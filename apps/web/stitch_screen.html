@@ -1,0 +1,269 @@
+<!DOCTYPE html><html class="light" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Đăng ký tài khoản - FoodResQ</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Be+Vietnam+Pro:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary": "#ffffff",
+                      "secondary-fixed": "#e8e2cf",
+                      "inverse-surface": "#303030",
+                      "on-tertiary": "#ffffff",
+                      "on-primary-container": "#226b29",
+                      "inverse-primary": "#8cd888",
+                      "primary-fixed-dim": "#8cd888",
+                      "on-secondary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "surface-bright": "#fbf9f8",
+                      "on-secondary-fixed-variant": "#4a4739",
+                      "secondary-container": "#e5e0cc",
+                      "surface-container": "#efeded",
+                      "on-surface-variant": "#40493e",
+                      "surface-dim": "#dbd9d9",
+                      "tertiary": "#366a35",
+                      "primary": "#236c2a",
+                      "background": "#fbf9f8",
+                      "outline": "#707a6d",
+                      "tertiary-fixed": "#b7f1af",
+                      "error": "#ba1a1a",
+                      "tertiary-container": "#ade6a5",
+                      "surface-container-high": "#eae8e7",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary": "#625f4f",
+                      "secondary-fixed-dim": "#ccc6b4",
+                      "on-surface": "#1b1c1c",
+                      "on-secondary-fixed": "#1e1c10",
+                      "primary-fixed": "#a8f5a2",
+                      "on-secondary-container": "#666353",
+                      "inverse-on-surface": "#f2f0f0",
+                      "on-background": "#1b1c1c",
+                      "primary-container": "#9dea98",
+                      "on-tertiary-fixed-variant": "#1e511f",
+                      "on-error-container": "#93000a",
+                      "surface-container-low": "#f5f3f3",
+                      "on-primary-fixed": "#002204",
+                      "outline-variant": "#c0c9ba",
+                      "on-tertiary-fixed": "#002204",
+                      "on-primary-fixed-variant": "#005314",
+                      "on-tertiary-container": "#356934",
+                      "surface-tint": "#236c2a",
+                      "surface": "#fbf9f8",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed-dim": "#9cd595",
+                      "surface-container-highest": "#e4e2e2",
+                      "surface-variant": "#e4e2e2"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "lg": "24px",
+                      "xl": "40px",
+                      "md": "16px",
+                      "gutter": "16px",
+                      "container-margin": "20px",
+                      "sm": "8px",
+                      "unit": "8px",
+                      "xs": "4px"
+              },
+              "fontFamily": {
+                      "label-lg": ["Be Vietnam Pro"],
+                      "body-md": ["Be Vietnam Pro"],
+                      "headline-md": ["Plus Jakarta Sans"],
+                      "headline-lg": ["Plus Jakarta Sans"],
+                      "label-sm": ["Be Vietnam Pro"],
+                      "body-lg": ["Be Vietnam Pro"],
+                      "headline-lg-mobile": ["Plus Jakarta Sans"]
+              },
+              "fontSize": {
+                      "label-lg": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .step-active { color: #236c2a; }
+        .step-inactive { color: #707a6d; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md text-body-md overflow-x-hidden">
+<!-- Top Navigation Header (Simplified for Transactional flow as per shell rules) -->
+<header class="w-full py-6 px-container-margin md:px-xl flex justify-between items-center max-w-[1140px] mx-auto">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md font-bold text-primary">FoodResQ</span>
+</div>
+<div class="hidden md:flex items-center gap-4 text-on-surface-variant font-label-lg text-label-lg">
+<span>Bạn đã có tài khoản?</span>
+<button class="text-primary font-bold hover:underline">Đăng nhập ngay</button>
+</div>
+</header>
+<main class="flex-grow flex flex-col items-center px-container-margin py-8 md:py-12 max-w-[1140px] mx-auto w-full">
+<!-- Progress Indicator -->
+<div class="w-full max-w-2xl mb-12">
+<div class="flex justify-between items-center relative mb-4">
+<!-- Progress Line -->
+<div class="absolute top-1/2 left-0 w-full h-1 bg-surface-container -translate-y-1/2 -z-10 rounded-full"></div>
+<div class="absolute top-1/2 left-0 w-1/2 h-1 bg-primary-container -translate-y-1/2 -z-10 rounded-full"></div>
+<!-- Steps -->
+<div class="flex flex-col items-center gap-2">
+<div class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold shadow-lg shadow-primary/20">1</div>
+<span class="font-label-lg text-label-lg text-primary">Vai trò</span>
+</div>
+<div class="flex flex-col items-center gap-2">
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold border-2 border-primary">2</div>
+<span class="font-label-lg text-label-lg text-primary">Thông tin</span>
+</div>
+<div class="flex flex-col items-center gap-2">
+<div class="w-10 h-10 rounded-full bg-surface-container text-outline flex items-center justify-center font-bold">3</div>
+<span class="font-label-lg text-label-lg text-outline">Xác nhận</span>
+</div>
+</div>
+</div>
+<!-- Header Content -->
+<div class="text-center mb-10">
+<h1 class="font-headline-lg text-headline-lg md:text-headline-lg text-on-surface mb-2">Đăng ký tài khoản</h1>
+<p class="text-on-surface-variant max-w-md mx-auto">Cùng chung tay giảm thiểu lãng phí thực phẩm và chia sẻ yêu thương đến cộng đồng.</p>
+</div>
+<!-- Registration Container -->
+<div class="w-full grid grid-cols-1 md:grid-cols-12 gap-xl">
+<!-- Left Column: Illustration (Asymmetric/Bento style) -->
+<div class="hidden md:flex md:col-span-5 flex-col gap-6">
+<div class="bg-primary-container/20 rounded-3xl p-8 relative overflow-hidden group h-[320px]">
+<h3 class="font-headline-md text-headline-md text-primary mb-2 relative z-10">Kết nối cộng đồng</h3>
+<p class="text-on-primary-fixed-variant relative z-10">Hơn 5,000 bữa ăn đã được giải cứu thông qua mạng lưới tình nguyện viên nhiệt huyết.</p>
+<img class="absolute -right-10 -bottom-10 w-64 h-64 object-cover rounded-full transition-transform duration-500 group-hover:scale-105" data-alt="A heartwarming scene of community members laughing and sharing a large meal together in a bright, modern indoor garden space. The lighting is soft and golden, highlighting fresh vegetables and rustic bread on the table. The style is warm and accessible with soft-focus backgrounds and vibrant, natural greens and yellows reflecting a mutual aid spirit." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOTUjzlI-Sl2FLWO6MQ0BUBUUeW-7C-SR73v7klRE6QETukAYK58DdJ6sryliO0i2nKYljVzyjA3H67ziCIsVVNXhlpYJKdPWmaNxhcVyUwqXrtYsxqz-kc9i3obZtjchwTXNZZ6ouGwBuSaLbK7lAiphc7wlM3IvMTSRoRWEURBVWy7KInkMSQUeIuE9qiUDXQCwao4yoQK5iip4XR1kofq3kMOqXQO5SmWD0FtAWU0P-pfh0VO4x5v7zE7grvWwDmj8bPtW5U_H8">
+</div>
+<div class="bg-secondary-container rounded-3xl p-8 h-[240px] flex items-end">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 bg-on-secondary-container rounded-2xl flex items-center justify-center text-secondary-container">
+<span class="material-symbols-outlined" data-icon="volunteer_activism">volunteer_activism</span>
+</div>
+<div>
+<span class="block font-bold text-on-secondary-container">Lan tỏa yêu thương</span>
+<span class="text-sm text-on-secondary-container/80 text-label-sm">Bắt đầu hành trình của bạn ngay hôm nay.</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Registration Steps (Step 2 Content as focused task) -->
+<div class="md:col-span-7 space-y-8">
+<!-- Role Specific Form - Provider Section (Showing the Provider form as requested) -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-[32px] p-8 md:p-10 shadow-[0_16px_32px_rgba(35,108,42,0.06)]">
+<div class="mb-8 flex items-center gap-4">
+<div class="p-3 bg-primary-container rounded-2xl text-on-primary-container">
+<span class="material-symbols-outlined" data-icon="storefront">storefront</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Thông tin Nhà cung cấp</h2>
+<p class="text-on-surface-variant text-label-sm font-label-sm">Vui lòng cung cấp thông tin chính xác để chúng tôi xác minh.</p>
+</div>
+</div>
+<form class="space-y-6">
+<!-- Store Info -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="font-label-lg text-label-lg text-on-surface ml-1">Tên cửa hàng/doanh nghiệp</label>
+<input class="w-full bg-surface-bright border-2 border-surface-container focus:border-primary focus:ring-0 rounded-2xl px-6 py-4 transition-all duration-300" placeholder="Ví dụ: Bakery Fresh" type="text">
+</div>
+<div class="space-y-2">
+<label class="font-label-lg text-label-lg text-on-surface ml-1">Loại thực phẩm</label>
+<select class="w-full bg-surface-bright border-2 border-surface-container focus:border-primary focus:ring-0 rounded-2xl px-6 py-4 transition-all duration-300 appearance-none">
+<option>Đồ tươi sống</option>
+<option>Bánh mì &amp; Bánh ngọt</option>
+<option>Đồ ăn đã chế biến</option>
+<option>Rau củ quả</option>
+</select>
+</div>
+</div>
+<!-- Address -->
+<div class="space-y-2">
+<label class="font-label-lg text-label-lg text-on-surface ml-1">Địa chỉ hoạt động</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline" data-icon="location_on">location_on</span>
+<input class="w-full bg-surface-bright border-2 border-surface-container focus:border-primary focus:ring-0 rounded-2xl pl-12 pr-6 py-4 transition-all duration-300" placeholder="Số nhà, tên đường, quận/huyện..." type="text">
+</div>
+</div>
+<!-- Business License Upload -->
+<div class="space-y-2">
+<label class="font-label-lg text-label-lg text-on-surface ml-1">Giấy phép kinh doanh (Ảnh chụp)</label>
+<div class="border-2 border-dashed border-outline-variant/50 rounded-2xl p-8 flex flex-col items-center justify-center bg-surface-container-low hover:bg-surface-container hover:border-primary/50 transition-all cursor-pointer group">
+<span class="material-symbols-outlined text-outline group-hover:text-primary mb-2 transition-colors" data-icon="cloud_upload">cloud_upload</span>
+<span class="text-on-surface-variant font-label-lg text-label-lg">Nhấn để tải lên hoặc kéo thả tệp</span>
+<span class="text-outline text-xs mt-1">PNG, JPG tối đa 5MB</span>
+</div>
+</div>
+<!-- Navigation Buttons -->
+<div class="pt-6 flex flex-col md:flex-row gap-4">
+<button class="flex-1 px-8 py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary/5 transition-all order-2 md:order-1" type="button"> Quay lại </button>
+<button class="flex-[2] px-8 py-4 rounded-full bg-primary-container text-on-primary-container font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all order-1 md:order-2 flex items-center justify-center gap-2" type="submit">
+                                Tiếp tục bước cuối
+                                <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</form>
+</div>
+<!-- Role Highlights (Secondary Section for better UX) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="p-6 rounded-3xl bg-surface-container-low flex items-start gap-4">
+<div class="text-primary mt-1">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+</div>
+<div>
+<span class="block font-bold text-on-surface">An toàn thực phẩm</span>
+<span class="text-sm text-on-surface-variant">Quy trình kiểm định nghiêm ngặt cho mọi giao dịch.</span>
+</div>
+</div>
+<div class="p-6 rounded-3xl bg-surface-container-low flex items-start gap-4">
+<div class="text-primary mt-1">
+<span class="material-symbols-outlined" data-icon="bolt">bolt</span>
+</div>
+<div>
+<span class="block font-bold text-on-surface">Hỗ trợ nhanh chóng</span>
+<span class="text-sm text-on-surface-variant">Đội ngũ kỹ thuật hỗ trợ 24/7 trong suốt hành trình.</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer for Context -->
+<footer class="w-full mt-12 py-8 border-t border-outline-variant/20 bg-surface-container-lowest">
+<div class="max-w-[1140px] mx-auto px-container-margin flex flex-col md:flex-row justify-between items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="font-bold text-primary">FoodResQ</span>
+<span class="text-on-surface-variant text-sm">© 2024 Dự án vì Cộng đồng</span>
+</div>
+<div class="flex gap-8 text-on-surface-variant text-label-sm">
+<a class="hover:text-primary" href="#">Điều khoản sử dụng</a>
+<a class="hover:text-primary" href="#">Chính sách bảo mật</a>
+<a class="hover:text-primary" href="#">Trung tâm hỗ trợ</a>
+</div>
+</div>
+</footer>
+<!-- FAB for quick help (Floating Action Button logic) -->
+<div class="fixed bottom-8 right-8 z-50">
+<button class="w-14 h-14 rounded-2xl bg-primary text-on-primary shadow-2xl flex items-center justify-center hover:scale-110 transition-transform">
+<span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+</button>
+</div>
+</body></html>
