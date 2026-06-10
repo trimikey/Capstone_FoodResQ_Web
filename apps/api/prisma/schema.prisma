@@ -1,0 +1,670 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ─────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  admin
+  provider
+  receiver
+  volunteer
+}
+
+enum UserStatus {
+  pending_verification
+  active
+  suspended
+  banned
+}
+
+enum BusinessType {
+  restaurant
+  supermarket
+  bakery
+  hotel
+  other
+}
+
+enum VerificationStatus {
+  pending
+  under_review
+  approved
+  rejected
+}
+
+enum VolunteerRank {
+  newcomer
+  active
+  experienced
+  expert
+}
+
+enum VolunteerSpecialization {
+  shipper
+  chef
+  waiter
+}
+
+enum FoodCategory {
+  prepared_meal
+  raw_ingredients
+  bakery
+  beverage
+  other
+}
+
+enum ListingStatus {
+  draft
+  active
+  fully_reserved
+  completed
+  expired
+  cancelled
+}
+
+enum QuantityUnit {
+  kg
+  portion
+  item
+  box
+  liter
+}
+
+enum ReservationStatus {
+  confirmed
+  picked_up
+  completed
+  cancelled
+  expired
+  no_show
+}
+
+enum DeliveryStatus {
+  pending_assignment
+  assigned
+  heading_to_provider
+  qc_completed
+  in_transit
+  delivered
+  failed
+}
+
+enum CampaignStatus {
+  draft
+  open
+  in_progress
+  completed
+  cancelled
+}
+
+enum AssignmentRole {
+  chef
+  waiter
+  shipper
+}
+
+enum AssignmentStatus {
+  assigned
+  checked_in
+  in_progress
+  completed
+  absent
+  cancelled
+}
+
+enum VerificationRequestType {
+  provider_registration
+  charity_registration
+  volunteer_chef_cert
+  receiver_income_proof
+}
+
+enum TrustScoreReason {
+  late_cancellation
+  no_show
+  bad_rating_received
+  food_safety_violation
+  hoarding_detected
+  manual_penalty
+  successful_rescue
+  high_rating_received
+  manual_bonus
+}
+
+enum OfferStatus {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+enum ReportTargetType {
+  user
+  listing
+  delivery
+  campaign
+}
+
+enum ReportReason {
+  spoiled_food
+  fake_account
+  hoarding
+  no_show_provider
+  unsafe_food
+  harassment
+  fraud
+  other
+}
+
+enum ReportStatus {
+  pending
+  under_review
+  resolved
+  dismissed
+}
+
+// ── Models ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email        String     @unique @db.VarChar(255)
+  phone        String?    @unique @db.VarChar(20)
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name") @db.VarChar(255)
+  avatarUrl    String?    @map("avatar_url")
+  role         UserRole
+  status       UserStatus @default(pending_verification)
+  trustScore   Int        @default(100) @map("trust_score") @db.SmallInt
+  fcmToken     String?    @map("fcm_token")
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
+
+  providerProfile   ProviderProfile?
+  receiverProfile   ReceiverProfile?
+  volunteerProfile  VolunteerProfile?
+  liabilityWaivers  LiabilityWaiver[]
+  refreshTokens     RefreshToken[]
+  verificationRequests VerificationRequest[]
+  notifications     Notification[]
+  ratingsGiven      Rating[]              @relation("RaterRelation")
+  ratingsReceived   Rating[]              @relation("RateeRelation")
+  trustScoreHistory TrustScoreHistory[]
+  auditLogs         AuditLog[]
+  reports           Report[]              @relation("ReporterRelation")
+  resolvedReports   Report[]              @relation("ResolverRelation")
+
+  @@index([email])
+  @@index([role, status])
+  @@map("users")
+}
+
+model ProviderProfile {
+  id                   String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId               String             @unique @map("user_id") @db.Uuid
+  businessName         String             @map("business_name") @db.VarChar(255)
+  businessType         BusinessType       @map("business_type")
+  taxCode              String?            @map("tax_code") @db.VarChar(50)
+  description          String?
+  address              String
+  // pickup_location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  contactPhone         String?            @map("contact_phone") @db.VarChar(20)
+  websiteUrl           String?            @map("website_url")
+  isVerified           Boolean            @default(false) @map("is_verified")
+  verificationStatus   VerificationStatus @default(pending) @map("verification_status")
+  verifiedAt           DateTime?          @map("verified_at") @db.Timestamptz
+  verifiedBy           String?            @map("verified_by") @db.Uuid
+  totalFoodRescuedKg   Decimal            @default(0) @map("total_food_rescued_kg") @db.Decimal(10, 2)
+  totalCo2SavedKg      Decimal            @default(0) @map("total_co2_saved_kg") @db.Decimal(10, 2)
+  avgRating            Decimal?           @map("avg_rating") @db.Decimal(3, 2)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodListings FoodListing[]
+  esgSnapshots EsgSnapshot[]
+
+  @@index([userId])
+  @@map("provider_profiles")
+}
+
+model ReceiverProfile {
+  id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  isCharityOrg       Boolean            @default(false) @map("is_charity_org")
+  organizationName   String?            @map("organization_name") @db.VarChar(255)
+  idCardNumber       String?            @map("id_card_number") @db.VarChar(50)
+  idCardImageUrl     String?            @map("id_card_image_url")
+  address            String?
+  // location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  incomeProofUrl     String?            @map("income_proof_url")
+  verificationStatus VerificationStatus @default(pending) @map("verification_status")
+  verifiedAt         DateTime?          @map("verified_at") @db.Timestamptz
+  verifiedBy         String?            @map("verified_by") @db.Uuid
+  reservationsToday  Int                @default(0) @map("reservations_today") @db.SmallInt
+  avgRating          Decimal?           @map("avg_rating") @db.Decimal(3, 2)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservations     Reservation[]
+  kitchenCampaigns KitchenCampaign[]
+
+  @@index([userId])
+  @@map("receiver_profiles")
+}
+
+model VolunteerProfile {
+  id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  idCardNumber       String?            @map("id_card_number") @db.VarChar(50)
+  // current_location stored as GEOGRAPHY — update via $executeRaw
+  locationUpdatedAt  DateTime?          @map("location_updated_at") @db.Timestamptz
+  isAvailable        Boolean            @default(false) @map("is_available")
+  dedicationPoints   Int                @default(0) @map("dedication_points")
+  rank               VolunteerRank      @default(newcomer)
+  vehicleType        String?            @map("vehicle_type") @db.VarChar(50)
+  vehiclePlate       String?            @map("vehicle_plate") @db.VarChar(20)
+  avgRating          Decimal?           @map("avg_rating") @db.Decimal(3, 2)
+  verificationStatus VerificationStatus @default(pending) @map("verification_status")
+  verifiedAt         DateTime?          @map("verified_at") @db.Timestamptz
+  verifiedBy         String?            @map("verified_by") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  user                   User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specializations        VolunteerSpecializationEntry[]
+  deliveries             Delivery[]
+  campaignAssignments    CampaignVolunteerAssignment[]
+  dedicationPointHistory DedicationPointsHistory[]
+  taskOffers             ShipperTaskOffer[]
+
+  @@index([userId])
+  @@index([isAvailable])
+  @@map("volunteer_profiles")
+}
+
+model VolunteerSpecializationEntry {
+  id                 String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId        String                  @map("volunteer_id") @db.Uuid
+  specialization     VolunteerSpecialization
+  foodSafetyCertUrl  String?                 @map("food_safety_cert_url")
+  certExpiryDate     DateTime?               @map("cert_expiry_date") @db.Date
+  isVerified         Boolean                 @default(false) @map("is_verified")
+  verifiedAt         DateTime?               @map("verified_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([volunteerId, specialization])
+  @@map("volunteer_specializations")
+}
+
+model LiabilityWaiver {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  waiverVersion  String   @default("v1.0") @map("waiver_version") @db.VarChar(20)
+  acceptedAt     DateTime @default(now()) @map("accepted_at") @db.Timestamptz
+  ipAddress      String?  @map("ip_address")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, waiverVersion])
+  @@map("liability_waivers")
+}
+
+model FoodListing {
+  id                 String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  providerId         String        @map("provider_id") @db.Uuid
+  title              String        @db.VarChar(255)
+  description        String?
+  category           FoodCategory
+  quantityTotal      Decimal       @map("quantity_total") @db.Decimal(10, 2)
+  quantityRemaining  Decimal       @map("quantity_remaining") @db.Decimal(10, 2)
+  quantityUnit       QuantityUnit  @default(portion) @map("quantity_unit")
+  weightPerUnitKg    Decimal?      @map("weight_per_unit_kg") @db.Decimal(6, 3)
+  pickupStartTime    DateTime      @map("pickup_start_time") @db.Timestamptz
+  pickupEndTime      DateTime      @map("pickup_end_time") @db.Timestamptz
+  expiryTime         DateTime      @map("expiry_time") @db.Timestamptz
+  pickupAddress      String        @map("pickup_address")
+  // pickup_location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  storageConditions  String?       @map("storage_conditions")
+  allergenNotes      String?       @map("allergen_notes")
+  maxPerReservation  Int           @default(1) @map("max_per_reservation") @db.SmallInt
+  imageUrls          Json          @default("[]") @map("image_urls")
+  status             ListingStatus @default(draft)
+  cancelledReason    String?       @map("cancelled_reason")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt          DateTime?     @map("deleted_at") @db.Timestamptz
+
+  provider     ProviderProfile @relation(fields: [providerId], references: [id])
+  reservations Reservation[]
+
+  @@index([providerId])
+  @@map("food_listings")
+}
+
+model Reservation {
+  id                   String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  listingId            String            @map("listing_id") @db.Uuid
+  receiverId           String            @map("receiver_id") @db.Uuid
+  quantity             Decimal           @db.Decimal(10, 2)
+  status               ReservationStatus @default(confirmed)
+  qrToken              String            @unique @map("qr_token") @db.VarChar(64)
+  qrExpiresAt          DateTime          @map("qr_expires_at") @db.Timestamptz
+  pickupProofUrl       String?           @map("pickup_proof_url")
+  pickupProofAt        DateTime?         @map("pickup_proof_at") @db.Timestamptz
+  scannedBy            String?           @map("scanned_by") @db.Uuid
+  scannedAt            DateTime?         @map("scanned_at") @db.Timestamptz
+  cancelledAt          DateTime?         @map("cancelled_at") @db.Timestamptz
+  cancellationReason   String?           @map("cancellation_reason")
+  receiverNotes        String?           @map("receiver_notes")
+  trustPenaltyApplied  Boolean           @default(false) @map("trust_penalty_applied")
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  listing  FoodListing     @relation(fields: [listingId], references: [id])
+  receiver ReceiverProfile @relation(fields: [receiverId], references: [id])
+  delivery Delivery?
+
+  @@unique([listingId, receiverId])
+  @@index([receiverId])
+  @@index([qrToken])
+  @@index([status])
+  @@index([receiverId, createdAt])
+  @@map("reservations")
+}
+
+model Delivery {
+  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  reservationId    String         @unique @map("reservation_id") @db.Uuid
+  shipperId        String?        @map("shipper_id") @db.Uuid
+  status           DeliveryStatus @default(pending_assignment)
+  qcPhotoUrl       String?        @map("qc_photo_url")
+  qcPhotoAt        DateTime?      @map("qc_photo_at") @db.Timestamptz
+  deliveryProofUrl String?        @map("delivery_proof_url")
+  deliveryProofAt  DateTime?      @map("delivery_proof_at") @db.Timestamptz
+  // pickup_location, delivery_location: GEOGRAPHY — use $queryRaw
+  distanceKm       Decimal?       @map("distance_km") @db.Decimal(8, 2)
+  assignedAt       DateTime?      @map("assigned_at") @db.Timestamptz
+  pickedUpAt       DateTime?      @map("picked_up_at") @db.Timestamptz
+  deliveredAt      DateTime?      @map("delivered_at") @db.Timestamptz
+  failedReason     String?        @map("failed_reason")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  reservation  Reservation        @relation(fields: [reservationId], references: [id])
+  shipper      VolunteerProfile?  @relation(fields: [shipperId], references: [id])
+  taskOffers   ShipperTaskOffer[]
+
+  @@index([shipperId])
+  @@index([status])
+  @@map("deliveries")
+}
+
+model KitchenCampaign {
+  id                 String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  charityReceiverId  String         @map("charity_receiver_id") @db.Uuid
+  title              String         @db.VarChar(255)
+  description        String?
+  kitchenAddress     String         @map("kitchen_address")
+  // kitchen_location: GEOGRAPHY — use $queryRaw
+  scheduledDate      DateTime       @map("scheduled_date") @db.Date
+  startTime          String         @map("start_time") @db.VarChar(8)
+  endTime            String         @map("end_time") @db.VarChar(8)
+  chefSlotsNeeded    Int            @default(0) @map("chef_slots_needed") @db.SmallInt
+  waiterSlotsNeeded  Int            @default(0) @map("waiter_slots_needed") @db.SmallInt
+  shipperSlotsNeeded Int            @default(0) @map("shipper_slots_needed") @db.SmallInt
+  chefSlotsFilled    Int            @default(0) @map("chef_slots_filled") @db.SmallInt
+  waiterSlotsFilled  Int            @default(0) @map("waiter_slots_filled") @db.SmallInt
+  shipperSlotsFilled Int            @default(0) @map("shipper_slots_filled") @db.SmallInt
+  status             CampaignStatus @default(draft)
+  expectedServings   Int?           @map("expected_servings")
+  actualServings     Int?           @map("actual_servings")
+  imageUrls          Json           @default("[]") @map("image_urls")
+  notes              String?
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  charityReceiver ReceiverProfile             @relation(fields: [charityReceiverId], references: [id])
+  assignments     CampaignVolunteerAssignment[]
+
+  @@index([charityReceiverId])
+  @@index([scheduledDate, status])
+  @@map("kitchen_campaigns")
+}
+
+model CampaignVolunteerAssignment {
+  id                   String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId           String           @map("campaign_id") @db.Uuid
+  volunteerId          String           @map("volunteer_id") @db.Uuid
+  role                 AssignmentRole
+  status               AssignmentStatus @default(assigned)
+  checkInTime          DateTime?        @map("check_in_time") @db.Timestamptz
+  // check_in_location: GEOGRAPHY — use $queryRaw
+  checkOutTime         DateTime?        @map("check_out_time") @db.Timestamptz
+  ingredientProofUrl   String?          @map("ingredient_proof_url")
+  ingredientProofAt    DateTime?        @map("ingredient_proof_at") @db.Timestamptz
+  cookedProofUrl       String?          @map("cooked_proof_url")
+  cookedProofAt        DateTime?        @map("cooked_proof_at") @db.Timestamptz
+  distributionProofUrl String?          @map("distribution_proof_url")
+  distributionProofAt  DateTime?        @map("distribution_proof_at") @db.Timestamptz
+  pointsAwarded        Int?             @map("points_awarded") @db.SmallInt
+  notes                String?
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  campaign  KitchenCampaign  @relation(fields: [campaignId], references: [id])
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
+
+  @@unique([campaignId, volunteerId, role])
+  @@index([campaignId])
+  @@index([volunteerId])
+  @@map("campaign_volunteer_assignments")
+}
+
+model Rating {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  // referenceType: 'reservation' | 'campaign' — polymorphic, no FK at Prisma level
+  referenceType String   @map("reference_type") @db.VarChar(20)
+  referenceId   String   @map("reference_id") @db.Uuid
+  raterId       String   @map("rater_id") @db.Uuid
+  rateeId       String   @map("ratee_id") @db.Uuid
+  score         Int      @db.SmallInt
+  comment       String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  rater User @relation("RaterRelation", fields: [raterId], references: [id])
+  ratee User @relation("RateeRelation", fields: [rateeId], references: [id])
+
+  @@unique([referenceType, referenceId, raterId, rateeId])
+  @@index([rateeId])
+  @@index([referenceType, referenceId])
+  @@map("ratings")
+}
+
+model TrustScoreHistory {
+  id            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId        String           @map("user_id") @db.Uuid
+  delta         Int              @db.SmallInt
+  reason        TrustScoreReason
+  referenceType String?          @map("reference_type") @db.VarChar(20)
+  referenceId   String?          @map("reference_id") @db.Uuid
+  scoreBefore   Int              @map("score_before") @db.SmallInt
+  scoreAfter    Int              @map("score_after") @db.SmallInt
+  createdBy     String?          @map("created_by") @db.Uuid
+  note          String?
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("trust_score_history")
+}
+
+model DedicationPointsHistory {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId   String   @map("volunteer_id") @db.Uuid
+  delta         Int
+  reason        String   @db.VarChar(100)
+  referenceType String?  @map("reference_type") @db.VarChar(20)
+  referenceId   String?  @map("reference_id") @db.Uuid
+  pointsBefore  Int      @map("points_before")
+  pointsAfter   Int      @map("points_after")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
+
+  @@index([volunteerId, createdAt(sort: Desc)])
+  @@map("dedication_points_history")
+}
+
+model VerificationRequest {
+  id            String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId        String                  @map("user_id") @db.Uuid
+  requestType   VerificationRequestType @map("request_type")
+  documents     Json                    @default("[]")
+  status        VerificationStatus      @default(pending)
+  reviewerId    String?                 @map("reviewer_id") @db.Uuid
+  reviewerNotes String?                 @map("reviewer_notes")
+  submittedAt   DateTime                @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedAt    DateTime?               @map("reviewed_at") @db.Timestamptz
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("verification_requests")
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  body      String
+  data      Json     @default("{}")
+  isRead    Boolean  @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  targetType String?  @map("target_type") @db.VarChar(50)
+  targetId   String?  @map("target_id") @db.Uuid
+  payload    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model SystemConfig {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(100)
+  value       Json
+  description String?
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_configs")
+}
+
+model EsgSnapshot {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  snapshotDate         DateTime @map("snapshot_date") @db.Date
+  providerId           String?  @map("provider_id") @db.Uuid
+  totalFoodRescuedKg   Decimal  @default(0) @map("total_food_rescued_kg") @db.Decimal(12, 2)
+  totalCo2SavedKg      Decimal  @default(0) @map("total_co2_saved_kg") @db.Decimal(12, 2)
+  totalReservations    Int      @default(0) @map("total_reservations")
+  totalVolunteersActive Int     @default(0) @map("total_volunteers_active")
+  totalProvidersActive Int      @default(0) @map("total_providers_active")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  provider ProviderProfile? @relation(fields: [providerId], references: [id])
+
+  @@unique([snapshotDate, providerId])
+  @@index([snapshotDate(sort: Desc)])
+  @@map("esg_snapshots")
+}
+
+model RefreshToken {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  deviceInfo String?   @map("device_info") @db.VarChar(255)
+  ipAddress  String?   @map("ip_address")
+  isRevoked  Boolean   @default(false) @map("is_revoked")
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Report {
+  id             String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  reporterId     String           @map("reporter_id") @db.Uuid
+  targetType     ReportTargetType @map("target_type")
+  targetId       String           @map("target_id") @db.Uuid
+  reason         ReportReason
+  description    String?
+  evidenceUrls   Json             @default("[]") @map("evidence_urls")
+  status         ReportStatus     @default(pending)
+  resolverId     String?          @map("resolver_id") @db.Uuid
+  resolutionNote String?          @map("resolution_note")
+  resolvedAt     DateTime?        @map("resolved_at") @db.Timestamptz
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  reporter User  @relation("ReporterRelation", fields: [reporterId], references: [id])
+  resolver User? @relation("ResolverRelation", fields: [resolverId], references: [id])
+
+  @@index([status])
+  @@index([targetType, targetId])
+  @@index([reporterId])
+  @@map("reports")
+}
+
+model ShipperTaskOffer {
+  id          String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  deliveryId  String      @map("delivery_id") @db.Uuid
+  shipperId   String      @map("shipper_id") @db.Uuid
+  status      OfferStatus @default(pending)
+  offeredAt   DateTime    @default(now()) @map("offered_at") @db.Timestamptz
+  respondedAt DateTime?   @map("responded_at") @db.Timestamptz
+  expiresAt   DateTime    @map("expires_at") @db.Timestamptz
+  rejectReason String?    @map("reject_reason")
+
+  delivery Delivery         @relation(fields: [deliveryId], references: [id])
+  shipper  VolunteerProfile @relation(fields: [shipperId], references: [id])
+
+  @@unique([deliveryId, shipperId])
+  @@index([deliveryId])
+  @@index([shipperId, status])
+  @@map("shipper_task_offers")
+}
