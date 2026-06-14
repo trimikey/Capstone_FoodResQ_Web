@@ -1,6 +1,7 @@
 import { Controller, Get, Patch, Post, Body, Param, UseGuards, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DeliveriesService } from './deliveries.service';
+import { UpdateDeliveryStatusDto, RejectOfferDto } from './dto/update-delivery-status.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -42,9 +43,9 @@ export class DeliveriesController {
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
-    @Body('reason') reason?: string,
+    @Body() dto: RejectOfferDto,
   ) {
-    return this.deliveriesService.rejectOffer(id, user.id, reason);
+    return this.deliveriesService.rejectOffer(id, user.id, dto.reason);
   }
 
   @Patch(':id/status')
@@ -53,9 +54,8 @@ export class DeliveriesController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
-    @Body('status') status: string,
-    @Body('proofUrl') proofUrl?: string,
+    @Body() dto: UpdateDeliveryStatusDto,
   ) {
-    return this.deliveriesService.updateStatus(id, user.id, status, proofUrl);
+    return this.deliveriesService.updateStatus(id, user.id, dto.status, dto.proofUrl);
   }
 }

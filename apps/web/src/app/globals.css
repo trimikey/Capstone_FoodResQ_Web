@@ -101,6 +101,20 @@
   --color-outline-variant: #c0c9ba;
   --color-secondary-container: #e5e0cc;
   --color-on-primary-fixed-variant: #005314;
+
+  /* Organic Forest/Sage green overrides to make it feel human & crafted, not AI */
+  --color-emerald-50: #f4f8f4;
+  --color-emerald-100: #e6efe6;
+  --color-emerald-200: #cde0cd;
+  --color-emerald-300: #a9caa9;
+  --color-emerald-400: #7eac7e;
+  --color-emerald-500: #4e9853;
+  --color-emerald-600: #377e3c;
+  --color-emerald-700: #2a662e;
+  --color-emerald-800: #1e4d21;
+  --color-emerald-850: #173c1a;
+  --color-emerald-900: #123114;
+  --color-emerald-950: #0a1b0b;
 }
 
 body {
@@ -130,5 +144,36 @@ body {
 
 .custom-shadow {
   box-shadow: 0 16px 24px -8px rgba(35, 108, 42, 0.08);
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  gap: 1.5rem;
+  width: max-content;
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 

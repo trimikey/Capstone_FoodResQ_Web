@@ -1,4 +1,13 @@
-import { IsUUID, IsNumber, IsPositive, IsOptional, IsString, IsBoolean } from 'class-validator';
+import {
+  IsUUID,
+  IsNumber,
+  IsPositive,
+  IsOptional,
+  IsString,
+  IsBoolean,
+  Max,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -10,12 +19,14 @@ export class CreateReservationDto {
   @ApiProperty({ example: 1 })
   @IsNumber()
   @IsPositive()
+  @Max(10)
   @Type(() => Number)
   quantity!: number;
 
   @ApiPropertyOptional({ example: 'Giao trước 10h sáng nếu có thể' })
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   receiverNotes?: string;
 
   @ApiPropertyOptional({ description: 'Yêu cầu giao hàng tận nơi qua shipper' })

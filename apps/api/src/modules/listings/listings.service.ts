@@ -156,9 +156,14 @@ export class ListingsService {
   }
 
   async findOne(id: string) {
-    const result = await this.prisma.$queryRaw<NearbyRow[]>(Prisma.sql`
+    const result = await this.prisma.$queryRaw<
+      (NearbyRow & { description: string | null; lng: number; lat: number })[]
+    >(Prisma.sql`
       SELECT
-        fl.*, pp.business_name,
+        fl.id, fl.title, fl.description, fl.category, fl.quantity_remaining, fl.quantity_unit,
+        fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time, fl.pickup_address,
+        fl.storage_conditions, fl.allergen_notes, fl.max_per_reservation, fl.image_urls, fl.status,
+        fl.provider_id, pp.business_name,
         ST_X(fl.pickup_location::geometry) AS lng,
         ST_Y(fl.pickup_location::geometry) AS lat
       FROM food_listings fl
@@ -166,8 +171,29 @@ export class ListingsService {
       WHERE fl.id = ${id}::uuid AND fl.deleted_at IS NULL
     `);
 
-    if (!result[0]) throw new NotFoundException('Listing not found');
-    return result[0];
+    const r = result[0];
+    if (!r) throw new NotFoundException('Listing not found');
+
+    return {
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      category: r.category,
+      quantityRemaining: Number(r.quantity_remaining),
+      quantityUnit: r.quantity_unit,
+      weightPerUnitKg: r.weight_per_unit_kg ? Number(r.weight_per_unit_kg) : null,
+      pickupStartTime: r.pickup_start_time,
+      pickupEndTime: r.pickup_end_time,
+      pickupAddress: r.pickup_address,
+      storageConditions: r.storage_conditions,
+      allergenNotes: r.allergen_notes,
+      maxPerReservation: r.max_per_reservation,
+      imageUrls: r.image_urls,
+      status: r.status,
+      provider: { id: r.provider_id, businessName: r.business_name },
+      lng: Number(r.lng),
+      lat: Number(r.lat),
+    };
   }
 
   async publish(listingId: string, providerId: string) {

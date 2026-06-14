@@ -8,6 +8,7 @@ import {
   IsArray,
   Min,
   Max,
+  MaxLength,
   IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -18,6 +19,7 @@ export class CreateListingDto {
   @ApiProperty({ example: 'Cơm hộp thừa cuối ngày' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   title!: string;
 
   @ApiPropertyOptional()

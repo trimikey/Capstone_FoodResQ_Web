@@ -11,6 +11,9 @@ import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
+import { StorageService } from '@/common/storage/storage.service';
+import { FaceMatchService } from '@/common/face-match/face-match.service';
+import { PickupVerificationType } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 const LOCK_TTL_MS = 10_000;   // 10s window để acquire lock và complete transaction
@@ -24,6 +27,8 @@ export class ReservationsService {
     private prisma: PrismaService,
     private config: ConfigService,
     private redlock: Redlock,
+    private storage: StorageService,
+    private faceMatch: FaceMatchService,
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {
     this.maxPerDay = this.config.get<number>('MAX_RESERVATIONS_PER_DAY') ?? 3;
@@ -201,6 +206,84 @@ export class ReservationsService {
     });
   }
 
+  /**
+   * Receiver xác minh danh tính khi lấy hàng bằng ảnh khuôn mặt hoặc CCCD.
+   * Ảnh chụp tại chỗ được so khớp với khuôn mặt đã đăng ký (face enrollment) —
+   * không khớp thì từ chối, không cho hoàn tất giao/nhận.
+   * Chỉ hợp lệ sau khi provider đã quét QR (status = picked_up) → chuyển completed.
+   */
+  async submitPickupProof(
+    reservationId: string,
+    userId: string,
+    verificationType: PickupVerificationType,
+    photo: Express.Multer.File,
+  ) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { receiver: true },
+    });
+
+    if (!reservation) throw new NotFoundException('Reservation not found');
+    if (reservation.receiver.userId !== userId) {
+      throw new ForbiddenException('Only the reservation owner can submit pickup proof');
+    }
+    if (reservation.status !== 'picked_up') {
+      throw new BadRequestException(
+        'Pickup proof can only be submitted after the provider has scanned your QR code',
+      );
+    }
+
+    // 1. Phải có khuôn mặt đã đăng ký để đối chiếu
+    const enrolledDescriptor = reservation.receiver.faceDescriptor as number[] | null;
+    if (!enrolledDescriptor) {
+      throw new BadRequestException(
+        'FACE_NOT_ENROLLED: You must enroll your face (ID card + selfie) before pickup verification',
+      );
+    }
+
+    // 2. Trích khuôn mặt từ ảnh chụp tại chỗ (selfie hoặc chân dung trên CCCD)
+    const liveDescriptor = await this.faceMatch.getFaceDescriptor(photo);
+    if (!liveDescriptor) {
+      throw new BadRequestException(
+        verificationType === PickupVerificationType.ID_CARD
+          ? 'No face detected on the ID card photo. Keep the card flat and sharp.'
+          : 'No face detected in the photo. Please retake with good lighting.',
+      );
+    }
+
+    // 3. So khớp với khuôn mặt đã đăng ký — không khớp thì KHÔNG giao hàng
+    const match = this.faceMatch.compare(enrolledDescriptor, liveDescriptor);
+    if (!match.matched) {
+      throw new ForbiddenException(
+        'Face does not match the registered face for this account. Handover denied.',
+      );
+    }
+
+    const proofUrl = await this.storage.saveImage(photo, 'pickup-proofs');
+
+    const updated = await this.prisma.reservation.update({
+      where: { id: reservationId },
+      data: {
+        status: 'completed',
+        pickupProofUrl: proofUrl,
+        pickupProofAt: new Date(),
+        pickupVerificationType: verificationType,
+      },
+    });
+
+    // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
+    void this.applyTrustDelta(userId, reservationId, 'successful_rescue', 2);
+
+    return {
+      reservationId: updated.id,
+      status: updated.status,
+      pickupProofUrl: proofUrl,
+      verificationType,
+      matchDistance: match.distance,
+      message: 'Identity verified. Reservation completed.',
+    };
+  }
+
   async cancel(reservationId: string, userId: string, reason?: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
@@ -243,7 +326,7 @@ export class ReservationsService {
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
-      void this.applyTrustPenalty(userId, reservationId, 'late_cancellation', -10);
+      void this.applyTrustDelta(userId, reservationId, 'late_cancellation', -10);
     }
 
     return { message: 'Reservation cancelled' };
@@ -258,7 +341,14 @@ export class ReservationsService {
         where: { receiverId: receiver.id },
         include: {
           listing: {
-            select: { title: true, pickupAddress: true, imageUrls: true, category: true },
+            select: {
+              title: true,
+              pickupAddress: true,
+              imageUrls: true,
+              category: true,
+              quantityUnit: true,
+              provider: { select: { businessName: true } },
+            },
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -271,6 +361,48 @@ export class ReservationsService {
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  async findOne(id: string, userId: string) {
+    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
+    if (!receiver) throw new NotFoundException('Receiver profile not found');
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id, receiverId: receiver.id },
+      include: {
+        listing: {
+          include: {
+            provider: {
+              select: {
+                id: true,
+                businessName: true,
+                address: true,
+                contactPhone: true,
+                avgRating: true,
+              },
+            },
+          },
+        },
+        delivery: {
+          include: {
+            shipper: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    avatarUrl: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!reservation) throw new NotFoundException('Reservation not found');
+    return reservation;
+  }
+
   private async expire(reservationId: string) {
     await this.prisma.$transaction([
       this.prisma.reservation.update({
@@ -280,7 +412,7 @@ export class ReservationsService {
     ]);
   }
 
-  private async applyTrustPenalty(
+  private async applyTrustDelta(
     userId: string,
     referenceId: string,
     reason: string,
@@ -289,7 +421,7 @@ export class ReservationsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
 
-    const newScore = Math.max(0, user.trustScore + delta);
+    const newScore = Math.min(100, Math.max(0, user.trustScore + delta));
 
     await this.prisma.$transaction([
       this.prisma.user.update({

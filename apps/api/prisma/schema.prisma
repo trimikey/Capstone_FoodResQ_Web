@@ -105,6 +105,13 @@ enum ReservationStatus {
   @@map("reservation_status")
 }
 
+enum PickupVerificationType {
+  face
+  id_card
+
+  @@map("pickup_verification_type")
+}
+
 enum DeliveryStatus {
   pending_assignment
   assigned
@@ -254,7 +261,8 @@ model ProviderProfile {
   taxCode              String?            @map("tax_code") @db.VarChar(50)
   description          String?
   address              String
-  // pickup_location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  // GEOGRAPHY: đọc/ghi qua $queryRaw; khai báo Unsupported để prisma db push KHÔNG xoá cột
+  location             Unsupported("geography(Point, 4326)")?
   contactPhone         String?            @map("contact_phone") @db.VarChar(20)
   websiteUrl           String?            @map("website_url")
   isVerified           Boolean            @default(false) @map("is_verified")
@@ -272,6 +280,7 @@ model ProviderProfile {
   esgSnapshots EsgSnapshot[]
 
   @@index([userId])
+  @@index([location], map: "idx_provider_location", type: Gist)
   @@map("provider_profiles")
 }
 
@@ -282,8 +291,10 @@ model ReceiverProfile {
   organizationName   String?            @map("organization_name") @db.VarChar(255)
   idCardNumber       String?            @map("id_card_number") @db.VarChar(50)
   idCardImageUrl     String?            @map("id_card_image_url")
+  faceImageUrl       String?            @map("face_image_url")
+  faceDescriptor     Json?              @map("face_descriptor")
   address            String?
-  // location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  location           Unsupported("geography(Point, 4326)")?
   incomeProofUrl     String?            @map("income_proof_url")
   verificationStatus VerificationStatus @default(pending) @map("verification_status")
   verifiedAt         DateTime?          @map("verified_at") @db.Timestamptz
@@ -305,7 +316,7 @@ model VolunteerProfile {
   id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   userId             String             @unique @map("user_id") @db.Uuid
   idCardNumber       String?            @map("id_card_number") @db.VarChar(50)
-  // current_location stored as GEOGRAPHY — update via $executeRaw
+  currentLocation    Unsupported("geography(Point, 4326)")? @map("current_location")
   locationUpdatedAt  DateTime?          @map("location_updated_at") @db.Timestamptz
   isAvailable        Boolean            @default(false) @map("is_available")
   dedicationPoints   Int                @default(0) @map("dedication_points")
@@ -328,6 +339,7 @@ model VolunteerProfile {
 
   @@index([userId])
   @@index([isAvailable])
+  @@index([currentLocation], map: "idx_volunteer_location", type: Gist)
   @@map("volunteer_profiles")
 }
 
@@ -373,7 +385,7 @@ model FoodListing {
   pickupEndTime      DateTime      @map("pickup_end_time") @db.Timestamptz
   expiryTime         DateTime      @map("expiry_time") @db.Timestamptz
   pickupAddress      String        @map("pickup_address")
-  // pickup_location stored as GEOGRAPHY — use $queryRaw for spatial queries
+  pickupLocation     Unsupported("geography(Point, 4326)")? @map("pickup_location")
   storageConditions  String?       @map("storage_conditions")
   allergenNotes      String?       @map("allergen_notes")
   maxPerReservation  Int           @default(1) @map("max_per_reservation") @db.SmallInt
@@ -388,6 +400,7 @@ model FoodListing {
   reservations Reservation[]
 
   @@index([providerId])
+  @@index([pickupLocation], map: "idx_listing_location", type: Gist)
   @@map("food_listings")
 }
 
@@ -401,6 +414,7 @@ model Reservation {
   qrExpiresAt          DateTime          @map("qr_expires_at") @db.Timestamptz
   pickupProofUrl       String?           @map("pickup_proof_url")
   pickupProofAt        DateTime?         @map("pickup_proof_at") @db.Timestamptz
+  pickupVerificationType PickupVerificationType? @map("pickup_verification_type")
   scannedBy            String?           @map("scanned_by") @db.Uuid
   scannedAt            DateTime?         @map("scanned_at") @db.Timestamptz
   cancelledAt          DateTime?         @map("cancelled_at") @db.Timestamptz
@@ -431,7 +445,8 @@ model Delivery {
   qcPhotoAt        DateTime?      @map("qc_photo_at") @db.Timestamptz
   deliveryProofUrl String?        @map("delivery_proof_url")
   deliveryProofAt  DateTime?      @map("delivery_proof_at") @db.Timestamptz
-  // pickup_location, delivery_location: GEOGRAPHY — use $queryRaw
+  pickupLocation   Unsupported("geography(Point, 4326)")? @map("pickup_location")
+  deliveryLocation Unsupported("geography(Point, 4326)")? @map("delivery_location")
   distanceKm       Decimal?       @map("distance_km") @db.Decimal(8, 2)
   assignedAt       DateTime?      @map("assigned_at") @db.Timestamptz
   pickedUpAt       DateTime?      @map("picked_up_at") @db.Timestamptz
@@ -455,7 +470,7 @@ model KitchenCampaign {
   title              String         @db.VarChar(255)
   description        String?
   kitchenAddress     String         @map("kitchen_address")
-  // kitchen_location: GEOGRAPHY — use $queryRaw
+  kitchenLocation    Unsupported("geography(Point, 4326)")? @map("kitchen_location")
   scheduledDate      DateTime       @map("scheduled_date") @db.Date
   startTime          String         @map("start_time") @db.VarChar(8)
   endTime            String         @map("end_time") @db.VarChar(8)
@@ -478,6 +493,7 @@ model KitchenCampaign {
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
+  @@index([kitchenLocation], map: "idx_campaign_location", type: Gist)
   @@map("kitchen_campaigns")
 }
 
@@ -488,7 +504,7 @@ model CampaignVolunteerAssignment {
   role                 AssignmentRole
   status               AssignmentStatus @default(assigned)
   checkInTime          DateTime?        @map("check_in_time") @db.Timestamptz
-  // check_in_location: GEOGRAPHY — use $queryRaw
+  checkInLocation      Unsupported("geography(Point, 4326)")? @map("check_in_location")
   checkOutTime         DateTime?        @map("check_out_time") @db.Timestamptz
   ingredientProofUrl   String?          @map("ingredient_proof_url")
   ingredientProofAt    DateTime?        @map("ingredient_proof_at") @db.Timestamptz
