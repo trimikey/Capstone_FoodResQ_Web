@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   View,
   Pressable,
   Image,
-  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -44,7 +44,6 @@ export function SignInScreen({
   onNavigateToForgotPassword,
 }: SignInScreenProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -87,13 +86,13 @@ export function SignInScreen({
   };
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={{
         flex: 1,
         backgroundColor: COLORS.background,
         paddingTop: insets.top,
       }}
-      contentContainerStyle={{ flexGrow: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
       <View
@@ -135,8 +134,8 @@ export function SignInScreen({
         style={{
           flex: 1,
           paddingHorizontal: 20,
-          paddingTop: 8,
-          paddingBottom: 32,
+          paddingTop: 4,
+          paddingBottom: 8,
         }}
       >
         {/* Subtitle */}
@@ -145,18 +144,20 @@ export function SignInScreen({
             textAlign: 'center',
             fontSize: 13,
             color: COLORS.onSurfaceVariant,
-            marginBottom: 24,
+            marginBottom: 10,
           }}
         >
           Welcome back to FoodResQ
         </Text>
 
-        {/* Hero Image */}
+        {/* Hero Image (co giãn để lấp khoảng trống, tự thu nhỏ trên màn hình thấp) */}
         <View
           style={{
             width: '100%',
-            height: 200,
-            marginBottom: 24,
+            flex: 1,
+            minHeight: 80,
+            maxHeight: 170,
+            marginBottom: 14,
             borderRadius: 24,
             overflow: 'hidden',
             backgroundColor: COLORS.outline,
@@ -167,12 +168,11 @@ export function SignInScreen({
               uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBMmLTbgMqJ7Os3EH_vc1wSOw1e7XLFKtHbs9Hdr5lr8yu8vynQuJvCOgAJ-LUyCYKKGGi7axLiBK4nAVdjpb-pnxOvb9tlBiNuivg4yaZfepnTgmBsQJIzYZLS5eTrlgapHDYyS-8dTAdk6YPKi2ZCfcw7GXg0d7EhLF4fP_EIFeeY54rRI62hQByH3D2U4wpxhFSwbyozgWBcZzf6RNDFvVE5gmthCK2sqkcMfKzxm9fg8PIzugPrtR4megGMKWxVaXKwVujB569-',
             }}
             style={{ width: '100%', height: '100%' }}
-            defaultSource={require('../assets/placeholder.png')}
           />
         </View>
 
         {/* Email Field */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -222,7 +222,7 @@ export function SignInScreen({
         </View>
 
         {/* Password Field */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -283,7 +283,7 @@ export function SignInScreen({
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 24,
+            marginBottom: 12,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -329,7 +329,7 @@ export function SignInScreen({
           disabled={isLoading}
           loading={isLoading}
           style={{
-            marginBottom: 24,
+            marginBottom: 12,
             backgroundColor: COLORS.primary,
             paddingVertical: 8,
           }}
@@ -346,7 +346,7 @@ export function SignInScreen({
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            marginVertical: 24,
+            marginVertical: 12,
           }}
         >
           <View
@@ -379,7 +379,7 @@ export function SignInScreen({
           style={{
             flexDirection: 'row',
             gap: 16,
-            marginBottom: 24,
+            marginBottom: 12,
           }}
         >
           {/* Google Button */}
@@ -532,7 +532,7 @@ export function SignInScreen({
         onDismiss={clearError}
         duration={4000}
       />
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

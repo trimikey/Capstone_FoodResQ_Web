@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   View,
   Pressable,
   Image,
@@ -160,7 +161,14 @@ export function SignUpVolunteerScreen({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+    <KeyboardAvoidingView
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.background,
+        paddingTop: insets.top,
+      }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* Header */}
       <View
         style={{
@@ -195,12 +203,9 @@ export function SignUpVolunteerScreen({
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{ flexGrow: 1 }}
-      >
+      <View style={{ flex: 1 }}>
         {/* Progress & Title */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 16, marginBottom: 24 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, marginBottom: 12 }}>
           <View
             style={{
               flexDirection: 'row',
@@ -248,7 +253,7 @@ export function SignUpVolunteerScreen({
           </Text>
         </View>
 
-        <View style={{ paddingHorizontal: 20, gap: 24, marginBottom: 100 }}>
+        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12, paddingBottom: 8 }}>
           {/* ID Card */}
           <View>
             <Text
@@ -273,7 +278,7 @@ export function SignUpVolunteerScreen({
                   onChangeText={onChange}
                   editable={!isLoading}
                   left={
-                    <TextInput.Icon icon="badge" color={COLORS.outlineVariant} />
+                    <TextInput.Icon icon="card-account-details-outline" color={COLORS.outlineVariant} />
                   }
                   style={{
                     backgroundColor: COLORS.surfaceContainerLowest,
@@ -480,7 +485,7 @@ export function SignUpVolunteerScreen({
             "Every meal saved is a step toward a greener planet."
           </Text>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Footer Buttons */}
       <View
@@ -535,7 +540,7 @@ export function SignUpVolunteerScreen({
         onDismiss={clearError}
         duration={3000}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

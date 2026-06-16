@@ -5,6 +5,7 @@ import {
 
 interface ForgotPasswordScreenProps {
   navigation: any;
+  route?: any;
 }
 
 /**
@@ -14,12 +15,6 @@ interface ForgotPasswordScreenProps {
 export default function ForgotPasswordScreen({
   navigation,
 }: ForgotPasswordScreenProps) {
-  const handleSuccess = (email: string) => {
-    // Navigate to reset password screen (user will click email link)
-    // Or navigate back to sign in
-    navigation.navigate('SignIn');
-  };
-
   const handleBack = () => {
     navigation.goBack();
   };

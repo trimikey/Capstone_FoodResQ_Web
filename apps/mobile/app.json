@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "FoodResQ",
+    "slug": "foodresq",
+    "version": "0.1.0",
+    "scheme": "foodresq",
+    "orientation": "portrait",
+    "icon": "./assets/Logo_FoodResQ.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.foodresq.mobile"
+    },
+    "android": {
+      "package": "com.foodresq.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/Logo_FoodResQ.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-status-bar"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

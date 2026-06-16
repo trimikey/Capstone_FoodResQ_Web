@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
   View,
   Pressable,
   useWindowDimensions,
@@ -168,17 +167,14 @@ export function SignUpVerificationScreen({
         </Text>
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{ flexGrow: 1 }}
-      >
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
         {/* Progress Indicator */}
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'center',
             gap: 8,
-            paddingVertical: 16,
+            paddingVertical: 12,
           }}
         >
           <View
@@ -208,7 +204,7 @@ export function SignUpVerificationScreen({
         </View>
 
         {/* Title */}
-        <View style={{ alignItems: 'center', marginBottom: 24, paddingHorizontal: 20 }}>
+        <View style={{ alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
           <Text
             style={{
               fontSize: 24,
@@ -231,7 +227,7 @@ export function SignUpVerificationScreen({
         </View>
 
         {/* Documents */}
-        <View style={{ paddingHorizontal: 20, gap: 20, marginBottom: 100 }}>
+        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
           {documents.map((doc) => (
             <View key={doc.id} style={{ gap: 8 }}>
               <View
@@ -277,7 +273,7 @@ export function SignUpVerificationScreen({
                       ? COLORS.primary
                       : COLORS.outline,
                     borderRadius: 12,
-                    paddingVertical: 32,
+                    paddingVertical: 16,
                     paddingHorizontal: 16,
                     backgroundColor: uploadedDocuments[doc.id]
                       ? `${COLORS.primaryContainer}10`
@@ -336,11 +332,11 @@ export function SignUpVerificationScreen({
         <View
           style={{
             paddingHorizontal: 20,
-            paddingTop: 16,
+            paddingTop: 12,
             borderTopWidth: 1,
             borderTopColor: COLORS.outline,
-            marginBottom: 20,
-            marginTop: 20,
+            marginBottom: 12,
+            marginTop: 12,
           }}
         >
           <View
@@ -368,7 +364,7 @@ export function SignUpVerificationScreen({
             </Text>
           </View>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Submit Button */}
       <View

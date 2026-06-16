@@ -122,13 +122,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       set({ isLoading: true, error: null });
 
+      // API yêu cầu `fullName` (không phải `name`) và `role` thuộc enum.
+      // role/phone được truyền thêm runtime từ flow đăng ký (cast vì RegisterInput không khai báo).
+      const extra = input as RegisterInput & { role?: string; phone?: string };
       const response = await apiClient.post<ApiResponse<LoginResponse>>(
         endpoints.auth.register,
         {
           email: input.email,
           password: input.password,
-          name: input.name,
-          role: 'receiver', // Default role for mobile app
+          fullName: input.name,
+          role: extra.role ?? 'receiver',
+          ...(extra.phone ? { phone: extra.phone } : {}),
         }
       );
 

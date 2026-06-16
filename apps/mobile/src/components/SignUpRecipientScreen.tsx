@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
   View,
   Pressable,
   Image,
@@ -152,22 +151,22 @@ export function SignUpRecipientScreen({
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView
+      <View
         style={{
           flex: 1,
           backgroundColor: COLORS.background,
         }}
-        contentContainerStyle={{ flexGrow: 1 }}
       >
         <View
           style={{
+            flex: 1,
             paddingHorizontal: 20,
             paddingTop: 8,
-            paddingBottom: 100,
+            paddingBottom: 8,
           }}
         >
           {/* Progress Indicator */}
-          <View style={{ alignItems: 'center', marginBottom: 24 }}>
+          <View style={{ alignItems: 'center', marginBottom: 12 }}>
             <View
               style={{
                 flexDirection: 'row',
@@ -204,7 +203,7 @@ export function SignUpRecipientScreen({
           </View>
 
           {/* Section Title */}
-          <View style={{ marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 24,
@@ -226,7 +225,7 @@ export function SignUpRecipientScreen({
           </View>
 
           {/* Recipient Type Selector */}
-          <View style={{ marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 14,
@@ -337,7 +336,7 @@ export function SignUpRecipientScreen({
 
           {/* Conditional Fields */}
           {recipientType === 'individual' ? (
-            <View style={{ marginBottom: 24 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text
                 style={{
                   fontSize: 14,
@@ -361,7 +360,7 @@ export function SignUpRecipientScreen({
                     editable={!isLoading}
                     left={
                       <TextInput.Icon
-                        icon="badge"
+                        icon="card-account-details-outline"
                         color={COLORS.onSurfaceVariant}
                       />
                     }
@@ -387,9 +386,9 @@ export function SignUpRecipientScreen({
               )}
             </View>
           ) : (
-            <View style={{ marginBottom: 24 }}>
+            <View style={{ marginBottom: 12 }}>
               {/* Organization Name */}
-              <View style={{ marginBottom: 16 }}>
+              <View style={{ marginBottom: 10 }}>
                 <Text
                   style={{
                     fontSize: 14,
@@ -493,7 +492,7 @@ export function SignUpRecipientScreen({
           )}
 
           {/* Pickup Address */}
-          <View style={{ marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 14,
@@ -557,22 +556,23 @@ export function SignUpRecipientScreen({
           {/* Illustration Image */}
           <View
             style={{
-              marginTop: 24,
+              flex: 1,
+              minHeight: 80,
+              maxHeight: 160,
               borderRadius: 16,
               overflow: 'hidden',
               backgroundColor: COLORS.outline,
-              marginBottom: 24,
             }}
           >
             <Image
               source={{
                 uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDkhWq4CeI6HiI0zCMKdz2Disk_Alof0JQoOpPuu7voFWvfFlMjnQQ7sbNa0nHnbfQd_kto27Hn-1dHCyd9ErflLQolZL_aym-vd-FeKpErhm5WV5kMVVFFIgIBdpNWUMC9rdItp8gSVYVq4g3y7KS91pEb3CdbFnDwC7It_nr9bkM8txZk7kGRDXdFxqir6G1RWUhgiDz92jPNRhenvJ4b-nUq_e_QL0h7N_vGPwGDuUHdw6bNHEt9Wg_RXdJhoUEJ0B3Ew_H7udWd',
               }}
-              style={{ width: '100%', height: 160 }}
+              style={{ width: '100%', height: '100%' }}
             />
           </View>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Footer Actions */}
       <View

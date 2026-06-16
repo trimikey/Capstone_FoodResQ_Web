@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   View,
   Pressable,
   Image,
@@ -85,7 +86,14 @@ export function SignUpBasicScreen({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+    <KeyboardAvoidingView
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.background,
+        paddingTop: insets.top,
+      }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* Header */}
       <View
         style={{
@@ -120,16 +128,15 @@ export function SignUpBasicScreen({
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{ flexGrow: 1 }}
-      >
+      <View style={{ flex: 1 }}>
         {/* Hero Image */}
         <View
           style={{
             width: '100%',
-            height: 200,
-            marginBottom: 24,
+            flex: 1,
+            minHeight: 80,
+            maxHeight: 160,
+            marginBottom: 12,
           }}
         >
           <Image
@@ -168,7 +175,7 @@ export function SignUpBasicScreen({
         </View>
 
         {/* Form */}
-        <View style={{ paddingHorizontal: 20, gap: 16, marginBottom: 100 }}>
+        <View style={{ paddingHorizontal: 20, gap: 16, marginBottom: 8 }}>
           {/* Full Name */}
           <View>
             <Controller
@@ -370,7 +377,7 @@ export function SignUpBasicScreen({
             </Text>
           </View>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Submit Button */}
       <View
@@ -437,7 +444,7 @@ export function SignUpBasicScreen({
         onDismiss={clearError}
         duration={3000}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
   View,
   Pressable,
   useWindowDimensions,
@@ -40,12 +39,12 @@ const ROLE_OPTIONS: RoleOption[] = [
     description: 'Get food support as an individual',
   },
   {
-  {
     id: 'charity',
     emoji: '🤲',
     title: 'Charity Organization',
     description: 'Receive food support as an organization',
   },
+  {
     id: 'volunteer',
     emoji: '🤝',
     title: 'Volunteer',
@@ -118,19 +117,18 @@ export function SelectRoleScreen({
       </View>
 
       {/* Main Content */}
-      <ScrollView
+      <View
         style={{
           flex: 1,
           backgroundColor: COLORS.background,
         }}
-        contentContainerStyle={{ flexGrow: 1 }}
       >
         {/* Subtitle & Progress Section */}
         <View
           style={{
             alignItems: 'center',
-            marginTop: 24,
-            marginBottom: 24,
+            marginTop: 12,
+            marginBottom: 12,
             paddingHorizontal: 20,
           }}
         >
@@ -176,7 +174,15 @@ export function SelectRoleScreen({
         </View>
 
         {/* Role Cards */}
-        <View style={{ paddingHorizontal: 20, gap: 16, marginBottom: 100 }}>
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: 20,
+            paddingBottom: 8,
+            gap: 16,
+            justifyContent: 'center',
+          }}
+        >
           {ROLE_OPTIONS.map((role) => {
             const isSelected = selectedRole === role.id;
 
@@ -275,7 +281,7 @@ export function SelectRoleScreen({
             );
           })}
         </View>
-      </ScrollView>
+      </View>
 
       {/* Continue Button */}
       <View

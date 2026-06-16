@@ -4,6 +4,7 @@ import SignInForm from '../../components/SignInScreen';
 
 interface SignInScreenProps {
   navigation: any; // React Navigation type
+  route?: any;
 }
 
 /**

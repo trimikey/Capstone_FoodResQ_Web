@@ -6,6 +6,7 @@ import {
 
 interface SelectRoleScreenProps {
   navigation: any;
+  route?: any;
 }
 
 /**

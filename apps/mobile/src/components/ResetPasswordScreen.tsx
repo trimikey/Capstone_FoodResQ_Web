@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
   View,
   Pressable,
   Image,
@@ -14,7 +13,7 @@ import {
   Text,
 } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
-import {   } from '@hookform/resolvers/zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema, ResetPasswordInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
@@ -137,16 +136,16 @@ export function ResetPasswordScreen({
         </Text>
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{
-          flexGrow: 1,
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
           paddingHorizontal: 20,
-          paddingTop: 24,
-          paddingBottom: 24,
+          paddingTop: 12,
+          paddingBottom: 8,
         }}
       >
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 28,
@@ -168,7 +167,7 @@ export function ResetPasswordScreen({
           </Text>
         </View>
 
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -252,7 +251,7 @@ export function ResetPasswordScreen({
           )}
         </View>
 
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -311,7 +310,7 @@ export function ResetPasswordScreen({
             </Text>
           )}
         </View>
-      </ScrollView>
+      </View>
 
       <View
         style={{
@@ -461,5 +460,3 @@ function RequirementItem({ text, met }: { text: string; met: boolean }) {
 }
 
 export default ResetPasswordScreen;
-EOFSETCOMPONENT
-echo "✅ ResetPasswordScreen created"

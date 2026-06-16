@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ScrollView,
   View,
   Pressable,
   Image,
@@ -121,23 +120,25 @@ export function ForgotPasswordScreen({
         </Text>
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{
-          flexGrow: 1,
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
           paddingHorizontal: 20,
-          paddingTop: 24,
-          paddingBottom: 24,
+          paddingTop: 12,
+          paddingBottom: 8,
         }}
       >
         {/* Illustration */}
         <View
           style={{
             width: '100%',
-            height: 200,
+            flex: 1,
+            minHeight: 80,
+            maxHeight: 160,
             borderRadius: 24,
             overflow: 'hidden',
-            marginBottom: 24,
+            marginBottom: 12,
             backgroundColor: COLORS.outlineVariant,
           }}
         >
@@ -160,7 +161,7 @@ export function ForgotPasswordScreen({
         </View>
 
         {/* Title & Subtitle */}
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 28,
@@ -184,7 +185,7 @@ export function ForgotPasswordScreen({
 
         {/* Form */}
         <View style={{ flex: 1 }}>
-          <View style={{ marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 14,
@@ -274,7 +275,7 @@ export function ForgotPasswordScreen({
             </Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Error Toast */}
       <ErrorToast

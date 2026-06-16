@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   View,
   Pressable,
-  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -68,7 +68,7 @@ export function OtpVerificationScreen({
   });
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (!canResend && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => {
@@ -108,7 +108,10 @@ export function OtpVerificationScreen({
   const otp = watch('otp');
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: COLORS.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View
         style={{
           height: 64,
@@ -141,16 +144,16 @@ export function OtpVerificationScreen({
         </Text>
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: COLORS.background }}
-        contentContainerStyle={{
-          flexGrow: 1,
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
           paddingHorizontal: 20,
           paddingTop: 24,
-          paddingBottom: 24,
+          paddingBottom: 8,
         }}
       >
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 28,
@@ -176,7 +179,7 @@ export function OtpVerificationScreen({
           </Text>
         </View>
 
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -225,7 +228,7 @@ export function OtpVerificationScreen({
           )}
         </View>
 
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -257,7 +260,7 @@ export function OtpVerificationScreen({
         </View>
 
         <View style={{ flex: 1 }} />
-      </ScrollView>
+      </View>
 
       <View
         style={{
@@ -294,7 +297,7 @@ export function OtpVerificationScreen({
         onDismiss={clearError}
         duration={3000}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

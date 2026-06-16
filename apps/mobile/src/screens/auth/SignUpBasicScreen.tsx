@@ -1,8 +1,6 @@
 import React from 'react';
-import {
-  SignUpBasicScreen as SignUpBasicForm,
-  SignUpBasicInfoInput,
-} from '../../components/SignUpBasicScreen';
+import { SignUpBasicScreen as SignUpBasicForm } from '../../components/SignUpBasicScreen';
+import type { SignUpBasicInfoInput } from '../../utils/validators';
 
 interface SignUpBasicScreenProps {
   navigation: any;
