@@ -72,6 +72,24 @@ export function useMyReservations(page = 1) {
   });
 }
 
+async function rateReservation(params: { id: string; score: number; comment?: string }) {
+  const { data } = await api.post(`/reservations/${params.id}/rating`, {
+    score: params.score,
+    comment: params.comment,
+  });
+  return data.data as { id: string; score: number; message: string };
+}
+
+export function useRateReservation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: rateReservation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'my'] });
+    },
+  });
+}
+
 export function useSubmitPickupProof() {
   const queryClient = useQueryClient();
   return useMutation({

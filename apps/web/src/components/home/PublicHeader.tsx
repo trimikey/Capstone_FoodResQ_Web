@@ -9,7 +9,8 @@ import { UserRole } from '@foodresq/types';
 const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
   { href: '/listings', label: 'Tìm thực phẩm' },
-  { href: '/reservations', label: 'Đơn hàng của tôi' },
+  { href: '/#about', label: 'Về chúng tôi' },
+  { href: '/#contact', label: 'Liên hệ' },
 ];
 
 /**
@@ -24,7 +25,19 @@ export default function PublicHeader() {
   const pathname = usePathname();
   // Tránh lệch hydration: zustand-persist chỉ có giá trị sau khi mount ở client
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+    // Check initial scroll position
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const isAuthed = mounted && !!user;
 
@@ -34,11 +47,18 @@ export default function PublicHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-neutral-200/70">
-      <div className="w-full px-6 md:px-16 lg:px-24 h-16 flex items-center justify-between gap-6">
+    <header 
+      className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-5xl rounded-full transition-all duration-300 ${
+        scrolled 
+          ? 'bg-white/95 backdrop-blur-md border border-neutral-200 shadow-[0_8px_30px_rgba(0,0,0,0.06)]' 
+          : 'bg-transparent border border-transparent shadow-none'
+      }`}
+    >
+      <div className="px-6 h-16 flex items-center justify-between gap-6">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 shrink-0">
-          <h1 className="font-extrabold text-xl text-emerald-800 tracking-tight">FoodResQ</h1>
+        <Link href="/" className="flex items-center shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/Logo_FoodResQ.png" alt="FoodResQ Logo" className="h-7 w-auto object-contain" />
         </Link>
 
         {/* Nav (chỉ hiện khi đã đăng nhập) */}
@@ -48,15 +68,15 @@ export default function PublicHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`relative py-5 text-sm font-bold transition-colors ${
+                className={`relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors ${
                   pathname === item.href
                     ? 'text-emerald-800'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                    : 'text-neutral-600 hover:text-emerald-700'
                 }`}
               >
                 {item.label}
                 {pathname === item.href && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-700 rounded-full" />
+                  <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />
                 )}
               </Link>
             ))}
@@ -69,37 +89,75 @@ export default function PublicHeader() {
             // placeholder tránh nhảy layout trước khi biết trạng thái auth
             <div className="w-24 h-9" />
           ) : isAuthed ? (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center border border-emerald-200 overflow-hidden">
+            <div 
+              className="relative flex items-center gap-2 h-full py-1.5"
+              onMouseEnter={() => setIsProfileMenuOpen(true)}
+              onMouseLeave={() => setIsProfileMenuOpen(false)}
+            >
+              <div className="flex items-center gap-2 cursor-pointer hover:bg-neutral-100/50 p-1 rounded-full transition-colors">
+                <div className="w-8 h-8 rounded-full bg-[#faf9f8] flex items-center justify-center border border-neutral-200 overflow-hidden">
                   {user!.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={user!.avatarUrl} alt={user!.fullName} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="font-bold text-sm text-emerald-800">
+                    <span className="font-bold text-xs text-[#236c2a]">
                       {user!.fullName.charAt(0).toUpperCase()}
                     </span>
                   )}
                 </div>
-                <div className="hidden lg:block leading-tight">
-                  <p className="text-sm font-bold text-neutral-900 max-w-[120px] truncate">{user!.fullName}</p>
-                  <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
-                    {user!.role === UserRole.RECEIVER
-                      ? 'Người nhận'
-                      : user!.role === UserRole.PROVIDER
-                        ? 'Cửa hàng'
-                        : 'Tình nguyện'}
-                  </p>
+                <div className="hidden lg:block leading-tight text-left pr-2">
+                  <p className="text-[13px] font-medium text-on-surface max-w-[100px] truncate">{user!.fullName}</p>
                 </div>
+                <span className="material-symbols-outlined text-[16px] text-neutral-400">arrow_drop_down</span>
               </div>
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-xl text-neutral-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                title="Đăng xuất"
-              >
-                <span className="material-symbols-outlined text-[20px]">logout</span>
-              </button>
-            </>
+
+              {isProfileMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-155 text-left">
+                  <div className="px-4 py-2 border-b border-neutral-100">
+                    <p className="font-bold text-xs text-neutral-500 uppercase tracking-wider">Tài khoản</p>
+                  </div>
+                  <div className="flex flex-col">
+                    <Link
+                      href="/profile"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50 text-sm font-semibold text-neutral-800 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px] text-neutral-500">person</span>
+                      <span>Hồ sơ cá nhân</span>
+                    </Link>
+
+                    <Link
+                      href="/reservations"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50 text-sm font-semibold text-neutral-800 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px] text-neutral-500">bookmark</span>
+                      <span>Đơn nhận của tôi</span>
+                    </Link>
+                    
+                    <Link
+                      href="/history"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50 text-sm font-semibold text-neutral-800 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px] text-neutral-500">history</span>
+                      <span>Lịch sử đơn hàng</span>
+                    </Link>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-rose-50 text-sm font-semibold text-rose-600 transition-colors text-left border-t border-neutral-100 w-full"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">logout</span>
+                      <span>Đăng xuất</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <Link

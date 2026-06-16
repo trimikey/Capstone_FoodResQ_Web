@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  Patch,
   Post,
   UseGuards,
   UseInterceptors,
@@ -10,6 +12,7 @@ import {
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -26,6 +29,18 @@ const ALLOWED_MIME = /^image\/(jpeg|png)$/;
 @ApiBearerAuth()
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  @Get('me')
+  @ApiOperation({ summary: 'Lấy hồ sơ + thống kê của người dùng đang đăng nhập' })
+  getMe(@CurrentUser() user: User) {
+    return this.usersService.getMe(user.id);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân (họ tên, SĐT, avatar)' })
+  updateMe(@CurrentUser() user: User, @Body() dto: UpdateMeDto) {
+    return this.usersService.updateMe(user.id, dto);
+  }
 
   @Get('me/face-enrollment')
   @Roles(UserRole.RECEIVER)

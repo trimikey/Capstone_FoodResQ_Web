@@ -28,6 +28,7 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { ScanQrDto } from './dto/scan-qr.dto';
 import { CancelReservationDto } from './dto/cancel-reservation.dto';
 import { SubmitPickupProofDto } from './dto/submit-pickup-proof.dto';
+import { RateReservationDto } from './dto/rate-reservation.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -128,5 +129,17 @@ export class ReservationsController {
     @Body() dto: CancelReservationDto,
   ) {
     return this.reservationsService.cancel(id, user.id, dto.reason);
+  }
+
+  @Post(':id/rating')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Receiver: Đánh giá nhà cung cấp sau khi nhận hàng' })
+  rate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: RateReservationDto,
+  ) {
+    return this.reservationsService.rateReservation(id, user.id, dto.score, dto.comment);
   }
 }

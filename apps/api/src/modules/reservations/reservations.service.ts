@@ -347,7 +347,8 @@ export class ReservationsService {
               imageUrls: true,
               category: true,
               quantityUnit: true,
-              provider: { select: { businessName: true } },
+              weightPerUnitKg: true,
+              provider: { select: { id: true, businessName: true, userId: true } },
             },
           },
         },
@@ -358,7 +359,77 @@ export class ReservationsService {
       this.prisma.reservation.count({ where: { receiverId: receiver.id } }),
     ]);
 
-    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+    // Ratings là quan hệ đa hình (referenceType/referenceId) — query riêng rồi gắn cờ ratedScore
+    const ratings = await this.prisma.rating.findMany({
+      where: {
+        referenceType: 'reservation',
+        referenceId: { in: items.map((r) => r.id) },
+        raterId: userId,
+      },
+      select: { referenceId: true, score: true },
+    });
+    const ratingByRes = new Map(ratings.map((rt) => [rt.referenceId, rt.score]));
+
+    const itemsWithRating = items.map((r) => ({
+      ...r,
+      ratedScore: ratingByRes.get(r.id) ?? null,
+    }));
+
+    return { items: itemsWithRating, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /** Receiver đánh giá nhà cung cấp sau khi nhận hàng (đơn completed). */
+  async rateReservation(
+    reservationId: string,
+    userId: string,
+    score: number,
+    comment?: string,
+  ) {
+    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
+    if (!receiver) throw new NotFoundException('Receiver profile not found');
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id: reservationId, receiverId: receiver.id },
+      include: { listing: { select: { provider: { select: { id: true, userId: true } } } } },
+    });
+    if (!reservation) throw new NotFoundException('Reservation not found');
+    if (reservation.status !== 'completed') {
+      throw new BadRequestException('Only completed reservations can be rated');
+    }
+
+    const rateeUserId = reservation.listing.provider.userId;
+
+    const rating = await this.prisma.rating.upsert({
+      where: {
+        referenceType_referenceId_raterId_rateeId: {
+          referenceType: 'reservation',
+          referenceId: reservationId,
+          raterId: userId,
+          rateeId: rateeUserId,
+        },
+      },
+      update: { score, comment: comment ?? null },
+      create: {
+        referenceType: 'reservation',
+        referenceId: reservationId,
+        raterId: userId,
+        rateeId: rateeUserId,
+        score,
+        comment: comment ?? null,
+      },
+    });
+
+    // Cập nhật avgRating của provider
+    const agg = await this.prisma.rating.aggregate({
+      where: { referenceType: 'reservation', rateeId: rateeUserId },
+      _avg: { score: true },
+    });
+    await this.prisma.providerProfile.update({
+      where: { id: reservation.listing.provider.id },
+      data: { avgRating: agg._avg.score ?? null },
+    });
+
+    return { id: rating.id, score: rating.score, message: 'Cảm ơn bạn đã đánh giá!' };
   }
 
   async findOne(id: string, userId: string) {

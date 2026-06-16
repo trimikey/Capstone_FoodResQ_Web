@@ -54,61 +54,61 @@ export default function ListingCard({ listing }: Props) {
   return (
     <Link
       href={`/listings/${listing.id}`}
-      className="bg-surface rounded-2xl overflow-hidden border border-outline-variant/15 flex flex-col hover:shadow-md hover:border-primary/20 transition-all duration-300 group cursor-pointer"
+      className="bg-white rounded-2xl overflow-hidden border border-neutral-200 flex flex-col hover:shadow-lg hover:border-[#236c2a]/30 transition-all duration-300 group cursor-pointer hover:-translate-y-1"
     >
       {/* Image Container */}
-      <div className="relative h-44 bg-surface-container overflow-hidden">
+      <div className="relative h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
         <img
           src={imageUrl}
           alt={listing.title}
-          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
 
         {/* Expiry / Status badges */}
         {isExpiringSoon && !isEmpty ? (
-          <div className="absolute top-3 left-3 bg-error/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-label-sm text-[11px] font-semibold shadow-sm">
-            Hết hạn trong 2h
+          <div className="absolute top-3 left-3 bg-rose-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
+            Sắp hết hạn
           </div>
         ) : (
-          <div className="absolute top-3 left-3 bg-primary/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-label-sm text-[11px] font-semibold shadow-sm">
+          <div className="absolute top-3 left-3 bg-[#236c2a]/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
             Mới đăng
           </div>
         )}
 
         {/* Free / Price badge */}
-        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white px-3 py-0.5 rounded-full font-label-sm text-[11px] font-semibold">
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold uppercase">
           Miễn phí
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-4 flex flex-col flex-1 gap-sm">
-        <div className="space-y-1">
+      <div className="p-5 flex flex-col flex-1 gap-2">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <h3 className="font-label-lg text-sm text-on-surface font-bold line-clamp-1 group-hover:text-primary transition-colors">
+            <h3 className="font-headline-md text-[17px] text-neutral-900 font-medium line-clamp-1 group-hover:text-[#236c2a] transition-colors">
               {listing.title}
             </h3>
             {/* Portions left badge (Green as shown in mockup) */}
-            <span className="shrink-0 bg-primary/10 text-primary px-2.5 py-0.5 rounded-full font-label-sm text-[11px] font-bold">
-              Còn lại {listing.quantityRemaining} phần
+            <span className="shrink-0 bg-[#efe8d8] text-[#236c2a] px-2.5 py-1 rounded-full font-body-md text-[11px] font-bold">
+              Còn {listing.quantityRemaining} phần
             </span>
           </div>
-          <p className="font-label-sm text-xs text-on-surface-variant/80">{listing.provider.businessName}</p>
+          <p className="font-body-md text-[13px] text-neutral-500">{listing.provider.businessName}</p>
         </div>
 
         {/* Details Row: Distance & Rating */}
-        <div className="flex items-center gap-3 mt-auto pt-2 border-t border-outline-variant/10 text-xs text-on-surface-variant/80">
-          <div className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-primary text-[16px]">location_on</span>
+        <div className="flex items-center gap-3 mt-auto pt-4 border-t border-neutral-100 text-[13px] text-neutral-500 font-body-md">
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[#236c2a] text-[16px]">location_on</span>
             <span>{formatDistance(listing.distanceM || 1200)}</span>
           </div>
 
-          <span className="text-outline-variant">•</span>
+          <span className="text-neutral-300">•</span>
 
           <div className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-amber-500 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-            <span className="font-semibold text-on-surface font-label-sm text-xs">4.8</span>
-            <span className="text-on-surface-variant/70">Uy tín</span>
+            <span className="material-symbols-outlined text-amber-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+            <span className="font-bold text-neutral-700 text-[13px]">4.8</span>
+            <span className="text-neutral-400 text-xs">Uy tín</span>
           </div>
         </div>
       </div>

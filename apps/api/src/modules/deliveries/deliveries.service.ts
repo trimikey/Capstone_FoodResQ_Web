@@ -9,6 +9,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { StorageService } from '@/common/storage/storage.service';
 
 const OFFER_EXPIRY_MINUTES = 2;
 const BROADCAST_RADIUS_M = 5000; // 5km
@@ -23,8 +24,14 @@ interface NearbyShipper {
 export class DeliveriesService {
   constructor(
     private prisma: PrismaService,
+    private storage: StorageService,
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {}
+
+  /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
+  async saveProofPhoto(photo: Express.Multer.File): Promise<string> {
+    return this.storage.saveImage(photo, 'delivery-proofs');
+  }
 
   // Called after reservation created with requestDelivery=true
   async broadcastToNearbyShippers(deliveryId: string, pickupLng: number, pickupLat: number) {
@@ -182,12 +189,14 @@ export class DeliveriesService {
       updateData.qcPhotoUrl = proofUrl;
       updateData.qcPhotoAt = new Date();
     }
-    if (newStatus === 'delivered' && proofUrl) {
-      updateData.deliveryProofUrl = proofUrl;
-      updateData.deliveryProofAt = new Date();
+    if (newStatus === 'delivered') {
       updateData.deliveredAt = new Date();
+      if (proofUrl) {
+        updateData.deliveryProofUrl = proofUrl;
+        updateData.deliveryProofAt = new Date();
+      }
 
-      // Mark reservation as completed + award dedication points
+      // Mark reservation as completed + award dedication points (ảnh proof là tùy chọn)
       await this.prisma.$transaction([
         this.prisma.reservation.update({
           where: { id: delivery.reservationId },

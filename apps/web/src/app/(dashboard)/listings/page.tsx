@@ -85,21 +85,21 @@ function ListingsPageContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-64px)] overflow-hidden">
+    <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-104px)] overflow-hidden bg-[#fcf9f2]">
       {/* Left side: Listings Panel */}
-      <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col border-r border-outline-variant/15 bg-surface h-full overflow-y-auto">
+      <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col border-r border-neutral-200 bg-[#fcf9f2] h-full overflow-y-auto">
         <div className="p-6 space-y-6">
           {/* Header */}
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="font-headline-md text-2xl text-on-surface font-bold">Thực phẩm mới đăng</h2>
-              <p className="font-label-sm text-xs text-on-surface-variant/70 mt-1">
+              <h2 className="font-headline-md text-3xl text-neutral-900 font-bold">Thực phẩm mới đăng</h2>
+              <p className="font-body-md text-sm text-neutral-500 mt-1">
                 Bán kính {distanceFilter}km • {listings.length} kết quả tìm thấy
               </p>
             </div>
             <button
               onClick={() => refetch()}
-              className="p-2.5 rounded-2xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors border border-outline-variant/15"
+              className="p-2.5 rounded-full text-neutral-500 hover:bg-white hover:text-neutral-900 transition-colors border border-neutral-200 bg-transparent shadow-sm"
               title="Làm mới"
             >
               <span className="material-symbols-outlined text-[20px]">refresh</span>
@@ -108,7 +108,7 @@ function ListingsPageContent() {
 
           {/* Quick Search */}
           <div className="relative">
-            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant text-[20px]">
+            <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-neutral-400 text-[20px]">
               search
             </span>
             <input
@@ -116,12 +116,12 @@ function ListingsPageContent() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tìm kiếm thực phẩm, cửa hàng..."
-              className="w-full pl-11 pr-10 py-3 bg-surface-container-low border border-outline-variant/20 rounded-2xl focus:outline-none focus:border-primary font-body-md text-sm transition-colors placeholder:text-outline-variant/70"
+              className="w-full pl-12 pr-10 py-3.5 bg-white border border-neutral-200 rounded-full focus:outline-none focus:border-[#236c2a] focus:ring-1 focus:ring-[#236c2a] font-body-md text-[15px] transition-all placeholder:text-neutral-400 shadow-sm"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface"
+                className="absolute right-5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-900 transition-colors"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
@@ -129,24 +129,24 @@ function ListingsPageContent() {
           </div>
 
           {/* Filter Row: Distance, Category, Time */}
-          <div className="flex flex-wrap gap-2 items-center text-xs">
-            <span className="text-on-surface-variant/80 font-bold mr-1 flex items-center gap-1">
+          <div className="flex flex-wrap gap-3 items-center text-[13px]">
+            <span className="text-neutral-500 font-medium flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <span className="material-symbols-outlined text-[16px]">filter_list</span>
               Bộ lọc:
             </span>
             
             {/* Distance Filter Dropdown */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-outline-variant/20 bg-surface-container-low hover:border-primary/40 font-semibold text-on-surface-variant">
+              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
                 Khoảng cách: {distanceFilter}km
-                <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+                <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-1 hidden group-hover:block hover:block bg-surface border border-outline-variant/20 rounded-xl shadow-lg z-30 py-1 min-w-[120px]">
+              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[140px]">
                 {[2, 5, 10, 20].map((d) => (
                   <button
                     key={d}
                     onClick={() => setDistanceFilter(d)}
-                    className="w-full text-left px-4 py-2 hover:bg-primary/10 hover:text-primary text-xs font-semibold"
+                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
                   >
                     Trong vòng {d}km
                   </button>
@@ -156,16 +156,16 @@ function ListingsPageContent() {
 
             {/* Category Filter Dropdown */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-outline-variant/20 bg-surface-container-low hover:border-primary/40 font-semibold text-on-surface-variant">
+              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
                 Danh mục: {category ? CATEGORIES.find(c => c.value === category)?.label : 'Tất cả'}
-                <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+                <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-1 hidden group-hover:block hover:block bg-surface border border-outline-variant/20 rounded-xl shadow-lg z-30 py-1 min-w-[140px]">
+              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
                 {CATEGORIES.map((cat) => (
                   <button
                     key={cat.value}
                     onClick={() => setCategory(cat.value)}
-                    className="w-full text-left px-4 py-2 hover:bg-primary/10 hover:text-primary text-xs font-semibold"
+                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
                   >
                     {cat.label}
                   </button>
@@ -175,27 +175,27 @@ function ListingsPageContent() {
 
             {/* Pickup Time Filter */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-outline-variant/20 bg-surface-container-low hover:border-primary/40 font-semibold text-on-surface-variant">
+              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
                 Thời gian nhận
-                <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+                <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-1 hidden group-hover:block hover:block bg-surface border border-outline-variant/20 rounded-xl shadow-lg z-30 py-1 min-w-[120px]">
-                <button onClick={() => setTimeFilter('all')} className="w-full text-left px-4 py-2 hover:bg-primary/10 hover:text-primary text-xs font-semibold">Tất cả</button>
-                <button onClick={() => setTimeFilter('soon')} className="w-full text-left px-4 py-2 hover:bg-primary/10 hover:text-primary text-xs font-semibold">Sắp hết hạn (&lt;2h)</button>
+              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
+                <button onClick={() => setTimeFilter('all')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Tất cả</button>
+                <button onClick={() => setTimeFilter('soon')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Sắp hết hạn (&lt;2h)</button>
               </div>
             </div>
           </div>
 
           {/* Quick pills */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none pt-2">
             {['Bánh mì', 'Suất ăn', 'Trái cây', 'Nước ngọt'].map((pill) => (
               <button
                 key={pill}
                 onClick={() => handlePillClick(pill)}
-                className={`px-4 py-1.5 rounded-full border transition-all text-xs font-semibold shrink-0 ${
+                className={`px-5 py-2 rounded-full border transition-all text-[13px] font-medium shrink-0 ${
                   activePill === pill
-                    ? 'bg-primary/15 text-primary border-primary font-bold'
-                    : 'border-outline-variant/20 text-on-surface-variant hover:border-primary/50'
+                    ? 'bg-[#236c2a] text-white border-[#236c2a] shadow-md'
+                    : 'bg-white border-neutral-200 text-neutral-600 hover:border-[#236c2a]/50 hover:text-[#236c2a]'
                 }`}
               >
                 {pill}
@@ -241,7 +241,7 @@ function ListingsPageContent() {
                   }}
                   onMouseLeave={() => setHoveredListingId(null)}
                   className={`transition-all duration-300 rounded-2xl ${
-                    selectedPinId === item.id ? 'ring-2 ring-primary ring-offset-2' : ''
+                    selectedPinId === item.id ? 'ring-[3px] ring-[#236c2a] ring-offset-2 ring-offset-[#fcf9f2]' : ''
                   }`}
                 >
                   <ListingCard listing={item} />
@@ -249,16 +249,16 @@ function ListingsPageContent() {
               ))}
 
             {!isLoading && !isError && listings.length === 0 && (
-              <div className="text-center py-12 space-y-3">
-                <span className="material-symbols-outlined text-outline-variant text-[48px]">restaurant</span>
-                <p className="font-label-lg text-sm text-on-surface-variant">Không tìm thấy thực phẩm nào</p>
+              <div className="text-center py-16 space-y-4 bg-white border border-neutral-200 rounded-2xl">
+                <span className="material-symbols-outlined text-neutral-300 text-[56px]">restaurant</span>
+                <p className="font-body-md text-[15px] text-neutral-500">Không tìm thấy thực phẩm nào</p>
                 <button
                   onClick={() => {
                     setSearch('');
                     setCategory('');
                     setActivePill(null);
                   }}
-                  className="px-4 py-2 bg-primary/10 text-primary rounded-xl text-xs font-bold"
+                  className="px-6 py-2.5 bg-[#efe8d8] hover:bg-[#e6dcc5] text-[#236c2a] transition-colors rounded-full text-sm font-medium"
                 >
                   Xóa bộ lọc
                 </button>
