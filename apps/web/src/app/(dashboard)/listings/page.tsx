@@ -32,27 +32,27 @@ export default function ListingsPage() {
   });
 
   return (
-    <div className="p-container-margin md:p-lg flex flex-col gap-lg min-h-full">
+    <div className="p-md md:p-lg flex flex-col gap-lg min-h-full">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-md">
         <div>
-          <h2 className="font-headline-md text-headline-md text-on-surface">Thực phẩm gần đây</h2>
-          <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">
+          <h1 className="font-display-lg text-display-lg text-on-surface">Thực phẩm gần đây</h1>
+          <p className="font-label-lg text-label-lg text-on-surface-variant mt-sm">
             Bán kính 5km • {listings?.length ?? 0} kết quả
           </p>
         </div>
         <button
           onClick={() => refetch()}
-          className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition-colors"
+          className="p-md rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
           title="Làm mới"
         >
-          <span className="material-symbols-outlined">refresh</span>
+          <span className="material-symbols-outlined text-[24px]">refresh</span>
         </button>
       </div>
 
       {/* Search bar */}
-      <div className="relative">
-        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant">
+      <div className="relative glass-card">
+        <span className="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-outline-variant">
           search
         </span>
         <input
@@ -60,12 +60,12 @@ export default function ListingsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Tìm kiếm thực phẩm, cửa hàng..."
-          className="w-full pl-12 pr-4 py-3 bg-surface-container-low border border-outline-variant/30 rounded-xl focus:outline-none focus:border-primary font-body-md transition-colors"
+          className="w-full pl-12 pr-md py-3 bg-transparent border-0 outline-none font-body-md text-on-surface placeholder:text-on-surface-variant"
         />
         {search && (
           <button
             onClick={() => setSearch('')}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface"
+            className="absolute right-md top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface transition-colors"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
@@ -73,15 +73,15 @@ export default function ListingsPage() {
       </div>
 
       {/* Category filters */}
-      <div className="flex gap-sm overflow-x-auto pb-1 flex-nowrap -mx-container-margin px-container-margin md:mx-0 md:px-0">
+      <div className="flex gap-sm overflow-x-auto pb-sm flex-nowrap -mx-md px-md md:mx-0 md:px-0">
         {CATEGORIES.map((cat) => (
           <button
             key={cat.value}
             onClick={() => setCategory(cat.value)}
-            className={`whitespace-nowrap px-md py-2 rounded-full font-label-lg text-label-lg border transition-colors shrink-0 ${
+            className={`whitespace-nowrap px-md py-2 rounded-lg font-label-lg text-label-lg border transition-all shrink-0 ${
               category === cat.value
-                ? 'bg-primary text-white border-primary shadow-sm'
-                : 'border-outline-variant/30 text-on-surface-variant hover:border-primary/60 hover:text-primary bg-surface'
+                ? 'bg-primary text-on-primary border-primary emerald-glow'
+                : 'glass-card border-outline-variant/50 text-on-surface-variant hover:border-primary hover:text-primary'
             }`}
           >
             {cat.label}

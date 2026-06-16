@@ -39,14 +39,14 @@ export default function ListingCard({ listing, onReserve }: Props) {
   const isEmpty = listing.quantityRemaining === 0;
 
   return (
-    <div className="bg-surface rounded-2xl overflow-hidden border border-outline-variant/20 flex flex-col hover:shadow-md transition-shadow">
+    <div className="glass-card flex flex-col overflow-hidden hover:shadow-lg transition-smooth">
       {/* Image */}
       <div className="relative h-44 bg-surface-container overflow-hidden">
         {listing.imageUrls.length > 0 ? (
           <img
             src={listing.imageUrls[0]}
             alt={listing.title}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-surface-container">
@@ -57,7 +57,7 @@ export default function ListingCard({ listing, onReserve }: Props) {
         )}
 
         {/* Distance badge */}
-        <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur-sm px-sm py-xs rounded-full flex items-center gap-xs">
+        <div className="absolute top-sm right-sm glass-card px-sm py-xs flex items-center gap-xs">
           <span className="material-symbols-outlined text-primary" style={{ fontSize: '14px' }}>
             location_on
           </span>
@@ -65,7 +65,7 @@ export default function ListingCard({ listing, onReserve }: Props) {
         </div>
 
         {isExpiringSoon && !isEmpty && (
-          <div className="absolute top-2 left-2 bg-error text-white px-sm py-xs rounded-full font-label-sm text-label-sm">
+          <div className="absolute top-sm left-sm bg-error text-white px-sm py-xs rounded-lg font-label-sm text-label-sm">
             Sắp hết hạn
           </div>
         )}
@@ -74,10 +74,10 @@ export default function ListingCard({ listing, onReserve }: Props) {
       {/* Content */}
       <div className="p-md flex flex-col flex-1 gap-sm">
         <div>
-          <span className="inline-block bg-tertiary-container text-on-tertiary-container px-sm py-xs rounded-full font-label-sm text-label-sm mb-xs">
+          <span className="impact-chip mb-xs">
             {CATEGORY_LABELS[listing.category] ?? listing.category}
           </span>
-          <h3 className="font-label-lg text-label-lg text-on-surface line-clamp-2 leading-snug">{listing.title}</h3>
+          <h3 className="font-headline-md text-headline-md text-on-surface line-clamp-2">{listing.title}</h3>
           <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">{listing.provider.businessName}</p>
         </div>
 
@@ -105,7 +105,7 @@ export default function ListingCard({ listing, onReserve }: Props) {
         <button
           onClick={onReserve}
           disabled={isEmpty}
-          className="mt-auto w-full py-3 bg-primary-container text-on-primary-container rounded-xl font-label-lg text-label-lg transition-all hover:shadow-sm active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-auto w-full py-3 px-md bg-primary text-on-primary rounded-lg font-label-lg transition-all hover:shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed emerald-glow"
         >
           {isEmpty ? 'Đã hết' : 'Đặt ngay'}
         </button>
