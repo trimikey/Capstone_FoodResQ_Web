@@ -74,6 +74,11 @@ export enum ReservationStatus {
   NO_SHOW = 'no_show',
 }
 
+export enum PickupVerificationType {
+  FACE = 'face',
+  ID_CARD = 'id_card',
+}
+
 export enum DeliveryStatus {
   PENDING_ASSIGNMENT = 'pending_assignment',
   ASSIGNED = 'assigned',

@@ -8,3 +8,10 @@ export const createReservationSchema = z.object({
 });
 
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
+
+// Xác minh danh tính khi nhận hàng — mirror SubmitPickupProofDto (BE)
+export const pickupVerificationSchema = z.object({
+  verificationType: z.enum(['face', 'id_card']),
+});
+
+export type PickupVerificationInput = z.infer<typeof pickupVerificationSchema>;

@@ -2,20 +2,25 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
+import PublicHeader from '@/components/home/PublicHeader';
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { href: string; icon: string; label: string; roles: UserRole[] | null }[] = [
   { href: '/listings', icon: 'restaurant', label: 'Tìm thực phẩm', roles: null },
-  { href: '/reservations', icon: 'bookmark', label: 'Đặt chỗ của tôi', roles: null },
-  { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng', roles: [UserRole.VOLUNTEER] },
+  { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận của tôi', roles: null },
+  { href: '/history', icon: 'history', label: 'Lịch sử', roles: null },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  // Hooks phải đứng trước mọi early-return — số hook mỗi lần render phải cố định
+  const [searchValue, setSearchValue] = useState('');
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -24,6 +29,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [isAuthenticated, router]);
 
   if (!user) return null;
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    router.push(`/listings?q=${encodeURIComponent(searchValue)}`);
+  };
 
   const navItems = NAV_ITEMS.filter(
     (item) => !item.roles || item.roles.includes(user.role as UserRole),
@@ -35,67 +45,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-surface-container-low border-r border-outline-variant/20 sticky top-0 h-screen shrink-0">
-        {/* Logo */}
-        <div className="p-lg border-b border-outline-variant/20">
-          <h1 className="font-headline-md text-headline-md text-primary">FoodResQ</h1>
-          <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">Kết nối cộng đồng</p>
-        </div>
+    <div className="flex flex-col min-h-screen bg-[#fcf9f2]">
+      {/* Desktop Top Header replaced with PublicHeader */}
+      <div className="hidden md:block">
+        <PublicHeader />
+      </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-md space-y-xs overflow-y-auto">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-md px-md py-3 rounded-xl font-label-lg text-label-lg transition-all ${
-                pathname === item.href
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-              }`}
-            >
-              <span
-                className="material-symbols-outlined text-[20px]"
-                style={pathname === item.href ? { fontVariationSettings: "'FILL' 1" } : {}}
-              >
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* User profile */}
-        <div className="p-md border-t border-outline-variant/20">
-          <div className="flex items-center gap-md p-sm rounded-xl">
-            <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center shrink-0">
-              <span className="font-label-lg text-label-lg text-on-primary-container">
-                {user.fullName.charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-label-lg text-label-lg text-on-surface truncate">{user.fullName}</p>
-              <p className="font-label-sm text-label-sm text-on-surface-variant">{user.role}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full mt-xs flex items-center gap-md px-md py-2 rounded-xl text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors font-label-lg text-label-lg"
-          >
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-            Đăng xuất
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between">
-        <h1 className="font-headline-md text-headline-md text-primary">FoodResQ</h1>
+      {/* Mobile Top Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between h-16">
+        <h1 className="font-headline-md text-headline-md text-primary font-bold">FoodResQ</h1>
         <div className="flex items-center gap-md">
           <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center">
-            <span className="font-label-sm text-label-sm text-on-primary-container">
+            <span className="font-label-sm text-label-sm text-on-primary-container font-semibold">
               {user.fullName.charAt(0).toUpperCase()}
             </span>
           </div>
@@ -105,18 +66,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </div>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col overflow-y-auto pt-16 md:pt-0 pb-20 md:pb-0">
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col pt-16 md:pt-[104px] pb-16 md:pb-0 min-h-screen">
         {children}
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant/20 flex">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant/20 flex shadow-lg">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex-1 flex flex-col items-center py-3 gap-xs transition-colors ${
+            className={`flex-1 flex flex-col items-center py-2 gap-xs transition-colors ${
               pathname === item.href ? 'text-primary' : 'text-on-surface-variant'
             }`}
           >
@@ -126,7 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               {item.icon}
             </span>
-            <span className="font-label-sm text-label-sm">{item.label.split(' ')[0]}</span>
+            <span className="font-label-sm text-[10px]">{item.label}</span>
           </Link>
         ))}
       </nav>

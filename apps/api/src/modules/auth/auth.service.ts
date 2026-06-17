@@ -29,15 +29,40 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        fullName: dto.fullName,
-        role: dto.role,
-        phone: dto.phone,
-        status: 'pending_verification',
-      },
+    // Tạo user + profile theo role trong 1 transaction — các flow sau
+    // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          fullName: dto.fullName,
+          role: dto.role,
+          phone: dto.phone,
+          status: 'pending_verification',
+        },
+      });
+
+      if (dto.role === 'receiver') {
+        await tx.receiverProfile.create({
+          data: { userId: created.id, address: dto.address ?? null },
+        });
+      } else if (dto.role === 'volunteer') {
+        await tx.volunteerProfile.create({
+          data: { userId: created.id, vehicleType: dto.vehicleType ?? null },
+        });
+      } else if (dto.role === 'provider') {
+        await tx.providerProfile.create({
+          data: {
+            userId: created.id,
+            businessName: dto.businessName ?? dto.fullName,
+            businessType: 'other',
+            address: dto.address ?? '',
+          },
+        });
+      }
+
+      return created;
     });
 
     return this.issueTokens(user);

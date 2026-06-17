@@ -1,6 +1,24 @@
-import { Controller, Get, Patch, Post, Body, Param, UseGuards, ParseUUIDPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseUUIDPipe,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { DeliveriesService } from './deliveries.service';
+import { UpdateDeliveryStatusDto, RejectOfferDto } from './dto/update-delivery-status.dto';
+
+const MAX_PROOF_BYTES = 5 * 1024 * 1024;
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -42,20 +60,44 @@ export class DeliveriesController {
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
-    @Body('reason') reason?: string,
+    @Body() dto: RejectOfferDto,
   ) {
-    return this.deliveriesService.rejectOffer(id, user.id, reason);
+    return this.deliveriesService.rejectOffer(id, user.id, dto.reason);
   }
 
   @Patch(':id/status')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Advance delivery status (with optional proof photo URL)' })
-  updateStatus(
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiOperation({ summary: 'Shipper: Advance delivery status (kèm ảnh proof tùy chọn)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['status'],
+      properties: {
+        status: { type: 'string' },
+        photo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
-    @Body('status') status: string,
-    @Body('proofUrl') proofUrl?: string,
+    @Body() dto: UpdateDeliveryStatusDto,
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: false,
+        validators: [
+          new MaxFileSizeValidator({ maxSize: MAX_PROOF_BYTES }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    photo?: Express.Multer.File,
   ) {
-    return this.deliveriesService.updateStatus(id, user.id, status, proofUrl);
+    const proofUrl = photo
+      ? await this.deliveriesService.saveProofPhoto(photo)
+      : dto.proofUrl;
+    return this.deliveriesService.updateStatus(id, user.id, dto.status, proofUrl);
   }
 }

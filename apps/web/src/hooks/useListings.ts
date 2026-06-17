@@ -35,10 +35,15 @@ async function fetchListings(params: QueryParams): Promise<ListingItem[]> {
   return data.data;
 }
 
-async function fetchListingById(id: string) {
-  const { data } = await api.get<{ data: ListingItem & { lng: number; lat: number } }>(
-    `/listings/${id}`,
-  );
+export interface ListingDetail extends Omit<ListingItem, 'distanceM'> {
+  description: string | null;
+  weightPerUnitKg: number | null;
+  lng: number;
+  lat: number;
+}
+
+async function fetchListingById(id: string): Promise<ListingDetail> {
+  const { data } = await api.get<{ data: ListingDetail }>(`/listings/${id}`);
   return data.data;
 }
 

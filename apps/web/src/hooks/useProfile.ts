@@ -1,0 +1,57 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { UserRole, UserStatus } from '@foodresq/types';
+
+export interface MeStats {
+  kgSaved: number;
+  completedCount: number;
+  cancelledCount: number;
+  providersHelped: number;
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  phone: string | null;
+  fullName: string;
+  avatarUrl: string | null;
+  role: UserRole;
+  status: UserStatus;
+  trustScore: number;
+  createdAt: string;
+  stats: MeStats;
+}
+
+interface UpdateMeInput {
+  fullName?: string;
+  phone?: string;
+  avatarUrl?: string;
+}
+
+async function fetchMe(): Promise<Me> {
+  const { data } = await api.get<{ data: Me }>('/users/me');
+  return data.data;
+}
+
+async function updateMe(input: UpdateMeInput): Promise<Me> {
+  const { data } = await api.patch<{ data: Me }>('/users/me', input);
+  return data.data;
+}
+
+export function useMe() {
+  return useQuery({
+    queryKey: ['users', 'me'],
+    queryFn: fetchMe,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useUpdateMe() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateMe,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users', 'me'] });
+    },
+  });
+}

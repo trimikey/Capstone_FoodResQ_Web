@@ -5,9 +5,12 @@ import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedlockModule } from './common/redlock/redlock.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { VolunteersModule } from './modules/volunteers/volunteers.module';
 
 @Module({
   imports: [
@@ -26,9 +29,12 @@ import { DeliveriesModule } from './modules/deliveries/deliveries.module';
     PrismaModule,
     RedlockModule,
     AuthModule,
+    UsersModule,
     ListingsModule,
     ReservationsModule,
     DeliveriesModule,
+    ReportsModule,
+    VolunteersModule,
   ],
 })
 export class AppModule {}

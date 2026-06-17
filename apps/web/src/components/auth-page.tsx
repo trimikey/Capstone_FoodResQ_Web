@@ -9,18 +9,23 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
+import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
 
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu phải từ 6 ký tự"),
+  password: z.string().min(8, "Mật khẩu phải từ 8 ký tự"),
   remember: z.boolean().default(false),
 });
 
 const registerSchema = z.object({
   fullName: z.string().min(2, "Họ và tên phải từ 2 ký tự"),
   email: z.string().email("Email không hợp lệ"),
-  phone: z.string().regex(/^(0[3|5|7|8|9])+([0-9]{8})$/, "Số điện thoại Việt Nam không hợp lệ"),
-  password: z.string().min(8, "Mật khẩu phải từ 8 ký tự"),
+  phone: z.string().regex(/^0[35789][0-9]{8}$/, "Số điện thoại Việt Nam không hợp lệ"),
+  password: z
+    .string()
+    .min(8, "Mật khẩu phải từ 8 ký tự")
+    .regex(/(?=.*[A-Z])/, "Cần ít nhất 1 chữ hoa")
+    .regex(/(?=.*[0-9])/, "Cần ít nhất 1 chữ số"),
   confirmPassword: z.string().min(8, "Xác nhận mật khẩu phải từ 8 ký tự"),
   role: z.enum(["provider", "receiver", "volunteer"]),
   
@@ -90,6 +95,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
+  const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
   const router = useRouter();
 
   // 1. Login form setup
@@ -177,23 +184,45 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await api.post('/auth/register', {
+      const res = await api.post<{
+        data: {
+          accessToken: string;
+          refreshToken: string;
+          user: Parameters<typeof setUser>[0];
+        };
+      }>('/auth/register', {
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
         role: data.role,
+        businessName: data.role === 'provider' ? data.storeName || undefined : undefined,
+        address:
+          data.role === 'provider'
+            ? data.providerAddress || undefined
+            : data.role === 'receiver'
+              ? data.receiverAddress || undefined
+              : undefined,
+        vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
       });
-      setSuccessMessage("Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.");
       toast.success("Đăng ký thành công!");
-      setTimeout(() => {
-        setActiveTab("login");
-        setRegisterStep(1);
-        resetLoginForm();
-        resetRegisterForm();
-        setUploadedFile(null);
-        setSuccessMessage(null);
-      }, 1500);
+
+      if (data.role === 'receiver') {
+        // Auto-login bằng token từ register → bước chụp khuôn mặt (eKYC) ngay
+        setTokens(res.data.data.accessToken, res.data.data.refreshToken);
+        setUser(res.data.data.user);
+        setShowFaceEnrollment(true);
+      } else {
+        setSuccessMessage("Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.");
+        setTimeout(() => {
+          setActiveTab("login");
+          setRegisterStep(1);
+          resetLoginForm();
+          resetRegisterForm();
+          setUploadedFile(null);
+          setSuccessMessage(null);
+        }, 1500);
+      }
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })
@@ -973,6 +1002,33 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           </div>
         </div>
       </footer>
+
+      {/* Bước cuối đăng ký (receiver): chụp khuôn mặt gốc để xác minh khi nhận hàng */}
+      {showFaceEnrollment && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative bg-surface rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-xl flex flex-col gap-lg p-lg max-h-[90vh] overflow-y-auto">
+            <div>
+              <h2 className="font-headline-md text-headline-md text-on-surface">
+                Bước cuối: Đăng ký khuôn mặt
+              </h2>
+              <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">
+                Tài khoản đã tạo thành công
+              </p>
+            </div>
+            <FaceEnrollmentPanel
+              onDone={() => {
+                setShowFaceEnrollment(false);
+                router.push('/listings');
+              }}
+              onSkip={() => {
+                setShowFaceEnrollment(false);
+                router.push('/listings');
+              }}
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

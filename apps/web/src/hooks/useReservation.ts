@@ -29,6 +29,30 @@ async function cancelReservation(id: string, reason?: string) {
   return data.data as { message: string };
 }
 
+interface PickupProofResult {
+  reservationId: string;
+  status: string;
+  pickupProofUrl: string;
+  verificationType: 'face' | 'id_card';
+  message: string;
+}
+
+async function submitPickupProof(params: {
+  id: string;
+  verificationType: 'face' | 'id_card';
+  photo: File;
+}): Promise<PickupProofResult> {
+  const formData = new FormData();
+  formData.append('photo', params.photo);
+  formData.append('verificationType', params.verificationType);
+  const { data } = await api.post<{ data: PickupProofResult }>(
+    `/reservations/${params.id}/pickup-proof`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data;
+}
+
 export function useCreateReservation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -48,6 +72,34 @@ export function useMyReservations(page = 1) {
   });
 }
 
+async function rateReservation(params: { id: string; score: number; comment?: string }) {
+  const { data } = await api.post(`/reservations/${params.id}/rating`, {
+    score: params.score,
+    comment: params.comment,
+  });
+  return data.data as { id: string; score: number; message: string };
+}
+
+export function useRateReservation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: rateReservation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'my'] });
+    },
+  });
+}
+
+export function useSubmitPickupProof() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: submitPickupProof,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'my'] });
+    },
+  });
+}
+
 export function useCancelReservation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -56,5 +108,19 @@ export function useCancelReservation() {
       void queryClient.invalidateQueries({ queryKey: ['reservations', 'my'] });
       void queryClient.invalidateQueries({ queryKey: ['listings', 'nearby'] });
     },
+  });
+}
+
+async function fetchReservationDetails(id: string) {
+  const { data } = await api.get(`/reservations/${id}`);
+  return data.data;
+}
+
+export function useReservationDetails(id: string) {
+  return useQuery({
+    queryKey: ['reservations', 'detail', id],
+    queryFn: () => fetchReservationDetails(id),
+    enabled: !!id,
+    staleTime: 10_000,
   });
 }

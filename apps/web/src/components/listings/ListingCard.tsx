@@ -1,10 +1,6 @@
-const CATEGORY_LABELS: Record<string, string> = {
-  prepared_meal: 'Đồ chín',
-  raw_ingredients: 'Nguyên liệu',
-  bakery: 'Bánh',
-  beverage: 'Đồ uống',
-  other: 'Khác',
-};
+'use client';
+
+import Link from 'next/link';
 
 export interface ListingItem {
   id: string;
@@ -26,17 +22,34 @@ export interface ListingItem {
 
 interface Props {
   listing: ListingItem;
-  onReserve: () => void;
+  onReserve?: () => void; // Made optional
 }
+
+const CATEGORY_LABELS: Record<string, string> = {
+  prepared_meal: 'Đồ chín',
+  raw_ingredients: 'Nguyên liệu',
+  bakery: 'Bánh ngọt',
+  beverage: 'Đồ uống',
+  other: 'Khác',
+};
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
-export default function ListingCard({ listing, onReserve }: Props) {
+export default function ListingCard({ listing }: Props) {
   const pickupEnd = new Date(listing.pickupEndTime);
   const isExpiringSoon = pickupEnd.getTime() - Date.now() < 2 * 60 * 60 * 1000;
   const isEmpty = listing.quantityRemaining === 0;
+
+  // Custom fallback images for mock display
+  const fallbackImage = listing.category === 'bakery'
+    ? '/banh-mi-ngot-thap-cam.png'
+    : listing.category === 'prepared_meal'
+    ? '/com-ga-hoi-an.png'
+    : '/banh-mi-lua-mach-tuoi.png';
+
+  const imageUrl = listing.imageUrls.length > 0 ? listing.imageUrls[0] : fallbackImage;
 
   return (
     <div className="glass-card flex flex-col overflow-hidden hover:shadow-lg transition-smooth">
@@ -49,10 +62,8 @@ export default function ListingCard({ listing, onReserve }: Props) {
             className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-surface-container">
-            <span className="material-symbols-outlined text-outline-variant" style={{ fontSize: '48px' }}>
-              restaurant
-            </span>
+          <div className="absolute top-3 left-3 bg-[#236c2a]/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
+            Mới đăng
           </div>
         )}
 
@@ -81,25 +92,20 @@ export default function ListingCard({ listing, onReserve }: Props) {
           <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">{listing.provider.businessName}</p>
         </div>
 
-        <div className="flex items-center gap-xs text-primary">
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>inventory_2</span>
-          <span className="font-label-sm text-label-sm">
-            Còn {listing.quantityRemaining} {listing.quantityUnit}
-          </span>
-        </div>
+        {/* Details Row: Distance & Rating */}
+        <div className="flex items-center gap-3 mt-auto pt-4 border-t border-neutral-100 text-[13px] text-neutral-500 font-body-md">
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[#236c2a] text-[16px]">location_on</span>
+            <span>{formatDistance(listing.distanceM || 1200)}</span>
+          </div>
 
-        <div className="flex items-center gap-xs text-on-surface-variant">
-          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>schedule</span>
-          <span className="font-label-sm text-label-sm">
-            {new Date(listing.pickupStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            {' – '}
-            {new Date(listing.pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
+          <span className="text-neutral-300">•</span>
 
-        <div className="flex items-start gap-xs text-on-surface-variant">
-          <span className="material-symbols-outlined mt-0.5 shrink-0" style={{ fontSize: '16px' }}>place</span>
-          <span className="font-label-sm text-label-sm line-clamp-1">{listing.pickupAddress}</span>
+          <div className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-amber-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+            <span className="font-bold text-neutral-700 text-[13px]">4.8</span>
+            <span className="text-neutral-400 text-xs">Uy tín</span>
+          </div>
         </div>
 
         <button
@@ -110,6 +116,6 @@ export default function ListingCard({ listing, onReserve }: Props) {
           {isEmpty ? 'Đã hết' : 'Đặt ngay'}
         </button>
       </div>
-    </div>
+    </Link>
   );
 }
