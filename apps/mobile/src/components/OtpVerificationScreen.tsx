@@ -16,6 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { otpVerificationSchema, OtpVerificationInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { FadeInUp } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -179,7 +180,7 @@ export function OtpVerificationScreen({
           </Text>
         </View>
 
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -226,9 +227,9 @@ export function OtpVerificationScreen({
               {errors.otp.message}
             </Text>
           )}
-        </View>
+        </FadeInUp>
 
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -257,7 +258,7 @@ export function OtpVerificationScreen({
               {canResend ? 'Resend Code' : `Resend in ${timeLeft}s`}
             </Text>
           </Pressable>
-        </View>
+        </FadeInUp>
 
         <View style={{ flex: 1 }} />
       </View>
@@ -272,23 +273,25 @@ export function OtpVerificationScreen({
           borderTopColor: COLORS.outline,
         }}
       >
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading || !otp || otp.length < 6}
-          loading={isLoading}
-          style={{
-            backgroundColor: COLORS.primaryContainer,
-            borderRadius: 16,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Verifying...' : 'Verify Code'}
-        </Button>
+        <FadeInUp delay={200}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || !otp || otp.length < 6}
+            loading={isLoading}
+            style={{
+              backgroundColor: COLORS.primaryContainer,
+              borderRadius: 16,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {isLoading ? 'Verifying...' : 'Verify Code'}
+          </Button>
+        </FadeInUp>
       </View>
 
       <ErrorToast

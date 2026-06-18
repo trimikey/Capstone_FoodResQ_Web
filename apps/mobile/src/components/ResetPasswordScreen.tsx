@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Pressable,
-  Image,
   Modal,
   useWindowDimensions,
 } from 'react-native';
@@ -17,6 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema, ResetPasswordInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { FadeInUp } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -167,7 +167,7 @@ export function ResetPasswordScreen({
           </Text>
         </View>
 
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -249,9 +249,9 @@ export function ResetPasswordScreen({
               <RequirementItem text="Number (0-9)" met={/[0-9]/.test(password)} />
             </View>
           )}
-        </View>
+        </FadeInUp>
 
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -309,7 +309,7 @@ export function ResetPasswordScreen({
               ✓ Passwords match
             </Text>
           )}
-        </View>
+        </FadeInUp>
       </View>
 
       <View
@@ -322,23 +322,25 @@ export function ResetPasswordScreen({
           borderTopColor: COLORS.outline,
         }}
       >
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading || !passwordsMatch}
-          loading={isLoading}
-          style={{
-            backgroundColor: COLORS.primaryContainer,
-            borderRadius: 16,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Resetting...' : 'Reset Password'}
-        </Button>
+        <FadeInUp delay={200}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || !passwordsMatch}
+            loading={isLoading}
+            style={{
+              backgroundColor: COLORS.primaryContainer,
+              borderRadius: 16,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {isLoading ? 'Resetting...' : 'Reset Password'}
+          </Button>
+        </FadeInUp>
       </View>
 
       <Modal visible={showSuccessModal} transparent animationType="slide" onRequestClose={() => setShowSuccessModal(false)}>

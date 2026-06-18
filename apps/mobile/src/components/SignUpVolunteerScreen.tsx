@@ -4,7 +4,6 @@ import {
   Platform,
   View,
   Pressable,
-  Image,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +18,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -255,7 +256,7 @@ export function SignUpVolunteerScreen({
 
         <View style={{ flex: 1, paddingHorizontal: 20, gap: 12, paddingBottom: 8 }}>
           {/* ID Card */}
-          <View>
+          <FadeInUp delay={80}>
             <Text
               style={{
                 fontSize: 14,
@@ -300,10 +301,10 @@ export function SignUpVolunteerScreen({
                 {errors.idCard.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Specializations */}
-          <View>
+          <FadeInUp delay={140}>
             <Text
               style={{
                 fontSize: 14,
@@ -378,11 +379,11 @@ export function SignUpVolunteerScreen({
                 );
               })}
             </View>
-          </View>
+          </FadeInUp>
 
           {/* Shipper Conditional Fields */}
           {isShipperSelected && (
-            <View
+            <FadeInUp
               style={{
                 borderLeftWidth: 4,
                 borderLeftColor: COLORS.primaryContainer,
@@ -454,11 +455,11 @@ export function SignUpVolunteerScreen({
                   )}
                 />
               </View>
-            </View>
+            </FadeInUp>
           )}
 
           {/* Illustration */}
-          <View
+          <FadeInView
             style={{
               borderRadius: 16,
               overflow: 'hidden',
@@ -466,13 +467,13 @@ export function SignUpVolunteerScreen({
               marginTop: 8,
             }}
           >
-            <Image
+            <AppImage
               source={{
                 uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD_muV8rDbs2VUt2ylvmXhRVV47V7WrYFNnH-iXfpCcdux4tHCVMojfDyiAsKcUF1ghH5gG6f74T8VNkN8YzIrLN8oIxaKyyfWoAmY7gXThlltdTz30KePzp2nEmPH2Zr0RkcYG-_Jhs_E86ZaM7-OQWNj2u46PO3qzQha18KjIjA7W8M39kSE149eut5Tn6Q-JViBuOnepbHfabkpVlUkyDLQxC7tH1mqLfK0ft6UVvmU6j7ISnRLAZTp2JMA9uXkHGMO4N0G8M8kI',
               }}
               style={{ width: '100%', height: 140 }}
             />
-          </View>
+          </FadeInView>
 
           <Text
             style={{
@@ -513,24 +514,25 @@ export function SignUpVolunteerScreen({
         >
           Back
         </Button>
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading || selectedSpecs.length === 0}
-          loading={isLoading}
-          style={{
-            flex: 2,
-            backgroundColor: COLORS.primary,
-            borderRadius: 12,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          Next
-        </Button>
+        <FadeInUp delay={200} style={{ flex: 2 }}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || selectedSpecs.length === 0}
+            loading={isLoading}
+            style={{
+              backgroundColor: COLORS.primary,
+              borderRadius: 12,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            Next
+          </Button>
+        </FadeInUp>
       </View>
 
       {/* Error Toast */}

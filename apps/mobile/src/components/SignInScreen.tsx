@@ -4,7 +4,6 @@ import {
   Platform,
   View,
   Pressable,
-  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -20,6 +19,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, LoginInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#10b981',
@@ -151,7 +152,7 @@ export function SignInScreen({
         </Text>
 
         {/* Hero Image (co giãn để lấp khoảng trống, tự thu nhỏ trên màn hình thấp) */}
-        <View
+        <FadeInView
           style={{
             width: '100%',
             flex: 1,
@@ -163,16 +164,16 @@ export function SignInScreen({
             backgroundColor: COLORS.outline,
           }}
         >
-          <Image
+          <AppImage
             source={{
               uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBMmLTbgMqJ7Os3EH_vc1wSOw1e7XLFKtHbs9Hdr5lr8yu8vynQuJvCOgAJ-LUyCYKKGGi7axLiBK4nAVdjpb-pnxOvb9tlBiNuivg4yaZfepnTgmBsQJIzYZLS5eTrlgapHDYyS-8dTAdk6YPKi2ZCfcw7GXg0d7EhLF4fP_EIFeeY54rRI62hQByH3D2U4wpxhFSwbyozgWBcZzf6RNDFvVE5gmthCK2sqkcMfKzxm9fg8PIzugPrtR4megGMKWxVaXKwVujB569-',
             }}
             style={{ width: '100%', height: '100%' }}
           />
-        </View>
+        </FadeInView>
 
         {/* Email Field */}
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -219,10 +220,10 @@ export function SignInScreen({
               {errors.email.message}
             </Text>
           )}
-        </View>
+        </FadeInUp>
 
         {/* Password Field */}
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -275,7 +276,7 @@ export function SignInScreen({
               {errors.password.message}
             </Text>
           )}
-        </View>
+        </FadeInUp>
 
         {/* Helper Row: Remember Me & Forgot Password */}
         <View
@@ -323,23 +324,25 @@ export function SignInScreen({
         </View>
 
         {/* Sign In Button */}
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading}
-          loading={isLoading}
-          style={{
-            marginBottom: 12,
-            backgroundColor: COLORS.primary,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 16,
-            fontWeight: 'bold',
-          }}
-        >
-          {isLoading ? 'Signing in...' : 'Sign In'}
-        </Button>
+        <FadeInUp delay={200}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading}
+            loading={isLoading}
+            style={{
+              marginBottom: 12,
+              backgroundColor: COLORS.primary,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 16,
+              fontWeight: 'bold',
+            }}
+          >
+            {isLoading ? 'Signing in...' : 'Sign In'}
+          </Button>
+        </FadeInUp>
 
         {/* Divider */}
         <View
@@ -401,11 +404,12 @@ export function SignInScreen({
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Image
+            <AppImage
               source={{
                 uri: 'https://www.google.com/images/branding/googleg/1x/googleg_standard_color_128dp.png',
               }}
               style={{ width: 20, height: 20 }}
+              contentFit="contain"
             />
             <Text
               style={{

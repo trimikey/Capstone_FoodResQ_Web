@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text, Card } from 'react-native-paper';
+import { FadeInUp } from './ui/Motion';
 
 const COLORS = {
   primary: '#10b981',
@@ -183,18 +184,18 @@ export function SelectRoleScreen({
             justifyContent: 'center',
           }}
         >
-          {ROLE_OPTIONS.map((role) => {
+          {ROLE_OPTIONS.map((role, index) => {
             const isSelected = selectedRole === role.id;
 
             return (
-              <Pressable
-                key={role.id}
-                onPress={() => handleSelectRole(role.id)}
-                disabled={isLoading}
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.8 : 1,
-                })}
-              >
+              <FadeInUp key={role.id} delay={80 + index * 80}>
+                <Pressable
+                  onPress={() => handleSelectRole(role.id)}
+                  disabled={isLoading}
+                  style={({ pressed }) => ({
+                    opacity: pressed ? 0.8 : 1,
+                  })}
+                >
                 <View
                   style={{
                     backgroundColor: isSelected
@@ -276,8 +277,9 @@ export function SelectRoleScreen({
                         : 'transparent',
                     }}
                   />
-                </View>
-              </Pressable>
+                  </View>
+                </Pressable>
+              </FadeInUp>
             );
           })}
         </View>
@@ -294,23 +296,25 @@ export function SelectRoleScreen({
           borderTopColor: COLORS.outline,
         }}
       >
-        <Button
-          mode="contained"
-          onPress={handleContinue}
-          disabled={!selectedRole || isLoading}
-          loading={isLoading}
-          style={{
-            backgroundColor: COLORS.primary,
-            borderRadius: 16,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Continuing...' : 'Continue'}
-        </Button>
+        <FadeInUp delay={320}>
+          <Button
+            mode="contained"
+            onPress={handleContinue}
+            disabled={!selectedRole || isLoading}
+            loading={isLoading}
+            style={{
+              backgroundColor: COLORS.primary,
+              borderRadius: 16,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {isLoading ? 'Continuing...' : 'Continue'}
+          </Button>
+        </FadeInUp>
       </View>
     </View>
   );

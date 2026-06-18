@@ -14,6 +14,7 @@ import {
 } from 'react-native-paper';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -204,7 +205,7 @@ export function SignUpVerificationScreen({
         </View>
 
         {/* Title */}
-        <View style={{ alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
+        <FadeInView style={{ alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
           <Text
             style={{
               fontSize: 24,
@@ -224,10 +225,10 @@ export function SignUpVerificationScreen({
           >
             Upload the required documents to finalize your registration and start saving food.
           </Text>
-        </View>
+        </FadeInView>
 
         {/* Documents */}
-        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
+        <FadeInUp delay={80} style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
           {documents.map((doc) => (
             <View key={doc.id} style={{ gap: 8 }}>
               <View
@@ -326,10 +327,11 @@ export function SignUpVerificationScreen({
               </Pressable>
             </View>
           ))}
-        </View>
+        </FadeInUp>
 
         {/* Certification Checkbox */}
-        <View
+        <FadeInUp
+          delay={140}
           style={{
             paddingHorizontal: 20,
             paddingTop: 12,
@@ -363,7 +365,7 @@ export function SignUpVerificationScreen({
               I certify the documents are accurate and valid. I understand that falsifying information will lead to immediate account suspension.
             </Text>
           </View>
-        </View>
+        </FadeInUp>
       </View>
 
       {/* Submit Button */}
@@ -377,6 +379,7 @@ export function SignUpVerificationScreen({
           borderTopColor: COLORS.outline,
         }}
       >
+        <FadeInUp delay={200}>
         <Button
           mode="contained"
           onPress={() => {
@@ -419,6 +422,7 @@ export function SignUpVerificationScreen({
         >
           {isLoading ? 'Submitting...' : 'Submit Documents'}
         </Button>
+        </FadeInUp>
       </View>
 
       {/* Toast Notification - For Document Errors */}

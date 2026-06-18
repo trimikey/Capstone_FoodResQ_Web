@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Pressable,
-  Image,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +17,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -336,7 +337,7 @@ export function SignUpRecipientScreen({
 
           {/* Conditional Fields */}
           {recipientType === 'individual' ? (
-            <View style={{ marginBottom: 12 }}>
+            <FadeInUp delay={80} style={{ marginBottom: 12 }}>
               <Text
                 style={{
                   fontSize: 14,
@@ -384,11 +385,11 @@ export function SignUpRecipientScreen({
                   {errors.idNumber.message}
                 </Text>
               )}
-            </View>
+            </FadeInUp>
           ) : (
             <View style={{ marginBottom: 12 }}>
               {/* Organization Name */}
-              <View style={{ marginBottom: 10 }}>
+              <FadeInUp delay={80} style={{ marginBottom: 10 }}>
                 <Text
                   style={{
                     fontSize: 14,
@@ -436,10 +437,10 @@ export function SignUpRecipientScreen({
                     {errors.organizationName.message}
                   </Text>
                 )}
-              </View>
+              </FadeInUp>
 
               {/* Tax ID */}
-              <View>
+              <FadeInUp delay={140}>
                 <Text
                   style={{
                     fontSize: 14,
@@ -487,12 +488,12 @@ export function SignUpRecipientScreen({
                     {errors.taxId.message}
                   </Text>
                 )}
-              </View>
+              </FadeInUp>
             </View>
           )}
 
           {/* Pickup Address */}
-          <View style={{ marginBottom: 12 }}>
+          <FadeInUp delay={200} style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 14,
@@ -551,10 +552,10 @@ export function SignUpRecipientScreen({
                 {errors.address.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Illustration Image */}
-          <View
+          <FadeInView
             style={{
               flex: 1,
               minHeight: 80,
@@ -564,13 +565,13 @@ export function SignUpRecipientScreen({
               backgroundColor: COLORS.outline,
             }}
           >
-            <Image
+            <AppImage
               source={{
                 uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDkhWq4CeI6HiI0zCMKdz2Disk_Alof0JQoOpPuu7voFWvfFlMjnQQ7sbNa0nHnbfQd_kto27Hn-1dHCyd9ErflLQolZL_aym-vd-FeKpErhm5WV5kMVVFFIgIBdpNWUMC9rdItp8gSVYVq4g3y7KS91pEb3CdbFnDwC7It_nr9bkM8txZk7kGRDXdFxqir6G1RWUhgiDz92jPNRhenvJ4b-nUq_e_QL0h7N_vGPwGDuUHdw6bNHEt9Wg_RXdJhoUEJ0B3Ew_H7udWd',
               }}
               style={{ width: '100%', height: '100%' }}
             />
-          </View>
+          </FadeInView>
         </View>
       </View>
 
@@ -602,23 +603,24 @@ export function SignUpRecipientScreen({
         >
           Back
         </Button>
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading}
-          loading={isLoading}
-          style={{
-            flex: 2,
-            borderRadius: 16,
-            backgroundColor: COLORS.primary,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Processing...' : 'Next'}
-        </Button>
+        <FadeInUp delay={260} style={{ flex: 2 }}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading}
+            loading={isLoading}
+            style={{
+              borderRadius: 16,
+              backgroundColor: COLORS.primary,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {isLoading ? 'Processing...' : 'Next'}
+          </Button>
+        </FadeInUp>
       </View>
 
       {/* Error Toast */}
