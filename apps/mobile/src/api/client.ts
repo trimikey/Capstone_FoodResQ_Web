@@ -124,17 +124,27 @@ export interface ApiResponse<T = any> {
 }
 
 /**
+ * Shape user backend trả về (NestJS dùng `fullName`, kèm vài field hồ sơ).
+ * Store sẽ chuẩn hoá về `User` nội bộ (map fullName -> name).
+ */
+export interface ApiUser {
+  id: string;
+  email: string;
+  fullName?: string;
+  name?: string;
+  role: string;
+  status?: string;
+  avatarUrl?: string | null;
+  trustScore?: number;
+}
+
+/**
  * Login response type
  */
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
-  user: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-  };
+  user: ApiUser;
 }
 
 /**

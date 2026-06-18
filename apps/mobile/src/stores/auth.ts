@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient, { ApiResponse, LoginResponse, endpoints } from '../api/client';
+import apiClient, {
+  ApiResponse,
+  ApiUser,
+  LoginResponse,
+  endpoints,
+} from '../api/client';
 import { LoginInput, RegisterInput } from '../utils/validators';
 
 export interface User {
@@ -8,6 +13,19 @@ export interface User {
   email: string;
   name: string;
   role: string;
+}
+
+/**
+ * Chuẩn hoá user từ API về shape nội bộ: backend trả `fullName`,
+ * app dùng `name`. Áp cho mọi nơi set user (login/register/initialize).
+ */
+function normalizeUser(raw: ApiUser): User {
+  return {
+    id: raw.id,
+    email: raw.email,
+    name: raw.fullName ?? raw.name ?? '',
+    role: raw.role,
+  };
 }
 
 export interface AuthState {
@@ -48,12 +66,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (accessToken) {
         // Try to fetch user profile
         try {
-          const response = await apiClient.get<ApiResponse<User>>(
+          const response = await apiClient.get<ApiResponse<ApiUser>>(
             endpoints.auth.me
           );
           if (response.data.success) {
             set({
-              user: response.data.data,
+              user: normalizeUser(response.data.data),
               accessToken,
               refreshToken,
               isInitialized: true,
@@ -102,7 +120,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await AsyncStorage.setItem('refreshToken', refreshToken);
 
         set({
-          user,
+          user: normalizeUser(user),
           accessToken,
           refreshToken,
           isLoading: false,
@@ -145,7 +163,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await AsyncStorage.setItem('refreshToken', refreshToken);
 
         set({
-          user,
+          user: normalizeUser(user),
           accessToken,
           refreshToken,
           isLoading: false,
