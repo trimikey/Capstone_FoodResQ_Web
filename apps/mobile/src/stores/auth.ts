@@ -25,6 +25,7 @@ export interface AuthState {
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   restoreToken: () => Promise<void>;
+  clearSession: () => void;
   clearError: () => void;
 }
 
@@ -207,6 +208,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error) {
       console.error('Error restoring token:', error);
     }
+  },
+
+  // Clear session in-memory (gọi khi refresh token fail từ interceptor).
+  // Token trong AsyncStorage đã được client.ts xoá; ở đây chỉ reset state
+  // để auth guard điều hướng về màn login ngay.
+  clearSession: () => {
+    set({
+      user: null,
+      accessToken: null,
+      refreshToken: null,
+      isLoading: false,
+      error: null,
+    });
   },
 
   // Clear error message
