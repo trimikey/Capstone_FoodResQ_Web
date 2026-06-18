@@ -22,7 +22,11 @@
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-status-bar"],
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-image"
+    ],
     "experiments": {
       "typedRoutes": true
     }
