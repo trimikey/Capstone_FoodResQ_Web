@@ -4,7 +4,6 @@ import {
   Platform,
   View,
   Pressable,
-  Image,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +19,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { signUpBasicInfoSchema, SignUpBasicInfoInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -130,7 +131,7 @@ export function SignUpBasicScreen({
 
       <View style={{ flex: 1 }}>
         {/* Hero Image */}
-        <View
+        <FadeInView
           style={{
             width: '100%',
             flex: 1,
@@ -139,7 +140,7 @@ export function SignUpBasicScreen({
             marginBottom: 12,
           }}
         >
-          <Image
+          <AppImage
             source={{
               uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDOcc2WP0BUcN0sLxOgDhGpAcoMhOF6iprt8IndevCN03HnrKsqttOj58XRHmwWCMbGdIMlMMb5pUb7r__kYrOG4bgbGrxEE5hq1dbE79QmsP_uCw4n580Le938C0vnziR-A1VJPxh2keWX4mhtjFwrstxaQ48hcLvF-x4xOPn9AlVXV_eWG5OZsLMjaOFf3GLitHvoRUsmcmACZ62YRa5GZZR6cdVB6pB1GBpOlL5i_Kfr9sl2kSQO-v3Kgm419bANa6xwFderrh_J',
             }}
@@ -172,12 +173,12 @@ export function SignUpBasicScreen({
               Đăng ký tài khoản
             </Text>
           </View>
-        </View>
+        </FadeInView>
 
         {/* Form */}
         <View style={{ paddingHorizontal: 20, gap: 16, marginBottom: 8 }}>
           {/* Full Name */}
-          <View>
+          <FadeInUp delay={80}>
             <Controller
               control={control}
               name="name"
@@ -212,10 +213,10 @@ export function SignUpBasicScreen({
                 {errors.name.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Email */}
-          <View>
+          <FadeInUp delay={140}>
             <Controller
               control={control}
               name="email"
@@ -252,10 +253,10 @@ export function SignUpBasicScreen({
                 {errors.email.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Password */}
-          <View>
+          <FadeInUp delay={200}>
             <Controller
               control={control}
               name="password"
@@ -298,10 +299,10 @@ export function SignUpBasicScreen({
                 {errors.password.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Confirm Password */}
-          <View>
+          <FadeInUp delay={260}>
             <Controller
               control={control}
               name="confirmPassword"
@@ -340,10 +341,11 @@ export function SignUpBasicScreen({
                 {errors.confirmPassword.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
 
           {/* Terms Checkbox */}
-          <View
+          <FadeInUp
+            delay={320}
             style={{
               flexDirection: 'row',
               alignItems: 'flex-start',
@@ -375,7 +377,7 @@ export function SignUpBasicScreen({
               </Text>{' '}
               của FoodResQ.
             </Text>
-          </View>
+          </FadeInUp>
         </View>
       </View>
 
@@ -388,23 +390,25 @@ export function SignUpBasicScreen({
           backgroundColor: COLORS.surfaceContainerLowest,
         }}
       >
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading || !agreedToTerms}
-          loading={isLoading}
-          style={{
-            backgroundColor: COLORS.primaryContainer,
-            borderRadius: 16,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Đang xử lý...' : 'Đăng ký'}
-        </Button>
+        <FadeInUp delay={380}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || !agreedToTerms}
+            loading={isLoading}
+            style={{
+              backgroundColor: COLORS.primaryContainer,
+              borderRadius: 16,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {isLoading ? 'Đang xử lý...' : 'Đăng ký'}
+          </Button>
+        </FadeInUp>
       </View>
 
       {/* Sign In Link */}

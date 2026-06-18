@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient, { ApiResponse, LoginResponse, endpoints } from '../api/client';
+import apiClient, {
+  ApiResponse,
+  ApiUser,
+  LoginResponse,
+  endpoints,
+} from '../api/client';
 import { LoginInput, RegisterInput } from '../utils/validators';
 
 export interface User {
@@ -8,6 +13,19 @@ export interface User {
   email: string;
   name: string;
   role: string;
+}
+
+/**
+ * Chuẩn hoá user từ API về shape nội bộ: backend trả `fullName`,
+ * app dùng `name`. Áp cho mọi nơi set user (login/register/initialize).
+ */
+function normalizeUser(raw: ApiUser): User {
+  return {
+    id: raw.id,
+    email: raw.email,
+    name: raw.fullName ?? raw.name ?? '',
+    role: raw.role,
+  };
 }
 
 export interface AuthState {
@@ -25,6 +43,7 @@ export interface AuthState {
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   restoreToken: () => Promise<void>;
+  clearSession: () => void;
   clearError: () => void;
 }
 
@@ -47,12 +66,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (accessToken) {
         // Try to fetch user profile
         try {
-          const response = await apiClient.get<ApiResponse<User>>(
+          const response = await apiClient.get<ApiResponse<ApiUser>>(
             endpoints.auth.me
           );
           if (response.data.success) {
             set({
-              user: response.data.data,
+              user: normalizeUser(response.data.data),
               accessToken,
               refreshToken,
               isInitialized: true,
@@ -101,7 +120,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await AsyncStorage.setItem('refreshToken', refreshToken);
 
         set({
-          user,
+          user: normalizeUser(user),
           accessToken,
           refreshToken,
           isLoading: false,
@@ -144,7 +163,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await AsyncStorage.setItem('refreshToken', refreshToken);
 
         set({
-          user,
+          user: normalizeUser(user),
           accessToken,
           refreshToken,
           isLoading: false,
@@ -169,8 +188,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         await apiClient.post(endpoints.auth.logout);
       } catch (error) {
-        // Logout endpoint might fail, but we still want to clear tokens locally
-        console.error('Logout endpoint error:', error);
+        // Logout endpoint có thể fail (vd 401 do token đã hết hạn) — vẫn xoá token local bình thường.
+        // Dùng debug để không kích hoạt LogBox overlay vì đây là trường hợp mong đợi.
+        if (__DEV__) console.debug('Logout endpoint bỏ qua được:', error);
       }
 
       // Clear stored tokens
@@ -206,6 +226,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error) {
       console.error('Error restoring token:', error);
     }
+  },
+
+  // Clear session in-memory (gọi khi refresh token fail từ interceptor).
+  // Token trong AsyncStorage đã được client.ts xoá; ở đây chỉ reset state
+  // để auth guard điều hướng về màn login ngay.
+  clearSession: () => {
+    set({
+      user: null,
+      accessToken: null,
+      refreshToken: null,
+      isLoading: false,
+      error: null,
+    });
   },
 
   // Clear error message

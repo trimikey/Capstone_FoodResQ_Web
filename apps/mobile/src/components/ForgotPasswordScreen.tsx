@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Pressable,
-  Image,
   Modal,
   useWindowDimensions,
 } from 'react-native';
@@ -18,6 +17,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { forgotPasswordSchema, ForgotPasswordInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#006c49',
@@ -130,7 +131,7 @@ export function ForgotPasswordScreen({
         }}
       >
         {/* Illustration */}
-        <View
+        <FadeInView
           style={{
             width: '100%',
             flex: 1,
@@ -142,7 +143,7 @@ export function ForgotPasswordScreen({
             backgroundColor: COLORS.outlineVariant,
           }}
         >
-          <Image
+          <AppImage
             source={{
               uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6RHsKkHGtF5RhfwRNAUVbrO0KA1UxpS6QE43PZTOi5TpiXlkzCtZl2uTd8EOcxqVfyvqyqZiIJnjdTm0g-xlqzY3YXFH41fuQM9nQGhY0hoVXW1y_p_D_3MXNx3__gdl1PzgxRSYWISxA_6ww28ObBOJH8wMAqu7x8ry6mRs3x7rfYfzvemWwOr1uC44sWlnzubjz8TI-CGRjHEf2p9JZcMM241aHmA5hy51_unlEw78mu8m92XW0haNJ8SJoOKQcDrD9ZiGsQKD4',
             }}
@@ -158,10 +159,10 @@ export function ForgotPasswordScreen({
               backgroundColor: 'rgba(0, 0, 0, 0.2)',
             }}
           />
-        </View>
+        </FadeInView>
 
         {/* Title & Subtitle */}
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 28,
@@ -181,11 +182,11 @@ export function ForgotPasswordScreen({
           >
             Đừng lo lắng, hãy nhập địa chỉ email của bạn bên dưới. Chúng tôi sẽ gửi hướng dẫn khôi phục mật khẩu ngay lập tức.
           </Text>
-        </View>
+        </FadeInUp>
 
         {/* Form */}
         <View style={{ flex: 1 }}>
-          <View style={{ marginBottom: 12 }}>
+          <FadeInUp delay={140} style={{ marginBottom: 12 }}>
             <Text
               style={{
                 fontSize: 14,
@@ -232,11 +233,11 @@ export function ForgotPasswordScreen({
                 {errors.email.message}
               </Text>
             )}
-          </View>
+          </FadeInUp>
         </View>
 
         {/* Action Buttons */}
-        <View style={{ gap: 12 }}>
+        <FadeInUp delay={200} style={{ gap: 12 }}>
           <Button
             mode="contained"
             onPress={handleSubmit(onSubmit)}
@@ -274,7 +275,7 @@ export function ForgotPasswordScreen({
               Quay lại đăng nhập
             </Text>
           </Pressable>
-        </View>
+        </FadeInUp>
       </View>
 
       {/* Error Toast */}

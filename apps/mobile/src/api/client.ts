@@ -82,17 +82,24 @@ apiClient.interceptors.response.use(
 );
 
 /**
+ * Callback được đăng ký từ tầng app (vd auth store) để reset session khi
+ * refresh token thất bại — giúp auth guard điều hướng về login ngay lập tức
+ * mà không tạo circular import (store import client, không ngược lại).
+ */
+let onSessionExpired: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
+/**
  * Handle logout when token refresh fails
  */
 async function handleLogout(): Promise<void> {
   try {
     await AsyncStorage.removeItem('accessToken');
     await AsyncStorage.removeItem('refreshToken');
-    // TODO: Navigate to login screen
-    // Navigation.reset({
-    //   index: 0,
-    //   routes: [{ name: 'Login' }],
-    // });
+    onSessionExpired?.();
   } catch (error) {
     console.error('Error during logout:', error);
   }
@@ -117,17 +124,27 @@ export interface ApiResponse<T = any> {
 }
 
 /**
+ * Shape user backend trả về (NestJS dùng `fullName`, kèm vài field hồ sơ).
+ * Store sẽ chuẩn hoá về `User` nội bộ (map fullName -> name).
+ */
+export interface ApiUser {
+  id: string;
+  email: string;
+  fullName?: string;
+  name?: string;
+  role: string;
+  status?: string;
+  avatarUrl?: string | null;
+  trustScore?: number;
+}
+
+/**
  * Login response type
  */
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
-  user: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-  };
+  user: ApiUser;
 }
 
 /**

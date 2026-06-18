@@ -4,7 +4,6 @@ import {
   Platform,
   View,
   Pressable,
-  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -18,8 +17,12 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, LoginInput } from '../utils/validators';
+import Toast from 'react-native-toast-message';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
+import { useAuth } from '../hooks/useAuth';
 import ErrorToast from './ErrorToast';
+import { AppImage } from './ui/AppImage';
+import { FadeInUp, FadeInView } from './ui/Motion';
 
 const COLORS = {
   primary: '#10b981',
@@ -48,6 +51,7 @@ export function SignInScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
+  const { login } = useAuth();
 
   const {
     control,
@@ -65,21 +69,22 @@ export function SignInScreen({
     try {
       setIsLoading(true);
       clearError();
-      
-      // TODO: Call API to login
-      // const response = await apiClient.post('/auth/login', data);
-      
-      // Store tokens if rememberMe is checked
-      if (rememberMe) {
-        // TODO: Store in AsyncStorage
-      }
-      
-      // Navigate to home screen
+
+      // Gọi API login thật (store set token + user, throw nếu thất bại)
+      await login(data);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Đăng nhập thành công',
+        text2: 'Chào mừng bạn quay lại FoodResQ',
+      });
+
+      // Token đã có → auth guard cho qua, điều hướng sang Home
       onSignInSuccess?.(null);
     } catch (error) {
-      const message = getErrorMessage(error);
-      showError(message, 4000);
-      console.error('Sign in error:', error);
+      // Sai thông tin (401) là lỗi mong đợi — hiển thị toast, KHÔNG console.error
+      // để tránh bật LogBox overlay đỏ.
+      showError(getErrorMessage(error), 4000);
     } finally {
       setIsLoading(false);
     }
@@ -151,7 +156,7 @@ export function SignInScreen({
         </Text>
 
         {/* Hero Image (co giãn để lấp khoảng trống, tự thu nhỏ trên màn hình thấp) */}
-        <View
+        <FadeInView
           style={{
             width: '100%',
             flex: 1,
@@ -163,16 +168,16 @@ export function SignInScreen({
             backgroundColor: COLORS.outline,
           }}
         >
-          <Image
+          <AppImage
             source={{
               uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBMmLTbgMqJ7Os3EH_vc1wSOw1e7XLFKtHbs9Hdr5lr8yu8vynQuJvCOgAJ-LUyCYKKGGi7axLiBK4nAVdjpb-pnxOvb9tlBiNuivg4yaZfepnTgmBsQJIzYZLS5eTrlgapHDYyS-8dTAdk6YPKi2ZCfcw7GXg0d7EhLF4fP_EIFeeY54rRI62hQByH3D2U4wpxhFSwbyozgWBcZzf6RNDFvVE5gmthCK2sqkcMfKzxm9fg8PIzugPrtR4megGMKWxVaXKwVujB569-',
             }}
             style={{ width: '100%', height: '100%' }}
           />
-        </View>
+        </FadeInView>
 
         {/* Email Field */}
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -219,10 +224,10 @@ export function SignInScreen({
               {errors.email.message}
             </Text>
           )}
-        </View>
+        </FadeInUp>
 
         {/* Password Field */}
-        <View style={{ marginBottom: 12 }}>
+        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
           <Text
             style={{
               fontSize: 14,
@@ -275,7 +280,7 @@ export function SignInScreen({
               {errors.password.message}
             </Text>
           )}
-        </View>
+        </FadeInUp>
 
         {/* Helper Row: Remember Me & Forgot Password */}
         <View
@@ -323,23 +328,25 @@ export function SignInScreen({
         </View>
 
         {/* Sign In Button */}
-        <Button
-          mode="contained"
-          onPress={handleSubmit(onSubmit)}
-          disabled={isLoading}
-          loading={isLoading}
-          style={{
-            marginBottom: 12,
-            backgroundColor: COLORS.primary,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 16,
-            fontWeight: 'bold',
-          }}
-        >
-          {isLoading ? 'Signing in...' : 'Sign In'}
-        </Button>
+        <FadeInUp delay={200}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading}
+            loading={isLoading}
+            style={{
+              marginBottom: 12,
+              backgroundColor: COLORS.primary,
+              paddingVertical: 8,
+            }}
+            labelStyle={{
+              fontSize: 16,
+              fontWeight: 'bold',
+            }}
+          >
+            {isLoading ? 'Signing in...' : 'Sign In'}
+          </Button>
+        </FadeInUp>
 
         {/* Divider */}
         <View
@@ -401,11 +408,12 @@ export function SignInScreen({
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Image
+            <AppImage
               source={{
                 uri: 'https://www.google.com/images/branding/googleg/1x/googleg_standard_color_128dp.png',
               }}
               style={{ width: 20, height: 20 }}
+              contentFit="contain"
             />
             <Text
               style={{
