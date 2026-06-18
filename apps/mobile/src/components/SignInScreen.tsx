@@ -17,7 +17,9 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, LoginInput } from '../utils/validators';
+import Toast from 'react-native-toast-message';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
+import { useAuth } from '../hooks/useAuth';
 import ErrorToast from './ErrorToast';
 import { AppImage } from './ui/AppImage';
 import { FadeInUp, FadeInView } from './ui/Motion';
@@ -49,6 +51,7 @@ export function SignInScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
+  const { login } = useAuth();
 
   const {
     control,
@@ -66,21 +69,22 @@ export function SignInScreen({
     try {
       setIsLoading(true);
       clearError();
-      
-      // TODO: Call API to login
-      // const response = await apiClient.post('/auth/login', data);
-      
-      // Store tokens if rememberMe is checked
-      if (rememberMe) {
-        // TODO: Store in AsyncStorage
-      }
-      
-      // Navigate to home screen
+
+      // Gọi API login thật (store set token + user, throw nếu thất bại)
+      await login(data);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Đăng nhập thành công',
+        text2: 'Chào mừng bạn quay lại FoodResQ',
+      });
+
+      // Token đã có → auth guard cho qua, điều hướng sang Home
       onSignInSuccess?.(null);
     } catch (error) {
-      const message = getErrorMessage(error);
-      showError(message, 4000);
-      console.error('Sign in error:', error);
+      // Sai thông tin (401) là lỗi mong đợi — hiển thị toast, KHÔNG console.error
+      // để tránh bật LogBox overlay đỏ.
+      showError(getErrorMessage(error), 4000);
     } finally {
       setIsLoading(false);
     }
