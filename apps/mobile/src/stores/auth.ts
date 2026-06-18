@@ -169,8 +169,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         await apiClient.post(endpoints.auth.logout);
       } catch (error) {
-        // Logout endpoint might fail, but we still want to clear tokens locally
-        console.error('Logout endpoint error:', error);
+        // Logout endpoint có thể fail (vd 401 do token đã hết hạn) — vẫn xoá token local bình thường.
+        // Dùng debug để không kích hoạt LogBox overlay vì đây là trường hợp mong đợi.
+        if (__DEV__) console.debug('Logout endpoint bỏ qua được:', error);
       }
 
       // Clear stored tokens
