@@ -18,6 +18,8 @@ interface ListingItem {
   status: string;
   provider: { id: string; businessName: string };
   distanceM: number;
+  lng?: number;
+  lat?: number;
 }
 
 interface QueryParams {

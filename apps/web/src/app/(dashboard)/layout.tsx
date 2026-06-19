@@ -2,25 +2,44 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
 
-const NAV_ITEMS: { href: string; icon: string; label: string; roles: UserRole[] | null }[] = [
-  { href: '/listings', icon: 'restaurant', label: 'Tìm thực phẩm', roles: null },
-  { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận của tôi', roles: null },
-  { href: '/history', icon: 'history', label: 'Lịch sử', roles: null },
-];
+// Bottom nav (mobile) theo vai trò
+function navItemsFor(role: UserRole): { href: string; icon: string; label: string }[] {
+  if (role === UserRole.ADMIN) {
+    return [
+      { href: '/admin', icon: 'dashboard', label: 'Quản trị' },
+      { href: '/profile', icon: 'person', label: 'Hồ sơ' },
+    ];
+  }
+  if (role === UserRole.PROVIDER) {
+    return [
+      { href: '/provider', icon: 'storefront', label: 'Cửa hàng' },
+      { href: '/provider/scan', icon: 'qr_code_scanner', label: 'Quét QR' },
+      { href: '/profile', icon: 'person', label: 'Hồ sơ' },
+    ];
+  }
+  if (role === UserRole.VOLUNTEER) {
+    return [
+      { href: '/listings', icon: 'restaurant', label: 'Tìm' },
+      { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
+      { href: '/profile', icon: 'person', label: 'Hồ sơ' },
+    ];
+  }
+  return [
+    { href: '/listings', icon: 'restaurant', label: 'Tìm thực phẩm' },
+    { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận' },
+    { href: '/history', icon: 'history', label: 'Lịch sử' },
+  ];
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
-  // Hooks phải đứng trước mọi early-return — số hook mỗi lần render phải cố định
-  const [searchValue, setSearchValue] = useState('');
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -30,14 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!user) return null;
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    router.push(`/listings?q=${encodeURIComponent(searchValue)}`);
-  };
-
-  const navItems = NAV_ITEMS.filter(
-    (item) => !item.roles || item.roles.includes(user.role as UserRole),
-  );
+  const navItems = navItemsFor(user.role as UserRole);
 
   const handleLogout = () => {
     logout();

@@ -5,13 +5,40 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
+import NotificationBell from '@/components/shared/NotificationBell';
 
-const NAV_LINKS = [
-  { href: '/', label: 'Trang chủ' },
-  { href: '/listings', label: 'Tìm thực phẩm' },
-  { href: '/#about', label: 'Về chúng tôi' },
-  { href: '/#contact', label: 'Liên hệ' },
-];
+// Nav theo vai trò: provider quản lý cửa hàng, volunteer giao hàng, receiver tìm/đặt.
+function navLinksFor(role?: string): { href: string; label: string }[] {
+  if (role === UserRole.ADMIN) {
+    return [
+      { href: '/admin', label: 'Quản trị' },
+      { href: '/listings', label: 'Tìm thực phẩm' },
+    ];
+  }
+  if (role === UserRole.PROVIDER) {
+    return [
+      { href: '/', label: 'Trang chủ' },
+      { href: '/provider', label: 'Cửa hàng của tôi' },
+      { href: '/provider/scan', label: 'Quét QR' },
+    ];
+  }
+  if (role === UserRole.VOLUNTEER) {
+    return [
+      { href: '/', label: 'Trang chủ' },
+      { href: '/listings', label: 'Tìm thực phẩm' },
+      { href: '/deliveries', label: 'Giao hàng' },
+      { href: '/campaigns', label: 'Bếp ăn' },
+    ];
+  }
+  // receiver / khách
+  return [
+    { href: '/', label: 'Trang chủ' },
+    { href: '/listings', label: 'Tìm thực phẩm' },
+    { href: '/reservations', label: 'Đơn nhận của tôi' },
+    { href: '/campaigns', label: 'Bếp ăn' },
+    { href: '/history', label: 'Lịch sử' },
+  ];
+}
 
 /**
  * Header công khai cho trang chủ (root /). Thích ứng theo trạng thái đăng nhập:
@@ -40,6 +67,7 @@ export default function PublicHeader() {
   }, []);
 
   const isAuthed = mounted && !!user;
+  const navLinks = navLinksFor(user?.role);
 
   const handleLogout = () => {
     logout();
@@ -64,7 +92,7 @@ export default function PublicHeader() {
         {/* Nav (chỉ hiện khi đã đăng nhập) */}
         {isAuthed && (
           <nav className="hidden md:flex items-center gap-6">
-            {NAV_LINKS.map((item) => (
+            {navLinks.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -89,7 +117,9 @@ export default function PublicHeader() {
             // placeholder tránh nhảy layout trước khi biết trạng thái auth
             <div className="w-24 h-9" />
           ) : isAuthed ? (
-            <div 
+            <>
+            <NotificationBell />
+            <div
               className="relative flex items-center gap-2 h-full py-1.5"
               onMouseEnter={() => setIsProfileMenuOpen(true)}
               onMouseLeave={() => setIsProfileMenuOpen(false)}
@@ -158,6 +188,7 @@ export default function PublicHeader() {
                 </div>
               )}
             </div>
+            </>
           ) : (
             <>
               <Link
