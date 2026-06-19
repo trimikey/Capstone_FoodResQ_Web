@@ -530,7 +530,7 @@ export function SignUpVolunteerScreen({
               fontWeight: '600',
             }}
           >
-            Next
+            {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
           </Button>
         </FadeInUp>
       </View>
