@@ -13,6 +13,7 @@ import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { PickupVerificationType } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
@@ -29,6 +30,7 @@ export class ReservationsService {
     private redlock: Redlock,
     private storage: StorageService,
     private faceMatch: FaceMatchService,
+    private notifications: NotificationsService,
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {
     this.maxPerDay = this.config.get<number>('MAX_RESERVATIONS_PER_DAY') ?? 3;
@@ -175,7 +177,10 @@ export class ReservationsService {
   async scanQr(qrToken: string, scannerUserId: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { qrToken },
-      include: { listing: { select: { providerId: true } } },
+      include: {
+        listing: { select: { providerId: true, title: true } },
+        receiver: { select: { userId: true } },
+      },
     });
 
     if (!reservation) throw new NotFoundException('Invalid QR code');
@@ -196,7 +201,7 @@ export class ReservationsService {
       throw new ForbiddenException('Only the listing provider can scan this QR');
     }
 
-    return this.prisma.reservation.update({
+    const updated = await this.prisma.reservation.update({
       where: { id: reservation.id },
       data: {
         status: 'picked_up',
@@ -204,6 +209,15 @@ export class ReservationsService {
         scannedAt: new Date(),
       },
     });
+
+    void this.notifications.notify(reservation.receiver.userId, {
+      type: 'reservation',
+      title: 'Đã xác nhận lấy hàng',
+      body: `Đơn "${reservation.listing.title}" đã được quét. Hãy chụp ảnh xác minh để hoàn tất.`,
+      data: { reservationId: reservation.id, status: 'picked_up' },
+    });
+
+    return updated;
   }
 
   /**
@@ -309,14 +323,15 @@ export class ReservationsService {
           cancellationReason: reason ?? null,
         },
       }),
-      // Restore quantity
-      this.prisma.foodListing.update({
-        where: { id: reservation.listingId },
-        data: {
-          quantityRemaining: { increment: Number(reservation.quantity) },
-          status: 'active',
-        },
-      }),
+      // Restore quantity safely using LEAST to avoid exceeding quantityTotal
+      this.prisma.$executeRaw(Prisma.sql`
+        UPDATE food_listings
+        SET 
+          quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(reservation.quantity)}),
+          status = 'active'::listing_status,
+          updated_at = NOW()
+        WHERE id = ${reservation.listingId}::uuid
+      `),
       // Decrement daily count
       this.prisma.receiverProfile.update({
         where: { id: reservation.receiverId },
@@ -430,6 +445,50 @@ export class ReservationsService {
     });
 
     return { id: rating.id, score: rating.score, message: 'Cảm ơn bạn đã đánh giá!' };
+  }
+
+  /**
+   * Cron: chuyển các đơn `confirmed` đã quá hạn QR thành `no_show`,
+   * hoàn lại số lượng listing, trừ daily count, phạt trust −20 (CLAUDE.md §9).
+   */
+  async expireNoShows(): Promise<number> {
+    const overdue = await this.prisma.reservation.findMany({
+      where: { status: 'confirmed', qrExpiresAt: { lt: new Date() } },
+      include: { receiver: { select: { id: true, userId: true } } },
+      take: 200,
+    });
+
+    for (const r of overdue) {
+      await this.prisma.$transaction([
+        this.prisma.reservation.update({
+          where: { id: r.id },
+          data: { status: 'no_show' },
+        }),
+        this.prisma.$executeRaw(Prisma.sql`
+          UPDATE food_listings
+          SET 
+            quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(r.quantity)}),
+            status = 'active'::listing_status,
+            updated_at = NOW()
+          WHERE id = ${r.listingId}::uuid
+        `),
+        this.prisma.receiverProfile.update({
+          where: { id: r.receiverId },
+          data: { reservationsToday: { decrement: 1 } },
+        }),
+      ]);
+      await this.applyTrustDelta(r.receiver.userId, r.id, 'no_show', -20);
+    }
+
+    return overdue.length;
+  }
+
+  /** Cron: reset bộ đếm đặt chỗ trong ngày của tất cả receiver (chạy lúc nửa đêm). */
+  async resetDailyReservationCounters(): Promise<void> {
+    await this.prisma.receiverProfile.updateMany({
+      where: { reservationsToday: { gt: 0 } },
+      data: { reservationsToday: 0 },
+    });
   }
 
   async findOne(id: string, userId: string) {
