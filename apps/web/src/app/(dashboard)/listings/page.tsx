@@ -1,10 +1,21 @@
 'use client';
 
-import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useListings } from '@/hooks/useListings';
 import { FoodCategory } from '@foodresq/types';
 import ListingCard, { type ListingItem } from '@/components/listings/ListingCard';
 import { useSearchParams } from 'next/navigation';
+
+// Bản đồ Leaflet dùng `window` → chỉ render ở client (ssr: false)
+const ListingsMap = dynamic(() => import('@/components/map/ListingsMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-[#e3e1dc]">
+      <span className="animate-spin border-4 border-[#236c2a] border-t-transparent rounded-full w-10 h-10" />
+    </div>
+  ),
+});
 
 const CATEGORIES: { value: FoodCategory | ''; label: string }[] = [
   { value: '', label: 'Tất cả' },
@@ -14,10 +25,6 @@ const CATEGORIES: { value: FoodCategory | ''; label: string }[] = [
   { value: FoodCategory.BEVERAGE, label: 'Đồ uống' },
   { value: FoodCategory.OTHER, label: 'Khác' },
 ];
-
-function formatDistance(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-}
 
 const DEFAULT_LAT = 10.8231;
 const DEFAULT_LNG = 106.6297;
@@ -37,12 +44,39 @@ function ListingsPageContent() {
   const [activePill, setActivePill] = useState<string | null>(null);
   
   // Interactive Map State
-  const [hoveredListingId, setHoveredListingId] = useState<string | null>(null);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null); // pin đang focus
 
-  const { data: apiListings, isLoading, isError, refetch } = useListings({
+  // Vị trí người dùng: mặc định tâm HCM, thay bằng GPS thật khi có quyền
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number }>({
     lat: DEFAULT_LAT,
     lng: DEFAULT_LNG,
+  });
+  const [locStatus, setLocStatus] = useState<'default' | 'locating' | 'gps' | 'denied'>('default');
+
+  // Xin GPS (gọi lúc mở trang + khi bấm "Định vị lại")
+  const locate = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocStatus('denied');
+      return;
+    }
+    setLocStatus('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocStatus('gps');
+      },
+      () => setLocStatus('denied'), // từ chối/không lấy được → giữ tâm HCM
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  }, []);
+
+  useEffect(() => {
+    locate();
+  }, [locate]);
+
+  const { data: apiListings, isLoading, isError, refetch } = useListings({
+    lat: userLoc.lat,
+    lng: userLoc.lng,
     radiusKm: distanceFilter,
     search: search.trim() || undefined,
     category: (category as FoodCategory) || undefined,
@@ -119,13 +153,46 @@ function ListingsPageContent() {
                 Bán kính {distanceFilter}km • {listings.length} kết quả tìm thấy
               </p>
             </div>
-            <button
-              onClick={() => refetch()}
-              className="p-2.5 rounded-full text-neutral-500 hover:bg-white hover:text-neutral-900 transition-colors border border-neutral-200 bg-transparent shadow-sm"
-              title="Làm mới"
-            >
-              <span className="material-symbols-outlined text-[20px]">refresh</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={locate}
+                disabled={locStatus === 'locating'}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm disabled:opacity-60 ${
+                  locStatus === 'gps'
+                    ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
+                    : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
+                }`}
+                title="Định vị lại theo GPS"
+              >
+                <span className={`material-symbols-outlined text-[18px] ${locStatus === 'locating' ? 'animate-spin' : ''}`}>
+                  {locStatus === 'locating' ? 'progress_activity' : 'my_location'}
+                </span>
+                {locStatus === 'locating' ? 'Đang định vị…' : 'Định vị lại'}
+              </button>
+              <button
+                onClick={() => refetch()}
+                className="p-2.5 rounded-full text-neutral-500 hover:bg-white hover:text-neutral-900 transition-colors border border-neutral-200 bg-transparent shadow-sm"
+                title="Làm mới"
+              >
+                <span className="material-symbols-outlined text-[20px]">refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Trạng thái định vị */}
+          <div className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${
+            locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
+          }`}>
+            <span className="material-symbols-outlined text-[14px]">
+              {locStatus === 'gps' ? 'location_on' : locStatus === 'denied' ? 'location_off' : 'location_searching'}
+            </span>
+            {locStatus === 'gps'
+              ? 'Đang hiển thị thực phẩm quanh vị trí GPS của bạn'
+              : locStatus === 'locating'
+                ? 'Đang xác định vị trí…'
+                : locStatus === 'denied'
+                  ? 'Chưa cấp quyền vị trí — đang dùng trung tâm TP.HCM. Bấm "Định vị lại".'
+                  : 'Trung tâm TP.HCM'}
           </div>
 
           {/* Quick Search */}
@@ -257,11 +324,7 @@ function ListingsPageContent() {
               listings.map((item) => (
                 <div
                   key={item.id}
-                  onMouseEnter={() => {
-                    setHoveredListingId(item.id);
-                    setSelectedPinId(item.id);
-                  }}
-                  onMouseLeave={() => setHoveredListingId(null)}
+                  onMouseEnter={() => setSelectedPinId(item.id)}
                   className={`transition-all duration-300 rounded-2xl ${
                     selectedPinId === item.id ? 'ring-[3px] ring-[#236c2a] ring-offset-2 ring-offset-[#fcf9f2]' : ''
                   }`}
@@ -290,161 +353,26 @@ function ListingsPageContent() {
         </div>
       </div>
 
-      {/* Right side: Interactive Map Mock */}
-      <div className="hidden lg:flex flex-1 bg-[#363a36] relative items-center justify-center p-8 select-none">
-        {/* Floating background grids for premium map styling */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
-
-        {/* Mobile Device Mockup */}
-        <div className="relative w-full max-w-[340px] aspect-[9/18.5] max-h-[82vh] bg-black rounded-[48px] p-3 shadow-2xl border-[4px] border-neutral-800 flex flex-col z-10">
-          {/* Notch */}
-          <div className="absolute top-5 left-1/2 -translate-x-1/2 w-36 h-6 bg-black rounded-full z-30 flex items-center justify-center">
-            <span className="w-16 h-1 bg-neutral-800 rounded-full" />
-          </div>
-
-          {/* Screen Container */}
-          <div className="relative flex-1 rounded-[38px] overflow-hidden bg-[#dedcd8] flex flex-col border border-neutral-900">
-            {/* Simulated Phone Top Status Bar */}
-            <div className="h-9 bg-transparent absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-6 text-[10px] font-bold text-neutral-800">
-              <span>9:41</span>
-              <div className="flex items-center gap-1">
-                <span className="material-symbols-outlined text-[12px]">signal_cellular_alt</span>
-                <span className="material-symbols-outlined text-[12px]">wifi</span>
-                <span className="material-symbols-outlined text-[12px]">battery_full</span>
-              </div>
-            </div>
-
-            {/* Mobile Header */}
-            <div className="pt-10 pb-3 bg-white/70 backdrop-blur-md border-b border-neutral-300/30 z-10 px-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-neutral-800 text-[18px]">arrow_back_ios</span>
-                <h4 className="font-label-lg text-xs font-bold text-neutral-800">Bản đồ thực phẩm</h4>
-              </div>
-              <span className="material-symbols-outlined text-neutral-800 text-[18px]">tune</span>
-            </div>
-
-            {/* Map Canvas Frame */}
-            <div className="flex-1 relative bg-[#e3e1dc] overflow-hidden">
-              {/* Grid Roads simulation */}
-              <svg className="absolute inset-0 w-full h-full opacity-40 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-                {/* Horizontal Streets */}
-                <line x1="0" y1="80" x2="400" y2="80" stroke="#fff" strokeWidth="8" />
-                <line x1="0" y1="160" x2="400" y2="160" stroke="#fff" strokeWidth="12" />
-                <line x1="0" y1="320" x2="400" y2="320" stroke="#fff" strokeWidth="10" />
-                <line x1="0" y1="440" x2="400" y2="440" stroke="#fff" strokeWidth="6" />
-
-                {/* Vertical Streets */}
-                <line x1="60" y1="0" x2="60" y2="600" stroke="#fff" strokeWidth="8" />
-                <line x1="160" y1="0" x2="160" y2="600" stroke="#fff" strokeWidth="14" />
-                <line x1="280" y1="0" x2="280" y2="600" stroke="#fff" strokeWidth="10" />
-
-                {/* Diagonal shortcut */}
-                <line x1="0" y1="0" x2="300" y2="500" stroke="#fff" strokeWidth="10" />
-              </svg>
-
-              {/* Park Green Areas */}
-              <div className="absolute top-24 left-20 w-16 h-12 rounded-full bg-emerald-700/10 blur-[4px]" />
-              <div className="absolute bottom-16 right-10 w-24 h-24 rounded-full bg-emerald-700/10 blur-[6px]" />
-
-              {/* Lakes/Water Area */}
-              <div className="absolute top-48 right-16 w-20 h-16 rounded-3xl bg-sky-500/15 blur-[2px]" />
-
-              {/* User Position Pin (Green circle & pulse) */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20">
-                <span className="absolute inline-flex h-6 w-6 rounded-full bg-primary/30 animate-ping" />
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-primary border-[2.5px] border-white shadow-md" />
-                
-                {/* Labeled callout */}
-                <div className="mt-1 bg-primary text-white font-label-sm text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                  Vị trí của bạn
-                </div>
-              </div>
-
-              {/* Listing Markers on Map */}
-              {listings.map((item, index) => {
-                // Calculate pseudo-locations based on coordinates or indices
-                const offsets = [
-                  { x: '72%', y: '32%' }, // Sweet buns
-                  { x: '35%', y: '25%' }, // Fresh bread
-                  { x: '22%', y: '68%' }, // Chicken rice
-                  { x: '78%', y: '74%' }, // Cream puff
-                ];
-                
-                const pos = offsets[index % offsets.length];
-                const isActive = selectedPinId === item.id;
-                const isHovered = hoveredListingId === item.id;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="absolute z-20 cursor-pointer transition-all duration-300"
-                    style={{ left: pos.x, top: pos.y }}
-                    onClick={() => setSelectedPinId(item.id)}
-                  >
-                    {/* Pulsing indicator if active or hovered */}
-                    {(isActive || isHovered) && (
-                      <span className="absolute -top-3 -left-3 inline-flex h-10 w-10 rounded-full bg-amber-500/20 animate-ping" />
-                    )}
-                    
-                    {/* Pin Marker */}
-                    <div className={`relative flex items-center justify-center rounded-full shadow-md transition-all duration-300 ${
-                      isActive || isHovered
-                        ? 'scale-110 border-[2px] border-amber-500 bg-white p-0.5'
-                        : 'bg-primary/95 text-white p-1 hover:scale-105'
-                    }`}>
-                      <span className={`material-symbols-outlined ${
-                        isActive || isHovered ? 'text-amber-500 text-[18px]' : 'text-white text-[12px]'
-                      }`}>
-                        restaurant
-                      </span>
-                    </div>
-
-                    {/* Small Callout for Active Pin (matches mockup) */}
-                    {(isActive || isHovered) && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white/95 backdrop-blur-sm text-neutral-800 p-2 rounded-xl border border-neutral-300/40 shadow-lg flex items-center gap-2 max-w-[140px] whitespace-nowrap animate-in fade-in slide-in-from-bottom duration-200">
-                        {/* Rounded thumbnail */}
-                        <div className="w-6 h-6 rounded-lg overflow-hidden shrink-0 bg-neutral-100">
-                          <img
-                            src={item.imageUrls[0] || '/banh-mi-ngot-thap-cam.png'}
-                            alt={item.title}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-label-lg text-[9px] font-bold text-neutral-800 truncate leading-none mb-[2px]">
-                            {item.provider.businessName}
-                          </p>
-                          <p className="text-[8px] text-neutral-500/90 leading-none truncate">
-                            {formatDistance(item.distanceM || 900)}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Floating controls inside map */}
-              <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
-                <button className="w-8 h-8 rounded-full bg-white text-neutral-800 flex items-center justify-center shadow-md border border-neutral-200 hover:bg-neutral-50 transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">my_location</span>
-                </button>
-                <div className="flex flex-col rounded-xl bg-white shadow-md border border-neutral-200 overflow-hidden">
-                  <button className="w-8 h-8 text-neutral-800 flex items-center justify-center hover:bg-neutral-50 border-b border-neutral-200 transition-colors font-bold text-xs">+</button>
-                  <button className="w-8 h-8 text-neutral-800 flex items-center justify-center hover:bg-neutral-50 transition-colors font-bold text-xs">-</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Simulated Phone Bottom App Navigation Bar */}
-            <div className="h-14 bg-white/95 backdrop-blur-md border-t border-neutral-300/30 flex items-center justify-around z-20 px-3 pb-2">
-              <span className="material-symbols-outlined text-[20px] text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>home</span>
-              <span className="material-symbols-outlined text-[20px] text-neutral-400">search</span>
-              <span className="material-symbols-outlined text-[20px] text-neutral-400">history_edu</span>
-              <span className="material-symbols-outlined text-[20px] text-neutral-400">notifications</span>
-              <span className="material-symbols-outlined text-[20px] text-neutral-400">person</span>
-            </div>
-          </div>
+      {/* Right side: bản đồ thật (Leaflet + OpenStreetMap) */}
+      <div className="hidden lg:block flex-1 relative">
+        <ListingsMap
+          listings={listings}
+          center={userLoc}
+          selectedId={selectedPinId}
+          onSelect={setSelectedPinId}
+        />
+        {/* Chú thích nổi trên bản đồ */}
+        <div className="absolute top-4 left-4 z-[1000] bg-white/95 backdrop-blur rounded-xl shadow-md border border-neutral-200 px-4 py-2.5 pointer-events-none">
+          <p className="text-xs font-bold text-neutral-800">{listings.length} điểm thực phẩm gần bạn</p>
+          <p className="text-[11px] text-neutral-500">
+            {locStatus === 'gps'
+              ? '📍 Theo vị trí GPS của bạn'
+              : locStatus === 'locating'
+                ? 'Đang xác định vị trí…'
+                : locStatus === 'denied'
+                  ? 'Chưa có quyền vị trí — đang dùng TP.HCM'
+                  : 'Trung tâm TP.HCM'}
+          </p>
         </div>
       </div>
     </div>

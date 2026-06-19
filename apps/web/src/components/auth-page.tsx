@@ -168,7 +168,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
       toast.success("Đăng nhập thành công!");
-      router.push("/listings");
+      // Điều hướng theo vai trò
+      const role = res.data.data.user.role;
+      router.push(
+        role === 'admin' ? '/admin'
+        : role === 'provider' ? '/provider'
+        : role === 'volunteer' ? '/deliveries'
+        : '/listings',
+      );
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })

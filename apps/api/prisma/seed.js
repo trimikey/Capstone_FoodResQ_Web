@@ -148,6 +148,20 @@ async function main() {
   const passwordHash = await bcrypt.hash('Provider123', 12);
   const now = new Date();
 
+  // 0. Admin user
+  await prisma.user.upsert({
+    where: { email: 'admin@foodresq.vn' },
+    update: { status: 'active', role: 'admin' },
+    create: {
+      email: 'admin@foodresq.vn',
+      passwordHash,
+      fullName: 'Quản trị viên FoodResQ',
+      role: 'admin',
+      status: 'active',
+    },
+  });
+  console.log('✓ admin: admin@foodresq.vn');
+
   // 1. Upsert provider users + profiles
   const providerIds = [];
   for (const prov of PROVIDERS) {

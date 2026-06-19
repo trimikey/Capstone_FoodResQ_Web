@@ -30,13 +30,27 @@ export interface NearbyRow {
   provider_id: string;
   business_name: string;
   distance_m: number;
+  lng: number;
+  lat: number;
 }
 
 @Injectable()
 export class ListingsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(providerId: string, dto: CreateListingDto) {
+  /** Đổi userId (từ JWT) sang provider_profiles.id — các bảng listing tham chiếu provider profile, KHÔNG phải user. */
+  private async resolveProviderId(userId: string): Promise<string> {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) throw new NotFoundException('Provider profile not found');
+    return profile.id;
+  }
+
+  async create(userId: string, dto: CreateListingDto) {
+    const providerId = await this.resolveProviderId(userId);
+
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
       throw new BadRequestException('pickup_end_time must be after pickup_start_time');
     }
@@ -92,6 +106,8 @@ export class ListingsService {
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
+          ST_X(fl.pickup_location::geometry) AS lng,
+          ST_Y(fl.pickup_location::geometry) AS lat,
           ST_Distance(
             fl.pickup_location::geography,
             ST_MakePoint(${lng}, ${lat})::geography
@@ -121,6 +137,8 @@ export class ListingsService {
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
+          ST_X(fl.pickup_location::geometry) AS lng,
+          ST_Y(fl.pickup_location::geometry) AS lat,
           0::float AS distance_m
         FROM food_listings fl
         JOIN provider_profiles pp ON pp.id = fl.provider_id
@@ -152,6 +170,8 @@ export class ListingsService {
       status: r.status,
       provider: { id: r.provider_id, businessName: r.business_name },
       distanceM: Math.round(r.distance_m),
+      lng: Number(r.lng),
+      lat: Number(r.lat),
     }));
   }
 
@@ -196,7 +216,8 @@ export class ListingsService {
     };
   }
 
-  async publish(listingId: string, providerId: string) {
+  async publish(listingId: string, userId: string) {
+    const providerId = await this.resolveProviderId(userId);
     const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.providerId !== providerId) throw new ForbiddenException();
@@ -210,7 +231,8 @@ export class ListingsService {
     });
   }
 
-  async cancel(listingId: string, providerId: string, reason?: string) {
+  async cancel(listingId: string, userId: string, reason?: string) {
+    const providerId = await this.resolveProviderId(userId);
     const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.providerId !== providerId) throw new ForbiddenException();
@@ -221,7 +243,8 @@ export class ListingsService {
     });
   }
 
-  async findByProvider(providerId: string, page = 1, limit = 20) {
+  async findByProvider(userId: string, page = 1, limit = 20) {
+    const providerId = await this.resolveProviderId(userId);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.foodListing.findMany({
         where: { providerId, deletedAt: null },
