@@ -618,7 +618,7 @@ export function SignUpRecipientScreen({
               fontWeight: '600',
             }}
           >
-            {isLoading ? 'Processing...' : 'Next'}
+            {isLoading ? 'Đang lưu...' : 'Lưu'}
           </Button>
         </FadeInUp>
       </View>

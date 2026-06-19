@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   SignUpRecipientScreen as SignUpRecipientForm,
   SignUpRecipientInput,
@@ -10,22 +10,15 @@ interface SignUpRecipientScreenProps {
 }
 
 /**
- * Sign Up Recipient Screen Container
- * Step 2 of signup flow for recipient users
+ * Recipient Details — KHÔNG còn trong luồng đăng ký (đăng ký hoàn tất ở bước Basic).
+ * Màn này để dành cho HOÀN THIỆN HỒ SƠ sau đăng ký (ID, địa chỉ...).
+ * TODO [Profile]: nối API cập nhật hồ sơ (PATCH /users/me) thay vì điều hướng Home.
  */
 export default function SignUpRecipientScreen({
   navigation,
-  route,
 }: SignUpRecipientScreenProps) {
-  // Retrieve email & password from previous step (Step 1: Basic Info)
-  const basicInfo = route?.params?.basicInfo || {};
-
-  const handleSuccess = (recipientData: SignUpRecipientInput) => {
-    // Navigate to verification screen or complete signup
-    navigation.navigate('SignUpVerification', {
-      basicInfo,
-      recipientData,
-    });
+  const handleSuccess = (_recipientData: SignUpRecipientInput) => {
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   const handleBack = () => {

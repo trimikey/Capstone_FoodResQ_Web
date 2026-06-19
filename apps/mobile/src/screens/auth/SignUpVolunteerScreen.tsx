@@ -10,21 +10,15 @@ interface SignUpVolunteerScreenProps {
 }
 
 /**
- * Sign Up Volunteer Screen Container
- * Step 3B of signup flow - Specializations & Skills
+ * Volunteer Details — KHÔNG còn trong luồng đăng ký (đăng ký hoàn tất ở bước Basic).
+ * Màn này để dành cho HOÀN THIỆN HỒ SƠ sau đăng ký (specialization, phương tiện...).
+ * TODO [Profile]: nối API cập nhật hồ sơ thay vì điều hướng Home.
  */
 export default function SignUpVolunteerScreen({
   navigation,
-  route,
 }: SignUpVolunteerScreenProps) {
-  const basicInfo = route?.params?.basicInfo || {};
-
-  const handleSuccess = (volunteerData: VolunteerInfoInput) => {
-    navigation.navigate('SignUpVerification', {
-      basicInfo,
-      volunteerData,
-      type: 'volunteer',
-    });
+  const handleSuccess = (_volunteerData: VolunteerInfoInput) => {
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   const handleBack = () => {

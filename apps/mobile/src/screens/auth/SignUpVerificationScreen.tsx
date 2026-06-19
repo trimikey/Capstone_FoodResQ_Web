@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Toast from 'react-native-toast-message';
 import {
   SignUpVerificationScreen as SignUpVerificationForm,
 } from '../../components/SignUpVerificationScreen';
 import { useAuth } from '../../hooks/useAuth';
+import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface SignUpVerificationScreenProps {
   navigation: any;
@@ -11,13 +13,15 @@ interface SignUpVerificationScreenProps {
 
 /**
  * Sign Up Verification Screen Container
- * Step 4 of signup flow - Document Upload & Verification
+ * Bước cuối của luồng đăng ký — gộp dữ liệu các bước rồi gọi register().
  */
 export default function SignUpVerificationScreen({
   navigation,
   route,
 }: SignUpVerificationScreenProps) {
   const { register } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const basicInfo = route?.params?.basicInfo || {};
   const volunteerData = route?.params?.volunteerData || {};
   const recipientData = route?.params?.recipientData || {};
@@ -25,24 +29,37 @@ export default function SignUpVerificationScreen({
 
   const handleSuccess = async () => {
     try {
-      // Combine all data
+      setIsSubmitting(true);
+
+      // Gộp dữ liệu các bước (store register chỉ lấy email/password/name->fullName/role)
       const fullData = {
         ...basicInfo,
         role: type === 'volunteer' ? 'volunteer' : 'receiver',
         ...(type === 'volunteer' ? volunteerData : recipientData),
       };
 
-      // Call register
       await register(fullData as any);
 
-      // Navigate to home on success
+      Toast.show({
+        type: 'success',
+        text1: 'Đăng ký thành công',
+        text2: 'Chào mừng bạn đến với FoodResQ',
+      });
+
+      // Token đã set -> auth guard cho qua, về Home
       navigation.reset({
         index: 0,
         routes: [{ name: 'Home' }],
       });
     } catch (error) {
-      // Handle registration error
-      console.error('Registration error:', error);
+      // Lỗi mong đợi (email trùng, validate...) -> toast, KHÔNG console.error (tránh LogBox)
+      Toast.show({
+        type: 'error',
+        text1: 'Đăng ký thất bại',
+        text2: getErrorMessage(error),
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -54,7 +71,7 @@ export default function SignUpVerificationScreen({
     <SignUpVerificationForm
       onSuccess={handleSuccess}
       onBack={handleBack}
-      isLoading={false}
+      isLoading={isSubmitting}
       recipientType={recipientData.recipientType || 'individual'}
       volunteerRole={type === 'volunteer'}
     />
