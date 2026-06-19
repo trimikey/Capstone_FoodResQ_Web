@@ -66,24 +66,10 @@ export function ForgotPasswordScreen({
     },
   });
 
-  const onSubmit = async (data: ForgotPasswordInput) => {
-    try {
-      clearError();
-      // TODO: Call API POST /auth/forgot-password
-      // await apiClient.post('/auth/forgot-password', { email: data.email });
-
-      setSubmittedEmail(data.email);
-      setShowSuccessModal(true);
-
-      // Auto-close after 3 seconds
-      setTimeout(() => {
-        onSuccess?.(data.email);
-      }, 3000);
-    } catch (error) {
-      const message = getErrorMessage(error);
-      showError(message, 3000);
-      console.error('Forgot password error:', error);
-    }
+  const onSubmit = (data: ForgotPasswordInput) => {
+    clearError();
+    // Container gọi API /auth/forgot-password rồi điều hướng sang OTP
+    onSuccess?.(data.email);
   };
 
   return (
