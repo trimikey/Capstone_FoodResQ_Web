@@ -20,8 +20,8 @@ export default function ResetPasswordScreen({
     try {
       setIsLoading(true);
       await apiClient.post(endpoints.auth.resetPassword, {
-        email,
-        otp,
+        email: String(email),
+        otp: String(otp),
         newPassword,
       });
 
