@@ -8,13 +8,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
+import { randomInt, randomBytes } from 'crypto';
 import Redis from 'ioredis';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { MailService } from './mail.service';
-import { User } from '@prisma/client';
+import { FirebaseService, FirebaseIdentity } from './firebase.service';
+import { User, UserRole } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
@@ -28,6 +29,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private mail: MailService,
+    private firebase: FirebaseService,
     @Inject('REDIS_CLIENT') private redis: Redis,
   ) {}
 
@@ -173,6 +175,96 @@ export class AuthService {
     await this.prisma.refreshToken.updateMany({
       where: { userId: user.id, isRevoked: false },
       data: { isRevoked: true, revokedAt: new Date() },
+    });
+  }
+
+  // ── Đăng nhập qua Firebase (Google / Phone OTP) ───────────────────────────
+  /** Chuẩn hoá số VN từ E.164 (+84xxxxxxxxx) về dạng 0xxxxxxxxx để khớp tài khoản đăng ký thường. */
+  private normalizeVnPhone(phone: string): string {
+    return phone.startsWith('+84') ? `0${phone.slice(3)}` : phone;
+  }
+
+  async loginWithFirebase(
+    idToken: string,
+    role: UserRole | undefined,
+    deviceInfo?: string,
+    ipAddress?: string,
+  ) {
+    const identity = await this.firebase.verifyIdToken(idToken);
+    const phone = identity.phoneNumber ? this.normalizeVnPhone(identity.phoneNumber) : null;
+
+    // Tìm tài khoản hiện có theo email (Google) hoặc phone (Phone OTP)
+    let user = await this.findExistingFirebaseUser(identity.email, phone);
+    let isNewUser = false;
+
+    if (user) {
+      // Bổ sung avatar/phone nếu tài khoản cũ còn thiếu (không ghi đè dữ liệu sẵn có)
+      const patch: { avatarUrl?: string; phone?: string; lastLoginAt: Date } = {
+        lastLoginAt: new Date(),
+      };
+      if (!user.avatarUrl && identity.picture) patch.avatarUrl = identity.picture;
+      if (!user.phone && phone) patch.phone = phone;
+      user = await this.prisma.user.update({ where: { id: user.id }, data: patch });
+    } else {
+      user = await this.createFirebaseUser(identity, phone, role ?? UserRole.receiver);
+      isNewUser = true;
+    }
+
+    if (user.status === 'banned') {
+      throw new UnauthorizedException('Account has been banned');
+    }
+
+    const tokens = await this.issueTokens(user, deviceInfo, ipAddress);
+    return { ...tokens, isNewUser };
+  }
+
+  private async findExistingFirebaseUser(email: string | null, phone: string | null) {
+    if (email) {
+      const byEmail = await this.prisma.user.findUnique({ where: { email } });
+      if (byEmail) return byEmail;
+    }
+    if (phone) {
+      const byPhone = await this.prisma.user.findUnique({ where: { phone } });
+      if (byPhone) return byPhone;
+    }
+    return null;
+  }
+
+  private async createFirebaseUser(
+    identity: FirebaseIdentity,
+    phone: string | null,
+    role: UserRole,
+  ): Promise<User> {
+    // email NOT NULL: user chỉ đăng nhập bằng phone → sinh email placeholder duy nhất theo uid
+    const email = identity.email ?? `${identity.uid}@phone.foodresq.local`;
+    const fullName = identity.name ?? email.split('@')[0] ?? 'Người dùng FoodResQ';
+    // passwordHash NOT NULL: tài khoản social/phone không dùng mật khẩu → hash chuỗi ngẫu nhiên không thể đăng nhập
+    const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          phone,
+          passwordHash,
+          fullName,
+          role,
+          avatarUrl: identity.picture,
+          status: 'pending_verification',
+        },
+      });
+
+      if (role === UserRole.receiver) {
+        await tx.receiverProfile.create({ data: { userId: created.id } });
+      } else if (role === UserRole.volunteer) {
+        await tx.volunteerProfile.create({ data: { userId: created.id } });
+      } else if (role === UserRole.provider) {
+        await tx.providerProfile.create({
+          data: { userId: created.id, businessName: fullName, businessType: 'other', address: '' },
+        });
+      }
+
+      return created;
     });
   }
 

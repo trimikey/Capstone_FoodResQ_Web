@@ -159,6 +159,7 @@ export const endpoints = {
     me: '/auth/me',
     forgotPassword: '/auth/forgot-password',
     resetPassword: '/auth/reset-password',
+    firebase: '/auth/firebase',
   },
   listings: {
     search: '/listings',

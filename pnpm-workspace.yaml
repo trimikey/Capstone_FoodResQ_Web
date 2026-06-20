@@ -13,3 +13,5 @@ allowBuilds:
   unrs-resolver: true
   sharp: true
   core-js: false
+  '@firebase/util': false
+  protobufjs: false
