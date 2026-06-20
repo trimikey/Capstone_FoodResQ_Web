@@ -5,8 +5,7 @@ expo-env.d.ts
 *.log
 .DS_Store
 
-# Firebase config (chứa định danh client — mỗi dev tự tải từ Firebase Console)
-google-services.json
+# Firebase iOS config (chưa dùng — thêm lại khi build iOS)
 GoogleService-Info.plist
 
 # Native dirs sinh ra khi prebuild/run local
