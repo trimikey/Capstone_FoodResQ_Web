@@ -54,8 +54,15 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com
 ```
 
 ### 3.2. File cấu hình Firebase
-- `apps/mobile/google-services.json` (Android) — **đã commit** sẵn cho project Firebase hiện tại. Nếu dùng Firebase project khác, tải lại từ Console (Project settings → app Android `com.foodresq.mobile`).
-- `apps/mobile/GoogleService-Info.plist` (iOS) — chưa cần, thêm khi build iOS.
+> ⚠️ `google-services.json` **KHÔNG được commit** (đã gitignore — chứa API key client, tránh GitHub secret scanning). Mỗi dev tự lấy file này từ project Firebase chung.
+
+**Để có file (teammate mới):**
+1. **Được mời vào project Firebase chung** (không tạo project riêng): chủ project vào Firebase Console → ⚙️ Project settings → **Users and permissions → Add member** → nhập email bạn (role Editor).
+2. Bạn vào Console project chung → ⚙️ Project settings → app Android `com.foodresq.mobile` → **Download `google-services.json`** → đặt vào `apps/mobile/google-services.json`.
+3. Lấy **Web client ID** trong file đó (`oauth_client` có `client_type: 3`) → điền vào `.env` (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`).
+4. **Build local** (`expo run:android`): lấy SHA-1 debug keystore **máy bạn** và **Add fingerprint** vào Firebase (mỗi máy SHA-1 khác nhau → Google Sign-In mới chạy). Nếu cả nhóm build qua **EAS** thì dùng chung SHA-1 của EAS keystore (chỉ cần thêm 1 lần).
+
+- `apps/mobile/GoogleService-Info.plist` (iOS) — chưa cần, thêm khi build iOS (cũng không commit).
 
 ---
 
