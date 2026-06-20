@@ -17,7 +17,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Internal server error';
+    let message = 'Đã có lỗi xảy ra, vui lòng thử lại sau.';
     let code = 'INTERNAL_ERROR';
 
     if (exception instanceof HttpException) {

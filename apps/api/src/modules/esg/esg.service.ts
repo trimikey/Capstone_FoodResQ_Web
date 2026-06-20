@@ -15,7 +15,7 @@ export class EsgService {
       where: { userId },
       select: { id: true, businessName: true },
     });
-    if (!provider) throw new NotFoundException('Provider profile not found');
+    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
 
     const [row] = await this.prisma.$queryRaw<
       { kg: number | null; completed: bigint; receivers: bigint }[]

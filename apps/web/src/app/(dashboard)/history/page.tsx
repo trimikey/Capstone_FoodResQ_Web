@@ -15,6 +15,7 @@ interface ResHistory {
   createdAt: string;
   listingId: string;
   ratedScore: number | null;
+  cancellationReason: string | null;
   listing: {
     title: string;
     pickupAddress: string;
@@ -36,14 +37,14 @@ function fallbackImage(category: string): string {
 
 const STATUS_META: Record<
   ResHistory['status'],
-  { label: string; cls: string; group: 'completed' | 'cancelled' | 'other' }
+  { label: string; badge: string; accent: string; group: 'completed' | 'cancelled' | 'other' }
 > = {
-  completed: { label: 'Hoàn thành', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200/60', group: 'completed' },
-  cancelled: { label: 'Đã hủy', cls: 'bg-neutral-100 text-neutral-500 border border-neutral-250/20', group: 'cancelled' },
-  no_show: { label: 'Không đến', cls: 'bg-rose-100 text-rose-700 border border-rose-200/60', group: 'cancelled' },
-  expired: { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-500 border border-neutral-250/20', group: 'cancelled' },
-  confirmed: { label: 'Đã xác nhận', cls: 'bg-blue-50 text-blue-700 border border-blue-200/60', group: 'other' },
-  picked_up: { label: 'Đã lấy hàng', cls: 'bg-amber-50 text-amber-700 border border-amber-200/60', group: 'other' },
+  completed: { label: 'Hoàn thành', badge: 'badge-emerald', accent: 'bg-emerald-500', group: 'completed' },
+  cancelled: { label: 'Đã hủy', badge: 'badge-neutral', accent: 'bg-neutral-300', group: 'cancelled' },
+  no_show: { label: 'Không đến', badge: 'badge-rose', accent: 'bg-rose-400', group: 'cancelled' },
+  expired: { label: 'Hết hạn', badge: 'badge-neutral', accent: 'bg-neutral-300', group: 'cancelled' },
+  confirmed: { label: 'Đã xác nhận', badge: 'badge-sky', accent: 'bg-sky-400', group: 'other' },
+  picked_up: { label: 'Đã lấy hàng', badge: 'badge-honey', accent: 'bg-honey-400', group: 'other' },
 };
 
 function formatWeight(r: ResHistory): string {
@@ -62,16 +63,12 @@ export default function HistoryPage() {
   const { data, isLoading, isError } = useMyReservations(page);
   const [items, setItems] = useState<ResHistory[]>([]);
 
-  // Tích lũy các trang đã tải
+  // Hiển thị dữ liệu theo trang thay vì tích lũy (Pagination)
   useEffect(() => {
     if (!data?.items) return;
-    setItems((prev) => {
-      const map = new Map(prev.map((i) => [i.id, i]));
-      for (const it of data.items as ResHistory[]) map.set(it.id, it);
-      return Array.from(map.values()).sort(
-        (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
-      );
-    });
+    setItems((data.items as ResHistory[]).sort(
+      (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+    ));
   }, [data]);
 
   const [filter, setFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
@@ -80,6 +77,9 @@ export default function HistoryPage() {
   // Report Modal
   const [reportingItem, setReportingItem] = useState<ResHistory | null>(null);
   const [reportReason, setReportReason] = useState('');
+
+  // Details Modal
+  const [viewingItem, setViewingItem] = useState<ResHistory | null>(null);
 
   // Review Modal
   const [reviewingItem, setReviewingItem] = useState<ResHistory | null>(null);
@@ -96,7 +96,7 @@ export default function HistoryPage() {
     });
   }, [items, filter]);
 
-  const hasMore = data ? page < data.totalPages : false;
+  const totalPages = data?.totalPages || 1;
 
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,10 +145,16 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50/50 pb-24 relative">
+    <div className="min-h-screen bg-mesh-brand pb-24 relative">
       <div className="max-w-7xl mx-auto px-6 md:px-16 lg:px-24 py-10 space-y-10">
-        <div>
-          <h1 className="font-extrabold text-3xl sm:text-4xl text-neutral-900">Lịch sử nhận hàng</h1>
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-brand-gradient flex items-center justify-center elevation-brand shrink-0">
+            <span className="material-symbols-outlined text-white text-[28px]">history</span>
+          </div>
+          <div>
+            <h1 className="font-headline-lg font-extrabold text-3xl sm:text-4xl text-neutral-900">Lịch sử nhận hàng</h1>
+            <p className="text-sm text-neutral-500 mt-0.5">Hành trình cứu trợ thực phẩm của bạn.</p>
+          </div>
         </div>
 
         {/* Impact & Metrics (dữ liệu thật từ /users/me) */}
@@ -186,9 +192,9 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-4 bg-white border border-neutral-200 rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-sm min-h-[190px]">
-            <div className="w-14 h-14 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[32px]">groups</span>
+          <div className="card-interactive lg:col-span-4 bg-white border border-neutral-150 rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center space-y-4 elevation-1 min-h-[190px]">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-honey-300 to-honey-500 text-white flex items-center justify-center shrink-0 ring-4 ring-honey-100 shadow-sm">
+              <span className="material-symbols-outlined text-[32px]">restaurant</span>
             </div>
             <div className="space-y-1">
               <h3 className="text-3xl font-extrabold text-neutral-900">{me?.stats.completedCount ?? 0} Bữa ăn</h3>
@@ -247,25 +253,29 @@ export default function HistoryPage() {
           {isLoading && items.length === 0 && (
             <div className="space-y-4">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="h-28 rounded-3xl bg-white border border-neutral-200/80 animate-pulse" />
+                <div key={i} className="h-28 skeleton" />
               ))}
             </div>
           )}
 
           {/* Error */}
           {isError && (
-            <div className="text-center py-12 bg-white rounded-3xl border border-neutral-200">
-              <span className="material-symbols-outlined text-rose-500 text-[48px]">wifi_off</span>
-              <p className="font-bold text-neutral-700 mt-2">Không tải được lịch sử từ máy chủ</p>
+            <div className="text-center py-12 bg-white rounded-3xl border border-rose-100 elevation-1">
+              <div className="w-16 h-16 mx-auto rounded-full bg-rose-50 flex items-center justify-center">
+                <span className="material-symbols-outlined text-rose-500 text-[36px]">wifi_off</span>
+              </div>
+              <p className="font-bold text-neutral-700 mt-3">Không tải được lịch sử từ máy chủ</p>
             </div>
           )}
 
           {/* Empty */}
           {!isLoading && !isError && filtered.length === 0 && (
-            <div className="text-center py-16 bg-white rounded-3xl border border-neutral-200">
-              <span className="material-symbols-outlined text-neutral-300 text-[64px]">bookmark_border</span>
+            <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-neutral-200 elevation-1">
+              <div className="w-20 h-20 mx-auto rounded-full bg-brand-gradient-soft flex items-center justify-center">
+                <span className="material-symbols-outlined text-emerald-600 text-[44px]">history</span>
+              </div>
               <h3 className="font-extrabold text-lg text-neutral-800 mt-4">Chưa có giao dịch nào</h3>
-              <p className="text-xs text-neutral-500 mt-1">Hãy tìm thực phẩm và cứu trợ ngay hôm nay.</p>
+              <p className="text-sm text-neutral-500 mt-1">Hãy tìm thực phẩm và cứu trợ ngay hôm nay.</p>
             </div>
           )}
 
@@ -276,10 +286,12 @@ export default function HistoryPage() {
               return (
                 <div
                   key={t.id}
-                  className="bg-white rounded-3xl border border-neutral-200/80 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm hover:border-emerald-500/20 hover:shadow-md transition-all duration-300"
+                  className="card-interactive bg-white rounded-2xl border border-neutral-150 elevation-1 flex overflow-hidden"
                 >
+                  <div className={`w-1.5 shrink-0 ${meta.accent}`} />
+                  <div className="flex-1 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 border border-neutral-100">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 ring-1 ring-neutral-150">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={t.listing.imageUrls[0] || fallbackImage(t.listing.category)}
@@ -300,11 +312,17 @@ export default function HistoryPage() {
                           {formatWeight(t)}
                         </span>
                       </div>
+                      {(t.status === 'cancelled' || t.status === 'no_show') && t.cancellationReason && (
+                        <p className="text-[11px] text-neutral-500 mt-1 flex items-start gap-1">
+                          <span className="material-symbols-outlined text-[13px] text-neutral-400 mt-px">sticky_note_2</span>
+                          <span><span className="font-bold">Lý do huỷ:</span> {t.cancellationReason}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4 justify-between sm:justify-end flex-1 sm:flex-initial">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-black shrink-0 tracking-wider ${meta.cls}`}>
+                    <span className={`badge ${meta.badge} shrink-0`}>
                       {meta.label}
                     </span>
 
@@ -314,6 +332,13 @@ export default function HistoryPage() {
                         className="px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-extrabold transition-all"
                       >
                         Báo cáo
+                      </button>
+
+                      <button
+                        onClick={() => setViewingItem(t)}
+                        className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-all"
+                      >
+                        Chi tiết
                       </button>
 
                       {t.status === 'completed' ? (
@@ -336,18 +361,44 @@ export default function HistoryPage() {
                       ) : null}
                     </div>
                   </div>
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {hasMore && (
-            <div className="flex justify-center mt-10">
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-2 mt-10">
               <button
-                onClick={() => setPage((p) => p + 1)}
-                className="px-8 py-3 bg-white border border-emerald-600 hover:bg-emerald-50/50 text-neutral-850 hover:text-emerald-900 rounded-full text-sm font-bold transition-all shadow-sm active:scale-95"
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
               >
-                Tải thêm lịch sử
+                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                  <button
+                    key={pageNum}
+                    onClick={() => setPage(pageNum)}
+                    className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
+                      page === pageNum 
+                        ? 'bg-emerald-600 text-white' 
+                        : 'text-neutral-600 hover:bg-neutral-100'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]">chevron_right</span>
               </button>
             </div>
           )}
@@ -376,7 +427,7 @@ export default function HistoryPage() {
                   onChange={(e) => setReportReason(e.target.value)}
                   placeholder="Ví dụ: Thực phẩm bị hỏng, không nhận được hàng, thái độ phục vụ không tốt..."
                   rows={4}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm"
+                  className="input-base"
                 />
               </div>
               <div className="flex gap-3 pt-2">
@@ -424,7 +475,7 @@ export default function HistoryPage() {
                   onChange={(e) => setReviewComment(e.target.value)}
                   placeholder="Chia sẻ cảm nghĩ của bạn về chất lượng thực phẩm và trải nghiệm nhận hàng..."
                   rows={3}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm"
+                  className="input-base"
                 />
               </div>
               <div className="flex gap-3 pt-2">
@@ -436,6 +487,75 @@ export default function HistoryPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* DETAILS MODAL */}
+      {viewingItem && (
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center bg-neutral-50/50">
+              <h3 className="font-extrabold text-neutral-900 text-lg">Chi tiết đơn hàng</h3>
+              <button onClick={() => setViewingItem(null)} className="p-1 hover:bg-neutral-200 rounded-full text-neutral-500 transition-colors">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
+                  <img
+                    src={viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category)}
+                    alt={viewingItem.listing.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-neutral-900 text-xl">{viewingItem.listing.title}</h4>
+                  <p className="text-sm font-bold text-neutral-500 mt-1">{viewingItem.listing.provider.businessName}</p>
+                  <div className="mt-3">
+                    <span className={`badge ${STATUS_META[viewingItem.status].badge}`}>
+                      {STATUS_META[viewingItem.status].label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                <div>
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Mã đơn hàng</p>
+                  <p className="text-sm font-mono text-neutral-800 font-medium">{viewingItem.id.split('-')[0].toUpperCase()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Ngày tạo</p>
+                  <p className="text-sm text-neutral-800 font-medium">{new Date(viewingItem.createdAt).toLocaleString('vi-VN')}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Số lượng nhận</p>
+                  <p className="text-sm text-neutral-800 font-medium">{formatWeight(viewingItem)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Địa chỉ lấy hàng</p>
+                  <p className="text-sm text-neutral-800 font-medium line-clamp-2" title={viewingItem.listing.pickupAddress}>
+                    {viewingItem.listing.pickupAddress}
+                  </p>
+                </div>
+              </div>
+
+              {(viewingItem.status === 'cancelled' || viewingItem.status === 'no_show') && viewingItem.cancellationReason && (
+                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Lý do huỷ</p>
+                  <p className="text-sm text-neutral-700">{viewingItem.cancellationReason}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 bg-neutral-50 border-t border-neutral-150 flex justify-end">
+              <button 
+                onClick={() => setViewingItem(null)} 
+                className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}

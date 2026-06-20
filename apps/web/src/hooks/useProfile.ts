@@ -9,6 +9,12 @@ export interface MeStats {
   providersHelped: number;
 }
 
+export interface VolunteerInfo {
+  specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
+  rank: string;
+  dedicationPoints: number;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -20,6 +26,7 @@ export interface Me {
   trustScore: number;
   createdAt: string;
   stats: MeStats;
+  volunteer: VolunteerInfo | null;
 }
 
 interface UpdateMeInput {

@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
+import { SystemConfigModule } from './common/system-config/system-config.module';
 import { RedlockModule } from './common/redlock/redlock.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -33,6 +34,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
     }),
 
     PrismaModule,
+    SystemConfigModule,
     RedlockModule,
     AuthModule,
     UsersModule,

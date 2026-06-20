@@ -26,7 +26,7 @@ export class VolunteersService {
         },
       },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     const [loc] = await this.prisma.$queryRaw<{ lng: number | null; lat: number | null }[]>(
       Prisma.sql`
@@ -51,7 +51,7 @@ export class VolunteersService {
   /** Bật/tắt sẵn sàng nhận đơn + cập nhật vị trí hiện tại. */
   async setAvailability(userId: string, dto: SetAvailabilityDto) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId } });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     if (dto.isAvailable && (dto.lng == null || dto.lat == null)) {
       throw new BadRequestException('Vị trí (lng, lat) là bắt buộc khi bật sẵn sàng');

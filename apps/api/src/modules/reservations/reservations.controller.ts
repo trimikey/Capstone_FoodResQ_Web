@@ -78,9 +78,17 @@ export class ReservationsController {
   @Post('scan')
   @UseGuards(RolesGuard)
   @Roles(UserRole.PROVIDER, UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Provider/Volunteer: Scan QR code to mark picked_up' })
+  @ApiOperation({ summary: 'Provider/Volunteer: Quét QR → picked_up + trả thông tin người nhận để đối chiếu' })
   scanQr(@Body() dto: ScanQrDto, @CurrentUser() user: User) {
     return this.reservationsService.scanQr(dto.qrToken, user.id);
+  }
+
+  @Post(':id/confirm-pickup')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER, UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Provider: Xác nhận đã giao đúng người (đối chiếu ảnh) → completed' })
+  confirmPickup(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.reservationsService.confirmPickupByProvider(id, user.id);
   }
 
   @Post(':id/pickup-proof')

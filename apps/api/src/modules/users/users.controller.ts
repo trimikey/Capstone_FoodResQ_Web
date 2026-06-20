@@ -79,15 +79,15 @@ export class UsersController {
     const idCard = files.idCard?.[0];
     const selfie = files.selfie?.[0];
     if (!idCard && !selfie) {
-      throw new BadRequestException('A selfie or an ID card photo is required');
+      throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
     }
     for (const file of [idCard, selfie]) {
       if (!file) continue;
       if (!ALLOWED_MIME.test(file.mimetype)) {
-        throw new BadRequestException('Only JPEG or PNG photos are allowed');
+        throw new BadRequestException('Chỉ chấp nhận ảnh JPEG hoặc PNG.');
       }
       if (file.size > MAX_PHOTO_BYTES) {
-        throw new BadRequestException('Each photo must be at most 5MB');
+        throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
       }
     }
     return this.usersService.enrollFace(user.id, idCard, selfie);

@@ -116,6 +116,26 @@
   --color-emerald-850: #173c1a;
   --color-emerald-900: #123114;
   --color-emerald-950: #0a1b0b;
+
+  /* Missing neutral steps used across pages (were silently rendering blank) */
+  --color-neutral-150: #ececec;
+  --color-neutral-250: #d8d8d8;
+  --color-neutral-450: #8f8f8f;
+  --color-neutral-850: #1f1f1f;
+  --color-emerald-250: #bcdabd;
+
+  /* Warm honey accent — secondary brand hue for energy / food warmth */
+  --color-honey-50: #fdf8ec;
+  --color-honey-100: #faedcc;
+  --color-honey-200: #f4d894;
+  --color-honey-300: #edc05a;
+  --color-honey-400: #e3a52f;
+  --color-honey-500: #c9871a;
+  --color-honey-600: #a66a13;
+  --color-honey-700: #7f4f13;
+
+  /* Box-shadow scale (Material-ish elevation) */
+  --shadow-12: 0 18px 40px -12px rgba(35, 108, 42, 0.22);
 }
 
 body {
@@ -177,4 +197,103 @@ body {
 .animate-fade-in-up {
   animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ============================================================= */
+/* Shared design language — reusable across every page           */
+/* ============================================================= */
+
+/* Layered elevation (softer & more premium than a flat 1px border) */
+.elevation-1 { box-shadow: 0 1px 2px rgba(16, 24, 16, 0.04), 0 1px 3px rgba(16, 24, 16, 0.06); }
+.elevation-2 { box-shadow: 0 4px 12px -2px rgba(16, 24, 16, 0.08), 0 2px 6px -2px rgba(16, 24, 16, 0.05); }
+.elevation-3 { box-shadow: 0 12px 28px -8px rgba(16, 24, 16, 0.12), 0 6px 12px -6px rgba(16, 24, 16, 0.06); }
+.elevation-brand { box-shadow: 0 16px 36px -12px rgba(35, 108, 42, 0.28); }
+
+/* Card that lifts on hover — the default interactive card across the app */
+.card-interactive {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform;
+}
+.card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 32px -12px rgba(16, 24, 16, 0.16), 0 6px 14px -8px rgba(16, 24, 16, 0.08);
+}
+
+/* Brand gradients */
+.bg-brand-gradient { background: linear-gradient(135deg, #2a662e 0%, #1e4d21 55%, #123114 100%); }
+.bg-brand-gradient-soft { background: linear-gradient(135deg, #f4f8f4 0%, #e6efe6 100%); }
+.bg-honey-gradient { background: linear-gradient(135deg, #f4d894 0%, #e3a52f 100%); }
+.text-gradient-brand {
+  background: linear-gradient(120deg, #377e3c, #1e4d21);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Mesh / radial glow used behind hero & stat sections */
+.bg-mesh-brand {
+  background-color: #f4f8f4;
+  background-image:
+    radial-gradient(at 12% 18%, rgba(126, 172, 126, 0.28) 0px, transparent 50%),
+    radial-gradient(at 88% 12%, rgba(244, 216, 148, 0.30) 0px, transparent 45%),
+    radial-gradient(at 75% 88%, rgba(78, 152, 83, 0.22) 0px, transparent 50%);
+}
+
+/* Status pill — one consistent badge across reservations/history/admin/provider */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge-emerald { background: #e6efe6; color: #2a662e; border-color: #cde0cd; }
+.badge-honey   { background: #faedcc; color: #7f4f13; border-color: #f4d894; }
+.badge-sky     { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.badge-rose    { background: #ffe4e6; color: #be123c; border-color: #fecdd3; }
+.badge-violet  { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+.badge-neutral { background: #f1f1f1; color: #525252; border-color: #e0e0e0; }
+
+/* Shimmer skeleton */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #ececec 25%, #f5f5f5 37%, #ececec 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+/* Soft floating decoration */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-floaty { animation: floaty 5s ease-in-out infinite; }
+
+/* Focus ring helper for inputs — consistent emerald glow */
+.input-base {
+  width: 100%;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.9rem;
+  font-size: 14px;
+  background: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.input-base:focus {
+  outline: none;
+  border-color: var(--color-emerald-500);
+  box-shadow: 0 0 0 3px rgba(78, 152, 83, 0.18);
+}
+
+/* Scrollbar hiding (used by quick-filter rails) */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
 

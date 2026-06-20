@@ -87,20 +87,20 @@ export class DeliveriesService {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     const offer = await this.prisma.shipperTaskOffer.findUnique({
       where: { deliveryId_shipperId: { deliveryId, shipperId: volunteer.id } },
     });
 
-    if (!offer) throw new NotFoundException('Offer not found');
-    if (offer.status !== 'pending') throw new BadRequestException(`Offer is already ${offer.status}`);
-    if (new Date() > offer.expiresAt) throw new BadRequestException('Offer has expired');
+    if (!offer) throw new NotFoundException('Không tìm thấy lời mời giao hàng.');
+    if (offer.status !== 'pending') throw new BadRequestException('Lời mời này không còn hiệu lực (đã được phản hồi hoặc hết hạn).');
+    if (new Date() > offer.expiresAt) throw new BadRequestException('Lời mời giao hàng đã hết hạn.');
 
     const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
-    if (!delivery) throw new NotFoundException('Delivery not found');
+    if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
     if (delivery.status !== 'pending_assignment') {
-      throw new ConflictException('Delivery already assigned to another shipper');
+      throw new ConflictException('Đơn đã được tình nguyện viên khác nhận.');
     }
 
     // Atomic: accept this offer + expire all others + assign shipper
@@ -137,14 +137,14 @@ export class DeliveriesService {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     const offer = await this.prisma.shipperTaskOffer.findUnique({
       where: { deliveryId_shipperId: { deliveryId, shipperId: volunteer.id } },
     });
 
     if (!offer || offer.status !== 'pending') {
-      throw new BadRequestException('No pending offer found');
+      throw new BadRequestException('Không có lời mời giao hàng nào đang chờ.');
     }
 
     await this.prisma.shipperTaskOffer.update({
@@ -164,10 +164,10 @@ export class DeliveriesService {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
-    if (!delivery) throw new NotFoundException('Delivery not found');
+    if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
     if (delivery.shipperId !== volunteer.id) throw new ForbiddenException();
 
     const transitions: Record<string, string> = {
@@ -178,9 +178,7 @@ export class DeliveriesService {
     };
 
     if (transitions[delivery.status] !== newStatus) {
-      throw new BadRequestException(
-        `Invalid transition: ${delivery.status} → ${newStatus}`,
-      );
+      throw new BadRequestException('Không thể chuyển sang trạng thái này từ trạng thái hiện tại của đơn.');
     }
 
     const updateData: Prisma.DeliveryUpdateInput = { status: newStatus as never };
@@ -227,7 +225,7 @@ export class DeliveriesService {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     return this.prisma.delivery.findFirst({
       where: {
@@ -251,7 +249,7 @@ export class DeliveriesService {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
-    if (!volunteer) throw new NotFoundException('Volunteer profile not found');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     return this.prisma.shipperTaskOffer.findMany({
       where: {

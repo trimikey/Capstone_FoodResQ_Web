@@ -94,13 +94,44 @@ export function useCancelListing() {
   });
 }
 
+// Thông tin người nhận trả về sau khi quét QR — để provider đối chiếu trực tiếp
+export interface ScanResult {
+  id: string;
+  status: string;
+  quantity: number;
+  listing: { title: string; quantityUnit: string };
+  receiver: {
+    fullName: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    faceImageUrl: string | null;
+    idCardImageUrl: string | null;
+    idCardNumber: string | null;
+    enrolled: boolean;
+  };
+}
+
 // Quét QR để xác nhận giao hàng (provider/volunteer)
 export function useScanQr() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (qrToken: string) => {
       const { data } = await api.post('/reservations/scan', { qrToken });
-      return data.data as { id: string; status: string };
+      return data.data as ScanResult;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reservations'] });
+    },
+  });
+}
+
+// Provider xác nhận đã giao đúng người (sau khi đối chiếu ảnh) → completed
+export function useConfirmPickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (reservationId: string) => {
+      const { data } = await api.post(`/reservations/${reservationId}/confirm-pickup`);
+      return data.data as { reservationId: string; status: string };
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['reservations'] });

@@ -33,11 +33,35 @@ export class UsersService {
         createdAt: true,
       },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng.');
 
     const stats = await this.getReceiverStats(userId);
 
-    return { ...user, stats };
+    // Nếu là tình nguyện viên → kèm chuyên môn (chef/waiter/shipper) + hạng/điểm
+    let volunteer: {
+      specializations: { specialization: string; isVerified: boolean }[];
+      rank: string;
+      dedicationPoints: number;
+    } | null = null;
+    if (user.role === 'volunteer') {
+      const vp = await this.prisma.volunteerProfile.findUnique({
+        where: { userId },
+        select: {
+          rank: true,
+          dedicationPoints: true,
+          specializations: { select: { specialization: true, isVerified: true } },
+        },
+      });
+      if (vp) {
+        volunteer = {
+          specializations: vp.specializations,
+          rank: vp.rank,
+          dedicationPoints: vp.dedicationPoints,
+        };
+      }
+    }
+
+    return { ...user, stats, volunteer };
   }
 
   /** Cập nhật hồ sơ cơ bản: họ tên, số điện thoại, avatar. */
@@ -64,7 +88,7 @@ export class UsersService {
       return user;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw new BadRequestException('Phone number is already in use');
+        throw new BadRequestException('Số điện thoại đã được sử dụng.');
       }
       throw e;
     }
@@ -115,7 +139,7 @@ export class UsersService {
       where: { userId },
       select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
     });
-    if (!receiver) throw new NotFoundException('Receiver profile not found');
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     return {
       enrolled: receiver.faceDescriptor !== null,
@@ -135,18 +159,18 @@ export class UsersService {
     selfiePhoto?: Express.Multer.File,
   ) {
     if (!idCardPhoto && !selfiePhoto) {
-      throw new BadRequestException('A selfie or an ID card photo is required');
+      throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
     }
 
     const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
-    if (!receiver) throw new NotFoundException('Receiver profile not found');
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     let selfieDescriptor: number[] | null = null;
     if (selfiePhoto) {
       selfieDescriptor = await this.faceMatch.getFaceDescriptor(selfiePhoto);
       if (!selfieDescriptor) {
         throw new BadRequestException(
-          'No face detected in the selfie. Please retake with good lighting.',
+          'Không nhận diện được khuôn mặt trong ảnh selfie. Vui lòng chụp lại nơi đủ sáng.',
         );
       }
     }
@@ -156,7 +180,7 @@ export class UsersService {
       idCardDescriptor = await this.faceMatch.getFaceDescriptor(idCardPhoto);
       if (!idCardDescriptor) {
         throw new BadRequestException(
-          'No face detected on the ID card photo. Please retake — keep the card flat and sharp.',
+          'Không nhận diện được khuôn mặt trên ảnh CCCD. Vui lòng chụp lại — đặt thẻ phẳng, rõ nét.',
         );
       }
     }
@@ -167,7 +191,7 @@ export class UsersService {
       const result = this.faceMatch.compare(selfieDescriptor, idCardDescriptor);
       if (!result.matched) {
         throw new BadRequestException(
-          'Selfie does not match the portrait on the ID card. Use your own ID card.',
+          'Ảnh selfie không khớp với ảnh trên CCCD. Vui lòng dùng CCCD của chính bạn.',
         );
       }
       matchDistance = result.distance;

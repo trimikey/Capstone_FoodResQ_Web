@@ -45,7 +45,7 @@ export class QueryListingDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
-  @Max(50)
+  @Max(200)
   @Type(() => Number)
   limit?: number = 20;
 }

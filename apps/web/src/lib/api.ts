@@ -37,8 +37,15 @@ api.interceptors.response.use(
       });
     }
 
+    const refreshToken =
+      typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null;
+
+    // Chưa có refresh token → không gọi refresh (tránh gửi token rỗng), trả lỗi luôn
+    if (!refreshToken) {
+      return Promise.reject(error as Error);
+    }
+
     isRefreshing = true;
-    const refreshToken = localStorage.getItem('refresh_token');
 
     try {
       const { data } = await axios.post<{ data: { accessToken: string; refreshToken: string } }>(

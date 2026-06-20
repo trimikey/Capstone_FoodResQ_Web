@@ -30,6 +30,14 @@ export class CampaignsController {
     return this.campaignsService.myCampaigns(user.id);
   }
 
+  @Get('my-tasks')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: việc bếp ăn đã đăng ký' })
+  myTasks(@CurrentUser() user: User) {
+    return this.campaignsService.myAssignments(user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết chiến dịch' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {

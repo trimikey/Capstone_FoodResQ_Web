@@ -42,7 +42,9 @@ function ListingsPageContent() {
   const [distanceFilter, setDistanceFilter] = useState<number>(5); // Default 5km
   const [timeFilter, setTimeFilter] = useState<'all' | 'soon' | 'today'>('all');
   const [activePill, setActivePill] = useState<string | null>(null);
-  
+  // Dropdown bộ lọc: bấm để mở, bấm ra ngoài/chọn để đóng (không dùng hover để khỏi tự đóng)
+  const [openMenu, setOpenMenu] = useState<'distance' | 'category' | 'time' | null>(null);
+
   // Interactive Map State
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null); // pin đang focus
 
@@ -80,6 +82,7 @@ function ListingsPageContent() {
     radiusKm: distanceFilter,
     search: search.trim() || undefined,
     category: (category as FoodCategory) || undefined,
+    limit: 100, // tải nhiều điểm để bản đồ hiển thị đủ khi zoom ra
   });
 
   // Luôn dùng dữ liệu thật từ API. search/category đã được lọc phía BE (PostGIS);
@@ -203,55 +206,73 @@ function ListingsPageContent() {
             </span>
             
             {/* Distance Filter Dropdown */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'distance' ? null : 'distance')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
                 Khoảng cách: {distanceFilter}km
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[140px]">
-                {[2, 5, 10, 20].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDistanceFilter(d)}
-                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
-                  >
-                    Trong vòng {d}km
-                  </button>
-                ))}
-              </div>
+              {openMenu === 'distance' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[140px]">
+                  {[2, 5, 10, 20, 50].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => { setDistanceFilter(d); setOpenMenu(null); }}
+                      className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${distanceFilter === d ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
+                    >
+                      Trong vòng {d}km
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Category Filter Dropdown */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'category' ? null : 'category')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
                 Danh mục: {category ? CATEGORIES.find(c => c.value === category)?.label : 'Tất cả'}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.value}
-                    onClick={() => setCategory(cat.value)}
-                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
+              {openMenu === 'category' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[160px]">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      onClick={() => { setCategory(cat.value); setOpenMenu(null); }}
+                      className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${category === cat.value ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Pickup Time Filter */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
-                Thời gian nhận
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'time' ? null : 'time')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
+                Thời gian nhận{timeFilter === 'soon' ? ': Sắp hết hạn' : ''}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
-                <button onClick={() => setTimeFilter('all')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Tất cả</button>
-                <button onClick={() => setTimeFilter('soon')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Sắp hết hạn (&lt;2h)</button>
-              </div>
+              {openMenu === 'time' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[160px]">
+                  <button onClick={() => { setTimeFilter('all'); setOpenMenu(null); }} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Tất cả</button>
+                  <button onClick={() => { setTimeFilter('soon'); setOpenMenu(null); }} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Sắp hết hạn (&lt;2h)</button>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Lớp phủ bắt click ra ngoài để đóng dropdown */}
+          {openMenu && <div className="fixed inset-0 z-30" onClick={() => setOpenMenu(null)} />}
 
           {/* Quick pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none pt-2">

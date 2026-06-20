@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
@@ -28,6 +29,16 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.authService.login(dto, ua, ip);
+  }
+
+  @Post('google')
+  @ApiOperation({ summary: 'Login/Register bằng Google ID token' })
+  google(
+    @Body() dto: GoogleLoginDto,
+    @Headers('user-agent') ua: string,
+    @Ip() ip: string,
+  ) {
+    return this.authService.loginWithGoogle(dto.idToken, ua, ip);
   }
 
   @Post('refresh')
