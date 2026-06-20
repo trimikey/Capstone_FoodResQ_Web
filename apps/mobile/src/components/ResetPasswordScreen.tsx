@@ -35,7 +35,7 @@ const COLORS = {
 interface ResetPasswordScreenProps {
   email: string;
   otp: string;
-  onSuccess?: () => void;
+  onSuccess?: (newPassword: string) => void;
   onBack?: () => void;
   isLoading?: boolean;
 }
@@ -92,14 +92,10 @@ export function ResetPasswordScreen({
   const strength = getPasswordStrength(password);
   const passwordsMatch = password === confirmPassword && password.length > 0;
 
-  const onSubmit = async (data: ResetPasswordInput) => {
-    try {
-      clearError();
-      setShowSuccessModal(true);
-      setTimeout(() => onSuccess?.(), 3000);
-    } catch (error) {
-      showError(getErrorMessage(error), 3000);
-    }
+  const onSubmit = (data: ResetPasswordInput) => {
+    clearError();
+    // Container gọi API /auth/reset-password với mật khẩu mới
+    onSuccess?.(data.password);
   };
 
   return (
@@ -409,10 +405,7 @@ export function ResetPasswordScreen({
             </View>
             <Button
               mode="outlined"
-              onPress={() => {
-                setShowSuccessModal(false);
-                onSuccess?.();
-              }}
+              onPress={() => setShowSuccessModal(false)}
               style={{
                 borderRadius: 16,
                 marginTop: 8,

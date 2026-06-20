@@ -2,18 +2,24 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
+import Redis from 'ioredis';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { MailService } from './mail.service';
 import { User } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_DAYS = 30;
+const OTP_TTL_SECONDS = 600; // 10 phút
 
 @Injectable()
 export class AuthService {
@@ -21,6 +27,8 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private mail: MailService,
+    @Inject('REDIS_CLIENT') private redis: Redis,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -119,6 +127,51 @@ export class AuthService {
   async logout(userId: string) {
     await this.prisma.refreshToken.updateMany({
       where: { userId, isRevoked: false },
+      data: { isRevoked: true, revokedAt: new Date() },
+    });
+  }
+
+  // ── Forgot / Reset password (OTP qua email, lưu Redis) ────────────────────
+  private otpKey(email: string) {
+    return `otp:reset:${email.toLowerCase()}`;
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { email, deletedAt: null },
+    });
+
+    // Luôn trả về như nhau để không lộ email có tồn tại hay không
+    if (!user) return;
+
+    const otp = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    await this.redis.set(this.otpKey(email), otp, 'EX', OTP_TTL_SECONDS);
+    await this.mail.sendPasswordResetOtp(email, otp);
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<void> {
+    const key = this.otpKey(email);
+    const stored = await this.redis.get(key);
+
+    if (!stored || stored !== otp) {
+      throw new BadRequestException('Mã OTP không đúng hoặc đã hết hạn');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email, deletedAt: null },
+    });
+    if (!user) throw new BadRequestException('Tài khoản không tồn tại');
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    // Xoá OTP + thu hồi mọi refresh token cũ để bảo mật
+    await this.redis.del(key);
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: user.id, isRevoked: false },
       data: { isRevoked: true, revokedAt: new Date() },
     });
   }

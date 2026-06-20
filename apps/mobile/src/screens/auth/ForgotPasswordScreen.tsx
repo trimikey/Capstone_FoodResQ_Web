@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Toast from 'react-native-toast-message';
 import {
   ForgotPasswordScreen as ForgotPasswordForm,
 } from '../../components/ForgotPasswordScreen';
+import apiClient, { endpoints } from '../../api/client';
+import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface ForgotPasswordScreenProps {
   navigation: any;
@@ -9,12 +12,14 @@ interface ForgotPasswordScreenProps {
 }
 
 /**
- * Forgot Password Screen Container
- * User enters email to receive password reset link
+ * Forgot Password Container — gửi OTP đặt lại mật khẩu qua email,
+ * rồi điều hướng sang màn nhập OTP.
  */
 export default function ForgotPasswordScreen({
   navigation,
 }: ForgotPasswordScreenProps) {
+  const [isLoading, setIsLoading] = useState(false);
+
   const handleBack = () => {
     navigation.goBack();
   };
@@ -23,12 +28,26 @@ export default function ForgotPasswordScreen({
     navigation.navigate('SignIn');
   };
 
-  const handleSuccess = (email: string) => {
-    // After email submitted, navigate to OTP verification
-    navigation.navigate('OtpVerification', {
-      email,
-      type: 'forgot_password',
-    });
+  const handleSuccess = async (email: string) => {
+    try {
+      setIsLoading(true);
+      await apiClient.post(endpoints.auth.forgotPassword, { email });
+
+      Toast.show({
+        type: 'success',
+        text1: 'Đã gửi mã OTP',
+        text2: 'Vui lòng kiểm tra email của bạn',
+      });
+      navigation.navigate('OtpVerification', { email, type: 'forgot_password' });
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Gửi OTP thất bại',
+        text2: getErrorMessage(error),
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -36,7 +55,7 @@ export default function ForgotPasswordScreen({
       onSuccess={handleSuccess}
       onBack={handleBack}
       onNavigateToSignIn={handleNavigateToSignIn}
-      isLoading={false}
+      isLoading={isLoading}
     />
   );
 }

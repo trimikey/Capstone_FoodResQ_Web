@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
+import Toast from 'react-native-toast-message';
 import OtpVerificationScreenComponent from '../../components/OtpVerificationScreen';
+import apiClient, { endpoints } from '../../api/client';
+import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface OtpVerificationScreenProps {
   navigation: any;
@@ -34,10 +37,17 @@ export default function OtpVerificationScreen({
   const handleResend = async () => {
     try {
       setIsLoading(true);
-      // TODO: POST /auth/resend-otp
-      console.log('OTP resent to:', email);
+      // Backend không có endpoint resend riêng — gọi lại forgot-password để sinh OTP mới
+      if (type === 'forgot_password' && email) {
+        await apiClient.post(endpoints.auth.forgotPassword, { email });
+      }
+      Toast.show({ type: 'success', text1: 'Đã gửi lại mã OTP' });
     } catch (error) {
-      console.error('Resend OTP error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Gửi lại OTP thất bại',
+        text2: getErrorMessage(error),
+      });
     } finally {
       setIsLoading(false);
     }

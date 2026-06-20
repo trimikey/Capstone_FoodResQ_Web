@@ -157,6 +157,8 @@ export const endpoints = {
     refresh: '/auth/refresh',
     logout: '/auth/logout',
     me: '/auth/me',
+    forgotPassword: '/auth/forgot-password',
+    resetPassword: '/auth/reset-password',
   },
   listings: {
     search: '/listings',
