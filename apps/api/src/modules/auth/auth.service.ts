@@ -237,7 +237,12 @@ export class AuthService {
   ): Promise<User> {
     // email NOT NULL: user chỉ đăng nhập bằng phone → sinh email placeholder duy nhất theo uid
     const email = identity.email ?? `${identity.uid}@phone.foodresq.local`;
-    const fullName = identity.name ?? email.split('@')[0] ?? 'Người dùng FoodResQ';
+    // Ưu tiên tên từ provider (Google); user phone-only không có tên → đặt theo 4 số cuối SĐT
+    const fullName =
+      identity.name ??
+      (phone ? `Người dùng ${phone.slice(-4)}` : null) ??
+      (identity.email ? identity.email.split('@')[0] : null) ??
+      'Người dùng FoodResQ';
     // passwordHash NOT NULL: tài khoản social/phone không dùng mật khẩu → hash chuỗi ngẫu nhiên không thể đăng nhập
     const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
 

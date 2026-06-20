@@ -109,7 +109,9 @@ export const otpVerificationSchema = z.object({
     .string()
     .length(6, 'OTP must be 6 digits')
     .regex(/^\d+$/, 'OTP must contain only numbers'),
-  email: z.string().email('Invalid email'),
+  // email/phone là metadata truyền qua prop (không bắt buộc) — verify thực ở backend/Firebase.
+  // Không validate ở đây để luồng phone_login (không có email) submit được.
+  email: z.string().optional(),
 });
 
 export type OtpVerificationInput = z.infer<typeof otpVerificationSchema>;
