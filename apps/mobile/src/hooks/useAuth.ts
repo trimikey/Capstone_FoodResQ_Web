@@ -13,6 +13,7 @@ export function useAuth() {
     error,
     isInitialized,
     login,
+    loginWithFirebase,
     register,
     logout,
     initialize,
@@ -33,6 +34,7 @@ export function useAuth() {
 
     // Methods
     login,
+    loginWithFirebase,
     register,
     logout,
     initialize,

@@ -145,3 +145,12 @@ export const forgotPasswordSchema = z.object({
 });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+// Đăng nhập bằng số điện thoại VN (0xxxxxxxxx) — chuẩn hoá về E.164 trước khi gửi Firebase.
+export const phoneSignInSchema = z.object({
+  phone: z
+    .string()
+    .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại không hợp lệ (vd 0912345678)'),
+});
+
+export type PhoneSignInInput = z.infer<typeof phoneSignInSchema>;

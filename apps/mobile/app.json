@@ -9,10 +9,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.foodresq.mobile"
+      "bundleIdentifier": "com.foodresq.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.foodresq.mobile",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/Logo_FoodResQ.png",
         "backgroundColor": "#ffffff"
@@ -25,7 +27,18 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-image"
+      "expo-image",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

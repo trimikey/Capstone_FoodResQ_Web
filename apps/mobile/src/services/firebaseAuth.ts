@@ -1,0 +1,92 @@
+import auth, {
+  type FirebaseAuthTypes,
+} from '@react-native-firebase/auth';
+import {
+  GoogleSignin,
+  statusCodes,
+  isErrorWithCode,
+} from '@react-native-google-signin/google-signin';
+
+/**
+ * Web client ID (OAuth 2.0) của Firebase — lấy từ google-services.json
+ * (oauth_client có client_type = 3) hoặc Firebase Console → Authentication → Google.
+ * Đặt trong .env: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+ */
+const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
+
+let configured = false;
+function ensureConfigured() {
+  if (configured) return;
+  GoogleSignin.configure({ webClientId: WEB_CLIENT_ID });
+  configured = true;
+}
+
+/** Người dùng bấm huỷ hộp thoại đăng nhập — phân biệt với lỗi thật để không hiện toast lỗi. */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super('cancelled');
+    this.name = 'AuthCancelledError';
+  }
+}
+
+/**
+ * Đăng nhập Google → trả về Firebase ID token để gửi backend /auth/firebase.
+ */
+export async function signInWithGoogle(): Promise<string> {
+  ensureConfigured();
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+  let googleIdToken: string | null;
+  try {
+    const result = await GoogleSignin.signIn();
+    // v13+: { type: 'success' | 'cancelled', data }
+    if (result.type === 'cancelled') throw new AuthCancelledError();
+    googleIdToken = result.data?.idToken ?? null;
+  } catch (err) {
+    if (isErrorWithCode(err) && err.code === statusCodes.SIGN_IN_CANCELLED) {
+      throw new AuthCancelledError();
+    }
+    throw err;
+  }
+
+  if (!googleIdToken) throw new Error('Không lấy được Google ID token');
+
+  const credential = auth.GoogleAuthProvider.credential(googleIdToken);
+  const userCredential = await auth().signInWithCredential(credential);
+  return userCredential.user.getIdToken();
+}
+
+// Giữ confirmation giữa màn nhập SĐT và màn nhập OTP (object không serialize qua navigation params).
+let pendingConfirmation: FirebaseAuthTypes.ConfirmationResult | null = null;
+
+/** Chuẩn hoá SĐT VN 0xxxxxxxxx → E.164 +84xxxxxxxxx cho Firebase. */
+export function toE164(phoneVn: string): string {
+  return phoneVn.startsWith('0') ? `+84${phoneVn.slice(1)}` : phoneVn;
+}
+
+/** Gửi OTP tới số điện thoại (nhận dạng 0xxxxxxxxx). */
+export async function signInWithPhone(phoneVn: string): Promise<void> {
+  pendingConfirmation = await auth().signInWithPhoneNumber(toE164(phoneVn));
+}
+
+/**
+ * Xác nhận mã OTP phone → trả về Firebase ID token để gửi backend /auth/firebase.
+ */
+export async function confirmPhoneCode(code: string): Promise<string> {
+  if (!pendingConfirmation) throw new Error('Phiên OTP đã hết hạn, vui lòng gửi lại mã');
+  const userCredential = await pendingConfirmation.confirm(code);
+  if (!userCredential) throw new Error('Mã OTP không đúng');
+  const token = await userCredential.user.getIdToken();
+  pendingConfirmation = null;
+  return token;
+}
+
+/** Đăng xuất khỏi Firebase + Google (gọi kèm khi logout app). */
+export async function signOutFirebase(): Promise<void> {
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // bỏ qua nếu chưa từng đăng nhập Google
+  }
+  if (auth().currentUser) await auth().signOut();
+}

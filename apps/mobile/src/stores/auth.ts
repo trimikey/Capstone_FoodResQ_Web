@@ -4,6 +4,7 @@ import apiClient, {
   ApiResponse,
   ApiUser,
   LoginResponse,
+  FirebaseAuthResponse,
   endpoints,
 } from '../api/client';
 import { LoginInput, RegisterInput } from '../utils/validators';
@@ -40,6 +41,7 @@ export interface AuthState {
   // Actions
   initialize: () => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
+  loginWithFirebase: (idToken: string, role?: string) => Promise<boolean>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   restoreToken: () => Promise<void>;
@@ -128,6 +130,39 @@ export const useAuthStore = create<AuthState>((set) => ({
       } else {
         throw new Error(response.data.error?.message || 'Login failed');
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'An error occurred';
+      set({ error: message, isLoading: false });
+      throw error;
+    }
+  },
+
+  // Đăng nhập qua Firebase (Google / Phone OTP). Trả về isNewUser.
+  loginWithFirebase: async (idToken: string, role?: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      const response = await apiClient.post<ApiResponse<FirebaseAuthResponse>>(
+        endpoints.auth.firebase,
+        { idToken, ...(role ? { role } : {}) }
+      );
+
+      if (response.data.success) {
+        const { accessToken, refreshToken, user, isNewUser } = response.data.data;
+
+        await AsyncStorage.setItem('accessToken', accessToken);
+        await AsyncStorage.setItem('refreshToken', refreshToken);
+
+        set({
+          user: normalizeUser(user),
+          accessToken,
+          refreshToken,
+          isLoading: false,
+        });
+        return isNewUser;
+      }
+      throw new Error(response.data.error?.message || 'Đăng nhập Firebase thất bại');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'An error occurred';
