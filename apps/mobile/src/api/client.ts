@@ -148,6 +148,14 @@ export interface LoginResponse {
 }
 
 /**
+ * Firebase auth response — như LoginResponse nhưng kèm cờ tài khoản mới
+ * (để app điều hướng hoàn thiện hồ sơ/role).
+ */
+export interface FirebaseAuthResponse extends LoginResponse {
+  isNewUser: boolean;
+}
+
+/**
  * API endpoints
  */
 export const endpoints = {
@@ -159,6 +167,7 @@ export const endpoints = {
     me: '/auth/me',
     forgotPassword: '/auth/forgot-password',
     resetPassword: '/auth/reset-password',
+    firebase: '/auth/firebase',
   },
   listings: {
     search: '/listings',

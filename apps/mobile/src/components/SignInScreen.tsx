@@ -23,6 +23,7 @@ import { useAuth } from '../hooks/useAuth';
 import ErrorToast from './ErrorToast';
 import { AppImage } from './ui/AppImage';
 import { FadeInUp, FadeInView } from './ui/Motion';
+import { signInWithGoogle, AuthCancelledError } from '../services/firebaseAuth';
 
 const COLORS = {
   primary: '#10b981',
@@ -39,19 +40,40 @@ interface SignInScreenProps {
   onSignInSuccess?: (user: any) => void;
   onNavigateToSignUp?: () => void;
   onNavigateToForgotPassword?: () => void;
+  onNavigateToPhoneSignIn?: () => void;
 }
 
 export function SignInScreen({
   onSignInSuccess,
   onNavigateToSignUp,
   onNavigateToForgotPassword,
+  onNavigateToPhoneSignIn,
 }: SignInScreenProps) {
   const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
-  const { login } = useAuth();
+  const { login, loginWithFirebase } = useAuth();
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleLoading(true);
+      const idToken = await signInWithGoogle();
+      await loginWithFirebase(idToken);
+      onSignInSuccess?.(undefined);
+    } catch (err) {
+      if (err instanceof AuthCancelledError) return; // người dùng huỷ — không báo lỗi
+      Toast.show({
+        type: 'error',
+        text1: 'Đăng nhập Google thất bại',
+        text2: getErrorMessage(err),
+      });
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const {
     control,
@@ -391,10 +413,8 @@ export function SignInScreen({
         >
           {/* Google Button */}
           <Pressable
-            onPress={() => {
-              // TODO: Implement OAuth Google
-            }}
-            disabled={isLoading}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading || googleLoading}
             style={({ pressed }) => ({
               flex: 1,
               height: 52,
@@ -405,16 +425,20 @@ export function SignInScreen({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
-              opacity: pressed ? 0.7 : 1,
+              opacity: pressed || googleLoading ? 0.7 : 1,
             })}
           >
-            <AppImage
-              source={{
-                uri: 'https://www.google.com/images/branding/googleg/1x/googleg_standard_color_128dp.png',
-              }}
-              style={{ width: 20, height: 20 }}
-              contentFit="contain"
-            />
+            {googleLoading ? (
+              <ActivityIndicator size={20} color={COLORS.primary} />
+            ) : (
+              <AppImage
+                source={{
+                  uri: 'https://www.google.com/images/branding/googleg/1x/googleg_standard_color_128dp.png',
+                }}
+                style={{ width: 20, height: 20 }}
+                contentFit="contain"
+              />
+            )}
             <Text
               style={{
                 fontSize: 14,
@@ -426,12 +450,10 @@ export function SignInScreen({
             </Text>
           </Pressable>
 
-          {/* Facebook Button */}
+          {/* Phone Button (Facebook để Phase 2) */}
           <Pressable
-            onPress={() => {
-              // TODO: Implement OAuth Facebook
-            }}
-            disabled={isLoading}
+            onPress={onNavigateToPhoneSignIn}
+            disabled={isLoading || googleLoading}
             style={({ pressed }) => ({
               flex: 1,
               height: 52,
@@ -445,15 +467,7 @@ export function SignInScreen({
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            {/* Facebook Icon SVG */}
-            <View
-              style={{
-                width: 24,
-                height: 24,
-                backgroundColor: '#1877F2',
-                borderRadius: 2,
-              }}
-            />
+            <Text style={{ fontSize: 18 }}>📱</Text>
             <Text
               style={{
                 fontSize: 14,
@@ -461,7 +475,7 @@ export function SignInScreen({
                 color: COLORS.onSurface,
               }}
             >
-              Facebook
+              Số điện thoại
             </Text>
           </Pressable>
         </View>

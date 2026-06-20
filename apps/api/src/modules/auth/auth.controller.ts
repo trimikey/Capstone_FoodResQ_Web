@@ -6,6 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
@@ -48,6 +49,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke all refresh tokens for current user' })
   logout(@CurrentUser() user: User) {
     return this.authService.logout(user.id);
+  }
+
+  @Post('firebase')
+  @ApiOperation({ summary: 'Đăng nhập/đăng ký qua Firebase (Google, Phone OTP)' })
+  firebase(
+    @Body() dto: FirebaseAuthDto,
+    @Headers('user-agent') ua: string,
+    @Ip() ip: string,
+  ) {
+    return this.authService.loginWithFirebase(dto.idToken, dto.role, ua, ip);
   }
 
   @Post('forgot-password')

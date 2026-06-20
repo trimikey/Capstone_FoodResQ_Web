@@ -4,3 +4,10 @@ web-build/
 expo-env.d.ts
 *.log
 .DS_Store
+
+# Firebase iOS config (chưa dùng — thêm lại khi build iOS)
+GoogleService-Info.plist
+
+# Native dirs sinh ra khi prebuild/run local
+/android
+/ios
