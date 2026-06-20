@@ -10,6 +10,9 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
 import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
+import { GoogleLogin } from "@react-oauth/google";
+
+const GOOGLE_ENABLED = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ"),
@@ -35,6 +38,7 @@ const registerSchema = z.object({
   providerAddress: z.string().optional(),
   
   // Volunteer fields
+  volunteerRole: z.string().optional(),
   vehicle: z.string().optional(),
   supportArea: z.string().optional(),
   
@@ -135,6 +139,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       storeName: "",
       foodCategory: "Đồ tươi sống",
       providerAddress: "",
+      volunteerRole: "shipper",
       vehicle: "Xe máy",
       supportArea: "",
       receiverAddress: "",
@@ -168,19 +173,65 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
       toast.success("Đăng nhập thành công!");
-      // Điều hướng theo vai trò
+      let redirectUrl = '/listings';
       const role = res.data.data.user.role;
-      router.push(
-        role === 'admin' ? '/admin'
-        : role === 'provider' ? '/provider'
-        : role === 'volunteer' ? '/deliveries'
-        : '/listings',
-      );
+      if (role === 'admin') redirectUrl = '/admin';
+      else if (role === 'provider') redirectUrl = '/provider';
+      else if (role === 'volunteer') {
+        try {
+          const volRes = await api.get('/volunteers/me');
+          const specs = volRes.data?.data?.specializations || [];
+          const isChefOrWaiter = specs.some((s: any) => s.specialization === 'chef' || s.specialization === 'waiter');
+          redirectUrl = isChefOrWaiter ? '/campaigns' : '/deliveries';
+        } catch (e) {
+          redirectUrl = '/deliveries';
+        }
+      }
+      router.push(redirectUrl);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message ?? "Đăng nhập thất bại. Kiểm tra lại email hoặc mật khẩu.";
       setErrorMessage(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const redirectByRole = async (role: string) => {
+    let redirectUrl = '/listings';
+    if (role === 'admin') redirectUrl = '/admin';
+    else if (role === 'provider') redirectUrl = '/provider';
+    else if (role === 'volunteer') {
+      try {
+        const volRes = await api.get('/volunteers/me');
+        const specs = volRes.data?.data?.specializations || [];
+        const isChefOrWaiter = specs.some((s: any) => s.specialization === 'chef' || s.specialization === 'waiter');
+        redirectUrl = isChefOrWaiter ? '/campaigns' : '/deliveries';
+      } catch (e) {
+        redirectUrl = '/deliveries';
+      }
+    }
+    router.push(redirectUrl);
+  };
+
+  const handleGoogleCredential = async (idToken: string) => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await api.post<{
+        data: { accessToken: string; refreshToken: string; user: Parameters<typeof setUser>[0] };
+      }>('/auth/google', { idToken });
+      setTokens(res.data.data.accessToken, res.data.data.refreshToken);
+      setUser(res.data.data.user);
+      toast.success('Đăng nhập Google thành công!');
+      redirectByRole(res.data.data.user.role);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Đăng nhập Google thất bại.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -211,6 +262,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               ? data.receiverAddress || undefined
               : undefined,
         vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
+        volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
       });
       toast.success("Đăng ký thành công!");
 
@@ -241,7 +293,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   return (
-    <main className="min-h-screen flex flex-col md:flex-row bg-surface">
+    <main className="min-h-screen flex flex-col md:flex-row bg-[#FAFBF9]">
       {/* Left Section: Visual & Branding (60% Desktop) */}
       <section className="relative hidden md:flex md:w-[60%] lg:w-[65%] min-h-screen items-center justify-center overflow-hidden">
         {/* Background Image */}
@@ -252,33 +304,34 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
             src="https://lh3.googleusercontent.com/aida-public/AB6AXuDDhq1Fly7FtAtk6JjL7x3SSYsGKCiFo2Qxp2OYGYZa59Guab_dPnBOL5MLdqDBcdiCOi2HlT7NgndHTz3XocA3f0tAWc01oiul3OZBR-gxTHI8L1GGY-iyUmXIG_e9HxrYJqlihHln2mwzrO-g49jZreyImS2VYkdTgQ123TKE7BWI7Pu904JrrmMycFxyZh6BpD8F_RbjNpR3whR-8jYOVXrQg8vVP1-m3l84qohZRXsYvVflYKDUolGe1lHqWbaMLDk6PEJ2UXT5"
           />
           {/* Soft Green Overlay */}
-          <div className="absolute inset-0 bg-primary/20 backdrop-blur-[2px]"></div>
+          <div className="absolute inset-0 bg-emerald-800/20 backdrop-blur-[2px]"></div>
           {/* Gradient Fade */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent to-surface/40"></div>
         </div>
         
         {/* Branding and Value Proposition */}
-        <div className="relative z-10 p-xl max-w-[576px] text-white drop-shadow-lg">
-          <div className="mb-lg">
-            <h1 className="font-headline-lg text-headline-lg text-primary-container italic tracking-tight">FoodResQ</h1>
-            <div className="h-1 w-16 bg-primary-container rounded-full mt-2"></div>
+        <div className="relative z-10 p-12 max-w-[576px] text-white drop-shadow-lg">
+          <div className="mb-8">
+            <h1 className="font-bold text-4xl text-emerald-400 italic tracking-tight">FoodResQ</h1>
+            <div className="h-1 w-16 bg-emerald-100 rounded-full mt-2"></div>
           </div>
-          <h2 className="font-headline-lg text-headline-lg mb-md leading-tight">Mọi bữa ăn đều đáng trân trọng.</h2>
-          <p className="font-body-lg text-body-lg opacity-90 leading-relaxed">
+đầu bếp
+          <h2 className="font-bold text-4xl mb-6 leading-tight">Mọi bữa ăn đều đáng trân trọng.</h2>
+          <p className="font-medium text-lg opacity-90 leading-relaxed">
             Tham gia cùng hàng ngàn người hàng xóm chia sẻ thực phẩm dư thừa, giảm thiểu lãng phí và xây dựng một cộng đồng gắn kết hơn.
           </p>
           
           {/* Community Progress Snippet */}
-          <div className="mt-xl p-lg bg-white/10 backdrop-blur-md rounded-xl border border-white/20 inline-block w-full max-w-sm">
-            <div className="flex items-center gap-md mb-sm">
-              <span className="material-symbols-outlined text-primary-container" style={{ fontVariationSettings: "'FILL' 1" }}>
+          <div className="mt-12 p-8 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 inline-block w-full max-w-sm">
+            <div className="flex items-center gap-6 mb-4">
+              <span className="material-symbols-outlined text-emerald-100" style={{ fontVariationSettings: "'FILL' 1" }}>
                 volunteer_activism
               </span>
-              <span className="font-label-lg text-label-lg">12,450+ bữa ăn đã được cứu</span>
+              <span className="font-semibold text-base">12,450+ bữa ăn đã được cứu</span>
             </div>
             <div className="w-full bg-white/20 h-3 rounded-full overflow-hidden">
               <div 
-                className="bg-primary-container h-full rounded-full shadow-[0_0_15px_rgba(157,234,152,0.5)] transition-all duration-1000"
+                className="bg-emerald-100 h-full rounded-full shadow-[0_0_15px_rgba(157,234,152,0.5)] transition-all duration-1000"
                 style={{ width: "85%" }}
               ></div>
             </div>
@@ -287,31 +340,31 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       </section>
 
       {/* Right Section: Authentication Form (40% Desktop) */}
-      <section className="flex-1 bg-surface flex flex-col px-container-margin md:px-xl py-xl justify-center items-center overflow-y-auto">
+      <section className="flex-1 bg-[#FAFBF9] flex flex-col px-6 md:px-12 py-12 justify-center items-center overflow-y-auto">
         <div className="w-full max-w-[440px] my-auto">
           {/* Mobile Branding (Logo only visible on mobile) */}
-          <div className="md:hidden mb-xl text-center">
-            <h1 className="font-headline-lg text-headline-lg text-primary italic tracking-tight">FoodResQ</h1>
-            <p className="text-on-surface-variant text-label-lg mt-xs">Kết nối cộng đồng, giảm thiểu lãng phí</p>
+          <div className="md:hidden mb-12 text-center">
+            <h1 className="font-bold text-4xl text-emerald-800 italic tracking-tight">FoodResQ</h1>
+            <p className="text-neutral-500 text-base mt-2">Kết nối cộng đồng, giảm thiểu lãng phí</p>
           </div>
 
           {/* Form Header & Toggle */}
           <div className="mb-8">
-            <h2 className="font-headline-md text-headline-md text-on-surface mb-2">
+            <h2 className="font-bold text-2xl text-neutral-800 mb-2">
               {activeTab === "login" ? "Chào mừng bạn!" : "Đăng ký thành viên"}
             </h2>
-            <p className="text-on-surface-variant font-body-md mb-6">
+            <p className="text-neutral-500 font-medium mb-6">
               {activeTab === "login" 
                 ? "Hãy bắt đầu hành trình chia sẻ thực phẩm ngay hôm nay." 
                 : "Tạo tài khoản để tham gia mạng lưới cứu trợ thực phẩm."}
             </p>
             
             {/* Toggle Switch */}
-            <div className="flex p-1 bg-surface-container-low rounded-full border border-outline-variant/30 relative">
+            <div className="flex p-1 bg-neutral-100 rounded-full border border-neutral-200/30 relative">
               <button
                 type="button"
-                className={`flex-1 py-2.5 font-label-lg text-label-lg rounded-full transition-all duration-300 relative z-10 ${
-                  activeTab === "login" ? "text-primary font-bold" : "text-on-surface-variant hover:text-on-surface"
+                className={`flex-1 py-2.5 font-semibold text-base rounded-full transition-all duration-300 relative z-10 ${
+                  activeTab === "login" ? "text-emerald-800 font-bold" : "text-neutral-500 hover:text-neutral-800"
                 }`}
                 onClick={() => {
                   setActiveTab("login");
@@ -325,8 +378,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               </button>
               <button
                 type="button"
-                className={`flex-1 py-2.5 font-label-lg text-label-lg rounded-full transition-all duration-300 relative z-10 ${
-                  activeTab === "register" ? "text-primary font-bold" : "text-on-surface-variant hover:text-on-surface"
+                className={`flex-1 py-2.5 font-semibold text-base rounded-full transition-all duration-300 relative z-10 ${
+                  activeTab === "register" ? "text-emerald-800 font-bold" : "text-neutral-500 hover:text-neutral-800"
                 }`}
                 onClick={() => {
                   setActiveTab("register");
@@ -340,12 +393,12 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               </button>
               
               {/* Sliding Background Indicator */}
-              <motion.div
-                layoutId="activeTabIndicator"
-                className="absolute top-1 bottom-1 left-1 rounded-full bg-white shadow-sm border border-outline-variant/10"
-                style={{ width: "calc(50% - 4px)" }}
-                animate={{ x: activeTab === "login" ? 0 : "100%" }}
-                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              <div
+                className="absolute top-1 bottom-1 rounded-full bg-white shadow-sm border border-neutral-200/10 transition-all duration-300 ease-out"
+                style={{ 
+                  width: "calc(50% - 4px)",
+                  left: activeTab === "login" ? "4px" : "50%"
+                }}
               />
             </div>
           </div>
@@ -357,9 +410,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="mb-md p-md bg-error-container text-on-error-container text-label-lg rounded-xl flex items-start gap-sm border border-error/20"
+                className="mb-6 p-6 bg-rose-50 text-rose-700 text-base rounded-xl flex items-start gap-4 border border-error/20"
               >
-                <span className="material-symbols-outlined text-error">error</span>
+                <span className="material-symbols-outlined text-rose-600">error</span>
                 <span>{errorMessage}</span>
               </motion.div>
             )}
@@ -369,9 +422,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="mb-md p-md bg-primary-container text-on-primary-container text-label-lg rounded-xl flex items-start gap-sm border border-primary/20"
+                className="mb-6 p-6 bg-emerald-800 text-white text-base rounded-xl flex items-start gap-4 border border-primary/20"
               >
-                <span className="material-symbols-outlined text-primary">check_circle</span>
+                <span className="material-symbols-outlined text-emerald-800">check_circle</span>
                 <span>{successMessage}</span>
               </motion.div>
             )}
@@ -392,7 +445,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 >
                   {/* Input: Email/Username */}
                   <div className="space-y-1.5">
-                    <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="login-email">
+                    <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="login-email">
                       Email
                     </label>
                     <div className="relative">
@@ -403,25 +456,25 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         id="login-email"
                         type="email"
                         placeholder="example@email.com"
-                        className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                          loginErrors.email ? "border-error" : "border-outline-variant/30"
+                        className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                          loginErrors.email ? "border-error" : "border-neutral-200/30"
                         }`}
                         disabled={isSubmitting}
                         {...registerLogin("email")}
                       />
                     </div>
                     {loginErrors.email && (
-                      <p className="text-error text-label-sm ml-1 mt-xs">{loginErrors.email.message}</p>
+                      <p className="text-rose-600 text-sm ml-1 mt-2">{loginErrors.email.message}</p>
                     )}
                   </div>
 
                   {/* Input: Password */}
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center px-1">
-                      <label className="font-label-lg text-label-lg text-on-surface-variant" htmlFor="login-password">
+                      <label className="font-semibold text-base text-neutral-500" htmlFor="login-password">
                         Mật khẩu
                       </label>
-                      <a className="font-label-sm text-label-sm text-primary font-bold hover:underline" href="#">
+                      <a className="font-medium text-sm text-emerald-800 font-bold hover:underline" href="#">
                         Quên mật khẩu?
                       </a>
                     </div>
@@ -433,8 +486,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         id="login-password"
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
-                        className={`w-full pl-12 pr-12 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                          loginErrors.password ? "border-error" : "border-outline-variant/30"
+                        className={`w-full pl-12 pr-12 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                          loginErrors.password ? "border-error" : "border-neutral-200/30"
                         }`}
                         disabled={isSubmitting}
                         {...registerLogin("password")}
@@ -442,7 +495,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface transition-colors"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-neutral-800 transition-colors"
                       >
                         <span className="material-symbols-outlined select-none">
                           {showPassword ? "visibility_off" : "visibility"}
@@ -450,7 +503,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       </button>
                     </div>
                     {loginErrors.password && (
-                      <p className="text-error text-label-sm ml-1 mt-xs">{loginErrors.password.message}</p>
+                      <p className="text-rose-600 text-sm ml-1 mt-2">{loginErrors.password.message}</p>
                     )}
                   </div>
 
@@ -459,11 +512,11 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                     <input
                       id="remember"
                       type="checkbox"
-                      className="w-5 h-5 rounded border-2 border-outline-variant text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer"
+                      className="w-5 h-5 rounded border-2 border-neutral-200 text-emerald-800 focus:ring-emerald-600 focus:ring-offset-0 cursor-pointer"
                       disabled={isSubmitting}
                       {...registerLogin("remember")}
                     />
-                    <label className="font-body-md text-on-surface-variant select-none cursor-pointer" htmlFor="remember">
+                    <label className="font-medium text-neutral-500 select-none cursor-pointer" htmlFor="remember">
                       Ghi nhớ đăng nhập
                     </label>
                   </div>
@@ -471,7 +524,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                   {/* Primary Action */}
                   <button
                     type="submit"
-                    className="squishy-button w-full py-3 bg-primary-container text-on-primary-container font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={isSubmitting}
                   >
                     {isSubmitting ? (
@@ -499,13 +552,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 >
                   {/* Progress Indicator */}
                   <div className="flex items-center justify-between mb-6 px-1 text-sm">
-                    <div className={`flex items-center gap-2 ${registerStep === 1 ? "text-primary font-bold" : "text-on-surface-variant/70"}`}>
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${registerStep === 1 ? "bg-primary text-white" : "bg-primary-container text-on-primary-container"}`}>1</span>
+                    <div className={`flex items-center gap-2 ${registerStep === 1 ? "text-emerald-800 font-bold" : "text-neutral-500/70"}`}>
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${registerStep === 1 ? "bg-emerald-800 text-white" : "bg-emerald-800 text-white"}`}>1</span>
                       <span>Tài khoản & Vai trò</span>
                     </div>
                     <div className="flex-1 h-0.5 mx-3 bg-outline-variant/30"></div>
-                    <div className={`flex items-center gap-2 ${registerStep === 2 ? "text-primary font-bold" : "text-on-surface-variant/70"}`}>
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${registerStep === 2 ? "bg-primary text-white" : "bg-surface-container text-on-surface-variant"}`}>2</span>
+                    <div className={`flex items-center gap-2 ${registerStep === 2 ? "text-emerald-800 font-bold" : "text-neutral-500/70"}`}>
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${registerStep === 2 ? "bg-emerald-800 text-white" : "bg-neutral-200 text-neutral-500"}`}>2</span>
                       <span>Thông tin chi tiết</span>
                     </div>
                   </div>
@@ -515,7 +568,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       {/* Step 1 Fields */}
                       {/* Input: Full Name */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="reg-fullname">
+                        <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="reg-fullname">
                           Họ và tên
                         </label>
                         <div className="relative">
@@ -526,21 +579,21 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-fullname"
                             type="text"
                             placeholder="Nguyễn Văn A"
-                            className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                              registerErrors.fullName ? "border-error" : "border-outline-variant/30"
+                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.fullName ? "border-error" : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("fullName")}
                           />
                         </div>
                         {registerErrors.fullName && (
-                          <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.fullName.message}</p>
+                          <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.fullName.message}</p>
                         )}
                       </div>
 
                       {/* Input: Email */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="reg-email">
+                        <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="reg-email">
                           Email
                         </label>
                         <div className="relative">
@@ -551,21 +604,21 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-email"
                             type="email"
                             placeholder="example@email.com"
-                            className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                              registerErrors.email ? "border-error" : "border-outline-variant/30"
+                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.email ? "border-error" : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("email")}
                           />
                         </div>
                         {registerErrors.email && (
-                          <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.email.message}</p>
+                          <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.email.message}</p>
                         )}
                       </div>
 
                       {/* Input: Phone */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="reg-phone">
+                        <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="reg-phone">
                           Số điện thoại
                         </label>
                         <div className="relative">
@@ -576,71 +629,71 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-phone"
                             type="text"
                             placeholder="0912345678"
-                            className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                              registerErrors.phone ? "border-error" : "border-outline-variant/30"
+                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.phone ? "border-error" : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("phone")}
                           />
                         </div>
                         {registerErrors.phone && (
-                          <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.phone.message}</p>
+                          <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.phone.message}</p>
                         )}
                       </div>
 
                       {/* Input: Role Selection */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1">
+                        <label className="font-semibold text-base text-neutral-500 ml-1">
                           Vai trò tham gia
                         </label>
                         <div className="grid grid-cols-3 gap-3">
                           <button
                             type="button"
                             onClick={() => setRegisterValue("role", "receiver")}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-surface-container-low text-center ${
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-neutral-100 text-center ${
                               selectedRole === "receiver" 
-                                ? "border-primary bg-primary/5 text-primary" 
-                                : "border-outline-variant/30 text-on-surface-variant"
+                                ? "border-primary bg-emerald-800/5 text-emerald-800" 
+                                : "border-neutral-200/30 text-neutral-500"
                             }`}
                             disabled={isSubmitting}
                           >
                             <span className="material-symbols-outlined mb-1">person_pin</span>
-                            <span className="font-label-sm text-[11px] leading-tight font-semibold">Người Nhận</span>
+                            <span className="font-medium text-[11px] leading-tight font-semibold">Người Nhận</span>
                           </button>
                           
                           <button
                             type="button"
                             onClick={() => setRegisterValue("role", "provider")}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-surface-container-low text-center ${
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-neutral-100 text-center ${
                               selectedRole === "provider" 
-                                ? "border-primary bg-primary/5 text-primary" 
-                                : "border-outline-variant/30 text-on-surface-variant"
+                                ? "border-primary bg-emerald-800/5 text-emerald-800" 
+                                : "border-neutral-200/30 text-neutral-500"
                             }`}
                             disabled={isSubmitting}
                           >
                             <span className="material-symbols-outlined mb-1">storefront</span>
-                            <span className="font-label-sm text-[11px] leading-tight font-semibold">Cửa Hàng</span>
+                            <span className="font-medium text-[11px] leading-tight font-semibold">Cửa Hàng</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setRegisterValue("role", "volunteer")}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-surface-container-low text-center ${
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-neutral-100 text-center ${
                               selectedRole === "volunteer" 
-                                ? "border-primary bg-primary/5 text-primary" 
-                                : "border-outline-variant/30 text-on-surface-variant"
+                                ? "border-primary bg-emerald-800/5 text-emerald-800" 
+                                : "border-neutral-200/30 text-neutral-500"
                             }`}
                             disabled={isSubmitting}
                           >
                             <span className="material-symbols-outlined mb-1">volunteer_activism</span>
-                            <span className="font-label-sm text-[11px] leading-tight font-semibold">Tình Nguyện</span>
+                            <span className="font-medium text-[11px] leading-tight font-semibold">Tình Nguyện</span>
                           </button>
                         </div>
                       </div>
 
                       {/* Input: Password */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="reg-password">
+                        <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="reg-password">
                           Mật khẩu
                         </label>
                         <div className="relative">
@@ -651,8 +704,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-password"
                             type={showPassword ? "text" : "password"}
                             placeholder="••••••••"
-                            className={`w-full pl-12 pr-12 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                              registerErrors.password ? "border-error" : "border-outline-variant/30"
+                            className={`w-full pl-12 pr-12 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.password ? "border-error" : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("password")}
@@ -660,7 +713,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface transition-colors"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-neutral-800 transition-colors"
                           >
                             <span className="material-symbols-outlined select-none">
                               {showPassword ? "visibility_off" : "visibility"}
@@ -668,13 +721,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           </button>
                         </div>
                         {registerErrors.password && (
-                          <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.password.message}</p>
+                          <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.password.message}</p>
                         )}
                       </div>
 
                       {/* Input: Confirm Password */}
                       <div className="space-y-1.5">
-                        <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="reg-confirmpass">
+                        <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="reg-confirmpass">
                           Xác nhận mật khẩu
                         </label>
                         <div className="relative">
@@ -685,8 +738,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-confirmpass"
                             type={showConfirmPassword ? "text" : "password"}
                             placeholder="••••••••"
-                            className={`w-full pl-12 pr-12 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                              registerErrors.confirmPassword ? "border-error" : "border-outline-variant/30"
+                            className={`w-full pl-12 pr-12 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.confirmPassword ? "border-error" : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("confirmPassword")}
@@ -694,7 +747,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           <button
                             type="button"
                             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface transition-colors"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant hover:text-neutral-800 transition-colors"
                           >
                             <span className="material-symbols-outlined select-none">
                               {showConfirmPassword ? "visibility_off" : "visibility"}
@@ -702,7 +755,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           </button>
                         </div>
                         {registerErrors.confirmPassword && (
-                          <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.confirmPassword.message}</p>
+                          <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.confirmPassword.message}</p>
                         )}
                       </div>
 
@@ -710,7 +763,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <button
                         type="button"
                         onClick={handleNextStep}
-                        className="squishy-button w-full py-3 bg-primary-container text-on-primary-container font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
+                        className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
                       >
                         Tiếp tục
                         <span className="material-symbols-outlined">arrow_forward</span>
@@ -723,32 +776,32 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         <div className="space-y-4">
                           {/* Store Name */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="store-name">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="store-name">
                               Tên cửa hàng/doanh nghiệp
                             </label>
                             <input
                               id="store-name"
                               type="text"
                               placeholder="Ví dụ: Bakery Fresh"
-                              className={`w-full px-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                                registerErrors.storeName ? "border-error" : "border-outline-variant/30"
+                              className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                registerErrors.storeName ? "border-error" : "border-neutral-200/30"
                               }`}
                               disabled={isSubmitting}
                               {...registerSignup("storeName")}
                             />
                             {registerErrors.storeName && (
-                              <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.storeName.message}</p>
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.storeName.message}</p>
                             )}
                           </div>
 
                           {/* Food Category */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="food-category">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="food-category">
                               Loại thực phẩm chính
                             </label>
                             <select
                               id="food-category"
-                              className="w-full px-4 py-3 bg-surface-container-lowest border-2 border-outline-variant/30 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none appearance-none"
+                              className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
                               disabled={isSubmitting}
                               {...registerSignup("foodCategory")}
                             >
@@ -761,7 +814,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
 
                           {/* Address */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="provider-address">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="provider-address">
                               Địa chỉ hoạt động
                             </label>
                             <div className="relative">
@@ -772,21 +825,21 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                 id="provider-address"
                                 type="text"
                                 placeholder="Số nhà, tên đường, quận/huyện..."
-                                className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                                  registerErrors.providerAddress ? "border-error" : "border-outline-variant/30"
+                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                  registerErrors.providerAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
                                 {...registerSignup("providerAddress")}
                               />
                             </div>
                             {registerErrors.providerAddress && (
-                              <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.providerAddress.message}</p>
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.providerAddress.message}</p>
                             )}
                           </div>
 
                           {/* Business License Upload */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1">
+                            <label className="font-semibold text-base text-neutral-500 ml-1">
                               Giấy phép kinh doanh (Ảnh chụp)
                             </label>
                             <div className="relative">
@@ -804,12 +857,12 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               />
                               <label
                                 htmlFor="license-upload"
-                                className="border-2 border-dashed border-outline-variant/50 rounded-xl p-6 flex flex-col items-center justify-center bg-surface-container-low hover:bg-surface-container-high hover:border-primary/50 transition-all cursor-pointer group text-center"
+                                className="border-2 border-dashed border-neutral-200/50 rounded-xl p-6 flex flex-col items-center justify-center bg-neutral-100 hover:bg-neutral-200-high hover:border-primary/50 transition-all cursor-pointer group text-center"
                               >
-                                <span className="material-symbols-outlined text-outline-variant group-hover:text-primary mb-2 transition-colors">
+                                <span className="material-symbols-outlined text-outline-variant group-hover:text-emerald-800 mb-2 transition-colors">
                                   cloud_upload
                                 </span>
-                                <span className="text-on-surface-variant font-label-lg text-label-lg">
+                                <span className="text-neutral-500 font-semibold text-base">
                                   {uploadedFile ? uploadedFile : "Nhấn để tải lên hoặc kéo thả tệp"}
                                 </span>
                                 <span className="text-outline-variant text-xs mt-1">PNG, JPG tối đa 5MB</span>
@@ -821,27 +874,29 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
 
                       {selectedRole === "volunteer" && (
                         <div className="space-y-4">
-                          {/* Vehicle */}
+                          {/* Volunteer Role */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="volunteer-vehicle">
-                              Phương tiện di chuyển
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="volunteer-role">
+                              Vị trí tình nguyện
                             </label>
                             <select
-                              id="volunteer-vehicle"
-                              className="w-full px-4 py-3 bg-surface-container-lowest border-2 border-outline-variant/30 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none appearance-none"
+                              id="volunteer-role"
+                              className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
                               disabled={isSubmitting}
-                              {...registerSignup("vehicle")}
+                              {...registerSignup("volunteerRole")}
                             >
-                              <option value="Xe máy">Xe máy</option>
-                              <option value="Xe đạp">Xe đạp</option>
-                              <option value="Ô tô">Ô tô</option>
-                              <option value="Đi bộ">Đi bộ</option>
+                              <option value="shipper">Người giao hàng (Shipper)</option>
+                              <option value="chef">Đầu bếp (Chef)</option>
+                              <option value="waiter">Phục vụ (Waiter)</option>
                             </select>
                           </div>
 
+                          {/* Vehicle */}
+                      
+
                           {/* Support Area */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="support-area">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="support-area">
                               Khu vực hỗ trợ hoạt động
                             </label>
                             <div className="relative">
@@ -852,15 +907,15 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                 id="support-area"
                                 type="text"
                                 placeholder="Quận/Huyện hoặc địa bàn mong muốn..."
-                                className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                                  registerErrors.supportArea ? "border-error" : "border-outline-variant/30"
+                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                  registerErrors.supportArea ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
                                 {...registerSignup("supportArea")}
                               />
                             </div>
                             {registerErrors.supportArea && (
-                              <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.supportArea.message}</p>
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.supportArea.message}</p>
                             )}
                           </div>
                         </div>
@@ -870,7 +925,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         <div className="space-y-4">
                           {/* Receiver Address */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="receiver-address">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="receiver-address">
                               Địa chỉ nhận hỗ trợ
                             </label>
                             <div className="relative">
@@ -881,28 +936,28 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                 id="receiver-address"
                                 type="text"
                                 placeholder="Số nhà, tên đường, quận/huyện..."
-                                className={`w-full pl-12 pr-4 py-3 bg-surface-container-lowest border-2 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant ${
-                                  registerErrors.receiverAddress ? "border-error" : "border-outline-variant/30"
+                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                  registerErrors.receiverAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
                                 {...registerSignup("receiverAddress")}
                               />
                             </div>
                             {registerErrors.receiverAddress && (
-                              <p className="text-error text-label-sm ml-1 mt-xs">{registerErrors.receiverAddress.message}</p>
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.receiverAddress.message}</p>
                             )}
                           </div>
 
                           {/* Notes */}
                           <div className="space-y-1.5">
-                            <label className="font-label-lg text-label-lg text-on-surface-variant ml-1" htmlFor="notes">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="notes">
                               Hoàn cảnh / Ghi chú thêm (Tùy chọn)
                             </label>
                             <textarea
                               id="notes"
                               rows={3}
                               placeholder="Ví dụ: Sinh viên nghèo, người lao động tự do, v.v."
-                              className="w-full px-4 py-3 bg-surface-container-lowest border-2 border-outline-variant/30 rounded-xl focus:ring-0 focus:border-primary transition-all font-body-md outline-none placeholder:text-outline-variant resize-none"
+                              className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant resize-none"
                               disabled={isSubmitting}
                               {...registerSignup("notes")}
                             />
@@ -915,14 +970,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         <button
                           type="button"
                           onClick={() => setRegisterStep(1)}
-                          className="flex-1 py-3 border-2 border-outline-variant/30 rounded-full font-bold text-on-surface hover:bg-surface-container-low transition-colors"
+                          className="flex-1 py-3 border-2 border-neutral-200/30 rounded-full font-bold text-neutral-800 hover:bg-neutral-100 transition-colors"
                         >
                           Quay lại
                         </button>
                         <button
                           type="submit"
                           disabled={isSubmitting}
-                          className="flex-[2] squishy-button py-3 bg-primary-container text-on-primary-container font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex-[2] squishy-button py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isSubmitting ? (
                             <>
@@ -947,47 +1002,64 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           {/* Divider */}
           <div className="relative my-8">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-outline-variant/30"></div>
+              <div className="w-full border-t border-neutral-200/30"></div>
             </div>
-            <div className="relative flex justify-center text-label-sm">
-              <span className="bg-surface px-3 text-on-surface-variant font-medium">Hoặc tiếp tục với</span>
+            <div className="relative flex justify-center text-sm">
+              <span className="bg-[#FAFBF9] px-3 text-neutral-500 font-medium">Hoặc tiếp tục với</span>
             </div>
           </div>
 
           {/* Social Logins */}
-          <div className="grid grid-cols-2 gap-4">
-            <button 
+          <div className="grid grid-cols-2 gap-4 items-center">
+            {GOOGLE_ENABLED ? (
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={(cred) => {
+                    if (cred.credential) void handleGoogleCredential(cred.credential);
+                  }}
+                  onError={() => {
+                    toast.error('Không kết nối được Google');
+                  }}
+                  text="signin_with"
+                  shape="pill"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => toast.info('Đăng nhập Google chưa được cấu hình (cần NEXT_PUBLIC_GOOGLE_CLIENT_ID).')}
+                className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
+              >
+                <img
+                  alt="Google"
+                  className="w-5 h-5"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBn3AKiR8i1e9RW7aMctVNXB-EOytwqjeutvRIqK52MHa5A07Jc38EDO99hLBJloim7BuqP8shDsWpb5DpUadakNcxRHw9i1kXLPJcFA0EXTBwPJktqTRQbJpPt84lv-F5beXxJPLtlon_zbESO4Ax31F331vJ78Wlk7uX6gnn0ieFEJZpMHxgsoTD-al9R_cJD0YOyVxipQmSUcvnpG6DlRFcVmCFx5EH1T9f4TvzYXiTQzqQd46u6tfVTM76f0qLNfElm2MhSF_vT"
+                />
+                <span className="font-semibold text-base">Google</span>
+              </button>
+            )}
+            <button
               type="button"
-              className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-outline-variant/30 rounded-xl bg-white hover:bg-surface-container-low transition-colors"
-            >
-              <img
-                alt="Google"
-                className="w-5 h-5"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBn3AKiR8i1e9RW7aMctVNXB-EOytwqjeutvRIqK52MHa5A07Jc38EDO99hLBJloim7BuqP8shDsWpb5DpUadakNcxRHw9i1kXLPJcFA0EXTBwPJktqTRQbJpPt84lv-F5beXxJPLtlon_zbESO4Ax31F331vJ78Wlk7uX6gnn0ieFEJZpMHxgsoTD-al9R_cJD0YOyVxipQmSUcvnpG6DlRFcVmCFx5EH1T9f4TvzYXiTQzqQd46u6tfVTM76f0qLNfElm2MhSF_vT"
-              />
-              <span className="font-label-lg text-label-lg">Google</span>
-            </button>
-            <button 
-              type="button"
-              className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-outline-variant/30 rounded-xl bg-white hover:bg-surface-container-low transition-colors"
+              onClick={() => toast.info('Đăng nhập Facebook sắp ra mắt.')}
+              className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
             >
               <img
                 alt="Facebook"
                 className="w-5 h-5"
                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuKbqZASyY96fbDYBxwezjj--7xfyRgGVGE2z7rlKSLfUG57qcyl2nhhaVpv3nt7NdJ0MeDoU8UP_jNPREHPszwxt9OQmhR-XUZFra1qEzDBt6cYf3R0ac7YSw8OxxQEI03qBHCAwCERNH6ZpBstkZgCIwI5NLE20wJ38_gljn1F8GeZaBt7K9cqmQG_iWhbulv8hUyM4gbs229jkp2mE3trI5Rxw_ljoCS9Fx5SSgc98fC4saxj4AjpKapTubq_t0IXaVpOl2gHGt"
               />
-              <span className="font-label-lg text-label-lg">Facebook</span>
+              <span className="font-semibold text-base">Facebook</span>
             </button>
           </div>
 
           {/* Footer Terms */}
-          <p className="mt-8 text-center text-label-sm text-on-surface-variant leading-relaxed px-4">
+          <p className="mt-8 text-center text-sm text-neutral-500 leading-relaxed px-4">
             Bằng cách đăng nhập, bạn đồng ý với{" "}
-            <a className="text-primary font-bold hover:underline" href="#">
+            <a className="text-emerald-800 font-bold hover:underline" href="#">
               Điều khoản dịch vụ
             </a>{" "}
             và{" "}
-            <a className="text-primary font-bold hover:underline" href="#">
+            <a className="text-emerald-800 font-bold hover:underline" href="#">
               Chính sách bảo mật
             </a>{" "}
             của FoodResQ.
@@ -996,14 +1068,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       </section>
 
       {/* Mobile Footer */}
-      <footer className="bg-surface-container-lowest border-t border-outline-variant/20 py-lg md:hidden">
-        <div className="flex flex-col items-center gap-md px-container-margin">
-          <span className="font-body-md text-secondary">© 2026 Chia Sẻ - Kết nối cộng đồng</span>
-          <div className="flex gap-lg">
-            <a className="text-label-lg text-on-surface-variant hover:text-primary" href="#">
+      <footer className="bg-white border-t border-neutral-200/20 py-8 md:hidden">
+        <div className="flex flex-col items-center gap-6 px-6">
+          <span className="font-medium text-secondary">© 2026 Chia Sẻ - Kết nối cộng đồng</span>
+          <div className="flex gap-8">
+            <a className="text-base text-neutral-500 hover:text-emerald-800" href="#">
               Liên hệ
             </a>
-            <a className="text-label-lg text-on-surface-variant hover:text-primary" href="#">
+            <a className="text-base text-neutral-500 hover:text-emerald-800" href="#">
               Hướng dẫn
             </a>
           </div>
@@ -1014,12 +1086,12 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       {showFaceEnrollment && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative bg-surface rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-xl flex flex-col gap-lg p-lg max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-12 flex flex-col gap-8 p-8 max-h-[90vh] overflow-y-auto">
             <div>
-              <h2 className="font-headline-md text-headline-md text-on-surface">
+              <h2 className="font-bold text-2xl text-neutral-800">
                 Bước cuối: Đăng ký khuôn mặt
               </h2>
-              <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">
+              <p className="font-medium text-sm text-neutral-500 mt-2">
                 Tài khoản đã tạo thành công
               </p>
             </div>

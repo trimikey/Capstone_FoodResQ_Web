@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 
+const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
+
 const ROLE_LABEL: Record<string, string> = {
   [UserRole.RECEIVER]: 'Người nhận thực phẩm',
   [UserRole.PROVIDER]: 'Nhà cung cấp',
@@ -108,6 +110,25 @@ export default function ProfilePage() {
                 <span className="material-symbols-outlined text-[14px] text-emerald-600">check_circle</span>
                 <span>{roleLabel}</span>
               </div>
+
+              {/* Chuyên môn tình nguyện viên (đầu bếp / phục vụ / giao hàng) */}
+              {me.volunteer && me.volunteer.specializations.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-1.5 mt-2">
+                  {me.volunteer.specializations.map((s) => (
+                    <span
+                      key={s.specialization}
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${s.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                    >
+                      {VOL_ROLE_LABEL[s.specialization]}{s.isVerified ? ' ✓' : ' (chờ duyệt)'}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {me.volunteer && (
+                <p className="text-[11px] text-neutral-400 mt-1.5">
+                  Hạng {me.volunteer.rank} · {me.volunteer.dedicationPoints} điểm cống hiến
+                </p>
+              )}
 
               <div className="w-full h-px bg-neutral-200/80 my-6" />
 

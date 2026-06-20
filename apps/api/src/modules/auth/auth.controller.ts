@@ -4,9 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { FirebaseAuthDto } from './dto/firebase-auth.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
@@ -33,6 +31,16 @@ export class AuthController {
     return this.authService.login(dto, ua, ip);
   }
 
+  @Post('google')
+  @ApiOperation({ summary: 'Login/Register bằng Google ID token' })
+  google(
+    @Body() dto: GoogleLoginDto,
+    @Headers('user-agent') ua: string,
+    @Ip() ip: string,
+  ) {
+    return this.authService.loginWithGoogle(dto.idToken, ua, ip);
+  }
+
   @Post('refresh')
   @ApiOperation({ summary: 'Rotate refresh token' })
   refresh(
@@ -49,30 +57,5 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke all refresh tokens for current user' })
   logout(@CurrentUser() user: User) {
     return this.authService.logout(user.id);
-  }
-
-  @Post('firebase')
-  @ApiOperation({ summary: 'Đăng nhập/đăng ký qua Firebase (Google, Phone OTP)' })
-  firebase(
-    @Body() dto: FirebaseAuthDto,
-    @Headers('user-agent') ua: string,
-    @Ip() ip: string,
-  ) {
-    return this.authService.loginWithFirebase(dto.idToken, dto.role, ua, ip);
-  }
-
-  @Post('forgot-password')
-  @ApiOperation({ summary: 'Gửi mã OTP đặt lại mật khẩu qua email' })
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    await this.authService.forgotPassword(dto.email);
-    // Luôn 200 với cùng message để không lộ email tồn tại hay không
-    return { message: 'Nếu email tồn tại, mã OTP đã được gửi.' };
-  }
-
-  @Post('reset-password')
-  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng OTP' })
-  async resetPassword(@Body() dto: ResetPasswordDto) {
-    await this.authService.resetPassword(dto.email, dto.otp, dto.newPassword);
-    return { message: 'Đặt lại mật khẩu thành công.' };
   }
 }

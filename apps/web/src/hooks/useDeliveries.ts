@@ -43,6 +43,7 @@ export interface VolunteerMe {
   avgRating: number | null;
   verificationStatus: string;
   isShipper: boolean;
+  specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
   currentLocation: { lng: number; lat: number } | null;
 }
 

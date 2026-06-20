@@ -42,7 +42,9 @@ function ListingsPageContent() {
   const [distanceFilter, setDistanceFilter] = useState<number>(5); // Default 5km
   const [timeFilter, setTimeFilter] = useState<'all' | 'soon' | 'today'>('all');
   const [activePill, setActivePill] = useState<string | null>(null);
-  
+  // Dropdown bộ lọc: bấm để mở, bấm ra ngoài/chọn để đóng (không dùng hover để khỏi tự đóng)
+  const [openMenu, setOpenMenu] = useState<'distance' | 'category' | 'time' | null>(null);
+
   // Interactive Map State
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null); // pin đang focus
 
@@ -80,65 +82,44 @@ function ListingsPageContent() {
     radiusKm: distanceFilter,
     search: search.trim() || undefined,
     category: (category as FoodCategory) || undefined,
+    limit: 100, // tải nhiều điểm để bản đồ hiển thị đủ khi zoom ra
   });
 
-  return (
-    <div className="p-md md:p-lg flex flex-col gap-lg min-h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-md">
-        <div>
-          <h1 className="font-display-lg text-display-lg text-on-surface">Thực phẩm gần đây</h1>
-          <p className="font-label-lg text-label-lg text-on-surface-variant mt-sm">
-            Bán kính 5km • {listings?.length ?? 0} kết quả
-          </p>
-        </div>
-        <button
-          onClick={() => refetch()}
-          className="p-md rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
-          title="Làm mới"
-        >
-          <span className="material-symbols-outlined text-[24px]">refresh</span>
-        </button>
-      </div>
+  // Luôn dùng dữ liệu thật từ API. search/category đã được lọc phía BE (PostGIS);
+  // chỉ lọc thêm activePill (chip nhanh) phía client cho tức thời.
+  const listings = useMemo<ListingItem[]>(() => {
+    let list: ListingItem[] = apiListings ?? [];
+    if (activePill) {
+      list = list.filter((item) =>
+        item.title.toLowerCase().includes(activePill.toLowerCase()),
+      );
+    }
+    if (timeFilter === 'soon') {
+      // Sắp hết hạn: pickupEndTime trong vòng 2 giờ
+      const twoHours = 2 * 60 * 60 * 1000;
+      list = list.filter(
+        (item) => new Date(item.pickupEndTime).getTime() - Date.now() < twoHours,
+      );
+    }
+    return list;
+  }, [apiListings, activePill, timeFilter]);
 
-      {/* Search bar */}
-      <div className="relative glass-card">
-        <span className="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-outline-variant">
-          search
-        </span>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Tìm kiếm thực phẩm, cửa hàng..."
-          className="w-full pl-12 pr-md py-3 bg-transparent border-0 outline-none font-body-md text-on-surface placeholder:text-on-surface-variant"
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-md top-1/2 -translate-y-1/2 text-outline-variant hover:text-on-surface transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
-        )}
-      </div>
+  // If search or categories change, auto-select first pin of the filtered list
+  useEffect(() => {
+    if (listings.length > 0) {
+      setSelectedPinId(listings[0].id);
+    } else {
+      setSelectedPinId(null);
+    }
+  }, [listings]);
 
-      {/* Category filters */}
-      <div className="flex gap-sm overflow-x-auto pb-sm flex-nowrap -mx-md px-md md:mx-0 md:px-0">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.value}
-            onClick={() => setCategory(cat.value)}
-            className={`whitespace-nowrap px-md py-2 rounded-lg font-label-lg text-label-lg border transition-all shrink-0 ${
-              category === cat.value
-                ? 'bg-primary text-on-primary border-primary emerald-glow'
-                : 'glass-card border-outline-variant/50 text-on-surface-variant hover:border-primary hover:text-primary'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
+  const handlePillClick = (pillName: string) => {
+    if (activePill === pillName) {
+      setActivePill(null);
+    } else {
+      setActivePill(pillName);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-104px)] overflow-hidden bg-[#fcf9f2]">
@@ -225,55 +206,73 @@ function ListingsPageContent() {
             </span>
             
             {/* Distance Filter Dropdown */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'distance' ? null : 'distance')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
                 Khoảng cách: {distanceFilter}km
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[140px]">
-                {[2, 5, 10, 20].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDistanceFilter(d)}
-                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
-                  >
-                    Trong vòng {d}km
-                  </button>
-                ))}
-              </div>
+              {openMenu === 'distance' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[140px]">
+                  {[2, 5, 10, 20, 50].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => { setDistanceFilter(d); setOpenMenu(null); }}
+                      className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${distanceFilter === d ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
+                    >
+                      Trong vòng {d}km
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Category Filter Dropdown */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'category' ? null : 'category')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
                 Danh mục: {category ? CATEGORIES.find(c => c.value === category)?.label : 'Tất cả'}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.value}
-                    onClick={() => setCategory(cat.value)}
-                    className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors"
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
+              {openMenu === 'category' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[160px]">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      onClick={() => { setCategory(cat.value); setOpenMenu(null); }}
+                      className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${category === cat.value ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Pickup Time Filter */}
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all">
-                Thời gian nhận
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenu(openMenu === 'time' ? null : 'time')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+              >
+                Thời gian nhận{timeFilter === 'soon' ? ': Sắp hết hạn' : ''}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
               </button>
-              <div className="absolute top-full left-0 mt-2 hidden group-hover:block hover:block bg-white border border-neutral-200 rounded-xl shadow-xl z-30 py-2 min-w-[160px]">
-                <button onClick={() => setTimeFilter('all')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Tất cả</button>
-                <button onClick={() => setTimeFilter('soon')} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Sắp hết hạn (&lt;2h)</button>
-              </div>
+              {openMenu === 'time' && (
+                <div className="absolute top-full left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-40 py-2 min-w-[160px]">
+                  <button onClick={() => { setTimeFilter('all'); setOpenMenu(null); }} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Tất cả</button>
+                  <button onClick={() => { setTimeFilter('soon'); setOpenMenu(null); }} className="w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-neutral-700 hover:text-[#236c2a] text-[13px] font-medium transition-colors">Sắp hết hạn (&lt;2h)</button>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Lớp phủ bắt click ra ngoài để đóng dropdown */}
+          {openMenu && <div className="fixed inset-0 z-30" onClick={() => setOpenMenu(null)} />}
 
           {/* Quick pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none pt-2">

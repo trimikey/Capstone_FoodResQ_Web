@@ -60,4 +60,9 @@ export class RegisterDto {
   @IsString()
   @MaxLength(50)
   vehicleType?: string;
+
+  @ApiPropertyOptional({ example: 'shipper', description: 'Volunteer: role (shipper, chef, waiter)' })
+  @IsOptional()
+  @IsEnum(['shipper', 'chef', 'waiter'])
+  volunteerRole?: 'shipper' | 'chef' | 'waiter';
 }

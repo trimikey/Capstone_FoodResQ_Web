@@ -59,9 +59,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex flex-col min-h-screen bg-[#fcf9f2]">
       {/* Desktop Top Header replaced with PublicHeader */}
-      <div className="hidden md:block">
-        <PublicHeader />
-      </div>
+      {!pathname.startsWith('/admin') && (
+        <div className="hidden md:block">
+          <PublicHeader />
+        </div>
+      )}
 
       {/* Mobile Top Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between h-16">
@@ -79,7 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col pt-16 md:pt-[104px] pb-16 md:pb-0 min-h-screen">
+      <main className={`flex-1 flex flex-col ${pathname.startsWith('/admin') ? 'md:pt-0' : 'pt-16 md:pt-[104px]'} pb-16 md:pb-0 min-h-screen`}>
         {children}
       </main>
 

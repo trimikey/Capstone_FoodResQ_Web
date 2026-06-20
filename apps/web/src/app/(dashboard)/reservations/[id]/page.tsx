@@ -294,6 +294,22 @@ export default function ReservationDetailsPage() {
                   </div>
                 </div>
 
+                {/* Mã token dạng chữ — tiện đối chiếu / nhập tay khi test & demo */}
+                {reservation.qrToken && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(reservation.qrToken!);
+                      toast.success('Đã sao chép mã xác nhận');
+                    }}
+                    title="Nhấn để sao chép mã"
+                    className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono text-emerald-700 hover:bg-emerald-50 transition-colors max-w-full"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                    <span className="truncate">{reservation.qrToken}</span>
+                  </button>
+                )}
+
                 {/* QR Scanner Trigger Button */}
                 <button 
                   onClick={handleSimulateScan}

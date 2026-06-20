@@ -12,6 +12,4 @@ allowBuilds:
   prisma: true
   unrs-resolver: true
   sharp: true
-  core-js: false
-  '@firebase/util': false
-  protobufjs: false
+  core-js: set this to true or false

@@ -44,7 +44,7 @@ export class ListingsService {
       where: { userId },
       select: { id: true },
     });
-    if (!profile) throw new NotFoundException('Provider profile not found');
+    if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
     return profile.id;
   }
 
@@ -52,10 +52,10 @@ export class ListingsService {
     const providerId = await this.resolveProviderId(userId);
 
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
-      throw new BadRequestException('pickup_end_time must be after pickup_start_time');
+      throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
     }
     if (new Date(dto.expiryTime) < new Date(dto.pickupEndTime)) {
-      throw new BadRequestException('expiry_time must be >= pickup_end_time');
+      throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
     }
 
     // Insert via raw SQL to handle the GEOGRAPHY column
@@ -82,7 +82,7 @@ export class ListingsService {
     `);
 
     const id = result[0]?.id;
-    if (!id) throw new BadRequestException('Failed to create listing');
+    if (!id) throw new BadRequestException('Tạo tin thất bại. Vui lòng thử lại.');
 
     return this.findOne(id);
   }
@@ -192,7 +192,7 @@ export class ListingsService {
     `);
 
     const r = result[0];
-    if (!r) throw new NotFoundException('Listing not found');
+    if (!r) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
 
     return {
       id: r.id,
@@ -219,10 +219,10 @@ export class ListingsService {
   async publish(listingId: string, userId: string) {
     const providerId = await this.resolveProviderId(userId);
     const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
-    if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();
     if (listing.status !== 'draft') {
-      throw new BadRequestException('Only draft listings can be published');
+      throw new BadRequestException('Chỉ đăng được tin đang ở trạng thái nháp.');
     }
 
     return this.prisma.foodListing.update({
@@ -234,7 +234,7 @@ export class ListingsService {
   async cancel(listingId: string, userId: string, reason?: string) {
     const providerId = await this.resolveProviderId(userId);
     const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
-    if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();
 
     return this.prisma.foodListing.update({

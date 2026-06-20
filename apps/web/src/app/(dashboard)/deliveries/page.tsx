@@ -176,14 +176,24 @@ export default function DeliveriesPage() {
           </button>
         </div>
 
-        {/* Cảnh báo chưa được duyệt làm shipper */}
+        {/* Cảnh báo chưa được duyệt làm shipper hoặc không phải shipper */}
         {me && !me.isShipper && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3">
-            <span className="material-symbols-outlined text-amber-600">info</span>
-            <p className="text-sm text-amber-900 font-medium">
-              Tài khoản của bạn chưa được xác minh chuyên môn <strong>shipper</strong>. Bạn sẽ không
-              nhận được đơn giao cho đến khi được quản trị viên duyệt.
-            </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col items-start gap-3">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-amber-600">info</span>
+              <p className="text-sm text-amber-900 font-medium">
+                Tài khoản của bạn không có chuyên môn <strong>shipper</strong>, hoặc chưa được xác minh. 
+                Bạn không thể nhận đơn giao hàng.
+              </p>
+            </div>
+            {/* Thêm link cho đầu bếp/phục vụ qua trang Bếp ăn cộng đồng */}
+            <a 
+              href="/campaigns" 
+              className="mt-2 ml-9 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white font-bold rounded-xl text-sm shadow-sm hover:bg-amber-700 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">soup_kitchen</span>
+              Chuyển đến Bếp ăn cộng đồng
+            </a>
           </div>
         )}
 

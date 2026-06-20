@@ -18,6 +18,12 @@ export interface Campaign {
   shipperSlotsFilled: number;
   status: string;
   charityReceiver?: { organizationName: string | null; user: { fullName: string } };
+  assignments?: {
+    id: string;
+    role: 'chef' | 'waiter' | 'shipper';
+    status: string;
+    volunteer: { user: { fullName: string; avatarUrl: string | null } };
+  }[];
 }
 
 export interface CreateCampaignInput {
@@ -35,10 +41,34 @@ export interface CreateCampaignInput {
   expectedServings?: number;
 }
 
+export interface MyTask {
+  id: string;
+  role: 'chef' | 'waiter' | 'shipper';
+  status: string;
+  campaign: {
+    id: string;
+    title: string;
+    kitchenAddress: string;
+    scheduledDate: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+  };
+}
+
 export function useCampaigns() {
   return useQuery({
     queryKey: ['campaigns', 'open'],
     queryFn: async () => (await api.get('/campaigns')).data.data as Campaign[],
+    staleTime: 30_000,
+  });
+}
+
+export function useMyTasks(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-tasks'],
+    queryFn: async () => (await api.get('/campaigns/my-tasks')).data.data as MyTask[],
+    enabled,
     staleTime: 30_000,
   });
 }

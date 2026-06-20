@@ -54,44 +54,48 @@ export default function ListingCard({ listing }: Props) {
   const imageUrl = listing.imageUrls.length > 0 ? listing.imageUrls[0] : fallbackImage;
 
   return (
-    <div className="glass-card flex flex-col overflow-hidden hover:shadow-lg transition-smooth">
-      {/* Image */}
-      <div className="relative h-44 bg-surface-container overflow-hidden">
-        {listing.imageUrls.length > 0 ? (
-          <img
-            src={listing.imageUrls[0]}
-            alt={listing.title}
-            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-          />
+    <Link
+      href={`/listings/${listing.id}`}
+      className="bg-white rounded-2xl overflow-hidden border border-neutral-200 flex flex-col hover:shadow-lg hover:border-[#236c2a]/30 transition-all duration-300 group cursor-pointer hover:-translate-y-1"
+    >
+      {/* Image Container */}
+      <div className="relative h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
+        <img
+          src={imageUrl}
+          alt={listing.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+
+        {/* Expiry / Status badges */}
+        {isExpiringSoon && !isEmpty ? (
+          <div className="absolute top-3 left-3 bg-rose-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
+            Sắp hết hạn
+          </div>
         ) : (
           <div className="absolute top-3 left-3 bg-[#236c2a]/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
             Mới đăng
           </div>
         )}
 
-        {/* Distance badge */}
-        <div className="absolute top-sm right-sm glass-card px-sm py-xs flex items-center gap-xs">
-          <span className="material-symbols-outlined text-primary" style={{ fontSize: '14px' }}>
-            location_on
-          </span>
-          <span className="font-label-sm text-label-sm text-on-surface">{formatDistance(listing.distanceM)}</span>
+        {/* Free / Price badge */}
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold uppercase">
+          Miễn phí
         </div>
-
-        {isExpiringSoon && !isEmpty && (
-          <div className="absolute top-sm left-sm bg-error text-white px-sm py-xs rounded-lg font-label-sm text-label-sm">
-            Sắp hết hạn
-          </div>
-        )}
       </div>
 
       {/* Content */}
-      <div className="p-md flex flex-col flex-1 gap-sm">
-        <div>
-          <span className="impact-chip mb-xs">
-            {CATEGORY_LABELS[listing.category] ?? listing.category}
-          </span>
-          <h3 className="font-headline-md text-headline-md text-on-surface line-clamp-2">{listing.title}</h3>
-          <p className="font-label-sm text-label-sm text-on-surface-variant mt-xs">{listing.provider.businessName}</p>
+      <div className="p-5 flex flex-col flex-1 gap-2">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-headline-md text-[17px] text-neutral-900 font-medium line-clamp-1 group-hover:text-[#236c2a] transition-colors">
+              {listing.title}
+            </h3>
+            {/* Portions left badge (Green as shown in mockup) */}
+            <span className="shrink-0 bg-[#efe8d8] text-[#236c2a] px-2.5 py-1 rounded-full font-body-md text-[11px] font-bold">
+              Còn {listing.quantityRemaining} phần
+            </span>
+          </div>
+          <p className="font-body-md text-[13px] text-neutral-500">{listing.provider.businessName}</p>
         </div>
 
         {/* Details Row: Distance & Rating */}
@@ -109,14 +113,6 @@ export default function ListingCard({ listing }: Props) {
             <span className="text-neutral-400 text-xs">Uy tín</span>
           </div>
         </div>
-
-        <button
-          onClick={onReserve}
-          disabled={isEmpty}
-          className="mt-auto w-full py-3 px-md bg-primary text-on-primary rounded-lg font-label-lg transition-all hover:shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed emerald-glow"
-        >
-          {isEmpty ? 'Đã hết' : 'Đặt ngay'}
-        </button>
       </div>
     </Link>
   );

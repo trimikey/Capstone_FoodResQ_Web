@@ -4,3 +4,6 @@ node_modules/
 dist/
 .next/
 *.log
+
+# Uploaded user media (faces, ID cards, pickup proofs) — sensitive, not for VCS
+apps/api/uploads/

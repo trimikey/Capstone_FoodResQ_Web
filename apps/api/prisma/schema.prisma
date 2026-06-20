@@ -428,7 +428,7 @@ model Reservation {
   receiver ReceiverProfile @relation(fields: [receiverId], references: [id])
   delivery Delivery?
 
-  @@unique([listingId, receiverId])
+  @@index([listingId, receiverId])
   @@index([receiverId])
   @@index([qrToken])
   @@index([status])

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -77,6 +78,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
     () => listings.filter((l) => l.lat != null && l.lng != null),
     [listings],
   );
+  const router = useRouter();
 
   return (
     <MapContainer
@@ -109,12 +111,29 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
           zIndexOffset={l.id === selectedId ? 1000 : 0}
         >
           <Popup>
-            <div style={{ minWidth: 160 }}>
+            <div style={{ minWidth: 180 }}>
+              {l.imageUrls?.[0] && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={l.imageUrls[0]}
+                  alt={l.title}
+                  style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8, marginBottom: 6 }}
+                />
+              )}
               <p style={{ fontWeight: 700, margin: 0 }}>{l.title}</p>
               <p style={{ margin: '2px 0', color: '#555', fontSize: 12 }}>{l.provider.businessName}</p>
-              <p style={{ margin: 0, color: '#236c2a', fontSize: 12, fontWeight: 600 }}>
+              <p style={{ margin: '0 0 8px', color: '#236c2a', fontSize: 12, fontWeight: 600 }}>
                 Còn {l.quantityRemaining} {l.quantityUnit} • {formatDistance(l.distanceM)}
               </p>
+              <button
+                onClick={() => router.push(`/listings/${l.id}`)}
+                style={{
+                  width: '100%', padding: '8px 0', background: '#236c2a', color: '#fff',
+                  border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                Xem chi tiết →
+              </button>
             </div>
           </Popup>
         </Marker>
