@@ -44,6 +44,7 @@ export interface AdminUser {
   avatarUrl: string | null;
   createdAt: string;
   specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
+  isCharityOrg: boolean;
 }
 
 export function useAdminStats() {

@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Param, Post, UseGuards, ParseUUIDPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -62,5 +74,60 @@ export class CampaignsController {
     @Body() dto: ApplyCampaignDto,
   ) {
     return this.campaignsService.apply(id, user.id, dto);
+  }
+
+  @Patch(':id/start')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: bắt đầu chiến dịch (open → in_progress)' })
+  start(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.startCampaign(id, user.id);
+  }
+
+  @Patch(':id/complete')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: kết thúc chiến dịch + nhập số suất thực tế' })
+  complete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: CompleteCampaignDto,
+  ) {
+    return this.campaignsService.completeCampaign(id, user.id, dto.actualServings);
+  }
+
+  @Post(':id/donations')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: quyên góp nguyên liệu cho chiến dịch' })
+  pledge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: PledgeDonationDto,
+  ) {
+    return this.campaignsService.pledgeDonation(id, user.id, dto);
+  }
+
+  @Patch('donations/:id/confirm')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: xác nhận đã nhận nguyên liệu quyên góp' })
+  confirmDonation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.confirmDonation(id, user.id);
+  }
+
+  @Post('assignments/:id/advance')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Volunteer: chuyển bước công việc (điểm danh → làm → hoàn thành) + ảnh minh chứng' })
+  async advance(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.advanceTask(id, user.id, proofUrl);
   }
 }

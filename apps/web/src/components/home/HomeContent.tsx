@@ -50,6 +50,7 @@ export default function HomeContent() {
   const [heroBgIndex, setHeroBgIndex] = useState<number>(0);
 
   const HERO_IMAGES = [
+    '/charity_bg.png',
     '/hero_food_bg.png',
     '/eco_volunteers.png',
     '/impact_kitchen.png'

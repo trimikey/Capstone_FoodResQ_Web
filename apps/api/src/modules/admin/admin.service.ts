@@ -702,14 +702,16 @@ export class AdminService {
         volunteerProfile: {
           select: { specializations: { select: { specialization: true, isVerified: true } } },
         },
+        receiverProfile: { select: { isCharityOrg: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
-    // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render
-    return users.map(({ volunteerProfile, ...u }) => ({
+    // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render + cờ tổ chức
+    return users.map(({ volunteerProfile, receiverProfile, ...u }) => ({
       ...u,
       specializations: volunteerProfile?.specializations ?? [],
+      isCharityOrg: receiverProfile?.isCharityOrg ?? false,
     }));
   }
 

@@ -61,7 +61,17 @@ export class UsersService {
       }
     }
 
-    return { ...user, stats, volunteer };
+    // Nếu là người nhận → kèm cờ tổ chức từ thiện để FE hiển thị nhãn đúng
+    let receiver: { isCharityOrg: boolean; organizationName: string | null } | null = null;
+    if (user.role === 'receiver') {
+      const rp = await this.prisma.receiverProfile.findUnique({
+        where: { userId },
+        select: { isCharityOrg: true, organizationName: true },
+      });
+      if (rp) receiver = { isCharityOrg: rp.isCharityOrg, organizationName: rp.organizationName };
+    }
+
+    return { ...user, stats, volunteer, receiver };
   }
 
   /** Cập nhật hồ sơ cơ bản: họ tên, số điện thoại, avatar. */
@@ -135,6 +145,17 @@ export class UsersService {
   }
 
   async getFaceEnrollmentStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+
+    if (user?.role === 'volunteer') {
+      const v = await this.prisma.volunteerProfile.findUnique({
+        where: { userId },
+        select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
+      });
+      if (!v) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+      return { enrolled: v.faceDescriptor !== null, faceImageUrl: v.faceImageUrl, idCardImageUrl: v.idCardImageUrl };
+    }
+
     const receiver = await this.prisma.receiverProfile.findUnique({
       where: { userId },
       select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
@@ -162,8 +183,11 @@ export class UsersService {
       throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
     }
 
-    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    // Chỉ người nhận & tình nguyện viên cần đăng ký khuôn mặt
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'receiver' && user?.role !== 'volunteer') {
+      throw new BadRequestException('Vai trò này không cần đăng ký khuôn mặt.');
+    }
 
     let selfieDescriptor: number[] | null = null;
     if (selfiePhoto) {
@@ -203,14 +227,16 @@ export class UsersService {
     ]);
 
     // Ưu tiên descriptor từ selfie (chất lượng tốt hơn chân dung in trên thẻ)
-    await this.prisma.receiverProfile.update({
-      where: { id: receiver.id },
-      data: {
-        ...(idCardUrl ? { idCardImageUrl: idCardUrl } : {}),
-        ...(faceUrl ? { faceImageUrl: faceUrl } : {}),
-        faceDescriptor: selfieDescriptor ?? idCardDescriptor!,
-      },
-    });
+    const faceData = {
+      ...(idCardUrl ? { idCardImageUrl: idCardUrl } : {}),
+      ...(faceUrl ? { faceImageUrl: faceUrl } : {}),
+      faceDescriptor: selfieDescriptor ?? idCardDescriptor!,
+    };
+    if (user.role === 'volunteer') {
+      await this.prisma.volunteerProfile.update({ where: { userId }, data: faceData });
+    } else {
+      await this.prisma.receiverProfile.update({ where: { userId }, data: faceData });
+    }
 
     return {
       enrolled: true,

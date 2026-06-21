@@ -84,7 +84,8 @@ export default function ProfilePage() {
     );
   }
 
-  const roleLabel = ROLE_LABEL[me.role] ?? me.role;
+  // Tổ chức từ thiện là receiver có cờ isCharityOrg → hiển thị nhãn riêng cho rõ
+  const roleLabel = me.receiver?.isCharityOrg ? 'Tổ chức từ thiện' : (ROLE_LABEL[me.role] ?? me.role);
 
   return (
     <div className="min-h-screen bg-neutral-50/50 pb-24">

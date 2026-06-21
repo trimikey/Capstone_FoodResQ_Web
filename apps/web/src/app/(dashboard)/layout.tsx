@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
+import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
 
 // Bottom nav (mobile) theo vai trò
-function navItemsFor(role: UserRole): { href: string; icon: string; label: string }[] {
+function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
   if (role === UserRole.ADMIN) {
     return [
       { href: '/admin', icon: 'dashboard', label: 'Quản trị' },
@@ -19,6 +20,7 @@ function navItemsFor(role: UserRole): { href: string; icon: string; label: strin
     return [
       { href: '/provider', icon: 'storefront', label: 'Cửa hàng' },
       { href: '/provider/scan', icon: 'qr_code_scanner', label: 'Quét QR' },
+      { href: '/campaigns', icon: 'soup_kitchen', label: 'Bếp ăn' },
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },
     ];
   }
@@ -26,6 +28,15 @@ function navItemsFor(role: UserRole): { href: string; icon: string; label: strin
     return [
       { href: '/listings', icon: 'restaurant', label: 'Tìm' },
       { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
+      { href: '/profile', icon: 'person', label: 'Hồ sơ' },
+    ];
+  }
+  // Tổ chức từ thiện → có thêm Chiến dịch
+  if (isCharityOrg) {
+    return [
+      { href: '/listings', icon: 'restaurant', label: 'Tìm' },
+      { href: '/campaigns', icon: 'soup_kitchen', label: 'Chiến dịch' },
+      { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận' },
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },
     ];
   }
@@ -47,9 +58,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [isAuthenticated, router]);
 
+  const { data: me } = useMe(!!user);
+
   if (!user) return null;
 
-  const navItems = navItemsFor(user.role as UserRole);
+  const navItems = navItemsFor(user.role as UserRole, !!me?.receiver?.isCharityOrg);
 
   const handleLogout = () => {
     logout();

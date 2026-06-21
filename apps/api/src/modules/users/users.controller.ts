@@ -43,14 +43,14 @@ export class UsersController {
   }
 
   @Get('me/face-enrollment')
-  @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Receiver: Trạng thái đăng ký khuôn mặt (eKYC)' })
+  @Roles(UserRole.RECEIVER, UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Receiver/Volunteer: Trạng thái đăng ký khuôn mặt (eKYC)' })
   getFaceEnrollment(@CurrentUser() user: User) {
     return this.usersService.getFaceEnrollmentStatus(user.id);
   }
 
   @Post('me/face-enrollment')
-  @Roles(UserRole.RECEIVER)
+  @Roles(UserRole.RECEIVER, UserRole.VOLUNTEER)
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'idCard', maxCount: 1 },

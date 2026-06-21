@@ -18,6 +18,10 @@ function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
+// Toạ độ hợp lệ: là số hữu hạn (chặn null/undefined/NaN — NaN lọt qua phép != null)
+const isNum = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+const HCM_FALLBACK = { lat: 10.8231, lng: 106.6297 };
+
 // Marker dạng HTML (divIcon) để không phụ thuộc asset ảnh mặc định của Leaflet (hay vỡ khi bundle)
 function pinIcon(active: boolean) {
   const bg = active ? '#b45309' : '#236c2a';
@@ -46,26 +50,35 @@ function MapController({
   selectedId: string | null;
 }) {
   const map = useMap();
+  const safeLat = isNum(center.lat) ? center.lat : HCM_FALLBACK.lat;
+  const safeLng = isNum(center.lng) ? center.lng : HCM_FALLBACK.lng;
 
   // Fit bounds quanh tất cả listing + vị trí người dùng (chạy khi tập listing đổi)
   useEffect(() => {
     const pts: [number, number][] = listings
-      .filter((l) => l.lat != null && l.lng != null)
+      .filter((l) => isNum(l.lat) && isNum(l.lng))
       .map((l) => [l.lat as number, l.lng as number]);
-    pts.push([center.lat, center.lng]);
+    pts.push([safeLat, safeLng]);
     if (pts.length > 1) {
       map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 16 });
     } else {
-      map.setView([center.lat, center.lng], 14);
+      map.setView([safeLat, safeLng], 14);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listings.length, center.lat, center.lng]);
+  }, [listings.length, safeLat, safeLng]);
 
   // Bay tới listing được chọn
   useEffect(() => {
+    if (!selectedId) return;
     const sel = listings.find((l) => l.id === selectedId);
-    if (sel?.lat != null && sel?.lng != null) {
-      map.flyTo([sel.lat, sel.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
+    if (!sel || !isNum(sel.lat) || !isNum(sel.lng)) return;
+    // getZoom() có thể là NaN khi map chưa set view → ép về zoom hợp lệ (NaN zoom làm Leaflet sinh LatLng NaN)
+    const cur = map.getZoom();
+    const targetZoom = isNum(cur) ? Math.max(cur, 15) : 15;
+    try {
+      map.flyTo([sel.lat as number, sel.lng as number], targetZoom, { duration: 0.6 });
+    } catch {
+      map.setView([sel.lat as number, sel.lng as number], targetZoom);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -75,14 +88,18 @@ function MapController({
 
 export default function ListingsMap({ listings, center, selectedId, onSelect }: Props) {
   const withCoords = useMemo(
-    () => listings.filter((l) => l.lat != null && l.lng != null),
+    () => listings.filter((l) => isNum(l.lat) && isNum(l.lng)),
     [listings],
   );
   const router = useRouter();
+  const safeCenter: [number, number] = [
+    isNum(center.lat) ? center.lat : HCM_FALLBACK.lat,
+    isNum(center.lng) ? center.lng : HCM_FALLBACK.lng,
+  ];
 
   return (
     <MapContainer
-      center={[center.lat, center.lng]}
+      center={safeCenter}
       zoom={14}
       scrollWheelZoom
       className="w-full h-full"
@@ -95,7 +112,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
 
       {/* Vị trí người dùng */}
       <CircleMarker
-        center={[center.lat, center.lng]}
+        center={safeCenter}
         radius={8}
         pathOptions={{ color: '#fff', weight: 3, fillColor: '#236c2a', fillOpacity: 1 }}
       >

@@ -17,12 +17,21 @@ export interface Campaign {
   waiterSlotsFilled: number;
   shipperSlotsFilled: number;
   status: string;
+  actualServings?: number | null;
   charityReceiver?: { organizationName: string | null; user: { fullName: string } };
   assignments?: {
     id: string;
     role: 'chef' | 'waiter' | 'shipper';
     status: string;
     volunteer: { user: { fullName: string; avatarUrl: string | null } };
+  }[];
+  donations?: {
+    id: string;
+    itemName: string;
+    quantity: string | null;
+    note?: string | null;
+    status: string;
+    provider: { businessName: string };
   }[];
 }
 
@@ -64,6 +73,16 @@ export function useCampaigns() {
   });
 }
 
+// Chiến dịch do tổ chức (charity) tạo — gồm cả draft đang chờ duyệt
+export function useMyCampaigns(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'mine'],
+    queryFn: async () => (await api.get('/campaigns/my')).data.data as Campaign[],
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useMyTasks(enabled = true) {
   return useQuery({
     queryKey: ['campaigns', 'my-tasks'],
@@ -91,5 +110,59 @@ export function useApplyCampaign() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['campaigns'] });
     },
+  });
+}
+
+// Tổ chức: bắt đầu chiến dịch (open → in_progress)
+export function useStartCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.patch(`/campaigns/${id}/start`)).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// Tổ chức: kết thúc chiến dịch + nhập số suất thực tế
+export function useCompleteCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { id: string; actualServings: number }) =>
+      (await api.patch(`/campaigns/${p.id}/complete`, { actualServings: p.actualServings })).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// Provider: quyên góp nguyên liệu cho chiến dịch
+export function usePledgeDonation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; itemName: string; quantity?: string; note?: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/donations`, { itemName: p.itemName, quantity: p.quantity, note: p.note })).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// Charity: xác nhận đã nhận nguyên liệu
+export function useConfirmDonation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (donationId: string) => (await api.patch(`/campaigns/donations/${donationId}/confirm`)).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// TNV: chuyển bước công việc (kèm ảnh minh chứng tuỳ chọn)
+export function useAdvanceTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { assignmentId: string; photo?: File }) => {
+      const fd = new FormData();
+      if (p.photo) fd.append('photo', p.photo);
+      const { data } = await api.post(`/campaigns/assignments/${p.assignmentId}/advance`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return data.data as { id: string; status: string; pointsAwarded?: number };
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }
