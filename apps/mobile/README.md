@@ -12,10 +12,10 @@ Checklist để chạy được app (chi tiết từng mục ở các phần dư
 
 - [ ] Được mời vào **Expo Organization `foodresq-team`** (để build chung) và **Firebase project `foodresq-53ae8`** (để tải config). → nhờ chủ project mời theo email.
 - [ ] `git pull` + `corepack pnpm install` (từ gốc monorepo).
-- [ ] Tạo **`apps/mobile/.env`** và **`apps/api/.env`** — xin giá trị (Resend key, Firebase service account, JWT secret, Google Web client ID...) từ chủ project qua kênh **riêng tư** (không commit). Xem §3.1.
+- [ ] Tạo **`apps/mobile/.env`** và **`apps/api/.env`** — xin giá trị (`DATABASE_URL` + `REDIS_URL` đã deploy cloud, Resend key, Firebase service account, JWT secret, Google Web client ID...) từ chủ project qua kênh **riêng tư** (không commit). Xem §3.1.
 - [ ] Tải **`google-services.json`** từ Firebase Console → đặt vào `apps/mobile/`. Xem §3.2.
 - [ ] Cài JDK 17 + Android SDK + 1 emulator (bản Google Play). Xem §2.
-- [ ] Chạy hạ tầng + backend: `docker compose up -d` → `cd apps/api && corepack pnpm dev`. Xem §4.
+- [ ] Chạy backend: `cd apps/api && corepack pnpm dev` (DB + Redis đã deploy cloud — **không cần docker**). Xem §4.
 - [ ] **Build dev client qua EAS** (khuyến nghị — dùng chung keystore org, **không phải thêm SHA-1**): `eas build --profile development --platform android` → cài APK → `npx expo start --dev-client`. Xem §5.2.
 
 > ⭐ **Vì sao build qua EAS:** project thuộc org `foodresq-team` nên mọi member build dùng **chung 1 keystore** (SHA-1 `06:1C:...` đã đăng ký Firebase) → **không ai phải thêm SHA-1 riêng**. Chỉ khi build **local** (`expo run:android`) mới phải thêm SHA-1 debug của máy mình (xem §6).
@@ -84,18 +84,16 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com
 
 ## 4. Chạy backend (bắt buộc để auth hoạt động)
 
-App gọi API ở `apps/api` (NestJS, port **3001**, prefix `/api/v1`). Trước khi chạy app:
+App gọi API ở `apps/api` (NestJS, port **3001**, prefix `/api/v1`).
+
+> ✅ **Hạ tầng đã deploy cloud — không cần docker.** Database (Postgres trên **Supabase**) và **Redis** đều đã chạy trên cloud. Thành viên mới **không** phải khởi động Postgres/Redis local nữa, chỉ cần điền `DATABASE_URL` + `REDIS_URL` (xin từ chủ project) vào `apps/api/.env`.
 
 ```bash
-# 1. Khởi động hạ tầng (Postgres + Redis) — xem docker-compose ở gốc repo
-docker compose up -d        # foodresq-db, foodresq-redis
-
-# 2. Backend
 cd apps/api
 corepack pnpm dev           # nest start --watch → http://localhost:3001/api/v1
 ```
 
-Backend cần `apps/api/.env` (DB, JWT, Redis, SMTP/Resend cho forgot-password, Firebase Admin cho `/auth/firebase`). Xem các biến `FIREBASE_*`, `SMTP_*` trong file `.env` của backend.
+Backend cần `apps/api/.env` — xem mẫu ở `apps/api/.env.example`. Các biến chính: `DATABASE_URL` (Supabase), `REDIS_URL` (cloud), `JWT_SECRET`, SMTP/Resend (forgot-password), `FIREBASE_*` (Firebase Admin cho `/auth/firebase`). Xin giá trị thật từ chủ project qua kênh riêng tư.
 
 ---
 
