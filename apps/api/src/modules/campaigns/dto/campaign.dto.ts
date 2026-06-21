@@ -95,3 +95,17 @@ export class ApplyCampaignDto {
   @IsEnum(AssignmentRole)
   role!: AssignmentRole;
 }
+
+export class CompleteCampaignDto {
+  @ApiProperty({ example: 150, description: 'Số suất ăn thực tế đã phục vụ' })
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  actualServings!: number;
+}
+
+export class PledgeDonationDto {
+  @ApiProperty({ example: 'Gạo' }) @IsString() @MinLength(1) @MaxLength(255) itemName!: string;
+  @ApiPropertyOptional({ example: '20 kg' }) @IsOptional() @IsString() @MaxLength(100) quantity?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
+}

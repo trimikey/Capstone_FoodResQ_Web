@@ -719,7 +719,7 @@ function DonStat({ icon, label, value }: { icon: string; label: string; value: n
 // CAMPAIGNS TAB (Quản lý chiến dịch bếp ăn)
 // ----------------------------------------------------------------------
 const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
+  draft: { label: 'Chờ duyệt', cls: 'bg-honey-100 text-honey-800' },
   open: { label: 'Đang tuyển', cls: 'bg-sky-100 text-sky-700' },
   in_progress: { label: 'Đang diễn ra', cls: 'bg-honey-100 text-honey-800' },
   completed: { label: 'Hoàn tất', cls: 'bg-emerald-100 text-emerald-800' },
@@ -823,16 +823,36 @@ function CampaignsAdminTab() {
                         <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <select
-                          value={c.status}
-                          disabled={setCampaignStatus.isPending}
-                          onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
-                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-                        >
-                          {CAMPAIGN_STATUS_OPTS.map((s) => (
-                            <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
-                          ))}
-                        </select>
+                        {c.status === 'draft' ? (
+                          // Yêu cầu chờ duyệt → nút Duyệt (mở) / Từ chối (huỷ) cho rõ
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => changeStatus(c.id, 'open')}
+                              disabled={setCampaignStatus.isPending}
+                              className="px-3 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() => changeStatus(c.id, 'cancelled')}
+                              disabled={setCampaignStatus.isPending}
+                              className="px-3 py-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50"
+                            >
+                              Từ chối
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            value={c.status}
+                            disabled={setCampaignStatus.isPending}
+                            onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
+                            className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                          >
+                            {CAMPAIGN_STATUS_OPTS.filter((s) => s !== 'draft').map((s) => (
+                              <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
@@ -1570,7 +1590,7 @@ function trustToFive(score: number): number {
 
 function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean }) {
   const [menu, setMenu] = useState(false);
-  const role = USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' };
+  const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const five = trustToFive(u.trustScore);
   const goodScore = five >= 3;
@@ -1636,7 +1656,7 @@ function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: st
 }
 
 function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => void; onAct: (id: string, s: 'active' | 'banned') => void }) {
-  const role = USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' };
+  const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>

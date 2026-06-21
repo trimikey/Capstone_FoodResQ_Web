@@ -27,6 +27,7 @@ export interface Me {
   createdAt: string;
   stats: MeStats;
   volunteer: VolunteerInfo | null;
+  receiver: { isCharityOrg: boolean; organizationName: string | null } | null;
 }
 
 interface UpdateMeInput {
@@ -45,11 +46,12 @@ async function updateMe(input: UpdateMeInput): Promise<Me> {
   return data.data;
 }
 
-export function useMe() {
+export function useMe(enabled = true) {
   return useQuery({
     queryKey: ['users', 'me'],
     queryFn: fetchMe,
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 

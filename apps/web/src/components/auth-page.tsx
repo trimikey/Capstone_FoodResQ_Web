@@ -30,7 +30,7 @@ const registerSchema = z.object({
     .regex(/(?=.*[A-Z])/, "Cần ít nhất 1 chữ hoa")
     .regex(/(?=.*[0-9])/, "Cần ít nhất 1 chữ số"),
   confirmPassword: z.string().min(8, "Xác nhận mật khẩu phải từ 8 ký tự"),
-  role: z.enum(["provider", "receiver", "volunteer"]),
+  role: z.enum(["provider", "receiver", "volunteer", "charity"]),
   
   // Provider fields
   storeName: z.string().optional(),
@@ -54,6 +54,21 @@ const registerSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Tên cửa hàng phải từ 2 ký tự",
+        path: ["storeName"],
+      });
+    }
+    if (!data.providerAddress || data.providerAddress.trim().length < 5) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Địa chỉ hoạt động phải từ 5 ký tự",
+        path: ["providerAddress"],
+      });
+    }
+  } else if (data.role === "charity") {
+    if (!data.storeName || data.storeName.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Tên tổ chức phải từ 2 ký tự",
         path: ["storeName"],
       });
     }
@@ -101,6 +116,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
   const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
+  const [enrollRole, setEnrollRole] = useState<'receiver' | 'volunteer'>('receiver');
   const router = useRouter();
 
   // 1. Login form setup
@@ -253,10 +269,11 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
-        role: data.role,
-        businessName: data.role === 'provider' ? data.storeName || undefined : undefined,
+        role: data.role === 'charity' ? 'receiver' : data.role,
+        isCharityOrg: data.role === 'charity' ? true : undefined,
+        businessName: (data.role === 'provider' || data.role === 'charity') ? data.storeName || undefined : undefined,
         address:
-          data.role === 'provider'
+          (data.role === 'provider' || data.role === 'charity')
             ? data.providerAddress || undefined
             : data.role === 'receiver'
               ? data.receiverAddress || undefined
@@ -266,12 +283,16 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       });
       toast.success("Đăng ký thành công!");
 
-      if (data.role === 'receiver') {
-        // Auto-login bằng token từ register → bước chụp khuôn mặt (eKYC) ngay
+      if (data.role === 'receiver' || data.role === 'volunteer') {
+        // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.
+        // CHỈ cá nhân người nhận & tình nguyện viên phải đăng ký khuôn mặt.
+        // Tổ chức (charity) và nhà cung cấp KHÔNG cần quét mặt.
         setTokens(res.data.data.accessToken, res.data.data.refreshToken);
         setUser(res.data.data.user);
+        setEnrollRole(data.role === 'volunteer' ? 'volunteer' : 'receiver');
         setShowFaceEnrollment(true);
       } else {
+        // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
         setSuccessMessage("Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.");
         setTimeout(() => {
           setActiveTab("login");
@@ -646,7 +667,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                         <label className="font-semibold text-base text-neutral-500 ml-1">
                           Vai trò tham gia
                         </label>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           <button
                             type="button"
                             onClick={() => setRegisterValue("role", "receiver")}
@@ -673,6 +694,20 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           >
                             <span className="material-symbols-outlined mb-1">storefront</span>
                             <span className="font-medium text-[11px] leading-tight font-semibold">Cửa Hàng</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setRegisterValue("role", "charity")}
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:bg-neutral-100 text-center ${
+                              selectedRole === "charity" 
+                                ? "border-primary bg-emerald-800/5 text-emerald-800" 
+                                : "border-neutral-200/30 text-neutral-500"
+                            }`}
+                            disabled={isSubmitting}
+                          >
+                            <span className="material-symbols-outlined mb-1">diversity_1</span>
+                            <span className="font-medium text-[11px] leading-tight font-semibold">Tổ Chức Từ Thiện</span>
                           </button>
 
                           <button
@@ -772,17 +807,17 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                   ) : (
                     <>
                       {/* Step 2: Role Specific Form */}
-                      {selectedRole === "provider" && (
+                      {(selectedRole === "provider" || selectedRole === "charity") && (
                         <div className="space-y-4">
                           {/* Store Name */}
                           <div className="space-y-1.5">
                             <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="store-name">
-                              Tên cửa hàng/doanh nghiệp
+                              {selectedRole === "charity" ? "Tên tổ chức/cơ sở" : "Tên cửa hàng/doanh nghiệp"}
                             </label>
                             <input
                               id="store-name"
                               type="text"
-                              placeholder="Ví dụ: Bakery Fresh"
+                              placeholder={selectedRole === "charity" ? "Ví dụ: Tổ chức Trăng Khuyết" : "Ví dụ: Bakery Fresh"}
                               className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
                                 registerErrors.storeName ? "border-error" : "border-neutral-200/30"
                               }`}
@@ -795,22 +830,24 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           </div>
 
                           {/* Food Category */}
-                          <div className="space-y-1.5">
-                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="food-category">
-                              Loại thực phẩm chính
-                            </label>
-                            <select
-                              id="food-category"
-                              className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
-                              disabled={isSubmitting}
-                              {...registerSignup("foodCategory")}
-                            >
-                              <option value="Đồ tươi sống">Đồ tươi sống</option>
-                              <option value="Bánh mì & Bánh ngọt">Bánh mì & Bánh ngọt</option>
-                              <option value="Đồ ăn đã chế biến">Đồ ăn đã chế biến</option>
-                              <option value="Rau củ quả">Rau củ quả</option>
-                            </select>
-                          </div>
+                          {selectedRole === "provider" && (
+                            <div className="space-y-1.5">
+                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="food-category">
+                                Loại thực phẩm chính
+                              </label>
+                              <select
+                                id="food-category"
+                                className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
+                                disabled={isSubmitting}
+                                {...registerSignup("foodCategory")}
+                              >
+                                <option value="Đồ tươi sống">Đồ tươi sống</option>
+                                <option value="Bánh mì & Bánh ngọt">Bánh mì & Bánh ngọt</option>
+                                <option value="Đồ ăn đã chế biến">Đồ ăn đã chế biến</option>
+                                <option value="Rau củ quả">Rau củ quả</option>
+                              </select>
+                            </div>
+                          )}
 
                           {/* Address */}
                           <div className="space-y-1.5">
@@ -840,7 +877,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                           {/* Business License Upload */}
                           <div className="space-y-1.5">
                             <label className="font-semibold text-base text-neutral-500 ml-1">
-                              Giấy phép kinh doanh (Ảnh chụp)
+                              {selectedRole === "charity" ? "Giấy phép hoạt động (Ảnh chụp)" : "Giấy phép kinh doanh (Ảnh chụp)"}
                             </label>
                             <div className="relative">
                               <input
@@ -1082,27 +1119,32 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         </div>
       </footer>
 
-      {/* Bước cuối đăng ký (receiver): chụp khuôn mặt gốc để xác minh khi nhận hàng */}
+      {/* Bước cuối đăng ký (BẮT BUỘC với người nhận & tình nguyện viên): chụp khuôn mặt gốc để xác minh danh tính */}
       {showFaceEnrollment && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-12 flex flex-col gap-8 p-8 max-h-[90vh] overflow-y-auto">
-            <div>
-              <h2 className="font-bold text-2xl text-neutral-800">
-                Bước cuối: Đăng ký khuôn mặt
+          <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-3xl w-full sm:max-w-3xl shadow-12 flex flex-col gap-6 p-6 sm:p-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-[#96F28A] rounded-full flex items-center justify-center mb-6 shadow-sm">
+                <span className="material-symbols-outlined text-green-900 font-bold text-3xl">verified_user</span>
+              </div>
+              <h2 className="font-bold text-[28px] text-neutral-800">
+                Bước bắt buộc: Đăng ký khuôn mặt
               </h2>
-              <p className="font-medium text-sm text-neutral-500 mt-2">
-                Tài khoản đã tạo thành công
+              <p className="font-bold text-[15px] text-emerald-800 mt-2">
+                Tài khoản đã tạo — hãy chụp/đưa ảnh khuôn mặt để hoàn tất
+              </p>
+              <p className="text-[13px] text-neutral-500 mt-1 max-w-md">
+                {enrollRole === 'volunteer'
+                  ? 'Tình nguyện viên cần xác minh khuôn mặt để được giao nhiệm vụ.'
+                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'} Đây là bước bắt buộc, chỉ làm một lần.
               </p>
             </div>
+            {/* Không truyền onSkip → KHÔNG có nút bỏ qua (bắt buộc hoàn tất) */}
             <FaceEnrollmentPanel
               onDone={() => {
                 setShowFaceEnrollment(false);
-                router.push('/listings');
-              }}
-              onSkip={() => {
-                setShowFaceEnrollment(false);
-                router.push('/listings');
+                router.push(enrollRole === 'volunteer' ? '/deliveries' : '/listings');
               }}
             />
           </div>

@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
+import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import NotificationBell from '@/components/shared/NotificationBell';
 
 // Dropdown dashboard menu theo vai trò
-function dashboardLinksFor(role?: string): { href: string; icon: string; label: string }[] {
+function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
   if (role === UserRole.ADMIN) {
     return [
       { href: '/admin', icon: 'dashboard', label: 'Bảng Quản trị' },
@@ -18,6 +19,7 @@ function dashboardLinksFor(role?: string): { href: string; icon: string; label: 
     return [
       { href: '/provider', icon: 'storefront', label: 'Cửa hàng của tôi' },
       { href: '/provider/scan', icon: 'qr_code_scanner', label: 'Quét QR' },
+      { href: '/campaigns', icon: 'soup_kitchen', label: 'Bếp ăn cộng đồng' },
     ];
   }
   if (role === UserRole.VOLUNTEER) {
@@ -27,10 +29,15 @@ function dashboardLinksFor(role?: string): { href: string; icon: string; label: 
     ];
   }
   // receiver / khách
-  return [
+  const links = [
     { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận của tôi' },
     { href: '/history', icon: 'history', label: 'Lịch sử đơn hàng' },
   ];
+  // Tổ chức từ thiện (receiver + isCharityOrg) → thêm Quản lý chiến dịch
+  if (isCharityOrg) {
+    links.unshift({ href: '/campaigns', icon: 'soup_kitchen', label: 'Quản lý chiến dịch' });
+  }
+  return links;
 }
 
 /**
@@ -61,6 +68,9 @@ export default function PublicHeader() {
 
   const isAuthed = mounted && !!user;
   const isSolid = scrolled || pathname !== '/';
+  // Lấy cờ tổ chức từ thiện để thêm link Quản lý chiến dịch (chỉ fetch khi đã đăng nhập)
+  const { data: me } = useMe(isAuthed);
+  const isCharityOrg = !!me?.receiver?.isCharityOrg;
 
   const handleLogout = () => {
     logout();
@@ -164,7 +174,7 @@ export default function PublicHeader() {
                       <span>Hồ sơ cá nhân</span>
                     </Link>
 
-                    {dashboardLinksFor(user?.role).map((link) => (
+                    {dashboardLinksFor(user?.role, isCharityOrg).map((link) => (
                       <Link
                         key={link.href}
                         href={link.href}

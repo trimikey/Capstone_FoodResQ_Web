@@ -65,4 +65,8 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(['shipper', 'chef', 'waiter'])
   volunteerRole?: 'shipper' | 'chef' | 'waiter';
+
+  @ApiPropertyOptional({ example: true, description: 'Charity: is a charity organization' })
+  @IsOptional()
+  isCharityOrg?: boolean;
 }

@@ -278,6 +278,7 @@ model ProviderProfile {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   foodListings FoodListing[]
   esgSnapshots EsgSnapshot[]
+  campaignDonations CampaignDonation[]
 
   @@index([userId])
   @@index([location], map: "idx_provider_location", type: Gist)
@@ -316,6 +317,9 @@ model VolunteerProfile {
   id                 String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   userId             String             @unique @map("user_id") @db.Uuid
   idCardNumber       String?            @map("id_card_number") @db.VarChar(50)
+  idCardImageUrl     String?            @map("id_card_image_url")
+  faceImageUrl       String?            @map("face_image_url")
+  faceDescriptor     Json?              @map("face_descriptor")
   currentLocation    Unsupported("geography(Point, 4326)")? @map("current_location")
   locationUpdatedAt  DateTime?          @map("location_updated_at") @db.Timestamptz
   isAvailable        Boolean            @default(false) @map("is_available")
@@ -490,11 +494,32 @@ model KitchenCampaign {
 
   charityReceiver ReceiverProfile             @relation(fields: [charityReceiverId], references: [id])
   assignments     CampaignVolunteerAssignment[]
+  donations       CampaignDonation[]
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
   @@index([kitchenLocation], map: "idx_campaign_location", type: Gist)
   @@map("kitchen_campaigns")
+}
+
+/// Nhà cung cấp quyên góp nguyên liệu cho một chiến dịch bếp ăn
+model CampaignDonation {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId String    @map("campaign_id") @db.Uuid
+  providerId String    @map("provider_id") @db.Uuid
+  itemName   String    @map("item_name") @db.VarChar(255)
+  quantity   String?   @db.VarChar(100)
+  note       String?
+  status     String    @default("pledged") @db.VarChar(20)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  receivedAt DateTime? @map("received_at") @db.Timestamptz
+
+  campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
+
+  @@index([campaignId])
+  @@index([providerId])
+  @@map("campaign_donations")
 }
 
 model CampaignVolunteerAssignment {

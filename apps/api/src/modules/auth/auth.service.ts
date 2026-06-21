@@ -48,7 +48,12 @@ export class AuthService {
 
       if (dto.role === 'receiver') {
         await tx.receiverProfile.create({
-          data: { userId: created.id, address: dto.address ?? null },
+          data: { 
+            userId: created.id, 
+            address: dto.address ?? null,
+            isCharityOrg: dto.isCharityOrg ?? false,
+            organizationName: dto.isCharityOrg ? (dto.businessName ?? dto.fullName) : null
+          },
         });
       } else if (dto.role === 'volunteer') {
         const vp = await tx.volunteerProfile.create({
