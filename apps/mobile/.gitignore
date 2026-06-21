@@ -1,0 +1,15 @@
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.log
+.DS_Store
+
+# Firebase config (chứa API key client — KHÔNG commit; mỗi dev tự tải từ Firebase Console,
+# EAS build dùng file environment variable). Tránh GitHub secret scanning flag.
+google-services.json
+GoogleService-Info.plist
+
+# Native dirs sinh ra khi prebuild/run local
+/android
+/ios

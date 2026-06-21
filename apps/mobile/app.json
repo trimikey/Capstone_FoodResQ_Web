@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "FoodResQ",
+    "slug": "foodresq",
+    "version": "0.1.0",
+    "scheme": "foodresq",
+    "orientation": "portrait",
+    "icon": "./assets/Logo_FoodResQ.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.foodresq.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "android": {
+      "package": "com.foodresq.mobile",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/Logo_FoodResQ.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-image",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2a15ed4a-5ce4-4185-bed1-9fea77f52427"
+      }
+    },
+    "owner": "foodresq-team"
+  }
+}
