@@ -32,6 +32,12 @@
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FoodResQ cần vị trí để tìm thực phẩm gần bạn."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {
