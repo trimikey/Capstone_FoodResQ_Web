@@ -8,6 +8,7 @@ import apiClient, {
   endpoints,
 } from '../api/client';
 import { LoginInput, RegisterInput } from '../utils/validators';
+import { signOutFirebase } from '../services/firebaseAuth';
 
 export interface User {
   id: string;
@@ -226,6 +227,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         // Logout endpoint có thể fail (vd 401 do token đã hết hạn) — vẫn xoá token local bình thường.
         // Dùng debug để không kích hoạt LogBox overlay vì đây là trường hợp mong đợi.
         if (__DEV__) console.debug('Logout endpoint bỏ qua được:', error);
+      }
+
+      // Đăng xuất + thu hồi quyền Firebase/Google để lần sau đăng nhập như người mới
+      try {
+        await signOutFirebase();
+      } catch (error) {
+        if (__DEV__) console.debug('signOutFirebase bỏ qua được:', error);
       }
 
       // Clear stored tokens
