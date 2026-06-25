@@ -64,10 +64,14 @@ enum VolunteerSpecialization {
 }
 
 enum FoodCategory {
-  prepared_meal
-  raw_ingredients
+  cooked_meal
   bakery
+  fresh_fruit
   beverage
+  vegetables
+  raw_protein
+  dry_goods
+  canned_packaged
   other
 
   @@map("food_category")

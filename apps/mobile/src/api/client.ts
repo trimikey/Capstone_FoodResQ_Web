@@ -132,10 +132,41 @@ export interface ApiUser {
   email: string;
   fullName?: string;
   name?: string;
+  phone?: string | null;
   role: string;
   status?: string;
   avatarUrl?: string | null;
   trustScore?: number;
+}
+
+/**
+ * Hồ sơ đầy đủ trả về từ GET /users/me — kèm thống kê và thông tin theo vai trò.
+ * Các nhánh volunteer/receiver là null nếu user không thuộc vai trò đó.
+ */
+export interface ApiUserProfile extends ApiUser {
+  createdAt?: string;
+  stats?: {
+    kgSaved: number;
+    completedCount: number;
+    cancelledCount: number;
+    providersHelped: number;
+  };
+  volunteer?: {
+    specializations: { specialization: string; isVerified: boolean }[];
+    rank: string;
+    dedicationPoints: number;
+  } | null;
+  receiver?: {
+    isCharityOrg: boolean;
+    organizationName: string | null;
+  } | null;
+}
+
+/** Body PATCH /users/me — cập nhật hồ sơ (tất cả field optional). */
+export interface UpdateProfileInput {
+  fullName?: string;
+  phone?: string;
+  avatarUrl?: string;
 }
 
 /**
@@ -164,10 +195,13 @@ export const endpoints = {
     register: '/auth/register',
     refresh: '/auth/refresh',
     logout: '/auth/logout',
-    me: '/auth/me',
     forgotPassword: '/auth/forgot-password',
     resetPassword: '/auth/reset-password',
     firebase: '/auth/firebase',
+  },
+  users: {
+    // Hồ sơ người dùng đang đăng nhập (GET lấy chi tiết, PATCH cập nhật)
+    me: '/users/me',
   },
   listings: {
     search: '/listings',

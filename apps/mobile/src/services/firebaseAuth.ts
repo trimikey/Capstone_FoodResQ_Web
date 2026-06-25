@@ -81,8 +81,18 @@ export async function confirmPhoneCode(code: string): Promise<string> {
   return token;
 }
 
-/** Đăng xuất khỏi Firebase + Google (gọi kèm khi logout app). */
+/**
+ * Đăng xuất khỏi Firebase + Google (gọi kèm khi logout app).
+ * Thu hồi luôn quyền OAuth (revokeAccess) để lần đăng nhập sau hiện lại
+ * màn chọn tài khoản + màn consent — như người dùng hoàn toàn mới.
+ */
 export async function signOutFirebase(): Promise<void> {
+  ensureConfigured();
+  try {
+    await GoogleSignin.revokeAccess();
+  } catch {
+    // bỏ qua nếu chưa cấp quyền / chưa từng đăng nhập Google
+  }
   try {
     await GoogleSignin.signOut();
   } catch {

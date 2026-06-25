@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import ResetPasswordScreenComponent from '../../components/ResetPasswordScreen';
 import apiClient, { endpoints } from '../../api/client';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
@@ -25,14 +25,14 @@ export default function ResetPasswordScreen({
         newPassword,
       });
 
-      Toast.show({
+      Popup.show({
         type: 'success',
         text1: 'Đặt lại mật khẩu thành công',
         text2: 'Hãy đăng nhập bằng mật khẩu mới',
       });
       navigation.reset({ index: 0, routes: [{ name: 'SignIn' }] });
     } catch (error) {
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Đặt lại mật khẩu thất bại',
         text2: getErrorMessage(error),
