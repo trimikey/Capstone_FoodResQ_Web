@@ -7,15 +7,14 @@ import type { Coords } from '../services/geolocation';
  * enum local). Dùng union mở rộng + fallback string để không vỡ khi gặp giá trị lạ.
  */
 export type FoodCategory =
-  | 'prepared_meal'
-  | 'raw_ingredients'
+  | 'cooked_meal'
   | 'bakery'
+  | 'fresh_fruit'
   | 'beverage'
   | 'vegetables'
-  | 'fruits'
-  | 'dairy'
-  | 'meat'
-  | 'seafood'
+  | 'raw_protein'
+  | 'dry_goods'
+  | 'canned_packaged'
   | 'other'
   | (string & {});
 

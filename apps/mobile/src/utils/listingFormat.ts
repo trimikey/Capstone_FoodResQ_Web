@@ -1,15 +1,16 @@
 import type { FoodCategory, QuantityUnit } from '../hooks/useListings';
 
+// Phải khớp enum food_category trong Postgres (9 giá trị). Gửi category
+// ngoài danh sách → backend trả 400 (làm filter "không hoạt động").
 export const CATEGORY_LABELS: Record<string, string> = {
-  prepared_meal: 'Bữa ăn',
-  raw_ingredients: 'Nguyên liệu',
+  cooked_meal: 'Món nấu chín',
   bakery: 'Bánh',
+  fresh_fruit: 'Trái cây',
   beverage: 'Đồ uống',
   vegetables: 'Rau củ',
-  fruits: 'Trái cây',
-  dairy: 'Sữa & trứng',
-  meat: 'Thịt',
-  seafood: 'Hải sản',
+  raw_protein: 'Thịt & hải sản sống',
+  dry_goods: 'Đồ khô',
+  canned_packaged: 'Đồ hộp & đóng gói',
   other: 'Khác',
 };
 
