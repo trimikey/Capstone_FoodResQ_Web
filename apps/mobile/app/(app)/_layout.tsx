@@ -66,6 +66,7 @@ export default function AppTabsLayout() {
       {/* Màn chi tiết — routable nhưng KHÔNG hiện trên tab bar (href: null) */}
       <Tabs.Screen name="listing/[id]" options={{ href: null }} />
       <Tabs.Screen name="order/[id]" options={{ href: null }} />
+      <Tabs.Screen name="profile/edit" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -32,6 +32,12 @@
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "FoodResQ cần truy cập thư viện ảnh để bạn chọn ảnh đại diện."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "FoodResQ cần vị trí để tìm thực phẩm gần bạn."

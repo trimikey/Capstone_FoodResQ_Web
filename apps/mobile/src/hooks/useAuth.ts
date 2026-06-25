@@ -19,6 +19,7 @@ export function useAuth() {
     initialize,
     restoreToken,
     clearError,
+    updateUser,
   } = useAuthStore();
 
   const isAuthenticated = !!accessToken && !!user;
@@ -40,5 +41,6 @@ export function useAuth() {
     initialize,
     restoreToken,
     clearError,
+    updateUser,
   };
 }

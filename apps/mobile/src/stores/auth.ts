@@ -15,6 +15,10 @@ export interface User {
   email: string;
   name: string;
   role: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  status: string | null;
+  trustScore: number | null;
 }
 
 /**
@@ -27,6 +31,10 @@ function normalizeUser(raw: ApiUser): User {
     email: raw.email,
     name: raw.fullName ?? raw.name ?? '',
     role: raw.role,
+    phone: raw.phone ?? null,
+    avatarUrl: raw.avatarUrl ?? null,
+    status: raw.status ?? null,
+    trustScore: raw.trustScore ?? null,
   };
 }
 
@@ -48,6 +56,8 @@ export interface AuthState {
   restoreToken: () => Promise<void>;
   clearSession: () => void;
   clearError: () => void;
+  /** Merge một phần thông tin user vào state (vd sau khi cập nhật hồ sơ). */
+  updateUser: (partial: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -70,7 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         // Try to fetch user profile
         try {
           const response = await apiClient.get<ApiResponse<ApiUser>>(
-            endpoints.auth.me
+            endpoints.users.me
           );
           if (response.data.success) {
             set({
@@ -287,5 +297,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   // Clear error message
   clearError: () => {
     set({ error: null });
+  },
+
+  // Merge thông tin user (vd sau khi PATCH /users/me thành công)
+  updateUser: (partial) => {
+    set((state) => (state.user ? { user: { ...state.user, ...partial } } : {}));
   },
 }));
