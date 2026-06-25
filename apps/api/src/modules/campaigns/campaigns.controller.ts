@@ -9,15 +9,17 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Public } from '@/common/decorators/public.decorator';
 import { UserRole } from '@foodresq/types';
 import { User } from '@prisma/client';
 
@@ -50,6 +52,20 @@ export class CampaignsController {
     return this.campaignsService.myAssignments(user.id);
   }
 
+  @Public()
+  @Get('public')
+  @ApiOperation({ summary: 'Công khai: chiến dịch sắp diễn ra (cho trang chủ)' })
+  listPublicUpcoming() {
+    return this.campaignsService.listPublicUpcoming();
+  }
+
+  @Public()
+  @Get('public/:id')
+  @ApiOperation({ summary: 'Công khai: chi tiết chiến dịch (cho trang chi tiết)' })
+  publicDetail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getPublicDetail(id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết chiến dịch' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
@@ -62,6 +78,18 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Charity: tạo chiến dịch bếp ăn' })
   create(@CurrentUser() user: User, @Body() dto: CreateCampaignDto) {
     return this.campaignsService.create(user.id, dto);
+  }
+
+  @Post('upload-image')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Charity: upload ảnh chiến dịch → trả về URL' })
+  async uploadImage(@UploadedFile() image?: Express.Multer.File) {
+    if (!image) throw new BadRequestException('Thiếu file ảnh.');
+    const url = await this.campaignsService.saveCampaignImage(image);
+    return { url };
   }
 
   @Post(':id/apply')
@@ -94,6 +122,34 @@ export class CampaignsController {
     @Body() dto: CompleteCampaignDto,
   ) {
     return this.campaignsService.completeCampaign(id, user.id, dto.actualServings);
+  }
+
+  @Post(':id/change-requests')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: gửi yêu cầu thay đổi chiến dịch (chờ admin duyệt)' })
+  submitChange(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: SubmitCampaignChangeDto,
+  ) {
+    return this.campaignsService.submitChangeRequest(id, user.id, dto);
+  }
+
+  @Get(':id/change-requests')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: lịch sử yêu cầu thay đổi của chiến dịch' })
+  listChanges(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.listChangeRequests(id, user.id);
+  }
+
+  @Patch('change-requests/:id/cancel')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: huỷ yêu cầu thay đổi đang chờ duyệt' })
+  cancelChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.cancelChangeRequest(id, user.id);
   }
 
   @Post(':id/donations')
