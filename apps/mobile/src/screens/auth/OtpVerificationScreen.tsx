@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import OtpVerificationScreenComponent from '../../components/OtpVerificationScreen';
 import apiClient, { endpoints } from '../../api/client';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
@@ -27,7 +27,7 @@ export default function OtpVerificationScreen({
         await loginWithFirebase(idToken);
         navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
       } catch (error) {
-        Toast.show({
+        Popup.show({
           type: 'error',
           text1: 'Xác minh OTP thất bại',
           text2: getErrorMessage(error),
@@ -55,9 +55,9 @@ export default function OtpVerificationScreen({
       } else if (type === 'phone_login' && phone) {
         await signInWithPhone(phone);
       }
-      Toast.show({ type: 'success', text1: 'Đã gửi lại mã OTP' });
+      Popup.show({ type: 'success', text1: 'Đã gửi lại mã OTP' });
     } catch (error) {
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Gửi lại OTP thất bại',
         text2: getErrorMessage(error),

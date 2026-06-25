@@ -156,3 +156,25 @@ export const phoneSignInSchema = z.object({
 });
 
 export type PhoneSignInInput = z.infer<typeof phoneSignInSchema>;
+
+/**
+ * Cập nhật hồ sơ (PATCH /users/me). Mọi field optional — chỉ gửi field thay đổi.
+ * Ràng buộc khớp UpdateMeDto backend: phone theo định dạng di động VN, avatarUrl là URL.
+ */
+export const updateProfileSchema = z.object({
+  fullName: z
+    .string()
+    .min(2, 'Họ tên phải có ít nhất 2 ký tự')
+    .max(255, 'Họ tên không vượt quá 255 ký tự'),
+  // Cho phép để trống (không đổi/không có); nếu nhập thì phải đúng định dạng VN.
+  phone: z
+    .string()
+    .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại không hợp lệ (vd 0912345678)')
+    .or(z.literal('')),
+  avatarUrl: z
+    .string()
+    .url('Đường dẫn ảnh không hợp lệ')
+    .or(z.literal('')),
+});
+
+export type UpdateProfileFormInput = z.infer<typeof updateProfileSchema>;

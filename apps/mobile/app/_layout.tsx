@@ -5,7 +5,7 @@ import { PaperProvider } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
 import { Stack } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
-import Toast from 'react-native-toast-message';
+import { AppPopupHost } from '@/components/ui/AppPopup';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/auth';
 import { setSessionExpiredHandler } from '@/api/client';
@@ -35,8 +35,8 @@ export default function RootLayout() {
           <PaperProvider>
             <StatusBar style="dark" />
             <Stack screenOptions={{ headerShown: false }} />
-            {/* Toast đặt cuối, ngoài navigator để luôn nổi trên mọi màn hình */}
-            <Toast />
+            {/* Popup giữa màn hình — đặt cuối, trong PaperProvider để Portal nổi trên mọi màn */}
+            <AppPopupHost />
           </PaperProvider>
         </SafeAreaProvider>
       </QueryClientProvider>

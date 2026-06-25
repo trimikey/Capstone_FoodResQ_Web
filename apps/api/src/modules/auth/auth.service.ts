@@ -14,6 +14,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { User } from '@prisma/client';
+import { FirebaseAdminService } from './firebase-admin.service';
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
@@ -25,6 +26,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private firebaseAdmin: FirebaseAdminService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -181,6 +183,92 @@ export class AuthService {
     }
 
     return this.issueTokens(user, deviceInfo, ipAddress);
+  }
+
+  /**
+   * Đăng nhập/đăng ký bằng Firebase ID token (dùng cho mobile: Google sign-in & Phone OTP).
+   * Token được verify bằng Firebase Admin SDK — khác với /auth/google (verify Google OAuth token).
+   */
+  async loginWithFirebase(
+    idToken: string,
+    role?: 'receiver' | 'volunteer' | 'provider',
+    deviceInfo?: string,
+    ipAddress?: string,
+  ) {
+    let email: string | undefined;
+    let name: string | undefined;
+    let picture: string | undefined;
+    let phone: string | undefined;
+    try {
+      const decoded = await this.firebaseAdmin.verifyIdToken(idToken);
+      email = decoded.email;
+      name = decoded.name as string | undefined;
+      picture = decoded.picture;
+      phone = decoded.phone_number;
+      if (decoded.email && decoded.email_verified === false) {
+        throw new UnauthorizedException('Email chưa được xác minh');
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException('Firebase token không hợp lệ');
+    }
+
+    // Đăng nhập bằng phone OTP không có email → dùng phone làm khoá định danh
+    if (!email && !phone) {
+      throw new UnauthorizedException('Không lấy được email hoặc số điện thoại từ Firebase');
+    }
+
+    let user = email
+      ? await this.prisma.user.findUnique({ where: { email } })
+      : await this.prisma.user.findFirst({ where: { phone, deletedAt: null } });
+    let isNewUser = false;
+
+    if (!user) {
+      isNewUser = true;
+      const newRole = role ?? 'receiver';
+      // Mật khẩu ngẫu nhiên vì đăng nhập qua Firebase, không dùng password
+      const randomPassword = crypto.randomBytes(32).toString('hex');
+      const passwordHash = await bcrypt.hash(randomPassword, BCRYPT_ROUNDS);
+      const fullName = name ?? email?.split('@')[0] ?? phone ?? 'Người dùng';
+      // email là cột bắt buộc + unique. Đăng nhập phone OTP không có email → sinh placeholder
+      const resolvedEmail = email ?? `${phone}@phone.foodresq.local`;
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email: resolvedEmail,
+            phone: phone ?? null,
+            passwordHash,
+            fullName,
+            avatarUrl: picture ?? null,
+            role: newRole,
+            status: 'active',
+          },
+        });
+        if (newRole === 'receiver') {
+          await tx.receiverProfile.create({ data: { userId: created.id } });
+        } else if (newRole === 'volunteer') {
+          await tx.volunteerProfile.create({ data: { userId: created.id } });
+        } else if (newRole === 'provider') {
+          await tx.providerProfile.create({
+            data: { userId: created.id, businessName: fullName, businessType: 'other', address: '' },
+          });
+        }
+        return created;
+      });
+    } else if (user.status === 'banned') {
+      throw new UnauthorizedException('Tài khoản đã bị khóa');
+    } else {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          lastLoginAt: new Date(),
+          ...(!user.avatarUrl && picture ? { avatarUrl: picture } : {}),
+        },
+      });
+    }
+
+    const tokens = await this.issueTokens(user, deviceInfo, ipAddress);
+    return { ...tokens, isNewUser };
   }
 
   async refresh(rawToken: string, deviceInfo?: string, ipAddress?: string) {

@@ -17,7 +17,7 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, LoginInput } from '../utils/validators';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import { useAuth } from '../hooks/useAuth';
 import ErrorToast from './ErrorToast';
@@ -65,7 +65,7 @@ export function SignInScreen({
       onSignInSuccess?.(undefined);
     } catch (err) {
       if (err instanceof AuthCancelledError) return; // người dùng huỷ — không báo lỗi
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Đăng nhập Google thất bại',
         text2: getErrorMessage(err),
@@ -95,7 +95,7 @@ export function SignInScreen({
       // Gọi API login thật (store set token + user, throw nếu thất bại)
       await login(data);
 
-      Toast.show({
+      Popup.show({
         type: 'success',
         text1: 'Đăng nhập thành công',
         text2: 'Chào mừng bạn quay lại FoodResQ',

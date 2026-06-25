@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import {
   SignUpVerificationScreen as SignUpVerificationForm,
 } from '../../components/SignUpVerificationScreen';
@@ -40,7 +40,7 @@ export default function SignUpVerificationScreen({
 
       await register(fullData as any);
 
-      Toast.show({
+      Popup.show({
         type: 'success',
         text1: 'Đăng ký thành công',
         text2: 'Chào mừng bạn đến với FoodResQ',
@@ -53,7 +53,7 @@ export default function SignUpVerificationScreen({
       });
     } catch (error) {
       // Lỗi mong đợi (email trùng, validate...) -> toast, KHÔNG console.error (tránh LogBox)
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Đăng ký thất bại',
         text2: getErrorMessage(error),
