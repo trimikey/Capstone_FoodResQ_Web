@@ -84,21 +84,21 @@ function listingsFor(now) {
       images: ['/banh-su-kem.png'], dLng: 0.0038, dLat: 0.0028,
     },
     {
-      p: 1, title: 'Cơm gà Hội An', category: 'prepared_meal',
+      p: 1, title: 'Cơm gà Hội An', category: 'cooked_meal',
       qty: 8, unit: 'portion', weight: 0.4, maxPer: 2,
       pickStart: h(0), pickEnd: d(2), expiry: d(2),
       storage: 'Giữ nóng', allergen: 'Gà, hành tây',
       images: ['/com-ga-hoi-an.png'], dLng: -0.006, dLat: 0.005,
     },
     {
-      p: 1, title: 'Suất cơm chay thập cẩm', category: 'prepared_meal',
+      p: 1, title: 'Suất cơm chay thập cẩm', category: 'cooked_meal',
       qty: 20, unit: 'portion', weight: 0.45, maxPer: 3,
       pickStart: h(0), pickEnd: d(2), expiry: d(2),
       storage: 'Giữ nóng', allergen: 'Đậu nành',
       images: ['/com-ga-hoi-an.png'], dLng: -0.0058, dLat: 0.0052,
     },
     {
-      p: 2, title: 'Rau củ quả tươi cuối ngày', category: 'raw_ingredients',
+      p: 2, title: 'Rau củ quả tươi cuối ngày', category: 'vegetables',
       qty: 30, unit: 'kg', weight: 1, maxPer: 5,
       pickStart: h(0), pickEnd: d(3), expiry: d(5),
       storage: 'Nơi khô ráo, thoáng mát', allergen: null,
@@ -113,14 +113,14 @@ function listingsFor(now) {
     },
     // Nhà Hàng Sen Việt (index 3)
     {
-      p: 3, title: 'Bún chả Hà Nội', category: 'prepared_meal',
+      p: 3, title: 'Bún chả Hà Nội', category: 'cooked_meal',
       qty: 15, unit: 'portion', weight: 0.5, maxPer: 2,
       pickStart: h(0), pickEnd: d(2), expiry: d(2),
       storage: 'Giữ nóng', allergen: 'Thịt heo, mắm tôm',
       images: ['/com-ga-hoi-an.png'], dLng: -0.008, dLat: -0.003,
     },
     {
-      p: 3, title: 'Gỏi cuốn tôm thịt', category: 'prepared_meal',
+      p: 3, title: 'Gỏi cuốn tôm thịt', category: 'cooked_meal',
       qty: 25, unit: 'item', weight: 0.1, maxPer: 5,
       pickStart: h(0), pickEnd: d(1), expiry: d(1),
       storage: 'Tủ mát', allergen: 'Tôm',

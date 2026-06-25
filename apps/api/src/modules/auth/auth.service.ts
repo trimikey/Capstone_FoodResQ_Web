@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -32,6 +33,10 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
+    // Toạ độ GPS lúc đăng ký (nếu người dùng cho phép định vị) → lưu vào cột
+    // GEOGRAPHY để các flow tìm theo bán kính (PostGIS ST_DWithin) hoạt động ngay.
+    const hasGeo = typeof dto.latitude === 'number' && typeof dto.longitude === 'number';
+
     // Tạo user + profile theo role trong 1 transaction — các flow sau
     // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
     const user = await this.prisma.$transaction(async (tx) => {
@@ -47,14 +52,21 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
-        await tx.receiverProfile.create({
-          data: { 
-            userId: created.id, 
+        const profile = await tx.receiverProfile.create({
+          data: {
+            userId: created.id,
             address: dto.address ?? null,
             isCharityOrg: dto.isCharityOrg ?? false,
             organizationName: dto.isCharityOrg ? (dto.businessName ?? dto.fullName) : null
           },
         });
+        if (hasGeo) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE receiver_profiles
+            SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography
+            WHERE id = ${profile.id}::uuid
+          `);
+        }
       } else if (dto.role === 'volunteer') {
         const vp = await tx.volunteerProfile.create({
           data: { userId: created.id, vehicleType: dto.vehicleType ?? null },
@@ -65,7 +77,7 @@ export class AuthService {
            });
         }
       } else if (dto.role === 'provider') {
-        await tx.providerProfile.create({
+        const profile = await tx.providerProfile.create({
           data: {
             userId: created.id,
             businessName: dto.businessName ?? dto.fullName,
@@ -73,6 +85,13 @@ export class AuthService {
             address: dto.address ?? '',
           },
         });
+        if (hasGeo) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE provider_profiles
+            SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography
+            WHERE id = ${profile.id}::uuid
+          `);
+        }
       }
 
       return created;

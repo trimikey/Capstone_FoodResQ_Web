@@ -9,7 +9,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { StorageService } from '@/common/storage/storage.service';
-import { CreateCampaignDto, ApplyCampaignDto } from './dto/campaign.dto';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
+import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto } from './dto/campaign.dto';
 
 // State machine cho công việc của TNV trong chiến dịch
 const ASSIGN_NEXT: Record<string, string> = {
@@ -43,7 +44,16 @@ export class CampaignsService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private storage: StorageService,
+    private systemConfig: SystemConfigService,
   ) {}
+
+  /** Số ngày (theo lịch UTC) từ hôm nay đến `date`. */
+  private daysUntil(date: Date): number {
+    const now = new Date();
+    const startToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const target = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    return Math.round((target - startToday) / 86_400_000);
+  }
 
   /**
    * Tổ chức từ thiện gửi YÊU CẦU tạo chiến dịch → tạo ở trạng thái 'draft' (chờ duyệt).
@@ -64,13 +74,18 @@ export class CampaignsService {
         charity_receiver_id, title, description, kitchen_address, kitchen_location,
         scheduled_date, start_time, end_time,
         chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
-        expected_servings, status, created_at, updated_at
+        expected_servings, image_urls, menu_items, schedule_items, supply_items,
+        status, created_at, updated_at
       ) VALUES (
         ${receiver.id}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
         ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
         ${dto.chefSlotsNeeded ?? 0}, ${dto.waiterSlotsNeeded ?? 0}, ${dto.shipperSlotsNeeded ?? 0},
-        ${dto.expectedServings ?? null}, 'draft'::campaign_status, NOW(), NOW()
+        ${dto.expectedServings ?? null}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
+        ${JSON.stringify(dto.menuItems ?? [])}::jsonb,
+        ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
+        ${JSON.stringify(dto.supplyItems ?? [])}::jsonb,
+        'draft'::campaign_status, NOW(), NOW()
       )
       RETURNING id
     `);
@@ -90,6 +105,59 @@ export class CampaignsService {
     }
 
     return this.findOne(row.id);
+  }
+
+  /** Công khai (không cần đăng nhập): vài chiến dịch đang tuyển, sắp diễn ra — cho trang chủ. */
+  async listPublicUpcoming(limit = 3) {
+    const rows = await this.prisma.kitchenCampaign.findMany({
+      where: { status: 'open' },
+      orderBy: { scheduledDate: 'asc' },
+      take: Math.min(limit, 12),
+      select: {
+        id: true, title: true, description: true,
+        scheduledDate: true, startTime: true, endTime: true,
+        kitchenAddress: true, imageUrls: true, status: true,
+        charityReceiver: { select: { organizationName: true } },
+      },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      scheduledDate: r.scheduledDate,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      kitchenAddress: r.kitchenAddress,
+      imageUrls: Array.isArray(r.imageUrls) ? (r.imageUrls as string[]) : [],
+      status: r.status,
+      organizationName: r.charityReceiver?.organizationName ?? null,
+    }));
+  }
+
+  /** Công khai: chi tiết một chiến dịch (cho trang chi tiết ngoài). Chỉ campaign đang mở/diễn ra. */
+  async getPublicDetail(id: string) {
+    const c = await this.prisma.kitchenCampaign.findUnique({
+      where: { id },
+      select: {
+        id: true, title: true, description: true, status: true,
+        scheduledDate: true, startTime: true, endTime: true, kitchenAddress: true, imageUrls: true,
+        chefSlotsNeeded: true, waiterSlotsNeeded: true, shipperSlotsNeeded: true,
+        chefSlotsFilled: true, waiterSlotsFilled: true, shipperSlotsFilled: true,
+        expectedServings: true, menuItems: true, scheduleItems: true, supplyItems: true,
+        charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
+      },
+    });
+    if (!c || !['open', 'in_progress'].includes(c.status)) {
+      throw new NotFoundException('Không tìm thấy chiến dịch.');
+    }
+    return {
+      ...c,
+      imageUrls: Array.isArray(c.imageUrls) ? (c.imageUrls as string[]) : [],
+      menuItems: Array.isArray(c.menuItems) ? c.menuItems : [],
+      scheduleItems: Array.isArray(c.scheduleItems) ? c.scheduleItems : [],
+      supplyItems: Array.isArray(c.supplyItems) ? (c.supplyItems as string[]) : [],
+      organizationName: c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
+    };
   }
 
   async listOpen() {
@@ -187,9 +255,20 @@ export class CampaignsService {
   async apply(campaignId: string, userId: string, dto: ApplyCampaignDto) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId },
-      include: { specializations: { select: { specialization: true } } },
+      include: {
+        specializations: { select: { specialization: true } },
+        user: { select: { status: true } },
+      },
     });
     if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    // Chốt uy tín: TNV đang bị khoá/hạn chế thì không được tham gia
+    if (volunteer.user.status === 'banned') {
+      throw new ForbiddenException('Tài khoản của bạn đang bị khoá, không thể tham gia chiến dịch.');
+    }
+    if (volunteer.user.status === 'suspended') {
+      throw new ForbiddenException('Tài khoản của bạn đang bị hạn chế do uy tín thấp, không thể tham gia chiến dịch.');
+    }
 
     // Chỉ cho ứng tuyển đúng chuyên môn đã đăng ký (chef/waiter/shipper)
     const roleVN = ROLE_VN[dto.role] ?? dto.role;
@@ -234,6 +313,11 @@ export class CampaignsService {
   /** Lưu ảnh minh chứng (nguyên liệu / món đã nấu / đã giao) của TNV. */
   async saveProofPhoto(photo: Express.Multer.File): Promise<string> {
     return this.storage.saveImage(photo, 'campaign-proofs');
+  }
+
+  /** Lưu ảnh đại diện chiến dịch → trả URL để gắn vào imageUrls khi tạo. */
+  async saveCampaignImage(photo: Express.Multer.File): Promise<string> {
+    return this.storage.saveImage(photo, 'campaigns');
   }
 
   /** Kiểm tra quyền sở hữu chiến dịch (charity owner). */
@@ -397,5 +481,119 @@ export class CampaignsService {
     });
 
     return { id: donationId, status: 'received' };
+  }
+
+  /**
+   * Tổ chức gửi YÊU CẦU thay đổi chiến dịch (giờ/ngày, địa chỉ+vị trí, số slot TNV).
+   * Không áp dụng ngay — tạo bản ghi chờ admin duyệt. Chỉ cho gửi khi còn ≥ ngưỡng
+   * CAMPAIGN_CHANGE_LOCK_DAYS ngày tới ngày diễn ra, và mỗi chiến dịch chỉ 1 yêu cầu pending.
+   */
+  async submitChangeRequest(campaignId: string, userId: string, dto: SubmitCampaignChangeDto) {
+    const campaign = await this.assertOwner(campaignId, userId);
+    if (campaign.status !== 'open') {
+      throw new BadRequestException('Chỉ chiến dịch đang tuyển (open) mới gửi được yêu cầu thay đổi.');
+    }
+
+    // lng & lat phải đi cùng nhau
+    if ((dto.lng === undefined) !== (dto.lat === undefined)) {
+      throw new BadRequestException('Cần cung cấp cả kinh độ (lng) và vĩ độ (lat) khi đổi vị trí.');
+    }
+
+    // Phải có ít nhất một trường thay đổi
+    const hasChange = [
+      dto.scheduledDate, dto.startTime, dto.endTime, dto.kitchenAddress,
+      dto.lng, dto.lat, dto.chefSlotsNeeded, dto.waiterSlotsNeeded, dto.shipperSlotsNeeded,
+    ].some((v) => v !== undefined);
+    if (!hasChange) throw new BadRequestException('Chưa có thay đổi nào được đề xuất.');
+
+    // Khóa thay đổi cận ngày
+    const lockDays = await this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS');
+    const daysLeft = this.daysUntil(campaign.scheduledDate);
+    if (daysLeft < lockDays) {
+      throw new BadRequestException(
+        `Chỉ được gửi yêu cầu thay đổi khi còn ít nhất ${lockDays} ngày trước ngày diễn ra (hiện còn ${daysLeft} ngày).`,
+      );
+    }
+    // Ngày diễn ra mới cũng phải cách hiện tại ≥ ngưỡng
+    if (dto.scheduledDate && this.daysUntil(new Date(dto.scheduledDate)) < lockDays) {
+      throw new BadRequestException(`Ngày diễn ra mới phải cách hôm nay ít nhất ${lockDays} ngày.`);
+    }
+
+    // Slot đề xuất không được nhỏ hơn số đã có người
+    if (dto.chefSlotsNeeded !== undefined && dto.chefSlotsNeeded < campaign.chefSlotsFilled) {
+      throw new BadRequestException('Số slot Đầu bếp không thể nhỏ hơn số đã có người.');
+    }
+    if (dto.waiterSlotsNeeded !== undefined && dto.waiterSlotsNeeded < campaign.waiterSlotsFilled) {
+      throw new BadRequestException('Số slot Phục vụ không thể nhỏ hơn số đã có người.');
+    }
+    if (dto.shipperSlotsNeeded !== undefined && dto.shipperSlotsNeeded < campaign.shipperSlotsFilled) {
+      throw new BadRequestException('Số slot Giao hàng không thể nhỏ hơn số đã có người.');
+    }
+
+    // Mỗi chiến dịch chỉ 1 yêu cầu đang chờ duyệt
+    const existingPending = await this.prisma.campaignChangeRequest.findFirst({
+      where: { campaignId, status: 'pending' },
+    });
+    if (existingPending) {
+      throw new ConflictException('Đã có một yêu cầu thay đổi đang chờ admin duyệt cho chiến dịch này.');
+    }
+
+    const cr = await this.prisma.campaignChangeRequest.create({
+      data: {
+        campaignId,
+        requestedByUserId: userId,
+        status: 'pending',
+        reason: dto.reason ?? null,
+        scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : null,
+        startTime: dto.startTime ?? null,
+        endTime: dto.endTime ?? null,
+        kitchenAddress: dto.kitchenAddress ?? null,
+        lng: dto.lng ?? null,
+        lat: dto.lat ?? null,
+        chefSlotsNeeded: dto.chefSlotsNeeded ?? null,
+        waiterSlotsNeeded: dto.waiterSlotsNeeded ?? null,
+        shipperSlotsNeeded: dto.shipperSlotsNeeded ?? null,
+      },
+    });
+
+    // Báo cho admin có yêu cầu cần duyệt
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'admin', deletedAt: null },
+      select: { id: true },
+    });
+    for (const a of admins) {
+      void this.notifications.notify(a.id, {
+        type: 'campaign',
+        title: 'Yêu cầu thay đổi chiến dịch',
+        body: `Tổ chức đề xuất thay đổi chiến dịch "${campaign.title}". Vui lòng xem & duyệt.`,
+        data: { campaignId, changeRequestId: cr.id, status: 'pending' },
+      });
+    }
+
+    return cr;
+  }
+
+  /** Tổ chức xem lịch sử yêu cầu thay đổi của chiến dịch mình. */
+  async listChangeRequests(campaignId: string, userId: string) {
+    await this.assertOwner(campaignId, userId);
+    return this.prisma.campaignChangeRequest.findMany({
+      where: { campaignId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Tổ chức huỷ yêu cầu thay đổi đang chờ duyệt của mình. */
+  async cancelChangeRequest(changeRequestId: string, userId: string) {
+    const cr = await this.prisma.campaignChangeRequest.findUnique({ where: { id: changeRequestId } });
+    if (!cr) throw new NotFoundException('Không tìm thấy yêu cầu thay đổi.');
+    await this.assertOwner(cr.campaignId, userId);
+    if (cr.status !== 'pending') {
+      throw new BadRequestException('Chỉ huỷ được yêu cầu đang chờ duyệt.');
+    }
+    await this.prisma.campaignChangeRequest.update({
+      where: { id: changeRequestId },
+      data: { status: 'cancelled' },
+    });
+    return { id: changeRequestId, status: 'cancelled' };
   }
 }
