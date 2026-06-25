@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import {
   ForgotPasswordScreen as ForgotPasswordForm,
 } from '../../components/ForgotPasswordScreen';
@@ -33,14 +33,14 @@ export default function ForgotPasswordScreen({
       setIsLoading(true);
       await apiClient.post(endpoints.auth.forgotPassword, { email });
 
-      Toast.show({
+      Popup.show({
         type: 'success',
         text1: 'Đã gửi mã OTP',
         text2: 'Vui lòng kiểm tra email của bạn',
       });
       navigation.navigate('OtpVerification', { email, type: 'forgot_password' });
     } catch (error) {
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Gửi OTP thất bại',
         text2: getErrorMessage(error),

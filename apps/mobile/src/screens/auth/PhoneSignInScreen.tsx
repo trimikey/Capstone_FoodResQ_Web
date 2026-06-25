@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import PhoneSignInForm from '../../components/PhoneSignInScreen';
 import { signInWithPhone } from '../../services/firebaseAuth';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
@@ -19,10 +19,10 @@ export default function PhoneSignInScreen({ navigation }: PhoneSignInScreenProps
     try {
       setIsLoading(true);
       await signInWithPhone(phone);
-      Toast.show({ type: 'success', text1: 'Đã gửi mã OTP', text2: `Tới số ${phone}` });
+      Popup.show({ type: 'success', text1: 'Đã gửi mã OTP', text2: `Tới số ${phone}` });
       navigation.navigate('OtpVerification', { phone, type: 'phone_login' });
     } catch (error) {
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Gửi OTP thất bại',
         text2: getErrorMessage(error),

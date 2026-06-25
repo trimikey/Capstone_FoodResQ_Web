@@ -1,7 +1,7 @@
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Chip, Button, Icon, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 
 import { useListingDetail } from '@/hooks/useListings';
 import { ImageCarousel } from '@/components/ImageCarousel';
@@ -96,7 +96,7 @@ export default function ListingDetailScreen({ id }: Props) {
           style={styles.cta}
           contentStyle={styles.ctaContent}
           onPress={() =>
-            Toast.show({
+            Popup.show({
               type: 'info',
               text1: 'Đặt chỗ sắp ra mắt',
               text2: 'Tính năng đặt chỗ thuộc Luồng 3.',

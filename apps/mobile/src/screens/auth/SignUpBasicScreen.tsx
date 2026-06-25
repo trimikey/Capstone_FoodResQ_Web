@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Toast from 'react-native-toast-message';
+import { Popup } from '@/components/ui/AppPopup';
 import { SignUpBasicScreen as SignUpBasicForm } from '../../components/SignUpBasicScreen';
 import type { SignUpBasicInfoInput } from '../../utils/validators';
 import { useAuth } from '../../hooks/useAuth';
@@ -29,14 +29,14 @@ export default function SignUpBasicScreen({
       setIsSubmitting(true);
       await register({ ...data, role: selectedRole } as any);
 
-      Toast.show({
+      Popup.show({
         type: 'success',
         text1: 'Đăng ký thành công',
         text2: 'Chào mừng bạn đến với FoodResQ',
       });
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (error) {
-      Toast.show({
+      Popup.show({
         type: 'error',
         text1: 'Đăng ký thất bại',
         text2: getErrorMessage(error),
