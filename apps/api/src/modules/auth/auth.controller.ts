@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
@@ -39,6 +40,16 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.authService.loginWithGoogle(dto.idToken, ua, ip);
+  }
+
+  @Post('firebase')
+  @ApiOperation({ summary: 'Login/Register bằng Firebase ID token (mobile: Google & Phone OTP)' })
+  firebase(
+    @Body() dto: FirebaseLoginDto,
+    @Headers('user-agent') ua: string,
+    @Ip() ip: string,
+  ) {
+    return this.authService.loginWithFirebase(dto.idToken, dto.role, ua, ip);
   }
 
   @Post('refresh')
