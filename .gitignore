@@ -7,3 +7,6 @@ dist/
 
 # Uploaded user media (faces, ID cards, pickup proofs) — sensitive, not for VCS
 apps/api/uploads/
+
+# File giao việc nội bộ (không commit)
+Quan_tasks.md
