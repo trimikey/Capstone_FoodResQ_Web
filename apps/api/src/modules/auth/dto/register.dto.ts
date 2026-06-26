@@ -58,22 +58,17 @@ export class RegisterDto {
   @MaxLength(500)
   address?: string;
 
-  @ApiPropertyOptional({ enum: BusinessType, description: 'Provider: loại hình cơ sở' })
-  @IsOptional()
-  @IsEnum(BusinessType)
-  businessType?: BusinessType;
-
-  @ApiPropertyOptional({ example: 10.7769, description: 'Provider: vĩ độ cơ sở' })
+  @ApiPropertyOptional({ example: 10.8231, description: 'Vĩ độ vị trí (GPS) khi đăng ký' })
   @IsOptional()
   @Type(() => Number)
   @IsLatitude()
-  lat?: number;
+  latitude?: number;
 
-  @ApiPropertyOptional({ example: 106.7009, description: 'Provider: kinh độ cơ sở' })
+  @ApiPropertyOptional({ example: 106.6297, description: 'Kinh độ vị trí (GPS) khi đăng ký' })
   @IsOptional()
   @Type(() => Number)
   @IsLongitude()
-  lng?: number;
+  longitude?: number;
 
   @ApiPropertyOptional({ example: 'Xe máy', description: 'Volunteer: phương tiện' })
   @IsOptional()

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { PushService } from './push.service';
 
 interface NotifyInput {
   type: string;
@@ -14,9 +15,10 @@ export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     private gateway: NotificationsGateway,
+    private push: PushService,
   ) {}
 
-  /** Tạo thông báo (lưu DB) + đẩy real-time qua WebSocket. Không throw để không chặn flow chính. */
+  /** Tạo thông báo (lưu DB) + đẩy real-time qua WebSocket + push FCM. Không throw để không chặn flow chính. */
   async notify(userId: string, input: NotifyInput) {
     try {
       const notif = await this.prisma.notification.create({
@@ -29,6 +31,8 @@ export class NotificationsService {
         },
       });
       this.gateway.emitToUser(userId, 'notification:new', notif);
+      // Push FCM (no-op nếu chưa cấu hình / user chưa có device token)
+      void this.push.sendToUser(userId, { title: input.title, body: input.body, data: input.data });
       return notif;
     } catch {
       return null;

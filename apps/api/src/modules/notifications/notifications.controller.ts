@@ -1,16 +1,38 @@
-import { Controller, Get, Param, Patch, UseGuards, ParseUUIDPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import { IsString, MaxLength, IsOptional } from 'class-validator';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
+import { PushService } from './push.service';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
+
+class DeviceTokenDto {
+  @ApiProperty() @IsString() @MaxLength(4096) token!: string;
+  @ApiPropertyOptional({ example: 'web' }) @IsOptional() @IsString() @MaxLength(20) platform?: string;
+}
 
 @ApiTags('Notifications')
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class NotificationsController {
-  constructor(private notifications: NotificationsService) {}
+  constructor(
+    private notifications: NotificationsService,
+    private push: PushService,
+  ) {}
+
+  @Post('device-token')
+  @ApiOperation({ summary: 'Đăng ký device token (FCM) để nhận push' })
+  registerDeviceToken(@CurrentUser() user: User, @Body() dto: DeviceTokenDto) {
+    return this.push.registerToken(user.id, dto.token, dto.platform);
+  }
+
+  @Delete('device-token')
+  @ApiOperation({ summary: 'Xoá device token (khi đăng xuất / tắt push)' })
+  removeDeviceToken(@Body() dto: DeviceTokenDto) {
+    return this.push.removeToken(dto.token);
+  }
 
   @Get('my')
   @ApiOperation({ summary: 'Danh sách thông báo của tôi' })

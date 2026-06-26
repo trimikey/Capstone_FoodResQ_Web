@@ -221,13 +221,80 @@ export class DeliveriesService {
     return this.prisma.delivery.update({ where: { id: deliveryId }, data: updateData });
   }
 
+  /** Shipper huỷ nhận đơn TRƯỚC khi lấy hàng → đơn quay lại 'chờ nhận' + báo shipper khác. */
+  async cancelAssignment(deliveryId: string, shipperUserId: string, reason?: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId: shipperUserId } });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
+    if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
+    if (delivery.shipperId !== volunteer.id) throw new ForbiddenException();
+    if (!['assigned', 'heading_to_provider'].includes(delivery.status)) {
+      throw new BadRequestException('Chỉ huỷ được khi chưa lấy hàng. Sau khi đã lấy hàng, hãy báo giao thất bại.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.delivery.update({
+        where: { id: deliveryId },
+        data: { shipperId: null, status: 'pending_assignment', assignedAt: null },
+      }),
+      this.prisma.shipperTaskOffer.updateMany({
+        where: { deliveryId, shipperId: volunteer.id, status: 'accepted' },
+        data: { status: 'rejected', rejectReason: reason ?? 'Shipper huỷ nhận đơn', respondedAt: new Date() },
+      }),
+    ]);
+
+    // Mời lại các shipper khác gần điểm lấy hàng
+    const coords = (await this.getDeliveryCoords([deliveryId])).get(deliveryId);
+    if (coords?.pickupLng != null && coords?.pickupLat != null) {
+      await this.broadcastToNearbyShippers(deliveryId, coords.pickupLng, coords.pickupLat);
+    }
+    return { id: deliveryId, status: 'pending_assignment' };
+  }
+
+  /** Shipper báo giao THẤT BẠI (sau khi đã lấy hàng) — bắt buộc lý do. */
+  async failDelivery(deliveryId: string, shipperUserId: string, reason?: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId: shipperUserId } });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    if (!reason || !reason.trim()) throw new BadRequestException('Vui lòng nhập lý do giao thất bại.');
+
+    const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
+    if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
+    if (delivery.shipperId !== volunteer.id) throw new ForbiddenException();
+    if (!['qc_completed', 'in_transit'].includes(delivery.status)) {
+      throw new BadRequestException('Chỉ báo thất bại sau khi đã lấy hàng (QC xong).');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } }),
+      this.prisma.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } }),
+    ]);
+    return { id: deliveryId, status: 'failed' };
+  }
+
+  /** Lấy toạ độ lấy hàng / giao hàng (cột geography) cho danh sách delivery. */
+  private async getDeliveryCoords(ids: string[]) {
+    if (ids.length === 0) return new Map<string, { pickupLng: number | null; pickupLat: number | null; deliveryLng: number | null; deliveryLat: number | null }>();
+    const rows = await this.prisma.$queryRaw<
+      { id: string; plng: number | null; plat: number | null; dlng: number | null; dlat: number | null }[]
+    >(Prisma.sql`
+      SELECT id,
+        ST_X(pickup_location::geometry) AS plng, ST_Y(pickup_location::geometry) AS plat,
+        ST_X(delivery_location::geometry) AS dlng, ST_Y(delivery_location::geometry) AS dlat
+      FROM deliveries WHERE id IN (${Prisma.join(ids.map((i) => Prisma.sql`${i}::uuid`))})
+    `);
+    return new Map(
+      rows.map((r) => [r.id, { pickupLng: r.plng, pickupLat: r.plat, deliveryLng: r.dlng, deliveryLat: r.dlat }]),
+    );
+  }
+
   async getMyActiveDelivery(shipperUserId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
     if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
-    return this.prisma.delivery.findFirst({
+    const delivery = await this.prisma.delivery.findFirst({
       where: {
         shipperId: volunteer.id,
         status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
@@ -237,12 +304,122 @@ export class DeliveriesService {
           include: {
             listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
             receiver: {
-              include: { user: { select: { fullName: true, phone: true } } },
+              select: { address: true, user: { select: { fullName: true, phone: true } } },
             },
           },
         },
       },
     });
+    if (!delivery) return null;
+    const coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
+    return { ...delivery, coords };
+  }
+
+  /** Lịch sử giao hàng của shipper (đã giao / thất bại) — phân trang server-side. */
+  async getMyDeliveryHistory(shipperUserId: string, opts: { page?: number; limit?: number } = {}) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId: shipperUserId } });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const page = Math.max(1, Number(opts.page) || 1);
+    const limit = Math.min(Number(opts.limit) || 20, 100);
+    const where: Prisma.DeliveryWhereInput = {
+      shipperId: volunteer.id,
+      status: { in: ['delivered', 'failed'] },
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.delivery.findMany({
+        where,
+        take: limit,
+        skip: (page - 1) * limit,
+        orderBy: [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }],
+        include: {
+          reservation: {
+            include: {
+              listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+              receiver: { include: { user: { select: { fullName: true } } } },
+            },
+          },
+        },
+      }),
+      this.prisma.delivery.count({ where }),
+    ]);
+
+    return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  /** Bảng thành tích shipper (kiểu dashboard tài xế Grab/Xanh SM). */
+  async getMyStats(shipperUserId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId: shipperUserId },
+      select: { id: true, dedicationPoints: true, rank: true, avgRating: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [delivered, failed, todayDelivered, kmAgg] = await this.prisma.$transaction([
+      this.prisma.delivery.count({ where: { shipperId: volunteer.id, status: 'delivered' } }),
+      this.prisma.delivery.count({ where: { shipperId: volunteer.id, status: 'failed' } }),
+      this.prisma.delivery.count({
+        where: { shipperId: volunteer.id, status: 'delivered', deliveredAt: { gte: startOfToday } },
+      }),
+      this.prisma.delivery.aggregate({
+        where: { shipperId: volunteer.id, status: 'delivered' },
+        _sum: { distanceKm: true },
+      }),
+    ]);
+
+    const attempts = delivered + failed;
+    return {
+      totalDelivered: delivered,
+      todayDelivered,
+      totalFailed: failed,
+      completionRate: attempts > 0 ? Math.round((delivered / attempts) * 100) : null,
+      totalKm: Math.round(Number(kmAgg._sum.distanceKm ?? 0) * 10) / 10,
+      dedicationPoints: volunteer.dedicationPoints,
+      rank: volunteer.rank,
+      avgRating: volunteer.avgRating != null ? Number(volunteer.avgRating) : null,
+    };
+  }
+
+  /** Người nhận theo dõi đơn giao của mình: trạng thái + vị trí shipper trực tiếp. */
+  async getTrackingForReceiver(reservationId: string, receiverUserId: string) {
+    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId: receiverUserId }, select: { id: true } });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { reservationId },
+      include: {
+        reservation: { select: { receiverId: true, listing: { select: { title: true, pickupAddress: true } } } },
+        shipper: { select: { id: true, user: { select: { fullName: true, phone: true } } } },
+      },
+    });
+    if (!delivery) throw new NotFoundException('Đơn này chưa có thông tin giao hàng.');
+    if (delivery.reservation.receiverId !== receiver.id) throw new ForbiddenException();
+
+    const coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
+
+    let shipperLocation: { lng: number; lat: number } | null = null;
+    if (delivery.shipperId) {
+      const [row] = await this.prisma.$queryRaw<{ lng: number | null; lat: number | null }[]>(Prisma.sql`
+        SELECT ST_X(current_location::geometry) AS lng, ST_Y(current_location::geometry) AS lat
+        FROM volunteer_profiles WHERE id = ${delivery.shipperId}::uuid
+      `);
+      if (row?.lng != null && row?.lat != null) shipperLocation = { lng: row.lng, lat: row.lat };
+    }
+
+    return {
+      status: delivery.status,
+      distanceKm: delivery.distanceKm != null ? Number(delivery.distanceKm) : null,
+      listingTitle: delivery.reservation.listing.title,
+      pickupAddress: delivery.reservation.listing.pickupAddress,
+      coords,
+      shipper: delivery.shipper
+        ? { name: delivery.shipper.user.fullName, phone: delivery.shipper.user.phone, location: shipperLocation }
+        : null,
+    };
   }
 
   async getMyPendingOffers(shipperUserId: string) {
@@ -251,7 +428,7 @@ export class DeliveriesService {
     });
     if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
-    return this.prisma.shipperTaskOffer.findMany({
+    const offers = await this.prisma.shipperTaskOffer.findMany({
       where: {
         shipperId: volunteer.id,
         status: 'pending',
@@ -263,6 +440,7 @@ export class DeliveriesService {
             reservation: {
               include: {
                 listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+                receiver: { select: { address: true } },
               },
             },
           },
@@ -270,5 +448,8 @@ export class DeliveriesService {
       },
       orderBy: { offeredAt: 'asc' },
     });
+
+    const coordsMap = await this.getDeliveryCoords(offers.map((o) => o.deliveryId));
+    return offers.map((o) => ({ ...o, delivery: { ...o.delivery, coords: coordsMap.get(o.deliveryId) ?? null } }));
   }
 }

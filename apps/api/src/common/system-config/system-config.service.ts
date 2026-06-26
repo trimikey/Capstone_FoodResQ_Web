@@ -20,6 +20,7 @@ export const CONFIG_DEFS: ConfigDef[] = [
   { key: 'SHIPPER_OFFER_EXPIRY_MINUTES', label: 'Hết hạn lời mời shipper', description: 'Thời gian shipper phải phản hồi lời mời giao hàng.', group: 'Giao hàng', unit: 'phút', min: 1, max: 30, default: 2 },
   { key: 'TRUST_RESTRICT_THRESHOLD', label: 'Ngưỡng hạn chế (uy tín)', description: 'Điểm uy tín ≤ ngưỡng này sẽ bị hạn chế (suspended).', group: 'Uy tín', unit: 'điểm', min: 0, max: 100, default: 60 },
   { key: 'TRUST_BAN_THRESHOLD', label: 'Ngưỡng khoá (uy tín)', description: 'Điểm uy tín ≤ ngưỡng này sẽ bị khoá (banned).', group: 'Uy tín', unit: 'điểm', min: 0, max: 100, default: 30 },
+  { key: 'CAMPAIGN_CHANGE_LOCK_DAYS', label: 'Khoá sửa chiến dịch trước (ngày)', description: 'Tổ chức chỉ được gửi yêu cầu thay đổi khi còn ít nhất số ngày này tới ngày diễn ra.', group: 'Chiến dịch', unit: 'ngày', min: 0, max: 30, default: 3 },
 ];
 
 @Injectable()

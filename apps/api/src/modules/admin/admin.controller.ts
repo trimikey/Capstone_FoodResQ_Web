@@ -11,6 +11,8 @@ import {
   AdminUpdateCampaignDto,
   AssignVolunteerDto,
   AdminCreateUserDto,
+  ReviewCampaignChangeDto,
+  UpdateListingCategoryDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -158,6 +160,45 @@ export class AdminController {
   @ApiOperation({ summary: 'Admin: gỡ phân công TNV' })
   unassignVolunteer(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.adminUnassignVolunteer(id);
+  }
+
+  @Get('food-listings')
+  @ApiOperation({ summary: 'Admin: danh sách tin thực phẩm (lọc ?group&category&status&search, phân trang)' })
+  foodListings(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('category') category?: string,
+    @Query('group') group?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.listFoodListings({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      status, category, group, search,
+    });
+  }
+
+  @Patch('food-listings/:id/category')
+  @ApiOperation({ summary: 'Admin: đổi phân loại của một tin thực phẩm' })
+  updateListingCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateListingCategoryDto) {
+    return this.adminService.updateListingCategory(id, dto.category);
+  }
+
+  @Get('campaign-change-requests')
+  @ApiOperation({ summary: 'Admin: danh sách yêu cầu thay đổi chiến dịch (?status=pending)' })
+  campaignChangeRequests(@Query('status') status?: string) {
+    return this.adminService.listCampaignChangeRequests(status);
+  }
+
+  @Patch('campaign-change-requests/:id')
+  @ApiOperation({ summary: 'Admin: duyệt/từ chối yêu cầu thay đổi chiến dịch' })
+  reviewCampaignChange(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ReviewCampaignChangeDto,
+  ) {
+    return this.adminService.reviewCampaignChangeRequest(id, dto.decision, dto.reviewNote, user.id);
   }
 
   @Get('configs')

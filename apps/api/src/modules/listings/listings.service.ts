@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { QueryListingDto } from './dto/query-listing.dto';
+import { FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
@@ -26,6 +27,7 @@ export interface NearbyRow {
   allergen_notes: string | null;
   max_per_reservation: number;
   image_urls: unknown;
+  is_surprise_bag: boolean;
   status: string;
   provider_id: string;
   business_name: string;
@@ -78,7 +80,7 @@ export class ListingsService {
         quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
         pickup_start_time, pickup_end_time, expiry_time,
         pickup_address, pickup_location,
-        storage_conditions, allergen_notes, max_per_reservation, image_urls,
+        storage_conditions, allergen_notes, max_per_reservation, image_urls, is_surprise_bag,
         status, created_at, updated_at
       ) VALUES (
         ${providerId}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.category}::food_category,
@@ -88,7 +90,7 @@ export class ListingsService {
         ${dto.expiryTime}::timestamptz,
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
-        ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
+        ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb, ${dto.isSurpriseBag ?? false},
         'draft'::listing_status, NOW(), NOW()
       )
       RETURNING id
@@ -107,6 +109,15 @@ export class ListingsService {
     const limit = query.limit ?? DEFAULT_LIMIT;
     const offset = ((query.page ?? 1) - 1) * limit;
 
+    // Filter theo loại chi tiết hoặc nhóm lớn (nhóm lớn → danh sách loại chi tiết)
+    const categoryFilter = query.category
+      ? Prisma.sql`AND fl.category = ${query.category}::food_category`
+      : query.group
+        ? Prisma.sql`AND fl.category = ANY(ARRAY[${Prisma.join(
+            FOOD_GROUP_CATEGORIES[query.group],
+          )}]::food_category[])`
+        : Prisma.empty;
+
     // Base query — always filter active + not deleted + not expired
     let rows: NearbyRow[];
 
@@ -117,7 +128,7 @@ export class ListingsService {
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
-          fl.max_per_reservation, fl.image_urls, fl.status,
+          fl.max_per_reservation, fl.image_urls, fl.is_surprise_bag, fl.status,
           fl.provider_id, pp.business_name,
           ST_X(fl.pickup_location::geometry) AS lng,
           ST_Y(fl.pickup_location::geometry) AS lat,
@@ -136,7 +147,7 @@ export class ListingsService {
             ST_MakePoint(${lng}, ${lat})::geography,
             ${radiusM}
           )
-          ${query.category ? Prisma.sql`AND fl.category = ${query.category}::food_category` : Prisma.empty}
+          ${categoryFilter}
           ${query.search ? Prisma.sql`AND fl.title ILIKE ${'%' + query.search + '%'}` : Prisma.empty}
         ORDER BY distance_m ASC
         LIMIT ${limit} OFFSET ${offset}
@@ -148,7 +159,7 @@ export class ListingsService {
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
-          fl.max_per_reservation, fl.image_urls, fl.status,
+          fl.max_per_reservation, fl.image_urls, fl.is_surprise_bag, fl.status,
           fl.provider_id, pp.business_name,
           ST_X(fl.pickup_location::geometry) AS lng,
           ST_Y(fl.pickup_location::geometry) AS lat,
@@ -159,7 +170,7 @@ export class ListingsService {
           AND fl.deleted_at IS NULL
           AND fl.pickup_end_time > NOW()
           AND fl.quantity_remaining > 0
-          ${query.category ? Prisma.sql`AND fl.category = ${query.category}::food_category` : Prisma.empty}
+          ${categoryFilter}
           ${query.search ? Prisma.sql`AND fl.title ILIKE ${'%' + query.search + '%'}` : Prisma.empty}
         ORDER BY fl.created_at DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -180,6 +191,7 @@ export class ListingsService {
       allergenNotes: r.allergen_notes,
       maxPerReservation: r.max_per_reservation,
       imageUrls: r.image_urls,
+      isSurpriseBag: r.is_surprise_bag,
       status: r.status,
       provider: { id: r.provider_id, businessName: r.business_name },
       distanceM: Math.round(r.distance_m),
@@ -195,7 +207,7 @@ export class ListingsService {
       SELECT
         fl.id, fl.title, fl.description, fl.category, fl.quantity_remaining, fl.quantity_unit,
         fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time, fl.pickup_address,
-        fl.storage_conditions, fl.allergen_notes, fl.max_per_reservation, fl.image_urls, fl.status,
+        fl.storage_conditions, fl.allergen_notes, fl.max_per_reservation, fl.image_urls, fl.is_surprise_bag, fl.status,
         fl.provider_id, pp.business_name,
         ST_X(fl.pickup_location::geometry) AS lng,
         ST_Y(fl.pickup_location::geometry) AS lat
@@ -222,6 +234,7 @@ export class ListingsService {
       allergenNotes: r.allergen_notes,
       maxPerReservation: r.max_per_reservation,
       imageUrls: r.image_urls,
+      isSurpriseBag: r.is_surprise_bag,
       status: r.status,
       provider: { id: r.provider_id, businessName: r.business_name },
       lng: Number(r.lng),
