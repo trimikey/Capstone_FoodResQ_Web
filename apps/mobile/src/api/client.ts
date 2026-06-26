@@ -206,11 +206,19 @@ export const endpoints = {
   listings: {
     search: '/listings',
     detail: (id: string) => `/listings/${id}`,
+    // Provider (nhà cung cấp đăng tin)
+    create: '/listings',
+    providerMy: '/listings/provider/my',
+    publish: (id: string) => `/listings/${id}/publish`,
+    cancel: (id: string) => `/listings/${id}/cancel`,
   },
   reservations: {
     create: '/reservations',
     list: '/reservations/my',
     detail: (id: string) => `/reservations/${id}`,
+    // Provider quét QR nhận hàng
+    scan: '/reservations/scan',
+    confirmPickup: (id: string) => `/reservations/${id}/confirm-pickup`,
   },
 };
 
