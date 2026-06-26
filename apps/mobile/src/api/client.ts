@@ -216,6 +216,9 @@ export const endpoints = {
     create: '/reservations',
     list: '/reservations/my',
     detail: (id: string) => `/reservations/${id}`,
+    // Receiver huỷ đơn đã đặt / đánh giá sau khi nhận
+    cancel: (id: string) => `/reservations/${id}/cancel`,
+    rating: (id: string) => `/reservations/${id}/rating`,
     // Provider quét QR nhận hàng
     scan: '/reservations/scan',
     confirmPickup: (id: string) => `/reservations/${id}/confirm-pickup`,
