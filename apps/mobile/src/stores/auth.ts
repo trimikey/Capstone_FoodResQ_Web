@@ -188,8 +188,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ isLoading: true, error: null });
 
       // API yêu cầu `fullName` (không phải `name`) và `role` thuộc enum.
-      // role/phone được truyền thêm runtime từ flow đăng ký (cast vì RegisterInput không khai báo).
-      const extra = input as RegisterInput & { role?: string; phone?: string };
+      // role/phone + field provider được truyền thêm runtime (cast vì RegisterInput không khai báo).
+      const extra = input as RegisterInput & {
+        role?: string;
+        phone?: string;
+        businessName?: string;
+        businessType?: string;
+        address?: string;
+        lat?: number;
+        lng?: number;
+      };
       const response = await apiClient.post<ApiResponse<LoginResponse>>(
         endpoints.auth.register,
         {
@@ -198,6 +206,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           fullName: input.name,
           role: extra.role ?? 'receiver',
           ...(extra.phone ? { phone: extra.phone } : {}),
+          ...(extra.businessName ? { businessName: extra.businessName } : {}),
+          ...(extra.businessType ? { businessType: extra.businessType } : {}),
+          ...(extra.address ? { address: extra.address } : {}),
+          ...(extra.lat != null ? { lat: extra.lat } : {}),
+          ...(extra.lng != null ? { lng: extra.lng } : {}),
         }
       );
 

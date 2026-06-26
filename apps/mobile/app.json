@@ -38,6 +38,12 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "FoodResQ cần camera để quét mã QR nhận hàng."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "FoodResQ cần vị trí để tìm thực phẩm gần bạn."
