@@ -17,6 +17,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { EsgModule } from './modules/esg/esg.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
     NotificationsModule,
     EsgModule,
     CampaignsModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}
