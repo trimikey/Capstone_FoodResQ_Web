@@ -2,6 +2,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
+import { useNotificationSocket } from '@/hooks/useNotifications';
 
 const PRIMARY = '#10b981';
 const INACTIVE = '#9ca3af';
@@ -14,6 +15,8 @@ const INACTIVE = '#9ca3af';
  */
 export default function AppTabsLayout() {
   const { isInitialized, isAuthenticated, user } = useAuth();
+  // Kết nối WS nhận thông báo realtime (tự bỏ qua khi chưa có token).
+  useNotificationSocket();
 
   if (!isInitialized) {
     return (
@@ -72,6 +75,16 @@ export default function AppTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="provider/orders"
+        options={{
+          href: isProvider ? undefined : null,
+          title: 'Đơn đặt',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="clipboard-text-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="provider/scan"
         options={{
           href: isProvider ? undefined : null,
@@ -99,6 +112,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="provider/create" options={{ href: null }} />
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
+      <Tabs.Screen name="provider/orders/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

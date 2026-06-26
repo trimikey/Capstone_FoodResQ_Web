@@ -10,6 +10,7 @@ import { useProviderListings, type ProviderListing } from '@/hooks/useProviderLi
 import { ProviderListingCard } from '@/components/ProviderListingCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 const COLORS = {
   primary: '#10b981',
@@ -62,11 +63,7 @@ export default function ProviderListingsScreen() {
     };
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Text variant="titleLarge" style={styles.title}>
-            Tin của tôi
-          </Text>
-        </View>
+        <ScreenHeader title="Tin của tôi" />
         <View style={styles.pendingWrap}>
           <View style={styles.pendingIcon}>
             <MaterialCommunityIcons name="clock-alert-outline" size={56} color={COLORS.primary} />
@@ -103,11 +100,7 @@ export default function ProviderListingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text variant="titleLarge" style={styles.title}>
-          Tin của tôi
-        </Text>
-      </View>
+      <ScreenHeader title="Tin của tôi" />
 
       {/* Bộ lọc trạng thái */}
       <ScrollView

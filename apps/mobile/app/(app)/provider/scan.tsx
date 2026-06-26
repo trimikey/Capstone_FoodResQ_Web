@@ -8,6 +8,7 @@ import { useScanQr, useConfirmPickup, type ScanResult } from '@/hooks/useProvide
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 const COLORS = {
   primary: '#10b981',
@@ -158,11 +159,7 @@ export default function ScanQrScreen() {
 }
 
 function Header() {
-  return (
-    <View style={styles.header}>
-      <Text variant="titleLarge" style={styles.headerTitle}>Quét QR nhận hàng</Text>
-    </View>
-  );
+  return <ScreenHeader title="Quét QR nhận hàng" />;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

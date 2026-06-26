@@ -219,6 +219,14 @@ export const endpoints = {
     // Provider quét QR nhận hàng
     scan: '/reservations/scan',
     confirmPickup: (id: string) => `/reservations/${id}/confirm-pickup`,
+    // Provider xem đơn đặt vào tin của mình
+    providerMy: '/reservations/provider/my',
+  },
+  notifications: {
+    my: '/notifications/my',
+    unreadCount: '/notifications/unread-count',
+    read: (id: string) => `/notifications/${id}/read`,
+    readAll: '/notifications/read-all',
   },
 };
 
