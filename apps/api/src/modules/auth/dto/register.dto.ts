@@ -1,6 +1,8 @@
 import {
   IsEmail,
   IsEnum,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -8,8 +10,9 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@foodresq/types';
+import { UserRole, BusinessType } from '@foodresq/types';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -54,6 +57,23 @@ export class RegisterDto {
   @IsString()
   @MaxLength(500)
   address?: string;
+
+  @ApiPropertyOptional({ enum: BusinessType, description: 'Provider: loại hình cơ sở' })
+  @IsOptional()
+  @IsEnum(BusinessType)
+  businessType?: BusinessType;
+
+  @ApiPropertyOptional({ example: 10.7769, description: 'Provider: vĩ độ cơ sở' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  lat?: number;
+
+  @ApiPropertyOptional({ example: 106.7009, description: 'Provider: kinh độ cơ sở' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  lng?: number;
 
   @ApiPropertyOptional({ example: 'Xe máy', description: 'Volunteer: phương tiện' })
   @IsOptional()

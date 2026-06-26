@@ -67,14 +67,21 @@ export class AuthService {
            });
         }
       } else if (dto.role === 'provider') {
-        await tx.providerProfile.create({
+        const pp = await tx.providerProfile.create({
           data: {
             userId: created.id,
             businessName: dto.businessName ?? dto.fullName,
-            businessType: 'other',
+            businessType: dto.businessType ?? 'other',
             address: dto.address ?? '',
           },
         });
+        // Toạ độ cơ sở (geography) — set qua raw SQL nếu client gửi lat/lng.
+        if (dto.lat != null && dto.lng != null) {
+          await tx.$executeRaw`
+            UPDATE provider_profiles
+            SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
+            WHERE id = ${pp.id}::uuid`;
+        }
       }
 
       return created;
