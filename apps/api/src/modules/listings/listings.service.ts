@@ -40,18 +40,31 @@ export interface NearbyRow {
 export class ListingsService {
   constructor(private prisma: PrismaService) {}
 
-  /** Đổi userId (từ JWT) sang provider_profiles.id — các bảng listing tham chiếu provider profile, KHÔNG phải user. */
-  private async resolveProviderId(userId: string): Promise<string> {
+  /**
+   * Đổi userId (từ JWT) sang provider_profiles.id — các bảng listing tham chiếu provider profile, KHÔNG phải user.
+   * `requireActive`: với hành động ghi (đăng/phát tin), yêu cầu hồ sơ đã được admin duyệt
+   * (user.status === 'active' và isVerified). Provider mới đăng ký ở trạng thái pending_verification
+   * KHÔNG được phép đăng tin cho tới khi được xác minh.
+   */
+  private async resolveProviderId(
+    userId: string,
+    requireActive = false,
+  ): Promise<string> {
     const profile = await this.prisma.providerProfile.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, isVerified: true, user: { select: { status: true } } },
     });
     if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
+    if (requireActive && (!profile.isVerified || profile.user.status !== 'active')) {
+      throw new ForbiddenException(
+        'Hồ sơ cơ sở đang chờ xác minh. Bạn sẽ đăng tin được sau khi quản trị viên duyệt.',
+      );
+    }
     return profile.id;
   }
 
   async create(userId: string, dto: CreateListingDto) {
-    const providerId = await this.resolveProviderId(userId);
+    const providerId = await this.resolveProviderId(userId, true);
 
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
       throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
@@ -230,7 +243,7 @@ export class ListingsService {
   }
 
   async publish(listingId: string, userId: string) {
-    const providerId = await this.resolveProviderId(userId);
+    const providerId = await this.resolveProviderId(userId, true);
     const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();

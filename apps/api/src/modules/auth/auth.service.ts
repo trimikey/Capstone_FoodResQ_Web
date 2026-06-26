@@ -83,7 +83,7 @@ export class AuthService {
           data: {
             userId: created.id,
             businessName: dto.businessName ?? dto.fullName,
-            businessType: 'other',
+            businessType: dto.businessType ?? 'other',
             address: dto.address ?? '',
           },
         });

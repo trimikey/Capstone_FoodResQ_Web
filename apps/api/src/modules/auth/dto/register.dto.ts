@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@foodresq/types';
+import { UserRole, BusinessType } from '@foodresq/types';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })

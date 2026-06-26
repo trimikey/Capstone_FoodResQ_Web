@@ -178,3 +178,62 @@ export const updateProfileSchema = z.object({
 });
 
 export type UpdateProfileFormInput = z.infer<typeof updateProfileSchema>;
+
+/**
+ * Tạo tin thực phẩm (provider) — khớp CreateListingDto backend.
+ * Các field thời gian dùng Date (từ datetimepicker), convert ISO khi submit.
+ */
+const optionalPositive = z.preprocess(
+  (v) => (v === '' || v == null ? undefined : Number(v)),
+  z.number().positive('Phải là số dương').optional()
+);
+
+export const createListingSchema = z
+  .object({
+    title: z.string().min(1, 'Nhập tiêu đề').max(255, 'Tối đa 255 ký tự'),
+    category: z.string().min(1, 'Chọn loại thực phẩm'),
+    quantityTotal: z.coerce.number().positive('Số lượng phải lớn hơn 0'),
+    quantityUnit: z.string().min(1, 'Chọn đơn vị'),
+    maxPerReservation: z.coerce
+      .number()
+      .int('Phải là số nguyên')
+      .min(1, 'Tối thiểu 1')
+      .max(10, 'Tối đa 10'),
+    pickupStartTime: z.date(),
+    pickupEndTime: z.date(),
+    expiryTime: z.date(),
+    pickupAddress: z.string().min(1, 'Nhập địa chỉ lấy hàng'),
+    description: z.string().optional(),
+    weightPerUnitKg: optionalPositive,
+    storageConditions: z.string().optional(),
+    allergenNotes: z.string().optional(),
+  })
+  .refine((d) => d.pickupEndTime > d.pickupStartTime, {
+    message: 'Giờ kết thúc phải sau giờ bắt đầu',
+    path: ['pickupEndTime'],
+  })
+  .refine((d) => d.expiryTime >= d.pickupEndTime, {
+    message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi',
+    path: ['expiryTime'],
+  });
+
+export type CreateListingFormInput = z.infer<typeof createListingSchema>;
+
+/**
+ * Thông tin cơ sở khi đăng ký provider (gửi kèm register).
+ * businessType khớp enum BusinessType backend. lat/lng lấy từ GPS.
+ */
+export const signUpProviderSchema = z.object({
+  businessName: z
+    .string()
+    .min(2, 'Nhập tên cơ sở')
+    .max(255, 'Tối đa 255 ký tự'),
+  businessType: z.enum(['restaurant', 'supermarket', 'bakery', 'hotel', 'other']),
+  address: z.string().min(5, 'Nhập địa chỉ cơ sở'),
+  phone: z
+    .string()
+    .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại không hợp lệ (vd 0912345678)')
+    .or(z.literal('')),
+});
+
+export type SignUpProviderFormInput = z.infer<typeof signUpProviderSchema>;

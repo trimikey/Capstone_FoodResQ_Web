@@ -10,6 +10,7 @@ const ROUTE_TO_PATH: Record<string, string> = {
   SignUp: '/select-role',
   SelectRole: '/select-role',
   SignUpBasic: '/sign-up-basic',
+  SignUpProvider: '/sign-up-provider',
   SignUpRecipient: '/sign-up-recipient',
   SignUpVolunteer: '/sign-up-volunteer',
   SignUpVerification: '/sign-up-verification',

@@ -33,6 +33,11 @@ export default function SelectRoleScreen({ navigation }: SelectRoleScreenProps) 
       navigation.navigate('SignUpBasic', {
         role: 'volunteer',
       });
+    } else if (role === 'provider') {
+      // Nhà cung cấp / cơ sở kinh doanh -> nhập thông tin cơ bản, sau đó form cơ sở
+      navigation.navigate('SignUpBasic', {
+        role: 'provider',
+      });
     }
   };
 
