@@ -1,6 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import storage from '@react-native-firebase/storage';
-import auth from '@react-native-firebase/auth';
+import { uploadImageToBackend } from './imageUpload';
 
 /** Người dùng huỷ chọn ảnh — phân biệt với lỗi thật để không hiện toast lỗi. */
 export class ImagePickCancelledError extends Error {
@@ -35,17 +34,11 @@ export async function pickAvatarImage(): Promise<string> {
 }
 
 /**
- * Upload ảnh local lên Firebase Storage tại avatars/{uid}/... và trả về
- * download URL (https) dùng làm avatarUrl. Yêu cầu đã đăng nhập Firebase.
+ * Upload ảnh local lên backend (lưu ./uploads/avatars) và trả về URL tuyệt đối
+ * dùng làm avatarUrl. Hoạt động cho mọi kiểu đăng nhập (không cần phiên Firebase).
  */
 export async function uploadAvatar(localUri: string): Promise<string> {
-  const uid = auth().currentUser?.uid;
-  if (!uid) throw new Error('Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại.');
-
-  const path = `avatars/${uid}/avatar_${Date.now()}.jpg`;
-  const ref = storage().ref(path);
-  await ref.putFile(localUri);
-  return ref.getDownloadURL();
+  return uploadImageToBackend(localUri, 'avatar');
 }
 
 /**
