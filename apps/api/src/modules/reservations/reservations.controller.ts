@@ -75,6 +75,22 @@ export class ReservationsController {
     return this.reservationsService.findOne(id, user.id);
   }
 
+  @Get('provider/my')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: Danh sách đơn đặt vào các tin của mình (lọc trạng thái)' })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  providerReservations(
+    @CurrentUser() user: User,
+    @Query('status') status?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.reservationsService.findProviderReservations(user.id, status, page, limit);
+  }
+
   @Post('scan')
   @UseGuards(RolesGuard)
   @Roles(UserRole.PROVIDER, UserRole.VOLUNTEER)
