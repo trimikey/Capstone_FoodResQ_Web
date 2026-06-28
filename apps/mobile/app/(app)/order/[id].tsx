@@ -9,6 +9,7 @@ import { QRDisplay } from '@/components/QRDisplay';
 import { RatingDialog } from '@/components/RatingDialog';
 import { PickupProofDialog } from '@/components/PickupProofDialog';
 import { ReportDialog } from '@/components/ReportDialog';
+import { DeliveryTrackingCard } from '@/components/DeliveryTrackingCard';
 import { Popup } from '@/components/ui/AppPopup';
 import {
   reservationStatusDisplay,
@@ -239,6 +240,9 @@ export default function OrderDetailScreen() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* Theo dõi giao hàng (đơn giao tận nơi) */}
+        {order.delivery ? <DeliveryTrackingCard reservationId={order.id} /> : null}
 
         {/* Đánh giá đã gửi */}
         {completed && alreadyRated ? (

@@ -234,6 +234,10 @@ export const endpoints = {
     create: '/reports',
     my: '/reports/my',
   },
+  deliveries: {
+    // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
+    track: (reservationId: string) => `/deliveries/track/${reservationId}`,
+  },
   notifications: {
     my: '/notifications/my',
     unreadCount: '/notifications/unread-count',
