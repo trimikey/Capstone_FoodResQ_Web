@@ -30,6 +30,7 @@ export interface MyReservation {
 /** Chi tiết 1 đơn (GET /reservations/:id) — kèm thông tin liên hệ provider + delivery. */
 export interface ReservationDetail {
   id: string;
+  listingId: string;
   status: ReservationStatus;
   quantity: number;
   qrToken: string | null;

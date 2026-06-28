@@ -229,6 +229,22 @@ export const endpoints = {
     // Provider xem đơn đặt vào tin của mình
     providerMy: '/reservations/provider/my',
   },
+  reports: {
+    // Báo cáo vấn đề (listing/user/delivery/campaign)
+    create: '/reports',
+    my: '/reports/my',
+  },
+  deliveries: {
+    // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
+    track: (reservationId: string) => `/deliveries/track/${reservationId}`,
+  },
+  campaigns: {
+    // Chiến dịch bếp ăn cộng đồng (charity tạo). Provider: xem + quyên góp nguyên liệu.
+    list: '/campaigns',
+    detail: (id: string) => `/campaigns/${id}`,
+    // Provider quyên góp nguyên liệu cho 1 chiến dịch (status pledged → charity xác nhận)
+    donate: (id: string) => `/campaigns/${id}/donations`,
+  },
   notifications: {
     my: '/notifications/my',
     unreadCount: '/notifications/unread-count',
