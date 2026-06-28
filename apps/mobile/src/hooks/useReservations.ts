@@ -35,6 +35,7 @@ export interface ReservationDetail {
   qrExpiresAt: string | null;
   receiverNotes: string | null;
   createdAt: string;
+  ratedScore: number | null;
   listing: {
     title: string;
     pickupAddress: string;
@@ -126,6 +127,31 @@ export function useCreateReservation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+}
+
+/** Body POST /reservations/:id/rating (score 1-5, comment tuỳ chọn). */
+export interface RateReservationInput {
+  id: string;
+  score: number;
+  comment?: string;
+}
+
+/** Đánh giá nhà cung cấp sau khi nhận hàng. POST /reservations/:id/rating */
+export function useRateReservation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, score, comment }: RateReservationInput) => {
+      const res = await apiClient.post<ApiResponse<{ id: string; score: number; message: string }>>(
+        endpoints.reservations.rating(id),
+        { score, ...(comment ? { comment } : {}) }
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      queryClient.invalidateQueries({ queryKey: ['reservation', id] });
     },
   });
 }

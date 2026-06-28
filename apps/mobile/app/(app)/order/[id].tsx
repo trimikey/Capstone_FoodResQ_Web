@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
 import { QRDisplay } from '@/components/QRDisplay';
+import { RatingDialog } from '@/components/RatingDialog';
 import { Popup } from '@/components/ui/AppPopup';
 import {
   reservationStatusDisplay,
@@ -14,6 +15,7 @@ import {
 import {
   useReservationDetail,
   useCancelReservation,
+  useRateReservation,
 } from '@/hooks/useReservations';
 import { formatPickupWindow } from '@/utils/listingFormat';
 
@@ -42,12 +44,36 @@ export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: order, isLoading, isError, refetch } = useReservationDetail(id);
   const cancelMut = useCancelReservation();
+  const rateMut = useRateReservation();
 
   const sd = reservationStatusDisplay(order?.status);
   const countdown = useCountdown(
     order?.status === 'confirmed' ? order.qrExpiresAt : null
   );
   const [cancelling, setCancelling] = useState(false);
+  const [ratingVisible, setRatingVisible] = useState(false);
+  const [justRatedScore, setJustRatedScore] = useState<number | null>(null);
+
+  const onSubmitRating = (score: number, comment?: string) => {
+    if (!id) return;
+    rateMut.mutate(
+      { id, score, comment },
+      {
+        onSuccess: () => {
+          setJustRatedScore(score);
+          setRatingVisible(false);
+          Popup.show({ type: 'success', text1: 'Cảm ơn đánh giá của bạn' });
+        },
+        onError: (e: any) => {
+          Popup.show({
+            type: 'error',
+            text1: 'Gửi đánh giá thất bại',
+            text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
+          });
+        },
+      }
+    );
+  };
 
   const onShareToken = async () => {
     if (!order?.qrToken) return;
@@ -117,6 +143,9 @@ export default function OrderDetailScreen() {
 
   const provider = order.listing.provider;
   const showQr = order.status === 'confirmed' && !!order.qrToken;
+  const ratedScore = justRatedScore ?? order.ratedScore ?? null;
+  const completed = order.status === 'completed';
+  const alreadyRated = ratedScore != null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -206,6 +235,23 @@ export default function OrderDetailScreen() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* Đánh giá đã gửi */}
+        {completed && alreadyRated ? (
+          <>
+            <Text style={styles.sectionLabel}>Đánh giá của bạn</Text>
+            <View style={styles.ratedRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <MaterialCommunityIcons
+                  key={n}
+                  name={n <= ratedScore ? 'star' : 'star-outline'}
+                  size={26}
+                  color={n <= ratedScore ? '#f59e0b' : COLORS.outline}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
       </ScrollView>
 
       {order.status === 'confirmed' ? (
@@ -223,7 +269,28 @@ export default function OrderDetailScreen() {
             Huỷ đơn
           </Button>
         </View>
+      ) : completed && !alreadyRated ? (
+        <View style={styles.footer}>
+          <Button
+            mode="contained"
+            icon="star"
+            buttonColor={COLORS.primary}
+            onPress={() => setRatingVisible(true)}
+            style={styles.actionBtn}
+            labelStyle={{ fontSize: 15, fontWeight: '700' }}
+          >
+            Đánh giá nhà cung cấp
+          </Button>
+        </View>
       ) : null}
+
+      <RatingDialog
+        visible={ratingVisible}
+        providerName={provider.businessName}
+        submitting={rateMut.isPending}
+        onDismiss={() => setRatingVisible(false)}
+        onSubmit={onSubmitRating}
+      />
     </SafeAreaView>
   );
 }
@@ -282,6 +349,7 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.outline },
   avatarEmpty: { alignItems: 'center', justifyContent: 'center' },
   providerName: { fontSize: 16, fontWeight: '700', color: COLORS.onSurface },
+  ratedRow: { flexDirection: 'row', gap: 4 },
   callBtn: {
     width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#ecfdf5',
