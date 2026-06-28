@@ -94,6 +94,16 @@ export default function AppTabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="provider/campaigns"
+        options={{
+          href: isProvider ? undefined : null,
+          title: 'Bếp ăn',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="silverware-fork-knife" color={color} size={size} />
+          ),
+        }}
+      />
 
       {/* --- Chung --- */}
       <Tabs.Screen
@@ -113,6 +123,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="provider/create" options={{ href: null }} />
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
       <Tabs.Screen name="provider/orders/[id]" options={{ href: null }} />
+      <Tabs.Screen name="provider/campaigns/[id]" options={{ href: null }} />
     </Tabs>
   );
 }
