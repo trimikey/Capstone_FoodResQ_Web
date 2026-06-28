@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
 import { QRDisplay } from '@/components/QRDisplay';
 import { RatingDialog } from '@/components/RatingDialog';
+import { PickupProofDialog } from '@/components/PickupProofDialog';
 import { Popup } from '@/components/ui/AppPopup';
 import {
   reservationStatusDisplay,
@@ -53,6 +54,7 @@ export default function OrderDetailScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [ratingVisible, setRatingVisible] = useState(false);
   const [justRatedScore, setJustRatedScore] = useState<number | null>(null);
+  const [proofVisible, setProofVisible] = useState(false);
 
   const onSubmitRating = (score: number, comment?: string) => {
     if (!id) return;
@@ -269,6 +271,19 @@ export default function OrderDetailScreen() {
             Huỷ đơn
           </Button>
         </View>
+      ) : order.status === 'picked_up' ? (
+        <View style={styles.footer}>
+          <Button
+            mode="contained"
+            icon="face-recognition"
+            buttonColor={COLORS.primary}
+            onPress={() => setProofVisible(true)}
+            style={styles.actionBtn}
+            labelStyle={{ fontSize: 15, fontWeight: '700' }}
+          >
+            Xác minh nhận hàng
+          </Button>
+        </View>
       ) : completed && !alreadyRated ? (
         <View style={styles.footer}>
           <Button
@@ -290,6 +305,16 @@ export default function OrderDetailScreen() {
         submitting={rateMut.isPending}
         onDismiss={() => setRatingVisible(false)}
         onSubmit={onSubmitRating}
+      />
+
+      <PickupProofDialog
+        visible={proofVisible}
+        reservationId={id!}
+        onDismiss={() => setProofVisible(false)}
+        onCompleted={() => {
+          setProofVisible(false);
+          refetch();
+        }}
       />
     </SafeAreaView>
   );

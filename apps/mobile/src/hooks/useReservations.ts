@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { ReservationStatus } from './useProviderReservations';
+import type { CapturedImage } from '../services/faceCapture';
 
 export type { ReservationStatus };
 
@@ -147,6 +148,39 @@ export function useRateReservation() {
         endpoints.reservations.rating(id),
         { score, ...(comment ? { comment } : {}) }
       );
+      return res.data.data;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      queryClient.invalidateQueries({ queryKey: ['reservation', id] });
+    },
+  });
+}
+
+/** Body POST /reservations/:id/pickup-proof (multipart). */
+export interface SubmitPickupProofInput {
+  id: string;
+  verificationType: 'face' | 'id_card';
+  photo: CapturedImage;
+}
+
+/**
+ * Nộp ảnh xác minh nhận hàng. POST /reservations/:id/pickup-proof
+ * Chỉ hợp lệ khi đơn ở trạng thái picked_up và đã đăng ký khuôn mặt trước.
+ * Backend so khớp khuôn mặt → chuyển đơn sang completed nếu khớp.
+ */
+export function useSubmitPickupProof() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, verificationType, photo }: SubmitPickupProofInput) => {
+      const form = new FormData();
+      form.append('photo', photo as unknown as Blob);
+      form.append('verificationType', verificationType);
+      const res = await apiClient.post<
+        ApiResponse<{ reservationId: string; status: string; message: string }>
+      >(endpoints.reservations.pickupProof(id), form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       return res.data.data;
     },
     onSuccess: (_data, { id }) => {
