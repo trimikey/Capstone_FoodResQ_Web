@@ -202,6 +202,8 @@ export const endpoints = {
   users: {
     // Hồ sơ người dùng đang đăng nhập (GET lấy chi tiết, PATCH cập nhật)
     me: '/users/me',
+    // Đăng ký/kiểm tra khuôn mặt (GET trạng thái, POST enroll selfie/CCCD)
+    faceEnrollment: '/users/me/face-enrollment',
   },
   listings: {
     search: '/listings',
@@ -219,6 +221,8 @@ export const endpoints = {
     // Receiver huỷ đơn đã đặt / đánh giá sau khi nhận
     cancel: (id: string) => `/reservations/${id}/cancel`,
     rating: (id: string) => `/reservations/${id}/rating`,
+    // Receiver nộp ảnh xác minh nhận hàng (chỉ khi status picked_up)
+    pickupProof: (id: string) => `/reservations/${id}/pickup-proof`,
     // Provider quét QR nhận hàng
     scan: '/reservations/scan',
     confirmPickup: (id: string) => `/reservations/${id}/confirm-pickup`,
