@@ -229,6 +229,11 @@ export const endpoints = {
     // Provider xem đơn đặt vào tin của mình
     providerMy: '/reservations/provider/my',
   },
+  reports: {
+    // Báo cáo vấn đề (listing/user/delivery/campaign)
+    create: '/reports',
+    my: '/reports/my',
+  },
   notifications: {
     my: '/notifications/my',
     unreadCount: '/notifications/unread-count',

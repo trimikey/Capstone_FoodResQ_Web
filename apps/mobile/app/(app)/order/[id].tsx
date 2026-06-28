@@ -8,6 +8,7 @@ import { AppImage } from '@/components/ui/AppImage';
 import { QRDisplay } from '@/components/QRDisplay';
 import { RatingDialog } from '@/components/RatingDialog';
 import { PickupProofDialog } from '@/components/PickupProofDialog';
+import { ReportDialog } from '@/components/ReportDialog';
 import { Popup } from '@/components/ui/AppPopup';
 import {
   reservationStatusDisplay,
@@ -55,6 +56,7 @@ export default function OrderDetailScreen() {
   const [ratingVisible, setRatingVisible] = useState(false);
   const [justRatedScore, setJustRatedScore] = useState<number | null>(null);
   const [proofVisible, setProofVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
 
   const onSubmitRating = (score: number, comment?: string) => {
     if (!id) return;
@@ -254,6 +256,17 @@ export default function OrderDetailScreen() {
             </View>
           </>
         ) : null}
+
+        {/* Báo cáo vấn đề */}
+        <Button
+          mode="text"
+          icon="flag-outline"
+          textColor={COLORS.onSurfaceVariant}
+          onPress={() => setReportVisible(true)}
+          style={styles.reportBtn}
+        >
+          Báo cáo vấn đề
+        </Button>
       </ScrollView>
 
       {order.status === 'confirmed' ? (
@@ -316,6 +329,12 @@ export default function OrderDetailScreen() {
           refetch();
         }}
       />
+
+      <ReportDialog
+        visible={reportVisible}
+        listingId={order.listingId}
+        onDismiss={() => setReportVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -375,6 +394,7 @@ const styles = StyleSheet.create({
   avatarEmpty: { alignItems: 'center', justifyContent: 'center' },
   providerName: { fontSize: 16, fontWeight: '700', color: COLORS.onSurface },
   ratedRow: { flexDirection: 'row', gap: 4 },
+  reportBtn: { alignSelf: 'center', marginTop: 24 },
   callBtn: {
     width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#ecfdf5',
