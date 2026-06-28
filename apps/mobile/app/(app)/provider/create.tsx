@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, TextInput, Button, Chip, HelperText } from 'react-native-paper';
+import { Text, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
@@ -28,6 +28,7 @@ import { CATEGORY_LABELS, UNIT_LABELS } from '@/utils/listingFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
+import { AddressPicker } from '@/components/AddressPicker';
 
 const COLORS = {
   primary: '#10b981',
@@ -106,6 +107,7 @@ export default function CreateListingScreen() {
 
   const category = watch('category');
   const quantityUnit = watch('quantityUnit');
+  const pickupAddress = watch('pickupAddress');
   const pickupStart = watch('pickupStartTime');
   const pickupEnd = watch('pickupEndTime');
   const expiry = watch('expiryTime');
@@ -253,16 +255,22 @@ export default function CreateListingScreen() {
             <DateButton value={expiry} onPress={() => openDateTimePicker(expiry, (d) => setValue('expiryTime', d, { shouldValidate: true }))} />
           </Field>
 
-          {/* Địa chỉ */}
-          <Field label="Địa chỉ lấy hàng *" error={errors.pickupAddress?.message}>
-            <Controller control={control} name="pickupAddress" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" placeholder="VD: 12 Nguyễn Huệ, Q1" value={value} onChangeText={onChange}
-                outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.pickupAddress} />
-            )} />
+          {/* Địa chỉ lấy hàng — search gợi ý (chính) + tinh chỉnh trên map (phụ) */}
+          <Field label="Địa chỉ lấy hàng *">
+            <AddressPicker
+              initialCoords={coords}
+              value={
+                pickupAddress && coords
+                  ? { address: pickupAddress, lat: coords.lat, lng: coords.lng }
+                  : null
+              }
+              onChange={({ address, lat, lng }) => {
+                setValue('pickupAddress', address, { shouldValidate: true });
+                setCoords({ lat, lng });
+              }}
+              error={errors.pickupAddress?.message}
+            />
           </Field>
-          <HelperText type="info" visible={true} style={{ marginTop: -8 }}>
-            {coords ? '📍 Đã lấy toạ độ vị trí hiện tại của bạn' : 'Đang lấy vị trí…'}
-          </HelperText>
 
           {/* Optional */}
           <Field label="Mô tả (tuỳ chọn)">

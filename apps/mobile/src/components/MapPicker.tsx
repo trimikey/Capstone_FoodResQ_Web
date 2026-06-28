@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { Button, Text } from 'react-native-paper';
@@ -9,8 +9,14 @@ interface Props {
   initialLat?: number;
   initialLng?: number;
   height?: number;
-  /** Gọi mỗi khi người dùng kéo ghim / chạm chọn vị trí mới. */
+  /** Gọi khi người dùng CHỦ ĐỘNG chọn vị trí (kéo ghim / chạm bản đồ / bấm GPS). */
   onPick: (lat: number, lng: number) => void;
+}
+
+/** API điều khiển map từ component cha. */
+export interface MapPickerHandle {
+  /** Dời ghim + recenter map theo nguồn ngoài (vd chọn gợi ý), KHÔNG bắn onPick. */
+  recenter: (lat: number, lng: number) => void;
 }
 
 const DEFAULT = { lat: 10.7769, lng: 106.7009 }; // TP.HCM
@@ -34,21 +40,44 @@ function buildHtml(lat: number, lng: number): string {
     var p = marker.getLatLng();
     window.ReactNativeWebView.postMessage(JSON.stringify({ lat: p.lat, lng: p.lng }));
   }
+  // Tương tác thật của user → bắn message (cha sẽ reverse geocode).
   marker.on('dragend', send);
   map.on('click', function (e) { marker.setLatLng(e.latlng); send(); });
-  // RN gọi để dời ghim về vị trí mới (GPS)
-  window.recenter = function (la, ln) {
+  // RN gọi để dời ghim theo nguồn ngoài (gợi ý đã có địa chỉ) — KHÔNG bắn message.
+  window.moveMarker = function (la, ln) {
+    map.setView([la, ln], 16); marker.setLatLng([la, ln]);
+  };
+  // RN gọi sau khi lấy GPS → dời ghim VÀ bắn message (cần reverse geocode).
+  window.recenterFromGps = function (la, ln) {
     map.setView([la, ln], 16); marker.setLatLng([la, ln]); send();
   };
-  send();
 </script></body></html>`;
 }
 
-export function MapPicker({ initialLat, initialLng, height = 240, onPick }: Props) {
+/**
+ * Bản đồ chọn vị trí (Leaflet + OSM qua WebView). Hỗ trợ:
+ * - Kéo ghim / chạm bản đồ → onPick (cha tự reverse geocode).
+ * - Nút "Vị trí của tôi" (GPS) → onPick.
+ * - ref.recenter(lat,lng) → dời ghim im lặng (không onPick) khi cha chọn gợi ý.
+ */
+export const MapPicker = forwardRef<MapPickerHandle, Props>(function MapPicker(
+  { initialLat, initialLng, height = 240, onPick },
+  ref
+) {
   const lat0 = initialLat ?? DEFAULT.lat;
   const lng0 = initialLng ?? DEFAULT.lng;
   const webRef = useRef<WebView>(null);
   const [locating, setLocating] = useState(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      recenter: (lat: number, lng: number) => {
+        webRef.current?.injectJavaScript(`window.moveMarker(${lat}, ${lng}); true;`);
+      },
+    }),
+    []
+  );
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
@@ -66,7 +95,9 @@ export function MapPicker({ initialLat, initialLng, height = 240, onPick }: Prop
     try {
       setLocating(true);
       const { coords } = await getCurrentCoords();
-      webRef.current?.injectJavaScript(`window.recenter(${coords.lat}, ${coords.lng}); true;`);
+      webRef.current?.injectJavaScript(
+        `window.recenterFromGps(${coords.lat}, ${coords.lng}); true;`
+      );
     } finally {
       setLocating(false);
     }
@@ -101,7 +132,7 @@ export function MapPicker({ initialLat, initialLng, height = 240, onPick }: Prop
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   mapBox: {
