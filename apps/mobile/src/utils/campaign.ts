@@ -18,6 +18,23 @@ export function canDonate(status: CampaignStatus): boolean {
   return status === 'open' || status === 'in_progress';
 }
 
+/** Charity chỉ bắt đầu được chiến dịch khi đã duyệt (status 'open'). */
+export function canStartCampaign(status: CampaignStatus): boolean {
+  return status === 'open';
+}
+
+/** Charity chỉ kết thúc được khi chiến dịch đang diễn ra. */
+export function canCompleteCampaign(status: CampaignStatus): boolean {
+  return status === 'in_progress';
+}
+
+/** Nhãn tiếng Việt cho vai trò tình nguyện viên. */
+export const ASSIGNMENT_ROLE_LABEL: Record<string, string> = {
+  chef: 'Đầu bếp',
+  waiter: 'Phục vụ',
+  shipper: 'Giao hàng',
+};
+
 /** "2026-07-15" → "15/07/2026"; chuỗi rỗng nếu không hợp lệ. */
 export function formatDate(iso: string): string {
   if (!iso) return '';

@@ -2,6 +2,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
+import { useMyProfile } from '@/hooks/useProfile';
 import { useNotificationSocket } from '@/hooks/useNotifications';
 
 const PRIMARY = '#10b981';
@@ -33,6 +34,10 @@ export default function AppTabsLayout() {
 
   const isProvider = user?.role === 'provider';
   const isVolunteer = user?.role === 'volunteer';
+  const isReceiver = user?.role === 'receiver';
+  // Cờ tổ chức từ thiện nằm trong hồ sơ (GET /users/me) — chỉ fetch khi là receiver.
+  const { data: profile } = useMyProfile(isReceiver);
+  const isCharityOrg = isReceiver && !!profile?.receiver?.isCharityOrg;
   // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
   const hideReceiver = isProvider || isVolunteer;
 
@@ -63,6 +68,18 @@ export default function AppTabsLayout() {
           title: 'Đơn của tôi',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="clipboard-list-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
+      {/* --- Charity-org tab (receiver có isCharityOrg) --- */}
+      <Tabs.Screen
+        name="charity/campaigns"
+        options={{
+          href: isCharityOrg ? undefined : null,
+          title: 'Bếp ăn của tôi',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="pot-steam-outline" color={color} size={size} />
           ),
         }}
       />
@@ -162,6 +179,9 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
       <Tabs.Screen name="provider/orders/[id]" options={{ href: null }} />
       <Tabs.Screen name="provider/campaigns/[id]" options={{ href: null }} />
+      {/* Charity-org: tạo + quản lý chi tiết chiến dịch — route push, ẩn khỏi tab bar */}
+      <Tabs.Screen name="charity/campaigns/create" options={{ href: null }} />
+      <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
     </Tabs>

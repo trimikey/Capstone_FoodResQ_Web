@@ -262,6 +262,13 @@ export const endpoints = {
     detail: (id: string) => `/campaigns/${id}`,
     // Provider quyên góp nguyên liệu cho 1 chiến dịch (status pledged → charity xác nhận)
     donate: (id: string) => `/campaigns/${id}/donations`,
+    // Charity-org (receiver isCharityOrg) quản lý bếp ăn của mình
+    my: '/campaigns/my',
+    create: '/campaigns',
+    start: (id: string) => `/campaigns/${id}/start`,
+    complete: (id: string) => `/campaigns/${id}/complete`,
+    // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
+    confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
   },
   notifications: {
     my: '/notifications/my',
