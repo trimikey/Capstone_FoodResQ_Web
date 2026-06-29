@@ -127,7 +127,6 @@ export default function AppTabsLayout() {
       />
 
       {/* --- Volunteer tabs --- */}
-      {/* GHI CHÚ: tab "Chiến dịch" (campaign volunteer) sẽ thêm ở task riêng — đừng thêm ở đây. */}
       <Tabs.Screen
         name="volunteer/offers"
         options={{
@@ -145,6 +144,16 @@ export default function AppTabsLayout() {
           title: 'Đang giao',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="truck-fast-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="volunteer/campaigns"
+        options={{
+          href: isVolunteer ? undefined : null,
+          title: 'Chiến dịch',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="charity" color={color} size={size} />
           ),
         }}
       />
@@ -184,6 +193,8 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
+      {/* Volunteer: chi tiết chiến dịch (đăng ký vai trò) — route push, ẩn khỏi tab bar */}
+      <Tabs.Screen name="volunteer/campaigns/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

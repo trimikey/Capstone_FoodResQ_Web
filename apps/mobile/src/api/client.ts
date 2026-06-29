@@ -269,6 +269,12 @@ export const endpoints = {
     complete: (id: string) => `/campaigns/${id}/complete`,
     // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
     confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
+    // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch
+    apply: (id: string) => `/campaigns/${id}/apply`,
+    // Volunteer: các công việc đã đăng ký
+    myTasks: '/campaigns/my-tasks',
+    // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
+    advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
   },
   notifications: {
     my: '/notifications/my',

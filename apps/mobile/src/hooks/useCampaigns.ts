@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
+import type { CapturedImage } from '@/services/faceCapture';
 
 export type AssignmentRole = 'chef' | 'waiter' | 'shipper';
 
@@ -209,6 +210,78 @@ export function useConfirmDonation() {
     },
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+    },
+  });
+}
+
+/** Một công việc TNV đã đăng ký (kèm chiến dịch). GET /campaigns/my-tasks */
+export interface CampaignTask {
+  id: string;
+  role: AssignmentRole;
+  status: string;
+  checkInTime?: string | null;
+  campaign: {
+    id: string;
+    title: string;
+    kitchenAddress: string;
+    scheduledDate: string;
+    startTime: string;
+    endTime: string;
+    status: CampaignStatus;
+  };
+}
+
+/** Volunteer đăng ký 1 vai trò trong chiến dịch. POST /campaigns/:id/apply */
+export function useApplyCampaign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, role }: { campaignId: string; role: AssignmentRole }) => {
+      const res = await apiClient.post<ApiResponse<{ message: string }>>(
+        endpoints.campaigns.apply(campaignId),
+        { role }
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+    },
+  });
+}
+
+/** Việc bếp ăn TNV đã đăng ký. GET /campaigns/my-tasks */
+export function useMyTasks(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaign-tasks'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
+      return res.data.data;
+    },
+  });
+}
+
+/**
+ * TNV chuyển bước công việc của mình (kèm ảnh minh chứng tuỳ bước).
+ * POST /campaigns/assignments/:id/advance (multipart, field "photo").
+ */
+export function useAdvanceTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ assignmentId, photo }: { assignmentId: string; photo?: CapturedImage }) => {
+      const form = new FormData();
+      if (photo) form.append('photo', photo as unknown as Blob);
+      const res = await apiClient.post<ApiResponse<{ id: string; status: string; pointsAwarded?: number }>>(
+        endpoints.campaigns.advanceTask(assignmentId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
     },
   });
 }
