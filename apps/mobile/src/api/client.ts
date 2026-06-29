@@ -237,6 +237,24 @@ export const endpoints = {
   deliveries: {
     // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
     track: (reservationId: string) => `/deliveries/track/${reservationId}`,
+    // Volunteer (shipper): danh sách lời mời / đơn đang giao / lịch sử / thành tích
+    myOffers: '/deliveries/my/offers',
+    myActive: '/deliveries/my/active',
+    myHistory: '/deliveries/my/history',
+    myStats: '/deliveries/my/stats',
+    // Volunteer: phản hồi lời mời + điều khiển vòng đời đơn giao
+    accept: (id: string) => `/deliveries/${id}/accept`,
+    reject: (id: string) => `/deliveries/${id}/reject`,
+    cancel: (id: string) => `/deliveries/${id}/cancel`,
+    fail: (id: string) => `/deliveries/${id}/fail`,
+    // PATCH multipart {status, photo?} — chuyển bước (kèm ảnh QC/proof)
+    updateStatus: (id: string) => `/deliveries/${id}/status`,
+  },
+  volunteers: {
+    // Hồ sơ tình nguyện viên + trạng thái sẵn sàng + vị trí hiện tại
+    me: '/volunteers/me',
+    availability: '/volunteers/me/availability',
+    location: '/volunteers/me/location',
   },
   campaigns: {
     // Chiến dịch bếp ăn cộng đồng (charity tạo). Provider: xem + quyên góp nguyên liệu.

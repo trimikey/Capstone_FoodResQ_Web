@@ -10,7 +10,8 @@ const INACTIVE = '#9ca3af';
 /**
  * Layout nhóm route đã đăng nhập + AUTH GUARD. Tab bar đổi theo vai trò:
  * - receiver: Trang chủ · Đơn của tôi · Tài khoản
- * - provider: Tin của tôi · Quét QR · Tài khoản
+ * - provider: Tin của tôi · Đơn đặt · Quét QR · Bếp ăn · Tài khoản
+ * - volunteer: Đơn cần giao · Đang giao · Hồ sơ
  * Tab không thuộc vai trò bị ẩn (href: null); màn chi tiết là route push (ẩn tab).
  */
 export default function AppTabsLayout() {
@@ -31,6 +32,9 @@ export default function AppTabsLayout() {
   }
 
   const isProvider = user?.role === 'provider';
+  const isVolunteer = user?.role === 'volunteer';
+  // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
+  const hideReceiver = isProvider || isVolunteer;
 
   return (
     <Tabs
@@ -45,7 +49,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          href: isProvider ? null : undefined,
+          href: hideReceiver ? null : undefined,
           title: 'Trang chủ',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="home-variant" color={color} size={size} />
@@ -55,7 +59,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="orders"
         options={{
-          href: isProvider ? null : undefined,
+          href: hideReceiver ? null : undefined,
           title: 'Đơn của tôi',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="clipboard-list-outline" color={color} size={size} />
@@ -105,10 +109,44 @@ export default function AppTabsLayout() {
         }}
       />
 
-      {/* --- Chung --- */}
+      {/* --- Volunteer tabs --- */}
+      {/* GHI CHÚ: tab "Chiến dịch" (campaign volunteer) sẽ thêm ở task riêng — đừng thêm ở đây. */}
+      <Tabs.Screen
+        name="volunteer/offers"
+        options={{
+          href: isVolunteer ? undefined : null,
+          title: 'Đơn cần giao',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="clipboard-arrow-down-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="volunteer/active"
+        options={{
+          href: isVolunteer ? undefined : null,
+          title: 'Đang giao',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="truck-fast-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="volunteer/profile"
+        options={{
+          href: isVolunteer ? undefined : null,
+          title: 'Hồ sơ',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="account-circle-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
+      {/* --- Chung (receiver + provider; volunteer dùng "Hồ sơ" riêng ở trên) --- */}
       <Tabs.Screen
         name="profile"
         options={{
+          href: isVolunteer ? null : undefined,
           title: 'Tài khoản',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="account-circle-outline" color={color} size={size} />
@@ -124,6 +162,8 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
       <Tabs.Screen name="provider/orders/[id]" options={{ href: null }} />
       <Tabs.Screen name="provider/campaigns/[id]" options={{ href: null }} />
+      {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
+      <Tabs.Screen name="volunteer/history" options={{ href: null }} />
     </Tabs>
   );
 }
