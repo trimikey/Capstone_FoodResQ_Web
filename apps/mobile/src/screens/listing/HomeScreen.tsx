@@ -8,7 +8,7 @@ import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useAuth } from '@/hooks/useAuth';
 import { useListings, type FoodCategory, type Listing } from '@/hooks/useListings';
-import { getCurrentCoords, type Coords } from '@/services/geolocation';
+import { getCurrentCoords, DEFAULT_COORDS, type Coords } from '@/services/geolocation';
 import { ListingCard } from '@/components/ListingCard';
 import { ListingsMapView } from '@/components/ListingsMapView';
 import { SearchBar } from '@/components/SearchBar';
@@ -24,7 +24,9 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const sheetRef = useRef<BottomSheet>(null);
 
-  const [coords, setCoords] = useState<Coords | null>(null);
+  // Khởi tạo bằng DEFAULT_COORDS để feed fetch NGAY, không chờ định vị (tránh skeleton lâu).
+  // Khi có toạ độ thật → cập nhật → React Query tự refetch theo đúng vị trí.
+  const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
   const [bannerVisible, setBannerVisible] = useState(false);
 
@@ -65,8 +67,8 @@ export default function HomeScreen() {
   } = useListings({ coords, search: debouncedSearch, category });
 
   const items = useMemo(() => data?.pages.flat() ?? [], [data]);
-  const locating = coords == null;
-  const showSkeleton = (locating || isLoading) && items.length === 0;
+  // coords luôn có (khởi tạo DEFAULT_COORDS) → chỉ hiện skeleton khi đang fetch, không chờ định vị.
+  const showSkeleton = isLoading && items.length === 0;
 
   const renderEmpty = () => {
     if (showSkeleton) return <ListingListSkeleton count={5} />;
