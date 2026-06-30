@@ -20,6 +20,16 @@ export default function AppTabsLayout() {
   // Kết nối WS nhận thông báo realtime (tự bỏ qua khi chưa có token).
   useNotificationSocket();
 
+  const isProvider = user?.role === 'provider';
+  const isVolunteer = user?.role === 'volunteer';
+  const isReceiver = user?.role === 'receiver';
+  // Cờ tổ chức từ thiện nằm trong hồ sơ (GET /users/me) — chỉ fetch khi là receiver.
+  // PHẢI gọi trước mọi early-return để giữ đúng thứ tự hooks (tránh "rendered fewer hooks" khi logout).
+  const { data: profile } = useMyProfile(isReceiver);
+  const isCharityOrg = isReceiver && !!profile?.receiver?.isCharityOrg;
+  // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
+  const hideReceiver = isProvider || isVolunteer;
+
   if (!isInitialized) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -31,15 +41,6 @@ export default function AppTabsLayout() {
   if (!isAuthenticated) {
     return <Redirect href="/sign-in" />;
   }
-
-  const isProvider = user?.role === 'provider';
-  const isVolunteer = user?.role === 'volunteer';
-  const isReceiver = user?.role === 'receiver';
-  // Cờ tổ chức từ thiện nằm trong hồ sơ (GET /users/me) — chỉ fetch khi là receiver.
-  const { data: profile } = useMyProfile(isReceiver);
-  const isCharityOrg = isReceiver && !!profile?.receiver?.isCharityOrg;
-  // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
-  const hideReceiver = isProvider || isVolunteer;
 
   return (
     <Tabs
