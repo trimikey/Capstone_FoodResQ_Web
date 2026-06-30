@@ -75,17 +75,4 @@ export class VolunteersService {
 
     return { isAvailable: dto.isAvailable, message: dto.isAvailable ? 'Đã bật sẵn sàng nhận đơn' : 'Đã tắt nhận đơn' };
   }
-
-  /** Cập nhật vị trí hiện tại (dùng cho theo dõi đơn giao trực tiếp). */
-  async updateLocation(userId: string, lng: number, lat: number) {
-    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId }, select: { id: true } });
-    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-    await this.prisma.$executeRaw(Prisma.sql`
-      UPDATE volunteer_profiles
-      SET current_location = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-          location_updated_at = NOW(), updated_at = NOW()
-      WHERE id = ${volunteer.id}::uuid
-    `);
-    return { ok: true };
-  }
 }
