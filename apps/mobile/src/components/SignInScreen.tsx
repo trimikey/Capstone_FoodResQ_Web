@@ -40,14 +40,12 @@ interface SignInScreenProps {
   onSignInSuccess?: (user: any) => void;
   onNavigateToSignUp?: () => void;
   onNavigateToForgotPassword?: () => void;
-  onNavigateToPhoneSignIn?: () => void;
 }
 
 export function SignInScreen({
   onSignInSuccess,
   onNavigateToSignUp,
   onNavigateToForgotPassword,
-  onNavigateToPhoneSignIn,
 }: SignInScreenProps) {
   const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(false);
@@ -447,35 +445,6 @@ export function SignInScreen({
               }}
             >
               Google
-            </Text>
-          </Pressable>
-
-          {/* Phone Button (Facebook để Phase 2) */}
-          <Pressable
-            onPress={onNavigateToPhoneSignIn}
-            disabled={isLoading || googleLoading}
-            style={({ pressed }) => ({
-              flex: 1,
-              height: 52,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: COLORS.outline,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <Text style={{ fontSize: 18 }}>📱</Text>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: COLORS.onSurface,
-              }}
-            >
-              Số điện thoại
             </Text>
           </Pressable>
         </View>
