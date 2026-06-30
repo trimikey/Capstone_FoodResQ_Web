@@ -40,16 +40,11 @@ export default function SignInScreen({ navigation }: SignInScreenProps) {
     navigation.navigate('ForgotPassword');
   };
 
-  const handleNavigateToPhoneSignIn = () => {
-    navigation.navigate('PhoneSignIn');
-  };
-
   return (
     <SignInForm
       onSignInSuccess={handleSignInSuccess}
       onNavigateToSignUp={handleNavigateToSignUp}
       onNavigateToForgotPassword={handleNavigateToForgotPassword}
-      onNavigateToPhoneSignIn={handleNavigateToPhoneSignIn}
     />
   );
 }

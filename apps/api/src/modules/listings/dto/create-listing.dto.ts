@@ -6,7 +6,6 @@ import {
   IsDateString,
   IsOptional,
   IsArray,
-  IsBoolean,
   Min,
   Max,
   MaxLength,
@@ -102,9 +101,4 @@ export class CreateListingDto {
   @IsArray()
   @IsString({ each: true })
   imageUrls?: string[];
-
-  @ApiPropertyOptional({ example: false, description: 'Túi bất ngờ — ẩn nội dung tới khi nhận' })
-  @IsOptional()
-  @IsBoolean()
-  isSurpriseBag?: boolean;
 }

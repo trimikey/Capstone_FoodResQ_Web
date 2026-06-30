@@ -15,7 +15,6 @@ const ROUTE_TO_PATH: Record<string, string> = {
   SignUpVolunteer: '/sign-up-volunteer',
   SignUpVerification: '/sign-up-verification',
   ForgotPassword: '/forgot-password',
-  PhoneSignIn: '/phone-sign-in',
   OtpVerification: '/otp-verification',
   ResetPassword: '/reset-password',
   Home: '/home',

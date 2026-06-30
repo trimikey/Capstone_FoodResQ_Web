@@ -1,6 +1,4 @@
-import auth, {
-  type FirebaseAuthTypes,
-} from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 import {
   GoogleSignin,
   statusCodes,
@@ -54,31 +52,6 @@ export async function signInWithGoogle(): Promise<string> {
   const credential = auth.GoogleAuthProvider.credential(googleIdToken);
   const userCredential = await auth().signInWithCredential(credential);
   return userCredential.user.getIdToken();
-}
-
-// Giữ confirmation giữa màn nhập SĐT và màn nhập OTP (object không serialize qua navigation params).
-let pendingConfirmation: FirebaseAuthTypes.ConfirmationResult | null = null;
-
-/** Chuẩn hoá SĐT VN 0xxxxxxxxx → E.164 +84xxxxxxxxx cho Firebase. */
-export function toE164(phoneVn: string): string {
-  return phoneVn.startsWith('0') ? `+84${phoneVn.slice(1)}` : phoneVn;
-}
-
-/** Gửi OTP tới số điện thoại (nhận dạng 0xxxxxxxxx). */
-export async function signInWithPhone(phoneVn: string): Promise<void> {
-  pendingConfirmation = await auth().signInWithPhoneNumber(toE164(phoneVn));
-}
-
-/**
- * Xác nhận mã OTP phone → trả về Firebase ID token để gửi backend /auth/firebase.
- */
-export async function confirmPhoneCode(code: string): Promise<string> {
-  if (!pendingConfirmation) throw new Error('Phiên OTP đã hết hạn, vui lòng gửi lại mã');
-  const userCredential = await pendingConfirmation.confirm(code);
-  if (!userCredential) throw new Error('Mã OTP không đúng');
-  const token = await userCredential.user.getIdToken();
-  pendingConfirmation = null;
-  return token;
 }
 
 /**

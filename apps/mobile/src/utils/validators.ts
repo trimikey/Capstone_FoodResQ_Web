@@ -109,8 +109,7 @@ export const otpVerificationSchema = z.object({
     .string()
     .length(6, 'OTP must be 6 digits')
     .regex(/^\d+$/, 'OTP must contain only numbers'),
-  // email/phone là metadata truyền qua prop (không bắt buộc) — verify thực ở backend/Firebase.
-  // Không validate ở đây để luồng phone_login (không có email) submit được.
+  // email là metadata truyền qua prop (không bắt buộc) — verify thực ở backend.
   email: z.string().optional(),
 });
 
@@ -147,15 +146,6 @@ export const forgotPasswordSchema = z.object({
 });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-
-// Đăng nhập bằng số điện thoại VN (0xxxxxxxxx) — chuẩn hoá về E.164 trước khi gửi Firebase.
-export const phoneSignInSchema = z.object({
-  phone: z
-    .string()
-    .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại không hợp lệ (vd 0912345678)'),
-});
-
-export type PhoneSignInInput = z.infer<typeof phoneSignInSchema>;
 
 /**
  * Cập nhật hồ sơ (PATCH /users/me). Mọi field optional — chỉ gửi field thay đổi.

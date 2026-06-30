@@ -2,13 +2,19 @@ import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Portal, Dialog, Button, TextInput, Text, Chip } from 'react-native-paper';
 import { Popup } from '@/components/ui/AppPopup';
-import { useCreateReport, type ReportReason } from '@/hooks/useReports';
+import { useCreateReport, type ReportReason, type ReportTargetType } from '@/hooks/useReports';
 
 interface Props {
   visible: boolean;
-  /** UUID của listing bị báo cáo. */
-  listingId: string;
   onDismiss: () => void;
+  /** Loại mục tiêu báo cáo (listing/delivery/...). Mặc định 'listing'. */
+  targetType?: ReportTargetType;
+  /** UUID mục tiêu báo cáo. Ưu tiên dùng cùng targetType. */
+  targetId?: string;
+  /** @deprecated Dùng targetType='listing' + targetId. Giữ để tương thích call site cũ. */
+  listingId?: string;
+  /** Tiêu đề tuỳ chỉnh (mặc định "Báo cáo vấn đề"). */
+  title?: string;
 }
 
 const COLORS = {
@@ -28,11 +34,19 @@ const REASONS: { value: ReportReason; label: string }[] = [
   { value: 'other', label: 'Khác' },
 ];
 
-/** Báo cáo vấn đề về một listing (gửi tới đội ngũ quản trị). */
-export function ReportDialog({ visible, listingId, onDismiss }: Props) {
+/** Báo cáo vấn đề (listing/delivery/...) — gửi tới đội ngũ quản trị. */
+export function ReportDialog({
+  visible,
+  onDismiss,
+  targetType = 'listing',
+  targetId,
+  listingId,
+  title = 'Báo cáo vấn đề',
+}: Props) {
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [description, setDescription] = useState('');
   const reportMut = useCreateReport();
+  const effectiveTargetId = targetId ?? listingId;
 
   const reset = () => {
     setReason(null);
@@ -46,11 +60,11 @@ export function ReportDialog({ visible, listingId, onDismiss }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!reason) return;
+    if (!reason || !effectiveTargetId) return;
     try {
       await reportMut.mutateAsync({
-        targetType: 'listing',
-        targetId: listingId,
+        targetType,
+        targetId: effectiveTargetId,
         reason,
         ...(description.trim() ? { description: description.trim() } : {}),
       });
@@ -69,7 +83,7 @@ export function ReportDialog({ visible, listingId, onDismiss }: Props) {
   return (
     <Portal>
       <Dialog visible={visible} onDismiss={handleDismiss} style={styles.dialog}>
-        <Dialog.Title style={styles.title}>Báo cáo vấn đề</Dialog.Title>
+        <Dialog.Title style={styles.title}>{title}</Dialog.Title>
         <Dialog.Content>
           <Text style={styles.label}>Lý do</Text>
           <View style={styles.chips}>
@@ -108,7 +122,7 @@ export function ReportDialog({ visible, listingId, onDismiss }: Props) {
             onPress={handleSubmit}
             buttonColor={COLORS.danger}
             loading={reportMut.isPending}
-            disabled={reportMut.isPending || !reason}
+            disabled={reportMut.isPending || !reason || !effectiveTargetId}
           >
             Gửi báo cáo
           </Button>

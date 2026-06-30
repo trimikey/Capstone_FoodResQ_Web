@@ -1,30 +1,12 @@
 import { IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { AssignmentRole, ReportStatus, FoodCategory } from '@foodresq/types';
+import { AssignmentRole, ReportStatus } from '@foodresq/types';
 
 export class SetConfigDto {
   @ApiProperty({ example: 5, description: 'Giá trị số mới cho khoá cấu hình' })
   @IsNumber()
   value!: number;
-}
-
-export class UpdateListingCategoryDto {
-  @ApiProperty({ enum: FoodCategory, description: 'Loại thực phẩm mới' })
-  @IsEnum(FoodCategory)
-  category!: FoodCategory;
-}
-
-export class ReviewCampaignChangeDto {
-  @ApiProperty({ enum: ['approve', 'reject'], description: 'Duyệt hay từ chối yêu cầu thay đổi' })
-  @IsIn(['approve', 'reject'])
-  decision!: 'approve' | 'reject';
-
-  @ApiPropertyOptional({ description: 'Ghi chú của admin (lý do từ chối...)' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  reviewNote?: string;
 }
 
 export class SetCampaignStatusDto {

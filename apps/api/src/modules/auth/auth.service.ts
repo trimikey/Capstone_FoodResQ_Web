@@ -9,12 +9,11 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { User } from '@prisma/client';
 import { FirebaseAdminService } from './firebase-admin.service';
+import { User } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
@@ -35,10 +34,6 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    // Toạ độ GPS lúc đăng ký (nếu người dùng cho phép định vị) → lưu vào cột
-    // GEOGRAPHY để các flow tìm theo bán kính (PostGIS ST_DWithin) hoạt động ngay.
-    const hasGeo = typeof dto.latitude === 'number' && typeof dto.longitude === 'number';
-
     // Tạo user + profile theo role trong 1 transaction — các flow sau
     // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
     const user = await this.prisma.$transaction(async (tx) => {
@@ -54,21 +49,14 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
-        const profile = await tx.receiverProfile.create({
-          data: {
-            userId: created.id,
+        await tx.receiverProfile.create({
+          data: { 
+            userId: created.id, 
             address: dto.address ?? null,
             isCharityOrg: dto.isCharityOrg ?? false,
             organizationName: dto.isCharityOrg ? (dto.businessName ?? dto.fullName) : null
           },
         });
-        if (hasGeo) {
-          await tx.$executeRaw(Prisma.sql`
-            UPDATE receiver_profiles
-            SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography
-            WHERE id = ${profile.id}::uuid
-          `);
-        }
       } else if (dto.role === 'volunteer') {
         const vp = await tx.volunteerProfile.create({
           data: { userId: created.id, vehicleType: dto.vehicleType ?? null },
@@ -79,21 +67,14 @@ export class AuthService {
            });
         }
       } else if (dto.role === 'provider') {
-        const profile = await tx.providerProfile.create({
+        await tx.providerProfile.create({
           data: {
             userId: created.id,
             businessName: dto.businessName ?? dto.fullName,
-            businessType: dto.businessType ?? 'other',
+            businessType: 'other',
             address: dto.address ?? '',
           },
         });
-        if (hasGeo) {
-          await tx.$executeRaw(Prisma.sql`
-            UPDATE provider_profiles
-            SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography
-            WHERE id = ${profile.id}::uuid
-          `);
-        }
       }
 
       return created;
@@ -186,8 +167,8 @@ export class AuthService {
   }
 
   /**
-   * Đăng nhập/đăng ký bằng Firebase ID token (dùng cho mobile: Google sign-in & Phone OTP).
-   * Token được verify bằng Firebase Admin SDK — khác với /auth/google (verify Google OAuth token).
+   * Đăng nhập/đăng ký bằng Firebase ID token — CHỈ phục vụ Google sign-in.
+   * Token bắt buộc phải có email (Google); token không email (vd phone) bị từ chối.
    */
   async loginWithFirebase(
     idToken: string,
@@ -198,13 +179,11 @@ export class AuthService {
     let email: string | undefined;
     let name: string | undefined;
     let picture: string | undefined;
-    let phone: string | undefined;
     try {
       const decoded = await this.firebaseAdmin.verifyIdToken(idToken);
       email = decoded.email;
       name = decoded.name as string | undefined;
       picture = decoded.picture;
-      phone = decoded.phone_number;
       if (decoded.email && decoded.email_verified === false) {
         throw new UnauthorizedException('Email chưa được xác minh');
       }
@@ -213,14 +192,11 @@ export class AuthService {
       throw new UnauthorizedException('Firebase token không hợp lệ');
     }
 
-    // Đăng nhập bằng phone OTP không có email → dùng phone làm khoá định danh
-    if (!email && !phone) {
-      throw new UnauthorizedException('Không lấy được email hoặc số điện thoại từ Firebase');
+    if (!email) {
+      throw new UnauthorizedException('Chỉ hỗ trợ đăng nhập bằng Google');
     }
 
-    let user = email
-      ? await this.prisma.user.findUnique({ where: { email } })
-      : await this.prisma.user.findFirst({ where: { phone, deletedAt: null } });
+    let user = await this.prisma.user.findUnique({ where: { email } });
     let isNewUser = false;
 
     if (!user) {
@@ -229,14 +205,11 @@ export class AuthService {
       // Mật khẩu ngẫu nhiên vì đăng nhập qua Firebase, không dùng password
       const randomPassword = crypto.randomBytes(32).toString('hex');
       const passwordHash = await bcrypt.hash(randomPassword, BCRYPT_ROUNDS);
-      const fullName = name ?? email?.split('@')[0] ?? phone ?? 'Người dùng';
-      // email là cột bắt buộc + unique. Đăng nhập phone OTP không có email → sinh placeholder
-      const resolvedEmail = email ?? `${phone}@phone.foodresq.local`;
+      const fullName = name ?? email.split('@')[0] ?? 'Người dùng';
       user = await this.prisma.$transaction(async (tx) => {
         const created = await tx.user.create({
           data: {
-            email: resolvedEmail,
-            phone: phone ?? null,
+            email,
             passwordHash,
             fullName,
             avatarUrl: picture ?? null,

@@ -146,11 +146,6 @@ export class ReservationsService {
         void this.createDeliveryAsync(reservation.id, dto.listingId);
       }
 
-      // 8. Thông báo cho nhà cung cấp có đơn đặt mới (fire-and-forget)
-      if (reservation) {
-        void this.notifyProviderNewReservation(dto.listingId, reservation.id, dto.quantity);
-      }
-
       return {
         reservationId: reservation?.id,
         qrToken: reservation?.qr_token,
@@ -160,44 +155,6 @@ export class ReservationsService {
     } finally {
       await lock.release();
     }
-  }
-
-  /** Báo cho provider của listing rằng vừa có đơn đặt mới. Fire-and-forget. */
-  private async notifyProviderNewReservation(
-    listingId: string,
-    reservationId: string,
-    quantity: number,
-  ) {
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-      select: { title: true, quantityUnit: true, provider: { select: { userId: true } } },
-    });
-    if (!listing?.provider?.userId) return;
-    void this.notifications.notify(listing.provider.userId, {
-      type: 'reservation',
-      title: 'Đơn đặt mới',
-      body: `Có đơn đặt ${quantity} ${listing.quantityUnit} cho "${listing.title}".`,
-      data: { reservationId, status: 'confirmed' },
-    });
-  }
-
-  /** Báo cho provider của listing rằng một đơn đặt vừa bị huỷ. Fire-and-forget. */
-  private async notifyProviderReservationCancelled(
-    listingId: string,
-    reservationId: string,
-    reason?: string,
-  ) {
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-      select: { title: true, provider: { select: { userId: true } } },
-    });
-    if (!listing?.provider?.userId) return;
-    void this.notifications.notify(listing.provider.userId, {
-      type: 'reservation',
-      title: 'Đơn đặt bị huỷ',
-      body: `Một đơn đặt cho "${listing.title}" đã bị huỷ.${reason ? ' Lý do: ' + reason : ''}`,
-      data: { reservationId, status: 'cancelled' },
-    });
   }
 
   private async createDeliveryAsync(reservationId: string, listingId: string) {
@@ -473,9 +430,6 @@ export class ReservationsService {
       void this.applyTrustDelta(userId, reservationId, 'late_cancellation', -10);
     }
 
-    // Báo cho provider của listing rằng đơn vừa bị huỷ (fire-and-forget)
-    void this.notifyProviderReservationCancelled(reservation.listingId, reservationId, reason);
-
     return { message: 'Reservation cancelled' };
   }
 
@@ -498,7 +452,6 @@ export class ReservationsService {
               provider: { select: { id: true, businessName: true, userId: true } },
             },
           },
-          delivery: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -524,48 +477,6 @@ export class ReservationsService {
     }));
 
     return { items: itemsWithRating, total, page, limit, totalPages: Math.ceil(total / limit) };
-  }
-
-  /** Provider xem các đơn đặt vào tin của mình (lọc trạng thái tuỳ chọn). */
-  async findProviderReservations(
-    userId: string,
-    status?: string,
-    page = 1,
-    limit = 20,
-  ) {
-    const provider = await this.prisma.providerProfile.findUnique({ where: { userId } });
-    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
-
-    const where: Prisma.ReservationWhereInput = {
-      listing: { providerId: provider.id },
-      ...(status ? { status: status as Prisma.EnumReservationStatusFilter['equals'] } : {}),
-    };
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.reservation.findMany({
-        where,
-        include: {
-          listing: {
-            select: {
-              title: true,
-              pickupAddress: true,
-              imageUrls: true,
-              category: true,
-              quantityUnit: true,
-            },
-          },
-          receiver: {
-            select: { user: { select: { fullName: true, phone: true, avatarUrl: true } } },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.reservation.count({ where }),
-    ]);
-
-    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   /** Receiver đánh giá nhà cung cấp sau khi nhận hàng (đơn completed). */

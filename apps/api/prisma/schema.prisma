@@ -64,18 +64,19 @@ enum VolunteerSpecialization {
 }
 
 enum FoodCategory {
-  // Nhóm ăn liền
+  // Giá trị thực tế đang dùng trong DB (Postgres enum food_category)
   cooked_meal
   bakery
   fresh_fruit
   beverage
-  // Nhóm nguyên liệu thô
   vegetables
   raw_protein
   dry_goods
   canned_packaged
-  // Khác
   other
+  // Giá trị cũ — giữ lại để không phá code đang tham chiếu (không còn dùng trong DB)
+  prepared_meal
+  raw_ingredients
 
   @@map("food_category")
 }
@@ -129,15 +130,6 @@ enum DeliveryStatus {
   failed
 
   @@map("delivery_status")
-}
-
-enum CampaignChangeStatus {
-  pending
-  approved
-  rejected
-  cancelled
-
-  @@map("campaign_change_status")
 }
 
 enum CampaignStatus {
@@ -257,7 +249,6 @@ model User {
   refreshTokens     RefreshToken[]
   verificationRequests VerificationRequest[]
   notifications     Notification[]
-  deviceTokens      DeviceToken[]
   ratingsGiven      Rating[]              @relation("RaterRelation")
   ratingsReceived   Rating[]              @relation("RateeRelation")
   trustScoreHistory TrustScoreHistory[]
@@ -411,7 +402,6 @@ model FoodListing {
   allergenNotes      String?       @map("allergen_notes")
   maxPerReservation  Int           @default(1) @map("max_per_reservation") @db.SmallInt
   imageUrls          Json          @default("[]") @map("image_urls")
-  isSurpriseBag      Boolean       @default(false) @map("is_surprise_bag") // Túi bất ngờ: ẩn nội dung tới khi nhận
   status             ListingStatus @default(draft)
   cancelledReason    String?       @map("cancelled_reason")
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
@@ -506,9 +496,6 @@ model KitchenCampaign {
   expectedServings   Int?           @map("expected_servings")
   actualServings     Int?           @map("actual_servings")
   imageUrls          Json           @default("[]") @map("image_urls")
-  menuItems          Json           @default("[]") @map("menu_items")      // [{ name, type }]
-  scheduleItems      Json           @default("[]") @map("schedule_items")  // [{ time, label }]
-  supplyItems        Json           @default("[]") @map("supply_items")    // string[]
   notes              String?
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz
@@ -516,44 +503,11 @@ model KitchenCampaign {
   charityReceiver ReceiverProfile             @relation(fields: [charityReceiverId], references: [id])
   assignments     CampaignVolunteerAssignment[]
   donations       CampaignDonation[]
-  changeRequests  CampaignChangeRequest[]
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
   @@index([kitchenLocation], map: "idx_campaign_location", type: Gist)
   @@map("kitchen_campaigns")
-}
-
-/// Yêu cầu thay đổi chiến dịch do tổ chức từ thiện gửi, chờ admin duyệt mới áp dụng.
-/// Các cột proposed = null nghĩa là "không đổi trường đó".
-model CampaignChangeRequest {
-  id                String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId        String               @map("campaign_id") @db.Uuid
-  requestedByUserId String               @map("requested_by_user_id") @db.Uuid
-  status            CampaignChangeStatus @default(pending)
-  reason            String?
-  // Trường đề xuất thay đổi (null = giữ nguyên)
-  scheduledDate      DateTime? @map("scheduled_date") @db.Date
-  startTime          String?   @map("start_time") @db.VarChar(8)
-  endTime            String?   @map("end_time") @db.VarChar(8)
-  kitchenAddress     String?   @map("kitchen_address")
-  lng                Float?    @db.DoublePrecision
-  lat                Float?    @db.DoublePrecision
-  chefSlotsNeeded    Int?      @map("chef_slots_needed") @db.SmallInt
-  waiterSlotsNeeded  Int?      @map("waiter_slots_needed") @db.SmallInt
-  shipperSlotsNeeded Int?      @map("shipper_slots_needed") @db.SmallInt
-  // Kết quả duyệt
-  reviewNote       String?   @map("review_note")
-  reviewedByUserId String?   @map("reviewed_by_user_id") @db.Uuid
-  reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-
-  campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId])
-  @@index([status])
-  @@map("campaign_change_requests")
 }
 
 /// Nhà cung cấp quyên góp nguyên liệu cho một chiến dịch bếp ăn
@@ -695,21 +649,6 @@ model Notification {
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("notifications")
-}
-
-/// Token thiết bị (FCM) để gửi push notification.
-model DeviceToken {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  token     String   @unique
-  platform  String?  @db.VarChar(20)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("device_tokens")
 }
 
 model AuditLog {

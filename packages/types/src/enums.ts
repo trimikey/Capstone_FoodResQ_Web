@@ -40,8 +40,8 @@ export enum VolunteerSpecialization {
   WAITER = 'waiter',
 }
 
-// Phải khớp enum food_category trong Postgres (9 giá trị thực).
 export enum FoodCategory {
+  // Giá trị thực tế trong DB (Postgres enum food_category) — mobile & web dùng
   COOKED_MEAL = 'cooked_meal',
   BAKERY = 'bakery',
   FRESH_FRUIT = 'fresh_fruit',
@@ -51,6 +51,9 @@ export enum FoodCategory {
   DRY_GOODS = 'dry_goods',
   CANNED_PACKAGED = 'canned_packaged',
   OTHER = 'other',
+  // Giá trị cũ — giữ để web cũ không vỡ compile (không tồn tại trong DB)
+  PREPARED_MEAL = 'prepared_meal',
+  RAW_INGREDIENTS = 'raw_ingredients',
 }
 
 export enum ListingStatus {

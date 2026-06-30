@@ -237,6 +237,24 @@ export const endpoints = {
   deliveries: {
     // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
     track: (reservationId: string) => `/deliveries/track/${reservationId}`,
+    // Volunteer (shipper): danh sách lời mời / đơn đang giao / lịch sử / thành tích
+    myOffers: '/deliveries/my/offers',
+    myActive: '/deliveries/my/active',
+    myHistory: '/deliveries/my/history',
+    myStats: '/deliveries/my/stats',
+    // Volunteer: phản hồi lời mời + điều khiển vòng đời đơn giao
+    accept: (id: string) => `/deliveries/${id}/accept`,
+    reject: (id: string) => `/deliveries/${id}/reject`,
+    cancel: (id: string) => `/deliveries/${id}/cancel`,
+    fail: (id: string) => `/deliveries/${id}/fail`,
+    // PATCH multipart {status, photo?} — chuyển bước (kèm ảnh QC/proof)
+    updateStatus: (id: string) => `/deliveries/${id}/status`,
+  },
+  volunteers: {
+    // Hồ sơ tình nguyện viên + trạng thái sẵn sàng + vị trí hiện tại
+    me: '/volunteers/me',
+    availability: '/volunteers/me/availability',
+    location: '/volunteers/me/location',
   },
   campaigns: {
     // Chiến dịch bếp ăn cộng đồng (charity tạo). Provider: xem + quyên góp nguyên liệu.
@@ -244,6 +262,19 @@ export const endpoints = {
     detail: (id: string) => `/campaigns/${id}`,
     // Provider quyên góp nguyên liệu cho 1 chiến dịch (status pledged → charity xác nhận)
     donate: (id: string) => `/campaigns/${id}/donations`,
+    // Charity-org (receiver isCharityOrg) quản lý bếp ăn của mình
+    my: '/campaigns/my',
+    create: '/campaigns',
+    start: (id: string) => `/campaigns/${id}/start`,
+    complete: (id: string) => `/campaigns/${id}/complete`,
+    // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
+    confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
+    // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch
+    apply: (id: string) => `/campaigns/${id}/apply`,
+    // Volunteer: các công việc đã đăng ký
+    myTasks: '/campaigns/my-tasks',
+    // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
+    advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
   },
   notifications: {
     my: '/notifications/my',
