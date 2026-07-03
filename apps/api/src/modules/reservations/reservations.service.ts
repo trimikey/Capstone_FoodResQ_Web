@@ -475,7 +475,6 @@ export class ReservationsService {
               provider: { select: { id: true, businessName: true, userId: true } },
             },
           },
-          delivery: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,

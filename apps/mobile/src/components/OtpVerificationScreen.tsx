@@ -33,8 +33,7 @@ const COLORS = {
 
 interface OtpVerificationScreenProps {
   email: string;
-  phone?: string;
-  type?: 'forgot_password' | 'signup_email' | 'phone_login';
+  type?: 'forgot_password' | 'signup_email';
   onSuccess?: (otp: string) => void;
   onBack?: () => void;
   onResend?: () => void;
@@ -45,14 +44,13 @@ const RESEND_COOLDOWN = 60;
 
 export function OtpVerificationScreen({
   email,
-  phone,
   type = 'signup_email',
   onSuccess,
   onBack,
   onResend,
   isLoading = false,
 }: OtpVerificationScreenProps) {
-  const destination = type === 'phone_login' ? phone : email;
+  const destination = email;
   const insets = useSafeAreaInsets();
   const [timeLeft, setTimeLeft] = useState(RESEND_COOLDOWN);
   const [canResend, setCanResend] = useState(false);

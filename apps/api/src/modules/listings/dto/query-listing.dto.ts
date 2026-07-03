@@ -1,7 +1,7 @@
 import { IsNumber, IsOptional, IsEnum, IsString, Min, Max } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { FoodCategory, FoodGroup } from '@foodresq/types';
+import { FoodCategory } from '@foodresq/types';
 
 export class QueryListingDto {
   @ApiPropertyOptional({ example: 10.8231 })
@@ -24,15 +24,10 @@ export class QueryListingDto {
   @Type(() => Number)
   radiusKm?: number;
 
-  @ApiPropertyOptional({ enum: FoodCategory, description: 'Lọc theo loại chi tiết' })
+  @ApiPropertyOptional({ enum: FoodCategory })
   @IsOptional()
   @IsEnum(FoodCategory)
   category?: FoodCategory;
-
-  @ApiPropertyOptional({ enum: FoodGroup, description: 'Lọc theo nhóm lớn (ăn liền / nguyên liệu thô)' })
-  @IsOptional()
-  @IsEnum(FoodGroup)
-  group?: FoodGroup;
 
   @ApiPropertyOptional({ example: 'cơm' })
   @IsOptional()

@@ -3,6 +3,7 @@ import { Popup } from '@/components/ui/AppPopup';
 import { SignUpBasicScreen as SignUpBasicForm } from '../../components/SignUpBasicScreen';
 import type { SignUpBasicInfoInput } from '../../utils/validators';
 import { useAuth } from '../../hooks/useAuth';
+import { useOnboardingStore } from '../../stores/onboarding';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface SignUpBasicScreenProps {
@@ -21,10 +22,17 @@ export default function SignUpBasicScreen({
   route,
 }: SignUpBasicScreenProps) {
   const { register } = useAuth();
+  const setBasicInfo = useOnboardingStore((s) => s.setBasicInfo);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const selectedRole = route?.params?.role || 'receiver';
 
   const handleSuccess = async (data: SignUpBasicInfoInput) => {
+    // Provider: chưa đăng ký ngay — sang màn nhập thông tin cơ sở rồi mới register.
+    if (selectedRole === 'provider') {
+      setBasicInfo({ email: data.email, password: data.password, name: data.name });
+      navigation.navigate('SignUpProvider');
+      return;
+    }
     try {
       setIsSubmitting(true);
       await register({ ...data, role: selectedRole } as any);

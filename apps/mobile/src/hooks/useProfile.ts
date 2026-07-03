@@ -7,10 +7,14 @@ import apiClient, {
 } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 
-/** Hồ sơ đầy đủ của người dùng đang đăng nhập. Endpoint: GET /users/me */
-export function useMyProfile() {
+/**
+ * Hồ sơ đầy đủ của người dùng đang đăng nhập. Endpoint: GET /users/me
+ * `enabled` cho phép hoãn gọi (vd chỉ fetch khi cần kiểm tra cờ isCharityOrg).
+ */
+export function useMyProfile(enabled: boolean = true) {
   return useQuery({
     queryKey: ['profile', 'me'],
+    enabled,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<ApiUserProfile>>(
         endpoints.users.me

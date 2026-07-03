@@ -43,7 +43,7 @@ export class AuthController {
   }
 
   @Post('firebase')
-  @ApiOperation({ summary: 'Login/Register bằng Firebase ID token (mobile: Google & Phone OTP)' })
+  @ApiOperation({ summary: 'Login/Register bằng Firebase ID token (Google sign-in)' })
   firebase(
     @Body() dto: FirebaseLoginDto,
     @Headers('user-agent') ua: string,

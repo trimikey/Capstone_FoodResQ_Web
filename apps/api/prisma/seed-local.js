@@ -61,14 +61,14 @@ function listings(now) {
   return [
     { p: 0, title: 'Bánh mì bơ tỏi Long Bình', category: 'bakery', qty: 14, unit: 'portion', weight: 0.12, maxPer: 3, pickStart: h(0), pickEnd: d(2), expiry: d(3), storage: 'Nhiệt độ phòng', allergen: 'Gluten, sữa', images: ['/banh-mi-ngot-thap-cam.png'], dLat: 0.004, dLng: 0.003 },
     { p: 0, title: 'Bánh su kem Long Bình', category: 'bakery', qty: 18, unit: 'portion', weight: 0.08, maxPer: 4, pickStart: h(0), pickEnd: d(1), expiry: d(2), storage: 'Tủ lạnh', allergen: 'Trứng, sữa', images: ['/banh-su-kem.png'], dLat: 0.0042, dLng: 0.0028 },
-    { p: 1, title: 'Cơm tấm sườn dư trưa', category: 'cooked_meal', qty: 12, unit: 'portion', weight: 0.45, maxPer: 2, pickStart: h(0), pickEnd: d(1), expiry: d(1), storage: 'Giữ nóng', allergen: 'Trứng', images: ['/com-ga-hoi-an.png'], dLat: -0.005, dLng: 0.006 },
-    { p: 1, title: 'Suất cơm chay từ thiện', category: 'cooked_meal', qty: 25, unit: 'portion', weight: 0.4, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(1), storage: 'Giữ nóng', allergen: 'Đậu nành', images: ['/com-ga-hoi-an.png'], dLat: -0.0052, dLng: 0.0062 },
-    { p: 2, title: 'Rau củ Đà Lạt cuối ngày', category: 'vegetables', qty: 28, unit: 'kg', weight: 1, maxPer: 5, pickStart: h(0), pickEnd: d(2), expiry: d(4), storage: 'Nơi thoáng mát', allergen: null, images: [], dLat: 0.007, dLng: -0.004 },
+    { p: 1, title: 'Cơm tấm sườn dư trưa', category: 'prepared_meal', qty: 12, unit: 'portion', weight: 0.45, maxPer: 2, pickStart: h(0), pickEnd: d(1), expiry: d(1), storage: 'Giữ nóng', allergen: 'Trứng', images: ['/com-ga-hoi-an.png'], dLat: -0.005, dLng: 0.006 },
+    { p: 1, title: 'Suất cơm chay từ thiện', category: 'prepared_meal', qty: 25, unit: 'portion', weight: 0.4, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(1), storage: 'Giữ nóng', allergen: 'Đậu nành', images: ['/com-ga-hoi-an.png'], dLat: -0.0052, dLng: 0.0062 },
+    { p: 2, title: 'Rau củ Đà Lạt cuối ngày', category: 'raw_ingredients', qty: 28, unit: 'kg', weight: 1, maxPer: 5, pickStart: h(0), pickEnd: d(2), expiry: d(4), storage: 'Nơi thoáng mát', allergen: null, images: [], dLat: 0.007, dLng: -0.004 },
     { p: 2, title: 'Sữa tươi cận date', category: 'beverage', qty: 30, unit: 'box', weight: 1, maxPer: 4, pickStart: h(0), pickEnd: d(3), expiry: d(6), storage: 'Tủ lạnh', allergen: 'Sữa', images: [], dLat: 0.0072, dLng: -0.0042 },
 
     // Vựa Trái Cây Hóc Môn (index 3)
-    { p: 3, title: 'Trái cây tươi thập cẩm', category: 'fresh_fruit', qty: 20, unit: 'kg', weight: 1, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(2), storage: 'Nơi thoáng mát', allergen: null, images: ['/food_salad.png'], dLat: -0.003, dLng: -0.005 },
-    { p: 3, title: 'Chuối & táo cuối ngày', category: 'fresh_fruit', qty: 15, unit: 'kg', weight: 1, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(2), storage: 'Nơi thoáng mát', allergen: null, images: ['/food_salad.png'], dLat: -0.0032, dLng: -0.0052 },
+    { p: 3, title: 'Trái cây tươi thập cẩm', category: 'raw_ingredients', qty: 20, unit: 'kg', weight: 1, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(2), storage: 'Nơi thoáng mát', allergen: null, images: ['/food_salad.png'], dLat: -0.003, dLng: -0.005 },
+    { p: 3, title: 'Chuối & táo cuối ngày', category: 'raw_ingredients', qty: 15, unit: 'kg', weight: 1, maxPer: 3, pickStart: h(0), pickEnd: d(1), expiry: d(2), storage: 'Nơi thoáng mát', allergen: null, images: ['/food_salad.png'], dLat: -0.0032, dLng: -0.0052 },
 
     // Quán Nước Đông Thạnh (index 4)
     { p: 4, title: 'Nước ngọt đóng chai (cận date)', category: 'beverage', qty: 40, unit: 'box', weight: 0.5, maxPer: 6, pickStart: h(0), pickEnd: d(2), expiry: d(5), storage: 'Nơi thoáng mát', allergen: null, images: [], dLat: 0.002, dLng: 0.008 },

@@ -23,7 +23,7 @@ const COLORS = {
   warningContainer: '#f59e0b',
 };
 
-export type UserRole = 'individual' | 'charity' | 'volunteer';
+export type UserRole = 'individual' | 'charity' | 'volunteer' | 'provider';
 
 interface RoleOption {
   id: UserRole;
@@ -36,20 +36,26 @@ const ROLE_OPTIONS: RoleOption[] = [
   {
     id: 'individual',
     emoji: '👤',
-    title: 'Individual',
-    description: 'Get food support as an individual',
+    title: 'Cá nhân',
+    description: 'Nhận hỗ trợ thực phẩm cho cá nhân',
   },
   {
     id: 'charity',
     emoji: '🤲',
-    title: 'Charity Organization',
-    description: 'Receive food support as an organization',
+    title: 'Tổ chức từ thiện',
+    description: 'Nhận thực phẩm cho tổ chức',
   },
   {
     id: 'volunteer',
     emoji: '🤝',
-    title: 'Volunteer',
-    description: 'Help transport and distribute food',
+    title: 'Tình nguyện viên',
+    description: 'Hỗ trợ vận chuyển & phân phát thực phẩm',
+  },
+  {
+    id: 'provider',
+    emoji: '🏪',
+    title: 'Nhà cung cấp / Cơ sở kinh doanh',
+    description: 'Đăng tin chia sẻ thực phẩm dư cho cộng đồng',
   },
 ];
 
