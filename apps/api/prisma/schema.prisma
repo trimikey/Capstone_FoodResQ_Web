@@ -151,11 +151,13 @@ enum AssignmentRole {
 }
 
 enum AssignmentStatus {
+  pending
   assigned
   checked_in
   in_progress
   completed
   absent
+  rejected
   cancelled
 
   @@map("assignment_status")
@@ -255,6 +257,9 @@ model User {
   auditLogs         AuditLog[]
   reports           Report[]              @relation("ReporterRelation")
   resolvedReports   Report[]              @relation("ResolverRelation")
+  recipes           Recipe[]              @relation("RecipeAuthorRelation")
+  campaignChangeRequestsRequested CampaignChangeRequest[] @relation("campaign_change_requests_requested_by_user_idTousers")
+  campaignChangeRequestsReviewed  CampaignChangeRequest[] @relation("campaign_change_requests_reviewed_by_user_idTousers")
 
   @@index([email])
   @@index([role, status])
@@ -348,6 +353,9 @@ model VolunteerProfile {
   campaignAssignments    CampaignVolunteerAssignment[]
   dedicationPointHistory DedicationPointsHistory[]
   taskOffers             ShipperTaskOffer[]
+  campaignExperiences    CampaignExperience[]
+  kitchenSafetyLogs      KitchenSafetyLog[]
+  mealDistributions      MealDistribution[]
 
   @@index([userId])
   @@index([isAvailable])
@@ -497,12 +505,21 @@ model KitchenCampaign {
   actualServings     Int?           @map("actual_servings")
   imageUrls          Json           @default("[]") @map("image_urls")
   notes              String?
+  menuItems          Json           @default("[]") @map("menu_items")
+  scheduleItems      Json           @default("[]") @map("schedule_items")
+  supplyItems        Json           @default("[]") @map("supply_items")
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
   charityReceiver ReceiverProfile             @relation(fields: [charityReceiverId], references: [id])
   assignments     CampaignVolunteerAssignment[]
   donations       CampaignDonation[]
+  changeRequests    CampaignChangeRequest[]
+  experiences       CampaignExperience[]
+  menuItemRefs      CampaignMenuItem[]
+  safetyLogs        KitchenSafetyLog[]
+  mealDistributions MealDistribution[]
+  shifts            CampaignShift[]
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
@@ -550,8 +567,11 @@ model CampaignVolunteerAssignment {
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
+  shiftId              String?          @map("shift_id") @db.Uuid
+
   campaign  KitchenCampaign  @relation(fields: [campaignId], references: [id])
   volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
+  shift     CampaignShift?   @relation(fields: [shiftId], references: [id])
 
   @@unique([campaignId, volunteerId, role])
   @@index([campaignId])
@@ -757,3 +777,209 @@ model ShipperTaskOffer {
   @@index([shipperId, status])
   @@map("shipper_task_offers")
 }
+
+enum CampaignChangeStatus {
+  pending
+  approved
+  rejected
+  cancelled
+
+  @@map("campaign_change_status")
+}
+
+enum RecipeDifficulty {
+  easy
+  medium
+  hard
+
+  @@map("recipe_difficulty")
+}
+
+enum SafetyCheckType {
+  temperature
+  hygiene
+  storage
+  cross_contamination
+  handwashing
+  other
+
+  @@map("safety_check_type")
+}
+
+enum SafetyCheckResult {
+  pass
+  warning
+  fail
+
+  @@map("safety_check_result")
+}
+
+model Recipe {
+  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  createdByUserId String             @map("created_by_user_id") @db.Uuid
+  name            String             @db.VarChar(255)
+  description     String?
+  servings        Int                @default(0)
+  prepMinutes     Int?               @map("prep_minutes")
+  cookMinutes     Int?               @map("cook_minutes")
+  difficulty      RecipeDifficulty   @default(medium)
+  instructions    String?
+  imageUrls       Json               @default("[]") @map("image_urls")
+  isPublic        Boolean            @default(true) @map("is_public")
+  avgRating       Decimal?           @map("avg_rating") @db.Decimal(3, 2)
+  timesUsed       Int                @default(0) @map("times_used")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdBy       User               @relation("RecipeAuthorRelation", fields: [createdByUserId], references: [id])
+  ingredients     RecipeIngredient[]
+  menuItems       CampaignMenuItem[]
+
+  @@index([createdByUserId])
+  @@index([name])
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id       String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  recipeId String  @map("recipe_id") @db.Uuid
+  name     String  @db.VarChar(255)
+  quantity String? @db.VarChar(100)
+  unit     String? @db.VarChar(30)
+  note     String?
+  recipe   Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
+  @@map("recipe_ingredients")
+}
+
+model CampaignChangeRequest {
+  id                                                         String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId                                                 String               @map("campaign_id") @db.Uuid
+  requestedByUserId                                          String               @map("requested_by_user_id") @db.Uuid
+  status                                                     CampaignChangeStatus @default(pending)
+  reason                                                     String?
+  scheduledDate                                              DateTime?            @map("scheduled_date") @db.Date
+  startTime                                                  String?              @map("start_time") @db.VarChar(8)
+  endTime                                                    String?              @map("end_time") @db.VarChar(8)
+  kitchenAddress                                             String?              @map("kitchen_address")
+  lng                                                        Float?
+  lat                                                        Float?
+  chefSlotsNeeded                                            Int?                 @map("chef_slots_needed") @db.SmallInt
+  waiterSlotsNeeded                                          Int?                 @map("waiter_slots_needed") @db.SmallInt
+  shipperSlotsNeeded                                         Int?                 @map("shipper_slots_needed") @db.SmallInt
+  reviewNote                                                 String?              @map("review_note")
+  reviewedByUserId                                           String?              @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt                                                 DateTime?            @map("reviewed_at") @db.Timestamptz(6)
+  createdAt                                                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                                                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  campaign                                                   KitchenCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_campaign_change_requests_requested_by_user_idTousers User                 @relation("campaign_change_requests_requested_by_user_idTousers", fields: [requestedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_campaign_change_requests_reviewed_by_user_idTousers  User?                @relation("campaign_change_requests_reviewed_by_user_idTousers", fields: [reviewedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([campaignId], map: "idx_campaign_change_campaign")
+  @@index([status], map: "idx_campaign_change_status")
+  @@map("campaign_change_requests")
+}
+
+model CampaignExperience {
+  id          String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId  String           @map("campaign_id") @db.Uuid
+  volunteerId String           @map("volunteer_id") @db.Uuid
+  content     String
+  imageUrls   Json             @default("[]") @map("image_urls")
+  rating      Int?             @db.SmallInt
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  campaign    KitchenCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  volunteer   VolunteerProfile @relation(fields: [volunteerId], references: [id])
+
+  @@unique([campaignId, volunteerId])
+  @@index([campaignId])
+  @@map("campaign_experiences")
+}
+
+model CampaignMenuItem {
+  id              String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId      String          @map("campaign_id") @db.Uuid
+  recipeId        String?         @map("recipe_id") @db.Uuid
+  customName      String?         @map("custom_name") @db.VarChar(255)
+  plannedServings Int?            @map("planned_servings")
+  sortOrder       Int             @default(0) @map("sort_order")
+  campaign        KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipe          Recipe?         @relation(fields: [recipeId], references: [id])
+
+  @@index([campaignId])
+  @@index([recipeId])
+  @@map("campaign_menu_items")
+}
+
+model CampaignShift {
+  id          String                        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId  String                        @map("campaign_id") @db.Uuid
+  label       String                        @db.VarChar(100)
+  role        AssignmentRole?
+  startTime   String                        @map("start_time") @db.VarChar(8)
+  endTime     String                        @map("end_time") @db.VarChar(8)
+  slotsNeeded Int                           @default(0) @map("slots_needed") @db.SmallInt
+  slotsFilled Int                           @default(0) @map("slots_filled") @db.SmallInt
+  createdAt   DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  campaign    KitchenCampaign               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assignments CampaignVolunteerAssignment[]
+
+  @@index([campaignId])
+  @@map("campaign_shifts")
+}
+
+model KitchenSafetyLog {
+  id                   String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId           String            @map("campaign_id") @db.Uuid
+  checkedByVolunteerId String            @map("checked_by_volunteer_id") @db.Uuid
+  checkType            SafetyCheckType   @map("check_type")
+  measuredValue        String?           @map("measured_value") @db.VarChar(50)
+  result               SafetyCheckResult @default(pass)
+  photoUrl             String?           @map("photo_url")
+  note                 String?
+  checkedAt            DateTime          @default(now()) @map("checked_at") @db.Timestamptz(6)
+  campaign             KitchenCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  checkedBy            VolunteerProfile  @relation(fields: [checkedByVolunteerId], references: [id])
+
+  @@index([campaignId])
+  @@index([checkedByVolunteerId])
+  @@map("kitchen_safety_logs")
+}
+
+model MealDistribution {
+  id                  String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId          String                                 @map("campaign_id") @db.Uuid
+  servedByVolunteerId String                                 @map("served_by_volunteer_id") @db.Uuid
+  roundLabel          String?                                @map("round_label") @db.VarChar(100)
+  servingsServed      Int                                    @default(0) @map("servings_served")
+  peopleServed        Int                                    @default(0) @map("people_served")
+  leftoverServings    Int                                    @default(0) @map("leftover_servings")
+  location            Unsupported("geography(Point, 4326)")?
+  photoUrl            String?                                @map("photo_url")
+  note                String?
+  distributedAt       DateTime                               @default(now()) @map("distributed_at") @db.Timestamptz(6)
+  campaign            KitchenCampaign                        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  servedBy            VolunteerProfile                       @relation(fields: [servedByVolunteerId], references: [id])
+  feedback            MealFeedback[]
+
+  @@index([campaignId])
+  @@index([servedByVolunteerId])
+  @@map("meal_distributions")
+}
+
+model MealFeedback {
+  id             String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  distributionId String           @map("distribution_id") @db.Uuid
+  satisfaction   Int              @db.SmallInt
+  comment        String?
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  distribution   MealDistribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+
+  @@index([distributionId])
+  @@map("meal_feedback")
+}
+

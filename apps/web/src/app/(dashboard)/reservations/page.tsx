@@ -1,10 +1,28 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
+import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
+
+const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
+  ssr: false,
+  loading: () => <div className="h-full w-full bg-neutral-100 animate-pulse" />,
+});
+
+const DELIVERY_STATUS_VI: Record<string, string> = {
+  pending_assignment: 'Đang tìm tài xế…',
+  assigned: 'Đã có tài xế nhận đơn',
+  heading_to_provider: 'Tài xế đang đến lấy hàng',
+  qc_completed: 'Đã lấy hàng, kiểm tra xong',
+  in_transit: 'Đang giao đến bạn',
+  delivered: 'Đã giao thành công',
+  failed: 'Giao thất bại',
+};
 
 interface Reservation {
   id: string;
@@ -26,12 +44,14 @@ interface Reservation {
     category: string;
     provider: { businessName: string };
   };
+  delivery: { id: string; status: string } | null;
 }
 
 const CATEGORY_FALLBACK: Record<string, string> = {
   bakery: '/banh-mi-ngot-thap-cam.png',
-  prepared_meal: '/com-ga-hoi-an.png',
-  raw_ingredients: '/food_salad.png',
+  cooked_meal: '/com-ga-hoi-an.png',
+  fresh_fruit: '/food_salad.png',
+  vegetables: '/food_salad.png',
 };
 const fallbackImg = (c: string) => CATEGORY_FALLBACK[c] ?? '/banh-mi-lua-mach-tuoi.png';
 
@@ -56,6 +76,7 @@ export default function ReservationsPage() {
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [verifying, setVerifying] = useState<Reservation | null>(null);
+  const [trackingId, setTrackingId] = useState<string | null>(null);
 
   const reservations = (data?.items ?? []) as Reservation[];
   const filtered = useMemo(
@@ -183,6 +204,19 @@ export default function ReservationsPage() {
                   </div>
                 </div>
 
+                {/* Theo dõi giao hàng trực tiếp (đơn có giao + đang trong tiến trình) */}
+                {r.delivery && ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'].includes(r.delivery.status) && (
+                  <div className="border-t border-neutral-100 px-5 py-3">
+                    <button
+                      onClick={() => setTrackingId(r.id)}
+                      className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">my_location</span>
+                      Theo dõi giao hàng trực tiếp
+                    </button>
+                  </div>
+                )}
+
                 {/* confirmed: QR + cancel */}
                 {r.status === 'confirmed' && (
                   <div className="border-t border-neutral-100 p-5 flex flex-col gap-3">
@@ -304,6 +338,75 @@ export default function ReservationsPage() {
           onClose={() => setVerifying(null)}
         />
       )}
+
+      {trackingId && <DeliveryTrackingModal reservationId={trackingId} onClose={() => setTrackingId(null)} />}
     </div>
+  );
+}
+
+function DeliveryTrackingModal({ reservationId, onClose }: { reservationId: string; onClose: () => void }) {
+  const { data: t, isLoading } = useDeliveryTracking(reservationId, true);
+  if (typeof document === 'undefined') return null;
+
+  const c = t?.coords;
+  const hasRoute = c?.pickupLat != null && c?.pickupLng != null && c?.deliveryLat != null && c?.deliveryLng != null;
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="material-symbols-outlined">my_location</span>
+            <div className="min-w-0">
+              <h3 className="font-extrabold text-lg truncate">{t?.listingTitle ?? 'Theo dõi giao hàng'}</h3>
+              <p className="text-xs text-white/85">{t ? DELIVERY_STATUS_VI[t.status] ?? t.status : 'Đang tải…'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white"><span className="material-symbols-outlined">close</span></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {isLoading && <div className="h-56 rounded-2xl bg-neutral-100 animate-pulse" />}
+
+          {t && hasRoute && (
+            <div className="h-60 rounded-2xl overflow-hidden border border-neutral-150">
+              <DeliveryRouteMap
+                pickup={{ lat: c!.pickupLat!, lng: c!.pickupLng! }}
+                delivery={{ lat: c!.deliveryLat!, lng: c!.deliveryLng! }}
+                shipper={t.shipper?.location ?? null}
+              />
+            </div>
+          )}
+
+          {t && (
+            <>
+              <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 flex items-center gap-2 text-sm text-emerald-800">
+                <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                <span className="font-semibold">{DELIVERY_STATUS_VI[t.status] ?? t.status}</span>
+                {t.distanceKm != null && <span className="text-neutral-500 ml-auto text-xs">~{t.distanceKm} km</span>}
+              </div>
+
+              {t.shipper ? (
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-150 p-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-neutral-400 font-bold uppercase">Tài xế</p>
+                    <p className="font-bold text-neutral-800 text-sm truncate">{t.shipper.name}</p>
+                  </div>
+                  {t.shipper.phone && (
+                    <a href={`tel:${t.shipper.phone}`} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50">
+                      <span className="material-symbols-outlined text-[18px]">call</span> Gọi
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-neutral-400 text-center py-2">Đang tìm tài xế cho đơn của bạn…</p>
+              )}
+              <p className="text-[11px] text-neutral-400 text-center">Vị trí tài xế tự cập nhật mỗi ~12 giây.</p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

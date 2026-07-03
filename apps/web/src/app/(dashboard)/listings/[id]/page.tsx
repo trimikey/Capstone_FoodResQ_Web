@@ -13,16 +13,22 @@ interface Props {
 }
 
 const CATEGORIES: Record<string, string> = {
-  prepared_meal: 'Đồ chín',
-  raw_ingredients: 'Nguyên liệu',
+  cooked_meal: 'Đồ chín',
   bakery: 'Bánh ngọt',
+  fresh_fruit: 'Trái cây',
   beverage: 'Đồ uống',
+  vegetables: 'Rau củ',
+  raw_protein: 'Thịt/cá sống',
+  dry_goods: 'Đồ khô',
+  canned_packaged: 'Đồ hộp',
   other: 'Khác',
 };
 
 const CATEGORY_FALLBACK_IMAGE: Record<string, string> = {
   bakery: '/banh-mi-ngot-thap-cam.png',
-  prepared_meal: '/com-ga-hoi-an.png',
+  cooked_meal: '/com-ga-hoi-an.png',
+  fresh_fruit: '/food_salad.png',
+  vegetables: '/food_salad.png',
 };
 
 function fallbackImage(category: string): string {
@@ -149,6 +155,11 @@ export default function ListingDetailPage({ params }: Props) {
               <span className="bg-primary/95 text-white font-label-lg px-4 py-2 rounded-full shadow-sm">
                 Cứu trợ 0đ
               </span>
+              {listing.isSurpriseBag && (
+                <span className="bg-honey-500/95 text-white font-label-lg px-4 py-2 rounded-full shadow-sm inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[18px]">redeem</span> Túi bất ngờ
+                </span>
+              )}
             </div>
           </div>
 

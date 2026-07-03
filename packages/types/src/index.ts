@@ -2,12 +2,17 @@ export * from './enums';
 
 // ── API response wrappers ──────────────────────────────────────────────────────
 
+/**
+ * Vỏ thành công — khớp apps/api TransformInterceptor: { success: true, data }.
+ * LƯU Ý: backend KHÔNG trả `meta` ngang hàng với `data`. Với danh sách phân trang,
+ * `data` chính là `Paginated<T>` / `PaginatedFlat<T>` (meta nằm bên trong).
+ */
 export interface ApiResponse<T> {
   success: true;
   data: T;
-  meta?: PaginationMeta;
 }
 
+/** Vỏ thất bại — khớp apps/api GlobalExceptionFilter. */
 export interface ApiError {
   success: false;
   error: {
@@ -21,6 +26,26 @@ export interface PaginationMeta {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+/** Danh sách phân trang — shape MỚI (khuyến nghị): admin, deliveries, recipes. */
+export interface Paginated<T> {
+  items: T[];
+  meta: PaginationMeta;
+}
+
+/**
+ * Danh sách phân trang — shape CŨ (phẳng): listings, reservations.
+ * ⚠️ Tồn tại song song với `Paginated<T>`; nên hợp nhất dần về `Paginated<T>`.
+ */
+export interface PaginatedFlat<T> extends PaginationMeta {
+  items: T[];
+}
+
+/** Cặp token trả từ /auth/login, /auth/register, /auth/refresh, /auth/google. */
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
 }
 
 // ── Geo helpers ────────────────────────────────────────────────────────────────

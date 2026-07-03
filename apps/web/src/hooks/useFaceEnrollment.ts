@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApiResponse } from '@foodresq/types';
 
 interface FaceEnrollmentStatus {
   enrolled: boolean;
@@ -15,7 +16,7 @@ interface EnrollFaceResult {
 }
 
 async function fetchFaceEnrollment(): Promise<FaceEnrollmentStatus> {
-  const { data } = await api.get<{ data: FaceEnrollmentStatus }>('/users/me/face-enrollment');
+  const { data } = await api.get<ApiResponse<FaceEnrollmentStatus>>('/users/me/face-enrollment');
   return data.data;
 }
 
@@ -24,7 +25,7 @@ async function enrollFace(params: { idCard?: File; selfie?: File }): Promise<Enr
   const formData = new FormData();
   if (params.idCard) formData.append('idCard', params.idCard);
   if (params.selfie) formData.append('selfie', params.selfie);
-  const { data } = await api.post<{ data: EnrollFaceResult }>(
+  const { data } = await api.post<ApiResponse<EnrollFaceResult>>(
     '/users/me/face-enrollment',
     formData,
     { headers: { 'Content-Type': 'multipart/form-data' } },

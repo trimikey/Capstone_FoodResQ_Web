@@ -35,6 +35,7 @@ export interface CreateListingInput {
   allergenNotes?: string;
   maxPerReservation: number;
   imageUrls?: string[];
+  isSurpriseBag?: boolean;
 }
 
 interface Paginated<T> {

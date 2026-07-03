@@ -29,7 +29,9 @@ interface ResHistory {
 
 const CATEGORY_FALLBACK_IMAGE: Record<string, string> = {
   bakery: '/food_bread.png',
-  prepared_meal: '/food_lunchbox.png',
+  cooked_meal: '/food_lunchbox.png',
+  fresh_fruit: '/food_salad.png',
+  vegetables: '/food_salad.png',
 };
 function fallbackImage(category: string): string {
   return CATEGORY_FALLBACK_IMAGE[category] ?? '/food_salad.png';

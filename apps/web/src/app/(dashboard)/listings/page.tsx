@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useListings } from '@/hooks/useListings';
-import { FoodCategory } from '@foodresq/types';
+import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import ListingCard, { type ListingItem } from '@/components/listings/ListingCard';
 import { useSearchParams } from 'next/navigation';
 
@@ -19,11 +19,9 @@ const ListingsMap = dynamic(() => import('@/components/map/ListingsMap'), {
 
 const CATEGORIES: { value: FoodCategory | ''; label: string }[] = [
   { value: '', label: 'Tất cả' },
-  { value: FoodCategory.PREPARED_MEAL, label: 'Đồ chín' },
-  { value: FoodCategory.RAW_INGREDIENTS, label: 'Nguyên liệu' },
-  { value: FoodCategory.BAKERY, label: 'Bánh ngọt' },
-  { value: FoodCategory.BEVERAGE, label: 'Đồ uống' },
-  { value: FoodCategory.OTHER, label: 'Khác' },
+  ...FOOD_GROUP_CATEGORIES[FoodGroup.READY_TO_EAT].map((c) => ({ value: c, label: FOOD_CATEGORY_LABEL[c] })),
+  ...FOOD_GROUP_CATEGORIES[FoodGroup.RAW_INGREDIENT].map((c) => ({ value: c, label: FOOD_CATEGORY_LABEL[c] })),
+  { value: FoodCategory.OTHER, label: FOOD_CATEGORY_LABEL[FoodCategory.OTHER] },
 ];
 
 const DEFAULT_LAT = 10.8231;

@@ -17,6 +17,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { EsgModule } from './modules/esg/esg.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { RecipesModule } from './modules/recipes/recipes.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     NotificationsModule,
     EsgModule,
     CampaignsModule,
+    RecipesModule,
     UploadsModule,
   ],
 })

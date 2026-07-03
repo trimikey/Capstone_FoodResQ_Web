@@ -12,6 +12,14 @@ import {
   AdminUpdateCampaignDto,
   AdminCreateUserDto,
 } from './dto/admin.dto';
+import {
+  FoodCategory,
+  FoodGroup,
+  FOOD_CATEGORY_GROUP,
+  FOOD_CATEGORY_LABEL,
+  FOOD_GROUP_LABEL,
+  FOOD_GROUP_CATEGORIES,
+} from '@foodresq/types';
 
 const SLOT_FIELD: Record<string, { needed: keyof Prisma.KitchenCampaignUpdateInput; filled: keyof Prisma.KitchenCampaignUpdateInput }> = {
   chef: { needed: 'chefSlotsNeeded', filled: 'chefSlotsFilled' },
@@ -132,8 +140,29 @@ export class AdminService {
       mealsServed: Number(agg?.meals ?? 0),
       peopleHelped: Number(agg?.people ?? 0),
       categories: catRows
-        .map((c) => ({ category: c.category, kg: Math.round(Number(c.kg ?? 0) * 10) / 10 }))
+        .map((c) => {
+          const cat = c.category as FoodCategory;
+          const group = FOOD_CATEGORY_GROUP[cat] ?? FoodGroup.OTHER;
+          return {
+            category: cat,
+            categoryLabel: FOOD_CATEGORY_LABEL[cat] ?? cat,
+            group,
+            groupLabel: FOOD_GROUP_LABEL[group],
+            kg: Math.round(Number(c.kg ?? 0) * 10) / 10,
+          };
+        })
         .filter((c) => c.kg > 0),
+      categoryGroups: Object.values(
+        catRows.reduce<Record<string, { group: FoodGroup; groupLabel: string; kg: number }>>((acc, c) => {
+          const group = FOOD_CATEGORY_GROUP[c.category as FoodCategory] ?? FoodGroup.OTHER;
+          const kg = Number(c.kg ?? 0);
+          if (!acc[group]) acc[group] = { group, groupLabel: FOOD_GROUP_LABEL[group], kg: 0 };
+          acc[group].kg += kg;
+          return acc;
+        }, {}),
+      )
+        .map((g) => ({ ...g, kg: Math.round(g.kg * 10) / 10 }))
+        .filter((g) => g.kg > 0),
       trend: trendRows.map((t) => ({ ym: t.ym, kg: Math.round(Number(t.kg ?? 0) * 10) / 10 })),
       donations: {
         confirmed: statusCount('confirmed'),
@@ -417,6 +446,102 @@ export class AdminService {
     return this.getCampaignDetail(a.campaignId);
   }
 
+  /** Danh sách đăng ký TNV đang CHỜ admin duyệt (mọi chiến dịch). */
+  async listPendingAssignments() {
+    const rows = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: { status: 'pending' },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        campaign: { select: { id: true, title: true, scheduledDate: true, startTime: true, endTime: true, status: true } },
+        volunteer: {
+          select: {
+            id: true,
+            dedicationPoints: true,
+            rank: true,
+            avgRating: true,
+            user: { select: { fullName: true, phone: true, avatarUrl: true } },
+            specializations: { select: { specialization: true } },
+          },
+        },
+      },
+    });
+    return rows.map((a) => ({
+      id: a.id,
+      role: a.role,
+      createdAt: a.createdAt,
+      campaign: a.campaign,
+      volunteer: {
+        id: a.volunteer.id,
+        fullName: a.volunteer.user.fullName,
+        phone: a.volunteer.user.phone,
+        avatarUrl: a.volunteer.user.avatarUrl,
+        dedicationPoints: a.volunteer.dedicationPoints,
+        rank: a.volunteer.rank,
+        avgRating: a.volunteer.avgRating,
+        specializations: a.volunteer.specializations.map((s) => s.specialization),
+      },
+    }));
+  }
+
+  /** Admin duyệt/từ chối đăng ký của TNV. approve → assigned + tăng slot; reject → rejected. */
+  async reviewAssignment(assignmentId: string, decision: 'approve' | 'reject', _userId: string, note?: string) {
+    const a = await this.prisma.campaignVolunteerAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        campaign: {
+          select: {
+            id: true, title: true, status: true,
+            chefSlotsNeeded: true, waiterSlotsNeeded: true, shipperSlotsNeeded: true,
+            chefSlotsFilled: true, waiterSlotsFilled: true, shipperSlotsFilled: true,
+          },
+        },
+        volunteer: { select: { user: { select: { id: true } } } },
+      },
+    });
+    if (!a) throw new NotFoundException('Không tìm thấy đăng ký.');
+    if (a.status !== 'pending') throw new BadRequestException('Đăng ký này đã được xử lý.');
+
+    const roleVN = ROLE_VN[a.role] ?? a.role;
+
+    if (decision === 'approve') {
+      if (!['open', 'in_progress'].includes(a.campaign.status)) {
+        throw new BadRequestException('Chiến dịch không còn nhận tình nguyện viên.');
+      }
+      const slot = SLOT_FIELD[a.role];
+      const needed = a.campaign[slot.needed as keyof typeof a.campaign] as number;
+      const filled = a.campaign[slot.filled as keyof typeof a.campaign] as number;
+      if (filled >= needed) throw new BadRequestException(`Đã đủ tình nguyện viên vai trò ${roleVN}.`);
+
+      await this.prisma.$transaction([
+        this.prisma.campaignVolunteerAssignment.update({
+          where: { id: assignmentId },
+          data: { status: 'assigned', notes: note ?? null },
+        }),
+        this.prisma.kitchenCampaign.update({ where: { id: a.campaign.id }, data: { [slot.filled]: { increment: 1 } } }),
+      ]);
+
+      void this.notifications.notify(a.volunteer.user.id, {
+        type: 'campaign',
+        title: 'Đăng ký được duyệt',
+        body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" đã được duyệt. Hẹn gặp bạn tại bếp!`,
+        data: { campaignId: a.campaign.id, assignmentId, status: 'assigned' },
+      });
+      return { id: assignmentId, status: 'assigned' };
+    }
+
+    await this.prisma.campaignVolunteerAssignment.update({
+      where: { id: assignmentId },
+      data: { status: 'rejected', notes: note ?? null },
+    });
+    void this.notifications.notify(a.volunteer.user.id, {
+      type: 'campaign',
+      title: 'Đăng ký chưa được duyệt',
+      body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" chưa được duyệt.${note ? ' Lý do: ' + note : ''}`,
+      data: { campaignId: a.campaign.id, assignmentId, status: 'rejected' },
+    });
+    return { id: assignmentId, status: 'rejected' };
+  }
+
   /** Admin đổi trạng thái chiến dịch (giám sát: mở/đang chạy/hoàn tất/huỷ). */
   async setCampaignStatus(id: string, status: string, _userId: string) {
     const allowed = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
@@ -440,6 +565,178 @@ export class AdminService {
     });
 
     return { id, status };
+  }
+
+  /** Danh sách yêu cầu thay đổi chiến dịch (mặc định cho admin xem & duyệt). */
+  async listCampaignChangeRequests(status?: string) {
+    return this.prisma.campaignChangeRequest.findMany({
+      where: status ? { status: status as never } : {},
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        campaign: {
+          select: {
+            id: true, title: true, status: true,
+            scheduledDate: true, startTime: true, endTime: true, kitchenAddress: true,
+            chefSlotsNeeded: true, waiterSlotsNeeded: true, shipperSlotsNeeded: true,
+            chefSlotsFilled: true, waiterSlotsFilled: true, shipperSlotsFilled: true,
+            charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Admin duyệt/từ chối yêu cầu thay đổi chiến dịch.
+   * Duyệt → áp dụng các trường đề xuất (null = giữ nguyên) vào chiến dịch trong 1 transaction.
+   */
+  async reviewCampaignChangeRequest(
+    id: string,
+    decision: 'approve' | 'reject',
+    reviewNote: string | undefined,
+    adminUserId: string,
+  ) {
+    const cr = await this.prisma.campaignChangeRequest.findUnique({
+      where: { id },
+      include: { campaign: { include: { charityReceiver: { select: { userId: true } } } } },
+    });
+    if (!cr) throw new NotFoundException('Không tìm thấy yêu cầu thay đổi.');
+    if (cr.status !== 'pending') throw new BadRequestException('Yêu cầu này đã được xử lý.');
+    const campaign = cr.campaign;
+
+    if (decision === 'reject') {
+      await this.prisma.campaignChangeRequest.update({
+        where: { id },
+        data: { status: 'rejected', reviewNote: reviewNote ?? null, reviewedByUserId: adminUserId, reviewedAt: new Date() },
+      });
+      void this.notifications.notify(campaign.charityReceiver.userId, {
+        type: 'campaign',
+        title: 'Yêu cầu thay đổi bị từ chối',
+        body: `Yêu cầu thay đổi chiến dịch "${campaign.title}" đã bị từ chối.${reviewNote ? ' Lý do: ' + reviewNote : ''}`,
+        data: { campaignId: campaign.id, changeRequestId: id, status: 'rejected' },
+      });
+      return { id, status: 'rejected' };
+    }
+
+    // approve: kiểm tra lại slot không nhỏ hơn số đã có người (tại thời điểm duyệt)
+    if (cr.chefSlotsNeeded !== null && cr.chefSlotsNeeded < campaign.chefSlotsFilled) {
+      throw new BadRequestException('Số slot Đầu bếp đề xuất nhỏ hơn số đã có người — không thể duyệt.');
+    }
+    if (cr.waiterSlotsNeeded !== null && cr.waiterSlotsNeeded < campaign.waiterSlotsFilled) {
+      throw new BadRequestException('Số slot Phục vụ đề xuất nhỏ hơn số đã có người — không thể duyệt.');
+    }
+    if (cr.shipperSlotsNeeded !== null && cr.shipperSlotsNeeded < campaign.shipperSlotsFilled) {
+      throw new BadRequestException('Số slot Giao hàng đề xuất nhỏ hơn số đã có người — không thể duyệt.');
+    }
+    // Ngày diễn ra đề xuất không được ở quá khứ
+    if (cr.scheduledDate) {
+      const now = new Date();
+      const startToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const target = Date.UTC(cr.scheduledDate.getUTCFullYear(), cr.scheduledDate.getUTCMonth(), cr.scheduledDate.getUTCDate());
+      if (target < startToday) throw new BadRequestException('Ngày diễn ra đề xuất đã ở quá khứ — không thể duyệt.');
+    }
+
+    const data: Prisma.KitchenCampaignUpdateInput = {};
+    if (cr.scheduledDate !== null) data.scheduledDate = cr.scheduledDate;
+    if (cr.startTime !== null) data.startTime = cr.startTime;
+    if (cr.endTime !== null) data.endTime = cr.endTime;
+    if (cr.kitchenAddress !== null) data.kitchenAddress = cr.kitchenAddress;
+    if (cr.chefSlotsNeeded !== null) data.chefSlotsNeeded = cr.chefSlotsNeeded;
+    if (cr.waiterSlotsNeeded !== null) data.waiterSlotsNeeded = cr.waiterSlotsNeeded;
+    if (cr.shipperSlotsNeeded !== null) data.shipperSlotsNeeded = cr.shipperSlotsNeeded;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(data).length > 0) {
+        await tx.kitchenCampaign.update({ where: { id: campaign.id }, data });
+      }
+      if (cr.lng !== null && cr.lat !== null) {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE kitchen_campaigns
+          SET kitchen_location = ST_SetSRID(ST_MakePoint(${cr.lng}, ${cr.lat}), 4326)::geography,
+              updated_at = NOW()
+          WHERE id = ${campaign.id}::uuid
+        `);
+      }
+      await tx.campaignChangeRequest.update({
+        where: { id },
+        data: { status: 'approved', reviewNote: reviewNote ?? null, reviewedByUserId: adminUserId, reviewedAt: new Date() },
+      });
+    });
+
+    void this.notifications.notify(campaign.charityReceiver.userId, {
+      type: 'campaign',
+      title: 'Yêu cầu thay đổi đã được duyệt',
+      body: `Thay đổi cho chiến dịch "${campaign.title}" đã được duyệt và áp dụng.`,
+      data: { campaignId: campaign.id, changeRequestId: id, status: 'approved' },
+    });
+
+    return this.getCampaignDetail(campaign.id);
+  }
+
+  /** Danh sách tin thực phẩm cho trang quản lý/phân loại thức ăn (lọc theo nhóm/loại/trạng thái). */
+  async listFoodListings(opts: {
+    page?: number; limit?: number; status?: string; category?: string; group?: string; search?: string;
+  }) {
+    const page = Math.max(1, Number(opts.page) || 1);
+    const limit = Math.min(Number(opts.limit) || 20, 100);
+
+    const where: Prisma.FoodListingWhereInput = { deletedAt: null };
+    if (opts.status) where.status = opts.status as never;
+    if (opts.category) {
+      where.category = opts.category as never;
+    } else if (opts.group) {
+      const cats = FOOD_GROUP_CATEGORIES[opts.group as FoodGroup];
+      if (cats) where.category = { in: cats as never };
+    }
+    if (opts.search) where.title = { contains: opts.search, mode: 'insensitive' };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.foodListing.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true, title: true, category: true, status: true,
+          quantityRemaining: true, quantityTotal: true, quantityUnit: true,
+          weightPerUnitKg: true, pickupEndTime: true, imageUrls: true, createdAt: true,
+          provider: { select: { businessName: true } },
+        },
+      }),
+      this.prisma.foodListing.count({ where }),
+    ]);
+
+    const items = rows.map((r) => {
+      const group = FOOD_CATEGORY_GROUP[r.category as FoodCategory] ?? FoodGroup.OTHER;
+      return {
+        id: r.id,
+        title: r.title,
+        category: r.category,
+        categoryLabel: FOOD_CATEGORY_LABEL[r.category as FoodCategory] ?? r.category,
+        group,
+        groupLabel: FOOD_GROUP_LABEL[group],
+        status: r.status,
+        quantityRemaining: Number(r.quantityRemaining),
+        quantityTotal: Number(r.quantityTotal),
+        quantityUnit: r.quantityUnit,
+        weightPerUnitKg: r.weightPerUnitKg ? Number(r.weightPerUnitKg) : null,
+        pickupEndTime: r.pickupEndTime,
+        imageUrls: r.imageUrls,
+        businessName: r.provider?.businessName ?? null,
+        createdAt: r.createdAt,
+      };
+    });
+
+    return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  /** Admin đổi phân loại (category) của một tin thực phẩm. */
+  async updateListingCategory(id: string, category: string) {
+    const listing = await this.prisma.foodListing.findUnique({ where: { id }, select: { id: true, deletedAt: true } });
+    if (!listing || listing.deletedAt) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+    await this.prisma.foodListing.update({ where: { id }, data: { category: category as never } });
+    return { id, category };
   }
 
   /** Đơn nhận gần đây nhất cho bảng quản lý quyên góp. */

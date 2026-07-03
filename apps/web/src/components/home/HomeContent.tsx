@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useListings } from '@/hooks/useListings';
+import { usePublicCampaigns } from '@/hooks/useCampaigns';
+import { mediaUrl } from '@/lib/utils';
 
 // Deterministic number formatter (Vietnamese style using dots as thousand separator) to prevent SSR/CSR hydration mismatch.
 function formatNumber(num: number): string {
@@ -12,17 +14,24 @@ function formatNumber(num: number): string {
 }
 
 const CAT_LABEL: Record<string, string> = {
-  prepared_meal: 'Suất ăn sẵn',
-  raw_ingredients: 'Nguyên liệu thô',
+  cooked_meal: 'Suất ăn sẵn',
   bakery: 'Bánh ngọt & Tráng miệng',
+  fresh_fruit: 'Trái cây tươi',
   beverage: 'Đồ uống',
+  vegetables: 'Rau củ quả',
+  raw_protein: 'Thịt, cá, trứng',
+  dry_goods: 'Đồ khô',
+  canned_packaged: 'Đồ hộp / đóng gói',
   other: 'Khác',
 };
 const CAT_IMG: Record<string, string> = {
   bakery: '/food_bread.png',
-  prepared_meal: '/food_lunchbox.png',
-  raw_ingredients: '/food_salad.png',
+  cooked_meal: '/food_lunchbox.png',
+  fresh_fruit: '/food_salad.png',
+  vegetables: '/food_salad.png',
 };
+// Các loại thuộc nhóm "nguyên liệu thô" (cho tab lọc ở trang chủ)
+const RAW_CATEGORIES = ['vegetables', 'raw_protein', 'dry_goods', 'canned_packaged'];
 function showcaseImg(category: string, imageUrls: string[]): string {
   return imageUrls?.[0] || CAT_IMG[category] || '/food_bread.png';
 }
@@ -34,14 +43,37 @@ function hoursLeft(end: string): string {
   return h >= 1 ? `Còn ${h} giờ` : 'Sắp hết hạn';
 }
 
+// Ảnh fallback khi chiến dịch chưa có ảnh riêng (ảnh người Việt)
+const CAMPAIGN_FALLBACK_IMAGES = ['/vn-pho.jpg', '/vn-streetfood.jpg', '/vn-farmer.jpg'];
+
+// Showcase tĩnh — chỉ dùng khi CHƯA có chiến dịch thật nào đang mở
+const FALLBACK_CAMPAIGNS = [
+  { title: 'Giải cứu Nông sản Miền Tây', date: '15/10/2024', image: '/vn-caibe.jpg', desc: 'Hỗ trợ bà con nông dân tiêu thụ sản phẩm sạch sau mùa thu hoạch cao điểm.' },
+  { title: 'Bữa cơm yêu thương', date: 'Hằng tuần', image: '/vn-pho.jpg', desc: 'Nấu và trao những suất ăn nóng cho người lao động nghèo, sinh viên và người già neo đơn.' },
+  { title: 'Bếp ăn 0 đồng', date: 'Mỗi thứ 7', image: '/vn-streetfood.jpg', desc: 'Chế biến các suất ăn dinh dưỡng từ nguồn thực phẩm cứu trợ mỗi cuối tuần.' },
+];
+
 export default function HomeContent() {
   const router = useRouter();
   const [filterTab, setFilterTab] = useState<'near' | 'raw'>('near');
   // Listing thật để trưng ở trang chủ (endpoint /listings công khai)
   const { data: showcaseAll } = useListings({ limit: 8 });
   const showcase = (showcaseAll ?? [])
-    .filter((l) => (filterTab === 'raw' ? l.category === 'raw_ingredients' : true))
+    .filter((l) => (filterTab === 'raw' ? RAW_CATEGORIES.includes(l.category) : true))
     .slice(0, 4);
+
+  // Chiến dịch thật đang mở (công khai); rỗng → dùng showcase tĩnh
+  const { data: liveCampaigns } = usePublicCampaigns();
+  const campaignCards =
+    liveCampaigns && liveCampaigns.length > 0
+      ? liveCampaigns.map((c, i) => ({
+          id: c.id as string | undefined,
+          title: c.title,
+          date: new Date(c.scheduledDate).toLocaleDateString('vi-VN'),
+          image: c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : CAMPAIGN_FALLBACK_IMAGES[i % CAMPAIGN_FALLBACK_IMAGES.length],
+          desc: c.description || c.kitchenAddress || '',
+        }))
+      : FALLBACK_CAMPAIGNS.map((c) => ({ ...c, id: undefined as string | undefined }));
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [donationAmount, setDonationAmount] = useState<number>(500000);
   const [impactTab, setImpactTab] = useState<'image' | 'calc'>('calc');
@@ -50,10 +82,9 @@ export default function HomeContent() {
   const [heroBgIndex, setHeroBgIndex] = useState<number>(0);
 
   const HERO_IMAGES = [
-    '/charity_bg.png',
-    '/hero_food_bg.png',
-    '/eco_volunteers.png',
-    '/impact_kitchen.png'
+    '/new_wide_hero_1.png',
+    '/new_wide_hero_2.png',
+    '/new_wide_hero_3.png'
   ];
 
   // Rotate hero background every 4 seconds
@@ -406,6 +437,49 @@ export default function HomeContent() {
             ))}
           </div>
         )}
+      </section>
+
+      {/* CHIẾN DỊCH SẮP DIỄN RA */}
+      <section className="w-full px-6 md:px-16 lg:px-24 py-20 bg-neutral-50 animate-fade-in-up [animation-delay:400ms]">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
+          <div className="space-y-2">
+            <h2 className="font-medium text-4xl text-on-surface">Chiến dịch sắp diễn ra</h2>
+            <p className="text-lg text-on-surface/80">Chung tay cùng chúng tôi trong những dự án ý nghĩa.</p>
+          </div>
+          <Link href="/campaigns" className="shrink-0 inline-flex items-center gap-1 text-[15px] font-semibold text-[#236c2a] hover:gap-2 transition-all">
+            Xem tất cả <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {campaignCards.map((c) => (
+            <div
+              key={c.title}
+              className="bg-white rounded-2xl border border-neutral-200/70 overflow-hidden flex flex-col group hover:-translate-y-2 hover:shadow-xl hover:shadow-[#236c2a]/5 transition-all duration-350"
+            >
+              <div className="relative aspect-[16/10] bg-neutral-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.image} alt={c.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <span className="absolute top-3 left-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-600/90 backdrop-blur text-white text-[11px] font-bold">
+                  <span className="material-symbols-outlined text-[13px]">campaign</span> Sắp diễn ra
+                </span>
+              </div>
+              <div className="p-6 flex flex-col flex-1">
+                <p className="text-xs font-semibold text-neutral-500 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-neutral-400">calendar_month</span> {c.date}
+                </p>
+                <h3 className="font-bold text-xl text-[#236c2a] mt-2">{c.title}</h3>
+                <p className="text-sm text-neutral-600 mt-2 leading-relaxed flex-1">{c.desc}</p>
+                <button
+                  onClick={() => router.push(c.id ? `/campaigns/${c.id}` : '/campaigns')}
+                  className="mt-5 w-full py-3 border border-[#236c2a]/30 text-[#236c2a] hover:bg-[#236c2a] hover:text-white rounded-lg text-[15px] font-semibold transition-all active:scale-95"
+                >
+                  Xem chi tiết
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* 5. BẢN ĐỒ VẬN HÀNH / NHẬT KÝ TRỰC TUYẾN SECTION */}

@@ -1,0 +1,75 @@
+%% FoodResQ — Activity Diagram: Kitchen Campaign (Chiến dịch bếp ăn)
+%% Dán toàn bộ nội dung này vào Lucidchart (Mermaid) — xem hướng dẫn trong chat.
+%% Quy ước hình (giống ảnh mẫu): (( )) = start/end · [ ] = action · { } = decision · {{ }} = fork/join · (("✗")) = flow-final
+flowchart TB
+
+  subgraph CHARITY["Charity Org (Tổ chức từ thiện)"]
+    direction TB
+    A0(("●"))
+    A1["Tạo chiến dịch<br/>status = draft"]
+    A2["Xác nhận đã nhận<br/>quyên góp"]
+    A3["Gửi yêu cầu thay đổi<br/>(lịch / địa điểm / slot)"]
+    AEND(("◉"))
+  end
+
+  subgraph ADMIN["Admin"]
+    B1{"Duyệt<br/>chiến dịch?"}
+    B2{"Duyệt yêu cầu<br/>thay đổi?"}
+  end
+
+  subgraph SYSTEM["System"]
+    S1{"Là tổ chức<br/>từ thiện?"}
+    SX1(("✗"))
+    S2["Thông báo Admin"]
+    SX2(("✗"))
+    S3["Mở chiến dịch<br/>status = open"]
+    FK{{"Fork"}}
+    S4{"Đúng kỹ năng<br/>& còn slot?"}
+    SX3(("✗"))
+    S5["Tạo assignment<br/>+ tăng slot_filled"]
+    S6["Ghi nhận quyên góp<br/>(pledged)"]
+    JN{{"Join"}}
+    S7["Cộng điểm cống hiến"]
+    S8{"Kết quả<br/>kiểm tra ATTP?"}
+    S9["Thông báo cảnh báo"]
+    S10["Hoàn tất chiến dịch<br/>status = completed"]
+    SX4(("✗"))
+  end
+
+  subgraph VOL["Volunteer (TNV)"]
+    V1["Ứng tuyển vai trò<br/>chef / waiter / shipper"]
+    V2["Check-in"]
+    V3["Bắt đầu: chụp ảnh nguyên liệu"]
+    V4["Hoàn thành: ảnh nấu / phân phát"]
+    V5["Ghi nhật ký ATTP"]
+    V6["Phân phát suất ăn"]
+  end
+
+  %% Tạo & duyệt chiến dịch
+  A0 --> A1 --> S1
+  S1 -- "Không" --> SX1
+  S1 -- "Có" --> S2 --> B1
+  B1 -- "Từ chối" --> SX2
+  B1 -- "Duyệt" --> S3 --> FK
+
+  %% Nhánh 1: Tuyển tình nguyện viên
+  FK --> V1 --> S4
+  S4 -- "Không (hết slot / chưa xác minh)" --> SX3
+  S4 -- "Hợp lệ" --> S5 --> JN
+
+  %% Nhánh 2: Quyên góp nguyên liệu
+  FK --> S6 --> A2 --> JN
+
+  %% Ngày diễn ra: tiến trình nhiệm vụ
+  JN --> V2 --> V3 --> V4 --> S7
+  V3 --> V5 --> S8
+  S8 -- "Warning / Fail" --> S9 --> V6
+  S8 -- "Pass" --> V6
+  V4 --> V6
+  S7 --> S10
+  V6 --> S10 --> AEND
+
+  %% Nhánh phụ: yêu cầu thay đổi (cần admin duyệt)
+  A3 --> B2
+  B2 -- "Duyệt" --> S3
+  B2 -- "Từ chối" --> SX4

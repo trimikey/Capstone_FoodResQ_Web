@@ -11,7 +11,7 @@ import {
   type ProviderListing,
   type CreateListingInput,
 } from '@/hooks/useProviderListings';
-import { FoodCategory, QuantityUnit } from '@foodresq/types';
+import { FoodCategory, FoodGroup, QuantityUnit, FOOD_CATEGORY_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
@@ -19,12 +19,10 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
   loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse rounded-xl" />,
 });
 
-const CATEGORY_OPTS: { value: FoodCategory; label: string }[] = [
-  { value: FoodCategory.PREPARED_MEAL, label: 'Đồ chín' },
-  { value: FoodCategory.RAW_INGREDIENTS, label: 'Nguyên liệu' },
-  { value: FoodCategory.BAKERY, label: 'Bánh ngọt' },
-  { value: FoodCategory.BEVERAGE, label: 'Đồ uống' },
-  { value: FoodCategory.OTHER, label: 'Khác' },
+const CATEGORY_OPTS: { value: FoodCategory; label: string; group: FoodGroup }[] = [
+  ...FOOD_GROUP_CATEGORIES[FoodGroup.READY_TO_EAT].map((c) => ({ value: c, label: FOOD_CATEGORY_LABEL[c], group: FoodGroup.READY_TO_EAT })),
+  ...FOOD_GROUP_CATEGORIES[FoodGroup.RAW_INGREDIENT].map((c) => ({ value: c, label: FOOD_CATEGORY_LABEL[c], group: FoodGroup.RAW_INGREDIENT })),
+  { value: FoodCategory.OTHER, label: FOOD_CATEGORY_LABEL[FoodCategory.OTHER], group: FoodGroup.OTHER },
 ];
 const UNIT_OPTS: { value: QuantityUnit; label: string }[] = [
   { value: QuantityUnit.PORTION, label: 'Phần' },
@@ -53,7 +51,7 @@ function localDateTime(offsetH: number): string {
 const EMPTY_FORM = () => ({
   title: '',
   description: '',
-  category: FoodCategory.PREPARED_MEAL as FoodCategory,
+  category: FoodCategory.COOKED_MEAL as FoodCategory,
   quantityTotal: 10,
   quantityUnit: QuantityUnit.PORTION as QuantityUnit,
   weightPerUnitKg: '',
@@ -67,6 +65,7 @@ const EMPTY_FORM = () => ({
   allergenNotes: '',
   maxPerReservation: 3,
   imageUrl: '',
+  isSurpriseBag: false,
 });
 
 export default function ProviderListingsPage() {
@@ -112,6 +111,7 @@ export default function ProviderListingsPage() {
       allergenNotes: form.allergenNotes.trim() || undefined,
       maxPerReservation: Number(form.maxPerReservation),
       imageUrls: form.imageUrl.trim() ? [form.imageUrl.trim()] : undefined,
+      isSurpriseBag: form.isSurpriseBag,
     };
     try {
       await createListing.mutateAsync(payload);
@@ -267,7 +267,15 @@ export default function ProviderListingsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Danh mục *">
                   <select value={form.category} onChange={(e) => set('category', e.target.value as FoodCategory)} className={inputCls}>
-                    {CATEGORY_OPTS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    <optgroup label="Thực phẩm ăn liền">
+                      {CATEGORY_OPTS.filter((c) => c.group === FoodGroup.READY_TO_EAT).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </optgroup>
+                    <optgroup label="Nguyên liệu thô">
+                      {CATEGORY_OPTS.filter((c) => c.group === FoodGroup.RAW_INGREDIENT).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </optgroup>
+                    <optgroup label="Khác">
+                      {CATEGORY_OPTS.filter((c) => c.group === FoodGroup.OTHER).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </optgroup>
                   </select>
                 </Field>
                 <Field label="Đơn vị *">
@@ -325,6 +333,16 @@ export default function ProviderListingsPage() {
               <Field label="URL ảnh (tùy chọn)">
                 <input value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} placeholder="/food_bread.png hoặc https://..." className={inputCls} />
               </Field>
+
+              <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-3 cursor-pointer hover:bg-neutral-50">
+                <input type="checkbox" checked={form.isSurpriseBag} onChange={(e) => set('isSurpriseBag', e.target.checked)} className="mt-0.5 w-4 h-4 accent-honey-500" />
+                <span>
+                  <span className="font-bold text-sm text-neutral-800 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[18px] text-honey-500">redeem</span> Túi bất ngờ
+                  </span>
+                  <span className="block text-[12px] text-neutral-500 mt-0.5">Người nhận không biết trước chính xác món gì — bất ngờ khi đến lấy (như Too Good To Go).</span>
+                </span>
+              </label>
             </div>
 
             <div className="px-6 py-4 border-t border-neutral-150 flex gap-3 sticky bottom-0 bg-white">

@@ -1,0 +1,918 @@
+// ============================================================
+// FoodResQ — Database schema (DBML)
+// Sinh từ apps/api/prisma/schema.prisma — 36 bảng (đã tách organization_profiles)
+// Dán toàn bộ file này vào https://dbdiagram.io để xem/sắp xếp ERD
+// ============================================================
+
+// ---------- ENUMS ----------
+enum user_role {
+  admin
+  provider
+  receiver
+  organization
+  volunteer
+}
+enum user_status {
+  pending_verification
+  active
+  suspended
+  banned
+}
+enum business_type {
+  restaurant
+  supermarket
+  bakery
+  hotel
+  other
+}
+enum verification_status {
+  pending
+  under_review
+  approved
+  rejected
+}
+enum volunteer_rank {
+  newcomer
+  active
+  experienced
+  expert
+}
+enum volunteer_specialization {
+  shipper
+  chef
+  waiter
+}
+enum food_category {
+  cooked_meal
+  bakery
+  fresh_fruit
+  beverage
+  vegetables
+  raw_protein
+  dry_goods
+  canned_packaged
+  other
+}
+enum listing_status {
+  draft
+  active
+  fully_reserved
+  completed
+  expired
+  cancelled
+}
+enum quantity_unit {
+  kg
+  portion
+  item
+  box
+  liter
+}
+enum reservation_status {
+  confirmed
+  picked_up
+  completed
+  cancelled
+  expired
+  no_show
+}
+enum pickup_verification_type {
+  face
+  id_card
+}
+enum delivery_status {
+  pending_assignment
+  assigned
+  heading_to_provider
+  qc_completed
+  in_transit
+  delivered
+  failed
+}
+enum campaign_change_status {
+  pending
+  approved
+  rejected
+  cancelled
+}
+enum campaign_status {
+  draft
+  open
+  in_progress
+  completed
+  cancelled
+}
+enum assignment_role {
+  chef
+  waiter
+  shipper
+}
+enum assignment_status {
+  pending
+  assigned
+  checked_in
+  in_progress
+  completed
+  absent
+  rejected
+  cancelled
+}
+enum verification_request_type {
+  provider_registration
+  charity_registration
+  volunteer_chef_cert
+  receiver_income_proof
+}
+enum trust_score_reason {
+  late_cancellation
+  no_show
+  bad_rating_received
+  food_safety_violation
+  hoarding_detected
+  manual_penalty
+  successful_rescue
+  high_rating_received
+  manual_bonus
+}
+enum offer_status {
+  pending
+  accepted
+  rejected
+  expired
+}
+enum report_target_type {
+  user
+  listing
+  delivery
+  campaign
+}
+enum report_reason {
+  spoiled_food
+  fake_account
+  hoarding
+  no_show_provider
+  unsafe_food
+  harassment
+  fraud
+  other
+}
+enum report_status {
+  pending
+  under_review
+  resolved
+  dismissed
+}
+enum recipe_difficulty {
+  easy
+  medium
+  hard
+}
+enum safety_check_type {
+  temperature
+  hygiene
+  storage
+  cross_contamination
+  handwashing
+  other
+}
+enum safety_check_result {
+  pass
+  warning
+  fail
+}
+
+// ============================================================
+// A. NGƯỜI DÙNG & XÁC THỰC
+// ============================================================
+
+Table users {
+  id uuid [pk]
+  email varchar [unique, not null]
+  phone varchar [unique]
+  password_hash text [not null]
+  full_name varchar [not null]
+  avatar_url text
+  role user_role [not null]
+  status user_status [not null, default: 'pending_verification']
+  trust_score smallint [not null, default: 100]
+  fcm_token text
+  last_login_at timestamptz
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+  indexes {
+    email
+    (role, status)
+  }
+}
+
+Table provider_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null]
+  business_name varchar [not null]
+  business_type business_type [not null]
+  tax_code varchar
+  description text
+  address text [not null]
+  location geography
+  contact_phone varchar
+  website_url text
+  is_verified boolean [not null, default: false]
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  total_food_rescued_kg decimal [not null, default: 0]
+  total_co2_saved_kg decimal [not null, default: 0]
+  avg_rating decimal
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table receiver_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null]
+  id_card_number varchar
+  id_card_image_url text
+  face_image_url text
+  face_descriptor jsonb
+  address text
+  location geography
+  income_proof_url text
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  reservations_today smallint [not null, default: 0]
+  avg_rating decimal
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+// Tổ chức từ thiện — TÁCH RIÊNG khỏi receiver_profiles (role = organization)
+Table organization_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null]
+  organization_name varchar [not null]
+  tax_code varchar
+  description text
+  address text
+  location geography
+  contact_phone varchar
+  website_url text
+  is_verified boolean [not null, default: false]
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  priority_level smallint [not null, default: 1, note: 'ưu tiên nhận listing số lượng lớn']
+  max_daily_quantity int [note: 'hạn mức đặt lớn hơn cá nhân']
+  reservations_today smallint [not null, default: 0]
+  avg_rating decimal
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+// Danh sách thành viên / người thụ hưởng do tổ chức phụ trách
+Table organization_members {
+  id uuid [pk]
+  organization_id uuid [not null]
+  full_name varchar [not null]
+  phone varchar
+  note text
+  created_at timestamptz
+  indexes {
+    organization_id
+  }
+}
+
+// Đợt lấy hàng theo nhóm do tổ chức quản lý (gắn với đơn số lượng lớn)
+Table group_pickups {
+  id uuid [pk]
+  organization_id uuid [not null]
+  reservation_id uuid
+  scheduled_at timestamptz
+  status varchar [not null, default: 'planned']
+  total_members int [not null, default: 0]
+  note text
+  created_at timestamptz
+  indexes {
+    organization_id
+  }
+}
+
+Table volunteer_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null]
+  id_card_number varchar
+  id_card_image_url text
+  face_image_url text
+  face_descriptor jsonb
+  current_location geography
+  location_updated_at timestamptz
+  is_available boolean [not null, default: false]
+  dedication_points int [not null, default: 0]
+  rank volunteer_rank [not null, default: 'newcomer']
+  vehicle_type varchar
+  vehicle_plate varchar
+  avg_rating decimal
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    is_available
+  }
+}
+
+Table volunteer_specializations {
+  id uuid [pk]
+  volunteer_id uuid [not null]
+  specialization volunteer_specialization [not null]
+  food_safety_cert_url text
+  cert_expiry_date date
+  is_verified boolean [not null, default: false]
+  verified_at timestamptz
+  indexes {
+    (volunteer_id, specialization) [unique]
+  }
+}
+
+Table liability_waivers {
+  id uuid [pk]
+  user_id uuid [not null]
+  waiver_version varchar [not null, default: 'v1.0']
+  accepted_at timestamptz
+  ip_address text
+  indexes {
+    (user_id, waiver_version) [unique]
+  }
+}
+
+Table refresh_tokens {
+  id uuid [pk]
+  user_id uuid [not null]
+  token_hash text [unique, not null]
+  device_info varchar
+  ip_address text
+  is_revoked boolean [not null, default: false]
+  revoked_at timestamptz
+  expires_at timestamptz [not null]
+  created_at timestamptz
+}
+
+Table device_tokens {
+  id uuid [pk]
+  user_id uuid [not null]
+  token text [unique, not null]
+  platform varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table verification_requests {
+  id uuid [pk]
+  user_id uuid [not null]
+  request_type verification_request_type [not null]
+  documents jsonb [default: `[]`]
+  status verification_status [not null, default: 'pending']
+  reviewer_id uuid
+  reviewer_notes text
+  submitted_at timestamptz
+  reviewed_at timestamptz
+  created_at timestamptz
+}
+
+// ============================================================
+// B. LUỒNG CỨU TRỢ THỰC PHẨM CỐT LÕI
+// ============================================================
+
+Table food_listings {
+  id uuid [pk]
+  provider_id uuid [not null]
+  title varchar [not null]
+  description text
+  category food_category [not null]
+  quantity_total decimal [not null]
+  quantity_remaining decimal [not null]
+  quantity_unit quantity_unit [not null, default: 'portion']
+  weight_per_unit_kg decimal
+  pickup_start_time timestamptz [not null]
+  pickup_end_time timestamptz [not null]
+  expiry_time timestamptz [not null]
+  pickup_address text [not null]
+  pickup_location geography
+  storage_conditions text
+  allergen_notes text
+  max_per_reservation smallint [not null, default: 1]
+  image_urls jsonb [default: `[]`]
+  status listing_status [not null, default: 'draft']
+  cancelled_reason text
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  is_surprise_bag boolean [not null, default: false]
+  indexes {
+    provider_id
+  }
+}
+
+// Người đặt là CÁ NHÂN (receiver_id) HOẶC TỔ CHỨC (organization_id)
+// => đúng 1 trong 2 cột có giá trị (exclusive arc). Cần CHECK constraint ở DB.
+Table reservations {
+  id uuid [pk]
+  listing_id uuid [not null]
+  receiver_id uuid [note: 'cá nhân đặt — null nếu là tổ chức']
+  organization_id uuid [note: 'tổ chức đặt — null nếu là cá nhân']
+  quantity decimal [not null]
+  status reservation_status [not null, default: 'confirmed']
+  qr_token varchar [unique, not null]
+  qr_expires_at timestamptz [not null]
+  pickup_proof_url text
+  pickup_proof_at timestamptz
+  pickup_verification_type pickup_verification_type
+  scanned_by uuid
+  scanned_at timestamptz
+  cancelled_at timestamptz
+  cancellation_reason text
+  receiver_notes text
+  trust_penalty_applied boolean [not null, default: false]
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    (listing_id, receiver_id)
+    receiver_id
+    status
+  }
+}
+
+Table deliveries {
+  id uuid [pk]
+  reservation_id uuid [unique, not null]
+  shipper_id uuid
+  status delivery_status [not null, default: 'pending_assignment']
+  qc_photo_url text
+  qc_photo_at timestamptz
+  delivery_proof_url text
+  delivery_proof_at timestamptz
+  pickup_location geography
+  delivery_location geography
+  distance_km decimal
+  assigned_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  failed_reason text
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    shipper_id
+    status
+  }
+}
+
+Table shipper_task_offers {
+  id uuid [pk]
+  delivery_id uuid [not null]
+  shipper_id uuid [not null]
+  status offer_status [not null, default: 'pending']
+  offered_at timestamptz
+  responded_at timestamptz
+  expires_at timestamptz [not null]
+  reject_reason text
+  indexes {
+    (delivery_id, shipper_id) [unique]
+    (shipper_id, status)
+  }
+}
+
+// ============================================================
+// C. CHIẾN DỊCH BẾP ĂN CỘNG ĐỒNG
+// ============================================================
+
+Table kitchen_campaigns {
+  id uuid [pk]
+  organization_id uuid [not null]
+  title varchar [not null]
+  description text
+  kitchen_address text [not null]
+  kitchen_location geography
+  scheduled_date date [not null]
+  start_time varchar [not null]
+  end_time varchar [not null]
+  chef_slots_needed smallint [not null, default: 0]
+  waiter_slots_needed smallint [not null, default: 0]
+  shipper_slots_needed smallint [not null, default: 0]
+  chef_slots_filled smallint [not null, default: 0]
+  waiter_slots_filled smallint [not null, default: 0]
+  shipper_slots_filled smallint [not null, default: 0]
+  status campaign_status [not null, default: 'draft']
+  expected_servings int
+  actual_servings int
+  image_urls jsonb [default: `[]`]
+  notes text
+  menu_items jsonb [default: `[]`]
+  schedule_items jsonb [default: `[]`]
+  supply_items jsonb [default: `[]`]
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table campaign_change_requests {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  requested_by_user_id uuid [not null]
+  status campaign_change_status [not null, default: 'pending']
+  reason text
+  scheduled_date date
+  start_time varchar
+  end_time varchar
+  kitchen_address text
+  lng float
+  lat float
+  chef_slots_needed smallint
+  waiter_slots_needed smallint
+  shipper_slots_needed smallint
+  review_note text
+  reviewed_by_user_id uuid
+  reviewed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table campaign_donations {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  provider_id uuid [not null]
+  item_name varchar [not null]
+  quantity varchar
+  note text
+  status varchar [not null, default: 'pledged']
+  created_at timestamptz
+  received_at timestamptz
+}
+
+Table campaign_volunteer_assignments {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  volunteer_id uuid [not null]
+  shift_id uuid
+  role assignment_role [not null]
+  status assignment_status [not null, default: 'assigned']
+  check_in_time timestamptz
+  check_in_location geography
+  check_out_time timestamptz
+  ingredient_proof_url text
+  ingredient_proof_at timestamptz
+  cooked_proof_url text
+  cooked_proof_at timestamptz
+  distribution_proof_url text
+  distribution_proof_at timestamptz
+  points_awarded smallint
+  notes text
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    (campaign_id, volunteer_id, role) [unique]
+  }
+}
+
+Table campaign_shifts {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  label varchar [not null]
+  role assignment_role
+  start_time varchar [not null]
+  end_time varchar [not null]
+  slots_needed smallint [not null, default: 0]
+  slots_filled smallint [not null, default: 0]
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table campaign_experiences {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  volunteer_id uuid [not null]
+  content text [not null]
+  image_urls jsonb [default: `[]`]
+  rating smallint
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    (campaign_id, volunteer_id) [unique]
+  }
+}
+
+Table recipes {
+  id uuid [pk]
+  created_by_user_id uuid [not null]
+  name varchar [not null]
+  description text
+  servings int [not null, default: 0]
+  prep_minutes int
+  cook_minutes int
+  difficulty recipe_difficulty [not null, default: 'medium']
+  instructions text
+  image_urls jsonb [default: `[]`]
+  is_public boolean [not null, default: true]
+  avg_rating decimal
+  times_used int [not null, default: 0]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+}
+
+Table recipe_ingredients {
+  id uuid [pk]
+  recipe_id uuid [not null]
+  name varchar [not null]
+  quantity varchar
+  unit varchar
+  note text
+}
+
+Table campaign_menu_items {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  recipe_id uuid
+  custom_name varchar
+  planned_servings int
+  sort_order int [not null, default: 0]
+}
+
+Table kitchen_safety_logs {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  checked_by_volunteer_id uuid [not null]
+  check_type safety_check_type [not null]
+  measured_value varchar
+  result safety_check_result [not null, default: 'pass']
+  photo_url text
+  note text
+  checked_at timestamptz
+}
+
+Table meal_distributions {
+  id uuid [pk]
+  campaign_id uuid [not null]
+  served_by_volunteer_id uuid [not null]
+  round_label varchar
+  servings_served int [not null, default: 0]
+  people_served int [not null, default: 0]
+  leftover_servings int [not null, default: 0]
+  location geography
+  photo_url text
+  note text
+  distributed_at timestamptz
+}
+
+Table meal_feedback {
+  id uuid [pk]
+  distribution_id uuid [not null]
+  satisfaction smallint [not null]
+  comment text
+  created_at timestamptz
+}
+
+// ============================================================
+// D. UY TÍN, ĐÁNH GIÁ & KIỂM DUYỆT
+// ============================================================
+
+Table ratings {
+  id uuid [pk]
+  reference_type varchar [not null, note: 'polymorphic — không FK']
+  reference_id uuid [not null, note: 'polymorphic — trỏ reservation/delivery/campaign']
+  rater_id uuid [not null]
+  ratee_id uuid [not null]
+  score smallint [not null]
+  comment text
+  created_at timestamptz
+  indexes {
+    (reference_type, reference_id, rater_id, ratee_id) [unique]
+    ratee_id
+  }
+}
+
+Table trust_score_history {
+  id uuid [pk]
+  user_id uuid [not null]
+  delta smallint [not null]
+  reason trust_score_reason [not null]
+  reference_type varchar [note: 'polymorphic — không FK']
+  reference_id uuid [note: 'polymorphic — không FK']
+  score_before smallint [not null]
+  score_after smallint [not null]
+  created_by uuid
+  note text
+  created_at timestamptz
+}
+
+Table dedication_points_history {
+  id uuid [pk]
+  volunteer_id uuid [not null]
+  delta int [not null]
+  reason varchar [not null]
+  reference_type varchar [note: 'polymorphic — không FK']
+  reference_id uuid [note: 'polymorphic — không FK']
+  points_before int [not null]
+  points_after int [not null]
+  created_at timestamptz
+}
+
+Table reports {
+  id uuid [pk]
+  reporter_id uuid [not null]
+  target_type report_target_type [not null, note: 'polymorphic']
+  target_id uuid [not null, note: 'polymorphic — trỏ user/listing/delivery/campaign']
+  reason report_reason [not null]
+  description text
+  evidence_urls jsonb [default: `[]`]
+  status report_status [not null, default: 'pending']
+  resolver_id uuid
+  resolution_note text
+  resolved_at timestamptz
+  created_at timestamptz
+  indexes {
+    status
+    (target_type, target_id)
+  }
+}
+
+// ============================================================
+// E. VẬN HÀNH HỆ THỐNG
+// ============================================================
+
+Table notifications {
+  id uuid [pk]
+  user_id uuid [not null]
+  type varchar [not null]
+  title varchar [not null]
+  body text [not null]
+  data jsonb [default: `{}`]
+  is_read boolean [not null, default: false]
+  read_at timestamptz
+  created_at timestamptz
+}
+
+Table audit_logs {
+  id bigint [pk, increment]
+  actor_id uuid
+  action varchar [not null]
+  target_type varchar [note: 'polymorphic — không FK']
+  target_id uuid [note: 'polymorphic — không FK']
+  payload jsonb
+  ip_address text
+  user_agent text
+  created_at timestamptz
+}
+
+Table system_configs {
+  id int [pk, increment]
+  key varchar [unique, not null]
+  value jsonb [not null]
+  description text
+  updated_by uuid [note: 'UUID admin nhưng KHÔNG có FK — bảng độc lập hoàn toàn']
+  updated_at timestamptz
+}
+
+Table esg_snapshots {
+  id uuid [pk]
+  snapshot_date date [not null]
+  provider_id uuid
+  organization_id uuid [note: 'ESG theo tổ chức (nullable)']
+  total_food_rescued_kg decimal [not null, default: 0]
+  total_co2_saved_kg decimal [not null, default: 0]
+  total_reservations int [not null, default: 0]
+  total_volunteers_active int [not null, default: 0]
+  total_providers_active int [not null, default: 0]
+  created_at timestamptz
+  indexes {
+    (snapshot_date, provider_id) [unique]
+  }
+}
+
+// ============================================================
+// RELATIONSHIPS (khóa ngoại)
+// ============================================================
+
+// 1–1 (hồ sơ vai trò & giao hàng)
+Ref: provider_profiles.user_id - users.id
+Ref: receiver_profiles.user_id - users.id
+Ref: organization_profiles.user_id - users.id
+Ref: volunteer_profiles.user_id - users.id
+Ref: deliveries.reservation_id - reservations.id
+
+// tổ chức (đã tách riêng)
+Ref: organization_members.organization_id > organization_profiles.id
+Ref: group_pickups.organization_id > organization_profiles.id
+Ref: group_pickups.reservation_id > reservations.id
+Ref: reservations.organization_id > organization_profiles.id
+Ref: esg_snapshots.organization_id > organization_profiles.id
+
+// users là cha của nhiều bảng
+Ref: liability_waivers.user_id > users.id
+Ref: refresh_tokens.user_id > users.id
+Ref: device_tokens.user_id > users.id
+Ref: verification_requests.user_id > users.id
+Ref: notifications.user_id > users.id
+Ref: audit_logs.actor_id > users.id
+Ref: ratings.rater_id > users.id
+Ref: ratings.ratee_id > users.id
+Ref: trust_score_history.user_id > users.id
+Ref: reports.reporter_id > users.id
+Ref: reports.resolver_id > users.id
+Ref: recipes.created_by_user_id > users.id
+Ref: campaign_change_requests.requested_by_user_id > users.id
+Ref: campaign_change_requests.reviewed_by_user_id > users.id
+
+// volunteer_profiles
+Ref: volunteer_specializations.volunteer_id > volunteer_profiles.id
+Ref: dedication_points_history.volunteer_id > volunteer_profiles.id
+Ref: deliveries.shipper_id > volunteer_profiles.id
+Ref: shipper_task_offers.shipper_id > volunteer_profiles.id
+Ref: campaign_volunteer_assignments.volunteer_id > volunteer_profiles.id
+Ref: campaign_experiences.volunteer_id > volunteer_profiles.id
+Ref: kitchen_safety_logs.checked_by_volunteer_id > volunteer_profiles.id
+Ref: meal_distributions.served_by_volunteer_id > volunteer_profiles.id
+
+// provider_profiles
+Ref: food_listings.provider_id > provider_profiles.id
+Ref: campaign_donations.provider_id > provider_profiles.id
+Ref: esg_snapshots.provider_id > provider_profiles.id
+
+// luồng cứu trợ
+Ref: reservations.listing_id > food_listings.id
+Ref: reservations.receiver_id > receiver_profiles.id
+Ref: shipper_task_offers.delivery_id > deliveries.id
+
+// bếp ăn
+Ref: kitchen_campaigns.organization_id > organization_profiles.id
+Ref: campaign_change_requests.campaign_id > kitchen_campaigns.id
+Ref: campaign_donations.campaign_id > kitchen_campaigns.id
+Ref: campaign_volunteer_assignments.campaign_id > kitchen_campaigns.id
+Ref: campaign_volunteer_assignments.shift_id > campaign_shifts.id
+Ref: campaign_experiences.campaign_id > kitchen_campaigns.id
+Ref: campaign_shifts.campaign_id > kitchen_campaigns.id
+Ref: campaign_menu_items.campaign_id > kitchen_campaigns.id
+Ref: campaign_menu_items.recipe_id > recipes.id
+Ref: recipe_ingredients.recipe_id > recipes.id
+Ref: kitchen_safety_logs.campaign_id > kitchen_campaigns.id
+Ref: meal_distributions.campaign_id > kitchen_campaigns.id
+Ref: meal_feedback.distribution_id > meal_distributions.id
+
+// LƯU Ý: system_configs KHÔNG có Ref nào — bảng cấu hình độc lập (đúng thiết kế).
+// Các cột reference_id / target_id ở ratings, trust_score_history,
+// dedication_points_history, reports, audit_logs là polymorphic → không tạo FK.
+
+// ============================================================
+// NHÓM DOMAIN (giúp dbdiagram tô màu & sắp xếp)
+// ============================================================
+
+TableGroup "A. Định danh & Xác thực" {
+  users
+  provider_profiles
+  receiver_profiles
+  organization_profiles
+  volunteer_profiles
+  volunteer_specializations
+  liability_waivers
+  refresh_tokens
+  device_tokens
+  verification_requests
+}
+
+TableGroup "B. Cứu trợ thực phẩm" {
+  food_listings
+  reservations
+  deliveries
+  shipper_task_offers
+  organization_members
+  group_pickups
+}
+
+TableGroup "C. Bếp ăn cộng đồng" {
+  kitchen_campaigns
+  campaign_change_requests
+  campaign_donations
+  campaign_volunteer_assignments
+  campaign_shifts
+  campaign_experiences
+  recipes
+  recipe_ingredients
+  campaign_menu_items
+  kitchen_safety_logs
+  meal_distributions
+  meal_feedback
+}
+
+TableGroup "D. Uy tín & Kiểm duyệt" {
+  ratings
+  trust_score_history
+  dedication_points_history
+  reports
+}
+
+TableGroup "E. Vận hành hệ thống" {
+  notifications
+  audit_logs
+  system_configs
+  esg_snapshots
+}

@@ -19,7 +19,9 @@ export default function ProviderScanPage() {
   const confirmPickup = useConfirmPickup();
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
-  const lockRef = useRef(false); // chặn quét trùng liên tiếp
+  const lockRef = useRef(false); // chặn 2 request chồng nhau
+  // Camera đã bắt được & xử lý 1 mã trong phiên quét này chưa — chặn callback bắn lại token cũ (gây loop 400)
+  const handledRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('scanning');
   const [cameraError, setCameraError] = useState(false);
@@ -32,9 +34,13 @@ export default function ProviderScanPage() {
     controlsRef.current = null;
   }
 
-  async function submitToken(token: string) {
+  // auto=true khi gọi từ callback camera (sẽ bị chặn nếu đã xử lý 1 mã rồi);
+  // nhập tay / tải ảnh là hành động chủ động của người dùng nên luôn cho chạy.
+  async function submitToken(token: string, auto = false) {
     if (lockRef.current) return;
+    if (auto && handledRef.current) return;
     lockRef.current = true;
+    handledRef.current = true;
     stopCamera();
     setPhase('submitting');
     try {
@@ -49,6 +55,20 @@ export default function ProviderScanPage() {
       setPhase('result');
     } finally {
       lockRef.current = false;
+    }
+  }
+
+  /** Giải mã QR từ ảnh người dùng tải lên (chụp màn hình / chụp QR bằng điện thoại). */
+  async function decodeImageFile(file: File) {
+    const url = URL.createObjectURL(file);
+    try {
+      const reader = new BrowserQRCodeReader();
+      const res = await reader.decodeFromImageUrl(url);
+      void submitToken(res.getText().trim());
+    } catch {
+      toast.error('Không đọc được mã QR trong ảnh. Hãy chọn ảnh rõ nét, cắt sát mã QR rồi thử lại.');
+    } finally {
+      URL.revokeObjectURL(url);
     }
   }
 
@@ -68,31 +88,48 @@ export default function ProviderScanPage() {
     }
   }
 
-  async function startScan() {
+  // Quay lại quét đơn mới: chỉ đổi state. Camera được bật bởi effect bên dưới SAU khi <video> mount lại.
+  function goScan() {
     setResult(null);
     setScan(null);
+    setManualToken('');
     setPhase('scanning');
-    lockRef.current = false;
-    setCameraError(false);
-    try {
-      const reader = new BrowserQRCodeReader();
-      controlsRef.current = await reader.decodeFromVideoDevice(
-        undefined,
-        videoRef.current ?? undefined,
-        (res) => {
-          if (res) void submitToken(res.getText().trim());
-        },
-      );
-    } catch {
-      setCameraError(true);
-    }
   }
 
+  // Bật camera mỗi khi vào phase 'scanning' — chạy sau commit nên <video> chắc chắn đã mount (tránh màn đen do ref null).
+  // Hoãn 1 nhịp (setTimeout 0): để lần mount "nháp" của React Strict Mode bị huỷ TRƯỚC khi kịp gọi getUserMedia,
+  // tránh đòi camera 2 lần chồng nhau khiến camera bật rồi tắt.
   useEffect(() => {
-    void startScan();
-    return () => stopCamera();
+    if (phase !== 'scanning') return;
+    let cancelled = false;
+    let controls: IScannerControls | null = null;
+    lockRef.current = false;
+    handledRef.current = false;
+    setCameraError(false);
+    const timer = setTimeout(() => {
+      const reader = new BrowserQRCodeReader();
+      reader
+        .decodeFromVideoDevice(undefined, videoRef.current ?? undefined, (res, _err, c) => {
+          // Dừng camera NGAY khi bắt được mã để không bắn lại liên tục
+          if (res && !handledRef.current) {
+            c.stop();
+            void submitToken(res.getText().trim(), true);
+          }
+        })
+        .then((c) => {
+          if (cancelled) c.stop();
+          else { controls = c; controlsRef.current = c; }
+        })
+        .catch(() => { if (!cancelled) setCameraError(true); });
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controls?.stop();
+      controlsRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [phase]);
 
   return (
     <div className="min-h-screen bg-mesh-brand pb-24">
@@ -171,7 +208,7 @@ export default function ProviderScanPage() {
                   {confirmPickup.isPending ? 'Đang xác nhận...' : 'Đã giao đúng người — Hoàn tất'}
                 </button>
                 <button
-                  onClick={() => void startScan()}
+                  onClick={goScan}
                   className="w-full py-3 border border-neutral-200 text-neutral-600 rounded-2xl font-bold text-sm hover:bg-neutral-50 transition-colors"
                 >
                   Không đúng người / Quét đơn khác
@@ -192,7 +229,7 @@ export default function ProviderScanPage() {
             <p className="font-bold text-lg text-neutral-900">{result.ok ? 'Bàn giao thành công' : 'Không xác nhận được'}</p>
             <p className="text-sm text-neutral-500 max-w-sm">{result.message}</p>
             <button
-              onClick={() => void startScan()}
+              onClick={goScan}
               className="mt-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-2xl font-bold text-sm transition-colors"
             >
               Quét đơn khác
@@ -221,25 +258,24 @@ export default function ProviderScanPage() {
           </div>
         )}
 
-        {/* Nhập tay mã token (fallback) */}
+        {/* Tải ảnh QR + nhập tay mã token (fallback khi camera quét không ăn) */}
         {(phase === 'scanning' || phase === 'result') && (
-          <div className="bg-white rounded-2xl border border-neutral-150 elevation-1 p-4 space-y-2">
-            <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide">Hoặc nhập mã thủ công</p>
-            <div className="flex gap-2">
+          <div className="bg-white rounded-2xl border border-neutral-150 elevation-1 p-4 space-y-3">
+            {/* Tải ảnh mã QR lên để giải mã */}
+            <label className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-emerald-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50 cursor-pointer transition-colors">
+              <span className="material-symbols-outlined text-[20px]">{scanQr.isPending ? 'hourglass_top' : 'image'}</span>
+              {scanQr.isPending ? 'Đang xử lý...' : 'Tải ảnh mã QR lên'}
               <input
-                value={manualToken}
-                onChange={(e) => setManualToken(e.target.value)}
-                placeholder="Dán mã QR token..."
-                className="input-base flex-1 font-mono"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={scanQr.isPending}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void decodeImageFile(f); e.target.value = ''; }}
               />
-              <button
-                onClick={() => manualToken.trim() && void submitToken(manualToken.trim())}
-                disabled={!manualToken.trim() || scanQr.isPending}
-                className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-colors"
-              >
-                Xác nhận
-              </button>
-            </div>
+            </label>
+            <p className="text-[11px] text-neutral-400 text-center -mt-1">Chụp/lưu ảnh mã QR của người nhận rồi tải lên — ổn định hơn quét qua màn hình.</p>
+
+        
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApiResponse } from '@foodresq/types';
 import type { CreateReservationInput } from '@/schemas/reservation.schema';
 
 interface ReservationResult {
@@ -10,7 +11,7 @@ interface ReservationResult {
 }
 
 async function createReservation(dto: CreateReservationInput): Promise<ReservationResult> {
-  const { data } = await api.post<{ data: ReservationResult }>('/reservations', dto);
+  const { data } = await api.post<ApiResponse<ReservationResult>>('/reservations', dto);
   return data.data;
 }
 
@@ -45,7 +46,7 @@ async function submitPickupProof(params: {
   const formData = new FormData();
   formData.append('photo', params.photo);
   formData.append('verificationType', params.verificationType);
-  const { data } = await api.post<{ data: PickupProofResult }>(
+  const { data } = await api.post<ApiResponse<PickupProofResult>>(
     `/reservations/${params.id}/pickup-proof`,
     formData,
     { headers: { 'Content-Type': 'multipart/form-data' } },
@@ -122,5 +123,10 @@ export function useReservationDetails(id: string) {
     queryFn: () => fetchReservationDetails(id),
     enabled: !!id,
     staleTime: 10_000,
+    // Tự làm mới khi đơn còn đang xử lý để bắt thời điểm NCC/TNV quét QR (confirmed → picked_up → completed)
+    refetchInterval: (query) => {
+      const status = (query.state.data as { status?: string } | undefined)?.status;
+      return status === 'confirmed' || status === 'picked_up' ? 5_000 : false;
+    },
   });
 }

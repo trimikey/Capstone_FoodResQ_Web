@@ -1,3 +1,5 @@
+nodeLinker: hoisted
+
 packages:
   - 'apps/*'
   - 'packages/*'
@@ -13,3 +15,5 @@ allowBuilds:
   unrs-resolver: true
   sharp: true
   core-js: false
+  '@firebase/util': true
+  protobufjs: true

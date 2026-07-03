@@ -1,0 +1,504 @@
+' =====================================================================
+'  FoodResQ — Logical ERD (PlantUML)
+'  Capstone SP26SE088 | FPT University
+'
+'  Quy ước:
+'    PK = Primary Key, FK = Foreign Key, U = Unique
+'    Quan hệ crow's-foot:
+'      ||--o|  : 1 — 0..1
+'      ||--o{  : 1 — 0..nhiều
+'      }o--||  : nhiều — 1
+'  Dán toàn bộ block vào https://www.plantuml.com/plantuml
+' =====================================================================
+@startuml erd-logical
+title FoodResQ — Logical ERD
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+skinparam roundCorner 6
+skinparam class {
+  BackgroundColor #FDFDFD
+  BorderColor #5B7DB1
+  ArrowColor #5B7DB1
+}
+
+' ── Identity & Auth ────────────────────────────────────────────────
+entity users {
+  * id : UUID <<PK>>
+  --
+  * email : varchar(255) <<U>>
+  phone : varchar(20) <<U>>
+  * password_hash : text
+  * full_name : varchar(255)
+  avatar_url : text
+  * role : user_role
+  * status : user_status
+  * trust_score : smallint
+  last_login_at : timestamptz
+  created_at : timestamptz
+  deleted_at : timestamptz
+}
+
+entity refresh_tokens {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * token_hash : text <<U>>
+  device_info : varchar(255)
+  ip_address : text
+  * is_revoked : boolean
+  * expires_at : timestamptz
+}
+
+entity liability_waivers {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * waiver_version : varchar(20)
+  * accepted_at : timestamptz
+}
+
+' ── Role Profiles ──────────────────────────────────────────────────
+entity provider_profiles {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,U>>
+  * business_name : varchar(255)
+  * business_type : business_type
+  tax_code : varchar(50)
+  * address : text
+  location : geography(Point,4326)
+  * is_verified : boolean
+  * verification_status : verification_status
+  total_food_rescued_kg : decimal
+  total_co2_saved_kg : decimal
+  avg_rating : decimal(3,2)
+}
+
+entity receiver_profiles {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,U>>
+  * is_charity_org : boolean
+  organization_name : varchar(255)
+  id_card_number : varchar(50)
+  id_card_image_url : text
+  face_image_url : text
+  face_descriptor : json
+  location : geography(Point,4326)
+  * reservations_today : smallint
+  * verification_status : verification_status
+}
+
+entity volunteer_profiles {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,U>>
+  current_location : geography(Point,4326)
+  location_updated_at : timestamptz
+  * is_available : boolean
+  * dedication_points : int
+  * rank : volunteer_rank
+  vehicle_type : varchar(50)
+  vehicle_plate : varchar(20)
+  * verification_status : verification_status
+}
+
+entity volunteer_specializations {
+  * id : UUID <<PK>>
+  --
+  * volunteer_id : UUID <<FK>>
+  * specialization : volunteer_specialization
+  food_safety_cert_url : text
+  cert_expiry_date : date
+  * is_verified : boolean
+  .. unique ..
+  (volunteer_id, specialization)
+}
+
+' ── Food Listings & Reservations ───────────────────────────────────
+entity food_listings {
+  * id : UUID <<PK>>
+  --
+  * provider_id : UUID <<FK>>
+  * title : varchar(255)
+  description : text
+  * category : food_category
+  * quantity_total : decimal
+  * quantity_remaining : decimal
+  * quantity_unit : quantity_unit
+  weight_per_unit_kg : decimal
+  * pickup_start_time : timestamptz
+  * pickup_end_time : timestamptz
+  * expiry_time : timestamptz
+  * pickup_address : text
+  pickup_location : geography(Point,4326)
+  * max_per_reservation : smallint
+  * is_surprise_bag : boolean
+  * status : listing_status
+  deleted_at : timestamptz
+}
+
+entity reservations {
+  * id : UUID <<PK>>
+  --
+  * listing_id : UUID <<FK>>
+  * receiver_id : UUID <<FK>>
+  * quantity : decimal
+  * status : reservation_status
+  * qr_token : varchar(64) <<U>>
+  * qr_expires_at : timestamptz
+  pickup_proof_url : text
+  pickup_proof_at : timestamptz
+  pickup_verification_type : pickup_verification_type
+  scanned_by : UUID
+  scanned_at : timestamptz
+  cancelled_at : timestamptz
+  cancellation_reason : text
+}
+
+' ── Delivery ───────────────────────────────────────────────────────
+entity deliveries {
+  * id : UUID <<PK>>
+  --
+  * reservation_id : UUID <<FK,U>>
+  shipper_id : UUID <<FK>>
+  * status : delivery_status
+  qc_photo_url : text
+  delivery_proof_url : text
+  pickup_location : geography(Point,4326)
+  delivery_location : geography(Point,4326)
+  distance_km : decimal
+  assigned_at : timestamptz
+  delivered_at : timestamptz
+}
+
+entity shipper_task_offers {
+  * id : UUID <<PK>>
+  --
+  * delivery_id : UUID <<FK>>
+  * shipper_id : UUID <<FK>>
+  * status : offer_status
+  * offered_at : timestamptz
+  responded_at : timestamptz
+  * expires_at : timestamptz
+  reject_reason : text
+  .. unique ..
+  (delivery_id, shipper_id)
+}
+
+' ── Kitchen Campaign ───────────────────────────────────────────────
+entity kitchen_campaigns {
+  * id : UUID <<PK>>
+  --
+  * charity_receiver_id : UUID <<FK>>
+  * title : varchar(255)
+  description : text
+  * kitchen_address : text
+  kitchen_location : geography(Point,4326)
+  * scheduled_date : date
+  * start_time : varchar(8)
+  * end_time : varchar(8)
+  * chef_slots_needed : smallint
+  * waiter_slots_needed : smallint
+  * shipper_slots_needed : smallint
+  * chef_slots_filled : smallint
+  * waiter_slots_filled : smallint
+  * shipper_slots_filled : smallint
+  * status : campaign_status
+  expected_servings : int
+  actual_servings : int
+  menu_items : jsonb
+  schedule_items : jsonb
+  supply_items : jsonb
+}
+
+entity campaign_shifts {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * label : varchar(100)
+  role : assignment_role
+  * start_time : varchar(8)
+  * end_time : varchar(8)
+  * slots_needed : smallint
+  * slots_filled : smallint
+}
+
+entity campaign_volunteer_assignments {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * volunteer_id : UUID <<FK>>
+  shift_id : UUID <<FK>>
+  * role : assignment_role
+  * status : assignment_status
+  check_in_time : timestamptz
+  check_out_time : timestamptz
+  ingredient_proof_url : text
+  cooked_proof_url : text
+  distribution_proof_url : text
+  points_awarded : smallint
+  .. unique ..
+  (campaign_id, volunteer_id, role)
+}
+
+entity campaign_donations {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * provider_id : UUID <<FK>>
+  * item_name : varchar(255)
+  quantity : varchar(100)
+  * status : varchar(20)
+  received_at : timestamptz
+}
+
+entity campaign_change_requests {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * requested_by_user_id : UUID
+  * status : campaign_change_status
+  scheduled_date : date
+  start_time : varchar(8)
+  end_time : varchar(8)
+  kitchen_address : text
+  lng : double
+  lat : double
+  reviewed_by_user_id : UUID
+  reviewed_at : timestamptz
+}
+
+' ── Recipes ────────────────────────────────────────────────────────
+entity recipes {
+  * id : UUID <<PK>>
+  --
+  * created_by_user_id : UUID <<FK>>
+  * name : varchar(255)
+  description : text
+  * servings : int
+  prep_minutes : int
+  cook_minutes : int
+  * difficulty : recipe_difficulty
+  instructions : text
+  image_urls : jsonb
+  * is_public : boolean
+  * times_used : int
+  deleted_at : timestamptz
+}
+
+entity recipe_ingredients {
+  * id : UUID <<PK>>
+  --
+  * recipe_id : UUID <<FK>>
+  * name : varchar(255)
+  quantity : varchar(100)
+  unit : varchar(30)
+  note : text
+}
+
+entity campaign_menu_items {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  recipe_id : UUID <<FK>>
+  custom_name : varchar(255)
+  planned_servings : int
+  * sort_order : int
+}
+
+' ── Kitchen Operations ─────────────────────────────────────────────
+entity kitchen_safety_logs {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * checked_by_volunteer_id : UUID <<FK>>
+  * check_type : safety_check_type
+  measured_value : varchar(50)
+  * result : safety_check_result
+  photo_url : text
+  * checked_at : timestamptz
+}
+
+entity meal_distributions {
+  * id : UUID <<PK>>
+  --
+  * campaign_id : UUID <<FK>>
+  * served_by_volunteer_id : UUID <<FK>>
+  round_label : varchar(100)
+  * servings_served : int
+  * people_served : int
+  * leftover_servings : int
+  location : geography(Point,4326)
+  photo_url : text
+  * distributed_at : timestamptz
+}
+
+entity meal_feedback {
+  * id : UUID <<PK>>
+  --
+  * distribution_id : UUID <<FK>>
+  * satisfaction : smallint
+  comment : text
+}
+
+' ── Trust, Gamification, Social ─────────────────────────────────────
+entity ratings {
+  * id : UUID <<PK>>
+  --
+  * reference_type : varchar(20)
+  * reference_id : UUID
+  * rater_id : UUID <<FK>>
+  * ratee_id : UUID <<FK>>
+  * score : smallint
+  comment : text
+  .. unique ..
+  (reference_type, reference_id, rater_id, ratee_id)
+}
+
+entity trust_score_history {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * delta : smallint
+  * reason : trust_score_reason
+  reference_type : varchar(20)
+  reference_id : UUID
+  * score_before : smallint
+  * score_after : smallint
+}
+
+entity dedication_points_history {
+  * id : UUID <<PK>>
+  --
+  * volunteer_id : UUID <<FK>>
+  * delta : int
+  * reason : varchar(100)
+  * points_before : int
+  * points_after : int
+}
+
+' ── Verification, Reports, System ──────────────────────────────────
+entity verification_requests {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * request_type : verification_request_type
+  documents : jsonb
+  * status : verification_status
+  reviewer_id : UUID
+  reviewer_notes : text
+}
+
+entity reports {
+  * id : UUID <<PK>>
+  --
+  * reporter_id : UUID <<FK>>
+  * target_type : report_target_type
+  * target_id : UUID
+  * reason : report_reason
+  description : text
+  * status : report_status
+  resolver_id : UUID <<FK>>
+  resolved_at : timestamptz
+}
+
+entity notifications {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * type : varchar(50)
+  * title : varchar(255)
+  * body : text
+  data : jsonb
+  * is_read : boolean
+  read_at : timestamptz
+}
+
+entity device_tokens {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * token : text <<U>>
+  platform : varchar(20)
+}
+
+entity esg_snapshots {
+  * id : UUID <<PK>>
+  --
+  * snapshot_date : date
+  provider_id : UUID <<FK>>
+  total_food_rescued_kg : decimal
+  total_co2_saved_kg : decimal
+  total_reservations : int
+  .. unique ..
+  (snapshot_date, provider_id)
+}
+
+entity audit_logs {
+  * id : bigint <<PK>>
+  --
+  actor_id : UUID <<FK>>
+  * action : varchar(100)
+  target_type : varchar(50)
+  target_id : UUID
+  payload : json
+}
+
+entity system_configs {
+  * id : int <<PK>>
+  --
+  * key : varchar(100) <<U>>
+  * value : json
+  description : text
+}
+
+' ── Relationships ──────────────────────────────────────────────────
+users ||--o| provider_profiles
+users ||--o| receiver_profiles
+users ||--o| volunteer_profiles
+users ||--o{ refresh_tokens
+users ||--o{ liability_waivers
+users ||--o{ trust_score_history
+users ||--o{ verification_requests
+users ||--o{ notifications
+users ||--o{ device_tokens
+users ||--o{ ratings : "rater"
+users ||--o{ ratings : "ratee"
+users ||--o{ reports : "reporter"
+users ||--o{ reports : "resolver"
+users ||--o{ recipes : "author"
+users ||--o{ audit_logs : "actor"
+
+volunteer_profiles ||--o{ volunteer_specializations
+volunteer_profiles ||--o{ deliveries : "shipper"
+volunteer_profiles ||--o{ shipper_task_offers : "shipper"
+volunteer_profiles ||--o{ campaign_volunteer_assignments
+volunteer_profiles ||--o{ dedication_points_history
+volunteer_profiles ||--o{ kitchen_safety_logs : "checked_by"
+volunteer_profiles ||--o{ meal_distributions : "served_by"
+
+provider_profiles ||--o{ food_listings
+provider_profiles ||--o{ campaign_donations
+provider_profiles ||--o{ esg_snapshots
+
+food_listings ||--o{ reservations
+receiver_profiles ||--o{ reservations
+reservations ||--o| deliveries
+deliveries ||--o{ shipper_task_offers
+
+receiver_profiles ||--o{ kitchen_campaigns
+kitchen_campaigns ||--o{ campaign_shifts
+kitchen_campaigns ||--o{ campaign_volunteer_assignments
+kitchen_campaigns ||--o{ campaign_donations
+kitchen_campaigns ||--o{ campaign_change_requests
+kitchen_campaigns ||--o{ campaign_menu_items
+kitchen_campaigns ||--o{ kitchen_safety_logs
+kitchen_campaigns ||--o{ meal_distributions
+campaign_shifts ||--o{ campaign_volunteer_assignments
+
+recipes ||--o{ recipe_ingredients
+recipes ||--o{ campaign_menu_items
+meal_distributions ||--o{ meal_feedback
+@enduml

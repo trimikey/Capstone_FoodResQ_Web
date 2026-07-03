@@ -10,6 +10,7 @@ import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
+import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
 
 const OFFER_EXPIRY_MINUTES = 2;
 const BROADCAST_RADIUS_M = 5000; // 5km
@@ -17,6 +18,7 @@ const MAX_OFFERS_PER_DELIVERY = 5;
 
 interface NearbyShipper {
   id: string;
+  user_id: string;
   distance_m: number;
 }
 
@@ -45,6 +47,7 @@ export class DeliveriesService {
     private prisma: PrismaService,
     private storage: StorageService,
     @InjectQueue('notification-push') private notifQueue: Queue,
+    private gateway: NotificationsGateway,
   ) {}
 
   /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
@@ -58,6 +61,7 @@ export class DeliveriesService {
     const shippers = await this.prisma.$queryRaw<NearbyShipper[]>(Prisma.sql`
       SELECT
         vp.id,
+        vp.user_id AS user_id,
         ST_Distance(
           vp.current_location::geography,
           ST_MakePoint(${pickupLng}, ${pickupLat})::geography
@@ -99,6 +103,11 @@ export class DeliveriesService {
         { shipperId: shipper.id, deliveryId, expiresAt },
         { delay: 0, removeOnComplete: true },
       );
+    }
+
+    // Realtime: bật popup nhận đơn ngay trên app shipper (không phải chờ poll 15s)
+    for (const shipper of shippers) {
+      this.gateway.emitToUser(shipper.user_id, 'delivery:offer', { deliveryId });
     }
   }
 

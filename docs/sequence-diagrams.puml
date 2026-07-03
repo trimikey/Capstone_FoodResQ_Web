@@ -1,0 +1,1241 @@
+' =====================================================================
+'  FoodResQ — Sequence Diagrams (PlantUML) — DETAILED DESIGN STYLE
+'  Capstone SP26SE088 | FPT University
+'  Stack: NestJS (BE) · Next.js/Expo (FE) · PostgreSQL + PostGIS · Redis · FCM
+'
+'  Quy ước layer (đúng kiến trúc NestJS + Prisma thực tế):
+'    Actor -> Frontend(Web/Mobile) -> Controller -> Service
+'           -> PrismaService -> PostgreSQL(+PostGIS)
+'    Các thành phần ngoài: Redlock(Redis), BullMQ, Firebase, FaceMatch,
+'    StorageService, NotificationsGateway(WebSocket), PushService(FCM).
+'
+'  Response wrapper: { success, data, meta? } | lỗi: { success:false, error }
+'  Mỗi block @startuml ... @enduml là MỘT diagram độc lập.
+' =====================================================================
+
+
+' =====================================================================
+' 1. ĐĂNG KÝ TÀI KHOẢN (REGISTER) — POST /api/v1/auth/register
+' =====================================================================
+@startuml 01-Auth-Register
+title Đăng ký tài khoản (Register)
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(Web/Mobile)" as FE
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+
+User -> FE : Điền form đăng ký
+FE -> Ctrl : POST /auth/register (RegisterDto)
+activate Ctrl
+Ctrl -> Svc : register(dto)
+activate Svc
+
+Svc -> Prisma : user.findUnique({ email })
+Prisma -> DB : SELECT * FROM users WHERE email = ?
+DB --> Prisma : row | null
+Prisma --> Svc : user | null
+alt email đã tồn tại
+    Svc --> Ctrl : throw ConflictException
+    Ctrl --> FE : HTTP 409 { success:false, error }
+    FE --> User : "Email đã tồn tại"
+end
+
+Svc -> Bcrypt : hash(password, 12)
+Bcrypt --> Svc : passwordHash
+
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : user.create(status='pending_verification')
+Prisma -> DB : INSERT INTO users
+alt role = receiver
+    Svc -> Prisma : receiverProfile.create()
+    Prisma -> DB : INSERT INTO receiver_profiles
+    Svc -> Prisma : $executeRaw (ST_MakePoint)
+    Prisma -> DB : UPDATE receiver_profiles SET location=ST_SetSRID(...)
+else role = provider
+    Svc -> Prisma : providerProfile.create() + $executeRaw
+    Prisma -> DB : INSERT INTO provider_profiles + set location
+else role = volunteer
+    Svc -> Prisma : volunteerProfile.create()
+    Prisma -> DB : INSERT INTO volunteer_profiles
+    Svc -> Prisma : volunteerSpecialization.create()
+    Prisma -> DB : INSERT INTO volunteer_specializations
+end
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+
+Svc -> Svc : issueTokens(user)
+note right of Svc
+  jwt.sign(accessToken, 15m)
+  jwt.sign(refreshToken, 30d)
+  bcrypt.hash(refreshToken)
+end note
+Svc -> Prisma : refreshToken.create(tokenHash, expiresAt)
+Prisma -> DB : INSERT INTO refresh_tokens
+
+Svc --> Ctrl : { accessToken, refreshToken, user }
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : Vào app / màn xác thực
+@enduml
+
+
+' =====================================================================
+' 2. ĐĂNG NHẬP (LOGIN) — POST /api/v1/auth/login
+' =====================================================================
+@startuml 02-Auth-Login
+title Đăng nhập (Login)
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(Web/Mobile)" as FE
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Nhập email + mật khẩu
+FE -> Ctrl : POST /auth/login (LoginDto, userAgent, ip)
+activate Ctrl
+Ctrl -> Svc : login(dto, deviceInfo, ip)
+activate Svc
+
+Svc -> Prisma : user.findUnique({ email, deletedAt:null })
+Prisma -> DB : SELECT * FROM users WHERE email=? AND deleted_at IS NULL
+DB --> Prisma : row | null
+Prisma --> Svc : user | null
+
+Svc -> Bcrypt : compare(password, passwordHash)
+Bcrypt --> Svc : true | false
+alt không tìm thấy / sai mật khẩu
+    Svc --> Ctrl : throw UnauthorizedException
+    Ctrl --> FE : HTTP 401 { success:false, error }
+    FE --> User : "Sai email hoặc mật khẩu"
+else user.status = banned
+    Svc --> Ctrl : throw UnauthorizedException
+    Ctrl --> FE : HTTP 401 { error: ACCOUNT_BANNED }
+    FE --> User : "Tài khoản bị khóa"
+end
+
+Svc -> Prisma : user.update({ lastLoginAt: now() })
+Prisma -> DB : UPDATE users SET last_login_at=NOW()
+Svc -> Svc : issueTokens(user, deviceInfo, ip)
+Svc -> Prisma : refreshToken.create(tokenHash)
+Prisma -> DB : INSERT INTO refresh_tokens
+
+Svc --> Ctrl : { accessToken, refreshToken, user }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : Đăng nhập thành công
+@enduml
+
+
+' =====================================================================
+' 3. ĐĂNG NHẬP GOOGLE — POST /api/v1/auth/google
+' =====================================================================
+@startuml 03-Auth-Google
+title Đăng nhập bằng Google (Firebase)
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(Web/Mobile)" as FE
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "Firebase Admin" as FB
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Bấm "Đăng nhập với Google"
+FE -> Ctrl : POST /auth/google { idToken }
+activate Ctrl
+Ctrl -> Svc : loginWithGoogle(idToken, deviceInfo, ip)
+activate Svc
+
+Svc -> FB : verifyIdToken(idToken)
+FB --> Svc : { email, name, picture, emailVerified }
+alt idToken sai / chưa verify email
+    Svc --> Ctrl : throw UnauthorizedException
+    Ctrl --> FE : HTTP 401
+end
+
+Svc -> Prisma : user.findUnique({ email })
+Prisma -> DB : SELECT * FROM users WHERE email=?
+DB --> Prisma : row | null
+Prisma --> Svc : user | null
+
+alt user chưa tồn tại
+    Svc -> Svc : randomPassword + bcrypt.hash
+    Svc -> Prisma : $transaction(user.create + receiverProfile.create)
+    Prisma -> DB : INSERT users(role=receiver, status=active)\nINSERT receiver_profiles
+else user bị ban
+    Svc --> Ctrl : throw UnauthorizedException
+    Ctrl --> FE : HTTP 401
+else user tồn tại
+    Svc -> Prisma : user.update({ avatarUrl?, lastLoginAt })
+    Prisma -> DB : UPDATE users
+end
+
+Svc -> Svc : issueTokens(user)
+Svc -> Prisma : refreshToken.create()
+Prisma -> DB : INSERT INTO refresh_tokens
+Svc --> Ctrl : { accessToken, refreshToken, user }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : Đăng nhập thành công
+@enduml
+
+
+' =====================================================================
+' 4. LÀM MỚI TOKEN (REFRESH + ROTATION) — POST /api/v1/auth/refresh
+' =====================================================================
+@startuml 04-Auth-Refresh
+title Làm mới Access Token (Refresh + Rotation)
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(axios interceptor)" as FE
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : (access token hết hạn 401)
+FE -> Ctrl : POST /auth/refresh { refreshToken }
+activate Ctrl
+Ctrl -> Svc : refresh(token, deviceInfo, ip)
+activate Svc
+
+Svc -> Prisma : refreshToken.findMany({ isRevoked:false, expiresAt>now })
+Prisma -> DB : SELECT * FROM refresh_tokens WHERE is_revoked=false AND expires_at>NOW()
+DB --> Prisma : activeTokens[]
+Prisma --> Svc : activeTokens[] (include user)
+
+loop mỗi token còn hiệu lực
+    Svc -> Bcrypt : compare(rawToken, tokenHash)
+    Bcrypt --> Svc : match?
+end
+alt không khớp token nào
+    Svc --> Ctrl : throw UnauthorizedException
+    Ctrl --> FE : HTTP 401
+    FE --> User : Buộc đăng nhập lại
+end
+
+Svc -> Prisma : refreshToken.update({ isRevoked:true, revokedAt })
+Prisma -> DB : UPDATE refresh_tokens (thu hồi token cũ)
+Svc -> Svc : issueTokens(user)
+Svc -> Prisma : refreshToken.create()
+Prisma -> DB : INSERT INTO refresh_tokens (token mới)
+Svc --> Ctrl : { accessToken, refreshToken, user }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : Tự động retry request
+@enduml
+
+
+' =====================================================================
+' 5. ĐẶT CHỖ THỰC PHẨM (CREATE RESERVATION) — luồng lõi
+'    POST /api/v1/reservations  (Role: RECEIVER)
+' =====================================================================
+@startuml 05-Reservation-Create
+title Đặt chỗ thực phẩm (Create Reservation)
+autonumber
+
+actor "Receiver" as User
+participant "Frontend\n(Web/Mobile)" as FE
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "SystemConfig" as Cfg
+participant "Redlock\n(Redis)" as Lock
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+queue "BullMQ\n(notification-push)" as MQ
+
+User -> FE : Bấm "Đặt chỗ"
+FE -> Ctrl : POST /reservations (CreateReservationDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+
+Svc -> Prisma : receiverProfile.findUnique({ userId })
+Prisma -> DB : SELECT * FROM receiver_profiles WHERE user_id=?
+DB --> Prisma : receiver
+Prisma --> Svc : receiver
+Svc -> Cfg : getNumber('MAX_RESERVATIONS_PER_DAY')
+Cfg --> Svc : maxPerDay
+alt reservationsToday >= maxPerDay
+    Svc --> Ctrl : throw BadRequestException
+    Ctrl --> FE : HTTP 400 (vượt giới hạn ngày)
+end
+
+Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
+activate Lock
+note over Svc, Lock : Khóa phân tán chống đặt trùng (race condition)
+
+Svc -> Prisma : $queryRaw (SELECT ... FOR validate)
+Prisma -> DB : SELECT quantity_remaining, status, max_per_reservation\nFROM food_listings WHERE id=? AND deleted_at IS NULL
+DB --> Prisma : listing
+Prisma --> Svc : listing
+alt không active / hết hàng / vượt max_per_reservation
+    Svc -> Lock : release()
+    Svc --> Ctrl : throw BadRequestException
+    Ctrl --> FE : HTTP 400
+end
+
+Svc -> Prisma : reservation.findFirst(confirmed|picked_up?)
+Prisma -> DB : SELECT FROM reservations WHERE listing_id=? AND receiver_id=?
+DB --> Prisma : existing | null
+alt đã có đơn đang xử lý
+    Svc -> Lock : release()
+    Svc --> Ctrl : throw ConflictException
+    Ctrl --> FE : HTTP 409
+end
+
+Svc -> Cfg : getNumber('QR_VALIDITY_MINUTES')
+Cfg --> Svc : qrMinutes
+
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : $executeRaw (giảm số lượng)
+Prisma -> DB : UPDATE food_listings SET quantity_remaining-=qty,\nstatus=CASE WHEN còn 0 THEN 'fully_reserved' END
+Svc -> Prisma : $queryRaw (tạo reservation)
+Prisma -> DB : INSERT INTO reservations\n(status='confirmed', qr_token=encode(gen_random_bytes(32)),\nqr_expires_at=NOW()+qrMinutes)
+Svc -> Prisma : receiverProfile.update(reservationsToday+=1)
+Prisma -> DB : UPDATE receiver_profiles
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+DB --> Prisma : { reservationId, qrToken }
+Prisma --> Svc : { reservationId, qrToken }
+
+Svc -> Lock : release() [finally]
+deactivate Lock
+
+opt dto.requestDelivery = true
+    Svc -> Svc : createDeliveryAsync(reservationId, listingId)
+    Svc -> Prisma : delivery.create(status='pending_assignment')
+    Prisma -> DB : INSERT INTO deliveries
+    Svc -> Prisma : $executeRaw (set location + ST_Distance)
+    Prisma -> DB : UPDATE deliveries SET pickup/delivery_location, distance_km
+    Svc -> MQ : add('shipper-broadcast', { deliveryId, pickupLng, pickupLat })
+end
+
+Svc --> Ctrl : { reservationId, qrToken, qrExpiresAt }
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : Hiển thị mã QR
+@enduml
+
+
+' =====================================================================
+' 6. QUÉT QR & XÁC NHẬN LẤY HÀNG — POST /api/v1/reservations/scan
+'    (Role: PROVIDER | VOLUNTEER)
+' =====================================================================
+@startuml 06-Reservation-ScanQR
+title Quét mã QR lấy hàng (Provider scan)
+autonumber
+
+actor "Provider" as User
+participant "Frontend\n(QR Scanner)" as FE
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+participant "NotificationsService" as Notif
+participant "NotificationsGateway\n(WebSocket)" as WS
+participant "PushService\n(FCM)" as Push
+
+User -> FE : Quét QR của Receiver
+FE -> Ctrl : POST /reservations/scan { qrToken }
+activate Ctrl
+Ctrl -> Svc : scanQr(qrToken, scannerUserId)
+activate Svc
+
+Svc -> Prisma : reservation.findUnique({ qrToken }) include listing, receiver
+Prisma -> DB : SELECT ... FROM reservations JOIN food_listings JOIN receiver_profiles
+DB --> Prisma : reservation
+Prisma --> Svc : reservation
+alt không tồn tại / status != confirmed
+    Svc --> Ctrl : throw NotFound / BadRequest
+    Ctrl --> FE : HTTP 404 / 400
+else QR hết hạn
+    Svc -> Svc : expire(reservationId) [async]
+    Svc --> Ctrl : throw BadRequestException
+    Ctrl --> FE : HTTP 400 (QR hết hạn)
+end
+
+Svc -> Prisma : providerProfile.findUnique({ userId })
+Prisma -> DB : SELECT * FROM provider_profiles WHERE user_id=?
+DB --> Prisma : provider
+alt provider != chủ listing
+    Svc --> Ctrl : throw ForbiddenException
+    Ctrl --> FE : HTTP 403
+end
+
+Svc -> Prisma : reservation.update(status='picked_up', scannedBy, scannedAt)
+Prisma -> DB : UPDATE reservations
+
+Svc -> Notif : notify(receiverUserId, "Đã xác nhận lấy hàng")
+activate Notif
+Notif -> Prisma : notification.create()
+Prisma -> DB : INSERT INTO notifications
+Notif -> WS : emitToUser(userId, 'notification:new')
+Notif -> Push : sendToUser(userId, ...) [async]
+deactivate Notif
+
+Svc --> Ctrl : { id, status:'picked_up', receiver{...} }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : Hiển thị thông tin người nhận
+@enduml
+
+
+' =====================================================================
+' 7. XÁC THỰC KHUÔN MẶT & HOÀN TẤT NHẬN HÀNG
+'    POST /api/v1/reservations/:id/pickup-proof  (Role: RECEIVER)
+' =====================================================================
+@startuml 07-Reservation-PickupProof
+title Xác thực khuôn mặt & hoàn tất nhận hàng
+autonumber
+
+actor "Receiver" as User
+participant "Frontend\n(Camera)" as FE
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "FaceMatchService" as Face
+participant "StorageService" as Store
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Chụp ảnh xác thực
+FE -> Ctrl : POST /reservations/:id/pickup-proof (photo, verificationType)
+activate Ctrl
+note right of Ctrl : Validate: ảnh <= 5MB, jpeg/png/webp
+Ctrl -> Svc : submitPickupProof(id, userId, type, photo)
+activate Svc
+
+Svc -> Prisma : reservation.findUnique({ id }) include receiver
+Prisma -> DB : SELECT ... FROM reservations JOIN receiver_profiles
+DB --> Prisma : reservation
+Prisma --> Svc : reservation
+alt không phải chủ đơn / status != picked_up
+    Svc --> Ctrl : throw Forbidden / BadRequest
+    Ctrl --> FE : HTTP 403 / 400
+end
+alt chưa enroll khuôn mặt
+    Svc --> Ctrl : throw BadRequest (FACE_NOT_ENROLLED)
+    Ctrl --> FE : HTTP 400
+end
+
+Svc -> Face : getFaceDescriptor(photo)
+Face --> Svc : liveDescriptor
+Svc -> Face : compare(enrolled, live)
+Face --> Svc : { matched, distance }
+alt không khớp khuôn mặt
+    Svc --> Ctrl : throw ForbiddenException (Face mismatch)
+    Ctrl --> FE : HTTP 403
+end
+
+Svc -> Store : saveImage(photo, 'pickup-proofs')
+Store --> Svc : proofUrl
+Svc -> Prisma : reservation.update(status='completed', pickupProofUrl, pickupProofAt)
+Prisma -> DB : UPDATE reservations
+Svc -> Svc : applyTrustDelta(userId, +2, 'successful_rescue') [async]
+
+Svc --> Ctrl : { status:'completed', proofUrl, matchDistance }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : "Nhận hàng thành công"
+@enduml
+
+
+' =====================================================================
+' 8. HỦY ĐẶT CHỖ — PATCH /api/v1/reservations/:id/cancel (RECEIVER)
+' =====================================================================
+@startuml 08-Reservation-Cancel
+title Hủy đặt chỗ (Cancel Reservation)
+autonumber
+
+actor "Receiver" as User
+participant "Frontend" as FE
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Bấm "Hủy đơn"
+FE -> Ctrl : PATCH /reservations/:id/cancel { reason }
+activate Ctrl
+Ctrl -> Svc : cancel(id, userId, reason)
+activate Svc
+
+Svc -> Prisma : reservation.findUnique({ id }) include receiver
+Prisma -> DB : SELECT ... FROM reservations
+DB --> Prisma : reservation
+Prisma --> Svc : reservation
+alt không phải chủ đơn / status != confirmed
+    Svc --> Ctrl : throw Forbidden / BadRequest
+    Ctrl --> FE : HTTP 403 / 400
+end
+
+Svc -> Svc : isLate = (now - createdAt) < 30 phút
+
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : reservation.update(status='cancelled', cancelledAt)
+Prisma -> DB : UPDATE reservations
+Svc -> Prisma : $executeRaw (hoàn số lượng)
+Prisma -> DB : UPDATE food_listings SET quantity_remaining+=qty, status='active'
+Svc -> Prisma : receiverProfile.update(reservationsToday-=1)
+Prisma -> DB : UPDATE receiver_profiles
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+
+opt hủy trễ (< 30 phút)
+    Svc -> Svc : applyTrustDelta(userId, -10, 'late_cancellation') [async]
+end
+
+Svc --> Ctrl : { message: 'cancelled' }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : "Đã hủy đơn"
+@enduml
+
+
+' =====================================================================
+' 9. CẬP NHẬT ĐIỂM UY TÍN (applyTrustDelta) — helper nội bộ
+' =====================================================================
+@startuml 09-TrustScore-Delta
+title Cập nhật điểm uy tín (applyTrustDelta)
+autonumber
+
+participant "ReservationsService" as Svc
+participant "SystemConfig" as Cfg
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+[-> Svc : applyTrustDelta(userId, reason, delta)
+activate Svc
+Svc -> Prisma : user.findUnique({ id })
+Prisma -> DB : SELECT trust_score, status FROM users WHERE id=?
+DB --> Prisma : user
+Prisma --> Svc : user
+Svc -> Svc : newScore = clamp(trustScore + delta, 0, 100)
+Svc -> Cfg : getNumber('TRUST_BAN_THRESHOLD' / 'TRUST_RESTRICT_THRESHOLD')
+Cfg --> Svc : ban=30, restrict=60
+
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : user.update(trustScore, status)
+Prisma -> DB : UPDATE users SET trust_score=?, \nstatus=(banned/suspended/giữ nguyên)
+Svc -> Prisma : trustScoreHistory.create()
+Prisma -> DB : INSERT INTO trust_score_history (scoreBefore, scoreAfter)
+alt newScore <= banThreshold
+    Svc -> Prisma : refreshToken.updateMany(isRevoked=true)
+    Prisma -> DB : UPDATE refresh_tokens (buộc đăng xuất)
+end
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+deactivate Svc
+@enduml
+
+
+' =====================================================================
+' 10. PHÂN CÔNG SHIPPER (BROADCAST + ACCEPT)
+' =====================================================================
+@startuml 10-Delivery-ShipperOffer
+title Phân công shipper (Broadcast + Accept race)
+autonumber
+
+queue "BullMQ" as MQ
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+participant "PushService\n(FCM)" as Push
+actor "Shipper" as Shipper
+participant "Frontend" as FE
+participant "DeliveriesController" as Ctrl
+
+== Broadcast tới tối đa 5 shipper gần nhất ==
+MQ -> Svc : broadcastToNearbyShippers(deliveryId, pickupLng, pickupLat)
+activate Svc
+Svc -> Prisma : $queryRaw (tìm shipper gần)
+Prisma -> DB : SELECT vp.id, ST_Distance(...)\nFROM volunteer_profiles vp JOIN volunteer_specializations\nWHERE is_available=true AND ST_DWithin(current_location, point, 5000)\nORDER BY distance LIMIT 5
+DB --> Prisma : nearbyShippers[]
+Prisma --> Svc : nearbyShippers[]
+Svc -> Svc : expiresAt = now + 2 phút
+Svc -> Prisma : $transaction(INSERT 5 offers)
+Prisma -> DB : INSERT INTO shipper_task_offers\n(status='pending', expires_at) ON CONFLICT DO NOTHING
+loop mỗi shipper
+    Svc -> Push : queue 'task-offer' { shipperId, deliveryId, expiresAt }
+end
+deactivate Svc
+Push -> Shipper : Push notification "Có đơn mới"
+
+== Shipper chấp nhận (ai nhanh nhất thắng) ==
+Shipper -> FE : Bấm "Nhận đơn"
+FE -> Ctrl : POST /deliveries/:id/accept
+activate Ctrl
+Ctrl -> Svc : acceptOffer(deliveryId, userId)
+activate Svc
+Svc -> Prisma : volunteerProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM volunteer_profiles
+Svc -> Prisma : shipperTaskOffer.findUnique(deliveryId_shipperId)
+Prisma -> DB : SELECT FROM shipper_task_offers
+DB --> Prisma : offer
+alt offer != pending / đã hết hạn
+    Svc --> Ctrl : throw BadRequestException
+    Ctrl --> FE : HTTP 400 (Đã có người nhận / hết hạn)
+end
+Svc -> Prisma : delivery.findUnique({ id })
+Prisma -> DB : SELECT FROM deliveries
+alt status != pending_assignment
+    Svc --> Ctrl : throw BadRequestException
+    Ctrl --> FE : HTTP 400
+end
+
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : offer.update(status='accepted')
+Prisma -> DB : UPDATE shipper_task_offers (offer này)
+Svc -> Prisma : offers khác -> 'expired'
+Prisma -> DB : UPDATE shipper_task_offers (các offer còn lại)
+Svc -> Prisma : delivery.update(shipperId, status='assigned')
+Prisma -> DB : UPDATE deliveries
+Svc -> Prisma : volunteerProfile.update(isAvailable=false)
+Prisma -> DB : UPDATE volunteer_profiles
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+Svc --> Ctrl : delivery (đã gán)
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> Shipper : "Nhận đơn thành công"
+@enduml
+
+
+' =====================================================================
+' 11. SHIPPER CẬP NHẬT VỊ TRÍ REAL-TIME
+'     PATCH /api/v1/volunteers/me/location
+' =====================================================================
+@startuml 11-Volunteer-LiveLocation
+title Shipper cập nhật vị trí real-time (Live Tracking)
+autonumber
+
+actor "Shipper" as Shipper
+participant "Frontend\n(GPS)" as FE
+participant "VolunteersController" as Ctrl
+participant "VolunteersService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+participant "NotificationsGateway\n(WebSocket)" as WS
+actor "Receiver" as Receiver
+
+Shipper -> FE : (GPS thay đổi)
+FE -> Ctrl : PATCH /volunteers/me/location { lng, lat }
+activate Ctrl
+Ctrl -> Svc : updateLocation(userId, lng, lat)
+activate Svc
+Svc -> Prisma : volunteerProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM volunteer_profiles
+Svc -> Prisma : $executeRaw (cập nhật vị trí)
+Prisma -> DB : UPDATE volunteer_profiles\nSET current_location=ST_SetSRID(ST_MakePoint(lng,lat),4326)
+Svc -> Prisma : delivery.findFirst(active)
+Prisma -> DB : SELECT FROM deliveries WHERE shipper_id=?\nAND status IN ('assigned','in_transit',...)
+DB --> Prisma : activeDelivery (receiver.userId)
+Prisma --> Svc : activeDelivery
+opt có đơn đang giao
+    Svc -> WS : emitToUser(receiverUserId, 'delivery:location', { lng, lat })
+    WS -> Receiver : delivery:location (cập nhật bản đồ)
+end
+Svc --> Ctrl : { ok: true }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+@enduml
+
+
+' =====================================================================
+' 12. PROVIDER TẠO TIN ĐĂNG — POST /api/v1/listings (PROVIDER)
+' =====================================================================
+@startuml 12-Listing-Create
+title Provider tạo tin đăng thực phẩm
+autonumber
+
+actor "Provider" as User
+participant "Frontend" as FE
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+
+User -> FE : Điền form tin đăng
+FE -> Ctrl : POST /listings (CreateListingDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Prisma : providerProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM provider_profiles
+DB --> Prisma : provider
+Prisma --> Svc : provider
+alt pickupEndTime <= pickupStartTime
+    Svc --> Ctrl : throw BadRequest (sai khung giờ)
+    Ctrl --> FE : HTTP 400
+else expiryTime < pickupEndTime
+    Svc --> Ctrl : throw BadRequest (sai hạn dùng)
+    Ctrl --> FE : HTTP 400
+end
+Svc -> Prisma : $executeRaw (INSERT listing)
+Prisma -> DB : INSERT INTO food_listings\n(quantity_remaining=quantity_total,\npickup_location=ST_MakePoint(lng,lat), status='draft')
+Svc -> Svc : findOne(id)
+Svc -> Prisma : $queryRaw (SELECT detail)
+Prisma -> DB : SELECT ... JOIN provider_profiles
+DB --> Prisma : listing detail
+Svc --> Ctrl : listing detail
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Tạo tin nháp thành công"
+@enduml
+
+
+' =====================================================================
+' 13. TÌM KIẾM TIN ĐĂNG GẦN ĐÂY (PostGIS) — GET /api/v1/listings
+' =====================================================================
+@startuml 13-Listing-NearbySearch
+title Tìm kiếm thực phẩm gần đây (PostGIS ST_DWithin)
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(Map)" as FE
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+
+User -> FE : Mở bản đồ / tìm kiếm
+FE -> Ctrl : GET /listings?lat&lng&radiusKm&category&search
+activate Ctrl
+Ctrl -> Svc : findNearby(query)
+activate Svc
+Svc -> Svc : offset=(page-1)*limit; radiusM=radiusKm*1000
+alt có lat & lng (tìm theo vị trí)
+    Svc -> Prisma : $queryRaw (spatial search)
+    Prisma -> DB : SELECT *, ST_Distance(pickup_location, point) AS distance_m\nFROM food_listings JOIN provider_profiles\nWHERE status='active' AND deleted_at IS NULL\nAND pickup_end_time>NOW() AND quantity_remaining>0\nAND ST_DWithin(pickup_location, point, radiusM)\nORDER BY distance_m LIMIT/OFFSET
+else không có vị trí
+    Svc -> Prisma : $queryRaw (latest active)
+    Prisma -> DB : SELECT ... ORDER BY created_at DESC
+end
+DB --> Prisma : rows[]
+Prisma --> Svc : rows[]
+Svc -> Svc : map -> DTO (parse số, ảnh)
+Svc --> Ctrl : { data, meta }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data, meta }
+deactivate Ctrl
+FE --> User : Hiển thị danh sách / pin bản đồ
+@enduml
+
+
+' =====================================================================
+' 14. CHARITY TẠO CHIẾN DỊCH BẾP ĂN — POST /api/v1/campaigns
+' =====================================================================
+@startuml 14-Campaign-Create
+title Tạo chiến dịch bếp ăn từ thiện (Kitchen Campaign)
+autonumber
+
+actor "Charity Org" as User
+participant "Frontend" as FE
+participant "CampaignsController" as Ctrl
+participant "CampaignsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+participant "NotificationsService" as Notif
+
+User -> FE : Tạo chiến dịch
+FE -> Ctrl : POST /campaigns (CreateCampaignDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Prisma : receiverProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM receiver_profiles
+DB --> Prisma : receiver
+Prisma --> Svc : receiver
+alt isCharityOrg != true
+    Svc --> Ctrl : throw ForbiddenException
+    Ctrl --> FE : HTTP 403
+end
+Svc -> Prisma : $executeRaw (INSERT campaign)
+Prisma -> DB : INSERT INTO kitchen_campaigns\n(kitchen_location=ST_MakePoint(lng,lat),\nchef/waiter/shipper_slots_needed,\nmenu_items/schedule_items/supply_items JSONB, status='draft')
+Svc -> Prisma : user.findMany(role='admin')
+Prisma -> DB : SELECT FROM users WHERE role='admin'
+DB --> Prisma : admins[]
+loop mỗi admin
+    Svc -> Notif : notify(admin, "Chiến dịch mới cần duyệt")
+end
+Svc -> Svc : findOne(campaignId)
+Svc --> Ctrl : campaign
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Đã tạo, chờ admin duyệt"
+@enduml
+
+
+' =====================================================================
+' 15. VOLUNTEER ỨNG TUYỂN CHIẾN DỊCH — POST /api/v1/campaigns/:id/apply
+' =====================================================================
+@startuml 15-Campaign-Apply
+title Volunteer ứng tuyển chiến dịch (chef/waiter/shipper)
+autonumber
+
+actor "Volunteer" as User
+participant "Frontend" as FE
+participant "CampaignsController" as Ctrl
+participant "CampaignsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Bấm "Ứng tuyển" (chọn role)
+FE -> Ctrl : POST /campaigns/:id/apply { role }
+activate Ctrl
+Ctrl -> Svc : apply(campaignId, userId, dto)
+activate Svc
+Svc -> Prisma : volunteerProfile.findUnique(include specializations)
+Prisma -> DB : SELECT FROM volunteer_profiles JOIN volunteer_specializations
+DB --> Prisma : volunteer
+Prisma --> Svc : volunteer
+alt user banned/suspended
+    Svc --> Ctrl : throw ForbiddenException
+    Ctrl --> FE : HTTP 403
+end
+alt không có specialization = role
+    Svc --> Ctrl : throw ForbiddenException (chưa xác minh kỹ năng)
+    Ctrl --> FE : HTTP 403
+end
+Svc -> Prisma : kitchenCampaign.findUnique({ id })
+Prisma -> DB : SELECT FROM kitchen_campaigns
+DB --> Prisma : campaign
+alt slot[role] đã đầy (filled >= needed)
+    Svc --> Ctrl : throw BadRequest (hết slot)
+    Ctrl --> FE : HTTP 400
+end
+Svc -> Prisma : campaignVolunteerAssignment.findUnique(campaignId_volunteerId_role)
+Prisma -> DB : SELECT FROM campaign_volunteer_assignment
+alt đã ứng tuyển rồi
+    Svc --> Ctrl : throw ConflictException
+    Ctrl --> FE : HTTP 409
+end
+Svc -> Prisma : $transaction(BEGIN)
+Prisma -> DB : BEGIN
+Svc -> Prisma : assignment.create(status='assigned')
+Prisma -> DB : INSERT INTO campaign_volunteer_assignment
+Svc -> Prisma : campaign.update([role]SlotsFilled+=1)
+Prisma -> DB : UPDATE kitchen_campaigns
+Svc -> Prisma : $transaction(COMMIT)
+Prisma -> DB : COMMIT
+Svc --> Ctrl : { message: 'đã ứng tuyển' }
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Ứng tuyển thành công"
+@enduml
+
+
+' =====================================================================
+' 16. VOLUNTEER TIẾN TRÌNH NHIỆM VỤ + CỘNG ĐIỂM
+'     POST /api/v1/campaigns/assignments/:id/advance
+'     assigned -> checked_in -> in_progress -> completed
+' =====================================================================
+@startuml 16-Campaign-AdvanceTask
+title Volunteer tiến trình nhiệm vụ + cộng điểm cống hiến
+autonumber
+
+actor "Volunteer" as User
+participant "Frontend\n(Camera)" as FE
+participant "CampaignsController" as Ctrl
+participant "CampaignsService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Bấm "Tiến trình" (+ ảnh minh chứng)
+FE -> Ctrl : POST /campaigns/assignments/:id/advance (photo?)
+activate Ctrl
+Ctrl -> Svc : advance(assignmentId, userId, photo)
+activate Svc
+opt có ảnh minh chứng
+    Svc -> Store : saveImage(photo, 'campaign-proofs')
+    Store --> Svc : proofUrl
+end
+Svc -> Prisma : volunteerProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM volunteer_profiles
+Svc -> Prisma : campaignVolunteerAssignment.findUnique({ id })
+Prisma -> DB : SELECT FROM campaign_volunteer_assignment
+DB --> Prisma : assignment
+Prisma --> Svc : assignment
+alt assignment.volunteerId != volunteer.id
+    Svc --> Ctrl : throw ForbiddenException
+    Ctrl --> FE : HTTP 403
+end
+Svc -> Svc : next = ASSIGN_NEXT[current]
+alt assigned -> checked_in
+    Svc -> Prisma : update(checkInTime=NOW())
+    Prisma -> DB : UPDATE campaign_volunteer_assignment
+else checked_in -> in_progress
+    Svc -> Prisma : update(ingredientProofUrl, ingredientProofAt)
+    Prisma -> DB : UPDATE campaign_volunteer_assignment
+else in_progress -> completed
+    note right of Svc : Điểm theo role:\nchef=15, waiter=10, shipper=10
+    Svc -> Prisma : $transaction(BEGIN)
+    Prisma -> DB : BEGIN
+    Svc -> Prisma : assignment.update(checkOutTime, cooked/distributionProofUrl)
+    Prisma -> DB : UPDATE campaign_volunteer_assignment
+    Svc -> Prisma : volunteerProfile.dedicationPoints += points
+    Prisma -> DB : UPDATE volunteer_profiles
+    Svc -> Prisma : dedicationPointsHistory.create()
+    Prisma -> DB : INSERT INTO dedication_points_history
+    Svc -> Prisma : $transaction(COMMIT)
+    Prisma -> DB : COMMIT
+end
+Svc --> Ctrl : { status: next }
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> User : Cập nhật trạng thái
+@enduml
+
+
+' =====================================================================
+' 17. PROVIDER QUYÊN GÓP & CHARITY XÁC NHẬN
+'     POST /api/v1/campaigns/:id/donations
+' =====================================================================
+@startuml 17-Campaign-Donation
+title Provider quyên góp & Charity xác nhận
+autonumber
+
+actor "Provider" as Prov
+participant "Frontend" as FE
+participant "CampaignsController" as Ctrl
+participant "CampaignsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+participant "NotificationsService" as Notif
+actor "Charity Org" as Charity
+
+== Cam kết quyên góp ==
+Prov -> FE : Nhập món + số lượng
+FE -> Ctrl : POST /campaigns/:id/donations (PledgeDto)
+activate Ctrl
+Ctrl -> Svc : pledge(campaignId, userId, dto)
+activate Svc
+Svc -> Prisma : providerProfile.findUnique({ userId })
+Prisma -> DB : SELECT FROM provider_profiles
+Svc -> Prisma : kitchenCampaign.findUnique(include charity.userId)
+Prisma -> DB : SELECT FROM kitchen_campaigns
+DB --> Prisma : campaign
+alt status không phải open/in_progress
+    Svc --> Ctrl : throw BadRequest
+    Ctrl --> FE : HTTP 400
+end
+Svc -> Prisma : campaignDonation.create(status='pledged')
+Prisma -> DB : INSERT INTO campaign_donation
+Svc -> Notif : notify(charityUserId, "Có quyên góp mới")
+Svc --> Ctrl : campaign detail
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> Prov : "Đã gửi cam kết"
+
+== Charity xác nhận đã nhận ==
+Charity -> FE : Bấm "Xác nhận đã nhận"
+FE -> Ctrl : PATCH /campaigns/donations/:id/confirm
+activate Ctrl
+Ctrl -> Svc : confirmDonation(donationId, userId)
+activate Svc
+Svc -> Prisma : donation + verify charity sở hữu campaign
+Prisma -> DB : SELECT FROM campaign_donation JOIN kitchen_campaigns
+Svc -> Prisma : campaignDonation.update(status='received', receivedAt)
+Prisma -> DB : UPDATE campaign_donation
+Svc -> Notif : notify(providerUserId, "Đã nhận quyên góp")
+Svc --> Ctrl : ok
+deactivate Svc
+Ctrl --> FE : HTTP 200 { success, data }
+deactivate Ctrl
+FE --> Charity : "Đã xác nhận"
+@enduml
+
+
+' =====================================================================
+' 18. NHẬT KÝ AN TOÀN THỰC PHẨM (HACCP-LITE)
+'     POST /api/v1/campaigns/:id/safety-logs  (chef)
+' =====================================================================
+@startuml 18-Kitchen-SafetyLog
+title Đầu bếp ghi nhật ký an toàn thực phẩm (HACCP-lite)
+autonumber
+
+actor "Chef" as User
+participant "Frontend\n(Camera)" as FE
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+participant "NotificationsService" as Notif
+
+User -> FE : Nhập kết quả kiểm tra (+ ảnh)
+FE -> Ctrl : POST /campaigns/:id/safety-logs (dto, photo?)
+activate Ctrl
+Ctrl -> Svc : createSafetyLog(campaignId, userId, dto, photo)
+activate Svc
+opt có ảnh
+    Svc -> Store : saveImage(photo, 'campaign-proofs')
+    Store --> Svc : photoUrl
+end
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'chef')
+Svc -> Prisma : kitchenCampaign.findUnique(include charity.userId)
+Prisma -> DB : SELECT FROM kitchen_campaigns
+DB --> Prisma : campaign
+alt status không phải open/in_progress
+    Svc --> Ctrl : throw BadRequest
+    Ctrl --> FE : HTTP 400
+end
+Svc -> Prisma : kitchenSafetyLog.create(result, photoUrl, checkedAt=NOW())
+Prisma -> DB : INSERT INTO kitchen_safety_log
+opt result = warning | fail
+    Svc -> Notif : notify(charityUserId, "Cảnh báo an toàn TP")
+end
+Svc --> Ctrl : log
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Đã lưu nhật ký"
+@enduml
+
+
+' =====================================================================
+' 19. WAITER PHÂN PHÁT SUẤT ĂN + PHẢN HỒI
+'     POST /api/v1/campaigns/:id/distributions  (waiter)
+' =====================================================================
+@startuml 19-Kitchen-MealDistribution
+title Waiter phân phát suất ăn + ghi nhận phản hồi
+autonumber
+
+actor "Waiter" as User
+participant "Frontend\n(Camera/GPS)" as FE
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Prisma
+database "PostgreSQL\n(+PostGIS)" as DB
+
+User -> FE : Nhập số suất + người nhận (+ ảnh, vị trí)
+FE -> Ctrl : POST /campaigns/:id/distributions (dto, photo?)
+activate Ctrl
+Ctrl -> Svc : createDistribution(campaignId, userId, dto, photo)
+activate Svc
+opt có ảnh
+    Svc -> Store : saveImage(photo, 'campaign-proofs')
+    Store --> Svc : photoUrl
+end
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'waiter')
+Svc -> Prisma : kitchenCampaign.findUnique({ id })
+Prisma -> DB : SELECT FROM kitchen_campaigns
+DB --> Prisma : campaign
+alt status không phải open/in_progress/completed
+    Svc --> Ctrl : throw BadRequest
+    Ctrl --> FE : HTTP 400
+end
+Svc -> Prisma : mealDistribution.create(servings, people, distributedAt=NOW())
+Prisma -> DB : INSERT INTO meal_distribution
+opt có lng/lat
+    Svc -> Prisma : $executeRaw (set location)
+    Prisma -> DB : UPDATE meal_distribution SET location=ST_MakePoint(lng,lat)
+end
+Svc --> Ctrl : distribution
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Đã ghi nhận"
+
+note over FE, DB
+  Người nhận phản hồi:
+  POST /campaigns/distributions/:distId/feedback
+  -> mealFeedback.create(satisfaction 1-5, comment)
+end note
+@enduml
+
+
+' =====================================================================
+' 20. CHEF TẠO CÔNG THỨC NẤU ĂN — POST /api/v1/recipes
+' =====================================================================
+@startuml 20-Recipe-Create
+title Tạo công thức nấu ăn (Recipe + Ingredients)
+autonumber
+
+actor "Chef / Admin" as User
+participant "Frontend" as FE
+participant "RecipesController" as Ctrl
+participant "RecipesService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+User -> FE : Điền công thức + nguyên liệu
+FE -> Ctrl : POST /recipes (CreateRecipeDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Svc : assertCanAuthor(userId)
+Svc -> Prisma : user.findUnique(role=admin OR volunteer+chef)
+Prisma -> DB : SELECT FROM users JOIN volunteer_specializations
+DB --> Prisma : user
+Prisma --> Svc : user
+alt không đủ quyền
+    Svc --> Ctrl : throw ForbiddenException
+    Ctrl --> FE : HTTP 403
+end
+Svc -> Prisma : recipe.create(nested recipeIngredient[])
+Prisma -> DB : INSERT INTO recipe + INSERT INTO recipe_ingredient (nhiều)
+DB --> Prisma : recipe + ingredients
+Prisma --> Svc : recipe
+Svc --> Ctrl : recipe
+deactivate Svc
+Ctrl --> FE : HTTP 201 { success, data }
+deactivate Ctrl
+FE --> User : "Tạo công thức thành công"
+
+note over FE, DB
+  Liên kết vào thực đơn chiến dịch:
+  POST /campaigns/:id/menu-items { recipeId }
+  -> campaignMenuItem.create + recipe.timesUsed += 1
+end note
+@enduml
+
+
+' =====================================================================
+' 21. GỬI THÔNG BÁO HỢP NHẤT (DB + WebSocket + FCM)
+' =====================================================================
+@startuml 21-Notifications-Unified
+title Gửi thông báo hợp nhất (DB + WebSocket + FCM)
+autonumber
+
+participant "Caller\n(any service)" as Caller
+participant "NotificationsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+participant "NotificationsGateway\n(Socket.IO)" as WS
+participant "PushService" as Push
+participant "Firebase FCM" as FCM
+actor "Thiết bị người dùng" as Dev
+
+Caller -> Svc : notify(userId, { type, title, body, data })
+activate Svc
+Svc -> Prisma : notification.create()
+Prisma -> DB : INSERT INTO notifications
+Svc -> WS : emitToUser(userId, 'notification:new', notif)
+WS -> Dev : (nếu online) realtime event
+Svc -> Push : sendToUser(userId, ...) [async, void]
+activate Push
+Push -> Prisma : deviceToken.findMany({ userId })
+Prisma -> DB : SELECT token FROM device_token WHERE user_id=?
+DB --> Prisma : tokens[]
+Prisma --> Push : tokens[]
+alt không có token
+    Push --> Svc : return (no-op)
+end
+Push -> FCM : sendEachForMulticast(tokens, notification, data)
+FCM -> Dev : Push notification
+FCM --> Push : responses[]
+opt có token lỗi
+    Push -> Prisma : deviceToken.deleteMany(invalid)
+    Prisma -> DB : DELETE FROM device_token WHERE token IN (...)
+end
+deactivate Push
+Svc --> Caller : notif
+deactivate Svc
+@enduml
+
+
+' =====================================================================
+' 22. KẾT NỐI WEBSOCKET + XÁC THỰC JWT
+' =====================================================================
+@startuml 22-WebSocket-Connect
+title Kết nối WebSocket + xác thực JWT
+autonumber
+
+actor "Người dùng" as User
+participant "Frontend\n(socket.io-client)" as FE
+participant "NotificationsGateway" as GW
+participant "JWT" as JWT
+
+User -> FE : Đăng nhập thành công
+FE -> GW : connect (auth.token / Authorization header)
+activate GW
+alt thiếu token
+    GW --> FE : disconnect()
+end
+GW -> JWT : verify(token, JWT_SECRET)
+alt token hợp lệ
+    JWT --> GW : { sub: userId }
+    GW -> GW : socket.join('user:' + userId)
+    GW --> FE : connected
+else token sai
+    GW --> FE : disconnect()
+end
+deactivate GW
+
+note over GW
+  emitToUser(userId, event, data)
+  => server.to('user:'+userId).emit(event, data)
+  Events: 'notification:new', 'delivery:location'
+end note
+@enduml
+
+
+' =====================================================================
+' 23. CRON: HẾT HẠN ĐƠN KHÔNG ĐẾN LẤY (EXPIRE NO-SHOWS)
+' =====================================================================
+@startuml 23-Cron-ExpireNoShows
+title Cron: xử lý đơn quá hạn (no-show, phạt điểm)
+autonumber
+
+participant "Cron Scheduler" as Cron
+participant "ReservationsService" as Svc
+participant "PrismaService" as Prisma
+database "PostgreSQL" as DB
+
+Cron -> Svc : expireNoShows()
+activate Svc
+Svc -> Prisma : reservation.findMany(confirmed, qrExpiresAt<now, take 200)
+Prisma -> DB : SELECT FROM reservations\nWHERE status='confirmed' AND qr_expires_at<NOW() LIMIT 200
+DB --> Prisma : overdue[]
+Prisma --> Svc : overdue[]
+loop mỗi đơn quá hạn
+    Svc -> Prisma : $transaction(BEGIN)
+    Prisma -> DB : BEGIN
+    Svc -> Prisma : reservation.update(status='no_show')
+    Prisma -> DB : UPDATE reservations
+    Svc -> Prisma : $executeRaw (hoàn số lượng)
+    Prisma -> DB : UPDATE food_listings SET quantity_remaining+=qty, status='active'
+    Svc -> Prisma : receiverProfile.update(reservationsToday-=1)
+    Prisma -> DB : UPDATE receiver_profiles
+    Svc -> Prisma : $transaction(COMMIT)
+    Prisma -> DB : COMMIT
+    Svc -> Svc : applyTrustDelta(receiverUserId, -20, 'no_show') [async]
+end
+Svc --> Cron : count
+deactivate Svc
+@enduml
