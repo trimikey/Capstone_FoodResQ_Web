@@ -446,6 +446,102 @@ export class AdminService {
     return this.getCampaignDetail(a.campaignId);
   }
 
+  /** Danh sách đăng ký TNV đang CHỜ admin duyệt (mọi chiến dịch). */
+  async listPendingAssignments() {
+    const rows = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: { status: 'pending' },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        campaign: { select: { id: true, title: true, scheduledDate: true, startTime: true, endTime: true, status: true } },
+        volunteer: {
+          select: {
+            id: true,
+            dedicationPoints: true,
+            rank: true,
+            avgRating: true,
+            user: { select: { fullName: true, phone: true, avatarUrl: true } },
+            specializations: { select: { specialization: true } },
+          },
+        },
+      },
+    });
+    return rows.map((a) => ({
+      id: a.id,
+      role: a.role,
+      createdAt: a.createdAt,
+      campaign: a.campaign,
+      volunteer: {
+        id: a.volunteer.id,
+        fullName: a.volunteer.user.fullName,
+        phone: a.volunteer.user.phone,
+        avatarUrl: a.volunteer.user.avatarUrl,
+        dedicationPoints: a.volunteer.dedicationPoints,
+        rank: a.volunteer.rank,
+        avgRating: a.volunteer.avgRating,
+        specializations: a.volunteer.specializations.map((s) => s.specialization),
+      },
+    }));
+  }
+
+  /** Admin duyệt/từ chối đăng ký của TNV. approve → assigned + tăng slot; reject → rejected. */
+  async reviewAssignment(assignmentId: string, decision: 'approve' | 'reject', _userId: string, note?: string) {
+    const a = await this.prisma.campaignVolunteerAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        campaign: {
+          select: {
+            id: true, title: true, status: true,
+            chefSlotsNeeded: true, waiterSlotsNeeded: true, shipperSlotsNeeded: true,
+            chefSlotsFilled: true, waiterSlotsFilled: true, shipperSlotsFilled: true,
+          },
+        },
+        volunteer: { select: { user: { select: { id: true } } } },
+      },
+    });
+    if (!a) throw new NotFoundException('Không tìm thấy đăng ký.');
+    if (a.status !== 'pending') throw new BadRequestException('Đăng ký này đã được xử lý.');
+
+    const roleVN = ROLE_VN[a.role] ?? a.role;
+
+    if (decision === 'approve') {
+      if (!['open', 'in_progress'].includes(a.campaign.status)) {
+        throw new BadRequestException('Chiến dịch không còn nhận tình nguyện viên.');
+      }
+      const slot = SLOT_FIELD[a.role];
+      const needed = a.campaign[slot.needed as keyof typeof a.campaign] as number;
+      const filled = a.campaign[slot.filled as keyof typeof a.campaign] as number;
+      if (filled >= needed) throw new BadRequestException(`Đã đủ tình nguyện viên vai trò ${roleVN}.`);
+
+      await this.prisma.$transaction([
+        this.prisma.campaignVolunteerAssignment.update({
+          where: { id: assignmentId },
+          data: { status: 'assigned', notes: note ?? null },
+        }),
+        this.prisma.kitchenCampaign.update({ where: { id: a.campaign.id }, data: { [slot.filled]: { increment: 1 } } }),
+      ]);
+
+      void this.notifications.notify(a.volunteer.user.id, {
+        type: 'campaign',
+        title: 'Đăng ký được duyệt',
+        body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" đã được duyệt. Hẹn gặp bạn tại bếp!`,
+        data: { campaignId: a.campaign.id, assignmentId, status: 'assigned' },
+      });
+      return { id: assignmentId, status: 'assigned' };
+    }
+
+    await this.prisma.campaignVolunteerAssignment.update({
+      where: { id: assignmentId },
+      data: { status: 'rejected', notes: note ?? null },
+    });
+    void this.notifications.notify(a.volunteer.user.id, {
+      type: 'campaign',
+      title: 'Đăng ký chưa được duyệt',
+      body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" chưa được duyệt.${note ? ' Lý do: ' + note : ''}`,
+      data: { campaignId: a.campaign.id, assignmentId, status: 'rejected' },
+    });
+    return { id: assignmentId, status: 'rejected' };
+  }
+
   /** Admin đổi trạng thái chiến dịch (giám sát: mở/đang chạy/hoàn tất/huỷ). */
   async setCampaignStatus(id: string, status: string, _userId: string) {
     const allowed = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];

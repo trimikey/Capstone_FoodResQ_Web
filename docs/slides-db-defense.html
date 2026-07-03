@@ -1,0 +1,676 @@
+<title>FoodResQ — Slide bảo vệ Database & Deployment</title>
+<meta name="description" content="Bộ slide chi tiết: kiến trúc, deploy, 32 bảng CSDL theo nhóm, luồng nghiệp vụ và câu hỏi hội đồng cho FoodResQ.">
+
+<style>
+  :root{
+    --ink:#122A20; --paper:#F6F4ED; --green:#1F7A4D; --green-deep:#145637;
+    --amber:#D9941F; --sage:#6E7F74; --panel:#EAEFE7; --line:#D7DBCC;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    overflow:hidden;-webkit-font-smoothing:antialiased}
+
+  .topbar{position:fixed;inset:0 0 auto 0;height:50px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 clamp(16px,3vw,40px);z-index:30;
+    background:linear-gradient(var(--paper),rgba(246,244,237,0));pointer-events:none}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:13.5px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(31,122,77,.18)}
+  .brand small{color:var(--sage);font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-size:10px}
+  .count{font-family:var(--mono);font-size:12.5px;color:var(--sage);font-variant-numeric:tabular-nums}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--amber);width:0;z-index:31;
+    transition:width .35s cubic-bezier(.4,0,.2,1)}
+  @media (prefers-reduced-motion:reduce){.progress{transition:none}}
+
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:safe center;
+    overflow:auto;padding:clamp(56px,7vh,84px) clamp(22px,5vw,84px) clamp(40px,6vh,64px);
+    animation:fade .4s ease both}
+  .slide.on{display:flex}
+  @media (prefers-reduced-motion:reduce){.slide{animation:none}}
+  @keyframes fade{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+  .wrap{width:100%;max-width:1120px;margin:0 auto}
+
+  .eyebrow{font-size:clamp(10.5px,1.2vw,12.5px);font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--green);margin:0 0 12px}
+  .eyebrow b{color:var(--amber)}
+  h1{font-family:var(--serif);font-weight:600;line-height:1.04;text-wrap:balance;margin:0}
+  .title{font-size:clamp(30px,5.2vw,60px)}
+  h2{font-family:var(--serif);font-weight:600;line-height:1.08;text-wrap:balance;
+    font-size:clamp(24px,3.7vw,42px);margin:0 0 4px}
+  .lead{font-size:clamp(15px,1.7vw,19px);color:var(--green-deep);max-width:64ch;line-height:1.5;margin:12px 0 0}
+  .sub{color:var(--sage)}
+  code{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);
+    padding:1.5px 6px;border-radius:5px;font-size:.85em;color:var(--green-deep)}
+
+  /* cover */
+  .cover .kicker{font-family:var(--mono);font-size:12.5px;color:var(--sage);letter-spacing:.04em;margin-top:20px}
+  .cover .meta{display:flex;flex-wrap:wrap;gap:9px;margin-top:26px}
+  .chip{font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:999px;
+    background:var(--panel);border:1px solid var(--line);color:var(--green-deep)}
+  .chip.solid{background:var(--green);color:#fff;border-color:var(--green)}
+
+  /* numbered list */
+  ul.clean{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:11px}
+  ul.clean li{display:flex;gap:12px;align-items:flex-start;font-size:clamp(14px,1.55vw,17px);line-height:1.42}
+  ul.clean li .n{flex:none;width:26px;height:26px;border-radius:7px;background:var(--green);color:#fff;
+    font-family:var(--mono);font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  ul.clean li b{color:var(--green-deep)}
+
+  /* architecture flow */
+  .flow{display:flex;align-items:stretch;gap:10px;margin-top:22px;flex-wrap:wrap}
+  .node{flex:1 1 150px;min-width:138px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .node .lbl{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--sage);font-weight:700}
+  .node .big{font-family:var(--serif);font-size:19px;margin-top:4px}
+  .node p{margin:6px 0 0;font-size:12.5px;color:var(--green-deep);line-height:1.38}
+  .arrow{align-self:center;color:var(--amber);font-size:22px;font-weight:700}
+  .sidecar{display:flex;gap:10px;margin-top:13px;flex-wrap:wrap}
+  .tag{font-size:12px;font-weight:600;padding:7px 11px;border-radius:9px;background:var(--panel);border:1px solid var(--line)}
+  .tag b{color:var(--amber)}
+
+  /* stack table */
+  .stack{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px}
+  .stack th,.stack td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  .stack th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--sage)}
+  .stack td:first-child{font-family:var(--mono);font-size:12.5px;color:var(--green-deep);font-weight:600;white-space:nowrap}
+  .stack td b{color:var(--amber)}
+  .stack.sm{font-size:12.6px}
+  .stack.sm th,.stack.sm td{padding:6px 10px}
+  .stack.sm td:nth-child(2){font-family:var(--mono);font-size:11.2px;color:var(--green);white-space:normal}
+
+  /* DDL code block */
+  pre{margin:18px 0 0;background:var(--ink);color:#E7 ECE6;border-radius:12px;padding:18px 20px;overflow:auto;
+    font-family:var(--mono);font-size:13px;line-height:1.6;color:#DCE6DD}
+  pre .c{color:#7E9A86}
+  pre .k{color:#E0A227}
+
+  /* groups grid (overview) */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:22px}
+  .gcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;position:relative}
+  .gcard .gl{position:absolute;top:11px;right:13px;font-family:var(--serif);font-size:21px;color:var(--line);font-weight:700}
+  .gcard h3{margin:0;font-size:14px;color:var(--green-deep)}
+  .gcard .cnt{font-family:var(--mono);font-size:11.5px;color:var(--amber);font-weight:700;margin-top:3px}
+  .gcard p{margin:7px 0 0;font-size:11.5px;color:var(--sage);line-height:1.4}
+
+  /* detailed table cards */
+  .tbls{display:grid;gap:11px;margin-top:18px}
+  .tbls.c2{grid-template-columns:1fr 1fr}
+  .tbls.c3{grid-template-columns:repeat(3,1fr)}
+  .tbl{background:#fff;border:1px solid var(--line);border-left:3px solid var(--green);
+    border-radius:10px;padding:11px 14px}
+  .tbl .nm{font-family:var(--mono);font-size:13px;color:var(--green-deep);font-weight:700}
+  .tbl .pp{font-size:12.8px;line-height:1.4;margin-top:3px}
+  .tbl .cols{font-family:var(--mono);font-size:10.8px;color:var(--sage);margin-top:6px;line-height:1.45;word-break:break-word}
+  .tbl .cols b{color:var(--green)}
+  .tbl .ex{font-size:11.6px;color:var(--green-deep);margin-top:5px;line-height:1.4}
+  .tbl .ex::before{content:"Ví dụ: ";font-weight:700;color:var(--amber)}
+  .tbl .note{font-size:11.5px;color:var(--green-deep);margin-top:6px;line-height:1.4}
+  .tbl .note::before{content:"★ ";color:var(--amber)}
+  .diff{margin-top:14px;width:100%;border-collapse:collapse;font-size:12.5px}
+  .diff th,.diff td{text-align:left;padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  .diff th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--sage)}
+  .diff td:first-child{font-family:var(--mono);font-size:11.5px;color:var(--green-deep);font-weight:600;white-space:nowrap}
+
+  /* relationship lists */
+  .rels{display:grid;grid-template-columns:1fr 1fr;gap:7px 26px;margin-top:14px}
+  .rels h4{grid-column:1/-1;margin:8px 0 1px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--amber);font-weight:700}
+  .rel{display:flex;flex-direction:column;gap:2px;padding:5px 0;border-bottom:1px dashed var(--line)}
+  .rel .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rel .rt{font-family:var(--mono);font-size:11.6px;color:var(--green-deep);font-weight:600}
+  .rel .card{font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;background:var(--green);
+    border-radius:999px;padding:1px 7px;letter-spacing:.04em}
+  .rel .card.one{background:var(--amber)}
+  .rel .d{font-size:11px;color:var(--sage);line-height:1.32}
+  @media (max-width:820px){.rels{grid-template-columns:1fr}}
+
+  /* flow steps */
+  .steps{display:flex;flex-direction:column;gap:9px;margin-top:18px}
+  .step{display:flex;gap:13px;align-items:flex-start;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:11px 14px}
+  .step .s{flex:none;width:25px;height:25px;border-radius:50%;background:var(--green);color:#fff;
+    font-family:var(--mono);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .step .b{font-size:13.8px;line-height:1.42}
+  .step .b b{color:var(--green-deep)}
+  .step.warn{border-color:#E7C58A;background:#FBF4E6}
+  .step.warn .s{background:var(--amber)}
+
+  /* technical highlight */
+  .hl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}
+  .hcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:10px;padding:13px 15px}
+  .hcard h3{margin:0 0 4px;font-size:15px;color:var(--green-deep);font-family:var(--serif)}
+  .hcard p{margin:0;font-size:12.6px;line-height:1.42}
+  .hcard.amber{border-left-color:var(--amber)}
+
+  /* Q&A */
+  .qa{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:18px}
+  .q{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 15px}
+  .q .qq{font-weight:700;color:var(--green-deep);font-size:13.6px;display:flex;gap:8px;align-items:baseline}
+  .q .qq .qm{font-family:var(--serif);color:var(--amber);font-size:16px}
+  .q .aa{margin:5px 0 0 22px;font-size:12.4px;line-height:1.42;color:var(--ink);opacity:.9}
+
+  .formula{margin-top:20px;background:var(--ink);color:var(--paper);border-radius:14px;padding:20px 24px;
+    font-family:var(--serif);font-size:clamp(16px,2vw,22px);line-height:1.4}
+  .formula b{color:var(--amber)}
+
+  .dots{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:30;flex-wrap:wrap;max-width:80vw;justify-content:center}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;background:var(--line);padding:0;cursor:pointer}
+  .dots button.on{background:var(--green);transform:scale(1.3)}
+  .dots button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .hint{position:fixed;bottom:13px;right:16px;font-size:11px;color:var(--sage);z-index:30;font-family:var(--mono)}
+
+  @media (max-width:820px){
+    .grid{grid-template-columns:repeat(2,1fr)}
+    .tbls.c2,.tbls.c3{grid-template-columns:1fr}
+    .hl{grid-template-columns:1fr}
+    .qa{grid-template-columns:1fr}
+    .flow{flex-direction:column}.arrow{transform:rotate(90deg)}
+    .hint{display:none}
+  }
+</style>
+
+<div class="progress" id="bar"></div>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span>FoodResQ&nbsp;<small>Capstone SP26SE088</small></div>
+  <div class="count" id="count"></div>
+</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 COVER -->
+  <section class="slide on cover">
+    <div class="wrap">
+      <p class="eyebrow">Đồ án tốt nghiệp · FPT University</p>
+      <h1 class="title">Thiết kế Cơ sở dữ liệu<br>& Triển khai Production</h1>
+      <p class="lead">Nền tảng cứu trợ và chia sẻ thực phẩm dư thừa — kết nối nhà cung cấp, người nhận và tình nguyện viên qua bản đồ thời gian thực.</p>
+      <p class="kicker">NestJS · PostgreSQL + PostGIS · Prisma · Redis · Supabase · Firebase</p>
+      <div class="meta">
+        <span class="chip solid">32 bảng đã deploy</span>
+        <span class="chip">4 vai trò người dùng</span>
+        <span class="chip">PostGIS không gian địa lý</span>
+        <span class="chip">Realtime + FCM</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 ARCHITECTURE -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Tổng quan · 01</p>
+      <h2>Kiến trúc phân lớp</h2>
+      <p class="sub lead">Client chỉ giao tiếp qua API; mọi nghiệp vụ và truy cập dữ liệu tập trung tại backend NestJS → bảo đảm quy tắc nghiệp vụ luôn được thực thi.</p>
+      <div class="flow">
+        <div class="node"><div class="lbl">Client</div><div class="big">Web · Mobile</div><p>Next.js & Expo — REST + WebSocket</p></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="lbl">API NestJS</div><div class="big">Controller → Service</div><p>Định tuyến · xác thực · nghiệp vụ</p></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="lbl">Data Access</div><div class="big">PrismaService</div><p>Tầng truy cập DB duy nhất</p></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="lbl">Storage</div><div class="big">PostgreSQL<br>+ PostGIS</div><p>Dữ liệu + không gian địa lý</p></div>
+      </div>
+      <div class="sidecar">
+        <span class="tag"><b>Redis</b> · Redlock + BullMQ + cache</span>
+        <span class="tag"><b>Firebase</b> · Google login + FCM</span>
+        <span class="tag"><b>face-api + TF.js</b> · xác thực khuôn mặt (backend)</span>
+        <span class="tag"><b>Socket.IO</b> · thông báo & tracking</span>
+        <span class="tag"><b>Leaflet</b> · bản đồ OpenStreetMap</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPONENT 1 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Thành phần hệ thống · 1/2 · Client & Lõi Backend</p>
+      <h2>Component Explanation</h2>
+      <table class="stack sm">
+        <tr><th>Component</th><th>Technology / Pattern</th><th>Function Description</th></tr>
+        <tr><td>Web App</td><td>Next.js 16 · React Query · Tailwind · Leaflet</td><td>Cổng Admin/Provider; bản đồ OpenStreetMap, gọi API qua Axios</td></tr>
+        <tr><td>Mobile App</td><td>Expo / React Native · React Query</td><td>App người nhận & tình nguyện viên</td></tr>
+        <tr><td>QR Code</td><td>qrcode.react · @zxing</td><td>Sinh & quét mã QR xác nhận lấy hàng</td></tr>
+        <tr><td>API Router Layer</td><td>NestJS Controller · Swagger</td><td>REST <code>/api/v1</code>; validate, phân quyền, tài liệu <code>/api/docs</code></td></tr>
+        <tr><td>Business Logic Layer</td><td>NestJS Service (DI)</td><td>Quy tắc nghiệp vụ, điều phối transaction</td></tr>
+        <tr><td>Data Access Layer</td><td>Prisma ORM · $queryRaw (PostGIS)</td><td>Tầng truy cập DB duy nhất, type-safe + raw SQL</td></tr>
+        <tr><td>Realtime Gateway</td><td>@nestjs/websockets · Socket.IO</td><td>Room user:{id} · sự kiện notification:new, delivery:location</td></tr>
+        <tr><td>Background Jobs</td><td>@nestjs/bullmq · BullMQ + Redis</td><td>Broadcast offer shipper, đẩy push (bất đồng bộ)</td></tr>
+        <tr><td>Scheduler (Cron)</td><td>@nestjs/schedule</td><td>Hết hạn reservation / no-show, tác vụ định kỳ</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- COMPONENT 2 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Thành phần hệ thống · 2/2 · Bảo mật, Xử lý & Hạ tầng</p>
+      <h2>Component Explanation</h2>
+      <table class="stack sm">
+        <tr><th>Component</th><th>Technology / Pattern</th><th>Function Description</th></tr>
+        <tr><td>Auth & Authorization</td><td>@nestjs/jwt · passport-jwt/local · bcrypt</td><td>JWT 15' · refresh xoay vòng · bcrypt ≥12 · phân quyền theo vai trò</td></tr>
+        <tr><td>Validation & Response</td><td>class-validator/transformer · Pipe/Interceptor/Filter</td><td>Lọc input · chuẩn hoá {success, data, meta} & lỗi</td></tr>
+        <tr><td>Security Middleware</td><td>helmet · CORS whitelist · @nestjs/throttler</td><td>Bảo vệ header, chặn origin lạ, rate-limit 100 req/60s</td></tr>
+        <tr><td>Logging</td><td>nestjs-pino · pino-http</td><td>Log có cấu trúc (structured logging)</td></tr>
+        <tr><td>Xác thực khuôn mặt</td><td>@vladmandic/face-api · TensorFlow.js (wasm)</td><td>Trích & so khớp vector khuôn mặt <b>trong backend</b> (không API ngoài)</td></tr>
+        <tr><td>Distributed Lock</td><td>redlock · ioredis</td><td>Chống đặt trùng: lock:reservation:{id}</td></tr>
+        <tr><td>Caching</td><td>@nestjs/cache-manager · ioredis</td><td>Cache cấu hình / truy vấn nóng</td></tr>
+        <tr><td>Push Notification</td><td>firebase-admin (FCM)</td><td>Đẩy push đa thiết bị; tự dọn token chết</td></tr>
+        <tr><td>Google Sign-In</td><td>firebase-admin · google-auth-library</td><td>Verify Google ID token, tạo tài khoản receiver</td></tr>
+        <tr><td>File Storage</td><td>Express static (/uploads) → S3/R2</td><td>Lưu ảnh minh chứng (proof, chiến dịch, ATTP)</td></tr>
+        <tr><td>Config</td><td>@nestjs/config · SystemConfig (DB)</td><td>Env + cấu hình động đổi runtime không deploy lại</td></tr>
+        <tr><td>Database</td><td>PostgreSQL + PostGIS (Supabase)</td><td>geography(Point,4326) · GiST · giao dịch ACID</td></tr>
+        <tr><td>Cache / Queue store</td><td>Redis (ioredis)</td><td>Backing store cho Redlock, BullMQ, cache</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3 TECH STACK WHY -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Tổng quan · 02</p>
+      <h2>Công nghệ & lý do chọn</h2>
+      <table class="stack">
+        <tr><th>Công nghệ</th><th>Vai trò</th><th>Vì sao chọn</th></tr>
+        <tr><td>NestJS</td><td>Backend API</td><td>Kiến trúc module rõ ràng, DI, TypeScript, guard/interceptor sẵn có</td></tr>
+        <tr><td>PostgreSQL</td><td>CSDL quan hệ</td><td>Giao dịch ACID, ràng buộc mạnh, hệ sinh thái trưởng thành</td></tr>
+        <tr><td>PostGIS</td><td>Truy vấn địa lý</td><td><b>Tìm gần</b> (ST_DWithin) + khoảng cách thật (ST_Distance) + index GiST</td></tr>
+        <tr><td>Prisma</td><td>ORM</td><td>Type-safe, một nguồn schema, hỗ trợ <code>$queryRaw</code> cho PostGIS</td></tr>
+        <tr><td>Redis</td><td>Khoá + hàng đợi</td><td><b>Redlock</b> chống đặt trùng · <b>BullMQ</b> xử lý bất đồng bộ</td></tr>
+        <tr><td>Supabase</td><td>Hạ tầng DB</td><td>Postgres managed + PostGIS bật sẵn + connection pooler</td></tr>
+        <tr><td>Firebase</td><td>Auth + Push</td><td>Đăng nhập Google + FCM đẩy thông báo đa thiết bị</td></tr>
+      </table>
+    </div>
+  </section>
+
+
+  <!-- 7 OVERVIEW 32 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Cơ sở dữ liệu · 06</p>
+      <h2>32 bảng — 8 nhóm nghiệp vụ</h2>
+      <div class="grid">
+        <div class="gcard"><span class="gl">A</span><h3>Định danh & Xác thực</h3><div class="cnt">3 bảng</div><p>users · refresh_tokens · liability_waivers</p></div>
+        <div class="gcard"><span class="gl">B</span><h3>Hồ sơ vai trò</h3><div class="cnt">4 bảng</div><p>provider · receiver · volunteer · specializations</p></div>
+        <div class="gcard"><span class="gl">C</span><h3>Thực phẩm & Đặt chỗ</h3><div class="cnt">2 bảng</div><p>food_listings · reservations</p></div>
+        <div class="gcard"><span class="gl">D</span><h3>Giao hàng</h3><div class="cnt">2 bảng</div><p>deliveries · shipper_task_offers</p></div>
+        <div class="gcard"><span class="gl">E</span><h3>Chiến dịch bếp ăn</h3><div class="cnt">5 bảng</div><p>campaigns · shifts · assignments · donations · change_requests</p></div>
+        <div class="gcard"><span class="gl">F</span><h3>Vận hành & Công thức</h3><div class="cnt">6 bảng</div><p>recipes · ingredients · menu_items · safety_logs · distributions · feedback</p></div>
+        <div class="gcard"><span class="gl">G</span><h3>Uy tín & Đánh giá</h3><div class="cnt">3 bảng</div><p>trust_history · dedication_history · ratings</p></div>
+        <div class="gcard"><span class="gl">H</span><h3>Xác minh & Hệ thống</h3><div class="cnt">7 bảng</div><p>verification · reports · notifications · device_tokens · esg · audit · configs</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 GROUP A -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>A</b> · Định danh & Xác thực · 3 bảng</p>
+      <h2>Tài khoản & phiên đăng nhập</h2>
+      <div class="tbls c3">
+        <div class="tbl"><div class="nm">users</div><div class="pp">Tài khoản gốc cho mọi vai trò.</div><div class="cols"><b>khoá:</b> email (unique) · <b>cột:</b> password_hash (bcrypt≥12), role, status, trust_score=100, deleted_at</div><div class="note">1 user → 0..1 hồ sơ mỗi vai trò</div></div>
+        <div class="tbl"><div class="nm">refresh_tokens</div><div class="pp">Cấp lại access token (JWT 15').</div><div class="cols"><b>cột:</b> token_hash (băm, unique), is_revoked, expires_at (30 ngày)</div><div class="note">Xoay vòng mỗi lần refresh · revoke tất cả khi ban</div></div>
+        <div class="tbl"><div class="nm">liability_waivers</div><div class="pp">Đồng ý điều khoản miễn trừ.</div><div class="cols"><b>cột:</b> waiver_version, accepted_at, ip_address · unique(user, version)</div><div class="note">Bằng chứng pháp lý khi chia sẻ thực phẩm</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 GROUP B -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>B</b> · Hồ sơ vai trò · 4 bảng</p>
+      <h2>Hồ sơ theo từng vai trò</h2>
+      <div class="tbls c2">
+        <div class="tbl"><div class="nm">provider_profiles</div><div class="pp">Nhà cung cấp (nhà hàng/siêu thị…).</div><div class="cols"><b>cột:</b> business_name/type, location (geography+GiST), verification_status, total_food_rescued_kg, total_co2_saved_kg</div><div class="note">1 → n food_listings · chỉ số ESG tích luỹ</div></div>
+        <div class="tbl"><div class="nm">receiver_profiles</div><div class="pp">Người nhận (gồm tổ chức từ thiện).</div><div class="cols"><b>cột:</b> is_charity_org, id_card_*, face_image_url, face_descriptor (json), reservations_today</div><div class="note">reservations_today → giới hạn số đặt/ngày</div></div>
+        <div class="tbl"><div class="nm">volunteer_profiles</div><div class="pp">Tình nguyện viên.</div><div class="cols"><b>cột:</b> current_location (realtime+GiST), is_available, dedication_points, rank, vehicle_*</div><div class="note">1 → n deliveries, assignments</div></div>
+        <div class="tbl"><div class="nm">volunteer_specializations</div><div class="pp">Kỹ năng của TNV.</div><div class="cols"><b>giá trị:</b> shipper / chef / waiter · cert_url, is_verified · unique(volunteer, specialization)</div><div class="note">Quyết định TNV được ứng tuyển vai trò nào</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 GROUP C -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>C</b> · Thực phẩm & Đặt chỗ · 2 bảng</p>
+      <h2>Tin đăng & đơn đặt chỗ</h2>
+      <div class="tbls c2">
+        <div class="tbl"><div class="nm">food_listings</div><div class="pp">Tin đăng thực phẩm của provider.</div><div class="cols"><b>cột:</b> category, quantity_total/remaining, quantity_unit, pickup_start/end_time, expiry_time, pickup_location (GiST), max_per_reservation, is_surprise_bag, status</div><div class="note">status: draft→active→fully_reserved→completed/expired/cancelled · xoá mềm</div></div>
+        <div class="tbl"><div class="nm">reservations</div><div class="pp">Đơn đặt chỗ — trung tâm nghiệp vụ.</div><div class="cols"><b>cột:</b> listing_id+receiver_id, quantity, status, qr_token (unique 64 ký tự), qr_expires_at, pickup_proof_*, pickup_verification_type, scanned_by/at</div><div class="note">status: confirmed→picked_up→completed / cancelled / expired / no_show</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 GROUP D -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>D</b> · Giao hàng · 2 bảng</p>
+      <h2>Điều phối shipper</h2>
+      <div class="tbls c2">
+        <div class="tbl"><div class="nm">deliveries</div><div class="pp">Đơn giao, gắn 1-1 với reservation.</div><div class="cols"><b>cột:</b> reservation_id (unique), shipper_id, status, pickup/delivery_location, distance_km, assigned_at, delivered_at</div><div class="note">status: pending_assignment→assigned→…→delivered/failed</div></div>
+        <div class="tbl"><div class="nm">shipper_task_offers</div><div class="pp">Lời mời nhận đơn cho shipper gần.</div><div class="cols"><b>cột:</b> delivery_id+shipper_id, status, offered_at, expires_at (+2 phút) · unique(delivery, shipper)</div><div class="note">Mời 5 shipper gần nhất · ai nhận trước thắng, còn lại expired</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 GROUP E -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>E</b> · Chiến dịch bếp ăn · 5 bảng</p>
+      <h2>Bếp ăn từ thiện</h2>
+      <div class="tbls c2">
+        <div class="tbl"><div class="nm">kitchen_campaigns</div><div class="pp">Chiến dịch nấu ăn do tổ chức tạo.</div><div class="cols"><b>cột:</b> kitchen_location, scheduled_date, chef/waiter/shipper_slots_needed & _filled, status, expected/actual_servings, menu/schedule/supply_items (jsonb)</div></div>
+        <div class="tbl"><div class="nm">campaign_shifts</div><div class="pp">Ca làm việc chia theo giờ.</div><div class="cols"><b>cột:</b> label, role?, start/end_time, slots_needed/filled</div></div>
+        <div class="tbl"><div class="nm">campaign_volunteer_assignments</div><div class="pp">Phân công TNV vào chiến dịch/ca.</div><div class="cols"><b>cột:</b> role, status (assigned→checked_in→in_progress→completed), proof_url các bước, points_awarded · unique(campaign,volunteer,role)</div></div>
+        <div class="tbl"><div class="nm">campaign_donations</div><div class="pp">Quyên góp nguyên liệu của provider.</div><div class="cols"><b>cột:</b> item_name, quantity, status (pledged→received)</div></div>
+        <div class="tbl"><div class="nm">campaign_change_requests</div><div class="pp">Yêu cầu đổi chiến dịch.</div><div class="cols"><b>cột:</b> trường đề xuất (NULL = không đổi), status, reviewed_by</div><div class="note">Phải được admin duyệt mới áp dụng</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 GROUP F -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>F</b> · Vận hành bếp & Công thức · 6 bảng</p>
+      <h2>Công thức & vận hành bếp</h2>
+      <div class="tbls c3">
+        <div class="tbl"><div class="nm">recipes</div><div class="pp">Thư viện công thức (chef đóng góp).</div><div class="cols"><b>cột:</b> servings, prep/cook_minutes, difficulty, is_public, times_used</div></div>
+        <div class="tbl"><div class="nm">recipe_ingredients</div><div class="pp">Nguyên liệu của công thức.</div><div class="cols"><b>cột:</b> name, quantity, unit, note</div></div>
+        <div class="tbl"><div class="nm">campaign_menu_items</div><div class="pp">Thực đơn chiến dịch.</div><div class="cols"><b>cột:</b> recipe_id?, custom_name, planned_servings</div><div class="note">Dùng recipe → tăng times_used</div></div>
+        <div class="tbl"><div class="nm">kitchen_safety_logs</div><div class="pp">Nhật ký ATTP (HACCP-lite).</div><div class="cols"><b>cột:</b> check_type, measured_value, result (pass/warning/fail), photo_url</div><div class="note">warning/fail → thông báo tổ chức</div></div>
+        <div class="tbl"><div class="nm">meal_distributions</div><div class="pp">Phân phát suất ăn từng đợt.</div><div class="cols"><b>cột:</b> servings/people_served, leftover, location, photo_url</div></div>
+        <div class="tbl"><div class="nm">meal_feedback</div><div class="pp">Phản hồi người thụ hưởng.</div><div class="cols"><b>cột:</b> satisfaction (1–5), comment</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14 GROUP G -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>G</b> · Uy tín & Đánh giá · 3 bảng</p>
+      <h2>Uy tín & gamification</h2>
+      <div class="tbls c3">
+        <div class="tbl"><div class="nm">trust_score_history</div><div class="pp">Lịch sử điểm uy tín của user.</div><div class="cols"><b>cột:</b> delta, reason, score_before/after, reference_*</div><div class="note">Cơ chế chống lạm dụng (no-show, huỷ trễ…)</div></div>
+        <div class="tbl"><div class="nm">dedication_points_history</div><div class="pp">Lịch sử điểm cống hiến TNV.</div><div class="cols"><b>cột:</b> delta, reason, points_before/after</div><div class="note">Khuyến khích TNV tham gia (gamification)</div></div>
+        <div class="tbl"><div class="nm">ratings</div><div class="pp">Đánh giá đa hình.</div><div class="cols"><b>cột:</b> reference_type/id, rater_id, ratee_id, score, comment</div><div class="note">Trỏ tới reservation hoặc campaign — không FK cứng</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15 GROUP H-1 : duyệt hồ sơ & vi phạm -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>H</b> (1/2) · Duyệt hồ sơ & Xử lý vi phạm</p>
+      <h2>Admin kiểm soát chất lượng</h2>
+      <div class="tbls c2">
+        <div>
+          <div class="tbl"><div class="nm">verification_requests</div><div class="pp">Nộp giấy tờ để admin <b>duyệt</b> trước khi cho hoạt động (kiểu KYC).</div><div class="ex">nhà hàng nộp giấy phép · TNV nộp chứng chỉ ATTP để làm đầu bếp</div><div class="cols"><b>cột:</b> request_type, documents (json), status, reviewer_id</div></div>
+          <div class="steps" style="margin-top:11px">
+            <div class="step"><span class="s">1</span><div class="b">Người dùng <b>nộp giấy tờ</b> → status <code>pending</code></div></div>
+            <div class="step"><span class="s">2</span><div class="b">Admin xem (<code>under_review</code>) → <b>duyệt / từ chối</b></div></div>
+            <div class="step"><span class="s">3</span><div class="b">Nếu duyệt → hồ sơ chuyển <code>is_verified = true</code></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="tbl"><div class="nm">reports</div><div class="pp">Bất kỳ ai cũng có thể <b>tố cáo</b> vi phạm; admin xử lý.</div><div class="ex">"thực phẩm hỏng", "tài khoản giả", "provider không giao"</div><div class="cols"><b>cột:</b> target_type/id, reason, evidence_urls, status, resolver_id</div><div class="note">Đa hình: tố cáo được user / listing / delivery / campaign</div></div>
+          <div class="steps" style="margin-top:11px">
+            <div class="step"><span class="s">1</span><div class="b">Người dùng <b>tố cáo</b> + ảnh bằng chứng → <code>pending</code></div></div>
+            <div class="step"><span class="s">2</span><div class="b">Admin <b>điều tra</b> → <code>resolved</code> / <code>dismissed</code></div></div>
+            <div class="step warn"><span class="s">3</span><div class="b">Có thể kèm <b>trừ điểm uy tín / ban</b> đối tượng</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 GROUP H-2 : thông báo & hạ tầng -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nhóm <b>H</b> (2/2) · Thông báo, Đo lường & Cấu hình</p>
+      <h2>Hạ tầng vận hành</h2>
+      <div class="tbls c2">
+        <div class="tbl"><div class="nm">notifications</div><div class="pp">Lịch sử thông báo trong app (🔔).</div><div class="ex">"Đơn của bạn đã được lấy" · "Có quyên góp mới"</div><div class="cols"><b>cột:</b> type, title, body, data (json), is_read</div><div class="note">Cùng lúc: ghi DB + bắn WebSocket + đẩy FCM</div></div>
+        <div class="tbl"><div class="nm">device_tokens</div><div class="pp">Lưu token thiết bị để đẩy push.</div><div class="ex">1 người có điện thoại + tablet → 2 token, push tới cả 2</div><div class="cols"><b>cột:</b> token (unique), platform (ios/android/web)</div><div class="note">Token chết → tự xoá</div></div>
+        <div class="tbl"><div class="nm">esg_snapshots</div><div class="pp">Chốt sổ <b>chỉ số tác động</b> mỗi ngày (ESG = Môi trường–Xã hội–Quản trị).</div><div class="ex">hôm nay cứu 320kg thực phẩm, giảm 540kg CO₂</div><div class="cols"><b>cột:</b> snapshot_date, food_rescued_kg, co2_saved_kg, provider_id (NULL=toàn nền tảng)</div><div class="note">Tính trước 1 lần/ngày → dashboard nhanh + có lịch sử</div></div>
+        <div class="tbl"><div class="nm">audit_logs</div><div class="pp">Nhật ký <b>hành động nhạy cảm</b> phục vụ bảo mật.</div><div class="ex">"Admin X ban user Y lúc 14:30 từ IP Z"</div><div class="cols"><b>cột:</b> actor_id, action, target_*, payload, ip, user_agent</div><div class="note">Cho admin/bảo mật xem — người dùng không thấy</div></div>
+      </div>
+      <div class="tbls" style="margin-top:11px"><div class="tbl"><div class="nm">system_configs</div><div class="pp">Hằng số nghiệp vụ dạng key–value, <b>đổi runtime không cần deploy lại</b>.</div><div class="ex">MAX_RESERVATIONS_PER_DAY=3 · SEARCH_RADIUS_KM=5 · QR_VALIDITY_MINUTES=30</div></div></div>
+      <table class="diff">
+        <tr><th>Dễ nhầm</th><th>Cho ai xem</th><th>Mục đích</th></tr>
+        <tr><td>notifications</td><td>Người dùng</td><td>Báo sự kiện liên quan tới họ</td></tr>
+        <tr><td>audit_logs</td><td>Admin / bảo mật</td><td>Truy vết hành động nhạy cảm</td></tr>
+        <tr><td>*_history</td><td>Hệ thống</td><td>Lưu biến động điểm số (trust / dedication)</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- REL 1 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Quan hệ giữa các bảng · 1/3</p>
+      <h2>Người dùng, Hồ sơ & Đặt chỗ</h2>
+      <div class="rels">
+        <h4>Người dùng & Hồ sơ</h4>
+        <div class="rel"><div class="top"><span class="rt">users → provider_profiles</span><span class="card one">1:1</span></div><div class="d">Hồ sơ kinh doanh; không có user thì không có profile</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → receiver_profiles</span><span class="card one">1:1</span></div><div class="d">Cá nhân / tổ chức từ thiện; thông tin xác minh nhân thân</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → volunteer_profiles</span><span class="card one">1:1</span></div><div class="d">Vị trí realtime, điểm cống hiến, hạng, phương tiện</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → specializations</span><span class="card">1:N</span></div><div class="d">Nhiều chuyên môn; mỗi cái có chứng chỉ ATTP riêng</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → liability_waivers</span><span class="card">1:N</span></div><div class="d">Ký lại khi điều khoản có version mới</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → verification_requests</span><span class="card">1:N</span></div><div class="d">Gửi lại nếu bị từ chối / tái xác minh</div></div>
+        <h4>Thực phẩm, Đặt chỗ & Giao hàng</h4>
+        <div class="rel"><div class="top"><span class="rt">provider_profiles → food_listings</span><span class="card">1:N</span></div><div class="d">1 nhà cung cấp đăng nhiều tin</div></div>
+        <div class="rel"><div class="top"><span class="rt">food_listings → reservations</span><span class="card">1:N</span></div><div class="d">1 tin nhiều người đặt nếu còn số lượng</div></div>
+        <div class="rel"><div class="top"><span class="rt">receiver_profiles → reservations</span><span class="card">1:N</span></div><div class="d">reservations_today giới hạn lạm dụng</div></div>
+        <div class="rel"><div class="top"><span class="rt">reservations → deliveries</span><span class="card one">1:1</span></div><div class="d">1 đơn đặt → tối đa 1 đơn giao</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → deliveries</span><span class="card">1:N</span></div><div class="d">shipper_id nullable — chờ qua bước offer</div></div>
+        <div class="rel"><div class="top"><span class="rt">deliveries → shipper_task_offers</span><span class="card">1:N</span></div><div class="d">Broadcast 1 đơn tới nhiều shipper</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → shipper_task_offers</span><span class="card">1:N</span></div><div class="d">1 shipper nhiều offer, chỉ accept 1</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REL 2 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Quan hệ giữa các bảng · 2/3</p>
+      <h2>Chiến dịch bếp ăn & Vận hành</h2>
+      <div class="rels">
+        <h4>Chiến dịch bếp ăn</h4>
+        <div class="rel"><div class="top"><span class="rt">receiver_profiles → kitchen_campaigns</span><span class="card">1:N</span></div><div class="d">Chỉ tổ chức từ thiện (is_charity_org) mới tạo</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → campaign_shifts</span><span class="card">1:N</span></div><div class="d">Chia chiến dịch thành nhiều ca</div></div>
+        <div class="rel"><div class="top"><span class="rt">campaign_shifts → assignments</span><span class="card">1:N</span></div><div class="d">TNV nào làm ca nào</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → assignments</span><span class="card">1:N</span></div><div class="d">Link thẳng để query nhanh "ai tham gia chiến dịch"</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → assignments</span><span class="card">1:N</span></div><div class="d">1 TNV tham gia nhiều chiến dịch</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → campaign_donations</span><span class="card">1:N</span></div><div class="d">Nhận quyên góp từ nhiều provider</div></div>
+        <div class="rel"><div class="top"><span class="rt">provider_profiles → campaign_donations</span><span class="card">1:N</span></div><div class="d">1 provider donate nhiều chiến dịch</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → change_requests</span><span class="card">1:N</span></div><div class="d">Nhiều lần xin đổi lịch/địa điểm/slot</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → change_requests</span><span class="card">1:N</span></div><div class="d">requested_by + reviewed_by đều FK về users</div></div>
+        <h4>Vận hành bếp</h4>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → menu_items</span><span class="card">1:N</span></div><div class="d">Thực đơn nhiều món</div></div>
+        <div class="rel"><div class="top"><span class="rt">recipes → menu_items</span><span class="card">1:N</span></div><div class="d">recipe_id nullable (món tự chế)</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → safety_logs</span><span class="card">1:N</span></div><div class="d">Nhiều lần kiểm tra ATTP</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → safety_logs</span><span class="card">1:N</span></div><div class="d">Ghi ai kiểm tra (trách nhiệm giải trình)</div></div>
+        <div class="rel"><div class="top"><span class="rt">kitchen_campaigns → meal_distributions</span><span class="card">1:N</span></div><div class="d">Phân phối nhiều đợt / địa điểm</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → meal_distributions</span><span class="card">1:N</span></div><div class="d">TNV phụ trách phát ghi số suất/người</div></div>
+        <div class="rel"><div class="top"><span class="rt">meal_distributions → meal_feedback</span><span class="card">1:N</span></div><div class="d">Người nhận feedback từng đợt</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REL 3 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Quan hệ giữa các bảng · 3/3</p>
+      <h2>Công thức, Uy tín & Hệ thống</h2>
+      <div class="rels">
+        <h4>Công thức & Uy tín</h4>
+        <div class="rel"><div class="top"><span class="rt">users → recipes</span><span class="card">1:N</span></div><div class="d">TNV / organiser tạo & chia sẻ công thức</div></div>
+        <div class="rel"><div class="top"><span class="rt">recipes → recipe_ingredients</span><span class="card">1:N</span></div><div class="d">Tách bảng để query "cần bao nhiêu gạo"</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → trust_score_history</span><span class="card">1:N</span></div><div class="d">Append-only audit — không update điểm trực tiếp</div></div>
+        <div class="rel"><div class="top"><span class="rt">volunteer_profiles → dedication_history</span><span class="card">1:N</span></div><div class="d">Điểm cống hiến → quyết định hạng TNV</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → ratings</span><span class="card">1:N ×2</span></div><div class="d">rater_id + ratee_id; polymorphic theo reservation/campaign</div></div>
+        <h4>Hệ thống & Thông báo</h4>
+        <div class="rel"><div class="top"><span class="rt">users → notifications</span><span class="card">1:N</span></div><div class="d">Thông báo gửi tới từng user</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → device_tokens</span><span class="card">1:N</span></div><div class="d">Nhiều thiết bị → gửi push tới tất cả</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → refresh_tokens</span><span class="card">1:N</span></div><div class="d">Per-device; logout máy nào revoke máy đó</div></div>
+        <div class="rel"><div class="top"><span class="rt">users → reports</span><span class="card">1:N</span></div><div class="d">target_type/id polymorphic (user/listing/delivery/campaign)</div></div>
+        <div class="rel"><div class="top"><span class="rt">provider_profiles → esg_snapshots</span><span class="card">1:N</span></div><div class="d">Snapshot định kỳ chỉ số môi trường</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 FLOW reservation -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Luồng nghiệp vụ · 07</p>
+      <h2>Luồng đặt chỗ & nhận hàng</h2>
+      <div class="steps">
+        <div class="step"><span class="s">1</span><div class="b">Người nhận tìm thực phẩm gần — <b>PostGIS ST_DWithin</b> trong bán kính 5km.</div></div>
+        <div class="step warn"><span class="s">2</span><div class="b">Bấm Đặt → <b>Redlock</b> khoá <code>lock:reservation:{id}</code> (10s) chống đặt trùng.</div></div>
+        <div class="step"><span class="s">3</span><div class="b">Kiểm tra giới hạn/ngày → <b>transaction</b>: giảm <code>quantity_remaining</code> + tạo reservation + sinh <code>qr_token</code> (hạn 30').</div></div>
+        <div class="step"><span class="s">4</span><div class="b">Provider <b>quét QR</b> → trạng thái <code>picked_up</code>.</div></div>
+        <div class="step"><span class="s">5</span><div class="b">Người nhận <b>xác thực khuôn mặt</b> → <code>completed</code> → cộng <b>+2 điểm uy tín</b>.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 FLOW shipper + trust -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Luồng nghiệp vụ · 08</p>
+      <h2>Phân công shipper & Điểm uy tín</h2>
+      <div class="tbls c2" style="margin-top:14px">
+        <div>
+          <div class="steps">
+            <div class="step"><span class="s">1</span><div class="b">Đặt chỗ có <b>giao hàng</b> → tạo delivery <code>pending_assignment</code>.</div></div>
+            <div class="step"><span class="s">2</span><div class="b">Tìm <b>5 shipper gần nhất</b> (ST_DWithin + is_available) → 5 offer hết hạn 2'.</div></div>
+            <div class="step"><span class="s">3</span><div class="b">Ai <b>nhận trước thắng</b>: set shipper + <code>assigned</code>, offer còn lại <code>expired</code> (1 transaction).</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="hcard amber" style="margin-bottom:11px"><h3>Trừ điểm uy tín</h3><p>no_show <b>−20</b> · huỷ trễ (&lt;30') <b>−10</b> · vi phạm ATTP <b>−50</b></p></div>
+          <div class="hcard"><h3>Ngưỡng xử lý</h3><p>≤ 60 → <b>hạn chế</b> (1 đơn/ngày) · ≤ 30 → <b>ban</b> + thu hồi toàn bộ refresh token</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 18 DESIGN PRINCIPLES -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Nguyên tắc thiết kế · 09</p>
+      <h2>Quy ước chung toàn CSDL</h2>
+      <div class="hl">
+        <div class="hcard"><h3>Khoá chính UUID</h3><p><code>uuid_generate_v4()</code> — chống dò ID tuần tự cho tài nguyên public.</p></div>
+        <div class="hcard"><h3>Thời gian UTC</h3><p>Mọi cột <code>timestamptz</code>; FE quy đổi giờ địa phương → không lệch múi giờ.</p></div>
+        <div class="hcard"><h3>Vị trí PostGIS</h3><p><code>geography(Point,4326)</code> + index <b>GiST</b> cho mọi cột toạ độ.</p></div>
+        <div class="hcard"><h3>Xoá mềm</h3><p><code>deleted_at</code> thay vì xoá hẳn — giữ lịch sử, không hỏng quan hệ.</p></div>
+        <div class="hcard"><h3>Giao dịch atomic</h3><p>Đặt chỗ = giảm số lượng + tạo đơn trong <b>1 transaction</b>.</p></div>
+        <div class="hcard"><h3>Cấu hình động</h3><p>Hằng số nghiệp vụ ở <code>system_configs</code> — đổi không cần deploy.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 19 TECHNICAL HIGHLIGHTS -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Điểm nhấn kỹ thuật · 10</p>
+      <h2>Những điểm dễ bị hỏi sâu</h2>
+      <div class="hl">
+        <div class="hcard"><h3>PostGIS</h3><p><code>ST_DWithin</code> tìm bán kính · <code>ST_Distance</code> khoảng cách thật (mét) trên <code>geography</code>.</p></div>
+        <div class="hcard"><h3>Chống đặt trùng</h3><p>Redlock (Redis) + transaction atomic giảm số lượng → không bán quá hàng.</p></div>
+        <div class="hcard"><h3>QR an toàn</h3><p><code>gen_random_bytes(32)</code> — 64 ký tự ngẫu nhiên, hết hạn 30'.</p></div>
+        <div class="hcard"><h3>Xác thực khuôn mặt</h3><p>So khớp vector <code>face_descriptor</code> đã enroll → chống mạo danh người nhận.</p></div>
+        <div class="hcard amber"><h3>Bảo mật auth</h3><p>bcrypt ≥12 · JWT 15' · refresh xoay vòng · rate-limit · Helmet · CORS whitelist.</p></div>
+        <div class="hcard amber"><h3>Realtime</h3><p>Socket.IO room <code>user:{id}</code> — <code>notification:new</code> & <code>delivery:location</code>.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 20 Q&A 1 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Chuẩn bị · 11 · Triển khai & thiết kế</p>
+      <h2>Câu hỏi hội đồng (1/2)</h2>
+      <div class="qa">
+        <div class="q"><div class="qq"><span class="qm">Q</span>Vì sao <code>db push</code> không dùng migration?</div><div class="aa">Phát triển nhanh, thay đổi thuần cộng thêm nên an toàn; vận hành thật sẽ chuyển <code>migrate</code> để có lịch sử + rollback.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Vì sao UUID thay vì số tự tăng?</div><div class="aa">Tránh lộ quy mô dữ liệu và chống dò ID tuần tự cho tài nguyên public-facing.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span><code>geography</code> khác <code>geometry</code> thế nào?</div><div class="aa">geography tính trên hình cầu (đơn vị mét, chuẩn WGS84) → khoảng cách thực tế chính xác; geometry tính mặt phẳng (đơn vị độ).</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Sao <code>ratings</code>/<code>reports</code> không có FK cứng?</div><div class="aa">Chúng đa hình — dùng <code>reference_type</code>+<code>reference_id</code> để trỏ nhiều loại đối tượng; kiểm soát ở tầng ứng dụng.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Sao tách bảng profile khỏi users?</div><div class="aa">Mỗi vai trò có trường riêng; tránh bảng users phình to và nhiều cột NULL.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Còn <code>menu_items</code> (JSON) lẫn bảng menu?</div><div class="aa">JSON là bản lưu nhanh ban đầu; <code>campaign_menu_items</code> là bản chuẩn hoá liên kết recipes — bước tiến hoá schema.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 21 Q&A 2 -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Chuẩn bị · 12 · Kỹ thuật & mở rộng</p>
+      <h2>Câu hỏi hội đồng (2/2)</h2>
+      <div class="qa">
+        <div class="q"><div class="qq"><span class="qm">Q</span>Chống 2 người đặt món cuối cùng cùng lúc?</div><div class="aa">Redlock khoá theo listingId + transaction atomic giảm <code>quantity_remaining</code> → không bán quá số lượng.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Mã QR có bị đoán không?</div><div class="aa"><code>gen_random_bytes(32)</code> = 64 ký tự ngẫu nhiên + hết hạn 30' → không đoán được.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Sao không có tầng Repository?</div><div class="aa"><code>PrismaService</code> chính là Data Access Layer của NestJS — thêm Repository là thừa lớp bọc.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Hệ thống mở rộng được không?</div><div class="aa">Index hợp lý (GiST/B-tree), phân trang bắt buộc, Redis cache + BullMQ tách tải, connection pooler; tách đọc/ghi khi cần.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Có truy vết hành động không?</div><div class="aa"><code>audit_logs</code> + các bảng *_history (trust, dedication) ghi đầy đủ ai làm gì, khi nào.</div></div>
+        <div class="q"><div class="qq"><span class="qm">Q</span>Làm sao biết DB khớp code?</div><div class="aa"><code>prisma db pull</code> introspect DB thật → so khớp 100% với schema (32 bảng).</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 22 CLOSING -->
+  <section class="slide">
+    <div class="wrap">
+      <p class="eyebrow">Kết luận</p>
+      <h2>Cách trả lời khi bị hỏi sâu một bảng</h2>
+      <div class="formula">
+        Bảng phục vụ <b>nghiệp vụ gì</b> &nbsp;→&nbsp; <b>cột quan trọng</b> &nbsp;→&nbsp; <b>quan hệ</b> &nbsp;→&nbsp; <b>ràng buộc / đặc biệt</b>.
+      </div>
+      <ul class="clean" style="margin-top:20px">
+        <li><span class="n">✦</span><div>Mở đầu bằng <b>kiến trúc + ERD</b>, rồi đi theo <b>luồng đặt chỗ → QR → giao hàng</b>.</div></li>
+        <li><span class="n">✦</span><div>Nhớ <b>theo 8 nhóm</b>, không học vẹt 32 bảng rời rạc.</div></li>
+        <li><span class="n">✦</span><div>Bị hỏi điểm yếu → thành thật: <i>"đang dùng db push, hướng cải tiến là migrate"</i>.</div></li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+
+<div class="dots" id="dots"></div>
+<div class="hint">← →&nbsp; chuyển slide</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const bar=document.getElementById('bar');
+  const count=document.getElementById('count');
+  const dotsWrap=document.getElementById('dots');
+  let i=0;
+  const pad=n=>String(n).padStart(2,'0');
+  slides.forEach((_,idx)=>{
+    const b=document.createElement('button');
+    b.setAttribute('aria-label','Slide '+(idx+1));
+    b.addEventListener('click',()=>go(idx));
+    dotsWrap.appendChild(b);
+  });
+  const dots=[...dotsWrap.children];
+  function go(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,idx)=>s.classList.toggle('on',idx===i));
+    dots.forEach((d,idx)=>d.classList.toggle('on',idx===i));
+    bar.style.width=((i+1)/slides.length*100)+'%';
+    count.textContent=pad(i+1)+' / '+pad(slides.length);
+    const cur=slides[i]; if(cur) cur.scrollTop=0;
+  }
+  function next(){go(i+1)} function prev(){go(i-1)}
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();next()}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();prev()}
+    else if(e.key==='Home'){go(0)} else if(e.key==='End'){go(slides.length-1)}
+  });
+  document.addEventListener('click',e=>{
+    if(e.target.closest('.dots')||e.target.closest('a'))return;
+    const x=e.clientX/window.innerWidth;
+    if(x>0.62)next(); else if(x<0.38)prev();
+  });
+  go(0);
+</script>

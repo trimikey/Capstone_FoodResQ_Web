@@ -15,6 +15,7 @@ export interface ListingItem {
   allergenNotes: string | null;
   maxPerReservation: number;
   imageUrls: string[];
+  isSurpriseBag?: boolean;
   status: string;
   provider: { id: string; businessName: string };
   distanceM: number;
@@ -28,10 +29,14 @@ interface Props {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  prepared_meal: 'Đồ chín',
-  raw_ingredients: 'Nguyên liệu',
+  cooked_meal: 'Đồ chín',
   bakery: 'Bánh ngọt',
+  fresh_fruit: 'Trái cây',
   beverage: 'Đồ uống',
+  vegetables: 'Rau củ',
+  raw_protein: 'Thịt/cá sống',
+  dry_goods: 'Đồ khô',
+  canned_packaged: 'Đồ hộp',
   other: 'Khác',
 };
 
@@ -47,8 +52,10 @@ export default function ListingCard({ listing }: Props) {
   // Custom fallback images for mock display
   const fallbackImage = listing.category === 'bakery'
     ? '/banh-mi-ngot-thap-cam.png'
-    : listing.category === 'prepared_meal'
+    : listing.category === 'cooked_meal'
     ? '/com-ga-hoi-an.png'
+    : listing.category === 'fresh_fruit' || listing.category === 'vegetables'
+    ? '/food_salad.png'
     : '/banh-mi-lua-mach-tuoi.png';
 
   const imageUrl = listing.imageUrls.length > 0 ? listing.imageUrls[0] : fallbackImage;
@@ -81,6 +88,13 @@ export default function ListingCard({ listing }: Props) {
         <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold uppercase">
           Miễn phí
         </div>
+
+        {/* Túi bất ngờ */}
+        {listing.isSurpriseBag && (
+          <div className="absolute top-3 right-3 bg-honey-500/95 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[10px] font-bold shadow-sm inline-flex items-center gap-1">
+            <span className="material-symbols-outlined text-[13px]">redeem</span> Túi bất ngờ
+          </div>
+        )}
       </div>
 
       {/* Content */}

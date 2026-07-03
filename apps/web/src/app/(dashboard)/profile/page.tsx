@@ -5,7 +5,15 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe } from '@/hooks/useProfile';
+import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { UserRole } from '@foodresq/types';
+
+// Ảnh lưu ở /uploads trên API server → ghép với origin (bỏ đuôi /api/v1)
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
+function imgUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.startsWith('http') ? path : `${API_ORIGIN}${path}`;
+}
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
@@ -28,6 +36,10 @@ export default function ProfilePage() {
   const router = useRouter();
   const { data: me, isLoading, isError } = useMe();
   const updateMe = useUpdateMe();
+  // Chỉ người nhận & tình nguyện viên mới có hồ sơ khuôn mặt (eKYC)
+  const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
+  const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
+  const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '' });
@@ -252,6 +264,19 @@ export default function ProfilePage() {
                   <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
                 </button>
 
+                {me.volunteer && (
+                  <button
+                    onClick={() => router.push('/deliveries/history')}
+                    className="w-full py-3.5 flex items-center justify-between text-neutral-800 hover:text-emerald-800 text-sm font-bold transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-neutral-400">local_shipping</span>
+                      <span>Lịch sử giao hàng</span>
+                    </div>
+                    <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => toast.info('Trung tâm trợ giúp đang được phát triển.')}
                   className="w-full py-3.5 flex items-center justify-between text-neutral-800 hover:text-emerald-800 text-sm font-bold transition-colors text-left"
@@ -337,6 +362,37 @@ export default function ProfilePage() {
                   className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
+
+              {/* Khuôn mặt đã đăng ký (eKYC) — chỉ hiển thị, đăng ký 1 lần khi tạo tài khoản */}
+              {isFaceRole && (
+                <div className="space-y-1.5 text-left">
+                  <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
+                  {faceImage ? (
+                    <div className="flex items-center gap-3 border border-neutral-200 rounded-xl p-3">
+                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
+                          <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                          <span>Đã xác minh khuôn mặt</span>
+                        </div>
+                        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                          Dùng để đối chiếu khi nhận hàng. Khuôn mặt gốc không thể tự thay đổi.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
+                      <span className="material-symbols-outlined text-amber-600">no_accounts</span>
+                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">
+                        Chưa đăng ký khuôn mặt.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button

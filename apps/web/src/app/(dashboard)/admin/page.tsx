@@ -18,6 +18,12 @@ import {
   useAdminCampaigns,
   useSetCampaignStatus,
   useAdminCampaignDetail,
+  useAdminCampaignChangeRequests,
+  useReviewCampaignChange,
+  useAdminPendingAssignments,
+  useReviewAssignment,
+  useAdminFoodListings,
+  useUpdateListingCategory,
   useAdminCharities,
   useAdminVolunteers,
   useCreateAdminCampaign,
@@ -29,11 +35,15 @@ import {
   type SystemConfigItem,
   type AdminCampaign,
   type AdminCampaignDetail,
+  type AdminCampaignChangeRequest,
+  type PendingAssignment,
+  type AdminFoodListing,
   type VolunteerDetail,
   type AdminUser,
   type CreateUserInput,
 } from '@/hooks/useAdmin';
 import { useListings } from '@/hooks/useListings';
+import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import { useAuthStore } from '@/stores/auth.store';
 import NotificationBell from '@/components/shared/NotificationBell';
 
@@ -44,23 +54,31 @@ const AdminMap = dynamic(() => import('@/components/map/ListingsMap'), {
 });
 
 const CATEGORY_LABEL: Record<string, string> = {
-  prepared_meal: 'Suất ăn',
-  bakery: 'Bánh mì',
-  raw_ingredients: 'Nguyên liệu',
+  cooked_meal: 'Đồ chín',
+  bakery: 'Bánh ngọt',
+  fresh_fruit: 'Trái cây',
   beverage: 'Đồ uống',
+  vegetables: 'Rau củ',
+  raw_protein: 'Thịt/cá sống',
+  dry_goods: 'Đồ khô',
+  canned_packaged: 'Đồ hộp',
   other: 'Khác',
 };
 const CATEGORY_COLOR: Record<string, string> = {
-  prepared_meal: '#166534',
+  cooked_meal: '#166534',
   bakery: '#22c55e',
-  raw_ingredients: '#86efac',
+  fresh_fruit: '#f59e0b',
   beverage: '#0ea5e9',
+  vegetables: '#86efac',
+  raw_protein: '#ef4444',
+  dry_goods: '#d97706',
+  canned_packaged: '#8b5cf6',
   other: '#a8a29e',
 };
 const MONTH_TARGET_KG = 2000; // mục tiêu cộng đồng theo tháng (hằng số cấu hình)
 const fmtKg = (n: number) => `${n.toLocaleString('vi-VN')} kg`;
 
-type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'volunteers' | 'reports' | 'monitor' | 'users' | 'settings';
+type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'volunteers' | 'reports' | 'monitor' | 'users' | 'settings';
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
@@ -69,6 +87,7 @@ const MAIN_TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'map', label: 'Bản đồ trực tiếp', icon: 'map' },
   { key: 'donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
   { key: 'campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
+  { key: 'food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
   { key: 'volunteers', label: 'Quản lý Tình nguyện viên', icon: 'group' },
   { key: 'reports', label: 'Xử lý khiếu nại', icon: 'warning' },
   { key: 'monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
@@ -201,6 +220,7 @@ export default function AdminPage() {
           {tab === 'map' && <MapTab />}
           {tab === 'donations' && <DonationsTab />}
           {tab === 'campaigns' && <CampaignsAdminTab />}
+          {tab === 'food' && <FoodAdminTab />}
           {tab === 'volunteers' && <VerifyTab />}
           {tab === 'reports' && <ReportsTab />}
           {tab === 'monitor' && <MonitorTab />}
@@ -609,7 +629,8 @@ const RES_STATUS_META: Record<string, { label: string; cls: string; icon: string
   expired: { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-600', icon: 'schedule' },
 };
 const CAT_ICON: Record<string, string> = {
-  prepared_meal: 'restaurant', bakery: 'bakery_dining', raw_ingredients: 'eco', beverage: 'local_cafe', other: 'lunch_dining',
+  cooked_meal: 'restaurant', bakery: 'bakery_dining', fresh_fruit: 'nutrition', beverage: 'local_cafe',
+  vegetables: 'eco', raw_protein: 'set_meal', dry_goods: 'grain', canned_packaged: 'inventory_2', other: 'lunch_dining',
 };
 
 function DonationsTab() {
@@ -760,6 +781,12 @@ function CampaignsAdminTab() {
         </button>
       </div>
 
+      {/* Đăng ký tình nguyện viên chờ duyệt */}
+      <PendingAssignmentsPanel />
+
+      {/* Yêu cầu thay đổi chờ duyệt */}
+      <ChangeRequestsPanel />
+
       {/* Lọc trạng thái */}
       <div className="flex flex-wrap gap-2">
         {[{ v: '', l: 'Tất cả' }, ...CAMPAIGN_STATUS_OPTS.map((s) => ({ v: s, l: CAMPAIGN_STATUS_META[s].label }))].map((opt) => (
@@ -875,6 +902,338 @@ function CampaignsAdminTab() {
 
       {detailId && <CampaignDetailModal id={detailId} onClose={() => setDetailId(null)} />}
       {showCreate && <CampaignFormModal mode="create" onClose={() => setShowCreate(false)} />}
+    </div>
+  );
+}
+
+// Panel: các yêu cầu thay đổi chiến dịch đang chờ admin duyệt
+function PendingAssignmentsPanel() {
+  const { data, isLoading } = useAdminPendingAssignments();
+  const items = data ?? [];
+  if (isLoading || items.length === 0) return null;
+
+  return (
+    <div className="bg-sky-50 border border-sky-200 rounded-3xl p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="material-symbols-outlined text-sky-700">how_to_reg</span>
+        <h3 className="font-extrabold text-neutral-900">Đăng ký tình nguyện viên chờ duyệt ({items.length})</h3>
+      </div>
+      <div className="grid md:grid-cols-2 gap-3">
+        {items.map((a) => <PendingAssignmentCard key={a.id} a={a} />)}
+      </div>
+    </div>
+  );
+}
+
+function PendingAssignmentCard({ a }: { a: PendingAssignment }) {
+  const review = useReviewAssignment();
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
+  const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
+  // TNV có đúng chuyên môn cho vai trò đăng ký không (cảnh báo cho admin)
+  const matchesSpec = a.volunteer.specializations.includes(a.role);
+
+  async function decide(decision: 'approve' | 'reject') {
+    try {
+      await review.mutateAsync({ id: a.id, decision, note: decision === 'reject' ? note.trim() || undefined : undefined });
+      toast.success(decision === 'approve' ? 'Đã duyệt đăng ký' : 'Đã từ chối đăng ký');
+      setRejecting(false); setNote('');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
+      toast.error(msg);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-neutral-150 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-extrabold shrink-0">
+          {a.volunteer.fullName.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-bold text-neutral-900 truncate">{a.volunteer.fullName}</p>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${rm.cls}`}>
+              <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
+            </span>
+          </div>
+          <p className="text-[11px] text-neutral-500 mt-0.5">
+            {a.volunteer.dedicationPoints} điểm cống hiến · Chuyên môn: {a.volunteer.specializations.map((s) => VOL_ROLE_LABEL[s] ?? s).join(', ') || 'chưa có'}
+          </p>
+          {!matchesSpec && (
+            <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">warning</span> Chưa đăng ký chuyên môn {rm.label}
+            </p>
+          )}
+          <p className="text-xs text-neutral-600 mt-1.5 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px] text-emerald-600">soup_kitchen</span>
+            <span className="font-semibold truncate">{a.campaign.title}</span>
+          </p>
+          <p className="text-[11px] text-neutral-400 mt-0.5">
+            {new Date(a.campaign.scheduledDate).toLocaleDateString('vi-VN')} · {a.campaign.startTime}–{a.campaign.endTime}
+          </p>
+        </div>
+      </div>
+
+      {rejecting ? (
+        <div className="mt-3 space-y-2">
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lý do từ chối (tuỳ chọn)"
+            className="w-full px-3 py-2 rounded-lg border border-neutral-200 text-sm" autoFocus />
+          <div className="flex gap-2">
+            <button onClick={() => decide('reject')} disabled={review.isPending}
+              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold disabled:opacity-50">Xác nhận từ chối</button>
+            <button onClick={() => setRejecting(false)} className="px-3 py-2 text-neutral-400 text-xs">Huỷ</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => decide('approve')} disabled={review.isPending}
+            className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold disabled:opacity-50">Duyệt</button>
+          <button onClick={() => setRejecting(true)} disabled={review.isPending}
+            className="flex-1 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-bold disabled:opacity-50">Từ chối</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChangeRequestsPanel() {
+  const { data, isLoading } = useAdminCampaignChangeRequests('pending');
+  const requests = data ?? [];
+  if (isLoading || requests.length === 0) return null;
+
+  return (
+    <div className="bg-honey-50 border border-honey-200 rounded-3xl p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="material-symbols-outlined text-honey-700">edit_note</span>
+        <h3 className="font-extrabold text-neutral-900">Yêu cầu thay đổi chờ duyệt ({requests.length})</h3>
+      </div>
+      <div className="grid md:grid-cols-2 gap-3">
+        {requests.map((r) => <ChangeRequestReviewCard key={r.id} r={r} />)}
+      </div>
+    </div>
+  );
+}
+
+// Một dòng diff: nhãn — giá trị cũ → giá trị mới
+function DiffRow({ label, from, to }: { label: string; from: string | number; to: string | number }) {
+  return (
+    <li className="flex items-center gap-1.5 flex-wrap">
+      <span className="material-symbols-outlined text-[14px] text-emerald-600">arrow_right</span>
+      <span className="font-semibold text-neutral-700">{label}:</span>
+      <span className="text-neutral-400 line-through">{from}</span>
+      <span className="material-symbols-outlined text-[13px] text-neutral-400">east</span>
+      <span className="font-bold text-emerald-700">{to}</span>
+    </li>
+  );
+}
+
+function ChangeRequestReviewCard({ r }: { r: AdminCampaignChangeRequest }) {
+  const review = useReviewCampaignChange();
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
+  const c = r.campaign;
+
+  const diffs: { label: string; from: string | number; to: string | number }[] = [];
+  if (r.scheduledDate) diffs.push({ label: 'Ngày', from: new Date(c.scheduledDate).toLocaleDateString('vi-VN'), to: new Date(r.scheduledDate).toLocaleDateString('vi-VN') });
+  if (r.startTime) diffs.push({ label: 'Giờ bắt đầu', from: c.startTime, to: r.startTime });
+  if (r.endTime) diffs.push({ label: 'Giờ kết thúc', from: c.endTime, to: r.endTime });
+  if (r.kitchenAddress) diffs.push({ label: 'Địa chỉ', from: c.kitchenAddress, to: r.kitchenAddress });
+  if (r.chefSlotsNeeded != null) diffs.push({ label: 'Đầu bếp', from: c.chefSlotsNeeded, to: r.chefSlotsNeeded });
+  if (r.waiterSlotsNeeded != null) diffs.push({ label: 'Phục vụ', from: c.waiterSlotsNeeded, to: r.waiterSlotsNeeded });
+  if (r.shipperSlotsNeeded != null) diffs.push({ label: 'Giao hàng', from: c.shipperSlotsNeeded, to: r.shipperSlotsNeeded });
+
+  async function decide(decision: 'approve' | 'reject') {
+    try {
+      await review.mutateAsync({ id: r.id, decision, reviewNote: decision === 'reject' ? note.trim() || undefined : undefined });
+      toast.success(decision === 'approve' ? 'Đã duyệt & áp dụng thay đổi' : 'Đã từ chối yêu cầu');
+      setRejecting(false); setNote('');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
+      toast.error(msg);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-neutral-150 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-bold text-neutral-900 truncate">{c.title}</p>
+          <p className="text-[11px] text-neutral-500 truncate">{c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? '—'}</p>
+        </div>
+        <span className="text-[10px] text-neutral-400 shrink-0">{new Date(r.createdAt).toLocaleDateString('vi-VN')}</span>
+      </div>
+
+      <ul className="mt-2.5 text-xs space-y-1">
+        {diffs.map((d, i) => <DiffRow key={i} {...d} />)}
+      </ul>
+      {r.reason && <p className="mt-2 text-[11px] text-neutral-500 italic">“{r.reason}”</p>}
+
+      {rejecting ? (
+        <div className="mt-3 space-y-2">
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lý do từ chối (tuỳ chọn)"
+            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-rose-300" autoFocus />
+          <div className="flex gap-2">
+            <button onClick={() => decide('reject')} disabled={review.isPending}
+              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
+              {review.isPending ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+            </button>
+            <button onClick={() => setRejecting(false)} className="px-3 py-2 text-neutral-400 text-xs">Huỷ</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => decide('approve')} disabled={review.isPending}
+            className="flex-1 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
+            Duyệt &amp; áp dụng
+          </button>
+          <button onClick={() => setRejecting(true)} disabled={review.isPending}
+            className="flex-1 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
+            Từ chối
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// FOOD TAB (Quản lý & phân loại thức ăn)
+// ----------------------------------------------------------------------
+const LISTING_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
+  active: { label: 'Đang mở', cls: 'bg-emerald-100 text-emerald-800' },
+  fully_reserved: { label: 'Hết suất', cls: 'bg-honey-100 text-honey-800' },
+  completed: { label: 'Hoàn tất', cls: 'bg-sky-100 text-sky-700' },
+  expired: { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-500' },
+  cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
+};
+const FOOD_GROUP_TABS: { v: string; l: string }[] = [
+  { v: '', l: 'Tất cả nhóm' },
+  { v: FoodGroup.READY_TO_EAT, l: FOOD_GROUP_LABEL[FoodGroup.READY_TO_EAT] },
+  { v: FoodGroup.RAW_INGREDIENT, l: FOOD_GROUP_LABEL[FoodGroup.RAW_INGREDIENT] },
+  { v: FoodGroup.OTHER, l: FOOD_GROUP_LABEL[FoodGroup.OTHER] },
+];
+
+function FoodAdminTab() {
+  const [group, setGroup] = useState('');
+  const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAdminFoodListings({
+    page,
+    group: group || undefined,
+    status: status || undefined,
+    search: search.trim() || undefined,
+  });
+  const update = useUpdateListingCategory();
+
+  function resetTo1<T>(setter: (v: T) => void) {
+    return (v: T) => { setter(v); setPage(1); };
+  }
+
+  async function changeCategory(id: string, category: string) {
+    try {
+      await update.mutateAsync({ id, category });
+      toast.success(`Đã đổi loại sang "${FOOD_CATEGORY_LABEL[category as FoodCategory]}"`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Đổi loại thất bại';
+      toast.error(msg);
+    }
+  }
+
+  const items = data?.items ?? [];
+  const meta = data?.meta;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div>
+        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý thức ăn</h2>
+        <p className="text-sm text-neutral-500 mt-1">Xem và phân loại lại các tin thực phẩm theo nhóm ăn liền / nguyên liệu thô.</p>
+      </div>
+
+      {/* Lọc theo nhóm + trạng thái + tìm kiếm */}
+      <div className="flex flex-wrap items-center gap-2">
+        {FOOD_GROUP_TABS.map((g) => (
+          <button key={g.v} onClick={() => resetTo1(setGroup)(g.v)}
+            className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${group === g.v ? 'bg-[#166534] text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
+            {g.l}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-2">
+          <select value={status} onChange={(e) => resetTo1(setStatus)(e.target.value)}
+            className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
+            <option value="">Mọi trạng thái</option>
+            {Object.entries(LISTING_STATUS_META).map(([v, m]) => <option key={v} value={v}>{m.label}</option>)}
+          </select>
+          <div className="relative">
+            <span className="material-symbols-outlined text-[18px] text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2">search</span>
+            <input value={search} onChange={(e) => resetTo1(setSearch)(e.target.value)} placeholder="Tìm tên món..."
+              className="bg-white border border-neutral-200 rounded-xl pl-9 pr-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 w-44" />
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <Skeleton />
+      ) : items.length === 0 ? (
+        <Empty icon="restaurant_menu" text="Không có tin thực phẩm nào" />
+      ) : (
+        <div className="bg-white border border-neutral-150 rounded-3xl shadow-sm overflow-hidden p-2">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm mt-2 min-w-[760px]">
+              <thead className="text-neutral-500 font-semibold text-[13px]">
+                <tr>
+                  <th className="px-6 py-4 w-[34%]">Món</th>
+                  <th className="px-6 py-4">Nhà cung cấp</th>
+                  <th className="px-6 py-4">Số lượng</th>
+                  <th className="px-6 py-4">Trạng thái</th>
+                  <th className="px-6 py-4">Phân loại</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100/50">
+                {items.map((it) => {
+                  const st = LISTING_STATUS_META[it.status] ?? { label: it.status, cls: 'bg-neutral-100 text-neutral-600' };
+                  return (
+                    <tr key={it.id} className="hover:bg-neutral-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="min-w-0">
+                          <p className="font-bold text-neutral-900 truncate">{it.title}</p>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">{it.groupLabel}</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-neutral-600 truncate max-w-[160px]">{it.businessName ?? '—'}</td>
+                      <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">{it.quantityRemaining}/{it.quantityTotal} {it.quantityUnit}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={it.category}
+                          disabled={update.isPending}
+                          onChange={(e) => changeCategory(it.id, e.target.value)}
+                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer max-w-[230px]"
+                        >
+                          <optgroup label={FOOD_GROUP_LABEL[FoodGroup.READY_TO_EAT]}>
+                            {FOOD_GROUP_CATEGORIES[FoodGroup.READY_TO_EAT].map((c) => <option key={c} value={c}>{FOOD_CATEGORY_LABEL[c]}</option>)}
+                          </optgroup>
+                          <optgroup label={FOOD_GROUP_LABEL[FoodGroup.RAW_INGREDIENT]}>
+                            {FOOD_GROUP_CATEGORIES[FoodGroup.RAW_INGREDIENT].map((c) => <option key={c} value={c}>{FOOD_CATEGORY_LABEL[c]}</option>)}
+                          </optgroup>
+                          <optgroup label={FOOD_GROUP_LABEL[FoodGroup.OTHER]}>
+                            {FOOD_GROUP_CATEGORIES[FoodGroup.OTHER].map((c) => <option key={c} value={c}>{FOOD_CATEGORY_LABEL[c]}</option>)}
+                          </optgroup>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} perPage={meta.limit} onChange={setPage} />}
+        </div>
+      )}
     </div>
   );
 }

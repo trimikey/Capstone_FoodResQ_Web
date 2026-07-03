@@ -2,10 +2,59 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
+import { useDeliveryTracking } from '@/hooks/useDeliveries';
+import { haversineKm } from '@/lib/utils';
+import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
+
+const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 flex items-center justify-center bg-neutral-100">
+      <span className="animate-spin border-4 border-emerald-600 border-t-transparent rounded-full w-8 h-8" />
+    </div>
+  ),
+});
+
+const isNum = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+
+// Ánh xạ trạng thái giao hàng thật → chỉ số bước trên thanh tiến trình 4 bước
+// (0: Đã nhận · 1: Lấy hàng · 2: Đang giao · 3: Hoàn tất)
+const DELIVERY_STEP: Record<string, number> = {
+  pending_assignment: 0,
+  assigned: 1,
+  heading_to_provider: 1,
+  qc_completed: 2,
+  in_transit: 2,
+  delivered: 3,
+  failed: 0,
+};
+
+// Tiêu đề/mô tả theo trạng thái giao hàng thật
+function deliveryHeadline(status?: string): { title: string; desc: string } {
+  switch (status) {
+    case 'pending_assignment':
+      return { title: 'Đang tìm tình nguyện viên', desc: 'Đang tìm người giao phù hợp gần bạn — vui lòng chờ trong giây lát.' };
+    case 'assigned':
+      return { title: 'Đã có tình nguyện viên nhận đơn', desc: 'Tình nguyện viên sắp đến điểm lấy hàng.' };
+    case 'heading_to_provider':
+      return { title: 'Đang đến lấy hàng', desc: 'Tình nguyện viên đang trên đường đến điểm lấy hàng.' };
+    case 'qc_completed':
+      return { title: 'Đã lấy hàng', desc: 'Tình nguyện viên đã lấy & kiểm tra hàng, chuẩn bị giao cho bạn.' };
+    case 'in_transit':
+      return { title: 'Đang giao hàng', desc: 'Tình nguyện viên đã lấy hàng và đang trên đường giao.' };
+    case 'delivered':
+      return { title: 'Đã giao thành công', desc: 'Cảm ơn bạn đã đồng hành cứu trợ thực phẩm cùng FoodResQ!' };
+    case 'failed':
+      return { title: 'Giao hàng thất bại', desc: 'Đơn giao gặp sự cố. Vui lòng liên hệ hỗ trợ để được hỗ trợ.' };
+    default:
+      return { title: 'Đang xử lý đơn', desc: 'Đang cập nhật trạng thái đơn giao.' };
+  }
+}
 
 export default function ReservationDetailsPage() {
   const params = useParams();
@@ -19,6 +68,8 @@ export default function ReservationDetailsPage() {
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [currentStep, setCurrentStep] = useState(1); // 1 = in progress, 2 = success
   const [isScanning, setIsScanning] = useState(false);
+  const [showProof, setShowProof] = useState(false);
+  const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
@@ -28,6 +79,51 @@ export default function ReservationDetailsPage() {
 
   // Handle fallback or fetched data determination
   const isMock = id.startsWith('demo-') || id.startsWith('mock-') || isError || !fetchedData;
+
+  // Theo dõi đơn giao real-time (toạ độ pickup/delivery + vị trí shipper trực tiếp)
+  const isDeliveryOrder = !isMock && !!fetchedData?.delivery;
+  const { data: tracking } = useDeliveryTracking(id, isDeliveryOrder);
+
+  // Toạ độ thật từ backend
+  const pickupPt =
+    tracking?.coords && isNum(tracking.coords.pickupLat) && isNum(tracking.coords.pickupLng)
+      ? { lat: tracking.coords.pickupLat, lng: tracking.coords.pickupLng }
+      : null;
+  const deliveryPt =
+    tracking?.coords && isNum(tracking.coords.deliveryLat) && isNum(tracking.coords.deliveryLng)
+      ? { lat: tracking.coords.deliveryLat, lng: tracking.coords.deliveryLng }
+      : null;
+  const shipperPt = tracking?.shipper?.location
+    ? { lat: tracking.shipper.location.lat, lng: tracking.shipper.location.lng }
+    : null;
+
+  // Khoảng cách thật theo chặng hiện tại của shipper
+  const headingToPickup =
+    tracking?.status === 'assigned' || tracking?.status === 'heading_to_provider';
+  // Trước khi lấy hàng: shipper → điểm lấy; sau khi lấy: shipper → điểm giao (chỗ bạn)
+  const liveDistanceKm =
+    shipperPt && headingToPickup && pickupPt
+      ? haversineKm(shipperPt, pickupPt)
+      : shipperPt && deliveryPt
+        ? haversineKm(shipperPt, deliveryPt)
+        : null;
+
+  const distanceLabel =
+    liveDistanceKm != null
+      ? headingToPickup
+        ? `Tình nguyện viên cách điểm lấy khoảng ${liveDistanceKm.toFixed(1)}km`
+        : `Tình nguyện viên cách bạn khoảng ${liveDistanceKm.toFixed(1)}km`
+      : tracking?.distanceKm != null
+        ? `Quãng đường giao khoảng ${tracking.distanceKm.toFixed(1)}km`
+        : null;
+  // Đơn THẬT có delivery → dùng trạng thái giao hàng thật từ tracking (không dùng mock currentStep).
+  const useRealDelivery = !isMock && isDeliveryOrder && !!tracking;
+  const realDeliveryStatus = tracking?.status;
+  const realDeliveryStep = useRealDelivery ? (DELIVERY_STEP[realDeliveryStatus ?? ''] ?? 0) : null;
+  const realShipper = tracking?.shipper ?? null;
+  const isDelivered = useRealDelivery
+    ? realDeliveryStatus === 'delivered'
+    : tracking?.status === 'delivered' || currentStep === 2;
 
   // Sync deliveryMethod based on database response
   useEffect(() => {
@@ -47,6 +143,14 @@ export default function ReservationDetailsPage() {
       }
     }
   }, [fetchedData, id]);
+
+  // Trạng thái thật của đơn (chỉ có khi không phải mock). Driver cho bước hiển thị + thông báo chờ quét.
+  const liveStatus = fetchedData?.status as string | undefined;
+
+  // Đơn thật hoàn tất → tự chuyển sang bước thành công (đồng bộ với UI mô phỏng dùng currentStep)
+  useEffect(() => {
+    if (!isMock && liveStatus === 'completed') setCurrentStep(2);
+  }, [isMock, liveStatus]);
 
   if (isLoading && !isMock) {
     return (
@@ -114,6 +218,23 @@ export default function ReservationDetailsPage() {
     }, 2000);
   };
 
+  // Người nhận chụp ảnh khuôn mặt/CCCD để hoàn tất đơn — chỉ hợp lệ sau khi NCC/TNV đã quét (picked_up)
+  const openProof = (mode: CaptureMode = 'face') => {
+    setProofMode(mode);
+    setShowProof(true);
+  };
+  const handleSubmitProof = async (photo: File) => {
+    try {
+      await submitProofMutation.mutateAsync({ id, verificationType: proofMode, photo });
+      toast.success('Xác minh thành công! Đơn đã hoàn tất.');
+      setShowProof(false);
+      setCurrentStep(2);
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Xác minh thất bại';
+      toast.error(msg);
+    }
+  };
+
   const handleSendMessage = () => {
     if (!chatMessage.trim()) return;
     setChatHistory([...chatHistory, { sender: 'receiver', text: chatMessage }]);
@@ -159,13 +280,16 @@ export default function ReservationDetailsPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-lg text-neutral-900">
-                      {currentStep === 2 ? 'Đã giao thành công' : 'Đang giao hàng'}
+                      {useRealDelivery
+                        ? deliveryHeadline(realDeliveryStatus).title
+                        : currentStep === 2 ? 'Đã giao thành công' : 'Đang giao hàng'}
                     </h3>
                     <p className="text-sm text-neutral-500">
-                      {currentStep === 2 
-                        ? 'Cảm ơn bạn đã đồng hành cứu trợ thực phẩm cùng FoodResQ!'
-                        : 'Tình nguyện viên đã lấy hàng và đang trên đường giao'
-                      }
+                      {useRealDelivery
+                        ? deliveryHeadline(realDeliveryStatus).desc
+                        : currentStep === 2
+                          ? 'Cảm ơn bạn đã đồng hành cứu trợ thực phẩm cùng FoodResQ!'
+                          : 'Tình nguyện viên đã lấy hàng và đang trên đường giao'}
                     </p>
                   </div>
                 </div>
@@ -174,9 +298,9 @@ export default function ReservationDetailsPage() {
                 <div className="mt-8 relative">
                   {/* Timeline Horizontal Line */}
                   <div className="absolute top-[9px] left-0 right-0 h-1 bg-neutral-100 rounded-full z-0">
-                    <div 
-                      className="h-full bg-emerald-600 rounded-full transition-all duration-500" 
-                      style={{ width: currentStep === 2 ? '100%' : '66.6%' }}
+                    <div
+                      className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                      style={{ width: `${((useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2)) / 3) * 100}%` }}
                     />
                   </div>
 
@@ -188,8 +312,8 @@ export default function ReservationDetailsPage() {
                       { label: 'Đang giao', desc: 'Đang vận chuyển' },
                       { label: 'Hoàn tất', desc: 'Giao thành công' }
                     ].map((step, idx) => {
-                      const isCompleted = idx <= (currentStep === 2 ? 3 : 2);
-                      const isActive = idx === (currentStep === 2 ? 3 : 2);
+                      const activeIdx = useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2);
+                      const isCompleted = idx <= activeIdx;
                       return (
                         <div key={idx} className="flex flex-col items-center">
                           <div className={`w-5 h-5 rounded-full border-4 ${
@@ -209,66 +333,26 @@ export default function ReservationDetailsPage() {
 
               {/* Map Route Tracking Card */}
               <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm relative h-[360px]">
-                {/* SVG Simulated Map Canvas */}
-                <div className="absolute inset-0 bg-neutral-100 flex items-center justify-center">
-                  <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-                    {/* Background Grid Pattern */}
-                    <defs>
-                      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e5e5e5" strokeWidth="1" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-
-                    {/* Parks & Green zones */}
-                    <rect x="150" y="80" width="220" height="90" rx="15" fill="#C8E6C9" opacity="0.6" />
-                    <rect x="420" y="220" width="180" height="100" rx="15" fill="#C8E6C9" opacity="0.6" />
-
-                    {/* Streets Roads */}
-                    <line x1="-50" y1="180" x2="900" y2="180" stroke="white" strokeWidth="24" strokeLinecap="round" />
-                    <line x1="300" y1="-50" x2="300" y2="500" stroke="white" strokeWidth="24" strokeLinecap="round" />
-                    <line x1="600" y1="-50" x2="600" y2="500" stroke="white" strokeWidth="24" strokeLinecap="round" />
-                    <line x1="-50" y1="320" x2="900" y2="320" stroke="white" strokeWidth="24" strokeLinecap="round" />
-
-                    {/* Route line */}
-                    <path 
-                      d="M 280,180 L 300,180 L 300,320 L 580,320" 
-                      fill="none" 
-                      stroke="#059669" 
-                      strokeWidth="6" 
-                      strokeDasharray="8,6" 
-                      strokeLinecap="round"
-                    />
-
-                    {/* Store Pin (Harmony) */}
-                    <g transform="translate(280, 180)">
-                      <circle cx="0" cy="0" r="14" fill="#047857" />
-                      <path d="M-6,-4 L6,-4 L0,8 Z" fill="#047857" />
-                      <circle cx="0" cy="0" r="6" fill="white" />
-                    </g>
-                    
-                    {/* User Pin */}
-                    <g transform="translate(580, 320)">
-                      <circle cx="0" cy="0" r="16" fill="#DC2626" className="animate-pulse" />
-                      <circle cx="0" cy="0" r="8" fill="white" />
-                    </g>
-
-                    {/* Shipper Pin */}
-                    <g transform={`translate(${currentStep === 2 ? 580 : 380}, 320)`} className="transition-all duration-[2000ms]">
-                      <circle cx="0" cy="0" r="18" fill="#2563EB" />
-                      <circle cx="0" cy="0" r="6" fill="white" />
-                      <path d="M-4,4 L4,4 L0,-6 Z" fill="white" />
-                    </g>
-                  </svg>
-                </div>
+                {pickupPt && deliveryPt ? (
+                  // Bản đồ thật (Leaflet/OSM): điểm lấy, điểm giao, vị trí shipper trực tiếp
+                  <DeliveryRouteMap pickup={pickupPt} delivery={deliveryPt} shipper={shipperPt} />
+                ) : (
+                  // Fallback khi đơn chưa có toạ độ (mock/demo hoặc backend chưa populate)
+                  <div className="absolute inset-0 bg-neutral-100 flex flex-col items-center justify-center gap-2 text-neutral-400">
+                    <span className="material-symbols-outlined text-[40px]">map</span>
+                    <p className="text-xs font-medium">Chưa có dữ liệu vị trí để hiển thị bản đồ</p>
+                  </div>
+                )}
 
                 {/* Overlaid Information Badge */}
-                <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur px-4 py-2.5 rounded-full shadow-md border border-neutral-200 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
-                  <span className="text-xs font-bold text-neutral-800">
-                    {currentStep === 2 ? 'Đã giao tới vị trí của bạn' : 'Tình nguyện viên cách bạn khoảng 1.2km'}
-                  </span>
-                </div>
+                {(distanceLabel || isDelivered) && (
+                  <div className="absolute bottom-4 left-4 z-[1000] bg-white/95 backdrop-blur px-4 py-2.5 rounded-full shadow-md border border-neutral-200 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
+                    <span className="text-xs font-bold text-neutral-800">
+                      {isDelivered ? 'Đã giao tới vị trí của bạn' : distanceLabel}
+                    </span>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -310,56 +394,109 @@ export default function ReservationDetailsPage() {
                   </button>
                 )}
 
-                {/* QR Scanner Trigger Button */}
-                <button 
-                  onClick={handleSimulateScan}
-                  disabled={currentStep === 2}
-                  className="w-full py-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-                  Quét mã của Tình nguyện viên
-                </button>
+                {/* Đơn thật: người nhận chỉ ĐƯA mã cho NCC/TNV quét — trạng thái tự cập nhật */}
+                {isMock ? (
+                  <button
+                    onClick={handleSimulateScan}
+                    disabled={currentStep === 2}
+                    className="w-full py-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+                    Quét mã của Tình nguyện viên (mô phỏng)
+                  </button>
+                ) : liveStatus === 'completed' ? (
+                  <div className="w-full py-3 bg-emerald-100 text-emerald-800 rounded-xl font-semibold text-sm flex items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                    Đã hoàn tất bàn giao
+                  </div>
+                ) : liveStatus === 'picked_up' ? (
+                  <button
+                    onClick={() => openProof('face')}
+                    disabled={submitProofMutation.isPending}
+                    className="w-full py-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+                    Chụp ảnh xác minh để hoàn tất
+                  </button>
+                ) : (
+                  <div className="w-full py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl font-semibold text-sm flex items-center justify-center gap-2">
+                    <span className="animate-spin border-2 border-emerald-500 border-t-transparent rounded-full w-4 h-4" />
+                    Đang chờ tình nguyện viên quét mã...
+                  </div>
+                )}
               </div>
 
               {/* Volunteer Shipper Details Card */}
-              <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
-                <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
-                <div className="flex items-center justify-between">
+              {useRealDelivery && !realShipper ? (
+                /* Đơn thật chưa có tình nguyện viên nhận → không hiện shipper giả */
+                <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
                   <div className="flex items-center gap-3">
-                    <img 
-                      src={reservation.delivery?.shipper?.user?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"} 
-                      alt="Avatar" 
-                      className="w-12 h-12 rounded-full object-cover border border-neutral-100" 
-                    />
+                    <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                      <span className="animate-spin border-2 border-emerald-500 border-t-transparent rounded-full w-5 h-5" />
+                    </div>
                     <div>
-                      <h5 className="font-bold text-neutral-800">{reservation.delivery?.shipper?.user?.fullName || 'Minh Tâm'}</h5>
-                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-neutral-500 font-medium">
-                        <span className="material-symbols-outlined text-[14px] text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                        <span>4.9</span>
-                        <span className="text-neutral-300">•</span>
-                        <span>120 lượt giúp</span>
-                      </div>
+                      <h5 className="font-bold text-neutral-800">Đang tìm tình nguyện viên…</h5>
+                      <p className="text-xs text-neutral-500 mt-0.5">Chúng tôi sẽ cập nhật ngay khi có người nhận đơn giao.</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleCallShipper(reservation.delivery?.shipper?.user?.fullName || 'Minh Tâm', reservation.delivery?.shipper?.user?.phone || '0987654321')}
-                      className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors"
-                      title="Gọi điện thoại"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">call</span>
-                    </button>
-                    <button 
-                      onClick={() => setIsChatOpen(true)}
-                      className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
-                      title="Nhắn tin"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">chat</span>
-                      <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white" />
-                    </button>
-                  </div>
                 </div>
-              </div>
+              ) : (
+                (() => {
+                  const shipperName = useRealDelivery
+                    ? (realShipper?.name ?? 'Tình nguyện viên')
+                    : (reservation.delivery?.shipper?.user?.fullName || 'Minh Tâm');
+                  const shipperPhone = useRealDelivery
+                    ? (realShipper?.phone ?? '')
+                    : (reservation.delivery?.shipper?.user?.phone || '0987654321');
+                  return (
+                    <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+                      <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={reservation.delivery?.shipper?.user?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"}
+                            alt="Avatar"
+                            className="w-12 h-12 rounded-full object-cover border border-neutral-100"
+                          />
+                          <div>
+                            <h5 className="font-bold text-neutral-800">{shipperName}</h5>
+                            {useRealDelivery ? (
+                              <p className="text-xs text-neutral-500 mt-0.5">Tình nguyện viên FoodResQ</p>
+                            ) : (
+                              <div className="flex items-center gap-1.5 mt-0.5 text-xs text-neutral-500 font-medium">
+                                <span className="material-symbols-outlined text-[14px] text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+                                <span>4.9</span>
+                                <span className="text-neutral-300">•</span>
+                                <span>120 lượt giúp</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {shipperPhone && (
+                            <button
+                              onClick={() => handleCallShipper(shipperName, shipperPhone)}
+                              className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors"
+                              title="Gọi điện thoại"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">call</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setIsChatOpen(true)}
+                            className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
+                            title="Nhắn tin"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">chat</span>
+                            <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-blue-600 rounded-full ring-2 ring-white" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
 
               {/* Listing Details Summary Card */}
               <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm space-y-4">
@@ -389,7 +526,11 @@ export default function ReservationDetailsPage() {
                   <div className="flex items-center justify-between text-neutral-500">
                     <span>Dự kiến giao:</span>
                     <span className="font-bold text-emerald-700">
-                      {currentStep === 2 ? 'Đã hoàn thành' : '10-15 phút nữa'}
+                      {isDelivered
+                        ? 'Đã hoàn thành'
+                        : useRealDelivery && realDeliveryStatus === 'pending_assignment'
+                          ? 'Đang tìm tình nguyện viên'
+                          : '10-15 phút nữa'}
                     </span>
                   </div>
                 </div>
@@ -448,6 +589,30 @@ export default function ReservationDetailsPage() {
                   <div className="bg-neutral-900 aspect-video relative flex items-center justify-center group overflow-hidden">
                     
                     {currentStep === 1 ? (
+                      !isMock ? (
+                        /* ĐƠN THẬT: người nhận chỉ ĐƯA mã QR cho NCC quét (không có camera phía người nhận) */
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-neutral-900 text-white p-6 text-center z-10">
+                          <div className="bg-white p-4 rounded-2xl shadow-lg">
+                            <QRCodeSVG value={reservation.qrToken!} size={180} level="M" />
+                          </div>
+                          <p className="text-sm font-semibold max-w-xs">Đưa mã QR này cho nhà cung cấp quét để xác nhận đã nhận hàng</p>
+                          {liveStatus === 'picked_up' ? (
+                            <button
+                              onClick={() => openProof('face')}
+                              disabled={submitProofMutation.isPending}
+                              className="mt-1 px-5 py-2.5 bg-white text-emerald-900 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-50 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+                              Chụp ảnh xác minh để hoàn tất
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-2 text-xs text-emerald-300">
+                              <span className="animate-spin border-2 border-emerald-400 border-t-transparent rounded-full w-4 h-4" />
+                              Đang chờ nhà cung cấp quét mã...
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                       <>
                         {/* Mock live camera view (a bakery shelf image) */}
                         <div className="absolute inset-0 bg-cover bg-center filter blur-[1px] opacity-70" style={{ 
@@ -485,6 +650,7 @@ export default function ReservationDetailsPage() {
                           </div>
                         </div>
                       </>
+                      )
                     ) : (
                       /* Success Completed Animation View */
                       <div className="absolute inset-0 bg-emerald-950/95 flex flex-col items-center justify-center text-center p-6 space-y-4 animate-fade-in">
@@ -705,6 +871,50 @@ export default function ReservationDetailsPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: NGƯỜI NHẬN CHỤP ẢNH XÁC MINH ĐỂ HOÀN TẤT (picked_up → completed)   */}
+      {/* ========================================================================= */}
+      {showProof && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => !submitProofMutation.isPending && setShowProof(false)}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-md p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-neutral-900">Xác minh danh tính để hoàn tất</h3>
+              <button
+                onClick={() => !submitProofMutation.isPending && setShowProof(false)}
+                className="text-neutral-400 hover:text-neutral-700"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setProofMode('face')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'face' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+              >
+                Khuôn mặt
+              </button>
+              <button
+                onClick={() => setProofMode('id_card')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'id_card' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+              >
+                CCCD / CMND
+              </button>
+            </div>
+            <CameraCapture
+              key={proofMode}
+              mode={proofMode}
+              hint={proofMode === 'face' ? 'Chụp ảnh khuôn mặt của bạn để đối chiếu với ảnh đã đăng ký' : 'Chụp ảnh CCCD/CMND của bạn'}
+              confirmLabel="Xác minh & hoàn tất"
+              busy={submitProofMutation.isPending}
+              onConfirm={handleSubmitProof}
+            />
           </div>
         </div>
       )}

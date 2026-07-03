@@ -14,7 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -34,6 +34,12 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Danh sách chiến dịch bếp ăn đang mở' })
   listOpen() {
     return this.campaignsService.listOpen();
+  }
+
+  @Get('completed')
+  @ApiOperation({ summary: 'Danh sách chiến dịch đã hoàn thành (success stories)' })
+  listCompleted() {
+    return this.campaignsService.listCompleted();
   }
 
   @Get('my')
@@ -112,6 +118,14 @@ export class CampaignsController {
     return this.campaignsService.startCampaign(id, user.id);
   }
 
+  @Patch(':id/cancel')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: huỷ chiến dịch đang tuyển (open → cancelled)' })
+  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.cancelCampaign(id, user.id);
+  }
+
   @Patch(':id/complete')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
@@ -150,6 +164,30 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Charity: huỷ yêu cầu thay đổi đang chờ duyệt' })
   cancelChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.campaignsService.cancelChangeRequest(id, user.id);
+  }
+
+  @Post('experiences/upload-image')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Volunteer: upload ảnh cảm nhận → trả về URL' })
+  async uploadExperienceImage(@UploadedFile() image?: Express.Multer.File) {
+    if (!image) throw new BadRequestException('Thiếu file ảnh.');
+    const url = await this.campaignsService.saveExperienceImage(image);
+    return { url };
+  }
+
+  @Post(':id/experiences')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: chia sẻ cảm nhận sau khi chiến dịch hoàn tất' })
+  addExperience(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: AddExperienceDto,
+  ) {
+    return this.campaignsService.addExperience(id, user.id, dto);
   }
 
   @Post(':id/donations')

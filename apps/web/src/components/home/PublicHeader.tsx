@@ -25,6 +25,7 @@ function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: strin
   if (role === UserRole.VOLUNTEER) {
     return [
       { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
+      { href: '/deliveries/history', icon: 'history', label: 'Lịch sử giao hàng' },
       { href: '/campaigns', icon: 'volunteer_activism', label: 'Bếp ăn' },
     ];
   }

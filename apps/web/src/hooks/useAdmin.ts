@@ -262,6 +262,147 @@ export function useSetCampaignStatus() {
   });
 }
 
+export interface AdminFoodListing {
+  id: string;
+  title: string;
+  category: string;
+  categoryLabel: string;
+  group: string;
+  groupLabel: string;
+  status: string;
+  quantityRemaining: number;
+  quantityTotal: number;
+  quantityUnit: string;
+  weightPerUnitKg: number | null;
+  pickupEndTime: string;
+  imageUrls: string[];
+  businessName: string | null;
+  createdAt: string;
+}
+
+export interface AdminFoodListingsResult {
+  items: AdminFoodListing[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export function useAdminFoodListings(params: { page?: number; group?: string; category?: string; status?: string; search?: string }) {
+  return useQuery({
+    queryKey: ['admin', 'food-listings', params],
+    queryFn: async () =>
+      (await api.get('/admin/food-listings', { params })).data.data as AdminFoodListingsResult,
+    staleTime: 15_000,
+  });
+}
+
+export function useUpdateListingCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { id: string; category: string }) =>
+      (await api.patch(`/admin/food-listings/${p.id}/category`, { category: p.category })).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'food-listings'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'overview'] });
+    },
+  });
+}
+
+export interface AdminCampaignChangeRequest {
+  id: string;
+  campaignId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  reason: string | null;
+  scheduledDate: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  kitchenAddress: string | null;
+  lng: number | null;
+  lat: number | null;
+  chefSlotsNeeded: number | null;
+  waiterSlotsNeeded: number | null;
+  shipperSlotsNeeded: number | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  campaign: {
+    id: string;
+    title: string;
+    status: string;
+    scheduledDate: string;
+    startTime: string;
+    endTime: string;
+    kitchenAddress: string;
+    chefSlotsNeeded: number;
+    waiterSlotsNeeded: number;
+    shipperSlotsNeeded: number;
+    chefSlotsFilled: number;
+    waiterSlotsFilled: number;
+    shipperSlotsFilled: number;
+    charityReceiver: { organizationName: string | null; user: { fullName: string } } | null;
+  };
+}
+
+export function useAdminCampaignChangeRequests(status = 'pending') {
+  return useQuery({
+    queryKey: ['admin', 'campaign-change-requests', status],
+    queryFn: async () =>
+      (await api.get('/admin/campaign-change-requests', { params: status ? { status } : {} }))
+        .data.data as AdminCampaignChangeRequest[],
+    staleTime: 15_000,
+  });
+}
+
+export function useReviewCampaignChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { id: string; decision: 'approve' | 'reject'; reviewNote?: string }) =>
+      (await api.patch(`/admin/campaign-change-requests/${p.id}`, { decision: p.decision, reviewNote: p.reviewNote }))
+        .data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'campaign-change-requests'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
+    },
+  });
+}
+
+export interface PendingAssignment {
+  id: string;
+  role: 'chef' | 'waiter' | 'shipper';
+  createdAt: string;
+  campaign: { id: string; title: string; scheduledDate: string; startTime: string; endTime: string; status: string };
+  volunteer: {
+    id: string;
+    fullName: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    dedicationPoints: number;
+    rank: string;
+    avgRating: string | number | null;
+    specializations: string[];
+  };
+}
+
+export function useAdminPendingAssignments() {
+  return useQuery({
+    queryKey: ['admin', 'pending-assignments'],
+    queryFn: async () =>
+      (await api.get('/admin/campaign-assignments/pending')).data.data as PendingAssignment[],
+    staleTime: 15_000,
+  });
+}
+
+export function useReviewAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { id: string; decision: 'approve' | 'reject'; note?: string }) =>
+      (await api.patch(`/admin/campaign-assignments/${p.id}/review`, { decision: p.decision, note: p.note }))
+        .data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'pending-assignments'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
+    },
+  });
+}
+
 export interface AdminCharity { id: string; name: string; isCharityOrg: boolean; }
 export interface AdminVolunteer { volunteerId: string; fullName: string; specializations: string[]; }
 

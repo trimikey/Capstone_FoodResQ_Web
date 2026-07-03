@@ -27,6 +27,18 @@ export class ReviewCampaignChangeDto {
   reviewNote?: string;
 }
 
+export class ReviewAssignmentDto {
+  @ApiProperty({ enum: ['approve', 'reject'], description: 'Duyệt hay từ chối đăng ký của TNV' })
+  @IsIn(['approve', 'reject'])
+  decision!: 'approve' | 'reject';
+
+  @ApiPropertyOptional({ description: 'Ghi chú của admin (lý do từ chối...)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class SetCampaignStatusDto {
   @ApiProperty({ enum: ['draft', 'open', 'in_progress', 'completed', 'cancelled'] })
   @IsIn(['draft', 'open', 'in_progress', 'completed', 'cancelled'])

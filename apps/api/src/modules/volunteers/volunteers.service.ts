@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { SetAvailabilityDto } from './dto/set-availability.dto';
 
 @Injectable()
 export class VolunteersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private gateway: NotificationsGateway,
+  ) {}
 
   /** Hồ sơ tình nguyện viên + vị trí hiện tại (geography đọc qua raw). */
   async getMe(userId: string) {
@@ -86,6 +90,27 @@ export class VolunteersService {
           location_updated_at = NOW(), updated_at = NOW()
       WHERE id = ${volunteer.id}::uuid
     `);
+
+    // Đẩy vị trí trực tiếp tới người nhận của đơn đang giao (nếu có) để bản đồ theo dõi cập nhật real-time.
+    const active = await this.prisma.delivery.findFirst({
+      where: {
+        shipperId: volunteer.id,
+        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+      },
+      select: {
+        reservationId: true,
+        reservation: { select: { receiver: { select: { userId: true } } } },
+      },
+    });
+    const receiverUserId = active?.reservation.receiver.userId;
+    if (receiverUserId) {
+      this.gateway.emitToUser(receiverUserId, 'delivery:location', {
+        reservationId: active.reservationId,
+        lng,
+        lat,
+      });
+    }
+
     return { ok: true };
   }
 }

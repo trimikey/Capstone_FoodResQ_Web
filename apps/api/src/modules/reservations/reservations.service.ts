@@ -162,6 +162,22 @@ export class ReservationsService {
       data: { reservationId, status: 'pending_assignment' },
     });
 
+    // Ghi sẵn toạ độ điểm lấy (từ listing) + điểm giao (vị trí người nhận) + khoảng cách lấy→giao.
+    // Để FE theo dõi đơn vẽ được bản đồ thật thay vì toạ độ giả.
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE deliveries d
+      SET pickup_location   = fl.pickup_location,
+          delivery_location = rp.location,
+          distance_km = CASE
+            WHEN fl.pickup_location IS NOT NULL AND rp.location IS NOT NULL
+            THEN ROUND((ST_Distance(fl.pickup_location::geography, rp.location::geography) / 1000)::numeric, 2)
+            ELSE NULL END
+      FROM reservations r
+      JOIN food_listings fl ON fl.id = ${listingId}::uuid
+      LEFT JOIN receiver_profiles rp ON rp.id = r.receiver_id
+      WHERE d.id = ${delivery.id}::uuid AND r.id = ${reservationId}::uuid
+    `);
+
     // Get listing pickup coordinates for proximity search
     const [listing] = await this.prisma.$queryRaw<
       { lng: number; lat: number }[]
@@ -199,13 +215,15 @@ export class ReservationsService {
     });
 
     if (!reservation) throw new NotFoundException('Mã QR không hợp lệ.');
-    if (reservation.status !== 'confirmed') {
-      throw new BadRequestException('Đơn này không còn ở trạng thái chờ lấy hàng (có thể đã được quét hoặc đã huỷ).');
-    }
-    if (new Date() > reservation.qrExpiresAt) {
-      // Auto-expire
-      await this.expire(reservation.id);
-      throw new BadRequestException('Mã QR đã hết hạn. Vui lòng tạo lại đặt chỗ.');
+    // Cho quét LẠI khi đơn đã 'picked_up' nhưng CHƯA hoàn tất (provider mất phiên → quét lại để tiếp tục đối chiếu).
+    // Chỉ chặn khi đơn đã rời pha lấy hàng (completed/cancelled/expired/no_show).
+    if (reservation.status === 'confirmed') {
+      if (new Date() > reservation.qrExpiresAt) {
+        await this.expire(reservation.id); // Auto-expire
+        throw new BadRequestException('Mã QR đã hết hạn. Vui lòng tạo lại đặt chỗ.');
+      }
+    } else if (reservation.status !== 'picked_up') {
+      throw new BadRequestException('Đơn này không còn ở trạng thái chờ lấy hàng (có thể đã hoàn tất hoặc đã huỷ).');
     }
 
     // Verify scanner is the provider for this listing
@@ -216,27 +234,32 @@ export class ReservationsService {
       throw new ForbiddenException('Chỉ nhà cung cấp của tin này mới quét được mã QR.');
     }
 
-    const updated = await this.prisma.reservation.update({
-      where: { id: reservation.id },
-      data: {
-        status: 'picked_up',
-        scannedBy: scannerUserId,
-        scannedAt: new Date(),
-      },
-    });
+    // Lần quét đầu (confirmed → picked_up) mới đổi trạng thái + thông báo; quét lại thì idempotent.
+    let status: string = reservation.status;
+    if (reservation.status === 'confirmed') {
+      const updated = await this.prisma.reservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: 'picked_up',
+          scannedBy: scannerUserId,
+          scannedAt: new Date(),
+        },
+      });
+      status = updated.status;
 
-    void this.notifications.notify(reservation.receiver.userId, {
-      type: 'reservation',
-      title: 'Đã xác nhận lấy hàng',
-      body: `Đơn "${reservation.listing.title}" đã được nhà cung cấp xác nhận bàn giao.`,
-      data: { reservationId: reservation.id, status: 'picked_up' },
-    });
+      void this.notifications.notify(reservation.receiver.userId, {
+        type: 'reservation',
+        title: 'Đã xác nhận lấy hàng',
+        body: `Đơn "${reservation.listing.title}" đã được nhà cung cấp xác nhận bàn giao.`,
+        data: { reservationId: reservation.id, status: 'picked_up' },
+      });
+    }
 
     // Trả kèm thẻ thông tin người nhận để provider đối chiếu trực tiếp (không cần receiver chụp lại)
     return {
-      id: updated.id,
-      status: updated.status,
-      quantity: updated.quantity,
+      id: reservation.id,
+      status,
+      quantity: reservation.quantity,
       listing: { title: reservation.listing.title, quantityUnit: reservation.listing.quantityUnit },
       receiver: {
         fullName: reservation.receiver.user.fullName,

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { FoodCategory } from '@foodresq/types';
+import { FoodCategory, type ApiResponse } from '@foodresq/types';
 
 interface ListingItem {
   id: string;
@@ -15,6 +15,7 @@ interface ListingItem {
   allergenNotes: string | null;
   maxPerReservation: number;
   imageUrls: string[];
+  isSurpriseBag?: boolean;
   status: string;
   provider: { id: string; businessName: string };
   distanceM: number;
@@ -33,7 +34,7 @@ interface QueryParams {
 }
 
 async function fetchListings(params: QueryParams): Promise<ListingItem[]> {
-  const { data } = await api.get<{ data: ListingItem[] }>('/listings', { params });
+  const { data } = await api.get<ApiResponse<ListingItem[]>>('/listings', { params });
   return data.data;
 }
 
@@ -45,7 +46,7 @@ export interface ListingDetail extends Omit<ListingItem, 'distanceM'> {
 }
 
 async function fetchListingById(id: string): Promise<ListingDetail> {
-  const { data } = await api.get<{ data: ListingDetail }>(`/listings/${id}`);
+  const { data } = await api.get<ApiResponse<ListingDetail>>(`/listings/${id}`);
   return data.data;
 }
 

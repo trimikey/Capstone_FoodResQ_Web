@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { UserRole, UserStatus } from '@foodresq/types';
+import { UserRole, UserStatus, type ApiResponse } from '@foodresq/types';
 
 export interface MeStats {
   kgSaved: number;
@@ -37,12 +37,12 @@ interface UpdateMeInput {
 }
 
 async function fetchMe(): Promise<Me> {
-  const { data } = await api.get<{ data: Me }>('/users/me');
+  const { data } = await api.get<ApiResponse<Me>>('/users/me');
   return data.data;
 }
 
 async function updateMe(input: UpdateMeInput): Promise<Me> {
-  const { data } = await api.patch<{ data: Me }>('/users/me', input);
+  const { data } = await api.patch<ApiResponse<Me>>('/users/me', input);
   return data.data;
 }
 

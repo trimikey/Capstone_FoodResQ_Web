@@ -1,18 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
+import dynamic from "next/dynamic";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+
+// Leaflet cần window → tắt SSR. Dùng để người dùng kéo ghim chỉnh vị trí chính xác.
+const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full flex items-center justify-center bg-neutral-100 text-neutral-500 text-sm">
+      Đang tải bản đồ...
+    </div>
+  ),
+});
 import { api } from "@/lib/api";
+import { reverseGeocode } from "@/lib/geocode";
 import { useAuthStore } from "@/stores/auth.store";
 import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
-import { GoogleLogin } from "@react-oauth/google";
+import { signInWithGoogle, isFirebaseConfigured } from "@/lib/firebase";
 
-const GOOGLE_ENABLED = !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+const GOOGLE_ENABLED = isFirebaseConfigured();
 
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ"),
@@ -117,6 +129,10 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
   const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
   const [enrollRole, setEnrollRole] = useState<'receiver' | 'volunteer'>('receiver');
+  // Toạ độ GPS bắt được khi người dùng bấm "Dùng vị trí hiện tại" lúc đăng ký.
+  // null = chưa định vị (BE sẽ chỉ lưu địa chỉ dạng text, không lưu location).
+  const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
   const router = useRouter();
 
   // 1. Login form setup
@@ -171,6 +187,55 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
     if (isValid) {
       setRegisterStep(2);
     }
+  };
+
+  // Bấm "Dùng vị trí hiện tại": xin GPS → lưu toạ độ → tự điền địa chỉ text.
+  const fillCurrentLocation = (
+    field: "receiverAddress" | "providerAddress",
+  ) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoStatus("denied");
+      toast.error("Trình duyệt không hỗ trợ định vị.");
+      return;
+    }
+    setGeoStatus("locating");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setGeoCoords({ lat, lng });
+        setGeoStatus("success");
+        const address = await reverseGeocode(lat, lng);
+        if (address) {
+          setRegisterValue(field, address, { shouldValidate: true });
+          toast.success("Đã lấy vị trí hiện tại của bạn.");
+        } else {
+          // Không tra được tên đường → vẫn giữ toạ độ, điền lat/lng để người dùng thấy
+          setRegisterValue(field, `${lat.toFixed(6)}, ${lng.toFixed(6)}`, { shouldValidate: true });
+          toast.success("Đã lấy toạ độ. Bạn có thể chỉnh lại tên đường nếu cần.");
+        }
+      },
+      () => {
+        setGeoStatus("denied");
+        toast.error("Không lấy được vị trí. Vui lòng cho phép quyền định vị hoặc nhập tay.");
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  };
+
+  // Người dùng kéo ghim / bấm trên bản đồ (LocationPicker trả về lng, lat) →
+  // cập nhật toạ độ và tự cập nhật lại địa chỉ text cho khớp điểm vừa chọn.
+  const handleMapPick = async (
+    field: "receiverAddress" | "providerAddress",
+    lng: number,
+    lat: number,
+  ) => {
+    setGeoCoords({ lat, lng });
+    setGeoStatus("success");
+    const address = await reverseGeocode(lat, lng);
+    setRegisterValue(field, address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}`, {
+      shouldValidate: true,
+    });
   };
 
   const { setTokens, setUser } = useAuthStore();
@@ -253,6 +318,19 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
     }
   };
 
+  // Mở popup Firebase → lấy ID token → gửi lên backend (/auth/google)
+  const handleGoogleSignIn = async () => {
+    try {
+      const idToken = await signInWithGoogle();
+      await handleGoogleCredential(idToken);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      // Người dùng tự đóng popup → không báo lỗi
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+      toast.error('Không kết nối được Google');
+    }
+  };
+
   const onRegisterSubmit = async (data: RegisterFormValues) => {
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -280,19 +358,27 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               : undefined,
         vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
         volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
+        // Toạ độ GPS (nếu người dùng đã bấm "Dùng vị trí hiện tại") — chỉ gửi cho
+        // receiver/provider/charity vì BE chỉ lưu location cho 2 profile này.
+        latitude:
+          geoCoords && data.role !== 'volunteer' ? geoCoords.lat : undefined,
+        longitude:
+          geoCoords && data.role !== 'volunteer' ? geoCoords.lng : undefined,
       });
-      toast.success("Đăng ký thành công!");
-
       if (data.role === 'receiver' || data.role === 'volunteer') {
         // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.
         // CHỈ cá nhân người nhận & tình nguyện viên phải đăng ký khuôn mặt.
         // Tổ chức (charity) và nhà cung cấp KHÔNG cần quét mặt.
+        // KHÔNG báo "Đăng ký thành công" ở đây — chỉ coi là hoàn tất khi đã xác minh
+        // được khuôn mặt (BE từ chối ảnh không có mặt). Báo thành công ở bước onDone.
+        toast.info('Đã tạo tài khoản. Vui lòng đăng ký khuôn mặt để hoàn tất.');
         setTokens(res.data.data.accessToken, res.data.data.refreshToken);
         setUser(res.data.data.user);
         setEnrollRole(data.role === 'volunteer' ? 'volunteer' : 'receiver');
         setShowFaceEnrollment(true);
       } else {
         // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
+        toast.success("Đăng ký thành công!");
         setSuccessMessage("Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.");
         setTimeout(() => {
           setActiveTab("login");
@@ -866,9 +952,50 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                   registerErrors.providerAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
-                                {...registerSignup("providerAddress")}
+                                {...(() => {
+                                  const r = registerSignup("providerAddress");
+                                  return {
+                                    ...r,
+                                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
+                                      void r.onChange(e);
+                                      if (geoCoords) {
+                                        setGeoCoords(null);
+                                        setGeoStatus("idle");
+                                      }
+                                    },
+                                  };
+                                })()}
                               />
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => fillCurrentLocation("providerAddress")}
+                              disabled={isSubmitting || geoStatus === "locating"}
+                              className="flex items-center gap-1.5 ml-1 mt-1 text-sm font-semibold text-emerald-800 hover:underline disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-base">
+                                {geoStatus === "locating" ? "progress_activity" : "my_location"}
+                              </span>
+                              {geoStatus === "locating"
+                                ? "Đang lấy vị trí..."
+                                : geoStatus === "success" && geoCoords
+                                  ? "Đã ghim vị trí — bấm để cập nhật"
+                                  : "Dùng vị trí hiện tại của cửa hàng"}
+                            </button>
+                            {geoCoords && (
+                              <div className="mt-2 space-y-1">
+                                <div className="h-48 w-full rounded-xl overflow-hidden border-2 border-neutral-200/30">
+                                  <LocationPicker
+                                    lng={geoCoords.lng}
+                                    lat={geoCoords.lat}
+                                    onPick={(lng, lat) => void handleMapPick("providerAddress", lng, lat)}
+                                  />
+                                </div>
+                                <p className="text-xs text-neutral-500 ml-1">
+                                  Kéo ghim hoặc bấm trên bản đồ để chỉnh đúng vị trí hoạt động.
+                                </p>
+                              </div>
+                            )}
                             {registerErrors.providerAddress && (
                               <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.providerAddress.message}</p>
                             )}
@@ -977,9 +1104,51 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                   registerErrors.receiverAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
-                                {...registerSignup("receiverAddress")}
+                                {...(() => {
+                                  const r = registerSignup("receiverAddress");
+                                  return {
+                                    ...r,
+                                    // Người dùng tự sửa tay → toạ độ GPS cũ không còn khớp, bỏ đi
+                                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
+                                      void r.onChange(e);
+                                      if (geoCoords) {
+                                        setGeoCoords(null);
+                                        setGeoStatus("idle");
+                                      }
+                                    },
+                                  };
+                                })()}
                               />
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => fillCurrentLocation("receiverAddress")}
+                              disabled={isSubmitting || geoStatus === "locating"}
+                              className="flex items-center gap-1.5 ml-1 mt-1 text-sm font-semibold text-emerald-800 hover:underline disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-base">
+                                {geoStatus === "locating" ? "progress_activity" : "my_location"}
+                              </span>
+                              {geoStatus === "locating"
+                                ? "Đang lấy vị trí..."
+                                : geoStatus === "success" && geoCoords
+                                  ? "Đã ghim vị trí — bấm để cập nhật"
+                                  : "Dùng vị trí hiện tại của tôi"}
+                            </button>
+                            {geoCoords && (
+                              <div className="mt-2 space-y-1">
+                                <div className="h-48 w-full rounded-xl overflow-hidden border-2 border-neutral-200/30">
+                                  <LocationPicker
+                                    lng={geoCoords.lng}
+                                    lat={geoCoords.lat}
+                                    onPick={(lng, lat) => void handleMapPick("receiverAddress", lng, lat)}
+                                  />
+                                </div>
+                                <p className="text-xs text-neutral-500 ml-1">
+                                  Kéo ghim hoặc bấm trên bản đồ để chỉnh đúng vị trí của bạn.
+                                </p>
+                              </div>
+                            )}
                             {registerErrors.receiverAddress && (
                               <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.receiverAddress.message}</p>
                             )}
@@ -1049,29 +1218,22 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           {/* Social Logins */}
           <div className="grid grid-cols-2 gap-4 items-center">
             {GOOGLE_ENABLED ? (
-              <div className="flex justify-center">
-                <GoogleLogin
-                  onSuccess={(cred) => {
-                    if (cred.credential) void handleGoogleCredential(cred.credential);
-                  }}
-                  onError={() => {
-                    toast.error('Không kết nối được Google');
-                  }}
-                  text="signin_with"
-                  shape="pill"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => void handleGoogleSignIn()}
+                disabled={isSubmitting}
+                className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors disabled:opacity-60"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+                <span className="font-semibold text-base">Google</span>
+              </button>
             ) : (
               <button
                 type="button"
-                onClick={() => toast.info('Đăng nhập Google chưa được cấu hình (cần NEXT_PUBLIC_GOOGLE_CLIENT_ID).')}
+                onClick={() => toast.info('Đăng nhập Google chưa được cấu hình (cần NEXT_PUBLIC_FIREBASE_*).')}
                 className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
               >
-                <img
-                  alt="Google"
-                  className="w-5 h-5"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBn3AKiR8i1e9RW7aMctVNXB-EOytwqjeutvRIqK52MHa5A07Jc38EDO99hLBJloim7BuqP8shDsWpb5DpUadakNcxRHw9i1kXLPJcFA0EXTBwPJktqTRQbJpPt84lv-F5beXxJPLtlon_zbESO4Ax31F331vJ78Wlk7uX6gnn0ieFEJZpMHxgsoTD-al9R_cJD0YOyVxipQmSUcvnpG6DlRFcVmCFx5EH1T9f4TvzYXiTQzqQd46u6tfVTM76f0qLNfElm2MhSF_vT"
-                />
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
                 <span className="font-semibold text-base">Google</span>
               </button>
             )}
@@ -1080,11 +1242,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               onClick={() => toast.info('Đăng nhập Facebook sắp ra mắt.')}
               className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
             >
-              <img
-                alt="Facebook"
-                className="w-5 h-5"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuKbqZASyY96fbDYBxwezjj--7xfyRgGVGE2z7rlKSLfUG57qcyl2nhhaVpv3nt7NdJ0MeDoU8UP_jNPREHPszwxt9OQmhR-XUZFra1qEzDBt6cYf3R0ac7YSw8OxxQEI03qBHCAwCERNH6ZpBstkZgCIwI5NLE20wJ38_gljn1F8GeZaBt7K9cqmQG_iWhbulv8hUyM4gbs229jkp2mE3trI5Rxw_ljoCS9Fx5SSgc98fC4saxj4AjpKapTubq_t0IXaVpOl2gHGt"
-              />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5"><path fill="#1976D2" d="M42,37c0,2.762-2.238,5-5,5H11c-2.761,0-5-2.238-5-5V11c0-2.762,2.239-5,5-5h26c2.762,0,5,2.238,5,5V37z"/><path fill="#FFF" d="M34.368,25H31v13h-5V25h-3v-4h3v-2.41c0.002-4.078,2.417-5.59,5.096-5.59h3.904v4h-2.604c-1.078,0-1.396,0.675-1.396,1.405V21h4.097L34.368,25z"/></svg>
               <span className="font-semibold text-base">Facebook</span>
             </button>
           </div>
@@ -1144,6 +1302,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
             <FaceEnrollmentPanel
               onDone={() => {
                 setShowFaceEnrollment(false);
+                // Chỉ tới đây (khuôn mặt đã được BE xác minh) mới coi là đăng ký thành công
+                toast.success('Đăng ký thành công!');
                 router.push(enrollRole === 'volunteer' ? '/deliveries' : '/listings');
               }}
             />

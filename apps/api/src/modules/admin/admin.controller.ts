@@ -12,6 +12,7 @@ import {
   AssignVolunteerDto,
   AdminCreateUserDto,
   ReviewCampaignChangeDto,
+  ReviewAssignmentDto,
   UpdateListingCategoryDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -160,6 +161,22 @@ export class AdminController {
   @ApiOperation({ summary: 'Admin: gỡ phân công TNV' })
   unassignVolunteer(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.adminUnassignVolunteer(id);
+  }
+
+  @Get('campaign-assignments/pending')
+  @ApiOperation({ summary: 'Admin: danh sách đăng ký TNV chờ duyệt' })
+  pendingAssignments() {
+    return this.adminService.listPendingAssignments();
+  }
+
+  @Patch('campaign-assignments/:id/review')
+  @ApiOperation({ summary: 'Admin: duyệt/từ chối đăng ký TNV' })
+  reviewAssignment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ReviewAssignmentDto,
+  ) {
+    return this.adminService.reviewAssignment(id, dto.decision, user.id, dto.note);
   }
 
   @Get('food-listings')

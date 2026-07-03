@@ -139,6 +139,29 @@ export class ApplyCampaignDto {
   role!: AssignmentRole;
 }
 
+export class AddExperienceDto {
+  @ApiProperty({ example: 'Một buổi sáng thật ý nghĩa, được nấu và trao tận tay những suất cơm ấm...' })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(2000)
+  content!: string;
+
+  @ApiPropertyOptional({ example: 5, description: 'Chấm điểm trải nghiệm 1-5 (tuỳ chọn)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  @Type(() => Number)
+  rating?: number;
+
+  @ApiPropertyOptional({ type: [String], description: 'URL ảnh đã upload kèm cảm nhận' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(6)
+  imageUrls?: string[];
+}
+
 export class CompleteCampaignDto {
   @ApiProperty({ example: 150, description: 'Số suất ăn thực tế đã phục vụ' })
   @IsInt()

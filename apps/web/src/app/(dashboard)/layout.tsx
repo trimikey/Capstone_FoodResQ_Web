@@ -28,6 +28,7 @@ function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; ic
     return [
       { href: '/listings', icon: 'restaurant', label: 'Tìm' },
       { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
+      { href: '/recipes', icon: 'menu_book', label: 'Công thức' },
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },
     ];
   }
@@ -57,6 +58,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/login');
     }
   }, [isAuthenticated, router]);
+
+  // Đăng ký nhận push FCM khi đã đăng nhập (no-op nếu chưa cấu hình Firebase)
+  useEffect(() => {
+    if (!user) return;
+    void import('@/lib/push').then((m) => m.registerPush());
+  }, [user]);
 
   const { data: me } = useMe(!!user);
 

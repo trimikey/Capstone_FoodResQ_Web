@@ -8,7 +8,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
+import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
@@ -22,12 +23,36 @@ const REFRESH_TOKEN_TTL_DAYS = 30;
 
 @Injectable()
 export class AuthService {
+  /** App firebase-admin riêng cho verify ID token (tách khỏi app FCM mặc định). */
+  private firebaseApp?: App;
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
     private firebaseAdmin: FirebaseAdminService,
   ) {}
+
+  /**
+   * Khởi tạo (lazy) firebase-admin Auth từ FIREBASE_PROJECT_ID / CLIENT_EMAIL / PRIVATE_KEY.
+   * Dùng app có tên 'auth' để không xung đột với app mặc định mà PushService (FCM) dùng.
+   */
+  private getFirebaseAuth() {
+    const projectId = this.config.get<string>('FIREBASE_PROJECT_ID');
+    const clientEmail = this.config.get<string>('FIREBASE_CLIENT_EMAIL');
+    const privateKeyRaw = this.config.get<string>('FIREBASE_PRIVATE_KEY');
+    if (!projectId || !clientEmail || !privateKeyRaw) {
+      throw new ServiceUnavailableException('Đăng nhập Google (Firebase) chưa được cấu hình trên máy chủ');
+    }
+    if (!this.firebaseApp) {
+      const APP_NAME = 'auth';
+      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+      const existing = getApps().find((a) => a.name === APP_NAME);
+      this.firebaseApp =
+        existing ?? initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }, APP_NAME);
+    }
+    return getAuth(this.firebaseApp);
+  }
 
   async register(dto: RegisterDto) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
@@ -128,27 +153,22 @@ export class AuthService {
    * email đã được Google xác thực nên tài khoản mới được kích hoạt luôn (role mặc định receiver).
    */
   async loginWithGoogle(idToken: string, deviceInfo?: string, ipAddress?: string) {
-    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
-    if (!clientId) {
-      throw new ServiceUnavailableException('Google login chưa được cấu hình trên máy chủ');
-    }
+    const auth = this.getFirebaseAuth();
 
-    const client = new OAuth2Client(clientId);
     let email: string | undefined;
     let name: string | undefined;
     let picture: string | undefined;
+    let emailVerified: boolean | undefined;
     try {
-      const ticket = await client.verifyIdToken({ idToken, audience: clientId });
-      const payload = ticket.getPayload();
-      email = payload?.email;
-      name = payload?.name;
-      picture = payload?.picture;
-      if (payload && payload.email_verified === false) {
-        throw new UnauthorizedException('Email Google chưa được xác minh');
-      }
+      const decoded = await auth.verifyIdToken(idToken);
+      email = decoded.email;
+      name = decoded.name as string | undefined;
+      picture = decoded.picture;
+      emailVerified = decoded.email_verified;
     } catch {
       throw new UnauthorizedException('Google token không hợp lệ');
     }
+    if (emailVerified === false) throw new UnauthorizedException('Email Google chưa được xác minh');
     if (!email) throw new UnauthorizedException('Không lấy được email từ Google');
 
     let user = await this.prisma.user.findUnique({ where: { email } });

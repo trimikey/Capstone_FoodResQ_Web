@@ -55,6 +55,12 @@ export class CampaignsService {
     return Math.round((target - startToday) / 86_400_000);
   }
 
+  /** Đầu ngày hôm nay (theo lịch UTC) — dùng để lọc chiến dịch đã qua hạn. */
+  private startOfTodayUTC(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+
   /**
    * Tổ chức từ thiện gửi YÊU CẦU tạo chiến dịch → tạo ở trạng thái 'draft' (chờ duyệt).
    * Admin duyệt (draft → open) thì chiến dịch mới hiển thị công khai & nhận TNV.
@@ -107,10 +113,67 @@ export class CampaignsService {
     return this.findOne(row.id);
   }
 
+  /**
+   * Tự động huỷ chiến dịch 'open' đã qua ngày diễn ra (tổ chức chưa bấm "Bắt đầu").
+   * Chạy định kỳ qua CampaignsCron. 'in_progress' không đụng tới (để tổ chức kết thúc & nhập số suất).
+   */
+  async expireOverdueCampaigns(): Promise<number> {
+    const overdue = await this.prisma.kitchenCampaign.findMany({
+      where: { status: 'open', scheduledDate: { lt: this.startOfTodayUTC() } },
+      select: { id: true, title: true, charityReceiver: { select: { userId: true } } },
+    });
+    if (overdue.length === 0) return 0;
+
+    await this.prisma.kitchenCampaign.updateMany({
+      where: { id: { in: overdue.map((c) => c.id) } },
+      data: { status: 'cancelled' },
+    });
+
+    for (const c of overdue) {
+      void this.notifications.notify(c.charityReceiver.userId, {
+        type: 'campaign',
+        title: 'Chiến dịch đã quá hạn',
+        body: `Chiến dịch "${c.title}" đã qua ngày diễn ra mà chưa được bắt đầu nên đã tự động huỷ.`,
+        data: { campaignId: c.id, status: 'cancelled' },
+      });
+    }
+    return overdue.length;
+  }
+
+  /** Danh sách chiến dịch ĐÃ HOÀN THÀNH (success stories) — cho mục "câu chuyện thành công". */
+  async listCompleted() {
+    const rows = await this.prisma.kitchenCampaign.findMany({
+      where: { status: 'completed' },
+      orderBy: { scheduledDate: 'desc' },
+      take: 50,
+      select: {
+        id: true, title: true, description: true, scheduledDate: true, kitchenAddress: true,
+        imageUrls: true, actualServings: true, expectedServings: true,
+        charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
+        mealDistributions: { select: { peopleServed: true } },
+        assignments: { where: { status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] } }, select: { id: true } },
+        _count: { select: { experiences: true } },
+      },
+    });
+    return rows.map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      scheduledDate: c.scheduledDate,
+      kitchenAddress: c.kitchenAddress,
+      imageUrls: Array.isArray(c.imageUrls) ? (c.imageUrls as string[]) : [],
+      actualServings: c.actualServings,
+      peopleServed: c.mealDistributions.reduce((s, d) => s + d.peopleServed, 0),
+      volunteers: c.assignments.length,
+      experienceCount: c._count.experiences,
+      organizationName: c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
+    }));
+  }
+
   /** Công khai (không cần đăng nhập): vài chiến dịch đang tuyển, sắp diễn ra — cho trang chủ. */
   async listPublicUpcoming(limit = 3) {
     const rows = await this.prisma.kitchenCampaign.findMany({
-      where: { status: 'open' },
+      where: { status: 'open', scheduledDate: { gte: this.startOfTodayUTC() } },
       orderBy: { scheduledDate: 'asc' },
       take: Math.min(limit, 12),
       select: {
@@ -134,7 +197,11 @@ export class CampaignsService {
     }));
   }
 
-  /** Công khai: chi tiết một chiến dịch (cho trang chi tiết ngoài). Chỉ campaign đang mở/diễn ra. */
+  /**
+   * Công khai: chi tiết một chiến dịch (cho trang chi tiết ngoài). Mở/đang diễn ra/đã hoàn tất.
+   * Khi 'completed' → trả thêm dữ liệu "success story": người tham gia, phân phát + feedback,
+   * thư viện ảnh minh chứng, cảm nhận của TNV.
+   */
   async getPublicDetail(id: string) {
     const c = await this.prisma.kitchenCampaign.findUnique({
       where: { id },
@@ -143,26 +210,198 @@ export class CampaignsService {
         scheduledDate: true, startTime: true, endTime: true, kitchenAddress: true, imageUrls: true,
         chefSlotsNeeded: true, waiterSlotsNeeded: true, shipperSlotsNeeded: true,
         chefSlotsFilled: true, waiterSlotsFilled: true, shipperSlotsFilled: true,
-        expectedServings: true, menuItems: true, scheduleItems: true, supplyItems: true,
+        expectedServings: true, actualServings: true, menuItems: true, scheduleItems: true, supplyItems: true,
         charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
+        // Chỉ người đã được duyệt (không hiện pending/rejected/cancelled)
+        assignments: {
+          where: { status: { in: ['assigned', 'checked_in', 'in_progress', 'completed', 'absent'] } },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true, role: true, status: true,
+            ingredientProofUrl: true, cookedProofUrl: true, distributionProofUrl: true,
+            volunteer: { select: { rank: true, user: { select: { fullName: true, avatarUrl: true } } } },
+          },
+        },
+        donations: {
+          where: { status: { in: ['pledged', 'received'] } },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, itemName: true, quantity: true, status: true, provider: { select: { businessName: true } } },
+        },
+        mealDistributions: {
+          orderBy: { distributedAt: 'asc' },
+          select: {
+            id: true, roundLabel: true, servingsServed: true, peopleServed: true, leftoverServings: true,
+            photoUrl: true, note: true, distributedAt: true,
+            servedBy: { select: { user: { select: { fullName: true } } } },
+            feedback: { orderBy: { createdAt: 'desc' }, select: { satisfaction: true, comment: true, createdAt: true } },
+          },
+        },
+        experiences: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true, content: true, imageUrls: true, rating: true, createdAt: true,
+            volunteer: { select: { rank: true, user: { select: { fullName: true, avatarUrl: true } } } },
+          },
+        },
       },
     });
-    if (!c || !['open', 'in_progress'].includes(c.status)) {
+    if (!c || !['open', 'in_progress', 'completed'].includes(c.status)) {
       throw new NotFoundException('Không tìm thấy chiến dịch.');
     }
+
+    const participants = c.assignments.map((a) => ({
+      id: a.id,
+      role: a.role,
+      status: a.status,
+      fullName: a.volunteer.user.fullName,
+      avatarUrl: a.volunteer.user.avatarUrl,
+      rank: a.volunteer.rank,
+    }));
+
+    // Thư viện ảnh minh chứng từ các bước của TNV (nguyên liệu / món nấu / phân phát)
+    const proofGallery = c.assignments.flatMap((a) =>
+      [
+        a.ingredientProofUrl ? { url: a.ingredientProofUrl, kind: 'ingredient', by: a.volunteer.user.fullName } : null,
+        a.cookedProofUrl ? { url: a.cookedProofUrl, kind: 'cooked', by: a.volunteer.user.fullName } : null,
+        a.distributionProofUrl ? { url: a.distributionProofUrl, kind: 'distribution', by: a.volunteer.user.fullName } : null,
+      ].filter((x): x is { url: string; kind: string; by: string } => x !== null),
+    );
+
+    const distributions = c.mealDistributions.map((d) => ({
+      id: d.id,
+      roundLabel: d.roundLabel,
+      servingsServed: d.servingsServed,
+      peopleServed: d.peopleServed,
+      leftoverServings: d.leftoverServings,
+      photoUrl: d.photoUrl,
+      note: d.note,
+      distributedAt: d.distributedAt,
+      servedBy: d.servedBy.user.fullName,
+      feedback: d.feedback,
+    }));
+
+    const distributionSummary = c.mealDistributions.reduce(
+      (acc, d) => ({
+        servingsServed: acc.servingsServed + d.servingsServed,
+        peopleServed: acc.peopleServed + d.peopleServed,
+        leftoverServings: acc.leftoverServings + d.leftoverServings,
+      }),
+      { servingsServed: 0, peopleServed: 0, leftoverServings: 0 },
+    );
+
+    const allFeedback = c.mealDistributions.flatMap((d) => d.feedback);
+    const avgSatisfaction =
+      allFeedback.length > 0
+        ? allFeedback.reduce((s, f) => s + f.satisfaction, 0) / allFeedback.length
+        : null;
+
+    const experiences = c.experiences.map((e) => ({
+      id: e.id,
+      content: e.content,
+      imageUrls: Array.isArray(e.imageUrls) ? (e.imageUrls as string[]) : [],
+      rating: e.rating,
+      createdAt: e.createdAt,
+      fullName: e.volunteer.user.fullName,
+      avatarUrl: e.volunteer.user.avatarUrl,
+      rank: e.volunteer.rank,
+    }));
+
     return {
-      ...c,
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      status: c.status,
+      scheduledDate: c.scheduledDate,
+      startTime: c.startTime,
+      endTime: c.endTime,
+      kitchenAddress: c.kitchenAddress,
+      chefSlotsNeeded: c.chefSlotsNeeded,
+      waiterSlotsNeeded: c.waiterSlotsNeeded,
+      shipperSlotsNeeded: c.shipperSlotsNeeded,
+      chefSlotsFilled: c.chefSlotsFilled,
+      waiterSlotsFilled: c.waiterSlotsFilled,
+      shipperSlotsFilled: c.shipperSlotsFilled,
+      expectedServings: c.expectedServings,
+      actualServings: c.actualServings,
       imageUrls: Array.isArray(c.imageUrls) ? (c.imageUrls as string[]) : [],
       menuItems: Array.isArray(c.menuItems) ? c.menuItems : [],
       scheduleItems: Array.isArray(c.scheduleItems) ? c.scheduleItems : [],
       supplyItems: Array.isArray(c.supplyItems) ? (c.supplyItems as string[]) : [],
       organizationName: c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
+      participants,
+      donations: c.donations,
+      proofGallery,
+      distributions,
+      distributionSummary,
+      avgSatisfaction,
+      feedbackCount: allFeedback.length,
+      experiences,
     };
   }
 
+  /** Lưu ảnh cảm nhận của TNV → trả URL để gắn vào experience. */
+  async saveExperienceImage(photo: Express.Multer.File): Promise<string> {
+    return this.storage.saveImage(photo, 'campaign-experiences');
+  }
+
+  /**
+   * TNV chia sẻ cảm nhận/trải nghiệm sau khi chiến dịch hoàn tất.
+   * Điều kiện: chiến dịch đã 'completed' và TNV có tham gia (đã được duyệt). Mỗi TNV 1 bài / chiến dịch (cập nhật nếu gửi lại).
+   */
+  async addExperience(
+    campaignId: string,
+    userId: string,
+    dto: { content: string; rating?: number; imageUrls?: string[] },
+  ) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId } });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const campaign = await this.prisma.kitchenCampaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    if (campaign.status !== 'completed') {
+      throw new BadRequestException('Chỉ chia sẻ cảm nhận sau khi chiến dịch đã hoàn tất.');
+    }
+
+    // Phải là người đã tham gia (được duyệt) chiến dịch này
+    const participated = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: {
+        campaignId,
+        volunteerId: volunteer.id,
+        status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+      },
+    });
+    if (!participated) {
+      throw new ForbiddenException('Chỉ tình nguyện viên đã tham gia chiến dịch mới chia sẻ được cảm nhận.');
+    }
+
+    const experience = await this.prisma.campaignExperience.upsert({
+      where: { campaignId_volunteerId: { campaignId, volunteerId: volunteer.id } },
+      create: {
+        campaignId,
+        volunteerId: volunteer.id,
+        content: dto.content,
+        imageUrls: dto.imageUrls ?? [],
+        rating: dto.rating ?? null,
+      },
+      update: {
+        content: dto.content,
+        imageUrls: dto.imageUrls ?? [],
+        rating: dto.rating ?? null,
+      },
+    });
+    return { id: experience.id, message: 'Đã chia sẻ cảm nhận của bạn. Cảm ơn bạn!' };
+  }
+
   async listOpen() {
+    const today = this.startOfTodayUTC();
     return this.prisma.kitchenCampaign.findMany({
-      where: { status: { in: ['open', 'in_progress'] } },
+      // 'open' chỉ tính khi chưa qua ngày; 'in_progress' (đang diễn ra) vẫn hiển thị
+      where: {
+        OR: [
+          { status: 'in_progress' },
+          { status: 'open', scheduledDate: { gte: today } },
+        ],
+      },
       orderBy: { scheduledDate: 'asc' },
       include: {
         charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
@@ -284,6 +523,10 @@ export class CampaignsService {
     if (!['open', 'in_progress'].includes(campaign.status)) {
       throw new BadRequestException('Chiến dịch này không còn nhận đăng ký.');
     }
+    // Chặn đăng ký khi chiến dịch đã qua ngày diễn ra (kẹt ở 'open' vì tổ chức chưa bắt đầu)
+    if (this.daysUntil(campaign.scheduledDate) < 0) {
+      throw new BadRequestException('Chiến dịch này đã qua ngày diễn ra, không còn nhận đăng ký.');
+    }
 
     const slot = SLOT_FIELD[dto.role];
     const needed = campaign[slot.needed] as number;
@@ -295,19 +538,24 @@ export class CampaignsService {
     const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
       where: { campaignId_volunteerId_role: { campaignId, volunteerId: volunteer.id, role: dto.role } },
     });
-    if (existing) throw new ConflictException('Bạn đã đăng ký vai trò này rồi.');
+    if (existing) {
+      // Cho đăng ký lại nếu lần trước bị từ chối/huỷ; còn pending/đã duyệt thì chặn.
+      if (existing.status === 'rejected' || existing.status === 'cancelled') {
+        await this.prisma.campaignVolunteerAssignment.update({
+          where: { id: existing.id },
+          data: { status: 'pending', notes: null },
+        });
+        return { message: `Đã gửi lại đăng ký vai trò ${roleVN}. Vui lòng chờ quản trị viên duyệt.` };
+      }
+      throw new ConflictException('Bạn đã đăng ký vai trò này rồi.');
+    }
 
-    await this.prisma.$transaction([
-      this.prisma.campaignVolunteerAssignment.create({
-        data: { campaignId, volunteerId: volunteer.id, role: dto.role, status: 'assigned' },
-      }),
-      this.prisma.kitchenCampaign.update({
-        where: { id: campaignId },
-        data: { [slot.filled]: { increment: 1 } },
-      }),
-    ]);
+    // Đăng ký vào trạng thái 'pending' — CHỜ admin duyệt mới được nhận (không tăng slot ngay).
+    await this.prisma.campaignVolunteerAssignment.create({
+      data: { campaignId, volunteerId: volunteer.id, role: dto.role, status: 'pending' },
+    });
 
-    return { message: `Đăng ký vai trò ${roleVN} thành công.` };
+    return { message: `Đã gửi đăng ký vai trò ${roleVN}. Vui lòng chờ quản trị viên duyệt.` };
   }
 
   /** Lưu ảnh minh chứng (nguyên liệu / món đã nấu / đã giao) của TNV. */
@@ -338,6 +586,16 @@ export class CampaignsService {
       throw new BadRequestException('Chỉ bắt đầu được chiến dịch đang ở trạng thái "Đang tuyển".');
     }
     await this.prisma.kitchenCampaign.update({ where: { id: campaignId }, data: { status: 'in_progress' } });
+    return this.findOne(campaignId);
+  }
+
+  /** Tổ chức: huỷ chiến dịch đang tuyển (open → cancelled). Dùng khi quá hạn mà không kịp bắt đầu. */
+  async cancelCampaign(campaignId: string, userId: string) {
+    const campaign = await this.assertOwner(campaignId, userId);
+    if (campaign.status !== 'open') {
+      throw new BadRequestException('Chỉ huỷ được chiến dịch đang ở trạng thái "Đang tuyển".');
+    }
+    await this.prisma.kitchenCampaign.update({ where: { id: campaignId }, data: { status: 'cancelled' } });
     return this.findOne(campaignId);
   }
 
