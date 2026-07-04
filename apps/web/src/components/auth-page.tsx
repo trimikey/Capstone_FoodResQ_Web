@@ -358,12 +358,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               : undefined,
         vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
         volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
-        // Toạ độ GPS (nếu người dùng đã bấm "Dùng vị trí hiện tại") — chỉ gửi cho
-        // receiver/provider/charity vì BE chỉ lưu location cho 2 profile này.
-        latitude:
-          geoCoords && data.role !== 'volunteer' ? geoCoords.lat : undefined,
-        longitude:
-          geoCoords && data.role !== 'volunteer' ? geoCoords.lng : undefined,
       });
       if (data.role === 'receiver' || data.role === 'volunteer') {
         // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.

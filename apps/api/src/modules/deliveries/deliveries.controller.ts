@@ -5,6 +5,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -47,11 +48,32 @@ export class DeliveriesController {
     return this.deliveriesService.getMyPendingOffers(user.id);
   }
 
-  @Get('track/:id')
+  @Get('track/:reservationId')
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Receiver: theo dõi đơn giao theo reservationId (trạng thái + vị trí shipper)' })
-  track(@Param('id', ParseUUIDPipe) reservationId: string, @CurrentUser() user: User) {
-    return this.deliveriesService.trackByReservation(reservationId, user.id);
+  @ApiOperation({ summary: 'Receiver: theo dõi đơn giao (trạng thái + vị trí shipper)' })
+  track(@Param('reservationId', ParseUUIDPipe) reservationId: string, @CurrentUser() user: User) {
+    return this.deliveriesService.getTrackingForReceiver(reservationId, user.id);
+  }
+
+  @Get('my/stats')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: Bảng thành tích (số đơn, km, tỉ lệ hoàn thành, ★)' })
+  getMyStats(@CurrentUser() user: User) {
+    return this.deliveriesService.getMyStats(user.id);
+  }
+
+  @Get('my/history')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: Lịch sử giao hàng (đã giao / thất bại), phân trang' })
+  getMyHistory(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.deliveriesService.getMyDeliveryHistory(user.id, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Post(':id/accept')
@@ -70,6 +92,28 @@ export class DeliveriesController {
     @Body() dto: RejectOfferDto,
   ) {
     return this.deliveriesService.rejectOffer(id, user.id, dto.reason);
+  }
+
+  @Post(':id/cancel')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: Huỷ nhận đơn (chỉ trước khi lấy hàng) → trả về chờ nhận' })
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: RejectOfferDto,
+  ) {
+    return this.deliveriesService.cancelAssignment(id, user.id, dto.reason);
+  }
+
+  @Post(':id/fail')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: Báo giao thất bại (sau khi đã lấy hàng), kèm lý do' })
+  fail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: RejectOfferDto,
+  ) {
+    return this.deliveriesService.failDelivery(id, user.id, dto.reason);
   }
 
   @Patch(':id/status')

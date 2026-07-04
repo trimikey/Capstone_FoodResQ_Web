@@ -143,7 +143,7 @@ function OfferPopup({
             </p>
             <p className="flex items-start gap-2">
               <span className="material-symbols-outlined text-rose-600 text-[18px]">location_on</span>
-              <span className="text-neutral-700"><b>Giao:</b> {offer.delivery.reservation.receiver.address ?? '—'}</span>
+              <span className="text-neutral-700"><b>Giao:</b> {offer.delivery.reservation.receiver?.address ?? '—'}</span>
             </p>
           </div>
           <div className="flex gap-3 pt-1">
@@ -522,7 +522,7 @@ export default function DeliveriesPage() {
                 const tLat = toPickup ? c?.pickupLat : c?.deliveryLat;
                 const tLng = toPickup ? c?.pickupLng : c?.deliveryLng;
                 const label = toPickup ? 'Điểm lấy hàng' : 'Điểm giao hàng';
-                const addr = toPickup ? active.reservation.listing.pickupAddress : active.reservation.receiver.address;
+                const addr = toPickup ? active.reservation.listing.pickupAddress : active.reservation.receiver?.address;
                 const fromMe =
                   me?.currentLocation && tLat != null && tLng != null
                     ? haversineKm(me.currentLocation, { lat: tLat, lng: tLng })

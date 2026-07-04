@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import type { Marker as LeafletMarker } from 'leaflet';
 import L from 'leaflet';
@@ -40,6 +40,7 @@ function Recenter({ lng, lat }: { lng: number; lat: number }) {
 /** Bản đồ cho phép bấm hoặc kéo ghim để chọn toạ độ chính xác. */
 export default function LocationPicker({ lng, lat, onPick }: Props) {
   const markerRef = useRef<LeafletMarker | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   const dragHandlers = useMemo(
     () => ({
@@ -54,8 +55,16 @@ export default function LocationPicker({ lng, lat, onPick }: Props) {
     [onPick],
   );
 
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return <div className="w-full h-full bg-neutral-100" />;
+  }
+
   return (
-    <MapContainer center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full">
+    <MapContainer key={`${lat.toFixed(6)}-${lng.toFixed(6)}`} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full">
       <TileLayer
         attribution='&copy; OpenStreetMap'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
