@@ -45,3 +45,10 @@ export function formatRelativeTime(date: string | Date) {
   if (Math.abs(diff) < 86400) return rtf.format(Math.round(diff / 3600), 'hour');
   return rtf.format(Math.round(diff / 86400), 'day');
 }
+
+/** Trích thông điệp lỗi từ response API (axios) — fallback nếu không có. */
+export function errMsg(e: unknown, fallback: string): string {
+  return (
+    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback
+  );
+}

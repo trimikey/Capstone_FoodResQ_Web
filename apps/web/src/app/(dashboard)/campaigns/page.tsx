@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { createPortal } from 'react-dom';
+import { Modal } from '@/components/shared/Modal';
 import { toast } from 'sonner';
 import { reverseGeocode } from '@/lib/geocode';
 import {
@@ -30,13 +30,10 @@ import {
   type CompletedCampaign,
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, errMsg } from '@/lib/utils';
 import { useVolunteerMe } from '@/hooks/useDeliveries';
 import { AssignmentRole, UserRole } from '@foodresq/types';
 
-function errMsg(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-}
 
 // Trạng thái chiến dịch (phía tổ chức xem yêu cầu của mình)
 const CAMPAIGN_STATUS_META: Record<string, { label: string; badge: string }> = {
@@ -523,10 +520,8 @@ function CampaignChangeModal({ c, onClose }: { c: Campaign; onClose: () => void 
     catch (err) { toast.error(errMsg(err, 'Huỷ thất bại')); }
   }
 
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto animate-fade-in-up" onClick={onClose}>
-      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+  return (
+    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden">
         <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="material-symbols-outlined">tune</span>
@@ -604,9 +599,7 @@ function CampaignChangeModal({ c, onClose }: { c: Campaign; onClose: () => void 
             </div>
           </div>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 

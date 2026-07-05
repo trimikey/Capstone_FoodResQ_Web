@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { createPortal } from 'react-dom';
+import { Modal } from '@/components/shared/Modal';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
@@ -351,9 +351,8 @@ function DeliveryTrackingModal({ reservationId, onClose }: { reservationId: stri
   const c = t?.coords;
   const hasRoute = c?.pickupLat != null && c?.pickupLng != null && c?.deliveryLat != null && c?.deliveryLng != null;
 
-  return createPortal(
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+  return (
+    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 overflow-hidden">
         <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="material-symbols-outlined">my_location</span>
@@ -405,8 +404,6 @@ function DeliveryTrackingModal({ reservationId, onClose }: { reservationId: stri
             </>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

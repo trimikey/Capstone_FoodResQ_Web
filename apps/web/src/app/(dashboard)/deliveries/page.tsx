@@ -24,6 +24,8 @@ import {
   type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { mediaUrl, mapsDirUrl, haversineKm } from '@/lib/utils';
+import { StatTile } from '@/components/shared/StatTile';
+import { Spinner } from '@/components/shared/Spinner';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -39,15 +41,6 @@ const RANK_LABEL: Record<string, string> = {
   expert: 'Chuyên gia',
 };
 
-function StatTile({ icon, value, label, accent }: { icon: string; value: string | number; label: string; accent?: string }) {
-  return (
-    <div className="bg-white rounded-2xl border border-neutral-150 p-4 flex flex-col gap-1">
-      <span className={`material-symbols-outlined text-[22px] ${accent ?? 'text-emerald-600'}`}>{icon}</span>
-      <span className="font-extrabold text-2xl text-neutral-900 leading-none">{value}</span>
-      <span className="text-[11px] text-neutral-500 font-medium">{label}</span>
-    </div>
-  );
-}
 
 // Bước trạng thái giao hàng + hành động kế tiếp
 const NEXT_STATUS: Record<string, { next: string; label: string; needsPhoto: boolean }> = {
@@ -314,7 +307,7 @@ export default function DeliveriesPage() {
   if (meLoading) {
     return (
       <div className="min-h-screen bg-neutral-50/50 flex items-center justify-center py-20">
-        <span className="animate-spin border-4 border-emerald-600 border-t-transparent rounded-full w-10 h-10" />
+        <Spinner size="lg" className="text-emerald-600" />
       </div>
     );
   }
@@ -561,7 +554,7 @@ export default function DeliveriesPage() {
                   className="w-full py-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
                   {updateStatus.isPending ? (
-                    <span className="animate-spin border-2 border-white border-t-transparent rounded-full w-5 h-5" />
+                    <Spinner size="sm" className="text-white" />
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[20px]">

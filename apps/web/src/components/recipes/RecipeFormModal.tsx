@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from '@/components/shared/Modal';
 import { toast } from 'sonner';
 import { RecipeDifficulty } from '@foodresq/types';
 import {
@@ -12,11 +12,8 @@ import {
   type RecipeIngredient,
   type RecipeInput,
 } from '@/hooks/useRecipes';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, errMsg } from '@/lib/utils';
 
-function errMsg(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-}
 
 const DIFFICULTY_OPTS: { value: RecipeDifficulty; label: string }[] = [
   { value: RecipeDifficulty.EASY, label: 'Dễ' },
@@ -100,16 +97,8 @@ export default function RecipeFormModal({
     }
   }
 
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div
-      className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+  return (
+    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden">
         <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="material-symbols-outlined">menu_book</span>
@@ -218,8 +207,6 @@ export default function RecipeFormModal({
             {busy ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : 'Thêm công thức'}
           </button>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
