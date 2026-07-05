@@ -16,7 +16,8 @@ import {
 } from '@/hooks/useCampaigns';
 import { useVolunteerMe } from '@/hooks/useDeliveries';
 import { useAuthStore } from '@/stores/auth.store';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, errMsg } from '@/lib/utils';
+import { StatTile } from '@/components/shared/StatTile';
 import { AssignmentRole, UserRole } from '@foodresq/types';
 
 const CAMPAIGN_FALLBACK = '/vn-pho.jpg';
@@ -33,9 +34,6 @@ const PROOF_KIND: Record<string, string> = {
   distribution: 'Trao suất ăn',
 };
 
-function errMsg(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-}
 
 export default function CampaignPublicDetailPage() {
   const params = useParams();
@@ -145,10 +143,11 @@ export default function CampaignPublicDetailPage() {
             {/* Băng số liệu tác động — chỉ khi đã hoàn thành */}
             {isCompleted && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
-                <StatBox icon="restaurant" value={c.actualServings ?? c.distributionSummary.servingsServed} label="suất ăn đã trao" />
-                <StatBox icon="diversity_3" value={c.distributionSummary.peopleServed} label="người được phục vụ" />
-                <StatBox icon="volunteer_activism" value={c.participants.length} label="tình nguyện viên" />
-                <StatBox
+                <StatTile align="center" icon="restaurant" value={c.actualServings ?? c.distributionSummary.servingsServed} label="suất ăn đã trao" />
+                <StatTile align="center" icon="diversity_3" value={c.distributionSummary.peopleServed} label="người được phục vụ" />
+                <StatTile align="center" icon="volunteer_activism" value={c.participants.length} label="tình nguyện viên" />
+                <StatTile
+              align="center"
                   icon="sentiment_very_satisfied"
                   value={c.avgSatisfaction != null ? `${c.avgSatisfaction.toFixed(1)}/5` : '—'}
                   label={`hài lòng (${c.feedbackCount} phản hồi)`}
@@ -355,15 +354,6 @@ export default function CampaignPublicDetailPage() {
   );
 }
 
-function StatBox({ icon, value, label }: { icon: string; value: number | string; label: string }) {
-  return (
-    <div className="bg-white border border-neutral-150 rounded-2xl p-4 text-center">
-      <span className="material-symbols-outlined text-emerald-600 text-[24px]">{icon}</span>
-      <p className="font-extrabold text-xl text-neutral-900 mt-1">{value}</p>
-      <p className="text-[11px] text-neutral-500">{label}</p>
-    </div>
-  );
-}
 
 function ProofPhoto({ p }: { p: CampaignProofPhoto }) {
   return (

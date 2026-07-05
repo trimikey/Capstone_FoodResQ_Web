@@ -14,11 +14,8 @@ import {
   useSafetyLogs, useCreateSafetyLog,
   useDistributions, useDistributionSummary, useCreateDistribution, useAddFeedback,
 } from '@/hooks/useKitchenOps';
-import { mediaUrl, formatDate } from '@/lib/utils';
+import { mediaUrl, formatDate, errMsg } from '@/lib/utils';
 
-function errMsg(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-}
 
 const ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 const CHECK_TYPE: { value: SafetyCheckType; label: string }[] = [

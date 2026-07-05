@@ -6,12 +6,9 @@ import { toast } from 'sonner';
 import { RecipeDifficulty, UserRole } from '@foodresq/types';
 import { useRecipe, useDeleteRecipe } from '@/hooks/useRecipes';
 import { useAuthStore } from '@/stores/auth.store';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, errMsg } from '@/lib/utils';
 import RecipeFormModal from '@/components/recipes/RecipeFormModal';
 
-function errMsg(e: unknown, fallback: string): string {
-  return (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-}
 
 const DIFFICULTY_LABEL: Record<RecipeDifficulty, string> = {
   [RecipeDifficulty.EASY]: 'Dễ',
