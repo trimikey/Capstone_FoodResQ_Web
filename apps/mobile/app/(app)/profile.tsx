@@ -169,6 +169,15 @@ export default function ProfileTab() {
 
         {/* Hành động */}
         <Button
+          mode="outlined"
+          icon="chef-hat"
+          onPress={() => router.push('/(app)/recipes')}
+          style={styles.recipesBtn}
+          textColor={COLORS.primary}
+        >
+          Công thức nấu ăn
+        </Button>
+        <Button
           mode="contained"
           icon="account-edit"
           onPress={() => router.push('/(app)/profile/edit')}
@@ -245,6 +254,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600' },
-  editBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 4 },
+  recipesBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
+  editBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 4 },
   logout: { marginTop: 12, borderRadius: 12, borderColor: COLORS.error },
 });

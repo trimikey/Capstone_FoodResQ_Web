@@ -239,6 +239,15 @@ export default function VolunteerProfileScreen() {
         </Button>
         <Button
           mode="outlined"
+          icon="chef-hat"
+          onPress={() => router.push('/(app)/recipes')}
+          style={styles.recipesBtn}
+          textColor={COLORS.primary}
+        >
+          Công thức nấu ăn
+        </Button>
+        <Button
+          mode="outlined"
           icon="logout"
           onPress={logout}
           loading={authLoading}
@@ -301,5 +310,6 @@ const styles = StyleSheet.create({
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600' },
   actionBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 4 },
+  recipesBtn: { marginTop: 12, borderRadius: 12, borderColor: COLORS.primary },
   logout: { marginTop: 12, borderRadius: 12, borderColor: COLORS.error },
 });
