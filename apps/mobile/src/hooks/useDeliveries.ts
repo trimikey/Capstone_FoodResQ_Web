@@ -1,6 +1,15 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { io, type Socket } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
+import { useAuthStore } from '../stores/auth';
+import { getCurrentCoords } from '../services/geolocation';
 import type { CapturedImage } from '../services/faceCapture';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+/** Origin cho WebSocket — bỏ prefix /api/v1 (gateway gắn ở gốc). */
+const SOCKET_URL = API_URL.replace(/\/api\/v\d+\/?$/, '');
 
 export type DeliveryStatus =
   | 'pending_assignment'
@@ -27,13 +36,17 @@ export interface DeliveryTracking {
 
 /**
  * Theo dõi đơn giao tận nơi (receiver). GET /deliveries/track/:reservationId
- * Poll mỗi 15s để cập nhật trạng thái + vị trí shipper (backend pull-based).
+ * Realtime qua socket `delivery:location` (cập nhật vị trí shipper tức thì);
+ * vẫn giữ poll 15s làm fallback khi socket rớt.
  */
 export function useDeliveryTracking(reservationId?: string, enabled = true) {
-  return useQuery({
+  const qc = useQueryClient();
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  const query = useQuery({
     queryKey: ['delivery-tracking', reservationId],
     enabled: !!reservationId && enabled,
-    refetchInterval: 15000,
+    refetchInterval: 15000, // fallback; realtime qua socket bên dưới
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<DeliveryTracking>>(
         endpoints.deliveries.track(reservationId!)
@@ -41,6 +54,33 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
       return res.data.data;
     },
   });
+
+  // Nghe `delivery:location` → cập nhật vị trí shipper trong cache ngay, không chờ poll.
+  useEffect(() => {
+    if (!reservationId || !enabled || !accessToken) return;
+    let socket: Socket | null = null;
+    let cancelled = false;
+    (async () => {
+      const token = (await AsyncStorage.getItem('accessToken')) || accessToken;
+      if (cancelled) return;
+      socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
+      socket.on('delivery:location', (p: { reservationId: string; lng: number; lat: number }) => {
+        if (p.reservationId !== reservationId) return;
+        qc.setQueryData<DeliveryTracking>(['delivery-tracking', reservationId], (prev) =>
+          prev && prev.shipper
+            ? { ...prev, shipper: { ...prev.shipper, location: { lng: p.lng, lat: p.lat } } }
+            : prev
+        );
+      });
+    })();
+    return () => {
+      cancelled = true;
+      socket?.off('delivery:location');
+      socket?.disconnect();
+    };
+  }, [reservationId, enabled, accessToken, qc]);
+
+  return query;
 }
 
 // ── Volunteer (shipper): giao hàng ────────────────────────────────────────────
@@ -273,4 +313,59 @@ export function useUpdateDeliveryStatus() {
       void qc.invalidateQueries({ queryKey: ['volunteer', 'me'] });
     },
   });
+}
+
+/**
+ * Shipper: nghe `delivery:offer` để làm mới danh sách lời mời NGAY khi backend
+ * broadcast (không chờ poll 15s). Gọi ở màn "Đơn cần giao".
+ */
+export function useDeliveryOfferSocket(enabled = true) {
+  const qc = useQueryClient();
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  useEffect(() => {
+    if (!enabled || !accessToken) return;
+    let socket: Socket | null = null;
+    let cancelled = false;
+    (async () => {
+      const token = (await AsyncStorage.getItem('accessToken')) || accessToken;
+      if (cancelled) return;
+      socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
+      socket.on('delivery:offer', () => {
+        void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+      });
+    })();
+    return () => {
+      cancelled = true;
+      socket?.off('delivery:offer');
+      socket?.disconnect();
+    };
+  }, [enabled, accessToken, qc]);
+}
+
+/**
+ * Shipper đang giao: đẩy vị trí hiện tại lên backend định kỳ (PATCH
+ * /volunteers/me/location) để receiver theo dõi live qua `delivery:location`.
+ * Bỏ qua khi không lấy được GPS thật (tránh gửi toạ độ mặc định gây sai vị trí).
+ */
+export function useShipperLocationBroadcast(enabled: boolean, intervalMs = 15000) {
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const push = async () => {
+      try {
+        const { coords, isFallback } = await getCurrentCoords();
+        if (cancelled || isFallback) return;
+        await apiClient.patch(endpoints.volunteers.location, { lng: coords.lng, lat: coords.lat });
+      } catch {
+        // im lặng — chu kỳ sau thử lại
+      }
+    };
+    void push();
+    const id = setInterval(push, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [enabled, intervalMs]);
 }
