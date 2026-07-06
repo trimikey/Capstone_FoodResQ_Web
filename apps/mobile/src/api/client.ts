@@ -276,6 +276,16 @@ export const endpoints = {
     // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
   },
+  recipes: {
+    // Thư viện công thức nấu ăn (đầu bếp/chef đóng góp). List + detail công khai.
+    list: '/recipes',
+    mine: '/recipes/mine',
+    detail: (id: string) => `/recipes/${id}`,
+    create: '/recipes',
+    uploadImage: '/recipes/upload-image',
+    update: (id: string) => `/recipes/${id}`,
+    delete: (id: string) => `/recipes/${id}`,
+  },
   notifications: {
     my: '/notifications/my',
     unreadCount: '/notifications/unread-count',
