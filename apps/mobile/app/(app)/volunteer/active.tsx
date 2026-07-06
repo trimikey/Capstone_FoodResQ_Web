@@ -15,6 +15,7 @@ import {
   useUpdateDeliveryStatus,
   useFailDelivery,
   useCancelAssignment,
+  useShipperLocationBroadcast,
   type ActiveDelivery,
   type DeliveryCoords,
 } from '@/hooks/useDeliveries';
@@ -86,6 +87,11 @@ export default function VolunteerActiveScreen() {
 
   const delivery = data ?? null;
   const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending;
+
+  // Đang giao trên đường → đẩy vị trí định kỳ để receiver theo dõi live.
+  useShipperLocationBroadcast(
+    !!delivery && ['heading_to_provider', 'in_transit'].includes(delivery.status)
+  );
 
   const handleAdvance = async (d: ActiveDelivery) => {
     const next = nextDeliveryStatus(d.status);
