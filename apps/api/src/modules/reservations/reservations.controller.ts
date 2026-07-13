@@ -67,6 +67,20 @@ export class ReservationsController {
     return this.reservationsService.findMyReservations(user.id, page, limit);
   }
 
+  @Get('provider/my')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: Get reservations for my listings' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  providerReservations(
+    @CurrentUser() user: User,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.reservationsService.findProviderReservations(user.id, page, limit);
+  }
+
   @Get(':id')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)

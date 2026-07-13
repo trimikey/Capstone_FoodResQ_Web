@@ -20,6 +20,7 @@ function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; ic
   if (role === UserRole.PROVIDER) {
     return [
       { href: '/provider', icon: 'storefront', label: 'Cửa hàng' },
+      { href: '/provider/orders', icon: 'receipt_long', label: 'Đơn hàng' },
       { href: '/provider/scan', icon: 'qr_code_scanner', label: 'Quét QR' },
       { href: '/campaigns', icon: 'soup_kitchen', label: 'Bếp ăn' },
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },

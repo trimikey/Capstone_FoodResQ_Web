@@ -9,6 +9,29 @@ import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { UpdateMeDto } from './dto/update-me.dto';
 
+/**
+ * Thống kê trả về cho /users/me, phạm vi trường phụ thuộc vào role.
+ * Giữ union shape thay vì discriminator để các FE cũ dùng `me.stats.completedCount` không vỡ.
+ */
+export interface MeStats {
+  kind: 'receiver' | 'provider' | 'volunteer' | 'admin';
+  // Receiver
+  kgSaved?: number;
+  completedCount?: number;
+  cancelledCount?: number;
+  providersHelped?: number;
+  // Provider
+  listingsCount?: number;
+  activeListingsCount?: number;
+  completedOrdersCount?: number;
+  receiversHelped?: number;
+  totalKgRescued?: number;
+  // Volunteer (shipper)
+  deliveriesCompleted?: number;
+  deliveriesInProgress?: number;
+  campaignsJoined?: number;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -35,7 +58,7 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng.');
 
-    const stats = await this.getReceiverStats(userId);
+    const stats = await this.getMeStats(userId, user.role);
 
     // Nếu là tình nguyện viên → kèm chuyên môn (chef/waiter/shipper) + hạng/điểm
     let volunteer: {
@@ -95,12 +118,14 @@ export class UsersService {
           tax_code: string | null;
           is_verified: boolean;
           verification_status: string;
+          avg_rating: Prisma.Decimal | null;
           lng: number | null;
           lat: number | null;
         }[]
       >(Prisma.sql`
         SELECT id, business_name, business_type, address, contact_phone, tax_code,
                is_verified, verification_status::text AS verification_status,
+               avg_rating,
                ST_X(location::geometry) AS lng,
                ST_Y(location::geometry) AS lat
         FROM provider_profiles
@@ -117,6 +142,7 @@ export class UsersService {
           taxCode: r.tax_code,
           isVerified: r.is_verified,
           verificationStatus: r.verification_status,
+          avgRating: r.avg_rating != null ? Number(r.avg_rating) : null,
           lng: r.lng !== null ? Number(r.lng) : null,
           lat: r.lat !== null ? Number(r.lat) : null,
         };
@@ -157,16 +183,127 @@ export class UsersService {
   }
 
   /**
+   * Thống kê hiển thị trên trang Hồ sơ. Phạm vi trường tuỳ theo role:
+   *
+   * - **Receiver**: kg đã cứu, đơn hoàn tất/hủy, số cửa hàng đã gặp.
+   * - **Provider**: số tin đã đăng/đang mở, đơn hoàn tất, người nhận đã giúp, tổng kg đã cứu
+   *   (lấy từ `provider_profiles.total_food_rescued_kg` để khớp với ESG snapshot).
+   * - **Volunteer**: số chuyến đã giao / đang chạy, số chiến dịch bếp đã tham gia (vai trò chef/waiter).
+   * - **Admin**: trả zero cho tất cả chỉ số (chưa có dashboard con).
+   *
+   * Tất cả query là parameterized — tránh SQL injection; dùng `prisma.$queryRaw` cho phép aggregate phức tạp.
+   */
+  async getMeStats(userId: string, role: string): Promise<MeStats> {
+    if (role === 'receiver') return this.getReceiverStats(userId);
+    if (role === 'provider') return this.getProviderStats(userId);
+    if (role === 'volunteer') return this.getVolunteerStats(userId);
+    return { kind: 'admin' };
+  }
+
+  /**
+   * Provider: tin đã đăng (kể cả draft), tin đang mở, đơn đã hoàn tất (reservation completed thuộc listing của provider),
+   * người nhận distinct đã phục vụ, tổng kg đã cứu (tính trực tiếp từ reservation — không phụ thuộc snapshot ESG).
+   */
+  private async getProviderStats(userId: string): Promise<MeStats> {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) {
+      return {
+        kind: 'provider',
+        listingsCount: 0,
+        activeListingsCount: 0,
+        completedOrdersCount: 0,
+        receiversHelped: 0,
+        totalKgRescued: 0,
+      };
+    }
+
+    const [row] = await this.prisma.$queryRaw<
+      {
+        listings_count: bigint;
+        active_listings_count: bigint;
+        completed_orders_count: bigint;
+        receivers_helped: bigint;
+        kg_rescued: number | null;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        (SELECT COUNT(*) FROM food_listings fl WHERE fl.provider_id = ${profile.id}::uuid AND fl.deleted_at IS NULL) AS listings_count,
+        (SELECT COUNT(*) FROM food_listings fl WHERE fl.provider_id = ${profile.id}::uuid AND fl.status = 'active' AND fl.deleted_at IS NULL) AS active_listings_count,
+        (SELECT COUNT(*) FROM reservations r JOIN food_listings fl ON fl.id = r.listing_id WHERE fl.provider_id = ${profile.id}::uuid AND r.status = 'completed') AS completed_orders_count,
+        (SELECT COUNT(DISTINCT r.receiver_id) FROM reservations r JOIN food_listings fl ON fl.id = r.listing_id WHERE fl.provider_id = ${profile.id}::uuid AND r.status = 'completed') AS receivers_helped,
+        COALESCE((
+          SELECT SUM(r.quantity * COALESCE(fl.weight_per_unit_kg, 0))
+          FROM reservations r
+          JOIN food_listings fl ON fl.id = r.listing_id
+          WHERE fl.provider_id = ${profile.id}::uuid AND r.status = 'completed'
+        ), 0) AS kg_rescued
+    `);
+
+    return {
+      kind: 'provider',
+      listingsCount: Number(row?.listings_count ?? 0),
+      activeListingsCount: Number(row?.active_listings_count ?? 0),
+      completedOrdersCount: Number(row?.completed_orders_count ?? 0),
+      receiversHelped: Number(row?.receivers_helped ?? 0),
+      totalKgRescued: Math.round(Number(row?.kg_rescued ?? 0) * 10) / 10,
+    };
+  }
+
+  /**
+   * Volunteer: chỉ đếm delivery mà volunteer này làm shipper (bỏ campaign cook/waiter để tránh trùng).
+   * campaignsJoined = tổng số campaign assignment (cả 3 vai trò) để phản ánh mức độ tham gia.
+   */
+  private async getVolunteerStats(userId: string): Promise<MeStats> {
+    const profile = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) {
+      return {
+        kind: 'volunteer',
+        deliveriesCompleted: 0,
+        deliveriesInProgress: 0,
+        campaignsJoined: 0,
+      };
+    }
+
+    const [row] = await this.prisma.$queryRaw<
+      {
+        deliveries_completed: bigint;
+        deliveries_in_progress: bigint;
+        campaigns_joined: bigint;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE d.status = 'delivered') AS deliveries_completed,
+        COUNT(*) FILTER (WHERE d.status IN ('pending_assignment','assigned','heading_to_provider','qc_completed','in_transit')) AS deliveries_in_progress,
+        (SELECT COUNT(*) FROM campaign_volunteer_assignments cva WHERE cva.volunteer_id = ${profile.id}::uuid) AS campaigns_joined
+      FROM deliveries d
+      WHERE d.shipper_id = ${profile.id}::uuid
+    `);
+
+    return {
+      kind: 'volunteer',
+      deliveriesCompleted: Number(row?.deliveries_completed ?? 0),
+      deliveriesInProgress: Number(row?.deliveries_in_progress ?? 0),
+      campaignsJoined: Number(row?.campaigns_joined ?? 0),
+    };
+  }
+
+  /**
    * Thống kê tác động của receiver: kg đã cứu, số đơn hoàn tất/hủy, số cửa hàng đã giúp.
    * Trả zero nếu user không phải receiver (chưa có receiver_profile).
    */
-  private async getReceiverStats(userId: string) {
+  private async getReceiverStats(userId: string): Promise<MeStats> {
     const receiver = await this.prisma.receiverProfile.findUnique({
       where: { userId },
       select: { id: true },
     });
     if (!receiver) {
-      return { kgSaved: 0, completedCount: 0, cancelledCount: 0, providersHelped: 0 };
+      return { kind: 'receiver', kgSaved: 0, completedCount: 0, cancelledCount: 0, providersHelped: 0 };
     }
 
     const [row] = await this.prisma.$queryRaw<
@@ -189,6 +326,7 @@ export class UsersService {
     `);
 
     return {
+      kind: 'receiver',
       kgSaved: Math.round(Number(row?.kg_saved ?? 0) * 10) / 10,
       completedCount: Number(row?.completed_count ?? 0),
       cancelledCount: Number(row?.cancelled_count ?? 0),
