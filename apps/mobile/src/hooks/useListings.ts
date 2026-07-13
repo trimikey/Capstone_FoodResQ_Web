@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { Coords } from '../services/geolocation';
 
@@ -57,20 +57,29 @@ export interface ListingQuery {
   search?: string;
   category?: FoodCategory | null;
   radiusKm?: number;
+  page?: number;
+  limit?: number;
 }
 
-const PAGE_SIZE = 20;
+export const LISTING_PAGE_SIZE = 6;
 
 /**
- * Danh sách listing geospatial (infinite scroll). Endpoint: GET /listings
- * Response là mảng phẳng không có meta → suy trang sau từ độ dài trang hiện tại.
+ * Danh sách listing geospatial có phân trang rõ ràng. Endpoint: GET /listings.
+ * Backend hiện trả mảng phẳng không có total → suy có trang sau từ độ dài trang hiện tại.
  */
-export function useListings({ coords, search, category, radiusKm = 5 }: ListingQuery) {
-  return useInfiniteQuery({
-    queryKey: ['listings', coords, search ?? '', category ?? null, radiusKm],
-    initialPageParam: 1,
+export function useListings({
+  coords,
+  search,
+  category,
+  radiusKm = 5,
+  page = 1,
+  limit = LISTING_PAGE_SIZE,
+}: ListingQuery) {
+  return useQuery({
+    queryKey: ['listings', coords, search ?? '', category ?? null, radiusKm, page, limit],
     enabled: coords != null,
-    queryFn: async ({ pageParam }) => {
+    placeholderData: (previous) => previous,
+    queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Listing[]>>(
         endpoints.listings.search,
         {
@@ -80,15 +89,19 @@ export function useListings({ coords, search, category, radiusKm = 5 }: ListingQ
             radiusKm,
             search: search || undefined,
             category: category || undefined,
-            page: pageParam,
-            limit: PAGE_SIZE,
+            page,
+            limit,
           },
         }
       );
-      return res.data.data;
+      const items = res.data.data;
+      return {
+        items,
+        page,
+        pageSize: limit,
+        hasNextPage: items.length === limit,
+      };
     },
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.length === PAGE_SIZE ? allPages.length + 1 : undefined,
   });
 }
 

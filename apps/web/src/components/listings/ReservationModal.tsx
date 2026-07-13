@@ -34,7 +34,11 @@ export default function ReservationModal({ listingId, onClose }: Props) {
     try {
       const res = await createReservation.mutateAsync(data);
       setResult({ qrToken: res.qrToken, qrExpiresAt: res.qrExpiresAt, reservationId: res.reservationId });
-      toast.success('Đặt chỗ thành công!');
+      toast.success(
+        data.requestDelivery
+          ? 'Đã tạo đơn giao hàng! Hệ thống đang tìm tình nguyện viên gần điểm lấy.'
+          : 'Đặt chỗ tự đến lấy thành công! Đơn này sẽ không gửi lời mời cho shipper.'
+      );
     } catch (err: unknown) {
       const msg =
         err instanceof Error

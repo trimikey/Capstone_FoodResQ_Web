@@ -13,7 +13,8 @@ try {
 }
 
 function isReachable(isConnected?: boolean | null, isInternetReachable?: boolean | null) {
-  return Boolean(isConnected) && isInternetReachable !== false;
+  if (isConnected === false || isInternetReachable === false) return false;
+  return true;
 }
 
 onlineManager.setEventListener((setOnline) => {
