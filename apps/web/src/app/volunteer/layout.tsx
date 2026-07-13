@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/auth.store";
-import { mediaUrl } from "@/lib/utils";
 
 export default function VolunteerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -50,7 +49,7 @@ export default function VolunteerLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-3 p-3 bg-white/50 rounded-xl">
             <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center overflow-hidden">
               {user?.avatarUrl ? (
-                <img src={mediaUrl(user.avatarUrl)} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <span className="font-bold text-emerald-800">{user?.fullName?.charAt(0) || "V"}</span>
               )}
