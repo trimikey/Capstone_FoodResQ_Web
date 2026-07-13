@@ -17,7 +17,6 @@ function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: strin
   }
   if (role === UserRole.PROVIDER) {
     return [
-      { href: '/provider', icon: 'storefront', label: 'Cửa hàng của tôi' },
       { href: '/provider/scan', icon: 'qr_code_scanner', label: 'Quét QR' },
       { href: '/campaigns', icon: 'soup_kitchen', label: 'Bếp ăn cộng đồng' },
     ];
@@ -68,6 +67,10 @@ export default function PublicHeader() {
   }, []);
 
   const isAuthed = mounted && !!user;
+  const isProvider = isAuthed && user?.role === UserRole.PROVIDER;
+  const foodNavLink = isProvider
+    ? { href: '/provider', label: 'Cửa hàng của tôi' }
+    : { href: '/listings', label: 'Tìm thực phẩm' };
   const isSolid = scrolled || pathname !== '/';
   // Lấy cờ tổ chức từ thiện để thêm link Quản lý chiến dịch (chỉ fetch khi đã đăng nhập)
   const { data: me } = useMe(isAuthed);
@@ -105,13 +108,13 @@ export default function PublicHeader() {
             {pathname === '/' && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
           </Link>
           <Link
-            href="/listings"
+            href={foodNavLink.href}
             className={`relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors ${
-              pathname === '/listings' ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
+              pathname === foodNavLink.href ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
             }`}
           >
-            Tìm thực phẩm
-            {pathname === '/listings' && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
+            {foodNavLink.label}
+            {pathname === foodNavLink.href && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
           </Link>
           <Link
             href="/#about"
