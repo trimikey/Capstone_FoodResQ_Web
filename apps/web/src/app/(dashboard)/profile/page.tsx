@@ -154,9 +154,13 @@ export default function ProfilePage() {
       <div className="relative bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 text-white overflow-hidden">
         {/* decorative circles */}
         <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-white/5" />
+        <div className="absolute -top-12 -left-12 w-40 h-40 rounded-full bg-emerald-400/10" />
         <div className="absolute bottom-0 -left-16 w-56 h-56 rounded-full bg-white/5" />
+        <div className="absolute bottom-6 right-10 w-24 h-24 rounded-full bg-teal-400/10" />
+        {/* decorative grid pattern */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
-        <div className="relative max-w-5xl mx-auto px-6 md:px-12 pt-10 pb-20">
+        <div className="relative max-w-5xl mx-auto px-6 md:px-12 pt-10 pb-24">
           <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10">
             {/* Avatar */}
             <div className="relative shrink-0">
@@ -173,10 +177,16 @@ export default function ProfilePage() {
               </div>
               {/* online dot */}
               <span className="absolute bottom-2 right-2 w-5 h-5 bg-emerald-400 border-[3px] border-emerald-800 rounded-full" />
+              {/* ring pulse */}
+              <span className="absolute inset-0 rounded-full border-2 border-emerald-400/30 animate-ping" />
             </div>
 
             {/* Name + meta */}
             <div className="text-center md:text-left space-y-2 flex-1 min-w-0">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/30 border border-emerald-400/30 text-[11px] font-bold text-emerald-100 mb-1">
+                <span className="material-symbols-outlined text-[12px]">workspace_premium</span>
+                Thành viên FoodResQ
+              </div>
               <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight truncate">{me.fullName}</h1>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 border border-white/20`}>
@@ -191,10 +201,25 @@ export default function ProfilePage() {
                 )}
               </div>
               {me.volunteer && (
-                <p className="text-xs text-emerald-100/90 font-semibold">
-                  Hạng {me.volunteer.rank} · {me.volunteer.dedicationPoints} điểm cống hiến
-                </p>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-100/90 font-semibold">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-amber-300">military_tech</span>
+                    Hạng {me.volunteer.rank}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-amber-300">diamond</span>
+                    {me.volunteer.dedicationPoints} điểm cống hiến
+                  </span>
+                </div>
               )}
+              {/* Trust score badge inline */}
+              <div className="flex items-center justify-center md:justify-start gap-2 mt-1">
+                <span className="material-symbols-outlined text-[16px] text-amber-400">stars</span>
+                <span className="text-sm font-bold text-emerald-100">{me.trustScore} điểm tin cậy</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${trustBadgeColor(me.trustScore)}`}>
+                  {trustLabel(me.trustScore)}
+                </span>
+              </div>
             </div>
 
             {/* Actions */}
@@ -219,6 +244,13 @@ export default function ProfilePage() {
             ))}
           </div>
         </div>
+
+        {/* wave divider */}
+        <div className="absolute bottom-0 left-0 right-0">
+          <svg viewBox="0 0 1440 60" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-12 md:h-16">
+            <path d="M0 60L60 50C120 40 240 20 360 15C480 10 600 15 720 20C840 25 960 35 1080 40C1200 45 1320 45 1380 45L1440 45V60H0Z" fill="white"/>
+          </svg>
+        </div>
       </div>
 
       {/* ── MAIN CONTENT ────────────────────────────────────── */}
@@ -227,7 +259,7 @@ export default function ProfilePage() {
           {/* LEFT: Trust + contact */}
           <div className="lg:col-span-4 space-y-6">
             {/* Trust Score */}
-            <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+            <div className="bg-white rounded-3xl border-l-4 border-l-emerald-600 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-neutral-800 font-bold text-sm">
                   <span className="material-symbols-outlined text-[20px] text-emerald-600">stars</span>
@@ -279,18 +311,19 @@ export default function ProfilePage() {
                   )}
                   {trustHistory?.items.map((item) => {
                     const reasonLabel = TRUST_REASON_LABEL[item.reason] ?? item.reason ?? item.referenceType ?? 'Điều chỉnh điểm';
+                    const isPositive = item.delta > 0;
                     return (
-                      <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-neutral-50 border border-neutral-100">
+                      <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded-lg border ${isPositive ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-neutral-800">
+                          <p className={`text-xs font-bold ${isPositive ? 'text-emerald-800' : 'text-rose-800'}`}>
                             {reasonLabel}
                           </p>
                           <p className="text-[10px] text-neutral-400 mt-0.5">
                             {new Date(item.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
-                        <span className={`text-xs font-extrabold ml-2 ${item.delta < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                          {item.delta > 0 ? '+' : ''}{item.delta}
+                        <span className={`text-xs font-extrabold ml-2 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isPositive ? '+' : ''}{item.delta}
                         </span>
                       </div>
                     );
@@ -311,12 +344,12 @@ export default function ProfilePage() {
             </div>
 
             {/* Contact */}
-            <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+            <div className="bg-white rounded-3xl border-l-4 border-l-teal-500 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
               <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-4">Thông tin liên hệ</h3>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">mail</span>
+                  <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-teal-600 text-[20px]">mail</span>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Email</p>
@@ -324,8 +357,8 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">call</span>
+                  <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-teal-600 text-[20px]">call</span>
                   </div>
                   <div className="min-w-0">
                     <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Số điện thoại</p>
@@ -337,10 +370,10 @@ export default function ProfilePage() {
 
             {/* eKYC status */}
             {isFaceRole && (
-              <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-3xl border-l-4 border-l-emerald-600 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
                 {faceImage ? (
-                  <div className="flex items-center gap-3 border border-emerald-200 rounded-2xl p-3 bg-emerald-50/50">
+                  <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
                     <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
                       <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
                     </div>
@@ -366,25 +399,33 @@ export default function ProfilePage() {
           <div className="lg:col-span-8 space-y-6">
             {/* Stats cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {stats.map((s) => (
-                <div
-                  key={s.label}
-                  className="group bg-white border border-neutral-200 rounded-3xl p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-default"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="material-symbols-outlined text-neutral-300 group-hover:text-emerald-600 group-hover:scale-110 transition-all text-[28px]">
-                      {s.icon}
-                    </span>
-                    <span className="text-[11px] font-bold text-neutral-400 bg-neutral-50 px-2 py-0.5 rounded-lg border border-neutral-100 group-hover:bg-emerald-50 group-hover:text-emerald-700 group-hover:border-emerald-200 transition-colors">
-                      {s.accent === 'emerald' ? 'Môi trường' : s.accent === 'teal' ? 'Khẩn cấp' : 'Cộng đồng'}
-                    </span>
+              {stats.map((s, i) => {
+                const accents = [
+                  { icon: 'text-teal-500 group-hover:text-teal-600', badge: 'bg-teal-50 text-teal-700 border-teal-200 group-hover:bg-teal-100 group-hover:border-teal-300' },
+                  { icon: 'text-emerald-500 group-hover:text-emerald-600', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 group-hover:bg-emerald-100 group-hover:border-emerald-300' },
+                  { icon: 'text-rose-500 group-hover:text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200 group-hover:bg-rose-100 group-hover:border-rose-300' },
+                ];
+                const ac = accents[i] ?? accents[0];
+                return (
+                  <div
+                    key={s.label}
+                    className="group bg-white border border-neutral-200 rounded-3xl p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-default"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`material-symbols-outlined text-neutral-300 ${ac.icon} group-hover:scale-110 transition-all text-[28px]`}>
+                        {s.icon}
+                      </span>
+                      <span className={`text-[11px] font-bold border px-2 py-0.5 rounded-lg ${ac.badge} transition-colors`}>
+                        {s.accent === 'emerald' ? 'Môi trường' : s.accent === 'teal' ? 'Khẩn cấp' : 'Cộng đồng'}
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <span className="text-4xl font-extrabold text-neutral-900">{s.value}</span>
+                      <p className="text-xs text-neutral-500 font-semibold mt-0.5">{s.label}</p>
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    <span className="text-4xl font-extrabold text-neutral-900">{s.value}</span>
-                    <p className="text-xs text-neutral-500 font-semibold mt-0.5">{s.label}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Quick actions */}
@@ -393,11 +434,10 @@ export default function ProfilePage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: 'Lịch sử nhận hàng', icon: 'history', href: '/history', accent: 'emerald' },
-                  { label: 'Lịch sử giao hàng', icon: 'local_shipping', href: '/deliveries/history', accent: 'violet', hidden: !me.volunteer },
-                  { label: 'Đánh giá', icon: 'rate_review', href: '#', accent: 'amber' },
-                  { label: 'Trợ giúp', icon: 'support_agent', href: '#', accent: 'sky' },
+                  { label: 'Lịch sử giao hàng', icon: 'local_shipping', href: '/deliveries/history', accent: 'teal', hidden: !me.volunteer },
+                  { label: 'Đánh giá', icon: 'rate_review', href: '#', accent: 'emerald' },
+                  { label: 'Trợ giúp', icon: 'support_agent', href: '#', accent: 'emerald' },
                 ].filter((a) => !a.hidden).map((action) => {
-                  const c = COLOR_MAP[action.accent] ?? COLOR_MAP.emerald;
                   return (
                     <button
                       key={action.label}
@@ -410,7 +450,7 @@ export default function ProfilePage() {
                       }}
                       className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-neutral-100 hover:border-emerald-200 hover:bg-emerald-50/60 text-center transition-all group"
                     >
-                      <span className={`material-symbols-outlined text-[28px] text-neutral-400 group-hover:${c.text} group-hover:scale-110 transition-all`}>
+                      <span className={`material-symbols-outlined text-[28px] text-neutral-400 group-hover:text-emerald-600 group-hover:scale-110 transition-all`}>
                         {action.icon}
                       </span>
                       <span className="text-xs font-bold text-neutral-700 group-hover:text-emerald-800 transition-colors">{action.label}</span>
