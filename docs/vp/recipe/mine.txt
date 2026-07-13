@@ -1,0 +1,5 @@
+Chef->RecipesScreen:open my recipes
+    RecipesScreen->RecipesController:GET /recipes/mine
+        RecipesController->RecipesService:list(mine=true, userId)
+            RecipesService->PrismaService:recipe.findMany(createdByUserId) + count
+                PrismaService->Database:SELECT recipes

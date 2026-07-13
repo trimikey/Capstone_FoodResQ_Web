@@ -1,0 +1,5 @@
+User->RecipesScreen:open recipe library (search)
+    RecipesScreen->RecipesController:GET /recipes
+        RecipesController->RecipesService:list(query)
+            RecipesService->PrismaService:recipe.findMany(isPublic, search) + count
+                PrismaService->Database:SELECT recipes

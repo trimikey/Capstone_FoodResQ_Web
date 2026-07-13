@@ -7,10 +7,19 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateListingDto } from './dto/create-listing.dto';
+import { UpdateListingDto } from './dto/update-listing.dto';
 import { QueryListingDto } from './dto/query-listing.dto';
 
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
+
+/** Field được phép sửa khi tin đã đăng (active/fully_reserved) — tránh đổi địa điểm/giờ/số lượng khi người nhận đã đặt. */
+const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
+  'description',
+  'imageUrls',
+  'storageConditions',
+  'allergenNotes',
+]);
 
 export interface NearbyRow {
   id: string;
@@ -38,13 +47,21 @@ export interface NearbyRow {
 export class ListingsService {
   constructor(private prisma: PrismaService) {}
 
-  /** Đổi userId (từ JWT) sang provider_profiles.id — các bảng listing tham chiếu provider profile, KHÔNG phải user. */
+  /**
+   * Đổi userId (từ JWT) sang provider_profiles.id — đồng thời chặn nếu hồ sơ NCC
+   * chưa được admin duyệt (tránh tạo/publish tin trước khi verify).
+   */
   private async resolveProviderId(userId: string): Promise<string> {
     const profile = await this.prisma.providerProfile.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, verificationStatus: true, businessName: true },
     });
     if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
+    if (profile.verificationStatus !== 'approved') {
+      throw new ForbiddenException(
+        `Hồ sơ cửa hàng "${profile.businessName}" chưa được quản trị viên duyệt (trạng thái: ${profile.verificationStatus}). Không thể đăng tin cho đến khi được duyệt.`,
+      );
+    }
     return profile.id;
   }
 
@@ -256,5 +273,119 @@ export class ListingsService {
     ]);
 
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Sửa tin:
+   *  - draft → sửa mọi field (kể cả toạ độ — qua raw SQL).
+   *  - active / fully_reserved → CHỈ whitelist field mềm (mô tả, ảnh, bảo quản, dị ứng).
+   *    Field cứng bị chặn để không đổi địa điểm/giờ/số lượng khi người nhận đã đặt.
+   *  - completed / expired / cancelled → không cho sửa.
+   *
+   * Lưu ý: nếu `quantityTotal` giảm xuống dưới `quantityRemaining` → throw 400.
+   */
+  async update(listingId: string, userId: string, dto: UpdateListingDto) {
+    const providerId = await this.resolveProviderId(userId);
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
+    if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+    if (listing.providerId !== providerId) {
+      throw new ForbiddenException('Bạn không sở hữu tin này.');
+    }
+
+    const editableStatuses = new Set(['draft', 'active', 'fully_reserved']);
+    if (!editableStatuses.has(listing.status)) {
+      throw new BadRequestException(
+        `Tin đang ở trạng thái "${listing.status}" — không thể chỉnh sửa.`,
+      );
+    }
+
+    const isDraft = listing.status === 'draft';
+
+    // Kiểm tra whitelist khi edit active/fully_reserved
+    if (!isDraft) {
+      for (const key of Object.keys(dto) as (keyof UpdateListingDto)[]) {
+        if (dto[key] === undefined) continue;
+        if (!EDITABLE_WHEN_ACTIVE.has(key)) {
+          throw new BadRequestException(
+            `Không thể sửa "${key}" khi tin đã được đăng. Hãy huỷ rồi tạo lại nếu cần thay đổi lớn.`,
+          );
+        }
+      }
+    }
+
+    // Validate thời gian nếu có thay đổi
+    if (isDraft) {
+      const newStart = dto.pickupStartTime ? new Date(dto.pickupStartTime) : listing.pickupStartTime;
+      const newEnd = dto.pickupEndTime ? new Date(dto.pickupEndTime) : listing.pickupEndTime;
+      const newExp = dto.expiryTime ? new Date(dto.expiryTime) : listing.expiryTime;
+      if (newEnd <= newStart) {
+        throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
+      }
+      if (newExp < newEnd) {
+        throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
+      }
+    }
+
+    // Không cho quantityTotal < quantityRemaining (có người đã đặt)
+    if (isDraft && dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityRemaining)) {
+      throw new BadRequestException(
+        `Tổng số lượng mới (${dto.quantityTotal}) không được nhỏ hơn số đã có người đặt (${listing.quantityRemaining}).`,
+      );
+    }
+
+    // Nếu đổi toạ độ trên draft → so sánh với vị trí hiện tại (đọc qua raw SQL vì pickup_location là Unsupported)
+    let locationChanged = false;
+    if (isDraft && dto.lng !== undefined && dto.lat !== undefined) {
+      const [{ lng: curLng = null, lat: curLat = null } = {}] = await this.prisma.$queryRaw<
+        { lng: number | null; lat: number | null }[]
+      >(Prisma.sql`
+        SELECT ST_X(pickup_location::geometry) AS lng,
+               ST_Y(pickup_location::geometry) AS lat
+        FROM food_listings WHERE id = ${listingId}::uuid
+      `);
+      locationChanged =
+        curLng == null ||
+        curLat == null ||
+        Number(dto.lng) !== Number(curLng) ||
+        Number(dto.lat) !== Number(curLat);
+    }
+
+    const data: Prisma.FoodListingUpdateInput = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description ?? null;
+    if (dto.category !== undefined) data.category = dto.category;
+    if (dto.quantityTotal !== undefined) {
+      data.quantityTotal = dto.quantityTotal;
+      const diff = dto.quantityTotal - Number(listing.quantityTotal);
+      if (diff > 0) {
+        data.quantityRemaining = { increment: diff };
+      }
+    }
+    if (dto.quantityUnit !== undefined) data.quantityUnit = dto.quantityUnit;
+    if (dto.weightPerUnitKg !== undefined) data.weightPerUnitKg = dto.weightPerUnitKg ?? null;
+    if (dto.pickupStartTime !== undefined) data.pickupStartTime = new Date(dto.pickupStartTime);
+    if (dto.pickupEndTime !== undefined) data.pickupEndTime = new Date(dto.pickupEndTime);
+    if (dto.expiryTime !== undefined) data.expiryTime = new Date(dto.expiryTime);
+    if (dto.pickupAddress !== undefined) data.pickupAddress = dto.pickupAddress;
+    if (dto.storageConditions !== undefined) data.storageConditions = dto.storageConditions ?? null;
+    if (dto.allergenNotes !== undefined) data.allergenNotes = dto.allergenNotes ?? null;
+    if (dto.maxPerReservation !== undefined) data.maxPerReservation = dto.maxPerReservation;
+    if (dto.imageUrls !== undefined) data.imageUrls = dto.imageUrls as never;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(data).length > 0) {
+        await tx.foodListing.update({ where: { id: listingId }, data });
+      }
+      if (locationChanged && dto.lng !== undefined && dto.lat !== undefined) {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE food_listings
+          SET pickup_location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
+              updated_at = NOW()
+          WHERE id = ${listingId}::uuid
+        `);
+      }
+    });
+
+    return this.findOne(listingId);
   }
 }

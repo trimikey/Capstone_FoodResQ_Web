@@ -1,0 +1,7 @@
+Chef->RecipeDetailScreen:tap Delete
+    RecipeDetailScreen->RecipesController:DELETE /recipes/:id
+        RecipesController->RecipesService:remove(id, userId)
+            RecipesService->PrismaService:recipe.findFirst(owner check)
+                PrismaService->Database:SELECT recipes
+            RecipesService->PrismaService:recipe.update(deletedAt=now)
+                PrismaService->Database:UPDATE recipes (soft delete)

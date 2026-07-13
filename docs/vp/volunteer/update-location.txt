@@ -1,0 +1,10 @@
+Volunteer->VolunteerScreen:send GPS location
+    VolunteerScreen->VolunteersController:PATCH /volunteers/me/location (lng, lat)
+        VolunteersController->VolunteersService:updateLocation(userId, lng, lat)
+            VolunteersService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            VolunteersService->PrismaService:UPDATE current_location (ST_MakePoint)
+                PrismaService->Database:UPDATE volunteer_profiles
+            VolunteersService->PrismaService:delivery.findFirst(active) receiver
+                PrismaService->Database:SELECT deliveries
+            VolunteersService->NotificationsGateway:emitToUser(receiver, delivery location)

@@ -1,0 +1,347 @@
+  '==============================================================
+' FoodResQ — Sequence Diagrams: Delivery (deliveries module)
+' Broadcast offers · Accept · Reject · Update status ·
+' Cancel · Fail · Track · Pending offers/active
+'==============================================================
+
+'──────────── 1. Shipper Offer Broadcast (BullMQ worker) ──────
+@startuml seq-delivery-broadcast
+!include _seq-style.iuml
+title Shipper Offer Broadcast Sequence Diagram
+
+participant "notification-push\n(BullMQ Worker)" as Worker
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+queue "notification-push" as Q
+participant "NotificationsGateway\n(WebSocket)" as WS
+
+Worker -> Svc : broadcastToNearbyShippers(deliveryId, pickupLng, pickupLat)
+activate Svc
+Svc -> Repo : $queryRaw find <=5 nearest available shippers\n(ST_DWithin 5km, specialization=shipper, is_verified)
+Repo -> DB : SELECT volunteer_profiles JOIN volunteer_specializations
+DB --> Repo : shippers[]
+Repo --> Svc : shippers[]
+alt No shipper found
+  Svc --> Worker : return (no offers)
+else shippers found
+  group $transaction (expiresAt = now + 2 min)
+    loop each shipper
+      Svc -> Repo : INSERT shipper_task_offers (status=pending)\nON CONFLICT DO NOTHING
+      Repo -> DB : INSERT shipper_task_offers
+    end
+  end
+  loop each shipper
+    Svc -> Q : add('task-offer', {shipperId, deliveryId, expiresAt})
+    Svc -> WS : emitToUser(shipper, 'delivery:offer', {deliveryId})
+  end
+  Svc --> Worker : done
+end
+deactivate Svc
+@enduml
+
+'──────────────────────── 2. Accept Offer ────────────────────
+@startuml seq-delivery-accept
+!include _seq-style.iuml
+title Accept Delivery Offer Sequence Diagram
+
+actor "Shipper" as User
+participant "OffersScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Accept
+activate Screen
+Screen -> Ctrl : POST /deliveries/:id/accept
+activate Ctrl
+Ctrl -> Svc : acceptOffer(deliveryId, shipperUserId)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Svc -> Repo : shipperTaskOffer.findUnique(deliveryId, shipperId)
+Repo --> Svc : offer | null
+alt Offer missing / not pending / expired
+  Svc --> Ctrl : 400 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else offer valid
+  Svc -> Repo : delivery.findUnique(deliveryId)
+  alt delivery.status != pending_assignment
+    Svc --> Ctrl : 409 "Already taken by another shipper"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else still available
+    group $transaction (atomic assignment)
+      Svc -> Repo : offer.update(status=accepted)
+      Svc -> Repo : other offers.updateMany(status=expired)
+      Svc -> Repo : delivery.update(shipperId, status=assigned, assignedAt)
+      Svc -> Repo : volunteerProfile.update(isAvailable=false)
+      Repo -> DB : UPDATE offers / deliveries / volunteer_profiles
+    end
+    Svc -> Repo : delivery.findUnique(include reservation.listing)
+    Svc --> Ctrl : delivery (assigned)
+    Ctrl --> Screen : return data (200)
+    Screen --> User : show active task
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────────── 3. Reject Offer ────────────────────
+@startuml seq-delivery-reject
+!include _seq-style.iuml
+title Reject Delivery Offer Sequence Diagram
+
+actor "Shipper" as User
+participant "OffersScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Reject (reason?)
+activate Screen
+Screen -> Ctrl : POST /deliveries/:id/reject
+activate Ctrl
+Ctrl -> Svc : rejectOffer(deliveryId, shipperUserId, reason)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Svc -> Repo : shipperTaskOffer.findUnique(deliveryId, shipperId)
+Repo --> Svc : offer | null
+alt No pending offer
+  Svc --> Ctrl : 400 "No pending offer"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else pending
+  Svc -> Repo : offer.update(status=rejected, respondedAt, rejectReason)
+  Repo -> DB : UPDATE shipper_task_offers
+  Svc --> Ctrl : { message: "Offer rejected" }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : offer dismissed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 4. Update Delivery Status ──────────────────
+@startuml seq-delivery-status
+!include _seq-style.iuml
+title Update Delivery Status Sequence Diagram
+
+actor "Shipper" as User
+participant "ActiveTaskScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : advance status (+ photo?)
+activate Screen
+Screen -> Ctrl : PATCH /deliveries/:id/status (status, photo?)
+activate Ctrl
+opt photo attached
+  Ctrl -> Svc : saveProofPhoto(photo)
+  Svc -> Store : saveImage(photo, 'delivery-proofs')
+  Store --> Ctrl : proofUrl
+end
+Ctrl -> Svc : updateStatus(id, shipperUserId, status, proofUrl)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Svc -> Repo : delivery.findUnique(id)
+Repo --> Svc : delivery
+alt Not the assigned shipper OR invalid transition
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid transition
+  note right of Svc : assigned → heading_to_provider →\nqc_completed → in_transit → delivered
+  alt newStatus = delivered
+    group $transaction
+      Svc -> Repo : reservation.update(status=completed)
+      Svc -> Repo : volunteerProfile(isAvailable=true, dedicationPoints +5)
+      Svc -> Repo : dedicationPointsHistory.create(+5)
+      Repo -> DB : UPDATE / INSERT
+    end
+  end
+  Svc -> Repo : delivery.update(status, qc/delivery proof)
+  Repo -> DB : UPDATE deliveries
+  Svc --> Ctrl : delivery (updated)
+  Ctrl --> Screen : return data (200)
+  Screen --> User : status advanced
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 5. Cancel Assignment ───────────────────────
+@startuml seq-delivery-cancel
+!include _seq-style.iuml
+title Cancel Assignment Sequence Diagram
+
+actor "Shipper" as User
+participant "ActiveTaskScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : cancel before pickup (reason?)
+activate Screen
+Screen -> Ctrl : POST /deliveries/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancelAssignment(id, shipperUserId, reason)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Svc -> Repo : delivery.findUnique(id)
+Repo --> Svc : delivery
+alt Not assigned shipper OR status not in [assigned, heading_to_provider]
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else can cancel
+  group $transaction
+    Svc -> Repo : delivery.update(shipperId=null, status=pending_assignment)
+    Svc -> Repo : offer.updateMany(accepted → rejected)
+    Repo -> DB : UPDATE deliveries / shipper_task_offers
+  end
+  Svc -> Svc : broadcastToNearbyShippers(deliveryId, pickup coords)
+  Svc --> Ctrl : { id, status=pending_assignment }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : task released
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 6. Fail Delivery ───────────────────────────
+@startuml seq-delivery-fail
+!include _seq-style.iuml
+title Fail Delivery Sequence Diagram
+
+actor "Shipper" as User
+participant "ActiveTaskScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : report failed (reason required)
+activate Screen
+Screen -> Ctrl : POST /deliveries/:id/fail (reason)
+activate Ctrl
+Ctrl -> Svc : failDelivery(id, shipperUserId, reason)
+activate Svc
+alt reason empty
+  Svc --> Ctrl : 400 "Reason required"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else reason provided
+  Svc -> Repo : volunteerProfile.findUnique(userId)
+  Svc -> Repo : delivery.findUnique(id)
+  Repo --> Svc : delivery
+  alt Not assigned shipper OR status not in [qc_completed, in_transit]
+    Svc --> Ctrl : 400 / 403 error
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else can fail
+    group $transaction
+      Svc -> Repo : delivery.update(status=failed, failedReason)
+      Svc -> Repo : volunteerProfile.update(isAvailable=true)
+      Repo -> DB : UPDATE deliveries / volunteer_profiles
+    end
+    Svc --> Ctrl : { id, status=failed }
+    Ctrl --> Screen : return data (200)
+    Screen --> User : marked as failed
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 7. Track Delivery (Receiver) ───────────────
+@startuml seq-delivery-track
+!include _seq-style.iuml
+title Track Delivery (Receiver) Sequence Diagram
+
+actor "Receiver" as User
+participant "TrackScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open tracking map
+activate Screen
+Screen -> Ctrl : GET /deliveries/track/:reservationId
+activate Ctrl
+Ctrl -> Svc : getTrackingForReceiver(reservationId, receiverUserId)
+activate Svc
+Svc -> Repo : receiverProfile.findUnique(userId)
+Svc -> Repo : delivery.findUnique(reservationId) include reservation, shipper.user
+Repo --> Svc : delivery | null
+alt Not found OR not owner
+  Svc --> Ctrl : 404 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else authorized
+  Svc -> Repo : getDeliveryCoords([deliveryId]) (ST_X/ST_Y)
+  opt has shipper
+    Svc -> Repo : $queryRaw shipper current_location
+    Repo --> Svc : shipperLocation
+  end
+  Svc --> Ctrl : { status, distanceKm, coords, shipper }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render live map (WebSocket updates)
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 8. Get Pending Offers / Active ─────────────
+@startuml seq-delivery-offers
+!include _seq-style.iuml
+title Get Pending Offers & Active Task Sequence Diagram
+
+actor "Shipper" as User
+participant "ShipperHomeScreen" as Screen
+participant "DeliveriesController" as Ctrl
+participant "DeliveriesService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open shipper home
+activate Screen
+Screen -> Ctrl : GET /deliveries/my/offers
+activate Ctrl
+Ctrl -> Svc : getMyPendingOffers(userId)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Svc -> Repo : shipperTaskOffer.findMany(status=pending, expiresAt>now) include delivery/reservation/listing
+Repo -> DB : SELECT shipper_task_offers JOIN ...
+DB --> Repo : offers[]
+Svc -> Repo : getDeliveryCoords(offer deliveryIds)
+Svc --> Ctrl : offers[] (with coords)
+deactivate Svc
+Ctrl --> Screen : return data (200)
+Screen -> Ctrl : GET /deliveries/my/active
+activate Ctrl
+Ctrl -> Svc : getMyActiveDelivery(userId)
+activate Svc
+Svc -> Repo : delivery.findFirst(status in active set) include reservation/listing/receiver
+Repo --> Svc : delivery | null
+Svc --> Ctrl : active delivery | null
+deactivate Svc
+Ctrl --> Screen : return data (200)
+Screen --> User : render offers + active task
+deactivate Ctrl
+deactivate Screen
+@enduml

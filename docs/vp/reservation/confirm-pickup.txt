@@ -1,0 +1,11 @@
+Provider->ScanScreen:confirm handover
+    ScanScreen->ReservationsController:POST /reservations/:id/confirm-pickup
+        ReservationsController->ReservationsService:confirmPickupByProvider(id, scannerUserId)
+            ReservationsService->PrismaService:reservation.findUnique(id) include listing, receiver
+                PrismaService->Database:SELECT reservations JOIN
+            ReservationsService->PrismaService:providerProfile.findUnique(scannerUserId)
+                PrismaService->Database:SELECT provider_profiles
+            ReservationsService->PrismaService:reservation.update(status=completed, pickupProof)
+                PrismaService->Database:UPDATE reservations
+            ReservationsService->ReservationsService:applyTrustDelta(successful_rescue, +2)
+            ReservationsService->NotificationsService:notify(receiver, Pickup completed)

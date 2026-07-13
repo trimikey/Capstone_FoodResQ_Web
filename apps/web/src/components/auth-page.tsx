@@ -23,6 +23,7 @@ import { reverseGeocode } from "@/lib/geocode";
 import { useAuthStore } from "@/stores/auth.store";
 import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
 import { signInWithGoogle, isFirebaseConfigured } from "@/lib/firebase";
+import { useUploadVerificationImage } from "@/hooks/useUploadImage";
 
 const GOOGLE_ENABLED = isFirebaseConfigured();
 
@@ -48,12 +49,19 @@ const registerSchema = z.object({
   storeName: z.string().optional(),
   foodCategory: z.string().optional(),
   providerAddress: z.string().optional(),
-  
+  // Provider verification (P3): thêm loại hình + MST + toạ độ + ảnh GPKD
+  providerBusinessType: z
+    .enum(["restaurant", "supermarket", "bakery", "hotel", "other"])
+    .optional(),
+  taxCode: z.string().optional(),
+  providerDescription: z.string().max(1000).optional(),
+  evidenceUrls: z.array(z.string().url()).optional(),
+
   // Volunteer fields
   volunteerRole: z.string().optional(),
   vehicle: z.string().optional(),
   supportArea: z.string().optional(),
-  
+
   // Receiver fields
   receiverAddress: z.string().optional(),
   notes: z.string().optional(),
@@ -74,6 +82,27 @@ const registerSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: "Địa chỉ hoạt động phải từ 5 ký tự",
         path: ["providerAddress"],
+      });
+    }
+    if (data.providerBusinessType && data.providerBusinessType !== "other" && !data.taxCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vui lòng nhập mã số thuế (10–13 chữ số) để admin xác minh doanh nghiệp.",
+        path: ["taxCode"],
+      });
+    }
+    if (data.taxCode && !/^[0-9]{10,13}$/.test(data.taxCode)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Mã số thuế phải gồm 10–13 chữ số.",
+        path: ["taxCode"],
+      });
+    }
+    if (!data.providerBusinessType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vui lòng chọn loại hình kinh doanh.",
+        path: ["providerBusinessType"],
       });
     }
   } else if (data.role === "charity") {
@@ -171,6 +200,10 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       storeName: "",
       foodCategory: "Đồ tươi sống",
       providerAddress: "",
+      providerBusinessType: undefined,
+      taxCode: "",
+      providerDescription: "",
+      evidenceUrls: [],
       volunteerRole: "shipper",
       vehicle: "Xe máy",
       supportArea: "",
@@ -239,6 +272,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   const { setTokens, setUser } = useAuthStore();
+  const uploadEvidence = useUploadVerificationImage();
 
   const onLoginSubmit = async (data: LoginFormValues) => {
     setIsSubmitting(true);
@@ -262,7 +296,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         try {
           const volRes = await api.get('/volunteers/me');
           const specs = volRes.data?.data?.specializations || [];
-          const isChefOrWaiter = specs.some((s: any) => s.specialization === 'chef' || s.specialization === 'waiter');
+          const isChefOrWaiter = specs.some((s: { specialization?: string }) => s.specialization === 'chef' || s.specialization === 'waiter');
           redirectUrl = isChefOrWaiter ? '/campaigns' : '/deliveries';
         } catch (e) {
           redirectUrl = '/deliveries';
@@ -287,7 +321,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       try {
         const volRes = await api.get('/volunteers/me');
         const specs = volRes.data?.data?.specializations || [];
-        const isChefOrWaiter = specs.some((s: any) => s.specialization === 'chef' || s.specialization === 'waiter');
+        const isChefOrWaiter = specs.some((s: { specialization?: string }) => s.specialization === 'chef' || s.specialization === 'waiter');
         redirectUrl = isChefOrWaiter ? '/campaigns' : '/deliveries';
       } catch (e) {
         redirectUrl = '/deliveries';
@@ -358,6 +392,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               : undefined,
         vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
         volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
+        // Provider verification (P3)
+        ...(data.role === 'provider' && {
+          businessType: data.providerBusinessType,
+          taxCode: data.taxCode || undefined,
+          description: data.providerDescription || undefined,
+          evidenceUrls: data.evidenceUrls && data.evidenceUrls.length ? data.evidenceUrls : undefined,
+          ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
+        }),
       });
       if (data.role === 'receiver' || data.role === 'volunteer') {
         // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.
@@ -372,8 +414,16 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         setShowFaceEnrollment(true);
       } else {
         // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
-        toast.success("Đăng ký thành công!");
-        setSuccessMessage("Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.");
+        const waitingMsg =
+          data.role === "provider"
+            ? "Đăng ký tài khoản NCC thành công! Hồ sơ đang chờ admin duyệt (tối đa 24h). Bạn có thể đăng nhập, các chức năng đăng tin sẽ mở sau khi duyệt."
+            : "Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.";
+        toast.success(
+          data.role === "provider"
+            ? "Đã gửi hồ sơ đăng ký!"
+            : "Đăng ký thành công!",
+        );
+        setSuccessMessage(waitingMsg);
         setTimeout(() => {
           setActiveTab("login");
           setRegisterStep(1);
@@ -381,7 +431,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           resetRegisterForm();
           setUploadedFile(null);
           setSuccessMessage(null);
-        }, 1500);
+        }, 2200);
       }
     } catch (err: unknown) {
       const msg =
@@ -928,6 +978,150 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               </select>
                             </div>
                           )}
+
+                          {/* Provider: loại hình kinh doanh (P3) */}
+                          {selectedRole === "provider" && (
+                            <div className="space-y-1.5">
+                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="provider-business-type">
+                                Loại hình kinh doanh <span className="text-rose-600">*</span>
+                              </label>
+                              <select
+                                id="provider-business-type"
+                                className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none ${
+                                  registerErrors.providerBusinessType ? "border-error" : "border-neutral-200/30"
+                                }`}
+                                disabled={isSubmitting}
+                                {...registerSignup("providerBusinessType")}
+                              >
+                                <option value="">-- Chọn loại hình --</option>
+                                <option value="restaurant">🍜 Nhà hàng / Quán ăn</option>
+                                <option value="supermarket">🛒 Siêu thị / Cửa hàng tiện lợi</option>
+                                <option value="bakery">🥖 Tiệm bánh</option>
+                                <option value="hotel">🏨 Khách sạn / Resort</option>
+                                <option value="other">📦 Khác (cá nhân / hộ gia đình)</option>
+                              </select>
+                              {registerErrors.providerBusinessType && (
+                                <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.providerBusinessType.message}</p>
+                              )}
+                              <p className="text-xs text-neutral-500 ml-1">
+                                Quyết định bạn có cần cung cấp MST hay không.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Provider: MST (P3) */}
+                          {selectedRole === "provider" && (
+                            <div className="space-y-1.5">
+                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="tax-code">
+                                Mã số thuế <span className="text-rose-600">*</span>
+                              </label>
+                              <input
+                                id="tax-code"
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="Ví dụ: 0312345678"
+                                className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                  registerErrors.taxCode ? "border-error" : "border-neutral-200/30"
+                                }`}
+                                disabled={isSubmitting}
+                                {...registerSignup("taxCode")}
+                              />
+                              {registerErrors.taxCode && (
+                                <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.taxCode.message}</p>
+                              )}
+                              <p className="text-xs text-neutral-500 ml-1">
+                                Admin dùng MST để tra cứu doanh nghiệp. Hộ cá nhân chọn loại hình &quot;Khác&quot; ở trên thì không cần nhập.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Provider: mô tả ngắn (P3) */}
+                          {selectedRole === "provider" && (
+                            <div className="space-y-1.5">
+                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="provider-description">
+                                Mô tả ngắn về cửa hàng
+                              </label>
+                              <textarea
+                                id="provider-description"
+                                rows={3}
+                                placeholder="Ví dụ: Chuyên cơm văn phòng, mở cửa 10h–14h mỗi ngày..."
+                                className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant resize-none"
+                                disabled={isSubmitting}
+                                {...registerSignup("providerDescription")}
+                              />
+                            </div>
+                          )}
+
+                          {/* Provider: ảnh minh chứng (P3) — GPKD + mặt tiền + biển hiệu */}
+                          {selectedRole === "provider" && (() => {
+                            const evidenceUrls: string[] = (watchRegister("evidenceUrls") ?? []) as string[];
+                            const setEvidence = (urls: string[]) =>
+                              setRegisterValue("evidenceUrls", urls, { shouldValidate: true });
+                            return (
+                            <div className="space-y-2">
+                              <label className="font-semibold text-base text-neutral-500 ml-1">
+                                Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)
+                              </label>
+                              <p className="text-xs text-neutral-500 ml-1">
+                                Ảnh đầu tiên nên là giấy phép ĐKKD/GPKD để admin xác minh nhanh. Có thể thêm ảnh mặt tiền, kệ hàng, biển hiệu...
+                              </p>
+
+                              {/* Danh sách URL đã upload */}
+                              <div className="grid grid-cols-3 gap-2">
+                                {evidenceUrls.map((u: string, idx: number) => (
+                                  <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
+                                    <img src={u} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEvidence(evidenceUrls.filter((_, i) => i !== idx))
+                                      }
+                                      className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-black/80"
+                                      aria-label="Xoá ảnh"
+                                    >
+                                      ✕
+                                    </button>
+                                    {idx === 0 && (
+                                      <span className="absolute bottom-1 left-1 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded">
+                                        GPKD
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+
+                              <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-neutral-200/60 rounded-xl text-sm font-semibold text-emerald-800 hover:bg-emerald-50 cursor-pointer disabled:opacity-50">
+                                <span className="material-symbols-outlined text-base">add_photo_alternate</span>
+                                {uploadEvidence.isPending ? "Đang upload..." : "Thêm ảnh"}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  multiple
+                                  className="hidden"
+                                  disabled={isSubmitting || uploadEvidence.isPending}
+                                  onChange={async (e) => {
+                                    const files = Array.from(e.target.files ?? []);
+                                    if (!files.length) return;
+                                    try {
+                                      const urls: string[] = [];
+                                      for (const f of files) {
+                                        const u = await uploadEvidence.uploadVerificationImage(f);
+                                        urls.push(u);
+                                      }
+                                      setEvidence([...evidenceUrls, ...urls]);
+                                      toast.success(`Đã upload ${urls.length} ảnh.`);
+                                    } catch {
+                                      toast.error("Upload ảnh thất bại. Vui lòng thử lại.");
+                                    } finally {
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            );
+                          })()}
+
 
                           {/* Address */}
                           <div className="space-y-1.5">

@@ -1,0 +1,5 @@
+User->NotificationBell:load badge
+    NotificationBell->NotificationsController:GET /notifications/unread-count
+        NotificationsController->NotificationsService:unreadCount(userId)
+            NotificationsService->PrismaService:notification.count(isRead=false)
+                PrismaService->Database:SELECT COUNT notifications

@@ -71,7 +71,59 @@ export class UsersService {
       if (rp) receiver = { isCharityOrg: rp.isCharityOrg, organizationName: rp.organizationName };
     }
 
-    return { ...user, stats, volunteer, receiver };
+    // Nếu là NCC → kèm địa chỉ + toạ độ cửa hàng (đã đăng ký) để FE điền sẵn khi tạo listing
+    let provider: {
+      id: string;
+      businessName: string;
+      businessType: string;
+      address: string;
+      contactPhone: string | null;
+      taxCode: string | null;
+      isVerified: boolean;
+      verificationStatus: string;
+      lng: number | null;
+      lat: number | null;
+    } | null = null;
+    if (user.role === 'provider') {
+      const rows = await this.prisma.$queryRaw<
+        {
+          id: string;
+          business_name: string;
+          business_type: string;
+          address: string;
+          contact_phone: string | null;
+          tax_code: string | null;
+          is_verified: boolean;
+          verification_status: string;
+          lng: number | null;
+          lat: number | null;
+        }[]
+      >(Prisma.sql`
+        SELECT id, business_name, business_type, address, contact_phone, tax_code,
+               is_verified, verification_status::text AS verification_status,
+               ST_X(location::geometry) AS lng,
+               ST_Y(location::geometry) AS lat
+        FROM provider_profiles
+        WHERE user_id = ${userId}::uuid
+      `);
+      const r = rows[0];
+      if (r) {
+        provider = {
+          id: r.id,
+          businessName: r.business_name,
+          businessType: r.business_type,
+          address: r.address,
+          contactPhone: r.contact_phone,
+          taxCode: r.tax_code,
+          isVerified: r.is_verified,
+          verificationStatus: r.verification_status,
+          lng: r.lng !== null ? Number(r.lng) : null,
+          lat: r.lat !== null ? Number(r.lat) : null,
+        };
+      }
+    }
+
+    return { ...user, stats, volunteer, receiver, provider };
   }
 
   /** Cập nhật hồ sơ cơ bản: họ tên, số điện thoại, avatar. */

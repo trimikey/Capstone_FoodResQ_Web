@@ -333,8 +333,8 @@ export default function ReservationDetailsPage() {
 
               {/* Map Route Tracking Card */}
               <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm relative h-[360px]">
-                {pickupPt && deliveryPt ? (
-                  // Bản đồ thật (Leaflet/OSM): điểm lấy, điểm giao, vị trí shipper trực tiếp
+                {pickupPt || deliveryPt || shipperPt ? (
+                  // Bản đồ thật (Leaflet/OSM): vẽ mọi điểm đang có — điểm lấy, điểm giao, vị trí shipper trực tiếp
                   <DeliveryRouteMap pickup={pickupPt} delivery={deliveryPt} shipper={shipperPt} />
                 ) : (
                   // Fallback khi đơn chưa có toạ độ (mock/demo hoặc backend chưa populate)

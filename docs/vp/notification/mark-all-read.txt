@@ -1,0 +1,5 @@
+User->NotificationBell:tap Mark all read
+    NotificationBell->NotificationsController:PATCH /notifications/read-all
+        NotificationsController->NotificationsService:markAllRead(userId)
+            NotificationsService->PrismaService:notification.updateMany(isRead=true)
+                PrismaService->Database:UPDATE notifications

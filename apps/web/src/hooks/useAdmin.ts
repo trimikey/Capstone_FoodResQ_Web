@@ -21,6 +21,16 @@ export interface VerificationItem {
   phone: string | null;
   detail: string;
   createdAt: string;
+  // Provider-only extensions (tuỳ chọn — BE có thể trả về nếu có)
+  businessName?: string;
+  businessType?: string;
+  taxCode?: string | null;
+  address?: string;
+  contactPhone?: string | null;
+  evidenceUrls?: string[];
+  description?: string | null;
+  lng?: number | null;
+  lat?: number | null;
 }
 
 export interface AdminReport {

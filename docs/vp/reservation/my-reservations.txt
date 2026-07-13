@@ -1,0 +1,10 @@
+Receiver->HistoryScreen:open My Reservations
+    HistoryScreen->ReservationsController:GET /reservations/my
+        ReservationsController->ReservationsService:findMyReservations(userId, page, limit)
+            ReservationsService->PrismaService:receiverProfile.findUnique(userId)
+                PrismaService->Database:SELECT receiver_profiles
+            ReservationsService->PrismaService:reservation.findMany + count
+                PrismaService->Database:SELECT reservations
+            ReservationsService->PrismaService:rating.findMany(reservation refs)
+                PrismaService->Database:SELECT ratings
+            ReservationsService->ReservationsService:attach ratedScore

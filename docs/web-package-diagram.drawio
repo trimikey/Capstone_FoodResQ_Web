@@ -1,0 +1,140 @@
+<mxfile host="app.diagrams.net" agent="Claude Code" version="24.0.0">
+  <diagram id="foodresq-web-pkg" name="Web Package Diagram">
+    <mxGraphModel dx="1200" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="950" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ================= OUTER: src ================= -->
+        <mxCell id="src" value="src" style="shape=folder;tabWidth=50;tabHeight=20;tabPosition=left;html=1;rounded=0;verticalAlign=top;align=center;fontSize=14;fontStyle=1;fillColor=none;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1120" height="900" as="geometry" />
+        </mxCell>
+
+        <!-- ================= CORE CONTAINER: apps/web/src ================= -->
+        <mxCell id="core" value="apps/web/src" style="shape=folder;tabWidth=110;tabHeight=20;tabPosition=left;html=1;rounded=0;verticalAlign=top;align=center;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="70" y="80" width="1060" height="470" as="geometry" />
+        </mxCell>
+
+        <!-- left column -->
+        <mxCell id="schemas" value="schemas&#10;&#10;auth · reservation (zod)" style="shape=folder;tabWidth=60;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="110" y="140" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="stores" value="stores&#10;&#10;auth.store (zustand)" style="shape=folder;tabWidth=60;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="110" y="250" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lib" value="lib&#10;&#10;query-client · utils&#10;firebase · push · geocode" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="110" y="360" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- hub: @foodresq/types -->
+        <mxCell id="types" value="@foodresq/types&#10;&#10;UserRole · UserStatus&#10;ApiResponse&lt;T&gt; · enums" style="shape=folder;tabWidth=80;tabHeight=18;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#eef1f4;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="490" y="130" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- lib/api hub -->
+        <mxCell id="api" value="lib/api&#10;&#10;request (axios)&#10;Bearer + refresh 401" style="shape=folder;tabWidth=60;tabHeight=18;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="740" y="410" width="170" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- hooks container -->
+        <mxCell id="hooks" value="hooks" style="shape=folder;tabWidth=60;tabHeight=18;tabPosition=left;html=1;rounded=0;verticalAlign=top;align=center;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="730" y="130" width="360" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="useListings" value="useListings" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="760" y="185" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="useReservation" value="useReservation" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="920" y="270" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="hooksNote" value="+ useDeliveries · useCampaigns · useKitchenOps …" style="text;html=1;align=center;fontSize=10;fontStyle=2;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="750" y="335" width="320" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- components container -->
+        <mxCell id="components" value="components" style="shape=folder;tabWidth=90;tabHeight=18;tabPosition=left;html=1;rounded=0;verticalAlign=top;align=center;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="370" y="260" width="320" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="map" value="map&#10;(react-leaflet)" style="shape=folder;tabWidth=45;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="400" y="315" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="listings" value="listings&#10;+ reservations" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="530" y="385" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="shared" value="shared&#10;Modal · CameraCapture" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="400" y="450" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="compNote" value="+ home · recipes" style="text;html=1;align=center;fontSize=10;fontStyle=2;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="580" y="455" width="100" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- ================= APP CONTAINER ================= -->
+        <mxCell id="app" value="app  (App Router)" style="shape=folder;tabWidth=140;tabHeight=20;tabPosition=left;html=1;rounded=0;verticalAlign=top;align=center;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#1b2430;" vertex="1" parent="1">
+          <mxGeometry x="70" y="590" width="1060" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="(auth)&#10;&#10;login&#10;register" style="shape=folder;tabWidth=50;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="120" y="690" width="175" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" value="(dashboard)&#10;&#10;listings · reservations&#10;kitchen · recipes · admin&#10;provider · profile" style="shape=folder;tabWidth=70;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="350" y="690" width="230" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="volunteer" value="volunteer&#10;&#10;active · history&#10;profile · report" style="shape=folder;tabWidth=65;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="640" y="690" width="175" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="adminkho" value="admin-kho&#10;&#10;dashboard&#10;+ campaigns" style="shape=folder;tabWidth=70;tabHeight=16;tabPosition=left;html=1;rounded=0;verticalAlign=middle;align=center;fontSize=12;fontStyle=1;fillColor=#ffffff;strokeColor=#1b2430;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="870" y="690" width="180" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ================= EDGES ================= -->
+        <!-- solid: into @foodresq/types hub -->
+        <mxCell id="e1" value="Import" style="endArrow=block;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="schemas" target="types">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="Import" style="endArrow=block;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="stores" target="types">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- dashed: import / access -->
+        <mxCell id="e3" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="hooks" target="types">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="access" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="useReservation" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e5" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="components" target="types">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="components" target="hooks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="access" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="components" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="components" target="lib">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- app -> core -->
+        <mxCell id="e9" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="auth" target="components">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="dashboard" target="components">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="access" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="dashboard" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="volunteer" target="hooks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="access" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="adminkho" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="Import" style="endArrow=open;dashed=1;html=1;fontSize=10;fontColor=#7a5a12;strokeColor=#1b2430;" edge="1" parent="1" source="adminkho" target="stores">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

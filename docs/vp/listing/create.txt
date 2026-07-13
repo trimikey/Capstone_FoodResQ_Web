@@ -1,0 +1,10 @@
+Provider->CreateListingScreen:fill form + location
+    CreateListingScreen->ListingsController:POST /listings (CreateListingDto)
+        ListingsController->ListingsService:create(userId, dto)
+            ListingsService->PrismaService:providerProfile.findUnique(userId)
+                PrismaService->Database:SELECT provider_profiles
+            ListingsService->PrismaService:queryRaw INSERT food_listings (status=draft, ST_MakePoint)
+                PrismaService->Database:INSERT food_listings
+            ListingsService->ListingsService:findOne(id)
+                ListingsService->PrismaService:queryRaw SELECT listing
+                    PrismaService->Database:SELECT food_listings

@@ -1,0 +1,9 @@
+Shipper->OffersScreen:tap Reject (reason)
+    OffersScreen->DeliveriesController:POST /deliveries/:id/reject
+        DeliveriesController->DeliveriesService:rejectOffer(deliveryId, shipperUserId, reason)
+            DeliveriesService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            DeliveriesService->PrismaService:shipperTaskOffer.findUnique(deliveryId, shipperId)
+                PrismaService->Database:SELECT shipper_task_offers
+            DeliveriesService->PrismaService:offer.update(status=rejected, rejectReason)
+                PrismaService->Database:UPDATE shipper_task_offers

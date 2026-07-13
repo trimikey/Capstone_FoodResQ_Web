@@ -11,10 +11,13 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
+import { TrustService } from '@/modules/trust/trust.service';
 
 const OFFER_EXPIRY_MINUTES = 2;
 const BROADCAST_RADIUS_M = 5000; // 5km
 const MAX_OFFERS_PER_DELIVERY = 5;
+// Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
+const DELIVERY_STALL_HOURS = 6;
 
 interface NearbyShipper {
   id: string;
@@ -29,6 +32,7 @@ export class DeliveriesService {
     private storage: StorageService,
     @InjectQueue('notification-push') private notifQueue: Queue,
     private gateway: NotificationsGateway,
+    private trust: TrustService,
   ) {}
 
   /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
@@ -72,7 +76,12 @@ export class DeliveriesService {
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO shipper_task_offers (delivery_id, shipper_id, status, expires_at)
           VALUES (${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz)
-          ON CONFLICT (delivery_id, shipper_id) DO NOTHING
+          ON CONFLICT (delivery_id, shipper_id) DO UPDATE
+          SET status = 'pending'::offer_status,
+              expires_at = EXCLUDED.expires_at,
+              offered_at = NOW(),
+              responded_at = NULL
+          WHERE shipper_task_offers.status = 'expired'
         `);
       }
     });
@@ -105,6 +114,20 @@ export class DeliveriesService {
     if (!offer) throw new NotFoundException('Không tìm thấy lời mời giao hàng.');
     if (offer.status !== 'pending') throw new BadRequestException('Lời mời này không còn hiệu lực (đã được phản hồi hoặc hết hạn).');
     if (new Date() > offer.expiresAt) throw new BadRequestException('Lời mời giao hàng đã hết hạn.');
+
+    // Mỗi shipper chỉ giữ 1 đơn đang giao tại một thời điểm
+    const existingActive = await this.prisma.delivery.findFirst({
+      where: {
+        shipperId: volunteer.id,
+        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+      },
+      select: { id: true },
+    });
+    if (existingActive) {
+      throw new BadRequestException(
+        'Bạn đang có một đơn giao chưa hoàn tất. Hãy hoàn tất đơn hiện tại trước khi nhận đơn mới.',
+      );
+    }
 
     const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
     if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
@@ -169,13 +192,19 @@ export class DeliveriesService {
     shipperUserId: string,
     newStatus: string,
     proofUrl?: string,
+    qrToken?: string,
   ) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
     });
     if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
-    const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId } });
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: {
+        reservation: { select: { id: true, qrToken: true, receiver: { select: { userId: true } } } },
+      },
+    });
     if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
     if (delivery.shipperId !== volunteer.id) throw new ForbiddenException();
 
@@ -197,6 +226,20 @@ export class DeliveriesService {
       updateData.qcPhotoAt = new Date();
     }
     if (newStatus === 'delivered') {
+      // Bàn giao đúng người: shipper phải quét mã QR trên màn hình của người nhận.
+      // Không kiểm tra qr_expires_at — QR của đơn giao là mã xác nhận bàn giao,
+      // giao hàng thường lâu hơn 30 phút hiệu lực gốc.
+      if (!qrToken) {
+        throw new BadRequestException(
+          'Cần quét mã QR trên màn hình của người nhận để xác nhận bàn giao đúng người.',
+        );
+      }
+      if (qrToken.trim() !== delivery.reservation.qrToken) {
+        throw new BadRequestException(
+          'Mã QR không khớp với đơn này. Hãy quét mã trong trang theo dõi đơn của người nhận.',
+        );
+      }
+
       updateData.deliveredAt = new Date();
       if (proofUrl) {
         updateData.deliveryProofUrl = proofUrl;
@@ -225,6 +268,15 @@ export class DeliveriesService {
           },
         }),
       ]);
+
+      // Giải cứu thành công → +2 trust cho người nhận (đồng nhất với luồng tự đến lấy)
+      void this.trust.applyDelta(
+        delivery.reservation.receiver.userId,
+        2,
+        'successful_rescue',
+        'reservation',
+        delivery.reservation.id,
+      );
     }
 
     return this.prisma.delivery.update({ where: { id: deliveryId }, data: updateData });
@@ -277,8 +329,124 @@ export class DeliveriesService {
     await this.prisma.$transaction([
       this.prisma.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } }),
       this.prisma.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } }),
+      // Đóng luôn reservation — nếu để 'confirmed' thì đơn treo vĩnh viễn (không cron nào xử lý)
+      this.prisma.reservation.update({
+        where: { id: delivery.reservationId },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancellationReason: `Giao hàng thất bại: ${reason.trim()}`,
+        },
+      }),
     ]);
     return { id: deliveryId, status: 'failed' };
+  }
+
+  /**
+   * Cron: auto-fail các đơn giao KẸT — shipper đã nhận nhưng không cập nhật trạng thái
+   * quá DELIVERY_STALL_HOURS giờ (bỏ ngang giữa chừng).
+   * - Chưa lấy hàng (assigned/heading_to_provider): hàng vẫn ở provider → hoàn số lượng listing.
+   * - Đã lấy hàng (qc_completed/in_transit): hàng đã rời bếp → không hoàn số lượng.
+   * - Giải phóng shipper (is_available=true); reservation đang `confirmed` → `expired`
+   *   (không phạt trust người nhận — không phải lỗi của họ).
+   */
+  async expireStalledDeliveries(): Promise<number> {
+    const cutoff = new Date(Date.now() - DELIVERY_STALL_HOURS * 60 * 60 * 1000);
+    const stalled = await this.prisma.delivery.findMany({
+      where: {
+        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+        updatedAt: { lt: cutoff },
+      },
+      include: {
+        reservation: { select: { id: true, status: true, quantity: true, listingId: true } },
+      },
+      take: 100,
+    });
+
+    for (const d of stalled) {
+      const beforePickup = d.status === 'assigned' || d.status === 'heading_to_provider';
+      const ops: Prisma.PrismaPromise<unknown>[] = [
+        this.prisma.delivery.update({
+          where: { id: d.id },
+          data: {
+            status: 'failed',
+            failedReason: `Tự động huỷ: đơn không được cập nhật trạng thái trong ${DELIVERY_STALL_HOURS} giờ.`,
+          },
+        }),
+      ];
+      if (d.shipperId) {
+        ops.push(
+          this.prisma.volunteerProfile.update({
+            where: { id: d.shipperId },
+            data: { isAvailable: true },
+          }),
+        );
+      }
+      if (d.reservation.status === 'confirmed') {
+        ops.push(
+          this.prisma.reservation.update({
+            where: { id: d.reservation.id },
+            data: { status: 'expired' },
+          }),
+        );
+      }
+      if (beforePickup) {
+        ops.push(
+          this.prisma.$executeRaw(Prisma.sql`
+            UPDATE food_listings
+            SET
+              quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(d.reservation.quantity)}),
+              status = 'active'::listing_status,
+              updated_at = NOW()
+            WHERE id = ${d.reservation.listingId}::uuid
+          `),
+        );
+      }
+      await this.prisma.$transaction(ops);
+    }
+
+    return stalled.length;
+  }
+
+  /**
+   * Cron: (1) đóng các offer `pending` đã quá hạn thành `expired`;
+   * (2) đơn `pending_assignment` còn hiệu lực (reservation chưa hết hạn QR)
+   * mà không còn offer nào đang chờ → phát lại lời mời cho các shipper gần đó
+   * (kể cả shipper đã bỏ lỡ lần trước — trừ người đã từ chối).
+   */
+  async sweepOffersAndRebroadcast(): Promise<number> {
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE shipper_task_offers
+      SET status = 'expired'::offer_status, responded_at = NOW()
+      WHERE status = 'pending' AND expires_at < NOW()
+    `);
+
+    const stuck = await this.prisma.$queryRaw<
+      { id: string; plng: number | null; plat: number | null }[]
+    >(Prisma.sql`
+      SELECT d.id,
+             ST_X(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plng,
+             ST_Y(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plat
+      FROM deliveries d
+      JOIN reservations r ON r.id = d.reservation_id
+      JOIN food_listings fl ON fl.id = r.listing_id
+      WHERE d.status = 'pending_assignment'
+        AND r.status = 'confirmed'
+        AND r.qr_expires_at > NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM shipper_task_offers o
+          WHERE o.delivery_id = d.id AND o.status = 'pending'
+        )
+      LIMIT 20
+    `);
+
+    for (const d of stuck) {
+      if (d.plng != null && d.plat != null) {
+        await this.broadcastToNearbyShippers(d.id, Number(d.plng), Number(d.plat));
+      }
+    }
+
+    return stuck.length;
   }
 
   /** Lấy toạ độ lấy hàng / giao hàng (cột geography) cho danh sách delivery. */
@@ -408,7 +576,35 @@ export class DeliveriesService {
     if (!delivery) throw new NotFoundException('Đơn này chưa có thông tin giao hàng.');
     if (delivery.reservation.receiverId !== receiver.id) throw new ForbiddenException();
 
-    const coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
+    let coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
+
+    // Fallback: đơn cũ chưa được ghi sẵn toạ độ vào deliveries → lấy trực tiếp
+    // từ listing (điểm lấy) và receiver_profiles (điểm giao) để FE vẫn vẽ được bản đồ.
+    if (
+      coords == null ||
+      coords.pickupLng == null || coords.pickupLat == null ||
+      coords.deliveryLng == null || coords.deliveryLat == null
+    ) {
+      const [fb] = await this.prisma.$queryRaw<
+        { plng: number | null; plat: number | null; dlng: number | null; dlat: number | null }[]
+      >(Prisma.sql`
+        SELECT
+          ST_X(fl.pickup_location::geometry) AS plng, ST_Y(fl.pickup_location::geometry) AS plat,
+          ST_X(rp.location::geometry) AS dlng, ST_Y(rp.location::geometry) AS dlat
+        FROM reservations r
+        JOIN food_listings fl ON fl.id = r.listing_id
+        LEFT JOIN receiver_profiles rp ON rp.id = r.receiver_id
+        WHERE r.id = ${reservationId}::uuid
+      `);
+      if (fb) {
+        coords = {
+          pickupLng: coords?.pickupLng ?? fb.plng,
+          pickupLat: coords?.pickupLat ?? fb.plat,
+          deliveryLng: coords?.deliveryLng ?? fb.dlng,
+          deliveryLat: coords?.deliveryLat ?? fb.dlat,
+        };
+      }
+    }
 
     let shipperLocation: { lng: number; lat: number } | null = null;
     if (delivery.shipperId) {

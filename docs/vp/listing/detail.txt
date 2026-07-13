@@ -1,0 +1,5 @@
+Receiver->DetailScreen:open listing
+    DetailScreen->ListingsController:GET /listings/:id
+        ListingsController->ListingsService:findOne(id)
+            ListingsService->PrismaService:queryRaw SELECT listing + provider (ST_X, ST_Y)
+                PrismaService->Database:SELECT food_listings JOIN provider_profiles

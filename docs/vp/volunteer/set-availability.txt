@@ -1,0 +1,7 @@
+Volunteer->VolunteerScreen:toggle availability (lng, lat)
+    VolunteerScreen->VolunteersController:PATCH /volunteers/me/availability
+        VolunteersController->VolunteersService:setAvailability(userId, dto)
+            VolunteersService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            VolunteersService->PrismaService:UPDATE current_location + is_available
+                PrismaService->Database:UPDATE volunteer_profiles

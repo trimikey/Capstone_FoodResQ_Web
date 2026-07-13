@@ -1,0 +1,9 @@
+Chef->RecipeFormModal:edit recipe
+    RecipeFormModal->RecipesController:PATCH /recipes/:id (UpdateRecipeDto)
+        RecipesController->RecipesService:update(id, userId, dto)
+            RecipesService->PrismaService:recipe.findFirst(owner check)
+                PrismaService->Database:SELECT recipes
+            RecipesService->PrismaService:recipeIngredient.deleteMany(recipeId)
+                PrismaService->Database:DELETE recipe_ingredients
+            RecipesService->PrismaService:recipe.update + recreate ingredients
+                PrismaService->Database:UPDATE recipes + INSERT recipe_ingredients

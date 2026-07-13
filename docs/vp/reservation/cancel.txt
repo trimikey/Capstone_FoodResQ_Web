@@ -1,0 +1,12 @@
+Receiver->DetailScreen:tap Cancel (reason)
+    DetailScreen->ReservationsController:PATCH /reservations/:id/cancel
+        ReservationsController->ReservationsService:cancel(id, userId, reason)
+            ReservationsService->PrismaService:reservation.findUnique(id) include receiver
+                PrismaService->Database:SELECT reservations
+            ReservationsService->PrismaService:reservation.update(status=cancelled)
+                PrismaService->Database:UPDATE reservations
+            ReservationsService->PrismaService:restore quantity_remaining + status=active
+                PrismaService->Database:UPDATE food_listings
+            ReservationsService->PrismaService:receiverProfile reservationsToday -1
+                PrismaService->Database:UPDATE receiver_profiles
+            ReservationsService->ReservationsService:applyTrustDelta(late_cancellation, -10)

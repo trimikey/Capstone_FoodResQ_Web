@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmi:XMI xmi:version="2.1"
+         xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+         xmlns:uml="http://schema.omg.org/spec/UML/2.1">
+  <uml:Model xmi:id="model_1" name="FoodResQ">
+
+    <!-- ============ Participant types ============ -->
+    <packagedElement xmi:type="uml:Actor" xmi:id="cls_receiver" name="Receiver"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_ctrl"   name="ReservationsController"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_svc"    name="ReservationsService"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_syscfg" name="SystemConfigService"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_lock"   name="Redlock"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_prisma" name="PrismaService"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="cls_queue"  name="NotificationPushQueue"/>
+
+    <!-- ============ Interaction: Create Reservation ============ -->
+    <packagedElement xmi:type="uml:Interaction" xmi:id="int_1" name="Create Reservation">
+
+      <!-- lifeline-backing properties -->
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_receiver" name="receiver" type="cls_receiver"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_ctrl"     name="ctrl"     type="cls_ctrl"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_svc"      name="svc"      type="cls_svc"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_syscfg"   name="syscfg"   type="cls_syscfg"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_lock"     name="lock"     type="cls_lock"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_prisma"   name="prisma"   type="cls_prisma"/>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="p_queue"    name="queue"    type="cls_queue"/>
+
+      <!-- lifelines -->
+      <lifeline xmi:id="ll_receiver" name="Receiver"              represents="p_receiver"/>
+      <lifeline xmi:id="ll_ctrl"     name="ReservationsController" represents="p_ctrl"/>
+      <lifeline xmi:id="ll_svc"      name="ReservationsService"    represents="p_svc"/>
+      <lifeline xmi:id="ll_syscfg"   name="SystemConfigService"    represents="p_syscfg"/>
+      <lifeline xmi:id="ll_lock"     name="Redlock"                represents="p_lock"/>
+      <lifeline xmi:id="ll_prisma"   name="PrismaService"          represents="p_prisma"/>
+      <lifeline xmi:id="ll_queue"    name="NotificationPushQueue"  represents="p_queue"/>
+
+      <!-- ===== ordered fragments (send/receive occurrences) ===== -->
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_1s" covered="ll_receiver" message="msg_1"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_1r" covered="ll_ctrl"     message="msg_1"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_2s" covered="ll_ctrl"     message="msg_2"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_2r" covered="ll_svc"      message="msg_2"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_3s" covered="ll_svc"      message="msg_3"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_3r" covered="ll_prisma"   message="msg_3"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_4s" covered="ll_prisma"   message="msg_4"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_4r" covered="ll_svc"      message="msg_4"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_5s" covered="ll_svc"      message="msg_5"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_5r" covered="ll_syscfg"   message="msg_5"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_6s" covered="ll_syscfg"   message="msg_6"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_6r" covered="ll_svc"      message="msg_6"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_7s" covered="ll_svc"      message="msg_7"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_7r" covered="ll_lock"     message="msg_7"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_8s" covered="ll_lock"     message="msg_8"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_8r" covered="ll_svc"      message="msg_8"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_9s" covered="ll_svc"      message="msg_9"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_9r" covered="ll_prisma"   message="msg_9"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_10s" covered="ll_prisma"  message="msg_10"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_10r" covered="ll_svc"     message="msg_10"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_11s" covered="ll_svc"     message="msg_11"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_11r" covered="ll_prisma"  message="msg_11"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_12s" covered="ll_prisma"  message="msg_12"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_12r" covered="ll_svc"     message="msg_12"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_13s" covered="ll_svc"     message="msg_13"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_13r" covered="ll_syscfg"  message="msg_13"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_14s" covered="ll_syscfg"  message="msg_14"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_14r" covered="ll_svc"     message="msg_14"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_15s" covered="ll_svc"     message="msg_15"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_15r" covered="ll_prisma"  message="msg_15"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_16s" covered="ll_prisma"  message="msg_16"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_16r" covered="ll_svc"     message="msg_16"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_17s" covered="ll_svc"     message="msg_17"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_17r" covered="ll_queue"   message="msg_17"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_18s" covered="ll_svc"     message="msg_18"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_18r" covered="ll_lock"    message="msg_18"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_19s" covered="ll_svc"     message="msg_19"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_19r" covered="ll_ctrl"    message="msg_19"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_20s" covered="ll_ctrl"    message="msg_20"/>
+      <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="occ_20r" covered="ll_receiver" message="msg_20"/>
+
+      <!-- ===== messages ===== -->
+      <message xmi:id="msg_1"  name="POST /reservations (CreateReservationDto)" messageSort="synchCall" sendEvent="occ_1s"  receiveEvent="occ_1r"/>
+      <message xmi:id="msg_2"  name="create(receiverUserId, dto)"               messageSort="synchCall" sendEvent="occ_2s"  receiveEvent="occ_2r"/>
+      <message xmi:id="msg_3"  name="receiverProfile.findUnique(userId)"        messageSort="synchCall" sendEvent="occ_3s"  receiveEvent="occ_3r"/>
+      <message xmi:id="msg_4"  name="receiverProfile"                           messageSort="reply"     sendEvent="occ_4s"  receiveEvent="occ_4r"/>
+      <message xmi:id="msg_5"  name="getNumber(MAX_RESERVATIONS_PER_DAY)"       messageSort="synchCall" sendEvent="occ_5s"  receiveEvent="occ_5r"/>
+      <message xmi:id="msg_6"  name="maxPerDay"                                 messageSort="reply"     sendEvent="occ_6s"  receiveEvent="occ_6r"/>
+      <message xmi:id="msg_7"  name="acquire(lock:reservation:listingId, 10s)"  messageSort="synchCall" sendEvent="occ_7s"  receiveEvent="occ_7r"/>
+      <message xmi:id="msg_8"  name="lock"                                      messageSort="reply"     sendEvent="occ_8s"  receiveEvent="occ_8r"/>
+      <message xmi:id="msg_9"  name="queryRaw SELECT listing (qty, status, max)" messageSort="synchCall" sendEvent="occ_9s"  receiveEvent="occ_9r"/>
+      <message xmi:id="msg_10" name="listingRow"                               messageSort="reply"     sendEvent="occ_10s" receiveEvent="occ_10r"/>
+      <message xmi:id="msg_11" name="reservation.findFirst(active existing)"    messageSort="synchCall" sendEvent="occ_11s" receiveEvent="occ_11r"/>
+      <message xmi:id="msg_12" name="none"                                     messageSort="reply"     sendEvent="occ_12s" receiveEvent="occ_12r"/>
+      <message xmi:id="msg_13" name="getNumber(QR_VALIDITY_MINUTES)"           messageSort="synchCall" sendEvent="occ_13s" receiveEvent="occ_13r"/>
+      <message xmi:id="msg_14" name="qrValidMinutes"                           messageSort="reply"     sendEvent="occ_14s" receiveEvent="occ_14r"/>
+      <message xmi:id="msg_15" name="transaction: -qty + INSERT reservation + counter+1" messageSort="synchCall" sendEvent="occ_15s" receiveEvent="occ_15r"/>
+      <message xmi:id="msg_16" name="{ id, qr_token }"                         messageSort="reply"     sendEvent="occ_16s" receiveEvent="occ_16r"/>
+      <message xmi:id="msg_17" name="add(shipper-broadcast) [if requestDelivery]" messageSort="asynchCall" sendEvent="occ_17s" receiveEvent="occ_17r"/>
+      <message xmi:id="msg_18" name="release() [finally]"                      messageSort="synchCall" sendEvent="occ_18s" receiveEvent="occ_18r"/>
+      <message xmi:id="msg_19" name="{ reservationId, qrToken, qrExpiresAt }"  messageSort="reply"     sendEvent="occ_19s" receiveEvent="occ_19r"/>
+      <message xmi:id="msg_20" name="201 Created (show QR code)"              messageSort="reply"     sendEvent="occ_20s" receiveEvent="occ_20r"/>
+
+    </packagedElement>
+  </uml:Model>
+</xmi:XMI>

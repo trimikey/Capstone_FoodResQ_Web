@@ -1,0 +1,17 @@
+Shipper->ActiveTaskScreen:advance status (photo)
+    ActiveTaskScreen->DeliveriesController:PATCH /deliveries/:id/status (status, photo)
+        DeliveriesController->DeliveriesService:saveProofPhoto(photo)
+            DeliveriesService->StorageService:saveImage(photo, delivery-proofs)
+        DeliveriesController->DeliveriesService:updateStatus(id, shipperUserId, status, proofUrl)
+            DeliveriesService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            DeliveriesService->PrismaService:delivery.findUnique(id)
+                PrismaService->Database:SELECT deliveries
+            DeliveriesService->PrismaService:reservation.update(status=completed) if delivered
+                PrismaService->Database:UPDATE reservations
+            DeliveriesService->PrismaService:volunteerProfile dedicationPoints +5 if delivered
+                PrismaService->Database:UPDATE volunteer_profiles
+            DeliveriesService->PrismaService:dedicationPointsHistory.create(+5)
+                PrismaService->Database:INSERT dedication_points_history
+            DeliveriesService->PrismaService:delivery.update(status, proof)
+                PrismaService->Database:UPDATE deliveries

@@ -1,0 +1,261 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Authentication (auth module)
+' Register · Login · Login with Google/Firebase · Refresh · Logout
+'==============================================================
+
+'──────────────────────── 1. Register ────────────────────────
+@startuml seq-auth-register
+!include _seq-style.iuml
+title Register Sequence Diagram (all roles)
+
+actor "User" as User
+participant "RegisterScreen" as Screen
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "JwtService" as Jwt
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : submit register form
+activate Screen
+Screen -> Ctrl : POST /auth/register (RegisterDto)
+activate Ctrl
+Ctrl -> Svc : register(dto)
+activate Svc
+
+Svc -> Repo : user.findUnique(email)
+Repo -> DB : SELECT users WHERE email
+DB --> Repo : row | null
+Repo --> Svc : user | null
+
+alt Email already exists
+  Svc --> Ctrl : 409 ConflictException
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Email available
+  Svc -> Bcrypt : hash(password, 12)
+  Bcrypt --> Svc : passwordHash
+
+  group $transaction (create user + role profile)
+    Svc -> Repo : user.create(status = pending_verification)
+    Repo -> DB : INSERT users
+    DB --> Repo : user
+    Repo --> Svc : user
+    alt role = RECEIVER
+      Svc -> Repo : receiverProfile.create(address, isCharityOrg, organizationName)
+      Repo -> DB : INSERT receiver_profiles
+    else role = VOLUNTEER
+      Svc -> Repo : volunteerProfile.create(vehicleType)
+      Repo -> DB : INSERT volunteer_profiles
+      opt volunteerRole provided
+        Svc -> Repo : volunteerSpecializationEntry.create(specialization)
+        Repo -> DB : INSERT volunteer_specializations
+      end
+    else role = PROVIDER
+      Svc -> Repo : providerProfile.create(businessName, businessType='other', address)
+      Repo -> DB : INSERT provider_profiles
+    end
+  end
+
+  Svc -> Svc : issueTokens(user)
+  activate Svc
+  Svc -> Jwt : sign access (15m) + refresh (30d)
+  Svc -> Bcrypt : hash(rawRefreshToken)
+  Svc -> Repo : refreshToken.create(tokenHash, expiresAt)
+  Repo -> DB : INSERT refresh_tokens
+  deactivate Svc
+
+  Svc --> Ctrl : { accessToken, refreshToken, user }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : registered (pending_verification)
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────────── 2. Login ───────────────────────────
+@startuml seq-auth-login
+!include _seq-style.iuml
+title Login Sequence Diagram
+
+actor "User" as User
+participant "LoginScreen" as Screen
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "JwtService" as Jwt
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : submit login form
+activate Screen
+Screen -> Ctrl : POST /auth/login (LoginDto, UA, IP)
+activate Ctrl
+Ctrl -> Svc : login(dto, ua, ip)
+activate Svc
+
+Svc -> Repo : user.findUnique(email, deletedAt=null)
+Repo -> DB : SELECT users
+DB --> Repo : user | null
+Repo --> Svc : user | null
+Svc -> Bcrypt : compare(password, passwordHash)
+Bcrypt --> Svc : match?
+
+alt Invalid credentials
+  Svc --> Ctrl : 401 UnauthorizedException
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Account banned
+  Svc --> Ctrl : 401 "Account is locked"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Valid
+  Svc -> Repo : user.update(lastLoginAt = now)
+  Repo -> DB : UPDATE users
+  Svc -> Svc : issueTokens(user, ua, ip)
+  activate Svc
+  Svc -> Jwt : sign access + refresh
+  Svc -> Repo : refreshToken.create(...)
+  Repo -> DB : INSERT refresh_tokens
+  deactivate Svc
+  Svc --> Ctrl : { accessToken, refreshToken, user }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : redirect to dashboard
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 3. Login with Google / Firebase ─────────────
+@startuml seq-auth-firebase
+!include _seq-style.iuml
+title Login with Google (Firebase) Sequence Diagram
+
+actor "User" as User
+participant "LoginScreen" as Screen
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "FirebaseAdminService" as FB
+participant "JwtService" as Jwt
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : sign in with Google
+activate Screen
+Screen -> Ctrl : POST /auth/firebase (idToken, role?)
+activate Ctrl
+Ctrl -> Svc : loginWithFirebase(idToken, role, ua, ip)
+activate Svc
+
+Svc -> FB : verifyIdToken(idToken)
+FB --> Svc : { email, name, picture, email_verified }
+
+alt Invalid token / no email
+  Svc --> Ctrl : 401 UnauthorizedException
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Valid token
+  Svc -> Repo : user.findUnique(email)
+  Repo -> DB : SELECT users
+  DB --> Repo : user | null
+  Repo --> Svc : user | null
+  alt User not found (new sign-up)
+    Svc -> Repo : $transaction: user.create(status=active) + role profile
+    Repo -> DB : INSERT users / profile
+    note right of Svc : isNewUser = true, random password
+  else Existing account
+    alt banned
+      Svc --> Ctrl : 401 "Account is locked"
+      Ctrl --> Screen : return error
+      Screen --> User : show error message
+    else active
+      Svc -> Repo : user.update(lastLoginAt, avatarUrl?)
+      Repo -> DB : UPDATE users
+    end
+  end
+  Svc -> Svc : issueTokens(user, ua, ip)
+  activate Svc
+  Svc -> Jwt : sign access + refresh
+  Svc -> Repo : refreshToken.create(...)
+  deactivate Svc
+  Svc --> Ctrl : { accessToken, refreshToken, user, isNewUser }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : redirect to dashboard
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────────── 4. Refresh token ───────────────────
+@startuml seq-auth-refresh
+!include _seq-style.iuml
+title Refresh Token Sequence Diagram
+
+actor "Client App" as User
+participant "AuthController" as Ctrl
+participant "AuthService" as Svc
+participant "bcrypt" as Bcrypt
+participant "JwtService" as Jwt
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Ctrl : POST /auth/refresh (refreshToken)
+activate Ctrl
+Ctrl -> Svc : refresh(rawToken, ua, ip)
+activate Svc
+Svc -> Repo : refreshToken.findMany(isRevoked=false, expiresAt>now) include user
+Repo -> DB : SELECT refresh_tokens
+DB --> Repo : activeTokens[]
+Repo --> Svc : activeTokens[]
+loop each active token
+  Svc -> Bcrypt : compare(rawToken, tokenHash)
+end
+alt No token matches
+  Svc --> Ctrl : 401 "Session expired"
+  Ctrl --> User : return error
+else Matched
+  Svc -> Repo : refreshToken.update(old → isRevoked=true)
+  Repo -> DB : UPDATE refresh_tokens
+  Svc -> Svc : issueTokens(user, ua, ip)
+  activate Svc
+  Svc -> Jwt : sign new access + refresh
+  Svc -> Repo : refreshToken.create(...)
+  deactivate Svc
+  Svc --> Ctrl : { accessToken, refreshToken, user }
+  Ctrl --> User : return data (200)
+end
+deactivate Svc
+deactivate Ctrl
+@enduml
+
+'──────────────────────── 5. Logout ──────────────────────────
+@startuml seq-auth-logout
+!include _seq-style.iuml
+title Logout Sequence Diagram
+
+actor "User" as User
+participant "AuthController" as Ctrl
+participant "JwtAuthGuard" as Guard
+participant "AuthService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Ctrl : POST /auth/logout (Bearer token)
+activate Ctrl
+Ctrl -> Guard : validate JWT
+Guard --> Ctrl : CurrentUser
+Ctrl -> Svc : logout(user.id)
+activate Svc
+Svc -> Repo : refreshToken.updateMany(userId, isRevoked=false → true)
+Repo -> DB : UPDATE refresh_tokens
+DB --> Repo : ok
+Repo --> Svc : ok
+Svc --> Ctrl : void
+deactivate Svc
+Ctrl --> User : return data (200)
+deactivate Ctrl
+@enduml

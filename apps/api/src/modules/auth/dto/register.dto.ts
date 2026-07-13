@@ -2,14 +2,20 @@ import {
   IsEmail,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
+  IsArray,
+  IsUrl,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@foodresq/types';
+import { Type } from 'class-transformer';
+import { BusinessType, UserRole } from '@foodresq/types';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -69,4 +75,60 @@ export class RegisterDto {
   @ApiPropertyOptional({ example: true, description: 'Charity: is a charity organization' })
   @IsOptional()
   isCharityOrg?: boolean;
+
+  // ── Provider verification (mở rộng P3) ────────────────────────────────────
+
+  @ApiPropertyOptional({
+    enum: BusinessType,
+    description: 'Provider: loại hình kinh doanh (bắt buộc nếu role=provider)',
+  })
+  @IsOptional()
+  @IsEnum(BusinessType)
+  businessType?: BusinessType;
+
+  @ApiPropertyOptional({
+    example: '0312345678',
+    description:
+      'Provider: mã số thuế (10–13 chữ số). Bắt buộc nếu businessType ∈ {restaurant, supermarket, bakery, hotel}; không bắt buộc với "other".',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]{10,13}$/, {
+    message: 'Mã số thuế phải gồm 10–13 chữ số',
+  })
+  taxCode?: string;
+
+  @ApiPropertyOptional({ example: 106.6297 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({ example: 10.8231 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+  lat?: number;
+
+  @ApiPropertyOptional({
+    description: 'Provider: mô tả ngắn về cửa hàng',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Provider: URL ảnh minh chứng (ảnh GPKD/giấy ĐKKD ở index 0, các ảnh khác là mặt tiền/kệ/biển hiệu). Upload qua POST /uploads/image?kind=verification trước khi gửi register.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUrl({}, { each: true })
+  evidenceUrls?: string[];
 }

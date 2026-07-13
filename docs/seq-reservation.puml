@@ -1,0 +1,388 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Reservation (reservations module)
+' Create · My reservations · View detail · Scan QR ·
+' Confirm pickup · Upload pickup proof · Cancel · Rate
+'==============================================================
+
+'──────────────────── 1. Create Reservation ──────────────────
+@startuml seq-reservation-create
+!include _seq-style.iuml
+title Create Reservation Sequence Diagram
+
+actor "Receiver" as User
+participant "ReservationScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "SystemConfigService" as Cfg
+participant "Redlock" as Lock
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Reserve
+activate Screen
+Screen -> Ctrl : POST /reservations (CreateReservationDto)
+activate Ctrl
+Ctrl -> Svc : create(receiverUserId, dto)
+activate Svc
+
+Svc -> Repo : receiverProfile.findUnique(userId)
+Repo -> DB : SELECT receiver_profiles
+DB --> Repo : receiver
+Repo --> Svc : receiver
+Svc -> Cfg : getNumber(MAX_RESERVATIONS_PER_DAY)
+Cfg --> Svc : maxPerDay
+
+alt reservationsToday >= maxPerDay
+  Svc --> Ctrl : 400 "Daily limit reached"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else within daily limit
+  Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
+  Lock --> Svc : lock
+
+  Svc -> Repo : $queryRaw SELECT listing (qty, status, max)
+  Repo -> DB : SELECT food_listings
+  DB --> Repo : listingRow
+  Repo --> Svc : listingRow
+  Svc -> Repo : reservation.findFirst(active existing)
+  Repo --> Svc : existing | null
+
+  alt Listing invalid / not enough / duplicate active
+    Svc -> Lock : release()
+    Svc --> Ctrl : 400 / 409 error
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else Valid & available
+    Svc -> Cfg : getNumber(QR_VALIDITY_MINUTES)
+    Cfg --> Svc : qrValidMinutes
+    group $transaction (atomic)
+      Svc -> Repo : UPDATE food_listings −quantity (→ fully_reserved if 0)
+      Svc -> Repo : INSERT reservation (qr_token, qr_expires_at, status=confirmed)
+      Svc -> Repo : receiverProfile.reservationsToday +1
+      Repo -> DB : UPDATE / INSERT / UPDATE
+      DB --> Repo : { id, qr_token }
+      Repo --> Svc : reservation
+    end
+    opt dto.requestDelivery = true
+      Svc -> Svc : createDeliveryAsync(reservationId, listingId)
+      note right of Svc : creates delivery + enqueues\n'shipper-broadcast' (BullMQ)
+    end
+    Svc -> Lock : release() [finally]
+    Svc --> Ctrl : { reservationId, qrToken, qrExpiresAt }
+    Ctrl --> Screen : return data (201)
+    Screen --> User : show QR code
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. My Reservations ─────────────────────
+@startuml seq-reservation-list
+!include _seq-style.iuml
+title My Reservations Sequence Diagram
+
+actor "Receiver" as User
+participant "HistoryScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open My Reservations
+activate Screen
+Screen -> Ctrl : GET /reservations/my?page&limit
+activate Ctrl
+Ctrl -> Svc : findMyReservations(userId, page, limit)
+activate Svc
+Svc -> Repo : receiverProfile.findUnique(userId)
+Repo -> DB : SELECT receiver_profiles
+DB --> Repo : receiver
+Svc -> Repo : $transaction [ reservation.findMany(include listing/provider), count ]
+Repo -> DB : SELECT reservations + COUNT
+DB --> Repo : items[], total
+Repo --> Svc : items[], total
+Svc -> Repo : rating.findMany(referenceType='reservation', referenceId in items)
+Repo --> Svc : ratings[]
+Svc -> Svc : attach ratedScore to each item
+Svc --> Ctrl : { items, total, page, totalPages }
+Ctrl --> Screen : return data (200)
+Screen --> User : render reservation list
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. View Reservation Detail ─────────────
+@startuml seq-reservation-detail
+!include _seq-style.iuml
+title Reservation Detail Sequence Diagram
+
+actor "Receiver" as User
+participant "DetailScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open reservation detail
+activate Screen
+Screen -> Ctrl : GET /reservations/:id
+activate Ctrl
+Ctrl -> Svc : findOne(id, userId)
+activate Svc
+Svc -> Repo : receiverProfile.findUnique(userId)
+Svc -> Repo : reservation.findFirst(id, receiverId) include listing.provider, delivery.shipper.user
+Repo -> DB : SELECT reservations JOIN ...
+DB --> Repo : reservation | null
+Repo --> Svc : reservation | null
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Found
+  Svc --> Ctrl : reservation (with delivery + shipper)
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render detail
+  note right of Screen : poll every 5s while\nstatus confirmed / picked_up
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. Scan QR (Provider) ──────────────────
+@startuml seq-reservation-scanqr
+!include _seq-style.iuml
+title Scan QR (Provider) Sequence Diagram
+
+actor "Provider" as User
+participant "ScanScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : scan receiver's QR
+activate Screen
+Screen -> Ctrl : POST /reservations/scan (qrToken)
+activate Ctrl
+Ctrl -> Svc : scanQr(qrToken, scannerUserId)
+activate Svc
+Svc -> Repo : reservation.findUnique(qrToken) include listing, receiver
+Repo -> DB : SELECT reservations JOIN ...
+DB --> Repo : reservation | null
+Repo --> Svc : reservation | null
+alt QR invalid
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else status=confirmed & QR expired
+  Svc -> Repo : expire(reservation.id) → status=expired
+  Svc --> Ctrl : 400 "QR expired"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  Svc -> Repo : providerProfile.findUnique(scannerUserId)
+  alt Not the listing's provider
+    Svc --> Ctrl : 403 Forbidden
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else authorized
+    opt First scan (confirmed → picked_up)
+      Svc -> Repo : reservation.update(status=picked_up, scannedBy, scannedAt)
+      Repo -> DB : UPDATE reservations
+      Svc -> Notif : notify(receiver, "Pickup confirmed")
+    end
+    Svc --> Ctrl : { id, status, receiver info }
+    Ctrl --> Screen : return data (200)
+    Screen --> User : show face/ID verification card
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 5. Confirm Pickup (Provider) ───────────────
+@startuml seq-reservation-confirm
+!include _seq-style.iuml
+title Confirm Pickup by Provider Sequence Diagram
+
+actor "Provider" as User
+participant "ScanScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : confirm handover
+activate Screen
+Screen -> Ctrl : POST /reservations/:id/confirm-pickup
+activate Ctrl
+Ctrl -> Svc : confirmPickupByProvider(id, scannerUserId)
+activate Svc
+Svc -> Repo : reservation.findUnique(id) include listing, receiver
+Repo --> Svc : reservation
+alt status != picked_up
+  Svc --> Ctrl : 400 "QR not scanned / already completed"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else authorized provider & picked_up
+  Svc -> Repo : reservation.update(status=completed, pickupProofUrl, verificationType)
+  Repo -> DB : UPDATE reservations
+  Svc -> Svc : applyTrustDelta(receiver, 'successful_rescue', +2)
+  Svc -> Repo : user.update(trustScore) + trustScoreHistory.create
+  Svc -> Notif : notify(receiver, "Pickup completed")
+  Svc --> Ctrl : { reservationId, status=completed }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : handover complete
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────── 6. Upload Pickup Proof (Receiver) ──────────
+@startuml seq-reservation-proof
+!include _seq-style.iuml
+title Upload Pickup Proof (Face Verification) Sequence Diagram
+
+actor "Receiver" as User
+participant "DetailScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "FaceMatchService" as Face
+participant "StorageService" as Store
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : capture selfie / ID photo
+activate Screen
+Screen -> Ctrl : POST /reservations/:id/pickup-proof (photo, type)
+activate Ctrl
+Ctrl -> Svc : submitPickupProof(id, userId, type, photo)
+activate Svc
+Svc -> Repo : reservation.findUnique(id) include receiver
+Repo --> Svc : reservation
+alt Not owner OR status != picked_up OR face not enrolled
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else eligible
+  Svc -> Face : getFaceDescriptor(photo)
+  Face --> Svc : liveDescriptor | null
+  alt No face detected
+    Svc --> Ctrl : 400 "No face detected"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else face detected
+    Svc -> Face : compare(enrolled, live)
+    Face --> Svc : { matched, distance }
+    alt Not matched
+      Svc --> Ctrl : 403 "Face does not match"
+      Ctrl --> Screen : return error
+      Screen --> User : show error message
+    else matched
+      Svc -> Store : saveImage(photo, 'pickup-proofs')
+      Store --> Svc : proofUrl
+      Svc -> Repo : reservation.update(status=completed, pickupProofUrl, type)
+      Repo -> DB : UPDATE reservations
+      Svc -> Svc : applyTrustDelta(receiver, 'successful_rescue', +2)
+      Svc --> Ctrl : { status=completed, matchDistance }
+      Ctrl --> Screen : return data (200)
+      Screen --> User : identity verified, completed
+    end
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Cancel Reservation ──────────────────
+@startuml seq-reservation-cancel
+!include _seq-style.iuml
+title Cancel Reservation Sequence Diagram
+
+actor "Receiver" as User
+participant "DetailScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Cancel (reason?)
+activate Screen
+Screen -> Ctrl : PATCH /reservations/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancel(id, userId, reason)
+activate Svc
+Svc -> Repo : reservation.findUnique(id) include receiver
+Repo --> Svc : reservation
+alt Not owner OR status != confirmed
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else confirmed & owner
+  Svc -> Svc : isLateCancellation = created < 30 min ago
+  group $transaction
+    Svc -> Repo : reservation.update(status=cancelled)
+    Svc -> Repo : restore quantity_remaining (LEAST) + status=active
+    Svc -> Repo : receiverProfile.reservationsToday −1
+    Repo -> DB : UPDATE reservations / food_listings / receiver_profiles
+  end
+  opt Late cancellation (< 30 min)
+    Svc -> Svc : applyTrustDelta(userId, 'late_cancellation', −10)
+  end
+  Svc --> Ctrl : { message: "Reservation cancelled" }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : reservation cancelled
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 8. Rate Reservation ────────────────────
+@startuml seq-reservation-rate
+!include _seq-style.iuml
+title Rate Reservation Sequence Diagram
+
+actor "Receiver" as User
+participant "HistoryScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : submit rating (score, comment?)
+activate Screen
+Screen -> Ctrl : POST /reservations/:id/rating
+activate Ctrl
+Ctrl -> Svc : rateReservation(id, userId, score, comment)
+activate Svc
+Svc -> Repo : receiverProfile.findUnique(userId)
+Svc -> Repo : reservation.findFirst(id, receiverId) include provider
+Repo --> Svc : reservation
+alt status != completed
+  Svc --> Ctrl : 400 "Only completed can be rated"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else completed
+  Svc -> Repo : rating.upsert(referenceType='reservation', rater, ratee=provider)
+  Repo -> DB : INSERT/UPDATE ratings
+  Svc -> Repo : rating.aggregate(avg score) by provider
+  Svc -> Repo : providerProfile.update(avgRating)
+  Repo -> DB : UPDATE provider_profiles
+  Svc --> Ctrl : { id, score, message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : thanks for rating
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

@@ -21,6 +21,7 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const FOLDER_BY_KIND: Record<string, string> = {
   listing: 'listings',
   avatar: 'avatars',
+  verification: 'verifications',
 };
 
 @ApiTags('Uploads')
@@ -33,7 +34,7 @@ export class UploadsController {
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload 1 ảnh (listing/avatar) → trả về URL phục vụ qua /uploads.' })
+  @ApiOperation({ summary: 'Upload 1 ảnh (listing/avatar/verification) → trả về URL phục vụ qua /uploads.' })
   @ApiQuery({ name: 'kind', enum: Object.keys(FOLDER_BY_KIND), required: true })
   @ApiBody({
     schema: {
@@ -56,7 +57,7 @@ export class UploadsController {
   ) {
     const folder = FOLDER_BY_KIND[kind];
     if (!folder) {
-      throw new BadRequestException('kind phải là "listing" hoặc "avatar".');
+      throw new BadRequestException(`kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`);
     }
     const url = await this.storage.saveImage(file, folder);
     return { url };

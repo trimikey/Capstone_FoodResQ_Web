@@ -1,0 +1,7 @@
+Worker->DeliveriesService:broadcastToNearbyShippers(deliveryId, pickupLng, pickupLat)
+    DeliveriesService->PrismaService:queryRaw find <=5 nearest available shippers (ST_DWithin 5km)
+        PrismaService->Database:SELECT volunteer_profiles JOIN volunteer_specializations
+    DeliveriesService->PrismaService:INSERT shipper_task_offers (status=pending, expires 2min)
+        PrismaService->Database:INSERT shipper_task_offers
+    DeliveriesService->Queue:add(task-offer, shipperId, deliveryId)
+    DeliveriesService->NotificationsGateway:emitToUser(shipper, delivery offer)
