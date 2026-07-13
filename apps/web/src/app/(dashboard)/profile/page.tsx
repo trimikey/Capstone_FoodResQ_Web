@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
-import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
+import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
+import { useUploadImage } from '@/hooks/useUploadImage';
+import CameraCapture from '@/components/shared/CameraCapture';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
 
@@ -61,18 +63,24 @@ const TRUST_REASON_LABEL: Record<string, string> = {
 };
 
 export default function ProfilePage() {
-  const { logout } = useAuthStore();
+  const { logout, setUser } = useAuthStore();
   const router = useRouter();
   const { data: me, isLoading, isError } = useMe();
   const updateMe = useUpdateMe();
+  const uploadAvatar = useUploadImage();
+  const enrollFace = useEnrollFace();
 
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
-  const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
+  const isFaceEnrolled = !!faceEnrollment?.enrolled;
+  const faceProofImage = imgUrl(faceEnrollment?.faceImageUrl ?? faceEnrollment?.idCardImageUrl);
+  const isAvatarBusy = uploadAvatar.isPending || enrollFace.isPending;
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isFaceEnrollModalOpen, setIsFaceEnrollModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '' });
   const [showTrustHistory, setShowTrustHistory] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (me) {
@@ -81,14 +89,86 @@ export default function ProfilePage() {
   }, [me]);
 
   const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
+  const editAvatarPreview = imgUrl(editForm.avatarUrl);
+
+  const openAvatarFilePicker = () => {
+    if (!isAvatarBusy) {
+      avatarFileInputRef.current?.click();
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Chỉ hỗ trợ ảnh JPG hoặc PNG để có thể xác minh khuôn mặt.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh đại diện không được vượt quá 5MB.');
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadAvatar.mutateAsync({ file, kind: 'avatar' });
+      setEditForm((prev) => ({ ...prev, avatarUrl }));
+
+      if (isFaceRole && !isFaceEnrolled) {
+        try {
+          await enrollFace.mutateAsync({ selfie: file });
+          toast.success('Đã tải ảnh đại diện và đăng ký khuôn mặt.');
+        } catch (err: unknown) {
+          const msg =
+            (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+              ?.message ??
+            'Đã tải ảnh đại diện, nhưng chưa đăng ký được khuôn mặt. Vui lòng chọn ảnh thấy rõ mặt.';
+          toast.error(msg);
+        }
+      } else {
+        toast.success('Đã tải ảnh đại diện lên.');
+      }
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Tải ảnh thất bại. Vui lòng thử lại.';
+      toast.error(msg);
+    }
+  };
+
+  const handleFaceEnrollPhoto = async (photo: File) => {
+    try {
+      await enrollFace.mutateAsync({ selfie: photo });
+      setIsFaceEnrollModalOpen(false);
+      toast.success('Đăng ký khuôn mặt thành công!');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ??
+        'Không nhận diện được khuôn mặt. Vui lòng chọn/chụp ảnh rõ mặt, đủ sáng.';
+      toast.error(msg);
+    }
+  };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateMe.mutateAsync({
+      const updatedMe = await updateMe.mutateAsync({
         fullName: editForm.fullName,
         phone: editForm.phone || undefined,
         avatarUrl: editForm.avatarUrl || undefined,
+      });
+      setUser({
+        id: updatedMe.id,
+        email: updatedMe.email,
+        fullName: updatedMe.fullName,
+        role: updatedMe.role,
+        status: updatedMe.status,
+        trustScore: updatedMe.trustScore,
+        avatarUrl: updatedMe.avatarUrl,
       });
       setIsEditModalOpen(false);
       toast.success('Cập nhật hồ sơ cá nhân thành công!');
@@ -162,7 +242,7 @@ export default function ProfilePage() {
             <div className="relative shrink-0">
               <div className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-white/40 overflow-hidden bg-white/10 shadow-2xl shadow-black/20">
                 {me.avatarUrl ? (
-                  <img src={me.avatarUrl} alt={me.fullName} className="w-full h-full object-cover" />
+                  <img src={imgUrl(me.avatarUrl) ?? ''} alt={me.fullName} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-emerald-600/40">
                     <span className="text-5xl md:text-6xl font-extrabold text-white">
@@ -339,10 +419,14 @@ export default function ProfilePage() {
             {isFaceRole && (
               <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
-                {faceImage ? (
+                {isFaceEnrolled ? (
                   <div className="flex items-center gap-3 border border-emerald-200 rounded-2xl p-3 bg-emerald-50/50">
                     <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                      <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      {faceProofImage ? (
+                        <img src={faceProofImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="material-symbols-outlined w-full h-full flex items-center justify-center text-emerald-700">verified_user</span>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
@@ -355,7 +439,17 @@ export default function ProfilePage() {
                 ) : (
                   <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-2xl p-3">
                     <span className="material-symbols-outlined text-amber-600 text-[24px]">no_accounts</span>
-                    <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsFaceEnrollModalOpen(true)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
+                        Đăng ký ngay
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -481,24 +575,58 @@ export default function ProfilePage() {
               </div>
 
               <div className="space-y-1.5 text-left">
-                <label className="text-xs text-neutral-450 font-bold uppercase">URL ảnh đại diện (tùy chọn)</label>
+                <label className="text-xs text-neutral-450 font-bold uppercase">Ảnh đại diện (bấm để chọn từ máy)</label>
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
                 <input
                   type="text"
-                  value={editForm.avatarUrl}
+                  value={enrollFace.isPending ? 'Đang xác minh khuôn mặt...' : uploadAvatar.isPending ? 'Đang tải ảnh lên...' : editForm.avatarUrl}
                   placeholder="https://..."
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  readOnly
+                  disabled={isAvatarBusy}
+                  onClick={openAvatarFilePicker}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openAvatarFilePicker();
+                    }
+                  }}
+                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold cursor-pointer disabled:cursor-wait disabled:bg-neutral-50"
                 />
+                {editAvatarPreview && (
+                  <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
+                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                      <img src={editAvatarPreview} alt="Ảnh đại diện" className="w-full h-full object-cover" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openAvatarFilePicker}
+                      disabled={isAvatarBusy}
+                      className="text-xs font-bold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+                    >
+                      Chọn ảnh khác
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* eKYC status in modal */}
               {isFaceRole && (
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
-                  {faceImage ? (
+                  {isFaceEnrolled ? (
                     <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
                       <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                        {faceProofImage ? (
+                          <img src={faceProofImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="material-symbols-outlined w-full h-full flex items-center justify-center text-emerald-700">verified_user</span>
+                        )}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
@@ -511,7 +639,17 @@ export default function ProfilePage() {
                   ) : (
                     <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
                       <span className="material-symbols-outlined text-amber-600">no_accounts</span>
-                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsFaceEnrollModalOpen(true)}
+                          className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
+                          Đăng ký ngay
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -527,13 +665,44 @@ export default function ProfilePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={updateMe.isPending}
+                  disabled={updateMe.isPending || isAvatarBusy}
                   className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50"
                 >
-                  {updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  {enrollFace.isPending ? 'Đang xác minh...' : uploadAvatar.isPending ? 'Đang tải ảnh...' : updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isFaceEnrollModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-neutral-900 text-lg">Đăng ký khuôn mặt</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Chụp hoặc chọn ảnh rõ mặt để dùng khi xác thực nhận hàng.</p>
+              </div>
+              <button
+                type="button"
+                disabled={enrollFace.isPending}
+                onClick={() => setIsFaceEnrollModalOpen(false)}
+                className="p-1.5 hover:bg-neutral-100 rounded-full text-neutral-400 hover:text-neutral-800 transition-colors disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="p-6">
+              <CameraCapture
+                mode="face"
+                hint="Chụp hoặc tải lên ảnh khuôn mặt rõ nét, đủ sáng. Hệ thống sẽ từ chối ảnh không nhận diện được mặt."
+                confirmLabel="Đăng ký khuôn mặt"
+                busy={enrollFace.isPending}
+                onConfirm={handleFaceEnrollPhoto}
+              />
+            </div>
           </div>
         </div>
       )}
