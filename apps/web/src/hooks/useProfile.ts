@@ -64,3 +64,32 @@ export function useUpdateMe() {
     },
   });
 }
+
+export interface TrustHistoryItem {
+  id: string;
+  delta: number;
+  reason: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  scoreBefore: number;
+  scoreAfter: number;
+  createdAt: string;
+}
+
+export interface TrustHistory {
+  score: number;
+  status: string;
+  items: TrustHistoryItem[];
+  recommendation: string | null;
+}
+
+export function useTrustHistory() {
+  return useQuery({
+    queryKey: ['users', 'me', 'trust-history'],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<TrustHistory>>('/users/me/trust-history');
+      return data.data;
+    },
+    staleTime: 30_000,
+  });
+}

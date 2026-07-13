@@ -32,6 +32,11 @@ export class AuthService {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
 
+    if (dto.phone) {
+      const phoneExists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+      if (phoneExists) throw new ConflictException('Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     // Tạo user + profile theo role trong 1 transaction — các flow sau

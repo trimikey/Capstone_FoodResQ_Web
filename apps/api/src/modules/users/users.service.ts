@@ -144,6 +144,52 @@ export class UsersService {
     };
   }
 
+  /**
+   * Lịch sử điều chỉnh trust score (mới nhất trước), kèm progress đề xuất
+   * nếu user đang ở trạng thái bị hạn chế/khoá.
+   */
+  async getTrustHistory(userId: string, limit = 30) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { trustScore: true, status: true },
+    });
+    if (!current) throw new NotFoundException('Không tìm thấy người dùng.');
+
+    const items = await this.prisma.trustScoreHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        delta: true,
+        reason: true,
+        referenceType: true,
+        referenceId: true,
+        scoreBefore: true,
+        scoreAfter: true,
+        createdAt: true,
+      },
+    });
+
+    // Khuyến nghị phục hồi: +2 mỗi đơn hoàn tất → cần bao nhiêu đơn để thoát suspended
+    const RESTRICT_THRESHOLD = 60;
+    const pointsNeeded =
+      current.trustScore < RESTRICT_THRESHOLD ? RESTRICT_THRESHOLD - current.trustScore + 1 : 0;
+    const rescuesNeeded = pointsNeeded > 0 ? Math.ceil(pointsNeeded / 2) : 0;
+
+    return {
+      score: current.trustScore,
+      status: current.status,
+      items,
+      recommendation:
+        current.status === 'suspended' && rescuesNeeded > 0
+          ? `Hoàn tất ${rescuesNeeded} đơn thành công để thoát trạng thái bị hạn chế.`
+          : current.status === 'banned'
+            ? 'Tài khoản đã bị khoá vì điểm tin cậy quá thấp. Liên hệ hỗ trợ để được xem xét.'
+            : null,
+    };
+  }
+
   async getFaceEnrollmentStatus(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
 
