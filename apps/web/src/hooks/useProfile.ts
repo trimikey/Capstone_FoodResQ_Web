@@ -15,6 +15,20 @@ export interface VolunteerInfo {
   dedicationPoints: number;
 }
 
+export interface MeProvider {
+  id: string;
+  businessName: string;
+  businessType: string;
+  address: string;
+  contactPhone: string | null;
+  taxCode: string | null;
+  isVerified: boolean;
+  verificationStatus: 'pending' | 'under_review' | 'approved' | 'rejected' | string;
+  /** Tọa độ cửa hàng đã đăng ký — dùng để prefill khi tạo listing. */
+  lng: number | null;
+  lat: number | null;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -28,6 +42,8 @@ export interface Me {
   stats: MeStats;
   volunteer: VolunteerInfo | null;
   receiver: { isCharityOrg: boolean; organizationName: string | null } | null;
+  /** Chỉ có khi role = provider. Null với các role khác. */
+  provider: MeProvider | null;
 }
 
 interface UpdateMeInput {
@@ -62,5 +78,34 @@ export function useUpdateMe() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['users', 'me'] });
     },
+  });
+}
+
+export interface TrustHistoryItem {
+  id: string;
+  delta: number;
+  reason: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  scoreBefore: number;
+  scoreAfter: number;
+  createdAt: string;
+}
+
+export interface TrustHistory {
+  score: number;
+  status: string;
+  items: TrustHistoryItem[];
+  recommendation: string | null;
+}
+
+export function useTrustHistory() {
+  return useQuery({
+    queryKey: ['users', 'me', 'trust-history'],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<TrustHistory>>('/users/me/trust-history');
+      return data.data;
+    },
+    staleTime: 30_000,
   });
 }

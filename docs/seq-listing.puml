@@ -1,0 +1,225 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Food Listing (listings module)
+' Search nearby · View detail · Create · My listings · Publish · Cancel
+'==============================================================
+
+'──────────────────── 1. Search Nearby Listings ──────────────
+@startuml seq-listing-search
+!include _seq-style.iuml
+title Search Nearby Listings Sequence Diagram
+
+actor "Receiver" as User
+participant "ListingsScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open map / list (lat, lng, radius)
+activate Screen
+Screen -> Ctrl : GET /listings?lat&lng&radiusKm&category&search
+activate Ctrl
+Ctrl -> Svc : findNearby(query)
+activate Svc
+alt lat & lng provided
+  Svc -> Repo : $queryRaw spatial search\n(ST_DWithin + ST_Distance ORDER BY distance)
+  Repo -> DB : SELECT food_listings JOIN provider_profiles\nWHERE active, not deleted, qty>0, within radius
+else no location
+  Svc -> Repo : $queryRaw latest active listings\n(ORDER BY created_at DESC)
+  Repo -> DB : SELECT food_listings (latest active)
+end
+DB --> Repo : rows[]
+Repo --> Svc : rows[]
+Svc -> Svc : map rows → DTO (distanceM, lng/lat, provider)
+Svc --> Ctrl : listings[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render markers / cards
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. View Listing Detail ─────────────────
+@startuml seq-listing-detail
+!include _seq-style.iuml
+title Listing Detail Sequence Diagram
+
+actor "Receiver" as User
+participant "DetailScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open listing
+activate Screen
+Screen -> Ctrl : GET /listings/:id
+activate Ctrl
+Ctrl -> Svc : findOne(id)
+activate Svc
+Svc -> Repo : $queryRaw SELECT listing + provider (ST_X/ST_Y)
+Repo -> DB : SELECT food_listings JOIN provider_profiles WHERE id, not deleted
+DB --> Repo : row | empty
+Repo --> Svc : row | empty
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else Found
+  Svc --> Ctrl : listing detail (with coords)
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render detail
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Create Listing ──────────────────────
+@startuml seq-listing-create
+!include _seq-style.iuml
+title Create Listing Sequence Diagram
+
+actor "Provider" as User
+participant "CreateListingScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : fill listing form + location
+activate Screen
+Screen -> Ctrl : POST /listings (CreateListingDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) → providerId
+Repo --> Svc : providerId
+alt No provider profile
+  Svc --> Ctrl : 404 "Provider profile not found"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid provider
+  alt pickupEnd <= pickupStart OR expiry < pickupEnd
+    Svc --> Ctrl : 400 "Invalid time range"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else valid times
+    Svc -> Repo : $queryRaw INSERT food_listings\n(status=draft, ST_MakePoint location)
+    Repo -> DB : INSERT food_listings
+    DB --> Repo : { id }
+    Svc -> Svc : findOne(id)
+    Svc --> Ctrl : listing (draft)
+    Ctrl --> Screen : return data (201)
+    Screen --> User : listing created (draft)
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. My Listings (Provider) ──────────────
+@startuml seq-listing-mine
+!include _seq-style.iuml
+title My Listings Sequence Diagram
+
+actor "Provider" as User
+participant "ProviderScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open my listings
+activate Screen
+Screen -> Ctrl : GET /listings/provider/my?page&limit
+activate Ctrl
+Ctrl -> Svc : findByProvider(userId, page, limit)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) → providerId
+Svc -> Repo : $transaction [ foodListing.findMany(providerId, deletedAt=null), count ]
+Repo -> DB : SELECT food_listings + COUNT
+DB --> Repo : items[], total
+Repo --> Svc : items[], total
+Svc --> Ctrl : { items, total, page, totalPages }
+Ctrl --> Screen : return data (200)
+Screen --> User : render listing table
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 5. Publish Listing ─────────────────────
+@startuml seq-listing-publish
+!include _seq-style.iuml
+title Publish Listing Sequence Diagram
+
+actor "Provider" as User
+participant "ProviderScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Publish
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id/publish
+activate Ctrl
+Ctrl -> Svc : publish(listingId, userId)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) → providerId
+Svc -> Repo : foodListing.findUnique(listingId)
+Repo --> Svc : listing | null
+alt Not found OR not owner OR status != draft
+  Svc --> Ctrl : 400 / 403 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else draft & owner
+  Svc -> Repo : foodListing.update(status=active)
+  Repo -> DB : UPDATE food_listings
+  Svc --> Ctrl : listing (active)
+  Ctrl --> Screen : return data (200)
+  Screen --> User : listing is now live
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 6. Cancel Listing ──────────────────────
+@startuml seq-listing-cancel
+!include _seq-style.iuml
+title Cancel Listing Sequence Diagram
+
+actor "Provider" as User
+participant "ProviderScreen" as Screen
+participant "ListingsController" as Ctrl
+participant "ListingsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Cancel (reason?)
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancel(listingId, userId, reason)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) → providerId
+Svc -> Repo : foodListing.findUnique(listingId)
+Repo --> Svc : listing | null
+alt Not found OR not owner
+  Svc --> Ctrl : 403 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else owner
+  Svc -> Repo : foodListing.update(status=cancelled, cancelledReason)
+  Repo -> DB : UPDATE food_listings
+  Svc --> Ctrl : listing (cancelled)
+  Ctrl --> Screen : return data (200)
+  Screen --> User : listing cancelled
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

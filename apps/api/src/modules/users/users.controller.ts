@@ -36,6 +36,12 @@ export class UsersController {
     return this.usersService.getMe(user.id);
   }
 
+  @Get('me/trust-history')
+  @ApiOperation({ summary: 'Lịch sử điều chỉnh điểm tin cậy (mới nhất trước)' })
+  getTrustHistory(@CurrentUser() user: User) {
+    return this.usersService.getTrustHistory(user.id);
+  }
+
   @Patch('me')
   @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân (họ tên, SĐT, avatar)' })
   updateMe(@CurrentUser() user: User, @Body() dto: UpdateMeDto) {

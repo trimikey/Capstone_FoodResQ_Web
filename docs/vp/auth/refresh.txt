@@ -1,0 +1,10 @@
+ClientApp->AuthController:POST /auth/refresh (refreshToken)
+    AuthController->AuthService:refresh(rawToken, ua, ip)
+        AuthService->PrismaService:refreshToken.findMany(active) include user
+            PrismaService->Database:SELECT refresh_tokens
+        AuthService->bcrypt:compare(rawToken, tokenHash)
+        AuthService->PrismaService:refreshToken.update(old isRevoked=true)
+            PrismaService->Database:UPDATE refresh_tokens
+        AuthService->JwtService:sign(new access + refresh)
+        AuthService->PrismaService:refreshToken.create(new)
+            PrismaService->Database:INSERT refresh_tokens

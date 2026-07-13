@@ -1,0 +1,17 @@
+Shipper->OffersScreen:tap Accept
+    OffersScreen->DeliveriesController:POST /deliveries/:id/accept
+        DeliveriesController->DeliveriesService:acceptOffer(deliveryId, shipperUserId)
+            DeliveriesService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            DeliveriesService->PrismaService:shipperTaskOffer.findUnique(deliveryId, shipperId)
+                PrismaService->Database:SELECT shipper_task_offers
+            DeliveriesService->PrismaService:delivery.findUnique(deliveryId)
+                PrismaService->Database:SELECT deliveries
+            DeliveriesService->PrismaService:offer.update(status=accepted)
+                PrismaService->Database:UPDATE shipper_task_offers
+            DeliveriesService->PrismaService:other offers.updateMany(status=expired)
+                PrismaService->Database:UPDATE shipper_task_offers
+            DeliveriesService->PrismaService:delivery.update(shipperId, status=assigned)
+                PrismaService->Database:UPDATE deliveries
+            DeliveriesService->PrismaService:volunteerProfile.update(isAvailable=false)
+                PrismaService->Database:UPDATE volunteer_profiles

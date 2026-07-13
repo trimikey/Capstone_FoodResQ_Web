@@ -1,0 +1,13 @@
+User->LoginScreen:sign in with Google
+    LoginScreen->AuthController:POST /auth/firebase (idToken, role)
+        AuthController->AuthService:loginWithFirebase(idToken, role, ua, ip)
+            AuthService->FirebaseAdminService:verifyIdToken(idToken)
+            AuthService->PrismaService:user.findUnique(email)
+                PrismaService->Database:SELECT users
+            AuthService->PrismaService:user.create(status=active) + role profile
+                PrismaService->Database:INSERT users
+            AuthService->PrismaService:user.update(lastLoginAt, avatarUrl)
+                PrismaService->Database:UPDATE users
+            AuthService->JwtService:sign(access + refresh)
+            AuthService->PrismaService:refreshToken.create(tokenHash, expiresAt)
+                PrismaService->Database:INSERT refresh_tokens

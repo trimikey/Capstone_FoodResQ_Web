@@ -128,6 +128,7 @@ export class DeliveriesController {
       properties: {
         status: { type: 'string' },
         photo: { type: 'string', format: 'binary' },
+        qrToken: { type: 'string', description: 'Mã QR của người nhận (bắt buộc khi status=delivered)' },
       },
     },
   })
@@ -149,6 +150,6 @@ export class DeliveriesController {
     const proofUrl = photo
       ? await this.deliveriesService.saveProofPhoto(photo)
       : dto.proofUrl;
-    return this.deliveriesService.updateStatus(id, user.id, dto.status, proofUrl);
+    return this.deliveriesService.updateStatus(id, user.id, dto.status, proofUrl, dto.qrToken);
   }
 }

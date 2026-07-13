@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    font-family: Arial, sans-serif;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th, td {
+    border: 1px solid black;
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background-color: #fce4d6; /* matching the light orange background from the image */
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 5%;">No</th>
+      <th style="width: 25%;">Table</th>
+      <th style="width: 70%;">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>01</td>
+      <td>users</td>
+      <td>Stores core user account information, authentication credentials, and user roles.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> None</td>
+    </tr>
+    <tr>
+      <td>02</td>
+      <td>provider_profiles</td>
+      <td>Detailed profile information for Food Providers (e.g., restaurants, supermarkets).<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The associated user account)</td>
+    </tr>
+    <tr>
+      <td>03</td>
+      <td>receiver_profiles</td>
+      <td>Detailed profile information for Receivers (individuals needing food assistance).<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The associated user account)</td>
+    </tr>
+    <tr>
+      <td>04</td>
+      <td>organization_profiles</td>
+      <td>Detailed profile information for Charity Organizations.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The associated user account)</td>
+    </tr>
+    <tr>
+      <td>05</td>
+      <td>organization_members</td>
+      <td>Stores members or beneficiaries managed by a specific charity organization.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> organization_id (The organization they belong to)</td>
+    </tr>
+    <tr>
+      <td>06</td>
+      <td>group_pickups</td>
+      <td>Manages bulk or group food pickups scheduled by charity organizations.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> organization_id (The organizing charity), reservation_id (The associated bulk reservation)</td>
+    </tr>
+    <tr>
+      <td>07</td>
+      <td>volunteer_profiles</td>
+      <td>Detailed profile information for Volunteers, including availability and rank.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The associated user account)</td>
+    </tr>
+    <tr>
+      <td>08</td>
+      <td>volunteer_specializations</td>
+      <td>Stores specific skills, roles, or certifications for volunteers (e.g., shipper, chef).<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> volunteer_id (The volunteer who owns the specialization)</td>
+    </tr>
+    <tr>
+      <td>09</td>
+      <td>liability_waivers</td>
+      <td>Records user acceptances of system liability and safety waivers.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The user who accepted the waiver)</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>refresh_tokens</td>
+      <td>Stores active JWT refresh tokens to maintain user sessions securely.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The user owning the session)</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>device_tokens</td>
+      <td>Stores FCM device tokens used for sending push notifications.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The user who owns the device)</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>verification_requests</td>
+      <td>Stores requests and documents submitted by users to verify their accounts.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The user requesting verification)</td>
+    </tr>
+    <tr>
+      <td>13</td>
+      <td>food_listings</td>
+      <td>Stores details of surplus food items offered by providers.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> provider_id (The provider creating the listing)</td>
+    </tr>
+    <tr>
+      <td>14</td>
+      <td>reservations</td>
+      <td>Records food bookings/orders made by receivers or organizations.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> listing_id (The reserved food item), receiver_id (The receiver, if individual), organization_id (The organization, if bulk)</td>
+    </tr>
+    <tr>
+      <td>15</td>
+      <td>deliveries</td>
+      <td>Manages the logistics and status of delivering reserved food by volunteer shippers.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> reservation_id (The reservation being delivered), shipper_id (The assigned volunteer shipper)</td>
+    </tr>
+    <tr>
+      <td>16</td>
+      <td>shipper_task_offers</td>
+      <td>Stores delivery task offers broadcasted to nearby available volunteer shippers.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> delivery_id (The delivery task), shipper_id (The volunteer receiving the offer)</td>
+    </tr>
+    <tr>
+      <td>17</td>
+      <td>kitchen_campaigns</td>
+      <td>Manages community kitchen events and campaigns organized by charities.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> organization_id (The organizing charity)</td>
+    </tr>
+    <tr>
+      <td>18</td>
+      <td>campaign_change_requests</td>
+      <td>Stores requests to modify the details or schedule of an existing kitchen campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign to modify), requested_by_user_id (The user requesting the change)</td>
+    </tr>
+    <tr>
+      <td>19</td>
+      <td>campaign_donations</td>
+      <td>Records ingredient donations pledged by providers for a kitchen campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The destination campaign), provider_id (The donating provider)</td>
+    </tr>
+    <tr>
+      <td>20</td>
+      <td>campaign_volunteer_assignments</td>
+      <td>Assigns specific roles (chef, waiter, etc.) to volunteers in a campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign), volunteer_id (The assigned volunteer), shift_id (The specific shift)</td>
+    </tr>
+    <tr>
+      <td>21</td>
+      <td>campaign_shifts</td>
+      <td>Defines specific time slots and role requirements for a kitchen campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The associated campaign)</td>
+    </tr>
+    <tr>
+      <td>22</td>
+      <td>campaign_experiences</td>
+      <td>Stores feedback, ratings, and experiences shared by volunteers after a campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign), volunteer_id (The volunteer sharing the experience)</td>
+    </tr>
+    <tr>
+      <td>23</td>
+      <td>recipes</td>
+      <td>Stores standardized cooking recipes created by users.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> created_by_user_id (The creator of the recipe)</td>
+    </tr>
+    <tr>
+      <td>24</td>
+      <td>recipe_ingredients</td>
+      <td>Lists the specific ingredients and quantities required for a recipe.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> recipe_id (The associated recipe)</td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>campaign_menu_items</td>
+      <td>Associates specific recipes to form the menu of a kitchen campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign), recipe_id (The selected recipe)</td>
+    </tr>
+    <tr>
+      <td>26</td>
+      <td>kitchen_safety_logs</td>
+      <td>Records food safety, temperature, and hygiene checks during a kitchen campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign), checked_by_volunteer_id (The volunteer performing the check)</td>
+    </tr>
+    <tr>
+      <td>27</td>
+      <td>meal_distributions</td>
+      <td>Tracks the distribution rounds of cooked meals during a campaign.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> campaign_id (The campaign), served_by_volunteer_id (The volunteer distributing the meals)</td>
+    </tr>
+    <tr>
+      <td>28</td>
+      <td>meal_feedback</td>
+      <td>Stores feedback and satisfaction ratings from beneficiaries regarding the distributed meals.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> distribution_id (The specific distribution round)</td>
+    </tr>
+    <tr>
+      <td>29</td>
+      <td>ratings</td>
+      <td>Stores ratings and reviews given between users (e.g., receiver rating provider).<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> rater_id (The user giving the rating), ratee_id (The user receiving the rating)</td>
+    </tr>
+    <tr>
+      <td>30</td>
+      <td>trust_score_history</td>
+      <td>Logs all changes (penalties/bonuses) to users' trust scores over time.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The user whose score changed)</td>
+    </tr>
+    <tr>
+      <td>31</td>
+      <td>dedication_points_history</td>
+      <td>Logs all changes to volunteers' dedication points over time.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> volunteer_id (The volunteer whose points changed)</td>
+    </tr>
+    <tr>
+      <td>32</td>
+      <td>reports</td>
+      <td>Stores violation or issue reports submitted by users against others or listings.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> reporter_id (The user reporting the issue)</td>
+    </tr>
+    <tr>
+      <td>33</td>
+      <td>notifications</td>
+      <td>Stores system notifications sent to individual users.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> user_id (The recipient of the notification)</td>
+    </tr>
+    <tr>
+      <td>34</td>
+      <td>audit_logs</td>
+      <td>Records system-level actions and changes for auditing and security purposes.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> actor_id (The user performing the action, if applicable)</td>
+    </tr>
+    <tr>
+      <td>35</td>
+      <td>system_configs</td>
+      <td>Stores dynamic global system configurations (key-value pairs).<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> None</td>
+    </tr>
+    <tr>
+      <td>36</td>
+      <td>esg_snapshots</td>
+      <td>Stores periodic snapshots of Environmental, Social, and Governance (ESG) metrics.<br><br><b>- Primary keys:</b> id<br><b>- Foreign keys:</b> provider_id (The provider, if applicable), organization_id (The organization, if applicable)</td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
+</html>

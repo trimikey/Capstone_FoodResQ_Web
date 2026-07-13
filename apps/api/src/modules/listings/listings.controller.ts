@@ -1,4 +1,4 @@
-import {
+  import {
   Controller,
   Get,
   Post,
@@ -12,6 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
+import { UpdateListingDto } from './dto/update-listing.dto';
 import { QueryListingDto } from './dto/query-listing.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -48,6 +49,21 @@ export class ListingsController {
   @ApiOperation({ summary: 'Provider: Create a new listing (starts as draft)' })
   create(@CurrentUser() user: User, @Body() dto: CreateListingDto) {
     return this.listingsService.create(user.id, dto);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Provider: Sửa tin — draft sửa mọi field, tin đã đăng chỉ sửa thông tin phụ (mô tả, ảnh, bảo quản, dị ứng).',
+  })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateListingDto,
+  ) {
+    return this.listingsService.update(id, user.id, dto);
   }
 
   @Get('provider/my')

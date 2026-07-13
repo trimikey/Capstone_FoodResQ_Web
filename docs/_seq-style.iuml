@@ -1,0 +1,19 @@
+' Shared style for FoodResQ sequence diagrams (VP-like look)
+' Usage: put `!include _seq-style.iuml` right after @startuml
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 12
+skinparam BoxPadding 10
+skinparam maxMessageSize 220
+skinparam sequence {
+  LifeLineBorderColor #4A90D9
+  LifeLineBackgroundColor #F4F9FF
+  ParticipantBackgroundColor #CFE8FF
+  ParticipantBorderColor #2E6DA4
+  ActorBackgroundColor #CFE8FF
+  ActorBorderColor #2E6DA4
+  ArrowColor #333333
+  GroupBackgroundColor #EAF3FB
+  GroupBorderColor #2E6DA4
+}

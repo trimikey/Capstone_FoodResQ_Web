@@ -1,0 +1,5 @@
+User->ReportScreen:open my reports
+    ReportScreen->ReportsController:GET /reports/my
+        ReportsController->ReportsService:findMine(reporterId)
+            ReportsService->PrismaService:report.findMany(reporterId)
+                PrismaService->Database:SELECT reports

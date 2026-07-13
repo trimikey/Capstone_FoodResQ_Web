@@ -1,0 +1,9 @@
+Chef->RecipeFormModal:submit recipe form
+    RecipeFormModal->RecipesController:POST /recipes (CreateRecipeDto)
+        RecipesController->RecipesService:create(userId, dto)
+            RecipesService->PrismaService:user.findUnique(role)
+                PrismaService->Database:SELECT users
+            RecipesService->PrismaService:volunteerSpecializationEntry.findFirst(chef)
+                PrismaService->Database:SELECT volunteer_specializations
+            RecipesService->PrismaService:recipe.create + ingredients
+                PrismaService->Database:INSERT recipes + recipe_ingredients

@@ -1,0 +1,558 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Admin (admin module)
+' Dashboard · List/Review verification · List/Resolve report ·
+' List/Create user · Set user status · Assign volunteer ·
+' Review assignment · Review change request · Set campaign status ·
+' Update listing category · System config
+' NOTE: every admin route is guarded by JwtAuthGuard + RolesGuard(@Roles ADMIN)
+'==============================================================
+
+'──────────────────── 1. Dashboard Overview ──────────────────
+@startuml seq-admin-overview
+!include _seq-style.iuml
+title Admin Dashboard Overview Sequence Diagram
+
+actor "Admin" as User
+participant "AdminDashboard" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open dashboard
+activate Screen
+Screen -> Ctrl : GET /admin/overview
+activate Ctrl
+Ctrl -> Svc : getOverview()
+activate Svc
+Svc -> Repo : $queryRaw kg rescued / meals / people
+Svc -> Repo : $queryRaw by category / 6-month trend / status counts
+Svc -> Repo : getStats() counts (users, providers, listings, reports)
+Repo -> DB : SELECT aggregates
+DB --> Repo : metrics
+Svc --> Ctrl : { kgRescued, co2SavedKg, categories, trend, donations, reports }
+Ctrl --> Screen : return data (200)
+Screen --> User : render charts & KPIs
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. List Verifications ──────────────────
+@startuml seq-admin-list-verifications
+!include _seq-style.iuml
+title List Pending Verifications Sequence Diagram
+
+actor "Admin" as User
+participant "VerificationScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open verifications
+activate Screen
+Screen -> Ctrl : GET /admin/verifications
+activate Ctrl
+Ctrl -> Svc : listVerifications()
+activate Svc
+Svc -> Repo : providerProfile.findMany(verificationStatus=pending)
+Svc -> Repo : volunteerProfile.findMany(verificationStatus=pending)
+Repo -> DB : SELECT provider_profiles / volunteer_profiles
+DB --> Repo : pending profiles
+Svc -> Svc : merge + sort by createdAt
+Svc --> Ctrl : verifications[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render pending list
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Review Verification ─────────────────
+@startuml seq-admin-review-verification
+!include _seq-style.iuml
+title Review Verification Sequence Diagram
+
+actor "Admin" as User
+participant "VerificationScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : approve / reject a profile
+activate Screen
+Screen -> Ctrl : PATCH /admin/verifications/:type/:id (ReviewVerificationDto)
+activate Ctrl
+Ctrl -> Svc : reviewVerification(type, profileId, adminUserId, dto)
+activate Svc
+Svc -> Repo : providerProfile / volunteerProfile.findUnique(profileId)
+Repo --> Svc : profile
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  group $transaction
+    Svc -> Repo : profile.update(verificationStatus, verifiedBy)
+    Svc -> Repo : user.update(status = approved ? active : suspended)
+    opt volunteer approved
+      Svc -> Repo : volunteerSpecializations.updateMany(isVerified=true)
+    end
+    Repo -> DB : UPDATE profile / users / specializations
+  end
+  Svc -> Repo : auditLog.create(verification_decision)
+  Svc -> Notif : notify(user, decision)
+  Svc --> Ctrl : { message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : profile reviewed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. List Reports ────────────────────────
+@startuml seq-admin-list-reports
+!include _seq-style.iuml
+title List Reports Sequence Diagram
+
+actor "Admin" as User
+participant "ReportsScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open reports (filter by status)
+activate Screen
+Screen -> Ctrl : GET /admin/reports?status
+activate Ctrl
+Ctrl -> Svc : listReports(status)
+activate Svc
+Svc -> Repo : report.findMany(status) include reporter
+Repo -> DB : SELECT reports JOIN users
+DB --> Repo : reports[]
+Svc --> Ctrl : reports[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render reports
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 5. Resolve Report ──────────────────────
+@startuml seq-admin-resolve-report
+!include _seq-style.iuml
+title Resolve Report Sequence Diagram
+
+actor "Admin" as User
+participant "ReportsScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : resolve / dismiss report
+activate Screen
+Screen -> Ctrl : PATCH /admin/reports/:id (ResolveReportDto)
+activate Ctrl
+Ctrl -> Svc : resolveReport(id, adminUserId, dto)
+activate Svc
+Svc -> Repo : report.findUnique(id)
+Repo --> Svc : report | null
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : report.update(status, resolverId, resolutionNote, resolvedAt)
+  Repo -> DB : UPDATE reports
+  Svc -> Repo : auditLog.create(report_status)
+  Svc --> Ctrl : updated report
+  Ctrl --> Screen : return data (200)
+  Screen --> User : report resolved
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 6. List Users ──────────────────────────
+@startuml seq-admin-list-users
+!include _seq-style.iuml
+title List Users Sequence Diagram
+
+actor "Admin" as User
+participant "UsersScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open users (role, search)
+activate Screen
+Screen -> Ctrl : GET /admin/users?role&q
+activate Ctrl
+Ctrl -> Svc : listUsers(role, q)
+activate Svc
+Svc -> Repo : user.findMany(role, email/name search) include profiles
+Repo -> DB : SELECT users JOIN profiles
+DB --> Repo : users[]
+Svc -> Svc : flatten specializations + isCharityOrg
+Svc --> Ctrl : users[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render user table
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Admin Create User ───────────────────
+  @startuml seq-admin-create-user
+  !include _seq-style.iuml
+  title Admin Create User Sequence Diagram
+
+  actor "Admin" as User
+  participant "UsersScreen" as Screen
+  participant "AdminController" as Ctrl
+  participant "AdminService" as Svc
+  participant "bcrypt" as Bcrypt
+  participant "PrismaService" as Repo
+  database "Database" as DB
+
+  User -> Screen : create account form
+  activate Screen
+  Screen -> Ctrl : POST /admin/users (AdminCreateUserDto)
+  activate Ctrl
+  Ctrl -> Svc : adminCreateUser(dto)
+  activate Svc
+  Svc -> Repo : user.findUnique(email)
+  Repo --> Svc : existing | null
+  alt Email exists
+    Svc --> Ctrl : 409 Conflict
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else available
+    Svc -> Bcrypt : hash(password, 12)
+    group $transaction
+      Svc -> Repo : user.create(status=active)
+      Svc -> Repo : create role profile (receiver / volunteer / provider)
+      Repo -> DB : INSERT users + profile
+    end
+    Svc --> Ctrl : { id, email, role, status }
+    Ctrl --> Screen : return data (201)
+    Screen --> User : account created
+  end
+  deactivate Svc
+  deactivate Ctrl
+  deactivate Screen
+  @enduml
+
+'──────────────────── 8. Set User Status (Ban) ───────────────
+@startuml seq-admin-set-user-status
+!include _seq-style.iuml
+title Set User Status Sequence Diagram
+
+actor "Admin" as User
+participant "UsersScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : change account status (active/suspended/banned)
+activate Screen
+Screen -> Ctrl : PATCH /admin/users/:id/status (SetUserStatusDto)
+activate Ctrl
+Ctrl -> Svc : setUserStatus(id, adminUserId, dto)
+activate Svc
+Svc -> Repo : user.findUnique(id)
+Repo --> Svc : user
+alt Not found OR target is admin
+  Svc --> Ctrl : 400 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else allowed
+  group $transaction
+    Svc -> Repo : user.update(status)
+    opt status = banned
+      Svc -> Repo : refreshToken.updateMany(isRevoked=true)
+      note right of Svc : force-logout all sessions
+    end
+    Repo -> DB : UPDATE users / refresh_tokens
+  end
+  Svc -> Repo : auditLog.create(user_status)
+  Svc --> Ctrl : { message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : status updated
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 9. Assign Volunteer ────────────────────
+@startuml seq-admin-assign-volunteer
+!include _seq-style.iuml
+title Admin Assign Volunteer Sequence Diagram
+
+actor "Admin" as User
+participant "CampaignManageScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : assign volunteer to role
+activate Screen
+Screen -> Ctrl : POST /admin/campaigns/:id/assign (volunteerId, role, override?)
+activate Ctrl
+Ctrl -> Svc : adminAssignVolunteer(campaignId, volunteerId, role, override)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique include specializations
+Svc -> Repo : kitchenCampaign.findUnique(id)
+Repo --> Svc : volunteer, campaign
+alt invalid role OR not found OR missing specialization (no override) OR slot full OR already assigned
+  Svc --> Ctrl : 400 / 404 / 409 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  group $transaction
+    Svc -> Repo : campaignVolunteerAssignment.create(status=assigned)
+    Svc -> Repo : kitchenCampaign slotsFilled +1
+    Repo -> DB : INSERT assignment / UPDATE kitchen_campaigns
+  end
+  Svc -> Notif : notify(volunteer, "You have been assigned")
+  Svc -> Svc : getCampaignDetail(campaignId)
+  Svc --> Ctrl : campaign detail
+  Ctrl --> Screen : return data (200)
+  Screen --> User : volunteer assigned
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 10. Review Assignment ──────────────────
+@startuml seq-admin-review-assignment
+!include _seq-style.iuml
+title Review Volunteer Application Sequence Diagram
+
+actor "Admin" as User
+participant "AssignmentsScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : approve / reject application
+activate Screen
+Screen -> Ctrl : PATCH /admin/campaign-assignments/:id/review (decision, note)
+activate Ctrl
+Ctrl -> Svc : reviewAssignment(assignmentId, decision, userId, note)
+activate Svc
+Svc -> Repo : campaignVolunteerAssignment.findUnique include campaign, volunteer
+Repo --> Svc : assignment
+alt Not found OR status != pending
+  Svc --> Ctrl : 400 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else pending
+  alt decision = approve
+    alt campaign closed OR slot full
+      Svc --> Ctrl : 400 error
+      Ctrl --> Screen : return error
+      Screen --> User : show error message
+    else ok
+      group $transaction
+        Svc -> Repo : assignment.update(status=assigned)
+        Svc -> Repo : kitchenCampaign slotsFilled +1
+        Repo -> DB : UPDATE assignment / kitchen_campaigns
+      end
+      Svc -> Notif : notify(volunteer, "Application approved")
+    end
+  else decision = reject
+    Svc -> Repo : assignment.update(status=rejected, notes)
+    Repo -> DB : UPDATE campaign_volunteer_assignments
+    Svc -> Notif : notify(volunteer, "Application rejected")
+  end
+  Svc --> Ctrl : { id, status }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : application reviewed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 11. Review Change Request ──────────────
+@startuml seq-admin-review-change-request
+!include _seq-style.iuml
+title Review Campaign Change Request Sequence Diagram
+
+actor "Admin" as User
+participant "ChangeRequestScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database (PostGIS)" as DB
+
+User -> Screen : approve / reject change request
+activate Screen
+Screen -> Ctrl : PATCH /admin/campaign-change-requests/:id (decision, reviewNote)
+activate Ctrl
+Ctrl -> Svc : reviewCampaignChangeRequest(id, decision, reviewNote, adminUserId)
+activate Svc
+Svc -> Repo : campaignChangeRequest.findUnique include campaign
+Repo --> Svc : changeRequest
+alt Not found OR status != pending
+  Svc --> Ctrl : 400 / 404 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else decision = reject
+  Svc -> Repo : changeRequest.update(status=rejected, reviewNote)
+  Repo -> DB : UPDATE campaign_change_requests
+  Svc -> Notif : notify(charity, "Change request rejected")
+else decision = approve
+  alt proposed slots < filled OR date in the past
+    Svc --> Ctrl : 400 error
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else valid
+    group $transaction
+      Svc -> Repo : kitchenCampaign.update(applied fields)
+      opt lng/lat provided
+        Svc -> Repo : UPDATE kitchen_location (ST_MakePoint)
+      end
+      Svc -> Repo : changeRequest.update(status=approved)
+      Repo -> DB : UPDATE kitchen_campaigns / campaign_change_requests
+    end
+    Svc -> Notif : notify(charity, "Change request approved")
+  end
+  Svc --> Ctrl : campaign detail / { status }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : request reviewed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 12. Set Campaign Status ────────────────
+@startuml seq-admin-set-campaign-status
+!include _seq-style.iuml
+title Set Campaign Status Sequence Diagram
+
+actor "Admin" as User
+participant "CampaignManageScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : change campaign status (approve draft -> open, etc.)
+activate Screen
+Screen -> Ctrl : PATCH /admin/campaigns/:id/status (status)
+activate Ctrl
+Ctrl -> Svc : setCampaignStatus(id, status, userId)
+activate Svc
+alt status not in allowed set
+  Svc --> Ctrl : 400 BadRequest
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid status
+  Svc -> Repo : kitchenCampaign.findUnique(id) include charityReceiver
+  Repo --> Svc : campaign
+  Svc -> Repo : kitchenCampaign.update(status)
+  Repo -> DB : UPDATE kitchen_campaigns
+  Svc -> Notif : notify(charity, "Campaign status updated")
+  Svc --> Ctrl : { id, status }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : status changed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 13. Update Listing Category ────────────
+@startuml seq-admin-update-listing-category
+!include _seq-style.iuml
+title Update Listing Category Sequence Diagram
+
+actor "Admin" as User
+participant "FoodListingsScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : reclassify a listing
+activate Screen
+Screen -> Ctrl : PATCH /admin/food-listings/:id/category (category)
+activate Ctrl
+Ctrl -> Svc : updateListingCategory(id, category)
+activate Svc
+Svc -> Repo : foodListing.findUnique(id)
+Repo --> Svc : listing | null
+alt Not found OR deleted
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : foodListing.update(category)
+  Repo -> DB : UPDATE food_listings
+  Svc --> Ctrl : { id, category }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : category updated
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 14. System Config ──────────────────────
+@startuml seq-admin-config
+!include _seq-style.iuml
+title System Config Sequence Diagram
+
+actor "Admin" as User
+participant "ConfigScreen" as Screen
+participant "AdminController" as Ctrl
+participant "AdminService" as Svc
+participant "SystemConfigService" as Cfg
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open settings
+activate Screen
+Screen -> Ctrl : GET /admin/configs
+activate Ctrl
+Ctrl -> Svc : getConfigs()
+Svc -> Cfg : getAll()
+Cfg -> Repo : systemConfig.findMany()
+Repo -> DB : SELECT system_configs
+DB --> Repo : configs
+Cfg --> Ctrl : configs
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+User -> Screen : edit a config value
+Screen -> Ctrl : PATCH /admin/configs/:key (value)
+activate Ctrl
+Ctrl -> Svc : setConfig(key, value, userId)
+Svc -> Cfg : set(key, value, userId)
+Cfg -> Repo : systemConfig.upsert(key, value, updatedBy)
+Repo -> DB : INSERT/UPDATE system_configs
+Cfg --> Ctrl : updated config
+Ctrl --> Screen : return data (200)
+Screen --> User : config saved
+deactivate Ctrl
+deactivate Screen
+@enduml

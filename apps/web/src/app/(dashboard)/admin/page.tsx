@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import {
   useAdminOverview,
   useVerifications,
   useReviewVerification,
+  type VerificationItem,
   useAdminReports,
   useResolveReport,
   useAdminUsers,
@@ -88,10 +89,10 @@ const MAIN_TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
   { key: 'campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
   { key: 'food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
-  { key: 'volunteers', label: 'Quản lý Tình nguyện viên', icon: 'group' },
+  { key: 'volunteers', label: 'Duyệt hồ sơ NCC/TNV mới', icon: 'group' },
   { key: 'reports', label: 'Xử lý khiếu nại', icon: 'warning' },
   { key: 'monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
-  { key: 'users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+  { key: 'users', label: 'Quản lý tài khoản (khoá/mở)', icon: 'manage_accounts' },
 ];
 
 const ROLE_LABEL_ADMIN: Record<string, string> = {
@@ -1557,27 +1558,91 @@ function VerifyTab() {
   const pendingPaged = usePaged(pending ?? [], 5);
   const volPaged = usePaged(vols ?? [], 6);
 
-  async function act(type: string, id: string, decision: 'approved' | 'rejected') {
+  // Modal chi tiết 1 hồ sơ + duyệt ngay trong modal
+  const [detail, setDetail] = useState<VerificationItem | null>(null);
+  const [decisionNote, setDecisionNote] = useState('');
+  // Ảnh đang phóng to (lightbox)
+  const [zoomedImg, setZoomedImg] = useState<string | null>(null);
+
+  async function act(type: string, id: string, decision: 'approved' | 'rejected', note?: string) {
     try {
-      await review.mutateAsync({ type, id, decision });
-      toast.success(decision === 'approved' ? 'Đã duyệt' : 'Đã từ chối');
-    } catch {
-      toast.error('Thao tác thất bại');
+      await review.mutateAsync({ type, id, decision, note });
+      toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
+      // Đóng modal nếu đang mở đúng hồ sơ vừa duyệt
+      setDetail((curr: VerificationItem | null) =>
+        curr && curr.type === type && curr.profileId === id ? null : curr,
+      );
+      setDecisionNote('');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Thao tác thất bại';
+      toast.error(msg);
     }
   }
 
+  const closeDetail = () => {
+    setDetail(null);
+    setDecisionNote('');
+    setZoomedImg(null);
+  };
+
+  /**
+   * Gộp các hồ sơ chờ duyệt theo cùng user (key = email || phone).
+   * Một user có thể đăng ký nhiều role (NCC + TNV cùng email).
+   */
+  const grouped = useMemo(() => {
+    const list = pending ?? [];
+    const map = new Map<string, { key: string; email: string; phone?: string; fullName: string; profiles: VerificationItem[] }>();
+    for (const v of list) {
+      const key = (v.email || v.phone || `${v.type}-${v.profileId}`).toLowerCase();
+      const exist = map.get(key);
+      if (exist) {
+        exist.profiles.push(v);
+        // Lấy tên dài nhất
+        if (v.fullName && v.fullName.length > exist.fullName.length) exist.fullName = v.fullName;
+      } else {
+        map.set(key, {
+          key,
+          email: v.email,
+          phone: v.phone ?? undefined,
+          fullName: v.fullName,
+          profiles: [v],
+        });
+      }
+    }
+    // Sắp xếp: profile mới nhất trước; group có NCC trước
+    const arr = Array.from(map.values()).sort((a, b) => {
+      const aTime = Math.max(...a.profiles.map((p) => new Date(p.createdAt).getTime()));
+      const bTime = Math.max(...b.profiles.map((p) => new Date(p.createdAt).getTime()));
+      return bTime - aTime;
+    });
+    // Phẳng hoá để dùng với usePaged: mỗi group chiếm 1 "slot" duy nhất
+    return arr;
+  }, [pending]);
+
+  const groupedPaged = usePaged(grouped, 5);
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
+        <span className="material-symbols-outlined text-emerald-700 mt-0.5">info</span>
+        <div className="text-sm text-emerald-900">
+          <strong>Đây là nơi duyệt hồ sơ đăng ký mới.</strong> Để <em>khoá/mở khoá tài khoản đang hoạt động</em>
+          {' '}(ví dụ: NCC bị report gian lận), vào tab <strong>Quản lý tài khoản</strong> ở sidebar.
+        </div>
+      </div>
       <div>
-        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Tình nguyện viên &amp; Cửa hàng</h2>
-        <p className="text-sm text-neutral-500 mt-1">Duyệt hồ sơ mới và theo dõi tình nguyện viên đang hoạt động.</p>
+        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Duyệt hồ sơ NCC/TNV mới</h2>
+        <p className="text-sm text-neutral-500 mt-1">
+          Xét duyệt hồ sơ nhà cung cấp và tình nguyện viên vừa đăng ký. Sau khi duyệt, tài khoản được kích hoạt để đăng tin/nhận task.
+        </p>
       </div>
 
       {/* Hồ sơ chờ duyệt */}
       <section className="space-y-3">
         <h3 className="font-bold text-lg text-neutral-900 flex items-center gap-2">
           <span className="material-symbols-outlined text-honey-500">how_to_reg</span>
-          Hồ sơ chờ duyệt ({pending?.length ?? 0})
+          Hồ sơ chờ duyệt ({pending?.length ?? 0} hồ sơ · {grouped.length} người)
         </h3>
         {pendingLoading ? (
           <Skeleton />
@@ -1586,33 +1651,396 @@ function VerifyTab() {
         ) : (
           <>
             <div className="space-y-3">
-              {pendingPaged.slice.map((v) => (
-                <div key={`${v.type}-${v.profileId}`} className="bg-white border border-neutral-200 rounded-3xl p-6 shadow-sm flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${v.type === 'provider' ? 'bg-[#a7f3d0] text-emerald-900' : 'bg-[#fef08a] text-[#713f12]'}`}>
-                        {v.type === 'provider' ? 'Cửa hàng' : 'TNV'}
-                      </span>
-                      <h3 className="font-bold text-neutral-900 truncate">{v.fullName}</h3>
+              {groupedPaged.slice.map((g) => {
+                const isMulti = g.profiles.length > 1;
+                return (
+                  <div
+                    key={g.key}
+                    className={`bg-white border rounded-3xl shadow-sm overflow-hidden ${
+                      isMulti ? 'border-honey-300 ring-1 ring-honey-200' : 'border-neutral-200'
+                    }`}
+                  >
+                    {/* Header user */}
+                    <div className={`flex items-center gap-3 px-6 py-4 ${
+                      isMulti ? 'bg-honey-50 border-b border-honey-200' : ''
+                    }`}>
+                      <div className="w-10 h-10 rounded-full bg-emerald-700 text-white font-bold flex items-center justify-center text-lg shrink-0">
+                        {g.fullName?.charAt(0)?.toUpperCase() ?? '?'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-neutral-900 truncate">{g.fullName}</span>
+                          {isMulti && (
+                            <span className="px-2 py-0.5 rounded-full bg-honey-200 text-honey-900 text-[10px] font-bold uppercase">
+                              {g.profiles.length} vai trò
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-neutral-500 truncate">
+                          {g.email}{g.phone ? ` · ${g.phone}` : ''}
+                        </p>
+                      </div>
+                      {isMulti && (
+                        <div className="hidden sm:flex flex-col text-right">
+                          <span className="text-[11px] font-bold uppercase text-honey-700">Lưu ý</span>
+                          <span className="text-[11px] text-honey-800">Một người đăng ký nhiều vai trò</span>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-sm text-neutral-500 mt-2 truncate">{v.email}{v.phone ? ` · ${v.phone}` : ''}</p>
-                    <p className="text-sm text-neutral-600 mt-1 truncate bg-neutral-50 p-2 rounded-lg">{v.detail}</p>
+
+                    {/* Sub-rows: mỗi profile một dòng */}
+                    <div className="divide-y divide-neutral-100">
+                      {g.profiles.map((v) => (
+                        <div
+                          key={`${v.type}-${v.profileId}`}
+                          className="p-6 flex items-start justify-between gap-4 hover:bg-neutral-50/50 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                v.type === 'provider'
+                                  ? 'bg-[#a7f3d0] text-emerald-900'
+                                  : 'bg-[#fef08a] text-[#713f12]'
+                              }`}>
+                                {v.type === 'provider' ? '🏪 Cửa hàng (NCC)' : '🤝 Tình nguyện viên'}
+                              </span>
+                              <h3 className="font-bold text-neutral-900 truncate">{v.fullName}</h3>
+                              {v.type === 'provider' && v.taxCode && (
+                                <span className="px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 text-[11px] font-mono">
+                                  MST: {v.taxCode}
+                                </span>
+                              )}
+                              {v.type === 'provider' && v.businessType && (
+                                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px]">
+                                  {v.businessType === 'restaurant' && '🍜 Nhà hàng'}
+                                  {v.businessType === 'supermarket' && '🛒 Siêu thị'}
+                                  {v.businessType === 'bakery' && '🥖 Tiệm bánh'}
+                                  {v.businessType === 'hotel' && '🏨 Khách sạn'}
+                                  {v.businessType === 'other' && '📦 Khác'}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-neutral-500 mt-1">
+                              Đăng ký {new Date(v.createdAt).toLocaleString('vi-VN')}
+                            </p>
+                            <p className="text-sm text-neutral-600 mt-2 line-clamp-2 bg-neutral-50 p-2 rounded-lg">
+                              {v.detail}
+                            </p>
+
+                            {/* Provider: minh chứng */}
+                            {v.type === 'provider' && (v.evidenceUrls?.length || v.address || v.lng != null) ? (
+                              <div className="mt-3 space-y-2">
+                                {v.address && <p className="text-xs text-neutral-600">📍 {v.address}</p>}
+                                {v.lng != null && v.lat != null && (
+                                  <a
+                                    href={`https://www.google.com/maps?q=${v.lat},${v.lng}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">map</span>
+                                    {v.lat.toFixed(5)}, {v.lng.toFixed(5)} (Google Maps)
+                                  </a>
+                                )}
+                                {v.description && (
+                                  <p className="text-xs text-neutral-500 italic">&ldquo;{v.description}&rdquo;</p>
+                                )}
+                                {v.evidenceUrls && v.evidenceUrls.length > 0 && (
+                                  <div className="flex gap-2 items-start">
+                                    <span className="text-xs text-neutral-500 mt-1">Ảnh GPKD:</span>
+                                    <div className="flex gap-2 flex-wrap">
+                                      {v.evidenceUrls.map((u: string, i: number) => (
+                                        <a
+                                          key={u}
+                                          href={u}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="relative w-16 h-16 rounded-lg overflow-hidden border border-neutral-200 hover:opacity-90"
+                                          title={i === 0 ? 'GPKD / ĐKKD' : `Ảnh ${i + 1}`}
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={u} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                                          {i === 0 && (
+                                            <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-emerald-700 text-white text-center py-0.5">
+                                              GPKD
+                                            </span>
+                                          )}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="flex flex-col gap-2 shrink-0">
+                            <button
+                              onClick={() => setDetail(v)}
+                              className="px-4 py-2 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-full text-xs font-bold transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-sm align-middle mr-1">visibility</span>
+                              Chi tiết
+                            </button>
+                            <button
+                              onClick={() => act(v.type, v.profileId, 'rejected')}
+                              disabled={review.isPending}
+                              className="px-4 py-2 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full text-xs font-bold disabled:opacity-50 transition-colors"
+                            >
+                              Từ chối
+                            </button>
+                            <button
+                              onClick={() => act(v.type, v.profileId, 'approved')}
+                              disabled={review.isPending}
+                              className="px-4 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold disabled:opacity-50 shadow-sm transition-colors"
+                            >
+                              Duyệt
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => act(v.type, v.profileId, 'rejected')} disabled={review.isPending}
-                      className="px-6 py-2.5 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full text-sm font-bold disabled:opacity-50 transition-colors">Từ chối</button>
-                    <button onClick={() => act(v.type, v.profileId, 'approved')} disabled={review.isPending}
-                      className="px-6 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-sm font-bold disabled:opacity-50 shadow-sm transition-colors">Duyệt</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="bg-white border border-neutral-150 rounded-2xl">
-              <Pagination page={pendingPaged.page} totalPages={pendingPaged.totalPages} total={pendingPaged.total} perPage={pendingPaged.perPage} onChange={pendingPaged.setPage} />
+              <Pagination page={groupedPaged.page} totalPages={groupedPaged.totalPages} total={groupedPaged.total} perPage={groupedPaged.perPage} onChange={groupedPaged.setPage} />
             </div>
           </>
         )}
       </section>
+
+      {/* ══════════════ Modal chi tiết hồ sơ chờ duyệt ══════════════ */}
+      {detail && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={closeDetail}
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full my-8 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 p-6 border-b border-neutral-100">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <span
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
+                      detail.type === 'provider'
+                        ? 'bg-[#a7f3d0] text-emerald-900'
+                        : 'bg-[#fef08a] text-[#713f12]'
+                    }`}
+                  >
+                    {detail.type === 'provider' ? 'Nhà cung cấp' : 'Tình nguyện viên'}
+                  </span>
+                  {detail.type === 'provider' && detail.businessType && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] font-semibold">
+                      {detail.businessType === 'restaurant' && '🍜 Nhà hàng'}
+                      {detail.businessType === 'supermarket' && '🛒 Siêu thị'}
+                      {detail.businessType === 'bakery' && '🥖 Tiệm bánh'}
+                      {detail.businessType === 'hotel' && '🏨 Khách sạn'}
+                      {detail.businessType === 'other' && '📦 Khác'}
+                    </span>
+                  )}
+                </div>
+                <h2 className="font-extrabold text-2xl text-neutral-900">{detail.fullName}</h2>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Đăng ký lúc {new Date(detail.createdAt).toLocaleString('vi-VN')}
+                </p>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0"
+                aria-label="Đóng"
+              >
+                <span className="material-symbols-outlined text-neutral-700">close</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* Thông tin liên hệ */}
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin liên hệ</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+                  <div>
+                    <p className="text-[11px] text-neutral-500">Email</p>
+                    <p className="font-semibold text-neutral-900 break-all">{detail.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-neutral-500">Số điện thoại</p>
+                    <p className="font-semibold text-neutral-900">{detail.phone || '—'}</p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Provider: thông tin doanh nghiệp */}
+              {detail.type === 'provider' && (
+                <section>
+                  <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin doanh nghiệp</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+                    <div className="sm:col-span-2">
+                      <p className="text-[11px] text-neutral-500">Tên cửa hàng</p>
+                      <p className="font-bold text-neutral-900">{detail.businessName || detail.fullName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-neutral-500">Mã số thuế</p>
+                      <p className="font-mono font-semibold text-neutral-900">
+                        {detail.taxCode ?? <span className="text-rose-600 italic">Không có (cá nhân/hộ gia đình)</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-neutral-500">Liên hệ NCC</p>
+                      <p className="font-semibold text-neutral-900">{detail.contactPhone || detail.phone || '—'}</p>
+                    </div>
+                    {detail.address && (
+                      <div className="sm:col-span-2">
+                        <p className="text-[11px] text-neutral-500">Địa chỉ</p>
+                        <p className="font-semibold text-neutral-900">{detail.address}</p>
+                        {detail.lng != null && detail.lat != null && (
+                          <a
+                            href={`https://www.google.com/maps?q=${detail.lat},${detail.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-1"
+                          >
+                            <span className="material-symbols-outlined text-sm">map</span>
+                            Mở Google Maps ({detail.lat.toFixed(5)}, {detail.lng.toFixed(5)})
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {detail.description && (
+                      <div className="sm:col-span-2">
+                        <p className="text-[11px] text-neutral-500">Mô tả</p>
+                        <p className="italic text-neutral-800">&ldquo;{detail.description}&rdquo;</p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Bằng chứng — ảnh GPKD / mặt tiền */}
+              {detail.type === 'provider' && (
+                <section>
+                  <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">
+                    Bằng chứng ({detail.evidenceUrls?.length ?? 0} ảnh)
+                  </h3>
+                  {!detail.evidenceUrls || detail.evidenceUrls.length === 0 ? (
+                    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+                      <strong>Không có ảnh minh chứng.</strong> Cân nhắc từ chối vì không đủ điều kiện xác minh.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {detail.evidenceUrls.map((u: string, i: number) => (
+                        <button
+                          type="button"
+                          key={u}
+                          onClick={() => setZoomedImg(u)}
+                          className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group"
+                          title="Bấm để phóng to"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL: Next/Image not configured for arbitrary user paths */}
+                          <img src={u} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                          <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                            #{i + 1}
+                          </span>
+                          {i === 0 && (
+                            <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">
+                              GPKD / ĐKKD
+                            </span>
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                            <span className="material-symbols-outlined text-white text-3xl opacity-0 group-hover:opacity-100">
+                              zoom_in
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* TNV: chuyên môn / phương tiện */}
+              {detail.type === 'volunteer' && (
+                <section>
+                  <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Mô tả năng lực</h3>
+                  <div className="bg-neutral-50 rounded-2xl p-4 text-sm text-neutral-800">{detail.detail}</div>
+                </section>
+              )}
+
+              {/* Lý do (tuỳ chọn) — sẽ lưu vào verification_requests.reviewer_notes */}
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">
+                  Ghi chú cho NCC/TNV (tuỳ chọn, sẽ gửi kèm kết quả)
+                </h3>
+                <textarea
+                  rows={3}
+                  value={decisionNote}
+                  onChange={(e) => setDecisionNote(e.target.value)}
+                  placeholder={
+                    detail.type === 'provider'
+                      ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.'
+                      : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'
+                  }
+                  className="w-full px-4 py-3 bg-white border-2 border-neutral-200 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-neutral-400 resize-none"
+                />
+              </section>
+            </div>
+
+            {/* Footer: 2 nút quyết định */}
+            <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex gap-3 justify-end">
+              <button
+                onClick={closeDetail}
+                disabled={review.isPending}
+                className="px-5 py-2.5 bg-white border border-neutral-200 text-neutral-700 rounded-full font-bold text-sm hover:bg-neutral-50"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={() =>
+                  act(detail.type, detail.profileId, 'rejected', decisionNote.trim() || undefined)
+                }
+                disabled={review.isPending}
+                className="px-5 py-2.5 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full font-bold text-sm disabled:opacity-50"
+              >
+                Từ chối
+              </button>
+              <button
+                onClick={() =>
+                  act(detail.type, detail.profileId, 'approved', decisionNote.trim() || undefined)
+                }
+                disabled={review.isPending}
+                className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm disabled:opacity-50 shadow-sm"
+              >
+                Duyệt hồ sơ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox phóng to ảnh */}
+      {zoomedImg && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setZoomedImg(null)}
+          className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-6 cursor-zoom-out"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- dynamic URL served by /uploads */}
+          <img
+            src={zoomedImg}
+            alt="zoom"
+            className="max-w-full max-h-full object-contain cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       {/* Tình nguyện viên đang hoạt động */}
       <section className="space-y-3">

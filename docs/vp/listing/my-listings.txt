@@ -1,0 +1,7 @@
+Provider->ProviderScreen:open my listings
+    ProviderScreen->ListingsController:GET /listings/provider/my
+        ListingsController->ListingsService:findByProvider(userId, page, limit)
+            ListingsService->PrismaService:providerProfile.findUnique(userId)
+                PrismaService->Database:SELECT provider_profiles
+            ListingsService->PrismaService:foodListing.findMany + count
+                PrismaService->Database:SELECT food_listings

@@ -1,0 +1,13 @@
+Receiver->HistoryScreen:submit rating (score, comment)
+    HistoryScreen->ReservationsController:POST /reservations/:id/rating
+        ReservationsController->ReservationsService:rateReservation(id, userId, score, comment)
+            ReservationsService->PrismaService:receiverProfile.findUnique(userId)
+                PrismaService->Database:SELECT receiver_profiles
+            ReservationsService->PrismaService:reservation.findFirst include provider
+                PrismaService->Database:SELECT reservations JOIN
+            ReservationsService->PrismaService:rating.upsert(reservation, provider)
+                PrismaService->Database:INSERT ratings
+            ReservationsService->PrismaService:rating.aggregate(avg score)
+                PrismaService->Database:SELECT AVG ratings
+            ReservationsService->PrismaService:providerProfile.update(avgRating)
+                PrismaService->Database:UPDATE provider_profiles

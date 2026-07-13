@@ -1,0 +1,5 @@
+User->ReportScreen:submit report (target, reason)
+    ReportScreen->ReportsController:POST /reports (CreateReportDto)
+        ReportsController->ReportsService:create(reporterId, dto)
+            ReportsService->PrismaService:report.create(status=pending)
+                PrismaService->Database:INSERT reports

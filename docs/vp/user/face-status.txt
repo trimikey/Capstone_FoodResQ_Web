@@ -1,0 +1,7 @@
+User->ProfileScreen:open face enrollment
+    ProfileScreen->UsersController:GET /users/me/face-enrollment
+        UsersController->UsersService:getFaceEnrollmentStatus(userId)
+            UsersService->PrismaService:user.findUnique(role)
+                PrismaService->Database:SELECT users
+            UsersService->PrismaService:receiverProfile / volunteerProfile.findUnique(face)
+                PrismaService->Database:SELECT profile

@@ -1,0 +1,13 @@
+Shipper->ShipperHomeScreen:open shipper home
+    ShipperHomeScreen->DeliveriesController:GET /deliveries/my/offers
+        DeliveriesController->DeliveriesService:getMyPendingOffers(userId)
+            DeliveriesService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            DeliveriesService->PrismaService:shipperTaskOffer.findMany(pending) include delivery
+                PrismaService->Database:SELECT shipper_task_offers JOIN
+            DeliveriesService->PrismaService:getDeliveryCoords(deliveryIds)
+                PrismaService->Database:SELECT deliveries geography
+    ShipperHomeScreen->DeliveriesController:GET /deliveries/my/active
+        DeliveriesController->DeliveriesService:getMyActiveDelivery(userId)
+            DeliveriesService->PrismaService:delivery.findFirst(active) include reservation
+                PrismaService->Database:SELECT deliveries JOIN

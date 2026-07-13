@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
-import { useMe, useUpdateMe } from '@/hooks/useProfile';
+import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { UserRole } from '@foodresq/types';
+import type { UserRole as UserRoleType } from '@foodresq/types';
 
 // Ảnh lưu ở /uploads trên API server → ghép với origin (bỏ đuôi /api/v1)
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
@@ -17,11 +18,18 @@ function imgUrl(path: string | null | undefined): string | null {
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
-const ROLE_LABEL: Record<string, string> = {
-  [UserRole.RECEIVER]: 'Người nhận thực phẩm',
-  [UserRole.PROVIDER]: 'Nhà cung cấp',
-  [UserRole.VOLUNTEER]: 'Tình nguyện viên',
-  [UserRole.ADMIN]: 'Quản trị viên',
+const ROLE_META: Record<UserRoleType, { label: string; icon: string; color: string }> = {
+  [UserRole.RECEIVER]: { label: 'Người nhận', icon: 'person_pin', color: 'emerald' },
+  [UserRole.PROVIDER]: { label: 'Nhà cung cấp', icon: 'storefront', color: 'amber' },
+  [UserRole.VOLUNTEER]: { label: 'Tình nguyện viên', icon: 'volunteer_activism', color: 'violet' },
+  [UserRole.ADMIN]: { label: 'Quản trị viên', icon: 'admin_panel_settings', color: 'rose' },
+};
+
+const COLOR_MAP: Record<string, { bg: string; text: string; border: string; soft: string }> = {
+  emerald: { bg: 'bg-emerald-600', text: 'text-emerald-700', border: 'border-emerald-200', soft: 'bg-emerald-50' },
+  amber:   { bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-200', soft: 'bg-amber-50' },
+  violet:  { bg: 'bg-violet-600', text: 'text-violet-700', border: 'border-violet-200', soft: 'bg-violet-50' },
+  rose:    { bg: 'bg-rose-600', text: 'text-rose-700', border: 'border-rose-200', soft: 'bg-rose-50' },
 };
 
 function trustLabel(score: number): string {
@@ -31,29 +39,48 @@ function trustLabel(score: number): string {
   return 'Bị khóa';
 }
 
+function trustBadgeColor(score: number): string {
+  if (score >= 80) return 'bg-emerald-600 text-white';
+  if (score >= 60) return 'bg-emerald-700 text-white';
+  if (score > 30) return 'bg-amber-500 text-white';
+  return 'bg-rose-600 text-white';
+}
+
+const TRUST_REASON_LABEL: Record<string, string> = {
+  late_cancellation: 'Hủy đơn gần giờ hẹn',
+  no_show: 'Không nhận hàng đúng hạn',
+  bad_rating_received: 'Nhận đánh giá kém từ nhà cung cấp',
+  food_safety_violation: 'Vi phạm an toàn thực phẩm',
+  hoarding_detected: 'Gian lận đặt nhiều đơn một lúc',
+  manual_penalty: 'Bị phạt thủ công từ quản trị viên',
+  manual_bonus: 'Thưởng thủ công từ quản trị viên',
+  successful_rescue: 'Hoàn thành nhận thực phẩm thành công',
+  high_rating_received: 'Nhận đánh giá cao từ nhà cung cấp',
+  delivery_completed: 'Hoàn thành giao hàng thành công',
+  campaign_completed: 'Tham gia chiến dịch từ thiện',
+};
+
 export default function ProfilePage() {
   const { logout } = useAuthStore();
   const router = useRouter();
   const { data: me, isLoading, isError } = useMe();
   const updateMe = useUpdateMe();
-  // Chỉ người nhận & tình nguyện viên mới có hồ sơ khuôn mặt (eKYC)
+
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '' });
+  const [showTrustHistory, setShowTrustHistory] = useState(false);
 
-  // Đồng bộ form khi mở modal / khi dữ liệu về
   useEffect(() => {
     if (me) {
-      setEditForm({
-        fullName: me.fullName,
-        phone: me.phone ?? '',
-        avatarUrl: me.avatarUrl ?? '',
-      });
+      setEditForm({ fullName: me.fullName, phone: me.phone ?? '', avatarUrl: me.avatarUrl ?? '' });
     }
   }, [me]);
+
+  const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,238 +108,339 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-neutral-50/50 flex items-center justify-center py-20">
-        <span className="animate-spin border-4 border-emerald-600 border-t-transparent rounded-full w-10 h-10" />
+      <div className="min-h-screen bg-white flex items-center justify-center py-20">
+        <div className="flex flex-col items-center gap-4">
+          <span className="relative flex h-14 w-14">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-14 w-14 bg-emerald-500 items-center justify-center">
+              <span className="material-symbols-outlined text-white text-[28px]">person</span>
+            </span>
+          </span>
+          <p className="text-sm font-bold text-neutral-500">Đang tải hồ sơ...</p>
+        </div>
       </div>
     );
   }
 
   if (isError || !me) {
     return (
-      <div className="min-h-screen bg-neutral-50/50 flex flex-col items-center justify-center py-20 gap-3 text-center">
-        <span className="material-symbols-outlined text-rose-500 text-[48px]">wifi_off</span>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center py-20 gap-4">
+        <div className="w-20 h-20 rounded-full bg-rose-50 flex items-center justify-center">
+          <span className="material-symbols-outlined text-rose-400 text-[40px]">wifi_off</span>
+        </div>
         <p className="font-bold text-neutral-700">Không tải được hồ sơ từ máy chủ</p>
+        <button
+          onClick={() => router.refresh()}
+          className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm transition-colors"
+        >
+          Thử lại
+        </button>
       </div>
     );
   }
 
-  // Tổ chức từ thiện là receiver có cờ isCharityOrg → hiển thị nhãn riêng cho rõ
-  const roleLabel = me.receiver?.isCharityOrg ? 'Tổ chức từ thiện' : (ROLE_LABEL[me.role] ?? me.role);
+  const roleLabel = me.receiver?.isCharityOrg ? 'Tổ chức từ thiện' : (ROLE_META[me.role]?.label ?? me.role);
+  const meta = COLOR_MAP[ROLE_META[me.role as UserRoleType]?.color ?? 'emerald'];
+
+  const stats = [
+    { label: 'Đơn hoàn tất', value: me.stats.completedCount, icon: 'check_circle', accent: 'emerald' },
+    { label: 'Kg thực phẩm cứu', value: me.stats.kgSaved, icon: 'scale', accent: 'teal' },
+    { label: 'Cửa hàng đã giúp', value: me.stats.providersHelped, icon: 'favorite', accent: 'rose' },
+  ];
 
   return (
-    <div className="min-h-screen bg-neutral-50/50 pb-24">
-      <div className="max-w-7xl mx-auto px-6 md:px-16 lg:px-24 py-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* LEFT COLUMN */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Profile Info Card */}
-            <div className="bg-white rounded-3xl border border-neutral-200 p-8 flex flex-col items-center relative shadow-sm">
-              <div className="relative w-28 h-28 rounded-full border-4 border-emerald-100 overflow-hidden bg-emerald-50 flex items-center justify-center">
+    <div className="min-h-screen bg-white pb-24">
+      {/* ── TOP HERO ─────────────────────────────────────────── */}
+      <div className="relative bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 text-white overflow-hidden">
+        {/* decorative circles */}
+        <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-white/5" />
+        <div className="absolute bottom-0 -left-16 w-56 h-56 rounded-full bg-white/5" />
+
+        <div className="relative max-w-5xl mx-auto px-6 md:px-12 pt-10 pb-20">
+          <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10">
+            {/* Avatar */}
+            <div className="relative shrink-0">
+              <div className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-white/40 overflow-hidden bg-white/10 shadow-2xl shadow-black/20">
                 {me.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={me.avatarUrl} alt={me.fullName} className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-4xl font-extrabold text-emerald-700">
-                    {me.fullName.charAt(0).toUpperCase()}
+                  <div className="w-full h-full flex items-center justify-center bg-emerald-600/40">
+                    <span className="text-5xl md:text-6xl font-extrabold text-white">
+                      {me.fullName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {/* online dot */}
+              <span className="absolute bottom-2 right-2 w-5 h-5 bg-emerald-400 border-[3px] border-emerald-800 rounded-full" />
+            </div>
+
+            {/* Name + meta */}
+            <div className="text-center md:text-left space-y-2 flex-1 min-w-0">
+              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight truncate">{me.fullName}</h1>
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 border border-white/20`}>
+                  <span className="material-symbols-outlined text-[14px]">{ROLE_META[me.role as UserRoleType]?.icon}</span>
+                  {roleLabel}
+                </span>
+                {me.volunteer && me.volunteer.specializations.length > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/10 border border-white/20">
+                    <span className="material-symbols-outlined text-[13px]">verified</span>
+                    {VOL_ROLE_LABEL[me.volunteer.specializations[0].specialization] ?? 'Tình nguyện'}
                   </span>
                 )}
               </div>
-
-              <h2 className="text-xl font-bold text-neutral-900 mt-4">{me.fullName}</h2>
-              <div className="flex items-center gap-1 mt-1 text-xs text-neutral-500 font-semibold bg-neutral-50 px-3 py-1 rounded-full border border-neutral-100">
-                <span className="material-symbols-outlined text-[14px] text-emerald-600">check_circle</span>
-                <span>{roleLabel}</span>
-              </div>
-
-              {/* Chuyên môn tình nguyện viên (đầu bếp / phục vụ / giao hàng) */}
-              {me.volunteer && me.volunteer.specializations.length > 0 && (
-                <div className="flex flex-wrap justify-center gap-1.5 mt-2">
-                  {me.volunteer.specializations.map((s) => (
-                    <span
-                      key={s.specialization}
-                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${s.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
-                    >
-                      {VOL_ROLE_LABEL[s.specialization]}{s.isVerified ? ' ✓' : ' (chờ duyệt)'}
-                    </span>
-                  ))}
-                </div>
-              )}
               {me.volunteer && (
-                <p className="text-[11px] text-neutral-400 mt-1.5">
+                <p className="text-xs text-emerald-100/90 font-semibold">
                   Hạng {me.volunteer.rank} · {me.volunteer.dedicationPoints} điểm cống hiến
                 </p>
               )}
+            </div>
 
-              <div className="w-full h-px bg-neutral-200/80 my-6" />
-
-              <div className="w-full space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[20px] text-neutral-600">mail</span>
-                  </div>
-                  <div className="space-y-0.5 text-left min-w-0">
-                    <p className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider">Email</p>
-                    <p className="text-sm font-bold text-neutral-800 truncate max-w-[200px]">{me.email}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[20px] text-neutral-600">call</span>
-                  </div>
-                  <div className="space-y-0.5 text-left">
-                    <p className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider">Số điện thoại</p>
-                    <p className="text-sm font-bold text-neutral-800">{me.phone ?? 'Chưa cập nhật'}</p>
-                  </div>
-                </div>
-              </div>
-
+            {/* Actions */}
+            <div className="flex flex-col gap-2 shrink-0">
               <button
                 onClick={() => setIsEditModalOpen(true)}
-                className="w-full mt-6 py-3 bg-[#9AE69A] hover:bg-[#8CD88C] text-emerald-950 font-bold text-sm rounded-2xl transition-colors shadow-sm"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-emerald-900 hover:bg-emerald-50 rounded-2xl font-bold text-sm shadow-lg shadow-black/10 transition-all hover:scale-[1.03] active:scale-95"
               >
+                <span className="material-symbols-outlined text-[18px]">edit</span>
                 Chỉnh sửa hồ sơ
               </button>
             </div>
-
-            {/* Trust Score Card */}
-            <div className="bg-[#EAF5EC] border border-[#D5EAD9] rounded-3xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-sm">
-                  <span className="material-symbols-outlined text-[18px]">stars</span>
-                  <span>Điểm Tin Cậy</span>
-                </div>
-                <span className="bg-emerald-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  {trustLabel(me.trustScore)}
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <h3 className="text-4xl font-extrabold text-emerald-950">
-                  {me.trustScore}
-                  <span className="text-base font-bold text-emerald-800">/100</span>
-                </h3>
-                <div className="h-2.5 w-full bg-emerald-200/40 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-800 rounded-full" style={{ width: `${me.trustScore}%` }} />
-                </div>
-              </div>
-
-              <p className="text-xs text-emerald-900/80 leading-relaxed font-medium">
-                Bạn đã cứu được {me.stats.kgSaved}kg thực phẩm dư thừa. Hãy tiếp tục nhé!
-              </p>
-            </div>
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* Stats cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="bg-white border border-neutral-200 rounded-3xl p-6 flex flex-col justify-between min-h-[150px] shadow-sm">
-                <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-wider">
-                  <span className="material-symbols-outlined text-[18px]">history</span>
-                  <span>Đơn hoàn tất</span>
-                </div>
-                <div className="flex justify-between items-end mt-4">
-                  <span className="text-4xl font-extrabold text-neutral-900">{me.stats.completedCount}</span>
-                  <button
-                    onClick={() => router.push('/history')}
-                    className="text-xs font-bold text-neutral-700 hover:text-emerald-800 underline transition-colors"
-                  >
-                    Xem tất cả
-                  </button>
-                </div>
+          {/* mini stat strip */}
+          <div className="mt-8 grid grid-cols-3 gap-3">
+            {stats.map((s) => (
+              <div key={s.label} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl px-4 py-3 text-center">
+                <p className="text-2xl md:text-3xl font-extrabold">{s.value}</p>
+                <p className="text-[11px] text-emerald-100/90 font-semibold mt-0.5">{s.label}</p>
               </div>
-
-              <div className="bg-[#EAF5EC] border border-[#D5EAD9] rounded-3xl p-6 flex flex-col justify-between min-h-[150px] shadow-sm">
-                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
-                  <span className="material-symbols-outlined text-[18px]">scale</span>
-                  <span>Đã cứu</span>
-                </div>
-                <div className="flex justify-between items-end mt-4">
-                  <span className="text-4xl font-extrabold text-emerald-950">{me.stats.kgSaved}</span>
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-200/50 px-2.5 py-1 rounded-lg">
-                    kg
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white border border-neutral-200 rounded-3xl p-6 flex flex-col justify-between min-h-[150px] shadow-sm">
-                <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-wider">
-                  <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
-                  <span>Đã giúp đỡ</span>
-                </div>
-                <div className="flex justify-between items-end mt-4">
-                  <span className="text-4xl font-extrabold text-neutral-900">{me.stats.providersHelped}</span>
-                  <span className="text-xs font-bold text-neutral-500">cửa hàng</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Support list card */}
-            <div className="bg-white border border-neutral-200 rounded-3xl p-6 shadow-sm">
-              <h4 className="font-bold text-neutral-450 uppercase text-[10px] tracking-wider mb-3">Hỗ trợ</h4>
-
-              <div className="divide-y divide-neutral-100">
-                <button
-                  onClick={() => router.push('/history')}
-                  className="w-full py-3.5 flex items-center justify-between text-neutral-800 hover:text-emerald-800 text-sm font-bold transition-colors text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-neutral-400">history</span>
-                    <span>Lịch sử nhận hàng</span>
-                  </div>
-                  <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
-                </button>
-
-                {me.volunteer && (
-                  <button
-                    onClick={() => router.push('/deliveries/history')}
-                    className="w-full py-3.5 flex items-center justify-between text-neutral-800 hover:text-emerald-800 text-sm font-bold transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-neutral-400">local_shipping</span>
-                      <span>Lịch sử giao hàng</span>
-                    </div>
-                    <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => toast.info('Trung tâm trợ giúp đang được phát triển.')}
-                  className="w-full py-3.5 flex items-center justify-between text-neutral-800 hover:text-emerald-800 text-sm font-bold transition-colors text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-neutral-400">help</span>
-                    <span>Trung tâm trợ giúp</span>
-                  </div>
-                  <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
-                </button>
-
-                <button
-                  onClick={handleLogout}
-                  className="w-full py-3.5 flex items-center justify-between text-red-600 hover:text-red-700 text-sm font-bold transition-colors text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-red-500">logout</span>
-                    <span>Đăng xuất</span>
-                  </div>
-                  <span className="material-symbols-outlined text-red-500">chevron_right</span>
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* EDIT PROFILE MODAL */}
+      {/* ── MAIN CONTENT ────────────────────────────────────── */}
+      <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12 mt-0">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* LEFT: Trust + contact */}
+          <div className="lg:col-span-4 space-y-6">
+            {/* Trust Score */}
+            <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-neutral-800 font-bold text-sm">
+                  <span className="material-symbols-outlined text-[20px] text-emerald-600">stars</span>
+                  <span>Điểm Tin Cậy</span>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${trustBadgeColor(me.trustScore)}`}>
+                  {trustLabel(me.trustScore)}
+                </span>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-5xl font-extrabold text-neutral-900">{me.trustScore}</span>
+                  <span className="text-base font-bold text-neutral-400">/100</span>
+                </div>
+                <div className="h-3 w-full bg-neutral-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-600 to-teal-500 rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${Math.min(me.trustScore, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs text-neutral-500 leading-relaxed font-medium">
+                Bạn đã cứu được <span className="text-emerald-700 font-bold">{me.stats.kgSaved}kg</span> thực phẩm dư thừa. Hãy tiếp tục nhé!
+              </p>
+
+              {/* Trust history toggle */}
+              <button
+                onClick={() => setShowTrustHistory((v) => !v)}
+                className="mt-3 w-full flex items-center justify-between py-2.5 px-3 rounded-xl border border-neutral-100 hover:border-amber-200 hover:bg-amber-50/50 transition-all text-xs font-bold text-neutral-600 hover:text-amber-700"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">history</span>
+                  Lịch sử điểm tin cậy
+                </span>
+                <span className="material-symbols-outlined text-[16px] transition-transform duration-200" style={{ transform: showTrustHistory ? 'rotate(180deg)' : 'none' }}>
+                  expand_more
+                </span>
+              </button>
+
+              {showTrustHistory && (
+                <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {trustLoading && (
+                    <div className="flex items-center gap-2 py-3 text-neutral-400">
+                      <span className="animate-spin border-2 border-neutral-200 border-t-emerald-600 rounded-full w-4 h-4" />
+                      <span className="text-xs font-semibold">Đang tải...</span>
+                    </div>
+                  )}
+                  {trustHistory?.items.map((item) => {
+                    const reasonLabel = TRUST_REASON_LABEL[item.reason] ?? item.reason ?? item.referenceType ?? 'Điều chỉnh điểm';
+                    return (
+                      <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-neutral-50 border border-neutral-100">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-neutral-800">
+                            {reasonLabel}
+                          </p>
+                          <p className="text-[10px] text-neutral-400 mt-0.5">
+                            {new Date(item.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        <span className={`text-xs font-extrabold ml-2 ${item.delta < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {item.delta > 0 ? '+' : ''}{item.delta}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {trustHistory?.recommendation && (
+                    <div className="py-2.5 px-3 rounded-lg bg-amber-50 border border-amber-200">
+                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">
+                        <span className="material-symbols-outlined text-[14px] align-middle mr-1">lightbulb</span>
+                        {trustHistory.recommendation}
+                      </p>
+                    </div>
+                  )}
+                  {trustHistory?.items.length === 0 && !trustLoading && (
+                    <p className="text-xs text-neutral-400 text-center py-3">Chưa có lịch sử điều chỉnh điểm.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Contact */}
+            <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+              <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-4">Thông tin liên hệ</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">mail</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Email</p>
+                    <p className="text-sm font-bold text-neutral-800 truncate">{me.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">call</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Số điện thoại</p>
+                    <p className="text-sm font-bold text-neutral-800">{me.phone ?? 'Chưa cập nhật'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* eKYC status */}
+            {isFaceRole && (
+              <div className="bg-white rounded-3xl border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
+                {faceImage ? (
+                  <div className="flex items-center gap-3 border border-emerald-200 rounded-2xl p-3 bg-emerald-50/50">
+                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                      <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
+                        <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                        <span>Đã xác minh</span>
+                      </div>
+                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">Dùng để đối chiếu khi nhận hàng.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-2xl p-3">
+                    <span className="material-symbols-outlined text-amber-600 text-[24px]">no_accounts</span>
+                    <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Activity + menus */}
+          <div className="lg:col-span-8 space-y-6">
+            {/* Stats cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {stats.map((s) => (
+                <div
+                  key={s.label}
+                  className="group bg-white border border-neutral-200 rounded-3xl p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-default"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="material-symbols-outlined text-neutral-300 group-hover:text-emerald-600 group-hover:scale-110 transition-all text-[28px]">
+                      {s.icon}
+                    </span>
+                    <span className="text-[11px] font-bold text-neutral-400 bg-neutral-50 px-2 py-0.5 rounded-lg border border-neutral-100 group-hover:bg-emerald-50 group-hover:text-emerald-700 group-hover:border-emerald-200 transition-colors">
+                      {s.accent === 'emerald' ? 'Môi trường' : s.accent === 'teal' ? 'Khẩn cấp' : 'Cộng đồng'}
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <span className="text-4xl font-extrabold text-neutral-900">{s.value}</span>
+                    <p className="text-xs text-neutral-500 font-semibold mt-0.5">{s.label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick actions */}
+            <div className="bg-white border border-neutral-200 rounded-3xl p-6 shadow-sm">
+              <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-4">Tiện ích</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Lịch sử nhận hàng', icon: 'history', href: '/history', accent: 'emerald' },
+                  { label: 'Lịch sử giao hàng', icon: 'local_shipping', href: '/deliveries/history', accent: 'violet', hidden: !me.volunteer },
+                  { label: 'Đánh giá', icon: 'rate_review', href: '#', accent: 'amber' },
+                  { label: 'Trợ giúp', icon: 'support_agent', href: '#', accent: 'sky' },
+                ].filter((a) => !a.hidden).map((action) => {
+                  const c = COLOR_MAP[action.accent] ?? COLOR_MAP.emerald;
+                  return (
+                    <button
+                      key={action.label}
+                      onClick={() => {
+                        if (action.href.startsWith('#')) {
+                          toast.info('Tính năng đang phát triển.');
+                          return;
+                        }
+                        router.push(action.href);
+                      }}
+                      className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-neutral-100 hover:border-emerald-200 hover:bg-emerald-50/60 text-center transition-all group"
+                    >
+                      <span className={`material-symbols-outlined text-[28px] text-neutral-400 group-hover:${c.text} group-hover:scale-110 transition-all`}>
+                        {action.icon}
+                      </span>
+                      <span className="text-xs font-bold text-neutral-700 group-hover:text-emerald-800 transition-colors">{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3.5 border-2 border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl font-bold text-sm transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">logout</span>
+              Đăng xuất tài khoản
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── EDIT PROFILE MODAL ─────────────────────────────── */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
               <h3 className="font-extrabold text-neutral-900 text-lg">Chỉnh sửa hồ sơ</h3>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="p-1 hover:bg-neutral-100 rounded-full text-neutral-450 hover:text-neutral-800"
+                className="p-1.5 hover:bg-neutral-100 rounded-full text-neutral-400 hover:text-neutral-800 transition-colors"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
@@ -363,14 +491,13 @@ export default function ProfilePage() {
                 />
               </div>
 
-              {/* Khuôn mặt đã đăng ký (eKYC) — chỉ hiển thị, đăng ký 1 lần khi tạo tài khoản */}
+              {/* eKYC status in modal */}
               {isFaceRole && (
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
                   {faceImage ? (
-                    <div className="flex items-center gap-3 border border-neutral-200 rounded-xl p-3">
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 shrink-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
                         <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
                       </div>
                       <div className="min-w-0">
@@ -378,17 +505,13 @@ export default function ProfilePage() {
                           <span className="material-symbols-outlined text-[18px]">verified_user</span>
                           <span>Đã xác minh khuôn mặt</span>
                         </div>
-                        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-                          Dùng để đối chiếu khi nhận hàng. Khuôn mặt gốc không thể tự thay đổi.
-                        </p>
+                        <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">Dùng để đối chiếu khi nhận hàng. Không thể tự thay đổi.</p>
                       </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
                       <span className="material-symbols-outlined text-amber-600">no_accounts</span>
-                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">
-                        Chưa đăng ký khuôn mặt.
-                      </p>
+                      <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
                     </div>
                   )}
                 </div>
@@ -405,7 +528,7 @@ export default function ProfilePage() {
                 <button
                   type="submit"
                   disabled={updateMe.isPending}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                  className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50"
                 >
                   {updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>

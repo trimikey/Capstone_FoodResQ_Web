@@ -1,0 +1,5 @@
+User->ProfileScreen:edit profile (name, phone, avatar)
+    ProfileScreen->UsersController:PATCH /users/me (UpdateMeDto)
+        UsersController->UsersService:updateMe(userId, dto)
+            UsersService->PrismaService:user.update(fullName, phone, avatarUrl)
+                PrismaService->Database:UPDATE users

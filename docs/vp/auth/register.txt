@@ -1,0 +1,18 @@
+User->RegisterScreen:submit register form
+    RegisterScreen->AuthController:POST /auth/register (RegisterDto)
+        AuthController->AuthService:register(dto)
+            AuthService->PrismaService:user.findUnique(email)
+                PrismaService->Database:SELECT users WHERE email
+            AuthService->bcrypt:hash(password, 12)
+            AuthService->PrismaService:user.create(status=pending_verification)
+                PrismaService->Database:INSERT users
+            AuthService->PrismaService:receiverProfile.create(address, isCharityOrg)
+                PrismaService->Database:INSERT receiver_profiles
+            AuthService->PrismaService:volunteerProfile.create(vehicleType)
+                PrismaService->Database:INSERT volunteer_profiles
+            AuthService->PrismaService:providerProfile.create(businessName, address)
+                PrismaService->Database:INSERT provider_profiles
+            AuthService->JwtService:sign(access 15m + refresh 30d)
+            AuthService->bcrypt:hash(refreshToken)
+            AuthService->PrismaService:refreshToken.create(tokenHash, expiresAt)
+                PrismaService->Database:INSERT refresh_tokens

@@ -4,6 +4,7 @@ node_modules/
 dist/
 .next/
 *.log
+.pnpm-store/
 
 # Uploaded user media (faces, ID cards, pickup proofs) — sensitive, not for VCS
 apps/api/uploads/

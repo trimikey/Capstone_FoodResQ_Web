@@ -25,14 +25,14 @@ const CATEGORIES: Record<string, string> = {
 };
 
 const CATEGORY_FALLBACK_IMAGE: Record<string, string> = {
-  bakery: '/banh-mi-ngot-thap-cam.png',
-  cooked_meal: '/com-ga-hoi-an.png',
-  fresh_fruit: '/food_salad.png',
-  vegetables: '/food_salad.png',
+  bakery: '/banh-mi.png',
+  cooked_meal: '/com-ga.png',
+  fresh_fruit: '/rau-cu.png',
+  vegetables: '/rau-cu.png',
 };
 
 function fallbackImage(category: string): string {
-  return CATEGORY_FALLBACK_IMAGE[category] ?? '/banh-mi-lua-mach-tuoi.png';
+  return CATEGORY_FALLBACK_IMAGE[category] ?? '/hu-tieu.png';
 }
 
 function formatDistance(m: number): string {
@@ -112,10 +112,8 @@ export default function ListingDetailPage({ params }: Props) {
         qrToken: res.qrToken,
         qrExpiresAt: res.qrExpiresAt,
       });
-      toast.success('Đặt chỗ thành công! Đang chuyển hướng đến trang theo dõi...');
-      setTimeout(() => {
-        router.push(`/reservations/${res.reservationId}`);
-      }, 1500);
+      // Không auto-chuyển trang — để người dùng xem QR và tự bấm "Xem đơn đặt"
+      toast.success('Đặt chỗ thành công! Mã QR nhận hàng của bạn đã sẵn sàng.');
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -127,6 +125,15 @@ export default function ListingDetailPage({ params }: Props) {
   const dateObj = new Date(listing.pickupEndTime);
   const formattedEndTime = `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
   const isSoldOut = listing.quantityRemaining <= 0;
+
+  // Khung giờ nhận hàng — ngoài khung này thì không cho đặt (BE cũng chặn tương tự)
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const nowMs = Date.now();
+  const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
+  const windowClosed = nowMs > new Date(listing.pickupEndTime).getTime();
 
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -144,20 +151,27 @@ export default function ListingDetailPage({ params }: Props) {
         <div className="lg:col-span-7 flex flex-col gap-6">
           <div className="relative rounded-3xl overflow-hidden aspect-[4/3] bg-surface-container shadow-md border border-outline-variant/10 group">
             <img
-              src={listing.imageUrls[0] || fallbackImage(listing.category)}
+              src={
+                (listing.imageUrls[0] && ![
+                  '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                  '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
+                ].includes(listing.imageUrls[0]))
+                  ? listing.imageUrls[0]
+                  : fallbackImage(listing.category)
+              }
               alt={listing.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
             <div className="absolute top-4 left-4 flex gap-2">
-              <span className="bg-black/50 backdrop-blur-md text-white font-label-lg px-4 py-2 rounded-full">
+              <span className="bg-black/50 backdrop-blur-md text-white font-label-lg text-xs px-3 py-1.5 rounded-full">
                 Còn {listing.quantityRemaining} {listing.quantityUnit}
               </span>
-              <span className="bg-primary/95 text-white font-label-lg px-4 py-2 rounded-full shadow-sm">
+              <span className="bg-primary/95 text-white font-label-lg text-xs px-3 py-1.5 rounded-full shadow-sm">
                 Cứu trợ 0đ
               </span>
               {listing.isSurpriseBag && (
-                <span className="bg-honey-500/95 text-white font-label-lg px-4 py-2 rounded-full shadow-sm inline-flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[18px]">redeem</span> Túi bất ngờ
+                <span className="bg-honey-500/95 text-white font-label-lg text-xs px-3 py-1.5 rounded-full shadow-sm inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[15px]">redeem</span> Túi bất ngờ
                 </span>
               )}
             </div>
@@ -226,11 +240,19 @@ export default function ListingDetailPage({ params }: Props) {
                   <p className="font-label-sm text-xs text-on-surface font-semibold">{listing.storageConditions || '—'}</p>
                 </div>
               </div>
+
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">warning</span>
+                <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">schedule</span>
                 <div>
-                  <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Dị ứng</p>
-                  <p className="font-label-sm text-xs text-on-surface font-semibold">{listing.allergenNotes || 'Không'}</p>
+                  <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Giờ nhận hàng</p>
+                  <p className="font-label-sm text-xs text-on-surface font-semibold">
+                    {fmtTime(listing.pickupStartTime)} – {fmtTime(listing.pickupEndTime)}
+                    {(notYetOpen || windowClosed) && (
+                      <span className="ml-1 text-error font-semibold">
+                        ({notYetOpen ? 'chưa mở' : 'đã đóng'})
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
@@ -238,8 +260,8 @@ export default function ListingDetailPage({ params }: Props) {
             {/* Success QR Code block */}
             {reservationResult ? (
               <div className="flex flex-col items-center gap-5 border-t border-outline-variant/10 pt-5 text-center animate-in fade-in slide-in-from-bottom duration-300">
-                <div className="w-full bg-emerald-500/10 text-emerald-700 py-3 rounded-2xl flex items-center justify-center gap-2 font-semibold">
-                  <span className="material-symbols-outlined">check_circle</span>
+                <div className="w-full bg-emerald-500/10 text-emerald-700 py-2.5 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm">
+                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
                   Đặt chỗ thành công!
                 </div>
 
@@ -257,13 +279,13 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="w-full flex gap-3">
                   <button
                     onClick={() => router.push('/listings')}
-                    className="flex-1 py-3 bg-surface-container text-on-surface rounded-2xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+                    className="flex-1 py-2.5 bg-surface-container text-on-surface rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
                   >
                     Tiếp tục tìm
                   </button>
                   <button
-                    onClick={() => router.push('/reservations')}
-                    className="flex-1 py-3 bg-primary text-white rounded-2xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+                    onClick={() => router.push(`/reservations/${reservationResult.reservationId}`)}
+                    className="flex-1 py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
                   >
                     Xem đơn đặt
                   </button>
@@ -271,9 +293,19 @@ export default function ListingDetailPage({ params }: Props) {
               </div>
             ) : isSoldOut ? (
               <div className="border-t border-outline-variant/10 pt-5">
-                <div className="w-full bg-error/10 text-error py-4 rounded-2xl flex items-center justify-center gap-2 font-semibold">
-                  <span className="material-symbols-outlined">block</span>
+                <div className="w-full bg-error/10 text-error py-3 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm">
+                  <span className="material-symbols-outlined text-[20px]">block</span>
                   Đã hết phần
+                </div>
+              </div>
+            ) : notYetOpen || windowClosed ? (
+              /* Ngoài khung giờ nhận hàng → không hiển thị form đặt */
+              <div className="border-t border-outline-variant/10 pt-5">
+                <div className="w-full bg-surface-container-high/60 text-on-surface-variant py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm text-center">
+                  <span className="material-symbols-outlined text-[20px]">schedule</span>
+                  {notYetOpen
+                    ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
+                    : `Đã quá giờ nhận hàng hôm nay (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>
             ) : (
@@ -307,11 +339,10 @@ export default function ListingDetailPage({ params }: Props) {
                   <div className="flex flex-col gap-2">
                     <label
                       onClick={() => setDeliveryMethod('pickup')}
-                      className={`flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${
-                        deliveryMethod === 'pickup'
-                          ? 'border-primary bg-primary/5 shadow-sm'
-                          : 'border-outline-variant/15 hover:border-primary/40 bg-surface'
-                      }`}
+                      className={`flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${deliveryMethod === 'pickup'
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-outline-variant/15 hover:border-primary/40 bg-surface'
+                        }`}
                     >
                       <div className="mt-1 flex items-center justify-center">
                         <input
@@ -333,11 +364,10 @@ export default function ListingDetailPage({ params }: Props) {
 
                     <label
                       onClick={() => setDeliveryMethod('delivery')}
-                      className={`flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${
-                        deliveryMethod === 'delivery'
-                          ? 'border-primary bg-primary/5 shadow-sm'
-                          : 'border-outline-variant/15 hover:border-primary/40 bg-surface'
-                      }`}
+                      className={`flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${deliveryMethod === 'delivery'
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-outline-variant/15 hover:border-primary/40 bg-surface'
+                        }`}
                     >
                       <div className="mt-1 flex items-center justify-center">
                         <input
@@ -372,7 +402,7 @@ export default function ListingDetailPage({ params }: Props) {
                   <button
                     onClick={handlePreOrder}
                     disabled={createReservation.isPending}
-                    className="w-full py-4 bg-primary text-white rounded-2xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-[0.98] hover:bg-primary/90 disabled:opacity-50"
+                    className="w-full py-3 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-[0.98] hover:bg-primary/90 disabled:opacity-50"
                   >
                     {createReservation.isPending ? (
                       <>
@@ -381,7 +411,7 @@ export default function ListingDetailPage({ params }: Props) {
                       </>
                     ) : (
                       <>
-                        <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'wght' 600" }}>shopping_bag</span>
+                        <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'wght' 600" }}>shopping_bag</span>
                         Yêu cầu Đặt trước
                       </>
                     )}
@@ -409,7 +439,14 @@ export default function ListingDetailPage({ params }: Props) {
               >
                 <div className="relative h-40 bg-surface-container">
                   <img
-                    src={item.imageUrls[0] || fallbackImage(item.category)}
+                    src={
+                      (item.imageUrls[0] && ![
+                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                        '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
+                      ].includes(item.imageUrls[0]))
+                        ? item.imageUrls[0]
+                        : fallbackImage(item.category)
+                    }
                     alt={item.title}
                     className="w-full h-full object-cover"
                   />

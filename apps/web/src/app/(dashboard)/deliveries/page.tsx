@@ -18,14 +18,15 @@ import {
   useCancelDelivery,
   useFailDelivery,
   useUpdateMyLocation,
-  useOfferSocket,
   type ActiveDelivery,
   type DeliveryHistoryItem,
-  type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { mediaUrl, mapsDirUrl, haversineKm } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
+import { OfferCountdown } from '@/components/deliveries/OfferPopup';
+
+const QrScanModal = dynamic(() => import('@/components/deliveries/QrScanModal'), { ssr: false });
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -43,11 +44,12 @@ const RANK_LABEL: Record<string, string> = {
 
 
 // Bước trạng thái giao hàng + hành động kế tiếp
-const NEXT_STATUS: Record<string, { next: string; label: string; needsPhoto: boolean }> = {
+// needsQr: bước hoàn tất phải quét mã QR trên màn hình người nhận (bàn giao đúng người)
+const NEXT_STATUS: Record<string, { next: string; label: string; needsPhoto: boolean; needsQr?: boolean }> = {
   assigned: { next: 'heading_to_provider', label: 'Bắt đầu đến lấy hàng', needsPhoto: false },
   heading_to_provider: { next: 'qc_completed', label: 'Đã lấy hàng & kiểm tra (QC)', needsPhoto: true },
   qc_completed: { next: 'in_transit', label: 'Bắt đầu giao cho người nhận', needsPhoto: false },
-  in_transit: { next: 'delivered', label: 'Hoàn tất giao hàng', needsPhoto: true },
+  in_transit: { next: 'delivered', label: 'Quét mã của người nhận để hoàn tất', needsPhoto: false, needsQr: true },
 };
 
 const STEPS = [
@@ -69,100 +71,6 @@ function getLocation(): Promise<{ lng: number; lat: number }> {
   });
 }
 
-function OfferCountdown({ expiresAt }: { expiresAt: string }) {
-  const [left, setLeft] = useState(() =>
-    Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)),
-  );
-  useEffect(() => {
-    const t = setInterval(() => {
-      setLeft(Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)));
-    }, 1000);
-    return () => clearInterval(t);
-  }, [expiresAt]);
-  const m = Math.floor(left / 60);
-  const s = left % 60;
-  return (
-    <span className={`font-mono font-bold ${left < 30 ? 'text-rose-600' : 'text-emerald-700'}`}>
-      {m}:{String(s).padStart(2, '0')}
-    </span>
-  );
-}
-
-// Popup nổi bật (kiểu Grab/Xanh SM) khi có đơn mời — bật ngay qua socket.
-function OfferPopup({
-  offer,
-  onAccept,
-  onReject,
-  onClose,
-  busy,
-}: {
-  offer: TaskOffer;
-  onAccept: () => void;
-  onReject: () => void;
-  onClose: () => void;
-  busy: boolean;
-}) {
-  const l = offer.delivery.reservation.listing;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
-        <div className="bg-emerald-600 text-white px-5 py-4 flex items-center justify-between">
-          <span className="flex items-center gap-2 font-extrabold">
-            <span className="material-symbols-outlined">notifications_active</span>
-            Đơn giao mới!
-          </span>
-          <span className="flex items-center gap-1.5 text-sm bg-white/15 px-2.5 py-1 rounded-lg">
-            <span className="material-symbols-outlined text-[18px]">timer</span>
-            <OfferCountdown expiresAt={offer.expiresAt} />
-          </span>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={l.imageUrls[0] || '/food_bread.png'} alt={l.title} className="w-full h-full object-cover" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-extrabold text-neutral-900 truncate">{l.title}</h3>
-              {offer.delivery.distanceKm != null && (
-                <p className="text-xs text-neutral-500">~{offer.delivery.distanceKm} km</p>
-              )}
-            </div>
-          </div>
-          <div className="space-y-2 text-sm">
-            <p className="flex items-start gap-2">
-              <span className="material-symbols-outlined text-emerald-600 text-[18px]">store</span>
-              <span className="text-neutral-700"><b>Lấy:</b> {l.pickupAddress}</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="material-symbols-outlined text-rose-600 text-[18px]">location_on</span>
-              <span className="text-neutral-700"><b>Giao:</b> {offer.delivery.reservation.receiver?.address ?? '—'}</span>
-            </p>
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button
-              onClick={onReject}
-              disabled={busy}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm border border-neutral-200 text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
-            >
-              Từ chối
-            </button>
-            <button
-              onClick={onAccept}
-              disabled={busy}
-              className="flex-1 py-3 rounded-2xl font-bold text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              Nhận đơn
-            </button>
-          </div>
-          <button onClick={onClose} className="w-full text-center text-xs text-neutral-400 hover:text-neutral-600">
-            Để sau (xem trong danh sách)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function DeliveriesPage() {
   const { data: me, isLoading: meLoading } = useVolunteerMe();
@@ -178,15 +86,13 @@ export default function DeliveriesPage() {
   const failDelivery = useFailDelivery();
   const updateMyLocation = useUpdateMyLocation();
 
-  // Popup nhận đơn realtime: nghe socket + hiện đơn mới nhất chưa bị bỏ qua.
-  const canReceive = !!me?.isAvailable && !active;
-  useOfferSocket(canReceive);
-  const [dismissedOffers, setDismissedOffers] = useState<Set<string>>(new Set());
-  const popupOffer = canReceive ? offers?.find((o) => !dismissedOffers.has(o.id)) : undefined;
-  const dismissOffer = (id: string) => setDismissedOffers((prev) => new Set(prev).add(id));
+  // Popup nhận đơn realtime giờ do ShipperOfferWatcher (mount ở layout) đảm nhiệm
+  // trên MỌI trang — trang này chỉ hiển thị danh sách offer bên dưới.
 
   // Khi đang giao đơn → theo dõi GPS liên tục và đẩy vị trí để người nhận xem trực tiếp.
   // watchPosition tự bắn khi tài xế di chuyển; throttle gửi mạng tối đa 1 lần / 10s.
+  // liveLoc: vị trí GPS tức thì (không throttle) để marker shipper trên bản đồ tự di chuyển.
+  const [liveLoc, setLiveLoc] = useState<{ lng: number; lat: number } | null>(null);
   const activeId = active?.id;
   useEffect(() => {
     if (!activeId || typeof navigator === 'undefined' || !navigator.geolocation) return;
@@ -194,6 +100,7 @@ export default function DeliveriesPage() {
     let lastSent = 0;
     const send = (lng: number, lat: number, force = false) => {
       if (cancelled) return;
+      setLiveLoc({ lng, lat }); // cập nhật marker trên bản đồ ngay, không chờ throttle
       const now = Date.now();
       if (!force && now - lastSent < 10_000) return; // tiết kiệm pin/băng thông
       lastSent = now;
@@ -217,6 +124,7 @@ export default function DeliveriesPage() {
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [pendingNext, setPendingNext] = useState<string | null>(null);
+  const [qrScanOpen, setQrScanOpen] = useState(false); // modal quét QR người nhận (bước hoàn tất)
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
@@ -279,11 +187,12 @@ export default function DeliveriesPage() {
     }
   }
 
-  async function advance(d: ActiveDelivery, photo?: File) {
+  async function advance(d: ActiveDelivery, photo?: File, qrToken?: string) {
     const step = NEXT_STATUS[d.status];
     if (!step) return;
     try {
-      await updateStatus.mutateAsync({ deliveryId: d.id, status: step.next, photo });
+      await updateStatus.mutateAsync({ deliveryId: d.id, status: step.next, photo, qrToken });
+      setQrScanOpen(false);
       toast.success(step.next === 'delivered' ? 'Giao hàng hoàn tất! +5 điểm cống hiến 🎉' : 'Đã cập nhật trạng thái');
     } catch (err: unknown) {
       const msg =
@@ -296,7 +205,10 @@ export default function DeliveriesPage() {
   function onAdvanceClick(d: ActiveDelivery) {
     const step = NEXT_STATUS[d.status];
     if (!step) return;
-    if (step.needsPhoto) {
+    if (step.needsQr) {
+      // Hoàn tất giao: quét mã QR trên màn hình người nhận để xác nhận đúng người
+      setQrScanOpen(true);
+    } else if (step.needsPhoto) {
       setPendingNext(d.id);
       photoInputRef.current?.click();
     } else {
@@ -314,21 +226,14 @@ export default function DeliveriesPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50/50 pb-24">
-      {popupOffer && (
-        <OfferPopup
-          offer={popupOffer}
-          busy={acceptOffer.isPending || rejectOffer.isPending}
-          onAccept={() =>
-            acceptOffer.mutate(popupOffer.deliveryId, {
-              onSuccess: () => toast.success('Đã nhận đơn! Bắt đầu đến lấy hàng.'),
-              onError: () => toast.error('Đơn đã được người khác nhận hoặc đã hết hạn.'),
-            })
-          }
-          onReject={() => {
-            rejectOffer.mutate({ deliveryId: popupOffer.deliveryId });
-            dismissOffer(popupOffer.id);
-          }}
-          onClose={() => dismissOffer(popupOffer.id)}
+      {/* Modal quét mã QR người nhận — bước hoàn tất giao hàng */}
+      {qrScanOpen && active && (
+        <QrScanModal
+          title="Quét mã của người nhận"
+          hint={`Nhờ ${active.reservation.receiver.user.fullName} mở trang theo dõi đơn và đưa mã QR (hoặc bấm copy mã) để xác nhận bàn giao đúng người.`}
+          busy={updateStatus.isPending}
+          onResult={(token) => void advance(active, undefined, token)}
+          onClose={() => setQrScanOpen(false)}
         />
       )}
       <div className="max-w-5xl mx-auto px-6 md:px-12 py-10 space-y-8">
@@ -494,19 +399,24 @@ export default function DeliveriesPage() {
                 )}
               </div>
 
-              {/* Bản đồ lộ trình lấy → giao */}
-              {active.coords?.pickupLat != null &&
-                active.coords?.pickupLng != null &&
-                active.coords?.deliveryLat != null &&
-                active.coords?.deliveryLng != null && (
-                  <div className="h-56 rounded-2xl overflow-hidden border border-neutral-150 mb-5">
-                    <DeliveryRouteMap
-                      pickup={{ lat: active.coords.pickupLat, lng: active.coords.pickupLng }}
-                      delivery={{ lat: active.coords.deliveryLat, lng: active.coords.deliveryLng }}
-                      shipper={me?.currentLocation ?? null}
-                    />
-                  </div>
-                )}
+              {/* Bản đồ lộ trình lấy → giao (marker shipper chạy theo GPS trực tiếp) */}
+              {(active.coords?.pickupLat != null || active.coords?.deliveryLat != null || liveLoc || me?.currentLocation) && (
+                <div className="h-56 rounded-2xl overflow-hidden border border-neutral-150 mb-5">
+                  <DeliveryRouteMap
+                    pickup={
+                      active.coords?.pickupLat != null && active.coords?.pickupLng != null
+                        ? { lat: active.coords.pickupLat, lng: active.coords.pickupLng }
+                        : null
+                    }
+                    delivery={
+                      active.coords?.deliveryLat != null && active.coords?.deliveryLng != null
+                        ? { lat: active.coords.deliveryLat, lng: active.coords.deliveryLng }
+                        : null
+                    }
+                    shipper={liveLoc ?? me?.currentLocation ?? null}
+                  />
+                </div>
+              )}
 
               {/* Điều hướng tới điểm đến hiện tại */}
               {(() => {
@@ -516,9 +426,10 @@ export default function DeliveriesPage() {
                 const tLng = toPickup ? c?.pickupLng : c?.deliveryLng;
                 const label = toPickup ? 'Điểm lấy hàng' : 'Điểm giao hàng';
                 const addr = toPickup ? active.reservation.listing.pickupAddress : active.reservation.receiver?.address;
+                const myLoc = liveLoc ?? me?.currentLocation;
                 const fromMe =
-                  me?.currentLocation && tLat != null && tLng != null
-                    ? haversineKm(me.currentLocation, { lat: tLat, lng: tLng })
+                  myLoc && tLat != null && tLng != null
+                    ? haversineKm(myLoc, { lat: tLat, lng: tLng })
                     : null;
                 return (
                   <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-5">
@@ -558,7 +469,11 @@ export default function DeliveriesPage() {
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[20px]">
-                        {NEXT_STATUS[active.status].needsPhoto ? 'photo_camera' : 'arrow_forward'}
+                        {NEXT_STATUS[active.status].needsQr
+                          ? 'qr_code_scanner'
+                          : NEXT_STATUS[active.status].needsPhoto
+                            ? 'photo_camera'
+                            : 'arrow_forward'}
                       </span>
                       {NEXT_STATUS[active.status].label}
                     </>

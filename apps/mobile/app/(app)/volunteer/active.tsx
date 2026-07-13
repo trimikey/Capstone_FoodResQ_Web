@@ -15,6 +15,7 @@ import {
   useUpdateDeliveryStatus,
   useFailDelivery,
   useCancelAssignment,
+  useShipperLocationBroadcast,
   type ActiveDelivery,
   type DeliveryCoords,
 } from '@/hooks/useDeliveries';

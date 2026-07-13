@@ -1,0 +1,7 @@
+Volunteer->VolunteerProfileScreen:open profile
+    VolunteerProfileScreen->VolunteersController:GET /volunteers/me
+        VolunteersController->VolunteersService:getMe(userId)
+            VolunteersService->PrismaService:volunteerProfile.findUnique include specializations
+                PrismaService->Database:SELECT volunteer_profiles JOIN volunteer_specializations
+            VolunteersService->PrismaService:queryRaw current_location (ST_X, ST_Y)
+                PrismaService->Database:SELECT volunteer_profiles geography

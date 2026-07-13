@@ -9,6 +9,7 @@ import {
   useMyOffers,
   useAcceptOffer,
   useRejectOffer,
+  useDeliveryOfferSocket,
   type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -40,6 +41,7 @@ function countdown(expiresAt: string, now: number): string {
  */
 export default function VolunteerOffersScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
+  useDeliveryOfferSocket(); // nhận lời mời realtime, không chờ poll 15s
   const accept = useAcceptOffer();
   const reject = useRejectOffer();
   const [now, setNow] = useState(() => Date.now());

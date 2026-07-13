@@ -1,0 +1,5 @@
+User->RecipeDetailScreen:open recipe
+    RecipeDetailScreen->RecipesController:GET /recipes/:id
+        RecipesController->RecipesService:findOne(id)
+            RecipesService->PrismaService:recipe.findFirst include ingredients, author
+                PrismaService->Database:SELECT recipes JOIN recipe_ingredients

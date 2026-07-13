@@ -71,7 +71,59 @@ export class UsersService {
       if (rp) receiver = { isCharityOrg: rp.isCharityOrg, organizationName: rp.organizationName };
     }
 
-    return { ...user, stats, volunteer, receiver };
+    // Nếu là NCC → kèm địa chỉ + toạ độ cửa hàng (đã đăng ký) để FE điền sẵn khi tạo listing
+    let provider: {
+      id: string;
+      businessName: string;
+      businessType: string;
+      address: string;
+      contactPhone: string | null;
+      taxCode: string | null;
+      isVerified: boolean;
+      verificationStatus: string;
+      lng: number | null;
+      lat: number | null;
+    } | null = null;
+    if (user.role === 'provider') {
+      const rows = await this.prisma.$queryRaw<
+        {
+          id: string;
+          business_name: string;
+          business_type: string;
+          address: string;
+          contact_phone: string | null;
+          tax_code: string | null;
+          is_verified: boolean;
+          verification_status: string;
+          lng: number | null;
+          lat: number | null;
+        }[]
+      >(Prisma.sql`
+        SELECT id, business_name, business_type, address, contact_phone, tax_code,
+               is_verified, verification_status::text AS verification_status,
+               ST_X(location::geometry) AS lng,
+               ST_Y(location::geometry) AS lat
+        FROM provider_profiles
+        WHERE user_id = ${userId}::uuid
+      `);
+      const r = rows[0];
+      if (r) {
+        provider = {
+          id: r.id,
+          businessName: r.business_name,
+          businessType: r.business_type,
+          address: r.address,
+          contactPhone: r.contact_phone,
+          taxCode: r.tax_code,
+          isVerified: r.is_verified,
+          verificationStatus: r.verification_status,
+          lng: r.lng !== null ? Number(r.lng) : null,
+          lat: r.lat !== null ? Number(r.lat) : null,
+        };
+      }
+    }
+
+    return { ...user, stats, volunteer, receiver, provider };
   }
 
   /** Cập nhật hồ sơ cơ bản: họ tên, số điện thoại, avatar. */
@@ -141,6 +193,52 @@ export class UsersService {
       completedCount: Number(row?.completed_count ?? 0),
       cancelledCount: Number(row?.cancelled_count ?? 0),
       providersHelped: Number(row?.providers_helped ?? 0),
+    };
+  }
+
+  /**
+   * Lịch sử điều chỉnh trust score (mới nhất trước), kèm progress đề xuất
+   * nếu user đang ở trạng thái bị hạn chế/khoá.
+   */
+  async getTrustHistory(userId: string, limit = 30) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { trustScore: true, status: true },
+    });
+    if (!current) throw new NotFoundException('Không tìm thấy người dùng.');
+
+    const items = await this.prisma.trustScoreHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        delta: true,
+        reason: true,
+        referenceType: true,
+        referenceId: true,
+        scoreBefore: true,
+        scoreAfter: true,
+        createdAt: true,
+      },
+    });
+
+    // Khuyến nghị phục hồi: +2 mỗi đơn hoàn tất → cần bao nhiêu đơn để thoát suspended
+    const RESTRICT_THRESHOLD = 60;
+    const pointsNeeded =
+      current.trustScore < RESTRICT_THRESHOLD ? RESTRICT_THRESHOLD - current.trustScore + 1 : 0;
+    const rescuesNeeded = pointsNeeded > 0 ? Math.ceil(pointsNeeded / 2) : 0;
+
+    return {
+      score: current.trustScore,
+      status: current.status,
+      items,
+      recommendation:
+        current.status === 'suspended' && rescuesNeeded > 0
+          ? `Hoàn tất ${rescuesNeeded} đơn thành công để thoát trạng thái bị hạn chế.`
+          : current.status === 'banned'
+            ? 'Tài khoản đã bị khoá vì điểm tin cậy quá thấp. Liên hệ hỗ trợ để được xem xét.'
+            : null,
     };
   }
 

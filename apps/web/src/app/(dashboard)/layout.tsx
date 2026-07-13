@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
+import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 
 // Bottom nav (mobile) theo vai trò
 function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
@@ -78,6 +79,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex flex-col min-h-screen bg-[#fcf9f2]">
+      {/* Popup nhận đơn giao toàn cục cho shipper (hiện ở mọi trang) */}
+      {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
+
       {/* Desktop Top Header replaced with PublicHeader */}
       {!pathname.startsWith('/admin') && (
         <div className="hidden md:block">

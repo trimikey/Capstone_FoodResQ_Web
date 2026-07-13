@@ -1,0 +1,93 @@
+@startuml seq-reservation-create-styled
+title 3.x.x Create Reservation Sequence Diagram
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 12
+skinparam BoxPadding 10
+skinparam sequence {
+  LifeLineBorderColor #4A90D9
+  ParticipantBackgroundColor #CFE8FF
+  ParticipantBorderColor #2E6DA4
+  ActorBorderColor #2E6DA4
+  ArrowColor #333333
+}
+
+actor "Receiver" as User
+participant "ReservationScreen" as Screen
+participant "ReservationsController" as Ctrl
+participant "ReservationsService" as Svc
+participant "SystemConfigService" as Cfg
+participant "Redlock" as Lock
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open Reserve form
+activate Screen
+Screen -> Ctrl : POST /reservations (CreateReservationDto)
+activate Ctrl
+Ctrl -> Svc : create(receiverUserId, dto)
+activate Svc
+
+Svc -> Repo : receiverProfile.findUnique(userId)
+activate Repo
+Repo -> DB : SELECT receiver_profiles
+DB --> Repo : row
+Repo --> Svc : receiverProfile
+deactivate Repo
+
+Svc -> Cfg : getNumber(MAX_RESERVATIONS_PER_DAY)
+activate Cfg
+Cfg --> Svc : maxPerDay
+deactivate Cfg
+
+alt reservationsToday >= maxPerDay
+  Svc --> Ctrl : 400 "Daily limit reached"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else within daily limit
+  Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
+  activate Lock
+  Lock --> Svc : lock
+  deactivate Lock
+
+  Svc -> Repo : $queryRaw SELECT listing (qty, status, max)
+  activate Repo
+  Repo -> DB : SELECT food_listings
+  DB --> Repo : listingRow
+  Repo --> Svc : listingRow
+  deactivate Repo
+
+  alt listing invalid / not enough qty / duplicate active reservation
+    Svc -> Lock : release()
+    Svc --> Ctrl : 400 / 409 error
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else valid & available
+    Svc -> Cfg : getNumber(QR_VALIDITY_MINUTES)
+    activate Cfg
+    Cfg --> Svc : qrValidMinutes
+    deactivate Cfg
+
+    Svc -> Repo : $transaction( decrement qty, INSERT reservation, counter+1 )
+    activate Repo
+    Repo -> DB : UPDATE food_listings / INSERT reservations / UPDATE receiver_profiles
+    DB --> Repo : { id, qr_token }
+    Repo --> Svc : reservation
+    deactivate Repo
+
+    opt dto.requestDelivery = true
+      Svc -> Svc : createDeliveryAsync(reservationId, listingId)
+    end
+
+    Svc -> Lock : release()
+    Svc --> Ctrl : { reservationId, qrToken, qrExpiresAt }
+    Ctrl --> Screen : return data
+    Screen --> User : show QR code
+  end
+end
+
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

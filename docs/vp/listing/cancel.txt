@@ -1,0 +1,9 @@
+Provider->ProviderScreen:tap Cancel (reason)
+    ProviderScreen->ListingsController:PATCH /listings/:id/cancel
+        ListingsController->ListingsService:cancel(listingId, userId, reason)
+            ListingsService->PrismaService:providerProfile.findUnique(userId)
+                PrismaService->Database:SELECT provider_profiles
+            ListingsService->PrismaService:foodListing.findUnique(listingId)
+                PrismaService->Database:SELECT food_listings
+            ListingsService->PrismaService:foodListing.update(status=cancelled, cancelledReason)
+                PrismaService->Database:UPDATE food_listings
