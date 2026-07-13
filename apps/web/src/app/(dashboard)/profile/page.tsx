@@ -141,6 +141,7 @@ export default function ProfilePage() {
 
   const roleLabel = me.receiver?.isCharityOrg ? 'Tổ chức từ thiện' : (ROLE_META[me.role]?.label ?? me.role);
   const meta = COLOR_MAP[ROLE_META[me.role as UserRoleType]?.color ?? 'emerald'];
+  const providerAddress = me.provider?.address?.trim() || 'Chưa cập nhật địa chỉ';
 
   const stats = [
     { label: 'Đơn hoàn tất', value: me.stats.completedCount, icon: 'check_circle', accent: 'emerald' },
@@ -332,6 +333,17 @@ export default function ProfilePage() {
                     <p className="text-sm font-bold text-neutral-800">{me.phone ?? 'Chưa cập nhật'}</p>
                   </div>
                 </div>
+                {me.provider && (
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-emerald-600 text-[20px]">place</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Địa chỉ cửa hàng</p>
+                      <p className="text-sm font-bold text-neutral-800 leading-relaxed">{providerAddress}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
