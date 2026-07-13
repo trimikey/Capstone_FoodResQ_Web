@@ -136,6 +136,7 @@ export default function ProviderListingsPage() {
   const providerProfile = me?.provider ?? null;
   const providerVerified = providerProfile?.verificationStatus === 'approved';
   const providerHasLocation = !!(providerProfile && providerProfile.lng != null && providerProfile.lat != null);
+  const providerAddress = providerProfile?.address?.trim() || 'Chưa cập nhật địa chỉ';
 
   /** null = đóng modal; non-null = đang mở modal (chế độ tạo hoặc sửa). */
   type FormMode =
@@ -307,6 +308,31 @@ export default function ProviderListingsPage() {
             Đăng tin mới
           </button>
         </div>
+
+        {providerProfile && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-emerald-700 text-[26px]">storefront</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] text-neutral-400 font-bold uppercase tracking-wider">Cửa hàng đã đăng ký</p>
+                <h2 className="text-lg font-extrabold text-neutral-900 truncate">{providerProfile.businessName}</h2>
+                <div className="mt-2 flex items-start gap-2 text-sm text-neutral-600">
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px] mt-0.5">place</span>
+                  <span className="font-semibold leading-relaxed">{providerAddress}</span>
+                </div>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase border ${
+                providerVerified
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                {providerVerified ? 'Đã duyệt' : providerProfile.verificationStatus}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Banner trạng thái duyệt NCC */}
         {providerProfile && !providerVerified && (
