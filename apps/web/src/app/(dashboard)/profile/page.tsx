@@ -1,13 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
+import { reverseGeocode } from '@/lib/geocode';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
+
+const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse" />,
+});
 
 // Ảnh lưu ở /uploads trên API server → ghép với origin (bỏ đuôi /api/v1)
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
@@ -71,14 +78,57 @@ export default function ProfilePage() {
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
+  // Toạ độ cửa hàng (provider) / điểm giao (receiver) — chỉnh bằng GPS hoặc kéo ghim
+  const [editCoords, setEditCoords] = useState<{ lng: number; lat: number } | null>(null);
+  const [locating, setLocating] = useState(false);
   const [showTrustHistory, setShowTrustHistory] = useState(false);
+
+  // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
+  const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
 
   useEffect(() => {
     if (me) {
-      setEditForm({ fullName: me.fullName, phone: me.phone ?? '', avatarUrl: me.avatarUrl ?? '' });
+      const address = me.provider?.address ?? me.receiver?.address ?? '';
+      const lng = me.provider?.lng ?? me.receiver?.lng ?? null;
+      const lat = me.provider?.lat ?? me.receiver?.lat ?? null;
+      setEditForm({ fullName: me.fullName, phone: me.phone ?? '', avatarUrl: me.avatarUrl ?? '', address });
+      setEditCoords(lng != null && lat != null ? { lng, lat } : null);
     }
   }, [me]);
+
+  // Lấy vị trí hiện tại bằng GPS → cập nhật ghim + tự điền địa chỉ (reverse geocode)
+  const handleUseGps = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast.error('Trình duyệt không hỗ trợ định vị.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lng = pos.coords.longitude;
+        const lat = pos.coords.latitude;
+        setEditCoords({ lng, lat });
+        const address = await reverseGeocode(lat, lng);
+        // Ô địa chỉ chỉ đọc → luôn phải khớp ghim; tra không được tên thì dùng toạ độ
+        setEditForm((prev) => ({ ...prev, address: address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}` }));
+        setLocating(false);
+      },
+      () => {
+        toast.error('Không lấy được vị trí. Hãy cho phép quyền truy cập vị trí.');
+        setLocating(false);
+      },
+      { timeout: 10_000, enableHighAccuracy: true },
+    );
+  };
+
+  // Kéo ghim / bấm trên bản đồ → cập nhật toạ độ + gợi ý địa chỉ
+  const handleMapPick = async (lng: number, lat: number) => {
+    setEditCoords({ lng, lat });
+    const address = await reverseGeocode(lat, lng);
+    // Ô địa chỉ chỉ đọc → luôn phải khớp ghim; tra không được tên thì dùng toạ độ
+    setEditForm((prev) => ({ ...prev, address: address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}` }));
+  };
 
   const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
 
@@ -89,6 +139,8 @@ export default function ProfilePage() {
         fullName: editForm.fullName,
         phone: editForm.phone || undefined,
         avatarUrl: editForm.avatarUrl || undefined,
+        ...(hasLocationSection && editForm.address.trim() ? { address: editForm.address.trim() } : {}),
+        ...(hasLocationSection && editCoords ? { lng: editCoords.lng, lat: editCoords.lat } : {}),
       });
       setIsEditModalOpen(false);
       toast.success('Cập nhật hồ sơ cá nhân thành công!');
@@ -657,7 +709,7 @@ export default function ProfilePage() {
       {/* ── EDIT PROFILE MODAL ─────────────────────────────── */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
               <h3 className="font-extrabold text-neutral-900 text-lg">Chỉnh sửa hồ sơ</h3>
               <button
@@ -712,6 +764,56 @@ export default function ProfilePage() {
                   className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
+
+              {/* Địa chỉ + vị trí: provider = vị trí cửa hàng (điểm lấy hàng), receiver = điểm giao mặc định */}
+              {hasLocationSection && (
+                <div className="space-y-1.5 text-left">
+                  <label className="text-xs text-neutral-450 font-bold uppercase">
+                    {me.role === UserRole.PROVIDER ? 'Địa chỉ cửa hàng' : 'Địa chỉ nhận hàng'}
+                  </label>
+                  <div className="flex gap-2">
+                    {/* Chỉ đọc: địa chỉ luôn lấy theo ghim (reverse geocode) — không cho gõ tay
+                        để chữ và toạ độ không lệch nhau. Chỉnh bằng nút GPS hoặc kéo ghim. */}
+                    <input
+                      type="text"
+                      readOnly
+                      value={editForm.address}
+                      placeholder="Bấm nút định vị hoặc ghim trên bản đồ"
+                      className="flex-1 border border-neutral-200 bg-neutral-50 rounded-xl p-3 focus:outline-none text-sm font-semibold cursor-default"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleUseGps}
+                      disabled={locating}
+                      title="Dùng vị trí hiện tại"
+                      className="shrink-0 px-3 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                    >
+                      <span className={`material-symbols-outlined text-[20px] ${locating ? 'animate-pulse' : ''}`}>
+                        my_location
+                      </span>
+                    </button>
+                  </div>
+                  {editCoords ? (
+                    <>
+                      <div className="h-48 rounded-xl overflow-hidden border border-neutral-200">
+                        <LocationPicker
+                          lng={editCoords.lng}
+                          lat={editCoords.lat}
+                          onPick={(lng, lat) => void handleMapPick(lng, lat)}
+                        />
+                      </div>
+                      <p className="text-[11px] text-neutral-400">
+                        Kéo ghim hoặc bấm trên bản đồ để chỉnh vị trí chính xác ·{' '}
+                        {editCoords.lat.toFixed(6)}, {editCoords.lng.toFixed(6)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-amber-600 font-semibold">
+                      Chưa có vị trí trên bản đồ — bấm nút định vị để lấy vị trí hiện tại.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* eKYC status in modal */}
               {isFaceRole && (

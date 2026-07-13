@@ -110,6 +110,9 @@ export function useMyOffers(enabled = true) {
     queryFn: fetchMyOffers,
     enabled,
     refetchInterval: 15_000, // poll nhẹ để bắt offer mới
+    // Vẫn poll khi tab chạy nền — shipper thường để tab background trong lúc làm
+    // việc khác; mặc định React Query dừng poll nền khiến popup không nổ kịp.
+    refetchIntervalInBackground: true,
   });
 }
 export interface ShipperStats {
@@ -216,7 +219,11 @@ export function useRejectOffer() {
 }
 
 export interface DeliveryTracking {
+  /** ID đơn giao hàng — dùng để gọi API hủy tìm shipper */
+  deliveryId: string;
   status: ActiveDelivery['status'] | 'pending_assignment' | 'failed';
+  /** Lý do thất bại (vd: không có tình nguyện viên nào nhận) — chỉ có khi status=failed. */
+  failedReason: string | null;
   distanceKm: number | null;
   listingTitle: string;
   pickupAddress: string;
@@ -255,8 +262,20 @@ export function useDeliveryTracking(reservationId: string, enabled: boolean) {
         void qc.invalidateQueries({ queryKey: ['deliveries', 'track', reservationId] });
       }
     });
+    // Hết 4ph30 không ai nhận → BE bắn sự kiện này; refetch ngay để hiện thông báo đặt lại
+    socket.on('delivery:unassigned', (p: { reservationId: string }) => {
+      if (p.reservationId !== reservationId) return;
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'track', reservationId] });
+    });
+    // Shipper vừa nhận đơn → refetch ngay để lấy tên/SĐT shipper
+    socket.on('delivery:assigned', (p: { reservationId: string }) => {
+      if (p.reservationId !== reservationId) return;
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'track', reservationId] });
+    });
     return () => {
       socket.off('delivery:location');
+      socket.off('delivery:unassigned');
+      socket.off('delivery:assigned');
       socket.disconnect();
     };
   }, [enabled, reservationId, accessToken, qc]);
@@ -280,6 +299,19 @@ export function useCancelDelivery() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['deliveries'] });
       void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
+    },
+  });
+}
+
+/** Người nhận hủy tìm shipper → chuyển sang tự đến lấy */
+export function useCancelDeliverySearch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { deliveryId: string }) =>
+      (await api.post(`/deliveries/${params.deliveryId}/receiver-cancel`)).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'track'] });
+      void qc.invalidateQueries({ queryKey: ['reservations'] });
     },
   });
 }
