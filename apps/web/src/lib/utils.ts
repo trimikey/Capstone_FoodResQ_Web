@@ -47,8 +47,76 @@ export function formatRelativeTime(date: string | Date) {
 }
 
 /** Trích thông điệp lỗi từ response API (axios) — fallback nếu không có. */
+const FIELD_LABELS: Record<string, string> = {
+  address: 'địa chỉ',
+  lng: 'kinh độ',
+  lat: 'vĩ độ',
+  avatarUrl: 'ảnh đại diện',
+  fullName: 'họ và tên',
+  phone: 'số điện thoại',
+  email: 'email',
+  password: 'mật khẩu',
+};
+
+function fieldLabel(field: string): string {
+  return FIELD_LABELS[field] ?? `trường "${field}"`;
+}
+
+export function translateApiMessage(message: string): string {
+  const parts = message
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const translated = parts.map((part) => {
+    const forbidden = /^property ([\w.]+) should not exist$/.exec(part);
+    if (forbidden) return `${fieldLabel(forbidden[1])} không được hỗ trợ ở thao tác này.`;
+
+    const minLength = /^(\w+) must be longer than or equal to (\d+) characters$/.exec(part);
+    if (minLength) return `${fieldLabel(minLength[1])} phải có ít nhất ${minLength[2]} ký tự.`;
+
+    const maxLength = /^(\w+) must be shorter than or equal to (\d+) characters$/.exec(part);
+    if (maxLength) return `${fieldLabel(maxLength[1])} không được vượt quá ${maxLength[2]} ký tự.`;
+
+    const isString = /^(\w+) must be a string$/.exec(part);
+    if (isString) return `${fieldLabel(isString[1])} phải là chuỗi ký tự.`;
+
+    const isNumber = /^(\w+) must be a number/.exec(part);
+    if (isNumber) return `${fieldLabel(isNumber[1])} phải là một số hợp lệ.`;
+
+    if (part === 'Phone must be a valid Vietnamese mobile number') {
+      return 'Số điện thoại không hợp lệ. Vui lòng nhập số di động Việt Nam.';
+    }
+    if (part === 'Password must contain at least one uppercase letter and one number') {
+      return 'Mật khẩu phải có ít nhất một chữ hoa và một chữ số.';
+    }
+    if (part === 'avatarUrl must be an http(s) URL or an uploaded /uploads path') {
+      return 'Ảnh đại diện phải là URL hợp lệ hoặc ảnh đã tải lên hệ thống.';
+    }
+    if (part === 'Unauthorized') {
+      return 'Bạn cần đăng nhập để thực hiện thao tác này.';
+    }
+    if (part === 'Only JPEG, PNG or WebP images are allowed') {
+      return 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.';
+    }
+    if (part === 'File content does not match its image type') {
+      return 'Nội dung file không khớp với định dạng ảnh.';
+    }
+    if (part === 'Cannot decode image — file may be corrupted') {
+      return 'Không đọc được ảnh. File có thể đã bị lỗi.';
+    }
+    if (part === 'Face verification requires a JPEG or PNG photo') {
+      return 'Xác minh khuôn mặt cần ảnh JPEG hoặc PNG.';
+    }
+
+    return part;
+  });
+
+  return translated.join(', ');
+}
+
 export function errMsg(e: unknown, fallback: string): string {
-  return (
-    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback
-  );
+  const message =
+    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
+  return translateApiMessage(message);
 }

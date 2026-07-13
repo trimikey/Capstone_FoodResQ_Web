@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { translateApiMessage } from '@/lib/utils';
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1',
@@ -21,6 +22,10 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
+    const apiMessage = error.response?.data?.error?.message;
+    if (typeof apiMessage === 'string') {
+      error.response.data.error.message = translateApiMessage(apiMessage);
+    }
 
     if (error.response?.status !== 401 || original._retry) {
       return Promise.reject(error as Error);

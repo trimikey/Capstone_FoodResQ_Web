@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
+import { useUploadImage } from '@/hooks/useUploadImage';
 import { reverseGeocode } from '@/lib/geocode';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
@@ -68,10 +69,11 @@ const TRUST_REASON_LABEL: Record<string, string> = {
 };
 
 export default function ProfilePage() {
-  const { logout } = useAuthStore();
+  const { logout, setUser } = useAuthStore();
   const router = useRouter();
   const { data: me, isLoading, isError } = useMe();
   const updateMe = useUpdateMe();
+  const uploadAvatar = useUploadImage();
 
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
@@ -83,6 +85,7 @@ export default function ProfilePage() {
   const [editCoords, setEditCoords] = useState<{ lng: number; lat: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [showTrustHistory, setShowTrustHistory] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
   const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
@@ -131,16 +134,60 @@ export default function ProfilePage() {
   };
 
   const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
+  const editAvatarPreview = imgUrl(editForm.avatarUrl);
+
+  const openAvatarFilePicker = () => {
+    if (!uploadAvatar.isPending) {
+      avatarFileInputRef.current?.click();
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh đại diện không được vượt quá 5MB.');
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadAvatar.mutateAsync({ file, kind: 'avatar' });
+      setEditForm((prev) => ({ ...prev, avatarUrl }));
+      toast.success('Đã tải ảnh đại diện lên.');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Tải ảnh thất bại. Vui lòng thử lại.';
+      toast.error(msg);
+    }
+  };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateMe.mutateAsync({
+      const updatedMe = await updateMe.mutateAsync({
         fullName: editForm.fullName,
         phone: editForm.phone || undefined,
         avatarUrl: editForm.avatarUrl || undefined,
         ...(hasLocationSection && editForm.address.trim() ? { address: editForm.address.trim() } : {}),
         ...(hasLocationSection && editCoords ? { lng: editCoords.lng, lat: editCoords.lat } : {}),
+      });
+      setUser({
+        id: updatedMe.id,
+        email: updatedMe.email,
+        fullName: updatedMe.fullName,
+        role: updatedMe.role,
+        status: updatedMe.status,
+        trustScore: updatedMe.trustScore,
+        avatarUrl: updatedMe.avatarUrl,
       });
       setIsEditModalOpen(false);
       toast.success('Cập nhật hồ sơ cá nhân thành công!');
@@ -272,7 +319,7 @@ export default function ProfilePage() {
             <div className="relative shrink-0">
               <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white/30 overflow-hidden bg-white/10 shadow-2xl shadow-black/20">
                 {me.avatarUrl ? (
-                  <img src={me.avatarUrl} alt={me.fullName} className="w-full h-full object-cover" />
+                  <img src={imgUrl(me.avatarUrl) ?? ''} alt={me.fullName} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-emerald-600/40">
                     <span className="text-5xl md:text-6xl font-extrabold text-white">
@@ -757,12 +804,42 @@ export default function ProfilePage() {
               <div className="space-y-1.5 text-left">
                 <label className="text-xs text-neutral-450 font-bold uppercase">URL ảnh đại diện (tùy chọn)</label>
                 <input
-                  type="text"
-                  value={editForm.avatarUrl}
-                  placeholder="https://..."
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
                 />
+                <input
+                  type="text"
+                  value={uploadAvatar.isPending ? 'Đang tải ảnh lên...' : editForm.avatarUrl}
+                  placeholder="https://..."
+                  readOnly
+                  disabled={uploadAvatar.isPending}
+                  onClick={openAvatarFilePicker}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openAvatarFilePicker();
+                    }
+                  }}
+                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold cursor-pointer disabled:cursor-wait disabled:bg-neutral-50"
+                />
+                {editAvatarPreview && (
+                  <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
+                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                      <img src={editAvatarPreview} alt="Ảnh đại diện" className="w-full h-full object-cover" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openAvatarFilePicker}
+                      disabled={uploadAvatar.isPending}
+                      className="text-xs font-bold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+                    >
+                      Chọn ảnh khác
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Địa chỉ + vị trí: provider = vị trí cửa hàng (điểm lấy hàng), receiver = điểm giao mặc định */}
@@ -851,10 +928,10 @@ export default function ProfilePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={updateMe.isPending}
+                  disabled={updateMe.isPending || uploadAvatar.isPending}
                   className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50"
                 >
-                  {updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  {uploadAvatar.isPending ? 'Đang tải ảnh...' : updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </div>
             </form>
