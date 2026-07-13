@@ -1,41 +1,27 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Pressable,
-  Modal,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  TextInput,
-  Button,
-  Text,
-} from 'react-native-paper';
+import { StyleSheet, View } from 'react-native';
+import { Button, Text, TextInput } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema, ResetPasswordInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
 import { FadeInUp } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLow: '#f3f4f6',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#6c7a71',
-  outlineVariant: '#bbcabf',
-  success: '#10b981',
-};
+import {
+  AuthCard,
+  AuthField,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface ResetPasswordScreenProps {
   email: string;
   otp: string;
-  onSuccess?: (newPassword: string) => void;
+  onSuccess?: (newPassword: string) => void | Promise<void>;
   onBack?: () => void;
   isLoading?: boolean;
 }
@@ -47,9 +33,7 @@ export function ResetPasswordScreen({
   onBack,
   isLoading = false,
 }: ResetPasswordScreenProps) {
-  const insets = useSafeAreaInsets();
   const [showPassword, setShowPassword] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
   const {
@@ -68,358 +52,124 @@ export function ResetPasswordScreen({
   const password = watch('password');
   const confirmPassword = watch('confirmPassword');
 
-  const getPasswordStrength = (pwd: string): 'weak' | 'medium' | 'strong' => {
-    if (!pwd) return 'weak';
-    const hasUppercase = /[A-Z]/.test(pwd);
-    const hasNumber = /[0-9]/.test(pwd);
-    const isLongEnough = pwd.length >= 8;
-    if (hasUppercase && hasNumber && isLongEnough) return 'strong';
-    if ((hasUppercase || hasNumber) && pwd.length >= 6) return 'medium';
-    return 'weak';
-  };
+  const strength = getPasswordStrength(password);
+  const passwordsMatch = password === confirmPassword && password.length > 0;
+  const canSubmit = passwordsMatch && !isLoading;
 
-  const getStrengthColor = (strength: string) => {
-    switch (strength) {
-      case 'strong':
-        return COLORS.success;
-      case 'medium':
-        return '#f59e0b';
-      default:
-        return COLORS.error;
+  const onSubmit = async (data: ResetPasswordInput) => {
+    try {
+      clearError();
+      await onSuccess?.(data.password);
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
     }
   };
 
-  const strength = getPasswordStrength(password);
-  const passwordsMatch = password === confirmPassword && password.length > 0;
-
-  const onSubmit = (data: ResetPasswordInput) => {
-    clearError();
-    // Container gọi API /auth/reset-password với mật khẩu mới
-    onSuccess?.(data.password);
-  };
-
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.surface,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
+    <AuthScaffold
+      footer={
+        <Button
+          mode="contained"
+          onPress={handleSubmit(onSubmit)}
+          disabled={!canSubmit}
+          loading={isLoading}
+          buttonColor={COLORS.primary}
+          style={authStyles.primaryButton}
+          contentStyle={authStyles.buttonContent}
+          labelStyle={authStyles.buttonLabel}
+          accessibilityLabel="Lưu mật khẩu mới"
+          accessibilityState={{ disabled: !canSubmit }}
         >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-      </View>
+          {isLoading ? 'Đang cập nhật' : 'Lưu mật khẩu mới'}
+        </Button>
+      }
+    >
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Bảo mật tài khoản"
+      />
 
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: COLORS.background,
-          paddingHorizontal: 20,
-          paddingTop: 12,
-          paddingBottom: 8,
-        }}
-      >
-        <View style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: '700',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
-          >
-            Reset Password
-          </Text>
-          <Text
-            style={{
-              fontSize: 14,
-              color: COLORS.onSurfaceVariant,
-              lineHeight: 20,
-            }}
-          >
-            Create a new password for your account. Make sure it's strong and unique.
-          </Text>
-        </View>
+      <AuthIntro
+        icon="lock-reset"
+        eyebrow="Mật khẩu mới"
+        title="Tạo mật khẩu an toàn"
+        description={
+          <>
+            Tài khoản <Text style={styles.emailText}>{email}</Text> đã được xác thực bằng mã OTP.
+          </>
+        }
+      />
 
-        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
-          >
-            New Password
-          </Text>
-          <Controller
-            control={control}
-            name="password"
-            render={({ field: { onChange, value } }) => (
-              <TextInput
-                mode="outlined"
-                label="Enter new password"
-                placeholder="••••••••"
-                value={value}
-                onChangeText={onChange}
-                secureTextEntry={!showPassword}
-                editable={!isLoading}
-                left={
-                  <TextInput.Icon icon="lock" color={COLORS.outlineVariant} />
-                }
-                right={
-                  <TextInput.Icon
-                    icon={showPassword ? 'eye-off' : 'eye'}
-                    onPress={() => setShowPassword(!showPassword)}
-                    color={COLORS.outlineVariant}
-                  />
-                }
-                style={{
-                  backgroundColor: COLORS.surfaceContainerLow,
-                }}
-                outlineColor={COLORS.outline}
-                activeOutlineColor={COLORS.primary}
-                error={!!errors.password}
-              />
-            )}
-          />
-          {errors.password && (
-            <Text
-              style={{
-                fontSize: 12,
-                color: COLORS.error,
-                marginTop: 4,
-              }}
-            >
-              {errors.password.message}
-            </Text>
-          )}
-
-          {password && (
-            <View style={{ marginTop: 12 }}>
-              <View
-                style={{
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: getStrengthColor(strength),
-                  marginBottom: 8,
-                }}
-              />
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: getStrengthColor(strength),
-                  fontWeight: '600',
-                }}
-              >
-                {strength === 'strong'
-                  ? '✓ Strong password'
-                  : strength === 'medium'
-                  ? '○ Medium strength'
-                  : '✗ Weak password'}
-              </Text>
-              <RequirementItem text="At least 6 characters" met={password.length >= 6} />
-              <RequirementItem text="Uppercase letter (A-Z)" met={/[A-Z]/.test(password)} />
-              <RequirementItem text="Number (0-9)" met={/[0-9]/.test(password)} />
-            </View>
-          )}
-        </FadeInUp>
-
-        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
-          >
-            Confirm Password
-          </Text>
-          <Controller
-            control={control}
-            name="confirmPassword"
-            render={({ field: { onChange, value } }) => (
-              <TextInput
-                mode="outlined"
-                label="Confirm password"
-                placeholder="••••••••"
-                value={value}
-                onChangeText={onChange}
-                secureTextEntry={!showPassword}
-                editable={!isLoading}
-                left={
-                  <TextInput.Icon icon="lock-reset" color={COLORS.outlineVariant} />
-                }
-                style={{
-                  backgroundColor: COLORS.surfaceContainerLow,
-                }}
-                outlineColor={value && passwordsMatch ? COLORS.success : COLORS.outline}
-                activeOutlineColor={value && passwordsMatch ? COLORS.success : COLORS.primary}
-                error={!!errors.confirmPassword}
-              />
-            )}
-          />
-          {errors.confirmPassword && (
-            <Text
-              style={{
-                fontSize: 12,
-                color: COLORS.error,
-                marginTop: 4,
-              }}
-            >
-              {errors.confirmPassword.message}
-            </Text>
-          )}
-          {confirmPassword && passwordsMatch && (
-            <Text
-              style={{
-                fontSize: 12,
-                color: COLORS.success,
-                marginTop: 4,
-                fontWeight: '600',
-              }}
-            >
-              ✓ Passwords match
-            </Text>
-          )}
-        </FadeInUp>
-      </View>
-
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surface,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.outline,
-        }}
-      >
-        <FadeInUp delay={200}>
-          <Button
-            mode="contained"
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || !passwordsMatch}
-            loading={isLoading}
-            style={{
-              backgroundColor: COLORS.primaryContainer,
-              borderRadius: 16,
-              paddingVertical: 8,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Resetting...' : 'Reset Password'}
-          </Button>
-        </FadeInUp>
-      </View>
-
-      <Modal visible={showSuccessModal} transparent animationType="slide" onRequestClose={() => setShowSuccessModal(false)}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: COLORS.surface,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: 24,
-              paddingBottom: Math.max(24, insets.bottom),
-              gap: 16,
-            }}
-          >
-            <View
-              style={{
-                width: 48,
-                height: 4,
-                borderRadius: 2,
-                backgroundColor: COLORS.outlineVariant,
-                alignSelf: 'center',
-                marginBottom: 8,
-              }}
+      <FadeInUp delay={80}>
+        <AuthCard>
+          <AuthField label="Mật khẩu mới" error={errors.password?.message}>
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Mật khẩu mới"
+                  placeholder="Nhập mật khẩu mới"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry={!showPassword}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  editable={!isLoading}
+                  left={<TextInput.Icon icon="lock-outline" color={COLORS.onSurfaceVariant} />}
+                  right={
+                    <TextInput.Icon
+                      icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      onPress={() => setShowPassword((current) => !current)}
+                      color={COLORS.onSurfaceVariant}
+                      forceTextInputFocus={false}
+                    />
+                  }
+                  style={authStyles.input}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  error={!!errors.password}
+                  dense
+                />
+              )}
             />
-            <View style={{ alignItems: 'center', marginBottom: 8 }}>
-              <View
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 32,
-                  backgroundColor: `${COLORS.primaryContainer}20`,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ fontSize: 32 }}>✓</Text>
-              </View>
-            </View>
-            <View style={{ alignItems: 'center', gap: 8 }}>
-              <Text
-                style={{
-                  fontSize: 24,
-                  fontWeight: '600',
-                  color: COLORS.onSurface,
-                  textAlign: 'center',
-                }}
-              >
-                Password Reset!
-              </Text>
-              <Text
-                style={{
-                  fontSize: 14,
-                  color: COLORS.onSurfaceVariant,
-                  textAlign: 'center',
-                  lineHeight: 20,
-                }}
-              >
-                Your password has been successfully reset. You can now sign in with your new password.
-              </Text>
-            </View>
-            <Button
-              mode="outlined"
-              onPress={() => setShowSuccessModal(false)}
-              style={{
-                borderRadius: 16,
-                marginTop: 8,
-              }}
-              labelStyle={{
-                fontSize: 14,
-                fontWeight: '600',
-              }}
-            >
-              Back to Sign In
-            </Button>
-          </View>
-        </View>
-      </Modal>
+          </AuthField>
+
+          {password ? <PasswordStrength password={password} strength={strength} /> : null}
+
+          <AuthField label="Xác nhận mật khẩu" error={errors.confirmPassword?.message}>
+            <Controller
+              control={control}
+              name="confirmPassword"
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Nhập lại mật khẩu"
+                  placeholder="Nhập lại mật khẩu mới"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry={!showPassword}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  editable={!isLoading}
+                  left={<TextInput.Icon icon="lock-check-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
+                  outlineColor={value && passwordsMatch ? COLORS.success : COLORS.outline}
+                  activeOutlineColor={value && passwordsMatch ? COLORS.success : COLORS.primary}
+                  error={!!errors.confirmPassword}
+                  dense
+                />
+              )}
+            />
+            {confirmPassword && passwordsMatch ? (
+              <Text style={styles.matchText}>Mật khẩu xác nhận khớp.</Text>
+            ) : null}
+          </AuthField>
+        </AuthCard>
+      </FadeInUp>
 
       <ErrorToast
         visible={isVisible}
@@ -427,31 +177,120 @@ export function ResetPasswordScreen({
         onDismiss={clearError}
         duration={3000}
       />
+    </AuthScaffold>
+  );
+}
+
+function getPasswordStrength(pwd: string): 'weak' | 'medium' | 'strong' {
+  if (!pwd) return 'weak';
+  const hasUppercase = /[A-Z]/.test(pwd);
+  const hasNumber = /[0-9]/.test(pwd);
+  const isLongEnough = pwd.length >= 8;
+  if (hasUppercase && hasNumber && isLongEnough) return 'strong';
+  if ((hasUppercase || hasNumber) && pwd.length >= 6) return 'medium';
+  return 'weak';
+}
+
+function getStrengthColor(strength: 'weak' | 'medium' | 'strong') {
+  if (strength === 'strong') return COLORS.success;
+  if (strength === 'medium') return COLORS.warning;
+  return COLORS.error;
+}
+
+function PasswordStrength({
+  password,
+  strength,
+}: {
+  password: string;
+  strength: 'weak' | 'medium' | 'strong';
+}) {
+  const color = getStrengthColor(strength);
+  const label =
+    strength === 'strong' ? 'Mạnh' : strength === 'medium' ? 'Trung bình' : 'Yếu';
+
+  return (
+    <View style={styles.strengthBox}>
+      <View style={styles.strengthHeader}>
+        <Text style={[styles.strengthLabel, { color }]}>Độ mạnh: {label}</Text>
+        <View style={styles.strengthBars}>
+          {[0, 1, 2].map((index) => {
+            const active =
+              strength === 'strong' || (strength === 'medium' && index < 2) || index === 0;
+            return (
+              <View
+                key={index}
+                style={[styles.strengthBar, { backgroundColor: active ? color : COLORS.muted }]}
+              />
+            );
+          })}
+        </View>
+      </View>
+      <RequirementItem text="Tối thiểu 6 ký tự" met={password.length >= 6} />
+      <RequirementItem text="Có chữ hoa A-Z" met={/[A-Z]/.test(password)} />
+      <RequirementItem text="Có ít nhất một số" met={/[0-9]/.test(password)} />
     </View>
   );
 }
 
 function RequirementItem({ text, met }: { text: string; met: boolean }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <Text
-        style={{
-          fontSize: 16,
-          color: met ? COLORS.success : COLORS.error,
-        }}
-      >
-        {met ? '✓' : '✗'}
-      </Text>
-      <Text
-        style={{
-          fontSize: 12,
-          color: met ? COLORS.success : COLORS.onSurfaceVariant,
-        }}
-      >
-        {text}
-      </Text>
+    <View style={styles.requirementItem}>
+      <MaterialCommunityIcons
+        name={met ? 'check-circle' : 'circle-outline'}
+        size={17}
+        color={met ? COLORS.success : COLORS.onSurfaceVariant}
+      />
+      <Text style={[styles.requirementText, met && styles.requirementTextMet]}>{text}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  emailText: {
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  strengthBox: {
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerLow,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  strengthHeader: {
+    gap: spacing.sm,
+  },
+  strengthLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  strengthBars: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  strengthBar: {
+    flex: 1,
+    height: 5,
+    borderRadius: radius.pill,
+  },
+  requirementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  requirementText: {
+    fontSize: 12,
+    color: COLORS.onSurfaceVariant,
+  },
+  requirementTextMet: {
+    color: COLORS.success,
+    fontWeight: '700',
+  },
+  matchText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    color: COLORS.success,
+  },
+});
 
 export default ResetPasswordScreen;

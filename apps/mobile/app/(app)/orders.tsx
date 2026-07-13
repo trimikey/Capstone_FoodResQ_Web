@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Chip } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { useMyReservations, type MyReservation } from '@/hooks/useReservations';
@@ -9,12 +8,8 @@ import { MyReservationCard } from '@/components/MyReservationCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  outline: '#e5e7eb',
-};
+import { FilterPill } from '@/components/ui/FilterPill';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom status reservation thành nhóm dễ hiểu cho receiver. */
 type FilterKey = 'all' | 'confirmed' | 'picked_up' | 'completed' | 'cancelled';
@@ -38,7 +33,7 @@ export default function OrdersTab() {
   const { data, isLoading, isError, refetch, isRefetching } = useMyReservations();
   const [filter, setFilter] = useState<FilterKey>('all');
 
-  const all = data ?? [];
+  const all = useMemo(() => data ?? [], [data]);
   const items = useMemo(() => {
     const f = FILTERS.find((x) => x.key === filter)!;
     return all.filter((r) => f.match(r.status));
@@ -64,17 +59,13 @@ export default function OrdersTab() {
           const count =
             f.key === 'all' ? all.length : all.filter((r) => f.match(r.status)).length;
           return (
-            <Chip
+            <FilterPill
               key={f.key}
-              selected={filter === f.key}
-              showSelectedCheck={false}
+              active={filter === f.key}
               onPress={() => setFilter(f.key)}
-              style={[styles.chip, filter === f.key && styles.chipActive]}
-              textStyle={filter === f.key ? styles.chipTextActive : undefined}
-            >
-              {f.label}
-              {count > 0 ? ` (${count})` : ''}
-            </Chip>
+              label={f.label}
+              count={count}
+            />
           );
         })}
       </ScrollView>
@@ -101,8 +92,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
-  chip: { backgroundColor: '#fff', borderColor: COLORS.outline },
-  chipActive: { backgroundColor: COLORS.primary },
-  chipTextActive: { color: '#fff', fontWeight: '700' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
 });

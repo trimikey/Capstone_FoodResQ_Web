@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, ActivityIndicator, Button, SegmentedButtons } from 'react-native-paper';
+import { Text, Button, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
@@ -18,6 +18,9 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup } from '@/components/ui/AppPopup';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage } from '@/services/faceCapture';
+import { notifyError, notifySuccess } from '@/services/haptics';
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 import {
   ASSIGNMENT_STEPS,
   ASSIGNMENT_STEP_ORDER,
@@ -29,16 +32,6 @@ import {
   formatDate,
   formatTime,
 } from '@/utils/campaign';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  muted: '#d1d5db',
-};
 
 type Segment = 'open' | 'tasks';
 
@@ -79,77 +72,53 @@ export default function VolunteerCampaignsScreen() {
     }
     try {
       const res = await advanceMut.mutateAsync({ assignmentId: task.id, photo });
+      void notifySuccess();
       Popup.show({
         type: 'success',
-        text1: next === 'completed' ? 'Đã hoàn thành công việc 🎉' : 'Đã cập nhật',
+        text1: next === 'completed' ? 'Đã hoàn thành công việc' : 'Đã cập nhật',
         text2: res?.pointsAwarded ? `+${res.pointsAwarded} điểm cống hiến!` : undefined,
       });
     } catch (err) {
+      void notifyError();
       Popup.show({ type: 'error', text1: 'Cập nhật thất bại', text2: getErrorMessage(err) });
     }
   };
 
   const renderOpenEmpty = () => {
     if (openQuery.isLoading) {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      );
+      return <ScreenState kind="loading" title="Đang tải chiến dịch" />;
     }
     if (openQuery.isError) {
       return (
-        <View style={styles.center}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#ef4444" />
-          <Text style={styles.emptyTitle}>Không tải được chiến dịch</Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => openQuery.refetch()} style={styles.retryBtn}>
-            Thử lại
-          </Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được chiến dịch" onAction={() => openQuery.refetch()} />
       );
     }
     return (
-      <View style={styles.center}>
-        <View style={styles.emptyIcon}>
-          <MaterialCommunityIcons name="charity" size={48} color={COLORS.primary} />
-        </View>
-        <Text style={styles.emptyTitle}>Chưa có chiến dịch nào</Text>
-        <Text style={styles.emptyBody}>
-          Hiện chưa có bếp ăn cộng đồng nào đang tuyển. Quay lại sau để chung tay nhé.
-        </Text>
-      </View>
+      <ScreenState
+        kind="empty"
+        icon="charity"
+        title="Chưa có chiến dịch nào"
+        message="Hiện chưa có bếp ăn cộng đồng đang tuyển. Quay lại sau để đăng ký."
+      />
     );
   };
 
   const renderTasksEmpty = () => {
     if (tasksQuery.isLoading) {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      );
+      return <ScreenState kind="loading" title="Đang tải công việc" />;
     }
     if (tasksQuery.isError) {
       return (
-        <View style={styles.center}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#ef4444" />
-          <Text style={styles.emptyTitle}>Không tải được công việc</Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => tasksQuery.refetch()} style={styles.retryBtn}>
-            Thử lại
-          </Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được công việc" onAction={() => tasksQuery.refetch()} />
       );
     }
     return (
-      <View style={styles.center}>
-        <View style={styles.emptyIcon}>
-          <MaterialCommunityIcons name="clipboard-check-outline" size={48} color={COLORS.primary} />
-        </View>
-        <Text style={styles.emptyTitle}>Chưa đăng ký việc nào</Text>
-        <Text style={styles.emptyBody}>
-          Sang tab "Đang mở" để chọn một chiến dịch và đăng ký vai trò phù hợp.
-        </Text>
-      </View>
+      <ScreenState
+        kind="empty"
+        icon="clipboard-check-outline"
+        title="Chưa đăng ký việc nào"
+        message="Sang tab Đang mở để chọn một chiến dịch và đăng ký vai trò phù hợp."
+      />
     );
   };
 
@@ -164,7 +133,7 @@ export default function VolunteerCampaignsScreen() {
             { value: 'open', label: 'Đang mở', icon: 'charity' },
             { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
           ]}
-          theme={{ colors: { secondaryContainer: '#ecfdf5', onSecondaryContainer: COLORS.primary } }}
+          theme={{ colors: { secondaryContainer: COLORS.primaryContainer, onSecondaryContainer: COLORS.primary } }}
         />
       </View>
 
@@ -175,7 +144,6 @@ export default function VolunteerCampaignsScreen() {
           renderItem={({ item }: { item: Campaign }) => (
             <CampaignCard campaign={item} onPress={() => router.push(`/(app)/volunteer/campaigns/${item.id}`)} />
           )}
-          estimatedItemSize={170}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderOpenEmpty}
           refreshing={openQuery.isRefetching}
@@ -193,7 +161,6 @@ export default function VolunteerCampaignsScreen() {
               onOpen={() => router.push(`/(app)/volunteer/campaigns/${item.campaign.id}`)}
             />
           )}
-          estimatedItemSize={220}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderTasksEmpty}
           refreshing={tasksQuery.isRefetching}
@@ -238,7 +205,7 @@ function TaskCard({
       <View style={styles.metaRow}>
         <MaterialCommunityIcons name="calendar-clock" size={15} color={COLORS.onSurfaceVariant} />
         <Text style={styles.metaText}>
-          {formatDate(task.campaign.scheduledDate)} · {formatTime(task.campaign.startTime)}–
+          {formatDate(task.campaign.scheduledDate)} - {formatTime(task.campaign.startTime)}-
           {formatTime(task.campaign.endTime)}
         </Text>
       </View>

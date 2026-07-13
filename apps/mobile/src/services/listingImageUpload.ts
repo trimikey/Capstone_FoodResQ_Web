@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { ImagePickCancelledError } from './avatarUpload';
 import { uploadImageToBackend } from './imageUpload';
+import { preprocessImage } from './imagePreprocess';
 
 export { ImagePickCancelledError };
 
@@ -24,7 +25,7 @@ export async function pickListingImages(limit = 5): Promise<string[]> {
   if (result.canceled || !result.assets?.length) {
     throw new ImagePickCancelledError();
   }
-  return result.assets.map((a) => a.uri);
+  return Promise.all(result.assets.map((a) => preprocessImage(a.uri, 'listing')));
 }
 
 /**

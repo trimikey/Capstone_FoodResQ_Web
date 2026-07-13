@@ -3,7 +3,6 @@ import {
   Text,
   Button,
   Avatar,
-  ActivityIndicator,
   Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,16 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMyProfile } from '@/hooks/useProfile';
 import { roleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat';
 import { AppImage } from '@/components/ui/AppImage';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /**
  * Tài khoản (Luồng 4) — hiển thị hồ sơ đầy đủ từ GET /users/me:
@@ -74,8 +65,8 @@ export default function ProfileTab() {
 
           {/* Badge vai trò + trạng thái */}
           <View style={styles.badgeRow}>
-            <View style={[styles.badge, { backgroundColor: '#eef2ff' }]}>
-              <Text style={[styles.badgeText, { color: '#4338ca' }]}>
+            <View style={[styles.badge, { backgroundColor: COLORS.primaryContainer }]}>
+              <Text style={[styles.badgeText, { color: COLORS.primary }]}>
                 {roleLabel(role)}
               </Text>
             </View>
@@ -86,19 +77,9 @@ export default function ProfileTab() {
         </View>
 
         {isLoading && !profile ? (
-          <ActivityIndicator
-            style={{ marginTop: 24 }}
-            color={COLORS.primary}
-          />
+          <ScreenState kind="loading" title="Đang tải hồ sơ" />
         ) : isError && !profile ? (
-          <View style={styles.errorBox}>
-            <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 8 }}>
-              Không tải được hồ sơ.
-            </Text>
-            <Button mode="text" onPress={() => refetch()} textColor={COLORS.primary}>
-              Thử lại
-            </Button>
-          </View>
+          <ScreenState kind="error" title="Không tải được hồ sơ" actionLabel="Thử lại" onAction={() => refetch()} />
         ) : (
           <>
             {/* Điểm uy tín */}

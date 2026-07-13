@@ -1,6 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Portal, Dialog, Button, TextInput, Text, Chip } from 'react-native-paper';
+import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetTextInput,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
+import { Button, Text, Chip } from 'react-native-paper';
 import { Popup } from '@/components/ui/AppPopup';
 import { useCreateReport, type ReportReason, type ReportTargetType } from '@/hooks/useReports';
 
@@ -43,10 +50,24 @@ export function ReportDialog({
   listingId,
   title = 'Báo cáo vấn đề',
 }: Props) {
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['CONTENT_HEIGHT'], []);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [description, setDescription] = useState('');
   const reportMut = useCreateReport();
   const effectiveTargetId = targetId ?? listingId;
+
+  useEffect(() => {
+    if (visible) sheetRef.current?.present();
+    else sheetRef.current?.dismiss();
+  }, [visible]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
 
   const reset = () => {
     setReason(null);
@@ -81,10 +102,20 @@ export function ReportDialog({
   };
 
   return (
-    <Portal>
-      <Dialog visible={visible} onDismiss={handleDismiss} style={styles.dialog}>
-        <Dialog.Title style={styles.title}>{title}</Dialog.Title>
-        <Dialog.Content>
+    <BottomSheetModal
+      ref={sheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing
+      backdropComponent={renderBackdrop}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={handleDismiss}
+      handleIndicatorStyle={styles.handle}
+      accessibilityLabel={title}
+    >
+      <BottomSheetView style={styles.sheet}>
+        <Text style={styles.title}>{title}</Text>
+        <View>
           <Text style={styles.label}>Lý do</Text>
           <View style={styles.chips}>
             {REASONS.map((r) => (
@@ -95,25 +126,24 @@ export function ReportDialog({
                 onPress={() => setReason(r.value)}
                 selectedColor={COLORS.danger}
                 style={styles.chip}
+                accessibilityLabel={`Lý do báo cáo: ${r.label}`}
               >
                 {r.label}
               </Chip>
             ))}
           </View>
-          <TextInput
-            mode="outlined"
+          <BottomSheetTextInput
             placeholder="Mô tả chi tiết (tuỳ chọn)"
             value={description}
             onChangeText={setDescription}
             multiline
             numberOfLines={3}
-            outlineColor={COLORS.outline}
-            activeOutlineColor={COLORS.primary}
             style={styles.input}
-            disabled={reportMut.isPending}
+            editable={!reportMut.isPending}
+            accessibilityLabel="Mô tả chi tiết báo cáo"
           />
-        </Dialog.Content>
-        <Dialog.Actions>
+        </View>
+        <View style={styles.actions}>
           <Button onPress={handleDismiss} textColor={COLORS.onSurfaceVariant} disabled={reportMut.isPending}>
             Huỷ
           </Button>
@@ -126,17 +156,29 @@ export function ReportDialog({
           >
             Gửi báo cáo
           </Button>
-        </Dialog.Actions>
-      </Dialog>
-    </Portal>
+        </View>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  dialog: { borderRadius: 20 },
+  sheet: { paddingHorizontal: 20, paddingBottom: 28 },
+  handle: { backgroundColor: COLORS.outline },
   title: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant, marginBottom: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
   chip: { marginBottom: 4 },
-  input: { backgroundColor: COLORS.surface },
+  input: {
+    minHeight: 88,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: COLORS.onSurface,
+    textAlignVertical: 'top',
+  },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 12 },
 });

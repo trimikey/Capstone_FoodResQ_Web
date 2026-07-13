@@ -1,47 +1,29 @@
 import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  View,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  TextInput,
-  Button,
-  Text,
-  Checkbox,
-} from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Checkbox, Text, TextInput } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
-import { AppImage } from './ui/AppImage';
-import { FadeInUp, FadeInView } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  secondary: '#855300',
-  secondaryContainer: '#ffddb8',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLowest: '#ffffff',
-  surfaceContainerLow: '#eff4ff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#F3F4F6',
-  outlineVariant: '#bbcabf',
-};
+import { FadeInUp } from './ui/Motion';
+import {
+  AuthCard,
+  AuthField,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  ProgressDots,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const volunteerInfoSchema = z
   .object({
-    idCard: z.string().min(5, 'ID card number is required'),
+    idCard: z.string().min(5, 'Cần nhập số giấy tờ tùy thân'),
     specializations: z.array(z.enum(['shipper', 'chef', 'waiter']))
-      .min(1, 'Please select at least one specialization'),
+      .min(1, 'Chọn ít nhất một chuyên môn'),
     vehicleType: z.string().optional(),
     plateNumber: z.string().optional(),
   })
@@ -51,14 +33,14 @@ const volunteerInfoSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['vehicleType'],
-          message: 'Vehicle type is required for shippers',
+          message: 'Cần nhập loại phương tiện cho shipper',
         });
       }
       if (!data.plateNumber?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['plateNumber'],
-          message: 'Plate number is required for shippers',
+          message: 'Cần nhập biển số cho shipper',
         });
       }
     }
@@ -70,45 +52,34 @@ type Specialization = 'shipper' | 'chef' | 'waiter';
 
 interface SpecializationOption {
   id: Specialization;
-  emoji: string;
   title: string;
   description: string;
-  icon: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
 }
 
 const SPECIALIZATIONS: SpecializationOption[] = [
   {
     id: 'shipper',
-    emoji: '🚗',
     title: 'Shipper',
-    description: 'Transport food from donors to recipients',
-    icon: 'truck',
+    description: 'Nhận và giao thực phẩm tới điểm nhận.',
+    icon: 'truck-delivery-outline',
   },
   {
     id: 'chef',
-    emoji: '👨‍🍳',
-    title: 'Chef',
-    description: 'Prepare meals and check food quality',
+    title: 'Bếp',
+    description: 'Chuẩn bị suất ăn và kiểm tra chất lượng.',
     icon: 'chef-hat',
   },
   {
     id: 'waiter',
-    emoji: '🍽️',
-    title: 'Waiter',
-    description: 'Assist in serving and distribution events',
+    title: 'Phục vụ',
+    description: 'Hỗ trợ phân phát tại chiến dịch.',
     icon: 'silverware-fork-knife',
   },
 ];
 
-const VEHICLE_TYPES = [
-  { label: 'Bicycle', value: 'bike' },
-  { label: 'Motorcycle', value: 'moto' },
-  { label: 'Car / Van', value: 'car' },
-  { label: 'Refrigerated Truck', value: 'truck' },
-];
-
 interface SignUpVolunteerScreenProps {
-  onSuccess?: (data: VolunteerInfoInput) => void;
+  onSuccess?: (data: VolunteerInfoInput) => void | Promise<void>;
   onBack?: () => void;
   isLoading?: boolean;
 }
@@ -118,15 +89,13 @@ export function SignUpVolunteerScreen({
   onBack,
   isLoading = false,
 }: SignUpVolunteerScreenProps) {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const [selectedSpecs, setSelectedSpecs] = useState<Specialization[]>([]);
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
   const {
     control,
     handleSubmit,
-    watch,
+    setValue,
     formState: { errors },
   } = useForm<VolunteerInfoInput>({
     resolver: zodResolver(volunteerInfoSchema),
@@ -142,17 +111,18 @@ export function SignUpVolunteerScreen({
 
   const handleSpecializationChange = (spec: Specialization) => {
     setSelectedSpecs((prev) => {
-      const newSpecs = prev.includes(spec)
-        ? prev.filter((s) => s !== spec)
+      const next = prev.includes(spec)
+        ? prev.filter((item) => item !== spec)
         : [...prev, spec];
-      return newSpecs;
+      setValue('specializations', next, { shouldValidate: true });
+      return next;
     });
   };
 
-  const onSubmit = (data: VolunteerInfoInput) => {
+  const onSubmit = async (data: VolunteerInfoInput) => {
     try {
       clearError();
-      onSuccess?.({
+      await onSuccess?.({
         ...data,
         specializations: selectedSpecs,
       });
@@ -162,160 +132,81 @@ export function SignUpVolunteerScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{
-        flex: 1,
-        backgroundColor: COLORS.background,
-        paddingTop: insets.top,
-      }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Header */}
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.background,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
-        >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 24,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <View style={{ flex: 1 }}>
-        {/* Progress & Title */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 16, marginBottom: 12 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              gap: 8,
-              justifyContent: 'center',
-              marginBottom: 12,
-            }}
+    <AuthScaffold
+      footer={
+        <View style={styles.footerActions}>
+          <Button
+            mode="outlined"
+            onPress={onBack}
+            disabled={isLoading}
+            style={[authStyles.secondaryButton, styles.backFooterButton]}
+            contentStyle={authStyles.buttonContent}
+            labelStyle={authStyles.buttonLabel}
           >
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: COLORS.primaryContainer,
-              }}
-            />
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: COLORS.primary,
-              }}
-            />
-          </View>
-          <Text
-            style={{
-              fontSize: 12,
-              color: COLORS.onSurfaceVariant,
-              textAlign: 'center',
-              marginBottom: 8,
-            }}
+            Quay lại
+          </Button>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || selectedSpecs.length === 0}
+            loading={isLoading}
+            buttonColor={COLORS.primary}
+            style={[authStyles.primaryButton, styles.mainFooterButton]}
+            contentStyle={authStyles.buttonContent}
+            labelStyle={authStyles.buttonLabel}
           >
-            Step 2 of 2
-          </Text>
-          <Text
-            style={{
-              fontSize: 24,
-              fontWeight: '600',
-              color: COLORS.onSurface,
-              textAlign: 'center',
-            }}
-          >
-            Volunteer Details
-          </Text>
+            {isLoading ? 'Đang lưu' : 'Hoàn tất'}
+          </Button>
         </View>
+      }
+    >
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Thông tin tình nguyện viên"
+        right={<Text style={styles.stepText}>2/2</Text>}
+      />
 
-        <View style={{ flex: 1, paddingHorizontal: 20, gap: 12, paddingBottom: 8 }}>
-          {/* ID Card */}
-          <FadeInUp delay={80}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: COLORS.onSurfaceVariant,
-                marginBottom: 8,
-              }}
-            >
-              ID Card Number
-            </Text>
+      <ProgressDots total={2} active={1} label="Bước 2: Hồ sơ hỗ trợ" />
+
+      <AuthIntro
+        icon="account-hard-hat-outline"
+        eyebrow="Tình nguyện viên"
+        title="Bạn có thể hỗ trợ ở vai trò nào?"
+        description="Chọn một hoặc nhiều chuyên môn. Nếu chọn shipper, app cần thêm thông tin phương tiện."
+      />
+
+      <FadeInUp delay={80}>
+        <AuthCard>
+          <AuthField label="Số giấy tờ tùy thân" error={errors.idCard?.message}>
             <Controller
               control={control}
               name="idCard"
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   mode="outlined"
-                  label="Enter 16-digit ID"
-                  placeholder="0123456789012345"
+                  label="CCCD/CMND"
+                  placeholder="VD: 012345678901"
                   value={value}
                   onChangeText={onChange}
                   editable={!isLoading}
-                  left={
-                    <TextInput.Icon icon="card-account-details-outline" color={COLORS.outlineVariant} />
-                  }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLowest,
-                  }}
+                  left={<TextInput.Icon icon="card-account-details-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.idCard}
+                  dense
                 />
               )}
             />
-            {errors.idCard && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.idCard.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
 
-          {/* Specializations */}
-          <FadeInUp delay={140}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: COLORS.onSurfaceVariant,
-                marginBottom: 12,
-              }}
-            >
-              I want to volunteer as a:
-            </Text>
-            <View style={{ gap: 12 }}>
+          <AuthField
+            label="Chuyên môn hỗ trợ"
+            error={Array.isArray(errors.specializations) ? undefined : errors.specializations?.message}
+          >
+            <View style={styles.specList}>
               {SPECIALIZATIONS.map((spec) => {
                 const isSelected = selectedSpecs.includes(spec.id);
                 return (
@@ -323,227 +214,163 @@ export function SignUpVolunteerScreen({
                     key={spec.id}
                     onPress={() => handleSpecializationChange(spec.id)}
                     disabled={isLoading}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.8 : 1,
-                    })}
+                    style={({ pressed }) => [
+                      styles.specCard,
+                      isSelected && styles.specCardSelected,
+                      pressed && authStyles.pressed,
+                    ]}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`${spec.title}. ${spec.description}`}
+                    accessibilityState={{ checked: isSelected, disabled: isLoading }}
                   >
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 16,
-                        backgroundColor: isSelected
-                          ? COLORS.primaryContainer
-                          : COLORS.surfaceContainerLowest,
-                        borderRadius: 12,
-                        borderWidth: 1,
-                        borderColor: isSelected
-                          ? COLORS.primary
-                          : COLORS.outline,
-                        gap: 16,
-                      }}
-                    >
-                      <Checkbox
-                        status={isSelected ? 'checked' : 'unchecked'}
-                        onPress={() => handleSpecializationChange(spec.id)}
-                        disabled={isLoading}
-                        color={COLORS.primary}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontSize: 16,
-                            fontWeight: '600',
-                            color: isSelected
-                              ? COLORS.primary
-                              : COLORS.onSurface,
-                            marginBottom: 4,
-                          }}
-                        >
-                          {spec.title}
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            color: isSelected
-                              ? `${COLORS.primary}80`
-                              : COLORS.onSurfaceVariant,
-                          }}
-                        >
-                          {spec.description}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 24 }}>{spec.emoji}</Text>
+                    <Checkbox
+                      status={isSelected ? 'checked' : 'unchecked'}
+                      disabled={isLoading}
+                      color={COLORS.primary}
+                    />
+                    <View style={styles.specCopy}>
+                      <Text style={[styles.specTitle, isSelected && styles.specTitleSelected]}>
+                        {spec.title}
+                      </Text>
+                      <Text style={styles.specDescription}>{spec.description}</Text>
                     </View>
+                    <MaterialCommunityIcons
+                      name={spec.icon}
+                      size={23}
+                      color={isSelected ? COLORS.primary : COLORS.onSurfaceVariant}
+                    />
                   </Pressable>
                 );
               })}
             </View>
-          </FadeInUp>
+          </AuthField>
 
-          {/* Shipper Conditional Fields */}
-          {isShipperSelected && (
-            <FadeInUp
-              style={{
-                borderLeftWidth: 4,
-                borderLeftColor: COLORS.primaryContainer,
-                paddingLeft: 16,
-                gap: 12,
-              }}
-            >
-              {/* Vehicle Type */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: COLORS.onSurfaceVariant,
-                    marginBottom: 8,
-                  }}
-                >
-                  Vehicle Type
-                </Text>
+          {isShipperSelected ? (
+            <View style={styles.shipperBox}>
+              <Text style={styles.shipperTitle}>Thông tin phương tiện</Text>
+              <AuthField label="Loại phương tiện" error={errors.vehicleType?.message}>
                 <Controller
                   control={control}
                   name="vehicleType"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       mode="outlined"
-                      label="Select your vehicle"
+                      label="Xe máy, xe đạp, ô tô..."
                       value={value}
                       onChangeText={onChange}
                       editable={!isLoading}
-                      style={{
-                        backgroundColor: COLORS.surfaceContainerLowest,
-                      }}
+                      left={<TextInput.Icon icon="motorbike" color={COLORS.onSurfaceVariant} />}
+                      style={authStyles.input}
                       outlineColor={COLORS.outline}
                       activeOutlineColor={COLORS.primary}
+                      error={!!errors.vehicleType}
+                      dense
                     />
                   )}
                 />
-              </View>
+              </AuthField>
 
-              {/* Plate Number */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: COLORS.onSurfaceVariant,
-                    marginBottom: 8,
-                  }}
-                >
-                  Vehicle Plate Number
-                </Text>
+              <AuthField label="Biển số xe" error={errors.plateNumber?.message}>
                 <Controller
                   control={control}
                   name="plateNumber"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       mode="outlined"
-                      label="e.g. ABC 1234"
-                      placeholder="ABC 1234"
+                      label="VD: 59A1 12345"
                       value={value}
                       onChangeText={onChange}
                       editable={!isLoading}
-                      style={{
-                        backgroundColor: COLORS.surfaceContainerLowest,
-                      }}
+                      left={<TextInput.Icon icon="identifier" color={COLORS.onSurfaceVariant} />}
+                      style={authStyles.input}
                       outlineColor={COLORS.outline}
                       activeOutlineColor={COLORS.primary}
+                      error={!!errors.plateNumber}
+                      dense
                     />
                   )}
                 />
-              </View>
-            </FadeInUp>
-          )}
+              </AuthField>
+            </View>
+          ) : null}
+        </AuthCard>
+      </FadeInUp>
 
-          {/* Illustration */}
-          <FadeInView
-            style={{
-              borderRadius: 16,
-              overflow: 'hidden',
-              backgroundColor: COLORS.outline,
-              marginTop: 8,
-            }}
-          >
-            <AppImage
-              source={{
-                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD_muV8rDbs2VUt2ylvmXhRVV47V7WrYFNnH-iXfpCcdux4tHCVMojfDyiAsKcUF1ghH5gG6f74T8VNkN8YzIrLN8oIxaKyyfWoAmY7gXThlltdTz30KePzp2nEmPH2Zr0RkcYG-_Jhs_E86ZaM7-OQWNj2u46PO3qzQha18KjIjA7W8M39kSE149eut5Tn6Q-JViBuOnepbHfabkpVlUkyDLQxC7tH1mqLfK0ft6UVvmU6j7ISnRLAZTp2JMA9uXkHGMO4N0G8M8kI',
-              }}
-              style={{ width: '100%', height: 140 }}
-            />
-          </FadeInView>
-
-          <Text
-            style={{
-              fontSize: 12,
-              color: COLORS.onSurfaceVariant,
-              textAlign: 'center',
-              fontStyle: 'italic',
-            }}
-          >
-            "Every meal saved is a step toward a greener planet."
-          </Text>
-        </View>
-      </View>
-
-      {/* Footer Buttons */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surfaceContainerLowest,
-          flexDirection: 'row',
-          gap: 12,
-        }}
-      >
-        <Button
-          mode="outlined"
-          onPress={onBack}
-          disabled={isLoading}
-          style={{
-            flex: 1,
-            borderRadius: 12,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          Back
-        </Button>
-        <FadeInUp delay={200} style={{ flex: 2 }}>
-          <Button
-            mode="contained"
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || selectedSpecs.length === 0}
-            loading={isLoading}
-            style={{
-              backgroundColor: COLORS.primary,
-              borderRadius: 12,
-              paddingVertical: 8,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Đang lưu...' : 'Lưu'}
-          </Button>
-        </FadeInUp>
-      </View>
-
-      {/* Error Toast */}
       <ErrorToast
         visible={isVisible}
         message={error?.message || ''}
         onDismiss={clearError}
         duration={3000}
       />
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
+
+const styles = StyleSheet.create({
+  stepText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  specList: {
+    gap: spacing.sm,
+  },
+  specCard: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceContainerLow,
+    paddingRight: spacing.md,
+  },
+  specCardSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  specCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  specTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  specTitleSelected: {
+    color: COLORS.primary,
+  },
+  specDescription: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
+  shipperBox: {
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    backgroundColor: COLORS.surfaceContainerLow,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  shipperTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  backFooterButton: {
+    flex: 1,
+  },
+  mainFooterButton: {
+    flex: 2,
+  },
+});
 
 export default SignUpVolunteerScreen;

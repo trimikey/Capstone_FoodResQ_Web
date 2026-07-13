@@ -1,9 +1,10 @@
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator } from 'react-native-paper';
+import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
+import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
 import { useMyProfile } from '@/hooks/useProfile';
 import {
   statusMeta,
@@ -16,15 +17,10 @@ import {
 } from '@/utils/campaign';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+const ASSIGNMENT_ROLES: AssignmentRole[] = ['chef', 'waiter', 'shipper'];
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -54,7 +50,10 @@ export default function VolunteerCampaignDetailScreen() {
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
   const { data: profile } = useMyProfile(true);
   const { data: myTasks } = useMyTasks(true);
+  const { data: shifts = [] } = useShifts(id);
+  const { data: kitchenMenu = [] } = useMenuItems(id);
   const applyMut = useApplyCampaign();
+  const applyShiftMut = useApplyShift();
 
   const Header = (
     <View style={styles.header}>
@@ -70,9 +69,7 @@ export default function VolunteerCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <ScreenState kind="loading" title="Đang tải chiến dịch" />
       </SafeAreaView>
     );
   }
@@ -81,10 +78,7 @@ export default function VolunteerCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 12 }}>Không tải được chiến dịch.</Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => refetch()}>Thử lại</Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được chiến dịch" actionLabel="Thử lại" onAction={() => refetch()} />
       </SafeAreaView>
     );
   }
@@ -97,12 +91,31 @@ export default function VolunteerCampaignDetailScreen() {
   // Vai trò TNV đã đăng ký ở chính chiến dịch này.
   const appliedRoles = new Set((myTasks ?? []).filter((t) => t.campaign.id === c.id).map((t) => t.role));
 
+  const pickShiftRole = (shift: CampaignShift): AssignmentRole | undefined => {
+    if (shift.role) return shift.role;
+    return ASSIGNMENT_ROLES.find((role) => mySpecs.has(role) && !appliedRoles.has(role));
+  };
+
   const handleApply = async (role: AssignmentRole) => {
     try {
       await applyMut.mutateAsync({ campaignId: c.id, role });
       Popup.show({ type: 'success', text1: `Đã đăng ký ${ASSIGNMENT_ROLE_LABEL[role]}`, text2: 'Xem ở "Việc của tôi".' });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Đăng ký thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  const handleApplyShift = async (shift: CampaignShift) => {
+    const roleToSend = pickShiftRole(shift);
+    if (!roleToSend) {
+      Popup.show({ type: 'warning', text1: 'Chưa có vai trò phù hợp', text2: 'Cập nhật chuyên môn hoặc chọn ca theo vai trò khác.' });
+      return;
+    }
+    try {
+      await applyShiftMut.mutateAsync({ campaignId: c.id, shiftId: shift.id, role: roleToSend });
+      Popup.show({ type: 'success', text1: 'Đã đăng ký ca', text2: shift.label });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Đăng ký ca thất bại', text2: getErrorMessage(err) });
     }
   };
 
@@ -122,7 +135,7 @@ export default function VolunteerCampaignDetailScreen() {
         <View style={styles.card}>
           <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
           <InfoRow icon="calendar-clock">
-            {formatDate(c.scheduledDate)} · {formatTime(c.startTime)}–{formatTime(c.endTime)}
+            {formatDate(c.scheduledDate)} - {formatTime(c.startTime)}-{formatTime(c.endTime)}
           </InfoRow>
           <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
           {c.expectedServings ? (
@@ -154,7 +167,7 @@ export default function VolunteerCampaignDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.roleLabel}>{s.label}</Text>
                     <Text style={[styles.roleCount, full && { color: COLORS.primary }]}>
-                      {s.filled}/{s.needed} {full ? '· Đủ' : 'đã đăng ký'}
+                      {s.filled}/{s.needed} {full ? '- Đủ' : 'đã đăng ký'}
                     </Text>
                   </View>
                   {applied ? (
@@ -189,8 +202,54 @@ export default function VolunteerCampaignDetailScreen() {
           </Section>
         )}
 
+        {/* Ca làm việc (kitchen-ops) — đăng ký theo ca */}
+        {shifts.length > 0 ? (
+          <Section title="Ca làm việc">
+            {shifts.map((s) => {
+              const full = s.slotsFilled >= s.slotsNeeded;
+              const roleToSend = pickShiftRole(s);
+              const alreadyApplied = s.role ? appliedRoles.has(s.role) : !roleToSend && mySpecs.size > 0;
+              const eligible = !!roleToSend && (!s.role || mySpecs.has(s.role));
+              const disabled = !open || full || !eligible || applyShiftMut.isPending;
+              const reason = full ? 'Đã đủ' : alreadyApplied ? 'Đã đăng ký' : !eligible ? 'Không hợp chuyên môn' : null;
+              return (
+                <View key={s.id} style={styles.shiftRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.shiftLabel}>{s.label}</Text>
+                    <Text style={styles.shiftMeta}>
+                      {s.startTime}-{s.endTime}
+                      {s.role ? ` - ${ASSIGNMENT_ROLE_LABEL[s.role] ?? s.role}` : ' - Chung'} - {s.slotsFilled}/{s.slotsNeeded}
+                    </Text>
+                  </View>
+                  <Button
+                    mode="contained" compact buttonColor={COLORS.primary} disabled={disabled}
+                    loading={applyShiftMut.isPending && applyShiftMut.variables?.shiftId === s.id}
+                    onPress={() => handleApplyShift(s)}
+                  >
+                    {reason ?? 'Đăng ký'}
+                  </Button>
+                </View>
+              );
+            })}
+          </Section>
+        ) : null}
+
+        {kitchenMenu.length > 0 ? (
+          <Section title="Thực đơn cập nhật">
+            {kitchenMenu.map((m) => (
+              <View key={m.id} style={styles.bulletRow}>
+                <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bulletText}>{m.recipe?.name ?? m.customName ?? 'Món'}</Text>
+                  {m.plannedServings ? <Text style={styles.muted}>Dự kiến {m.plannedServings} suất</Text> : null}
+                </View>
+              </View>
+            ))}
+          </Section>
+        ) : null}
+
         {c.menuItems && c.menuItems.length > 0 ? (
-          <Section title="Thực đơn">
+          <Section title={kitchenMenu.length > 0 ? 'Thực đơn dự kiến (lúc tạo)' : 'Thực đơn'}>
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
@@ -253,14 +312,20 @@ const styles = StyleSheet.create({
   },
   roleLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   roleCount: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
-  appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#ecfdf5', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   appliedPillText: { fontSize: 13, fontWeight: '600', color: COLORS.primary },
   hint: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
+  shiftRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.outline,
+  },
+  shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
+  shiftMeta: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
 });

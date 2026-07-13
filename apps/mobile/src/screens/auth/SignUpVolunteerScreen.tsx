@@ -1,24 +1,64 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Popup } from '@/components/ui/AppPopup';
 import {
   SignUpVolunteerScreen as SignUpVolunteerForm,
   VolunteerInfoInput,
 } from '../../components/SignUpVolunteerScreen';
+import { useAuth } from '../../hooks/useAuth';
+import { useOnboardingStore } from '../../stores/onboarding';
+import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface SignUpVolunteerScreenProps {
   navigation: any;
   route: any;
 }
 
-/**
- * Volunteer Details — KHÔNG còn trong luồng đăng ký (đăng ký hoàn tất ở bước Basic).
- * Màn này để dành cho HOÀN THIỆN HỒ SƠ sau đăng ký (specialization, phương tiện...).
- * TODO [Profile]: nối API cập nhật hồ sơ thay vì điều hướng Home.
- */
 export default function SignUpVolunteerScreen({
   navigation,
 }: SignUpVolunteerScreenProps) {
-  const handleSuccess = (_volunteerData: VolunteerInfoInput) => {
-    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+  const { register, initialize } = useAuth();
+  const basicInfo = useOnboardingStore((s) => s.basicInfo);
+  const resetOnboarding = useOnboardingStore((s) => s.reset);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSuccess = async (volunteerData: VolunteerInfoInput) => {
+    if (!basicInfo.email || !basicInfo.password || !basicInfo.name) {
+      Popup.show({
+        type: 'error',
+        text1: 'Thiếu thông tin tài khoản',
+        text2: 'Vui lòng quay lại bước trước.',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await register({
+        email: basicInfo.email,
+        password: basicInfo.password,
+        name: basicInfo.name,
+        role: 'volunteer',
+        vehicleType: volunteerData.vehicleType,
+        volunteerRole: volunteerData.specializations[0],
+        // TODO(Profile API): backend register hiện chỉ nhận một specialization và chưa nhận idCard/plateNumber.
+      } as any);
+      await initialize();
+      resetOnboarding();
+      Popup.show({
+        type: 'success',
+        text1: 'Đăng ký thành công',
+        text2: 'Hồ sơ tình nguyện viên đang chờ xác minh.',
+      });
+      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    } catch (error) {
+      Popup.show({
+        type: 'error',
+        text1: 'Đăng ký thất bại',
+        text2: getErrorMessage(error),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleBack = () => {
@@ -29,7 +69,7 @@ export default function SignUpVolunteerScreen({
     <SignUpVolunteerForm
       onSuccess={handleSuccess}
       onBack={handleBack}
-      isLoading={false}
+      isLoading={isSubmitting}
     />
   );
 }

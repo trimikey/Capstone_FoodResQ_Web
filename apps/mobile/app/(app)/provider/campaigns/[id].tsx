@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator } from 'react-native-paper';
+import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail } from '@/hooks/useCampaigns';
@@ -14,15 +14,8 @@ import {
   slotProgress,
   canDonate,
 } from '@/utils/campaign';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /** Hàng thông tin có icon. */
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
@@ -67,9 +60,7 @@ export default function ProviderCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <ScreenState kind="loading" title="Đang tải chiến dịch" />
       </SafeAreaView>
     );
   }
@@ -78,14 +69,7 @@ export default function ProviderCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 12 }}>
-            Không tải được chiến dịch.
-          </Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => refetch()}>
-            Thử lại
-          </Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được chiến dịch" actionLabel="Thử lại" onAction={() => refetch()} />
       </SafeAreaView>
     );
   }
@@ -111,7 +95,7 @@ export default function ProviderCampaignDetailScreen() {
         <View style={styles.card}>
           <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
           <InfoRow icon="calendar-clock">
-            {formatDate(c.scheduledDate)} · {formatTime(c.startTime)}–{formatTime(c.endTime)}
+            {formatDate(c.scheduledDate)} - {formatTime(c.startTime)}-{formatTime(c.endTime)}
           </InfoRow>
           <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
           {c.expectedServings ? (
@@ -184,10 +168,10 @@ export default function ProviderCampaignDetailScreen() {
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.donationItem}>
-                      {d.itemName}{d.quantity ? ` · ${d.quantity}` : ''}
+                      {d.itemName}{d.quantity ? ` - ${d.quantity}` : ''}
                     </Text>
                     <Text style={styles.muted}>
-                      {d.provider.businessName} · {received ? 'Đã nhận' : 'Chờ xác nhận'}
+                      {d.provider.businessName} - {received ? 'Đã nhận' : 'Chờ xác nhận'}
                     </Text>
                     {d.note ? <Text style={styles.donationNote}>“{d.note}”</Text> : null}
                   </View>
@@ -255,7 +239,7 @@ const styles = StyleSheet.create({
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'flex-start' },

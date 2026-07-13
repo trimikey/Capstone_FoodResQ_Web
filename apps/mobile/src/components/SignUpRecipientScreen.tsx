@@ -1,38 +1,23 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  TextInput,
-  Button,
-  Text,
-  ActivityIndicator,
-  SegmentedButtons,
-} from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Text, TextInput } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
-import { AppImage } from './ui/AppImage';
-import { FadeInUp, FadeInView } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  secondary: '#855300',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLowest: '#f9fafb',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#e5e7eb',
-  outlineVariant: '#bbcabf',
-};
+import { FadeInUp } from './ui/Motion';
+import {
+  AuthCard,
+  AuthField,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  ProgressDots,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 type RecipientType = 'individual' | 'charity';
 
@@ -41,29 +26,28 @@ const signUpRecipientSchema = z.object({
   idNumber: z.string().optional(),
   organizationName: z.string().optional(),
   taxId: z.string().optional(),
-  address: z.string().min(10, 'Address must be at least 10 characters'),
+  address: z.string().min(10, 'Địa chỉ cần tối thiểu 10 ký tự'),
 }).superRefine((data, ctx) => {
-  if (data.recipientType === 'individual') {
-    if (!data.idNumber?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['idNumber'],
-        message: 'ID number is required for individuals',
-      });
-    }
-  } else if (data.recipientType === 'charity') {
+  if (data.recipientType === 'individual' && !data.idNumber?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['idNumber'],
+      message: 'Cần nhập số giấy tờ tùy thân',
+    });
+  }
+  if (data.recipientType === 'charity') {
     if (!data.organizationName?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['organizationName'],
-        message: 'Organization name is required',
+        message: 'Cần nhập tên tổ chức',
       });
     }
     if (!data.taxId?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['taxId'],
-        message: 'Tax ID is required',
+        message: 'Cần nhập mã số thuế',
       });
     }
   }
@@ -72,30 +56,30 @@ const signUpRecipientSchema = z.object({
 export type SignUpRecipientInput = z.infer<typeof signUpRecipientSchema>;
 
 interface SignUpRecipientScreenProps {
-  onSuccess?: (data: SignUpRecipientInput) => void;
+  onSuccess?: (data: SignUpRecipientInput) => void | Promise<void>;
   onBack?: () => void;
   isLoading?: boolean;
+  initialRecipientType?: RecipientType;
 }
 
 export function SignUpRecipientScreen({
   onSuccess,
   onBack,
   isLoading = false,
+  initialRecipientType = 'individual',
 }: SignUpRecipientScreenProps) {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const [recipientType, setRecipientType] = useState<RecipientType>('individual');
+  const [recipientType, setRecipientType] = useState<RecipientType>(initialRecipientType);
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
   const {
     control,
     handleSubmit,
     formState: { errors },
-    watch,
+    setValue,
   } = useForm<SignUpRecipientInput>({
     resolver: zodResolver(signUpRecipientSchema),
     defaultValues: {
-      recipientType: 'individual',
+      recipientType: initialRecipientType,
       idNumber: '',
       organizationName: '',
       taxId: '',
@@ -103,535 +87,279 @@ export function SignUpRecipientScreen({
     },
   });
 
-  const handleRecipientTypeChange = (value: string) => {
-    setRecipientType(value as RecipientType);
+  const handleRecipientTypeChange = (value: RecipientType) => {
+    setRecipientType(value);
+    setValue('recipientType', value, { shouldValidate: true });
   };
 
-  const onSubmit = (data: SignUpRecipientInput) => {
+  const onSubmit = async (data: SignUpRecipientInput) => {
     try {
       clearError();
-      onSuccess?.(data);
+      await onSuccess?.(data);
     } catch (error) {
       showError(getErrorMessage(error), 3000);
     }
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      {/* Header */}
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.background,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
-        >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 32,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-        <View style={{ width: 24 }} />
-      </View>
+    <AuthScaffold
+      footer={
+        <View style={styles.footerActions}>
+          <Button
+            mode="outlined"
+            onPress={onBack}
+            disabled={isLoading}
+            style={[authStyles.secondaryButton, styles.backFooterButton]}
+            contentStyle={authStyles.buttonContent}
+            labelStyle={authStyles.buttonLabel}
+          >
+            Quay lại
+          </Button>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading}
+            loading={isLoading}
+            buttonColor={COLORS.primary}
+            style={[authStyles.primaryButton, styles.mainFooterButton]}
+            contentStyle={authStyles.buttonContent}
+            labelStyle={authStyles.buttonLabel}
+          >
+            {isLoading ? 'Đang lưu' : 'Hoàn tất'}
+          </Button>
+        </View>
+      }
+    >
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Thông tin người nhận"
+        right={<Text style={styles.stepText}>2/2</Text>}
+      />
 
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: COLORS.background,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            paddingHorizontal: 20,
-            paddingTop: 8,
-            paddingBottom: 8,
-          }}
-        >
-          {/* Progress Indicator */}
-          <View style={{ alignItems: 'center', marginBottom: 12 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
-              <View
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 5,
-                  backgroundColor: COLORS.primaryContainer,
-                }}
-              />
-              <View
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 5,
-                  backgroundColor: COLORS.primaryContainer,
-                }}
-              />
-            </View>
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: '500',
-                color: COLORS.onSurfaceVariant,
-              }}
-            >
-              Step 2 of 2: Recipient Details
-            </Text>
-          </View>
+      <ProgressDots total={2} active={1} label="Bước 2: Hồ sơ nhận thực phẩm" />
 
-          {/* Section Title */}
-          <View style={{ marginBottom: 12 }}>
-            <Text
-              style={{
-                fontSize: 24,
-                fontWeight: '600',
-                color: COLORS.onSurface,
-                marginBottom: 4,
-              }}
-            >
-              Identify yourself
-            </Text>
-            <Text
-              style={{
-                fontSize: 16,
-                color: COLORS.onSurfaceVariant,
-              }}
-            >
-              Tell us how you'll be receiving the surplus food.
-            </Text>
-          </View>
+      <AuthIntro
+        icon="account-heart-outline"
+        eyebrow="Người nhận"
+        title={recipientType === 'charity' ? 'Thông tin tổ chức' : 'Thông tin cá nhân'}
+        description="FoodResQ dùng thông tin này để xác minh hồ sơ và gợi ý điểm chia sẻ thực phẩm phù hợp."
+      />
 
-          {/* Recipient Type Selector */}
-          <View style={{ marginBottom: 12 }}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: COLORS.onSurface,
-                marginBottom: 8,
-              }}
-            >
-              Recipient Type
-            </Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: 8,
-              }}
-            >
-              {/* Individual Button */}
-              <Pressable
+      <FadeInUp delay={80}>
+        <AuthCard>
+          <AuthField label="Loại hồ sơ">
+            <View style={styles.typeRow}>
+              <TypeButton
+                label="Cá nhân"
+                icon="account-outline"
+                selected={recipientType === 'individual'}
+                disabled={isLoading}
                 onPress={() => handleRecipientTypeChange('individual')}
+              />
+              <TypeButton
+                label="Tổ chức"
+                icon="hand-heart-outline"
+                selected={recipientType === 'charity'}
                 disabled={isLoading}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  paddingVertical: 16,
-                  paddingHorizontal: 16,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor:
-                    recipientType === 'individual'
-                      ? COLORS.primaryContainer
-                      : COLORS.outlineVariant,
-                  backgroundColor:
-                    recipientType === 'individual'
-                      ? '#f0fdf4'
-                      : COLORS.surfaceContainerLowest,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Text
-                  style={{
-                    fontSize: 20,
-                    marginBottom: 4,
-                  }}
-                >
-                  👤
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color:
-                      recipientType === 'individual'
-                        ? COLORS.primaryContainer
-                        : COLORS.onSurfaceVariant,
-                  }}
-                >
-                  Individual
-                </Text>
-              </Pressable>
-
-              {/* Charity Button */}
-              <Pressable
                 onPress={() => handleRecipientTypeChange('charity')}
-                disabled={isLoading}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  paddingVertical: 16,
-                  paddingHorizontal: 16,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor:
-                    recipientType === 'charity'
-                      ? COLORS.primaryContainer
-                      : COLORS.outlineVariant,
-                  backgroundColor:
-                    recipientType === 'charity'
-                      ? '#f0fdf4'
-                      : COLORS.surfaceContainerLowest,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Text
-                  style={{
-                    fontSize: 20,
-                    marginBottom: 4,
-                  }}
-                >
-                  🤝
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color:
-                      recipientType === 'charity'
-                        ? COLORS.primaryContainer
-                        : COLORS.onSurfaceVariant,
-                  }}
-                >
-                  Charity
-                </Text>
-              </Pressable>
+              />
             </View>
-          </View>
+          </AuthField>
 
-          {/* Conditional Fields */}
           {recipientType === 'individual' ? (
-            <FadeInUp delay={80} style={{ marginBottom: 12 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: COLORS.onSurface,
-                  marginBottom: 8,
-                }}
-              >
-                ID Card Number
-              </Text>
+            <AuthField label="Số giấy tờ tùy thân" error={errors.idNumber?.message}>
               <Controller
                 control={control}
                 name="idNumber"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
                     mode="outlined"
-                    label="Enter your national ID"
-                    placeholder="ID-123456789"
+                    label="CCCD/CMND hoặc giấy tờ tương đương"
+                    placeholder="VD: 012345678901"
                     value={value}
                     onChangeText={onChange}
                     editable={!isLoading}
-                    left={
-                      <TextInput.Icon
-                        icon="card-account-details-outline"
-                        color={COLORS.onSurfaceVariant}
-                      />
-                    }
-                    style={{
-                      backgroundColor: COLORS.surfaceContainerLowest,
-                    }}
+                    left={<TextInput.Icon icon="card-account-details-outline" color={COLORS.onSurfaceVariant} />}
+                    style={authStyles.input}
                     outlineColor={COLORS.outline}
                     activeOutlineColor={COLORS.primary}
                     error={!!errors.idNumber}
+                    dense
                   />
                 )}
               />
-              {errors.idNumber && (
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: COLORS.error,
-                    marginTop: 4,
-                  }}
-                >
-                  {errors.idNumber.message}
-                </Text>
-              )}
-            </FadeInUp>
+            </AuthField>
           ) : (
-            <View style={{ marginBottom: 12 }}>
-              {/* Organization Name */}
-              <FadeInUp delay={80} style={{ marginBottom: 10 }}>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: COLORS.onSurface,
-                    marginBottom: 8,
-                  }}
-                >
-                  Organization Name
-                </Text>
+            <>
+              <AuthField label="Tên tổ chức" error={errors.organizationName?.message}>
                 <Controller
                   control={control}
                   name="organizationName"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       mode="outlined"
-                      label="Official registered name"
-                      placeholder="Charity Organization Name"
+                      label="Tên pháp lý hoặc tên hoạt động"
+                      placeholder="VD: Mái ấm FoodResQ"
                       value={value}
                       onChangeText={onChange}
                       editable={!isLoading}
-                      left={
-                        <TextInput.Icon
-                          icon="office-building"
-                          color={COLORS.onSurfaceVariant}
-                        />
-                      }
-                      style={{
-                        backgroundColor: COLORS.surfaceContainerLowest,
-                      }}
+                      left={<TextInput.Icon icon="office-building-outline" color={COLORS.onSurfaceVariant} />}
+                      style={authStyles.input}
                       outlineColor={COLORS.outline}
                       activeOutlineColor={COLORS.primary}
                       error={!!errors.organizationName}
+                      dense
                     />
                   )}
                 />
-                {errors.organizationName && (
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: COLORS.error,
-                      marginTop: 4,
-                    }}
-                  >
-                    {errors.organizationName.message}
-                  </Text>
-                )}
-              </FadeInUp>
+              </AuthField>
 
-              {/* Tax ID */}
-              <FadeInUp delay={140}>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: COLORS.onSurface,
-                    marginBottom: 8,
-                  }}
-                >
-                  Tax ID / Registration No.
-                </Text>
+              <AuthField label="Mã số thuế / mã đăng ký" error={errors.taxId?.message}>
                 <Controller
                   control={control}
                   name="taxId"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       mode="outlined"
-                      label="Tax ID or Registration Number"
-                      placeholder="Ex: 12-3456789"
+                      label="Mã số thuế hoặc giấy phép"
+                      placeholder="VD: 0312345678"
                       value={value}
                       onChangeText={onChange}
                       editable={!isLoading}
-                      left={
-                        <TextInput.Icon
-                          icon="leaf"
-                          color={COLORS.onSurfaceVariant}
-                        />
-                      }
-                      style={{
-                        backgroundColor: COLORS.surfaceContainerLowest,
-                      }}
+                      left={<TextInput.Icon icon="file-document-outline" color={COLORS.onSurfaceVariant} />}
+                      style={authStyles.input}
                       outlineColor={COLORS.outline}
                       activeOutlineColor={COLORS.primary}
                       error={!!errors.taxId}
+                      dense
                     />
                   )}
                 />
-                {errors.taxId && (
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: COLORS.error,
-                      marginTop: 4,
-                    }}
-                  >
-                    {errors.taxId.message}
-                  </Text>
-                )}
-              </FadeInUp>
-            </View>
+              </AuthField>
+            </>
           )}
 
-          {/* Pickup Address */}
-          <FadeInUp delay={200} style={{ marginBottom: 12 }}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: COLORS.onSurface,
-                marginBottom: 8,
-              }}
-            >
-              Pickup Address
-            </Text>
+          <AuthField
+            label="Địa chỉ nhận hỗ trợ"
+            helper="Dùng để gợi ý các tin thực phẩm gần bạn hơn."
+            error={errors.address?.message}
+          >
             <Controller
               control={control}
               name="address"
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   mode="outlined"
-                  label="Enter your address"
-                  placeholder="Street name, Building, Apartment number"
+                  label="Địa chỉ"
+                  placeholder="Số nhà, đường, phường/xã, quận/huyện"
                   value={value}
                   onChangeText={onChange}
                   editable={!isLoading}
                   multiline
-                  numberOfLines={4}
-                  left={
-                    <TextInput.Icon
-                      icon="map-marker"
-                      color={COLORS.onSurfaceVariant}
-                    />
-                  }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLowest,
-                  }}
+                  numberOfLines={3}
+                  left={<TextInput.Icon icon="map-marker-outline" color={COLORS.onSurfaceVariant} />}
+                  style={[authStyles.input, authStyles.multilineInput]}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.address}
                 />
               )}
             />
-            <Text
-              style={{
-                fontSize: 12,
-                color: COLORS.onSurfaceVariant,
-                marginTop: 4,
-              }}
-            >
-              Used to suggest the nearest food surplus points.
-            </Text>
-            {errors.address && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.address.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
+        </AuthCard>
+      </FadeInUp>
 
-          {/* Illustration Image */}
-          <FadeInView
-            style={{
-              flex: 1,
-              minHeight: 80,
-              maxHeight: 160,
-              borderRadius: 16,
-              overflow: 'hidden',
-              backgroundColor: COLORS.outline,
-            }}
-          >
-            <AppImage
-              source={{
-                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDkhWq4CeI6HiI0zCMKdz2Disk_Alof0JQoOpPuu7voFWvfFlMjnQQ7sbNa0nHnbfQd_kto27Hn-1dHCyd9ErflLQolZL_aym-vd-FeKpErhm5WV5kMVVFFIgIBdpNWUMC9rdItp8gSVYVq4g3y7KS91pEb3CdbFnDwC7It_nr9bkM8txZk7kGRDXdFxqir6G1RWUhgiDz92jPNRhenvJ4b-nUq_e_QL0h7N_vGPwGDuUHdw6bNHEt9Wg_RXdJhoUEJ0B3Ew_H7udWd',
-              }}
-              style={{ width: '100%', height: '100%' }}
-            />
-          </FadeInView>
-        </View>
-      </View>
-
-      {/* Footer Actions */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surfaceContainerLowest,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.outline,
-          flexDirection: 'row',
-          gap: 16,
-        }}
-      >
-        <Button
-          mode="outlined"
-          onPress={onBack}
-          disabled={isLoading}
-          style={{
-            flex: 1,
-            borderRadius: 16,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          Back
-        </Button>
-        <FadeInUp delay={260} style={{ flex: 2 }}>
-          <Button
-            mode="contained"
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading}
-            loading={isLoading}
-            style={{
-              borderRadius: 16,
-              backgroundColor: COLORS.primary,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Đang lưu...' : 'Lưu'}
-          </Button>
-        </FadeInUp>
-      </View>
-
-      {/* Error Toast */}
       <ErrorToast
         visible={isVisible}
         message={error?.message || ''}
         onDismiss={clearError}
         duration={3000}
       />
-    </View>
+    </AuthScaffold>
   );
 }
+
+function TypeButton({
+  label,
+  icon,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.typeButton,
+        selected && styles.typeButtonSelected,
+        pressed && authStyles.pressed,
+      ]}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ selected, disabled }}
+    >
+      <MaterialCommunityIcons
+        name={icon}
+        size={22}
+        color={selected ? COLORS.primary : COLORS.onSurfaceVariant}
+      />
+      <Text style={[styles.typeLabel, selected && styles.typeLabelSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  stepText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  typeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  typeButton: {
+    flex: 1,
+    minHeight: 72,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  typeButtonSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  typeLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+  },
+  typeLabelSelected: {
+    color: COLORS.primary,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  backFooterButton: {
+    flex: 1,
+  },
+  mainFooterButton: {
+    flex: 2,
+  },
+});
 
 export default SignUpRecipientScreen;

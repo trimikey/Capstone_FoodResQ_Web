@@ -1,41 +1,31 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Button,
-  Text,
-  Checkbox,
-  ActivityIndicator,
-  Snackbar,
-} from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Checkbox, Snackbar, Text } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
-import { FadeInUp, FadeInView } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  primaryFixed: '#6ffbbe',
-  secondary: '#855300',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLowest: '#ffffff',
-  surfaceContainerLow: '#eff4ff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#F3F4F6',
-  outlineVariant: '#bbcabf',
-  inverseOnSurface: '#eaf1ff',
-  inverseSurface: '#27313f',
-};
+import { FadeInUp } from './ui/Motion';
+import {
+  AuthCard,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  ProgressDots,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface DocumentUploadState {
   [key: string]: boolean;
+}
+
+interface VerificationDocument {
+  id: string;
+  label: string;
+  description: string;
+  subtitle: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  required: boolean;
 }
 
 interface SignUpVerificationScreenProps {
@@ -53,42 +43,41 @@ export function SignUpVerificationScreen({
   recipientType = 'individual',
   volunteerRole = false,
 }: SignUpVerificationScreenProps) {
-  const insets = useSafeAreaInsets();
   const [agreedToCertification, setAgreedToCertification] = useState(false);
   const [uploadedDocuments, setUploadedDocuments] = useState<DocumentUploadState>({});
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
-  const documents = [
+  const documents: VerificationDocument[] = [
     ...(volunteerRole
       ? []
       : [
           {
             id: 'business_license',
-            label: 'Business License (Provider)',
-            description: 'Required for Businesses',
-            subtitle: 'PDF, JPG or PNG (max 5MB)',
-            icon: '📄',
+            label: 'Giấy phép / hồ sơ cơ sở',
+            description: 'Tuỳ chọn cho provider hoặc tổ chức',
+            subtitle: 'PDF, JPG hoặc PNG, tối đa 5MB',
+            icon: 'file-document-outline' as const,
             required: false,
           },
         ]),
     {
       id: 'id_card',
-      label: 'ID Card Front/Back',
-      description: 'Receiver/Volunteer',
-      subtitle: 'Upload both sides',
-      icon: '🪪',
+      label: 'Giấy tờ tùy thân',
+      description: 'Bắt buộc',
+      subtitle: 'Ảnh mặt trước và mặt sau',
+      icon: 'card-account-details-outline',
       required: true,
     },
     ...(recipientType === 'individual'
       ? [
           {
             id: 'income_proof',
-            label: 'Income Proof (Individual Receiver)',
-            description: 'Required for individuals',
-            subtitle: 'Pay stub or bank statement',
-            icon: '📊',
+            label: 'Giấy tờ chứng minh hoàn cảnh',
+            description: 'Tuỳ chọn',
+            subtitle: 'Sao kê, giấy xác nhận hoặc tài liệu liên quan',
+            icon: 'chart-box-outline' as const,
             required: false,
           },
         ]
@@ -97,10 +86,10 @@ export function SignUpVerificationScreen({
       ? [
           {
             id: 'food_safety',
-            label: 'Food Safety Certificate',
-            description: 'Volunteer Chef',
-            subtitle: 'Valid certification document',
-            icon: '✓',
+            label: 'Chứng nhận an toàn thực phẩm',
+            description: 'Tuỳ chọn cho vai trò bếp',
+            subtitle: 'Tài liệu chứng nhận còn hiệu lực',
+            icon: 'shield-check-outline' as const,
             required: false,
           },
         ]
@@ -112,342 +101,260 @@ export function SignUpVerificationScreen({
       ...prev,
       [docId]: !prev[docId],
     }));
-    setToastMessage(`Document uploaded: ${docId}`);
+    setToastMessage(uploadedDocuments[docId] ? 'Đã bỏ chọn tài liệu' : 'Đã chọn tài liệu');
     setShowToast(true);
   };
 
   const handleSubmit = () => {
-    if (!agreedToCertification) {
-      setToastMessage('Please agree to the certification');
-      setShowToast(true);
-      return;
+    try {
+      clearError();
+      if (!agreedToCertification) {
+        showError('Bạn cần xác nhận thông tin là chính xác.', 2000);
+        return;
+      }
+
+      const missingRequired = documents
+        .filter((doc) => doc.required)
+        .filter((doc) => !uploadedDocuments[doc.id])
+        .map((doc) => doc.label);
+
+      if (missingRequired.length > 0) {
+        showError(`Vui lòng tải lên: ${missingRequired.join(', ')}`, 3000);
+        return;
+      }
+
+      onSuccess?.();
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
     }
-    onSuccess?.();
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      {/* Header */}
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.background,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
+    <AuthScaffold
+      footer={
+        <Button
+          mode="contained"
+          onPress={handleSubmit}
+          disabled={isLoading || !agreedToCertification}
+          loading={isLoading}
+          buttonColor={COLORS.primary}
+          style={authStyles.primaryButton}
+          contentStyle={authStyles.buttonContent}
+          labelStyle={authStyles.buttonLabel}
+          accessibilityLabel="Gửi hồ sơ xác minh"
+          accessibilityState={{ disabled: isLoading || !agreedToCertification }}
         >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 24,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-        <Text
-          style={{
-            fontSize: 12,
-            color: COLORS.onSurfaceVariant,
-          }}
-        >
-          Step 3 of 3
-        </Text>
-      </View>
+          {isLoading ? 'Đang gửi' : 'Gửi hồ sơ'}
+        </Button>
+      }
+    >
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Xác minh hồ sơ"
+        right={<Text style={styles.stepText}>3/3</Text>}
+      />
 
-      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-        {/* Progress Indicator */}
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'center',
-            gap: 8,
-            paddingVertical: 12,
-          }}
-        >
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: COLORS.primaryContainer,
-            }}
-          />
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: COLORS.primaryContainer,
-            }}
-          />
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: COLORS.primary,
-            }}
-          />
-        </View>
+      <ProgressDots total={3} active={2} label="Bước 3: Tài liệu xác minh" />
 
-        {/* Title */}
-        <FadeInView style={{ alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
-          <Text
-            style={{
-              fontSize: 24,
-              fontWeight: '600',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
-          >
-            Verify Your Identity
-          </Text>
-          <Text
-            style={{
-              fontSize: 14,
-              color: COLORS.onSurfaceVariant,
-              textAlign: 'center',
-            }}
-          >
-            Upload the required documents to finalize your registration and start saving food.
-          </Text>
-        </FadeInView>
+      <AuthIntro
+        icon="file-upload-outline"
+        eyebrow="Xác minh"
+        title="Tải lên tài liệu cần thiết"
+        description="Các tài liệu giúp FoodResQ xác minh hồ sơ trước khi mở đầy đủ tính năng cho tài khoản."
+      />
 
-        {/* Documents */}
-        <FadeInUp delay={80} style={{ flex: 1, paddingHorizontal: 20, gap: 12 }}>
+      <FadeInUp delay={80}>
+        <AuthCard>
           {documents.map((doc) => (
-            <View key={doc.id} style={{ gap: 8 }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: COLORS.onSurface,
-                  }}
-                >
-                  {doc.label}
-                </Text>
-                {!doc.required && (
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: COLORS.primary,
-                      fontWeight: '700',
-                    }}
-                  >
-                    {doc.description}
-                  </Text>
-                )}
-              </View>
-
-              <Pressable
-                onPress={() => handleDocumentUpload(doc.id)}
-                disabled={isLoading}
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.8 : 1,
-                })}
-              >
-                <View
-                  style={{
-                    borderWidth: 1,
-                    borderColor: uploadedDocuments[doc.id]
-                      ? COLORS.primary
-                      : COLORS.outline,
-                    borderRadius: 12,
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    backgroundColor: uploadedDocuments[doc.id]
-                      ? `${COLORS.primaryContainer}10`
-                      : COLORS.surfaceContainerLowest,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 32,
-                      marginBottom: 8,
-                    }}
-                  >
-                    {uploadedDocuments[doc.id] ? '✓' : doc.icon}
-                  </Text>
-                  {uploadedDocuments[doc.id] ? (
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: '600',
-                        color: COLORS.onSurface,
-                      }}
-                    >
-                      {doc.id}.pdf selected
-                    </Text>
-                  ) : (
-                    <>
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          color: COLORS.onSurfaceVariant,
-                          textAlign: 'center',
-                          marginBottom: 4,
-                        }}
-                      >
-                        Click to upload or drag and drop
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: COLORS.outlineVariant,
-                        }}
-                      >
-                        {doc.subtitle}
-                      </Text>
-                    </>
-                  )}
-                </View>
-              </Pressable>
-            </View>
+            <DocumentCard
+              key={doc.id}
+              doc={doc}
+              uploaded={!!uploadedDocuments[doc.id]}
+              disabled={isLoading}
+              onPress={() => handleDocumentUpload(doc.id)}
+            />
           ))}
-        </FadeInUp>
 
-        {/* Certification Checkbox */}
-        <FadeInUp
-          delay={140}
-          style={{
-            paddingHorizontal: 20,
-            paddingTop: 12,
-            borderTopWidth: 1,
-            borderTopColor: COLORS.outline,
-            marginBottom: 12,
-            marginTop: 12,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              gap: 12,
-            }}
+          <Pressable
+            onPress={() => setAgreedToCertification((current) => !current)}
+            disabled={isLoading}
+            style={({ pressed }) => [styles.certBox, pressed && authStyles.pressed]}
+            accessibilityRole="checkbox"
+            accessibilityLabel="Xác nhận tài liệu chính xác"
+            accessibilityState={{ checked: agreedToCertification, disabled: isLoading }}
           >
             <Checkbox
               status={agreedToCertification ? 'checked' : 'unchecked'}
-              onPress={() => setAgreedToCertification(!agreedToCertification)}
               disabled={isLoading}
               color={COLORS.primary}
             />
-            <Text
-              style={{
-                fontSize: 14,
-                color: COLORS.onSurfaceVariant,
-                flex: 1,
-                lineHeight: 20,
-              }}
-            >
-              I certify the documents are accurate and valid. I understand that falsifying information will lead to immediate account suspension.
+            <Text style={styles.certText}>
+              Tôi xác nhận các tài liệu là chính xác và hiểu rằng thông tin sai có thể khiến tài khoản bị tạm ngưng.
             </Text>
-          </View>
-        </FadeInUp>
-      </View>
+          </Pressable>
+        </AuthCard>
+      </FadeInUp>
 
-      {/* Submit Button */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surfaceContainerLowest,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.outline,
-        }}
-      >
-        <FadeInUp delay={200}>
-        <Button
-          mode="contained"
-          onPress={() => {
-            try {
-              clearError();
-              
-              // Check certification
-              if (!agreedToCertification) {
-                showError('Please agree to the certification', 2000);
-                return;
-              }
-              
-              // Check required documents
-              const missingRequired = documents
-                .filter(doc => doc.required)
-                .filter(doc => !uploadedDocuments[doc.id])
-                .map(doc => doc.label);
-              
-              if (missingRequired.length > 0) {
-                showError(`Please upload: ${missingRequired.join(', ')}`, 3000);
-                return;
-              }
-              
-              handleSubmit?.();
-            } catch (error) {
-              showError(getErrorMessage(error), 3000);
-            }
-          }}
-          disabled={isLoading || !agreedToCertification}
-          loading={isLoading}
-          style={{
-            backgroundColor: COLORS.primary,
-            borderRadius: 12,
-            paddingVertical: 8,
-          }}
-          labelStyle={{
-            fontSize: 14,
-            fontWeight: '600',
-          }}
-        >
-          {isLoading ? 'Submitting...' : 'Submit Documents'}
-        </Button>
-        </FadeInUp>
-      </View>
-
-      {/* Toast Notification - For Document Errors */}
       <Snackbar
         visible={showToast}
         onDismiss={() => setShowToast(false)}
-        duration={2000}
-        style={{
-          backgroundColor: COLORS.inverseSurface,
-        }}
+        duration={1800}
+        style={styles.snackbar}
       >
-        <Text style={{ color: COLORS.inverseOnSurface, fontSize: 13 }}>
-          {toastMessage}
-        </Text>
+        <Text style={styles.snackbarText}>{toastMessage}</Text>
       </Snackbar>
 
-      {/* Error Toast - For API/System Errors */}
       <ErrorToast
         visible={isVisible}
         message={error?.message || ''}
         onDismiss={clearError}
         duration={3000}
       />
-    </View>
+    </AuthScaffold>
   );
 }
+
+function DocumentCard({
+  doc,
+  uploaded,
+  disabled,
+  onPress,
+}: {
+  doc: VerificationDocument;
+  uploaded: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.documentCard,
+        uploaded && styles.documentCardUploaded,
+        pressed && authStyles.pressed,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${uploaded ? 'Bỏ chọn' : 'Chọn'} ${doc.label}`}
+      accessibilityState={{ selected: uploaded, disabled }}
+    >
+      <View style={[styles.documentIcon, uploaded && styles.documentIconUploaded]}>
+        <MaterialCommunityIcons
+          name={uploaded ? 'check-circle-outline' : doc.icon}
+          size={25}
+          color={uploaded ? COLORS.success : COLORS.primary}
+        />
+      </View>
+      <View style={styles.documentCopy}>
+        <View style={styles.documentTitleRow}>
+          <Text style={styles.documentTitle}>{doc.label}</Text>
+          <Text style={[styles.documentBadge, doc.required && styles.documentBadgeRequired]}>
+            {doc.required ? 'Bắt buộc' : 'Tuỳ chọn'}
+          </Text>
+        </View>
+        <Text style={styles.documentDescription}>{doc.description}</Text>
+        <Text style={styles.documentSubtitle}>
+          {uploaded ? `${doc.id}.pdf đã chọn` : doc.subtitle}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  stepText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  documentCard: {
+    minHeight: 94,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceContainerLow,
+    padding: spacing.md,
+  },
+  documentCardUploaded: {
+    borderColor: COLORS.success,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  documentIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  documentIconUploaded: {
+    backgroundColor: COLORS.surface,
+  },
+  documentCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  documentTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  documentTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  documentBadge: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  documentBadgeRequired: {
+    color: COLORS.error,
+  },
+  documentDescription: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
+  documentSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.onSurfaceVariant,
+  },
+  certBox: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerLow,
+    paddingRight: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  certText: {
+    flex: 1,
+    paddingTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    color: COLORS.onSurfaceVariant,
+  },
+  snackbar: {
+    backgroundColor: COLORS.onSurface,
+  },
+  snackbarText: {
+    color: COLORS.surface,
+    fontSize: 13,
+  },
+});
 
 export default SignUpVerificationScreen;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable, Linking, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator } from 'react-native-paper';
+import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
@@ -21,19 +21,11 @@ import {
   useRateReservation,
 } from '@/hooks/useReservations';
 import { formatPickupWindow } from '@/utils/listingFormat';
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 function fmtDateTime(iso?: string): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -125,9 +117,7 @@ export default function OrderDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <ActivityIndicator color={COLORS.primary} />
-        </View>
+        <ScreenState kind="loading" title="Đang tải đơn đặt" />
       </SafeAreaView>
     );
   }
@@ -136,12 +126,7 @@ export default function OrderDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 12 }}>
-            Không tải được đơn đặt.
-          </Text>
-          <Button mode="outlined" onPress={() => refetch()}>Thử lại</Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được đơn đặt" actionLabel="Thử lại" onAction={() => refetch()} />
       </SafeAreaView>
     );
   }
