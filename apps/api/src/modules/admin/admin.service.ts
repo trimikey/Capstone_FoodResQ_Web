@@ -1049,18 +1049,21 @@ export class AdminService {
         avatarUrl: true,
         createdAt: true,
         volunteerProfile: {
-          select: { specializations: { select: { specialization: true, isVerified: true } } },
+          select: { id: true, specializations: { select: { specialization: true, isVerified: true } } },
         },
         receiverProfile: { select: { isCharityOrg: true } },
+        providerProfile: { select: { id: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
     // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render + cờ tổ chức
-    return users.map(({ volunteerProfile, receiverProfile, ...u }) => ({
+    // Đồng thời gắn profileId để admin có thể xét duyệt hồ sơ từ màn Quản lý Tài khoản
+    return users.map(({ volunteerProfile, receiverProfile, providerProfile, ...u }) => ({
       ...u,
       specializations: volunteerProfile?.specializations ?? [],
       isCharityOrg: receiverProfile?.isCharityOrg ?? false,
+      profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
     }));
   }
 

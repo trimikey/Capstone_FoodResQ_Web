@@ -13,6 +13,7 @@ import {
   useResolveReport,
   useAdminUsers,
   useSetUserStatus,
+  useReviewUserVerification,
   useRecentReservations,
   useAdminConfigs,
   useSetConfig,
@@ -2264,11 +2265,22 @@ function UsersTab() {
   const { data, isLoading } = useAdminUsers(undefined, q || undefined);
   const { data: ov } = useAdminOverview();
   const setStatus = useSetUserStatus();
+  const reviewUser = useReviewUserVerification();
 
   async function act(id: string, status: 'active' | 'banned') {
     try {
       await setStatus.mutateAsync({ id, status });
       toast.success(status === 'banned' ? 'Đã khoá tài khoản' : 'Đã cập nhật tài khoản');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
+      toast.error(msg);
+    }
+  }
+
+  async function reviewUserProfile(profileId: string, decision: 'approved' | 'rejected') {
+    try {
+      await reviewUser.mutateAsync({ profileId, decision });
+      toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
       toast.error(msg);
@@ -2347,7 +2359,7 @@ function UsersTab() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {paged.slice.map((u) => (
-                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} />
+                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} reviewProfile={reviewUserProfile} />
                 ))}
               </tbody>
             </table>
@@ -2366,7 +2378,7 @@ function UsersTab() {
       </button>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} />}
-      {detailUser && <UserDetailModal u={detailUser} onClose={() => setDetailUser(null)} onAct={act} />}
+      {detailUser && <UserDetailModal u={detailUser} onClose={() => setDetailUser(null)} onAct={act} reviewProfile={reviewUserProfile} />}
     </div>
   );
 }
@@ -2375,12 +2387,13 @@ function trustToFive(score: number): number {
   return Math.round((score / 20) * 10) / 10;
 }
 
-function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean }) {
+function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean; reviewProfile?: (profileId: string, decision: 'approved' | 'rejected') => void }) {
   const [menu, setMenu] = useState(false);
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const five = trustToFive(u.trustScore);
   const goodScore = five >= 3;
+  const canApprove = u.role !== 'admin' && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
 
   return (
     <tr className="hover:bg-neutral-50/50 transition-colors">
@@ -2413,7 +2426,7 @@ function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: st
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
           {u.role !== 'admin' && u.status === 'pending_verification' && (
-            <button onClick={() => onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
+            <button onClick={() => canApprove ? reviewProfile(u.profileId!, 'approved') : onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
           )}
           {u.role !== 'admin' && u.status === 'banned' && (
             <button onClick={() => onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50">Khôi phục</button>
@@ -2442,9 +2455,10 @@ function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: st
   );
 }
 
-function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => void; onAct: (id: string, s: 'active' | 'banned') => void }) {
+function UserDetailModal({ u, onClose, onAct, reviewProfile }: { u: AdminUser; onClose: () => void; onAct: (id: string, s: 'active' | 'banned') => void; reviewProfile?: (profileId: string, decision: 'approved' | 'rejected') => void }) {
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
+  const canApprove = u.role !== 'admin' && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -2469,7 +2483,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
               {u.status === 'banned' ? (
                 <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="flex-1 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl transition-colors">Khôi phục tài khoản</button>
               ) : u.status === 'pending_verification' ? (
-                <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="flex-1 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl transition-colors">Xét duyệt</button>
+                <button onClick={() => { canApprove ? reviewProfile(u.profileId!, 'approved') : onAct(u.id, 'active'); onClose(); }} className="flex-1 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl transition-colors">Xét duyệt</button>
               ) : (
                 <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-sm rounded-xl transition-colors">Khoá tài khoản</button>
               )}

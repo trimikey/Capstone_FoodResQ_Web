@@ -103,6 +103,7 @@ export class UsersService {
       contactPhone: string | null;
       taxCode: string | null;
       isVerified: boolean;
+      avgRating: number | null;
       verificationStatus: string;
       lng: number | null;
       lat: number | null;

@@ -55,6 +55,8 @@ export interface AdminUser {
   createdAt: string;
   specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
   isCharityOrg: boolean;
+  /** Provider/volunteer profile ID — needed to call /admin/verifications/{type}/{profileId} */
+  profileId?: string;
 }
 
 export function useAdminStats() {
@@ -514,6 +516,17 @@ export function useUnassignVolunteer() {
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
       void qc.invalidateQueries({ queryKey: ['admin', 'campaign', p.campaignId] });
+    },
+  });
+}
+
+export function useReviewUserVerification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { profileId: string; decision: 'approved' | 'rejected'; note?: string }) =>
+      (await api.patch(`/admin/verifications/provider/${p.profileId}`, { decision: p.decision, note: p.note })).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin'] });
     },
   });
 }

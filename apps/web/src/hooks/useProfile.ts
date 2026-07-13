@@ -105,7 +105,7 @@ export function useMe(enabled = true) {
   return useQuery({
     queryKey: ['users', 'me', userId],
     queryFn: fetchMe,
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
     enabled: enabled && !!userId,
   });
 }
