@@ -85,13 +85,39 @@ export class UsersService {
     }
 
     // Nếu là người nhận → kèm cờ tổ chức từ thiện để FE hiển thị nhãn đúng
-    let receiver: { isCharityOrg: boolean; organizationName: string | null } | null = null;
+    let receiver: {
+      isCharityOrg: boolean;
+      organizationName: string | null;
+      address: string | null;
+      lng: number | null;
+      lat: number | null;
+    } | null = null;
     if (user.role === 'receiver') {
-      const rp = await this.prisma.receiverProfile.findUnique({
-        where: { userId },
-        select: { isCharityOrg: true, organizationName: true },
-      });
-      if (rp) receiver = { isCharityOrg: rp.isCharityOrg, organizationName: rp.organizationName };
+      const rows = await this.prisma.$queryRaw<
+        {
+          is_charity_org: boolean;
+          organization_name: string | null;
+          address: string | null;
+          lng: number | null;
+          lat: number | null;
+        }[]
+      >(Prisma.sql`
+        SELECT is_charity_org, organization_name, address,
+               ST_X(location::geometry) AS lng,
+               ST_Y(location::geometry) AS lat
+        FROM receiver_profiles
+        WHERE user_id = ${userId}::uuid
+      `);
+      const rp = rows[0];
+      if (rp) {
+        receiver = {
+          isCharityOrg: rp.is_charity_org,
+          organizationName: rp.organization_name,
+          address: rp.address,
+          lng: rp.lng !== null ? Number(rp.lng) : null,
+          lat: rp.lat !== null ? Number(rp.lat) : null,
+        };
+      }
     }
 
     // Nếu là NCC → kèm địa chỉ + toạ độ cửa hàng (đã đăng ký) để FE điền sẵn khi tạo listing
@@ -103,6 +129,7 @@ export class UsersService {
       contactPhone: string | null;
       taxCode: string | null;
       isVerified: boolean;
+      avgRating: number | null;
       verificationStatus: string;
       lng: number | null;
       lat: number | null;
@@ -173,6 +200,43 @@ export class UsersService {
           trustScore: true,
         },
       });
+
+      const hasLocationUpdate =
+        dto.address !== undefined || dto.lng !== undefined || dto.lat !== undefined;
+      if (hasLocationUpdate) {
+        if (user.role !== 'provider' && user.role !== 'receiver') {
+          throw new BadRequestException('Vai trò hiện tại không hỗ trợ cập nhật địa chỉ.');
+        }
+        if ((dto.lng !== undefined || dto.lat !== undefined) && (dto.lng === undefined || dto.lat === undefined)) {
+          throw new BadRequestException('Cần cung cấp đầy đủ cả kinh độ và vĩ độ.');
+        }
+
+        const address = dto.address?.trim();
+        if (user.role === 'provider') {
+          if (address !== undefined) {
+            await this.prisma.providerProfile.update({ where: { userId }, data: { address } });
+          }
+          if (dto.lng !== undefined && dto.lat !== undefined) {
+            await this.prisma.$executeRaw(Prisma.sql`
+              UPDATE provider_profiles
+              SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
+              WHERE user_id = ${userId}::uuid
+            `);
+          }
+        } else {
+          if (address !== undefined) {
+            await this.prisma.receiverProfile.update({ where: { userId }, data: { address } });
+          }
+          if (dto.lng !== undefined && dto.lat !== undefined) {
+            await this.prisma.$executeRaw(Prisma.sql`
+              UPDATE receiver_profiles
+              SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
+              WHERE user_id = ${userId}::uuid
+            `);
+          }
+        }
+      }
+
       return user;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
