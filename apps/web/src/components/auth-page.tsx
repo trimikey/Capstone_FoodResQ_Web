@@ -22,7 +22,7 @@ const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), 
 import { api } from "@/lib/api";
 import { reverseGeocode } from "@/lib/geocode";
 import { useAuthStore } from "@/stores/auth.store";
-import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
+import CameraCapture from "@/components/shared/CameraCapture";
 import { signInWithGoogle, isFirebaseConfigured } from "@/lib/firebase";
 import { useUploadVerificationImage } from "@/hooks/useUploadImage";
 
@@ -157,8 +157,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
-  const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
-  const [enrollRole, setEnrollRole] = useState<'receiver' | 'volunteer'>('receiver');
+  // Form đã hợp lệ, chờ chụp khuôn mặt để gửi đăng ký (receiver/volunteer) —
+  // tài khoản CHỈ được tạo khi BE xác thực được khuôn mặt trong cùng request.
+  const [pendingFaceData, setPendingFaceData] = useState<RegisterFormValues | null>(null);
   // Toạ độ GPS bắt được khi người dùng bấm "Dùng vị trí hiện tại" lúc đăng ký.
   // null = chưa định vị (BE sẽ chỉ lưu địa chỉ dạng text, không lưu location).
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -372,9 +373,15 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   const onRegisterSubmit = async (data: RegisterFormValues) => {
-    setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    // Cá nhân người nhận & tình nguyện viên: eKYC BẮT BUỘC — chụp khuôn mặt TRƯỚC,
+    // gửi kèm request đăng ký; BE không nhận diện được mặt thì KHÔNG tạo tài khoản.
+    if (data.role === 'receiver' || data.role === 'volunteer') {
+      setPendingFaceData(data);
+      return;
+    }
+    setIsSubmitting(true);
     try {
       const res = await api.post<{
         data: {
@@ -383,21 +390,15 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           user: Parameters<typeof setUser>[0];
         };
       }>('/auth/register', {
+        // Nhánh này chỉ còn provider & charity (receiver/volunteer đã rẽ sang luồng selfie ở trên)
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
         role: data.role === 'charity' ? 'receiver' : data.role,
         isCharityOrg: data.role === 'charity' ? true : undefined,
-        businessName: (data.role === 'provider' || data.role === 'charity') ? data.storeName || undefined : undefined,
-        address:
-          (data.role === 'provider' || data.role === 'charity')
-            ? data.providerAddress || undefined
-            : data.role === 'receiver'
-              ? data.receiverAddress || undefined
-              : undefined,
-        vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
-        volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
+        businessName: data.storeName || undefined,
+        address: data.providerAddress || undefined,
         // Provider verification (P3)
         ...(data.role === 'provider' && {
           businessType: data.providerBusinessType,
@@ -407,44 +408,75 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
         }),
       });
-      if (data.role === 'receiver' || data.role === 'volunteer') {
-        // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.
-        // CHỈ cá nhân người nhận & tình nguyện viên phải đăng ký khuôn mặt.
-        // Tổ chức (charity) và nhà cung cấp KHÔNG cần quét mặt.
-        // KHÔNG báo "Đăng ký thành công" ở đây — chỉ coi là hoàn tất khi đã xác minh
-        // được khuôn mặt (BE từ chối ảnh không có mặt). Báo thành công ở bước onDone.
-        toast.info('Đã tạo tài khoản. Vui lòng đăng ký khuôn mặt để hoàn tất.');
-        setTokens(res.data.data.accessToken, res.data.data.refreshToken);
-        setUser(res.data.data.user);
-        queryClient.clear();
-        setEnrollRole(data.role === 'volunteer' ? 'volunteer' : 'receiver');
-        setShowFaceEnrollment(true);
-      } else {
-        // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
-        const waitingMsg =
-          data.role === "provider"
-            ? "Đăng ký tài khoản NCC thành công! Hồ sơ đang chờ admin duyệt (tối đa 24h). Bạn có thể đăng nhập, các chức năng đăng tin sẽ mở sau khi duyệt."
-            : "Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.";
-        toast.success(
-          data.role === "provider"
-            ? "Đã gửi hồ sơ đăng ký!"
-            : "Đăng ký thành công!",
-        );
-        setSuccessMessage(waitingMsg);
-        setTimeout(() => {
-          setActiveTab("login");
-          setRegisterStep(1);
-          resetLoginForm();
-          resetRegisterForm();
-          setUploadedFile(null);
-          setSuccessMessage(null);
-        }, 2200);
-      }
+      void res; // tokens không dùng ở nhánh này — provider/charity đăng nhập lại sau
+      // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
+      const waitingMsg =
+        data.role === "provider"
+          ? "Đăng ký tài khoản NCC thành công! Hồ sơ đang chờ admin duyệt (tối đa 24h). Bạn có thể đăng nhập, các chức năng đăng tin sẽ mở sau khi duyệt."
+          : "Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.";
+      toast.success(
+        data.role === "provider"
+          ? "Đã gửi hồ sơ đăng ký!"
+          : "Đăng ký thành công!",
+      );
+      setSuccessMessage(waitingMsg);
+      setTimeout(() => {
+        setActiveTab("login");
+        setRegisterStep(1);
+        resetLoginForm();
+        resetRegisterForm();
+        setUploadedFile(null);
+        setSuccessMessage(null);
+      }, 2200);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message ?? "Đăng ký thất bại. Email hoặc số điện thoại có thể đã được sử dụng.";
       setErrorMessage(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /** Gửi đăng ký receiver/volunteer kèm selfie (multipart) — BE xác thực mặt rồi mới tạo tài khoản. */
+  const submitWithSelfie = async (photo: File) => {
+    if (!pendingFaceData) return;
+    const data = pendingFaceData;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const form = new FormData();
+      form.append('email', data.email);
+      form.append('password', data.password);
+      form.append('fullName', data.fullName);
+      if (data.phone) form.append('phone', data.phone);
+      form.append('role', data.role); // 'receiver' | 'volunteer'
+      if (data.role === 'receiver' && data.receiverAddress) form.append('address', data.receiverAddress);
+      if (data.role === 'volunteer') {
+        if (data.vehicle) form.append('vehicleType', data.vehicle);
+        if (data.volunteerRole) form.append('volunteerRole', data.volunteerRole);
+      }
+      if (geoCoords) {
+        form.append('lng', String(geoCoords.lng));
+        form.append('lat', String(geoCoords.lat));
+      }
+      form.append('selfie', photo);
+
+      const res = await api.post<{
+        data: { accessToken: string; refreshToken: string; user: Parameters<typeof setUser>[0] };
+      }>('/auth/register', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+      setPendingFaceData(null);
+      toast.success('Đăng ký thành công!');
+      setTokens(res.data.data.accessToken, res.data.data.refreshToken);
+      setUser(res.data.data.user);
+      router.push(data.role === 'volunteer' ? '/deliveries' : '/listings');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Đăng ký thất bại. Vui lòng thử lại.';
+      // Giữ modal mở để chụp lại (trường hợp không nhận diện được khuôn mặt)
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -1453,8 +1485,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         </div>
       </footer>
 
-      {/* Bước cuối đăng ký (BẮT BUỘC với người nhận & tình nguyện viên): chụp khuôn mặt gốc để xác minh danh tính */}
-      {showFaceEnrollment && (
+      {/* eKYC BẮT BUỘC (người nhận cá nhân & tình nguyện viên): chụp khuôn mặt TRƯỚC —
+          tài khoản chỉ được tạo khi BE xác thực được khuôn mặt trong cùng request đăng ký. */}
+      {pendingFaceData && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-3xl w-full sm:max-w-3xl shadow-12 flex flex-col gap-6 p-6 sm:p-10 max-h-[90vh] overflow-y-auto">
@@ -1466,23 +1499,36 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 Bước bắt buộc: Đăng ký khuôn mặt
               </h2>
               <p className="font-bold text-[15px] text-emerald-800 mt-2">
-                Tài khoản đã tạo — hãy chụp/đưa ảnh khuôn mặt để hoàn tất
+                Chụp khuôn mặt để hoàn tất đăng ký — chưa có tài khoản nào được tạo
               </p>
               <p className="text-[13px] text-neutral-500 mt-1 max-w-md">
-                {enrollRole === 'volunteer'
+                {pendingFaceData.role === 'volunteer'
                   ? 'Tình nguyện viên cần xác minh khuôn mặt để được giao nhiệm vụ.'
-                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'} Đây là bước bắt buộc, chỉ làm một lần.
+                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'}{' '}
+                Không có khuôn mặt hợp lệ thì đăng ký sẽ thất bại.
               </p>
             </div>
-            {/* Không truyền onSkip → KHÔNG có nút bỏ qua (bắt buộc hoàn tất) */}
-            <FaceEnrollmentPanel
-              onDone={() => {
-                setShowFaceEnrollment(false);
-                // Chỉ tới đây (khuôn mặt đã được BE xác minh) mới coi là đăng ký thành công
-                toast.success('Đăng ký thành công!');
-                router.push(enrollRole === 'volunteer' ? '/deliveries' : '/listings');
-              }}
-            />
+            <div className="bg-white rounded-[24px] shadow-sm border border-neutral-100 p-6 sm:p-8 flex flex-col gap-6">
+              <CameraCapture
+                mode="face"
+                hint="Chụp selfie rõ nét, đủ ánh sáng — đây sẽ là khuôn mặt gốc để đối chiếu khi nhận hàng"
+                confirmLabel="Chụp & hoàn tất đăng ký"
+                busy={isSubmitting}
+                onConfirm={(photo) => void submitWithSelfie(photo)}
+              />
+              <div className="pt-1 flex justify-center">
+                <button
+                  onClick={() => {
+                    setPendingFaceData(null);
+                    toast.info('Đã huỷ đăng ký — tài khoản chưa được tạo.');
+                  }}
+                  disabled={isSubmitting}
+                  className="text-neutral-500 font-semibold text-[13px] hover:text-neutral-800 transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  Huỷ đăng ký <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
