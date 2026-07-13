@@ -57,6 +57,7 @@ export default function ListingDetailPage({ params }: Props) {
     qrToken: string;
     qrExpiresAt: string;
   } | null>(null);
+  const [renderNowMs] = useState(() => Date.now());
 
   if (isLoading) {
     return (
@@ -113,7 +114,11 @@ export default function ListingDetailPage({ params }: Props) {
         qrExpiresAt: res.qrExpiresAt,
       });
       // Không auto-chuyển trang — để người dùng xem QR và tự bấm "Xem đơn đặt"
-      toast.success('Đặt chỗ thành công! Mã QR nhận hàng của bạn đã sẵn sàng.');
+      toast.success(
+        deliveryMethod === 'delivery'
+          ? 'Đã tạo đơn giao hàng! Hệ thống đang tìm tình nguyện viên gần điểm lấy.'
+          : 'Đặt chỗ tự đến lấy thành công! Đơn này sẽ không gửi lời mời cho shipper.'
+      );
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -131,7 +136,7 @@ export default function ListingDetailPage({ params }: Props) {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
-  const nowMs = Date.now();
+  const nowMs = renderNowMs;
   const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
   const windowClosed = nowMs > new Date(listing.pickupEndTime).getTime();
 
@@ -417,7 +422,9 @@ export default function ListingDetailPage({ params }: Props) {
                     )}
                   </button>
                   <p className="text-center text-[10px] text-on-surface-variant/70 italic">
-                    * Bạn sẽ nhận được mã QR để nhận hàng tại cửa hàng.
+                    {deliveryMethod === 'delivery'
+                      ? '* Bạn vẫn có mã QR để đối chiếu khi nhận hàng; shipper sẽ nhận lời mời nếu đang ở gần điểm lấy.'
+                      : '* Đơn tự đến lấy sẽ không hiện ở màn Đơn cần giao của shipper.'}
                   </p>
                 </div>
               </div>

@@ -5,8 +5,10 @@ export interface Coords {
   lng: number;
 }
 
-/** Fallback: trung tâm TP.HCM (dùng khi từ chối quyền hoặc lỗi định vị). */
-export const DEFAULT_COORDS: Coords = { lat: 10.7769, lng: 106.7009 };
+/** Fallback/dev test: Vinhomes Grand Park, TP. Thủ Đức. */
+export const DEFAULT_COORDS: Coords = { lat: 10.8416, lng: 106.8370 };
+
+export const DEFAULT_LOCATION_LABEL = 'Vinhomes Grand Park';
 
 export interface CoordsResult {
   coords: Coords;
@@ -16,6 +18,16 @@ export interface CoordsResult {
 
 /** Quá thời gian này mà chưa lấy được GPS fix → dùng DEFAULT_COORDS (tránh treo định vị). */
 const LOCATION_TIMEOUT_MS = 6000;
+
+export function isNearCoords(a: Coords, b: Coords, tolerance = 0.003): boolean {
+  return Math.abs(a.lat - b.lat) <= tolerance && Math.abs(a.lng - b.lng) <= tolerance;
+}
+
+export function getLocationLabel(coords: Coords, isFallback = false): string {
+  if (isNearCoords(coords, DEFAULT_COORDS)) return DEFAULT_LOCATION_LABEL;
+  const raw = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+  return isFallback ? `${raw} (mặc định)` : raw;
+}
 
 /**
  * Lấy toạ độ hiện tại qua expo-location. Xin quyền foreground;

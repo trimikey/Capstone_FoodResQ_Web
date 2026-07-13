@@ -28,81 +28,119 @@ interface Props {
 export function ListingCard({ listing, onPress, index = 0 }: Props) {
   const distance = formatDistance(listing.distanceM);
   const imageUri = listing.imageUrls?.[0];
+  const canRenderImage = imageUri != null && /^(https?:|file:|data:)/.test(imageUri);
 
   return (
     <FadeInUp delay={Math.min(index, 8) * 40} style={styles.wrap}>
       <Card style={styles.card} onPress={onPress} mode="elevated">
-        <View style={styles.imageWrap}>
-          {imageUri ? (
+        <View style={styles.row}>
+          <View style={styles.imageWrap}>
+          {canRenderImage ? (
             <AppImage source={{ uri: imageUri }} style={styles.image} />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
               <Icon source="image-off-outline" size={32} color={COLORS.onSurfaceVariant} />
             </View>
           )}
-          <Chip compact style={styles.qtyChip} textStyle={styles.qtyChipText}>
-            {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
-          </Chip>
-        </View>
+          </View>
 
-        <Card.Content style={styles.content}>
-          <Text variant="titleMedium" numberOfLines={1} style={styles.title}>
-            {listing.title}
-          </Text>
+          <Card.Content style={styles.content}>
+            <View style={styles.topLine}>
+              <Chip compact style={styles.catChip} textStyle={styles.catChipText}>
+                {categoryLabel(listing.category)}
+              </Chip>
+              {distance && (
+                <View style={styles.distance}>
+                  <Icon source="map-marker-outline" size={14} color={COLORS.primary} />
+                  <Text style={styles.distanceText}>{distance}</Text>
+                </View>
+              )}
+            </View>
 
-          <View style={styles.metaRow}>
-            <Chip compact style={styles.catChip} textStyle={styles.catChipText}>
-              {categoryLabel(listing.category)}
-            </Chip>
-            {distance && (
+            <Text variant="titleMedium" numberOfLines={2} style={styles.title}>
+              {listing.title}
+            </Text>
+
+            <View style={styles.iconText}>
+              <Icon source="store-outline" size={14} color={COLORS.onSurfaceVariant} />
+              <Text style={styles.metaText} numberOfLines={1}>
+                {listing.provider?.businessName ?? 'Cửa hàng'}
+              </Text>
+            </View>
+
+            <View style={styles.bottomLine}>
               <View style={styles.iconText}>
-                <Icon source="map-marker-outline" size={14} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.metaText}>{distance}</Text>
+                <Icon source="clock-outline" size={14} color={COLORS.primary} />
+                <Text style={[styles.metaText, { color: COLORS.primary }]} numberOfLines={1}>
+                  {formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
+                </Text>
               </View>
-            )}
-          </View>
-
-          <View style={styles.iconText}>
-            <Icon source="store-outline" size={14} color={COLORS.onSurfaceVariant} />
-            <Text style={styles.metaText} numberOfLines={1}>
-              {listing.provider?.businessName ?? 'Cửa hàng'}
-            </Text>
-          </View>
-
-          <View style={styles.iconText}>
-            <Icon source="clock-outline" size={14} color={COLORS.primary} />
-            <Text style={[styles.metaText, { color: COLORS.primary }]} numberOfLines={1}>
-              {formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
-            </Text>
-          </View>
-        </Card.Content>
+              <View style={styles.actionLine}>
+                <Text style={styles.qtyText} numberOfLines={1}>
+                  Còn {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
+                </Text>
+                <View style={styles.detailCta}>
+                  <Text style={styles.detailText}>Chi tiết</Text>
+                  <Icon source="chevron-right" size={15} color={COLORS.primary} />
+                </View>
+              </View>
+            </View>
+          </Card.Content>
+        </View>
       </Card>
     </FadeInUp>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 12 },
-  card: { backgroundColor: COLORS.surface, borderRadius: 16, overflow: 'hidden' },
-  imageWrap: { position: 'relative' },
-  image: { width: '100%', height: 160 },
+  wrap: { marginBottom: 10 },
+  card: { backgroundColor: COLORS.surface, borderRadius: 14, overflow: 'hidden' },
+  row: { flexDirection: 'row', minHeight: 132 },
+  imageWrap: { width: 112, backgroundColor: COLORS.outlineVariant },
+  image: { width: 112, height: '100%', minHeight: 132 },
   imagePlaceholder: {
     backgroundColor: COLORS.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qtyChip: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(16,185,129,0.92)',
-  },
-  qtyChipText: { color: '#fff', fontSize: 12, fontWeight: '700', lineHeight: 16 },
-  content: { paddingTop: 12, gap: 6 },
-  title: { fontWeight: '700', color: COLORS.onSurface },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  content: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, gap: 6 },
+  topLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  title: { fontWeight: '700', color: COLORS.onSurface, lineHeight: 22 },
   catChip: { backgroundColor: '#ecfdf5' },
   catChipText: { color: COLORS.primary, fontSize: 11, lineHeight: 14 },
+  distance: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
+  distanceText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
   iconText: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: COLORS.onSurfaceVariant, flexShrink: 1 },
+  bottomLine: { gap: 6, alignItems: 'flex-start' },
+  actionLine: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  qtyText: {
+    color: COLORS.onSurface,
+    backgroundColor: '#fef3c7',
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  detailCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+    paddingLeft: 8,
+    flexShrink: 0,
+  },
+  detailText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '800',
+  },
 });

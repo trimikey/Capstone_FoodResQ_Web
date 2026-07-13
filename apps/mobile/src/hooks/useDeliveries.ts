@@ -42,7 +42,9 @@ export interface DeliveryTracking {
  */
 export function useDeliveryTracking(reservationId?: string, enabled = true) {
   const { isOnline } = useNetworkStatus();
-  return useQuery({
+  const qc = useQueryClient();
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const query = useQuery({
     queryKey: ['delivery-tracking', reservationId],
     enabled: !!reservationId && enabled && isOnline,
     refetchInterval: isOnline ? 15000 : false,
@@ -298,9 +300,15 @@ export function useFailDelivery() {
 export function useUpdateDeliveryStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { deliveryId: string; status: DeliveryStatus; photo?: CapturedImage }) => {
+    mutationFn: async (params: {
+      deliveryId: string;
+      status: DeliveryStatus;
+      photo?: CapturedImage;
+      qrToken?: string;
+    }) => {
       const form = new FormData();
       form.append('status', params.status);
+      if (params.qrToken) form.append('qrToken', params.qrToken);
       if (params.photo) form.append('photo', params.photo as unknown as Blob);
       const res = await apiClient.patch<ApiResponse<unknown>>(
         endpoints.deliveries.updateStatus(params.deliveryId),
