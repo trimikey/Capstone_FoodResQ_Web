@@ -41,7 +41,14 @@ export interface Me {
   createdAt: string;
   stats: MeStats;
   volunteer: VolunteerInfo | null;
-  receiver: { isCharityOrg: boolean; organizationName: string | null } | null;
+  receiver: {
+    isCharityOrg: boolean;
+    organizationName: string | null;
+    /** Địa chỉ + toạ độ điểm giao mặc định (đơn nhờ tình nguyện viên giao). */
+    address: string | null;
+    lng: number | null;
+    lat: number | null;
+  } | null;
   /** Chỉ có khi role = provider. Null với các role khác. */
   provider: MeProvider | null;
 }
@@ -50,6 +57,10 @@ interface UpdateMeInput {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  /** Provider: địa chỉ + vị trí cửa hàng · Receiver: điểm giao mặc định. */
+  address?: string;
+  lng?: number;
+  lat?: number;
 }
 
 async function fetchMe(): Promise<Me> {

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
-import { useDeliveryTracking } from '@/hooks/useDeliveries';
+import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
 import { haversineKm } from '@/lib/utils';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 
@@ -34,8 +34,12 @@ const DELIVERY_STEP: Record<string, number> = {
   failed: 0,
 };
 
-// Tiêu đề/mô tả theo trạng thái giao hàng thật
-function deliveryHeadline(status?: string): { title: string; desc: string } {
+// Tiêu đề/mô tả theo trạng thái giao hàng thật.
+// failedReason: lý do từ BE (vd: hết 4ph30 không có TNV nào nhận) — ưu tiên hiện thay mô tả chung.
+function deliveryHeadline(status?: string, failedReason?: string | null): { title: string; desc: string } {
+  if (status === 'failed' && failedReason) {
+    return { title: 'Không tìm được tình nguyện viên', desc: `${failedReason} Bạn có thể đặt lại đơn hoặc chọn tự đến lấy.` };
+  }
   switch (status) {
     case 'pending_assignment':
       return { title: 'Đang tìm tình nguyện viên', desc: 'Đang tìm người giao phù hợp gần bạn — vui lòng chờ trong giây lát.' };
@@ -63,6 +67,7 @@ export default function ReservationDetailsPage() {
 
   const { data: fetchedData, isLoading, isError } = useReservationDetails(id);
   const submitProofMutation = useSubmitPickupProof();
+  const cancelDeliveryMutation = useCancelDeliverySearch();
 
   // Mode and state simulations
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
@@ -76,6 +81,11 @@ export default function ReservationDetailsPage() {
     { sender: 'shipper', text: 'Chào bạn, mình đã nhận đơn cứu trợ của bạn rồi nhé!' },
     { sender: 'shipper', text: 'Đang chuẩn bị lấy bánh từ Tiệm bánh Harmony.' },
   ]);
+
+  // Countdown: 4 phút 30 giây khi đang tìm shipper
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [countdownExpired, setCountdownExpired] = useState(false);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Handle fallback or fetched data determination
   const isMock = id.startsWith('demo-') || id.startsWith('mock-') || isError || !fetchedData;
@@ -124,6 +134,74 @@ export default function ReservationDetailsPage() {
   const isDelivered = useRealDelivery
     ? realDeliveryStatus === 'delivered'
     : tracking?.status === 'delivered' || currentStep === 2;
+
+  // ── Đếm ngược 4:30 tìm shipper (đặt SAU các khai báo tracking/isMock ở trên) ──
+
+  // Khi có shipper nhận → dừng countdown ngay
+  useEffect(() => {
+    const status = tracking?.status ?? (isMock ? null : realDeliveryStatus);
+    const hasShipper = !!tracking?.shipper;
+    if (hasShipper && status !== 'pending_assignment') {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      setCountdown(null);
+      setCountdownExpired(false);
+    }
+  }, [tracking?.status, tracking?.shipper, isMock, realDeliveryStatus]);
+
+  // Khởi động đếm ngược khi status = pending_assignment VÀ chưa có shipper
+  useEffect(() => {
+    const status = tracking?.status ?? (isMock ? null : realDeliveryStatus);
+    if (status === 'pending_assignment' && !tracking?.shipper && countdown === null && !countdownExpired) {
+      setCountdown(4 * 60 + 30); // 270 giây = 4:30
+    }
+  }, [tracking?.status, tracking?.shipper, isMock, realDeliveryStatus, countdown, countdownExpired]);
+
+  // Tick đếm ngược
+  useEffect(() => {
+    if (countdown === null || countdown <= 0) return;
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          setCountdownExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+  }, [countdown]);
+
+  // Lấy deliveryId từ tracking
+  const deliveryId = tracking?.deliveryId ?? (fetchedData?.delivery as { id?: string } | null)?.id;
+
+  // Hàm hủy tìm shipper (gọi API BE)
+  const handleCancelSearch = useCallback(async () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setCountdown(null);
+    setCountdownExpired(false);
+
+    // Gọi API BE nếu có deliveryId thật
+    if (!isMock && deliveryId) {
+      try {
+        await cancelDeliveryMutation.mutateAsync({ deliveryId });
+        toast.success('Đã hủy tìm tình nguyện viên. Bạn có thể đến lấy trực tiếp.');
+      } catch (e) {
+        const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Huỷ thất bại';
+        toast.error(msg);
+        return; // không chuyển pickup nếu API lỗi
+      }
+    } else {
+      toast.info('Đã hủy tìm tình nguyện viên giao hàng.');
+    }
+    setDeliveryMethod('pickup');
+  }, [isMock, deliveryId, cancelDeliveryMutation]);
+
+  const fmtCountdown = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
 
   // Sync deliveryMethod based on database response
   useEffect(() => {
@@ -281,16 +359,45 @@ export default function ReservationDetailsPage() {
                   <div>
                     <h3 className="font-bold text-lg text-neutral-900">
                       {useRealDelivery
-                        ? deliveryHeadline(realDeliveryStatus).title
+                        ? deliveryHeadline(realDeliveryStatus, tracking?.failedReason).title
                         : currentStep === 2 ? 'Đã giao thành công' : 'Đang giao hàng'}
                     </h3>
                     <p className="text-sm text-neutral-500">
                       {useRealDelivery
-                        ? deliveryHeadline(realDeliveryStatus).desc
+                        ? deliveryHeadline(realDeliveryStatus, tracking?.failedReason).desc
                         : currentStep === 2
                           ? 'Cảm ơn bạn đã đồng hành cứu trợ thực phẩm cùng FoodResQ!'
                           : 'Tình nguyện viên đã lấy hàng và đang trên đường giao'}
                     </p>
+
+                    {/* Countdown + nút hủy — chỉ hiện khi đang tìm shipper (pending_assignment) */}
+                    {useRealDelivery && realDeliveryStatus === 'pending_assignment' && (
+                      <div className="mt-3 flex items-center gap-3">
+                        {countdown !== null && countdown > 0 ? (
+                          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full">
+                            <span className="material-symbols-outlined text-amber-600 text-[16px] animate-pulse">schedule</span>
+                            <span className="text-xs font-bold text-amber-700 font-mono">
+                              {fmtCountdown(countdown)}
+                            </span>
+                            <span className="text-[10px] text-amber-600">còn lại để tìm TNV</span>
+                          </div>
+                        ) : countdownExpired ? (
+                          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full">
+                            <span className="material-symbols-outlined text-red-600 text-[16px]">warning</span>
+                            <span className="text-xs font-bold text-red-700">Hết thời gian tìm TNV</span>
+                          </div>
+                        ) : null}
+
+                        <button
+                          onClick={handleCancelSearch}
+                          disabled={cancelDeliveryMutation.isPending}
+                          className="px-3 py-1.5 bg-white border border-neutral-200 hover:border-red-400 hover:bg-red-50 rounded-full text-xs font-semibold text-neutral-600 hover:text-red-600 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                          Hủy tìm
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -433,13 +540,72 @@ export default function ReservationDetailsPage() {
                   <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
-                      <span className="animate-spin border-2 border-emerald-500 border-t-transparent rounded-full w-5 h-5" />
+                      {countdownExpired ? (
+                        <span className="material-symbols-outlined text-neutral-400 text-[24px]">person_off</span>
+                      ) : (
+                        <span className="animate-spin border-2 border-emerald-500 border-t-transparent rounded-full w-5 h-5" />
+                      )}
                     </div>
                     <div>
-                      <h5 className="font-bold text-neutral-800">Đang tìm tình nguyện viên…</h5>
-                      <p className="text-xs text-neutral-500 mt-0.5">Chúng tôi sẽ cập nhật ngay khi có người nhận đơn giao.</p>
+                      <h5 className="font-bold text-neutral-800">
+                        {countdownExpired ? 'Không tìm được TNV' : 'Đang tìm tình nguyện viên…'}
+                      </h5>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        {countdownExpired
+                          ? 'Hết thời gian chờ. Bạn có thể đến lấy trực tiếp.'
+                          : 'Chúng tôi sẽ cập nhật ngay khi có người nhận đơn giao.'}
+                      </p>
+                      {!countdownExpired && countdown !== null && countdown > 0 && (
+                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 font-bold">
+                          <span className="material-symbols-outlined text-[14px] animate-pulse">schedule</span>
+                          <span className="font-mono">{fmtCountdown(countdown)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* Nút hủy tìm — chỉ hiện khi đang pending_assignment VÀ chưa hết giờ */}
+                  {realDeliveryStatus === 'pending_assignment' && !countdownExpired && (
+                    <div className="mt-4 pt-3 border-t border-neutral-100">
+                      <button
+                        onClick={handleCancelSearch}
+                        disabled={cancelDeliveryMutation.isPending}
+                        className="w-full py-2.5 border border-neutral-200 hover:border-red-400 hover:bg-red-50 rounded-xl text-xs font-semibold text-neutral-500 hover:text-red-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {cancelDeliveryMutation.isPending ? (
+                          <>
+                            <span className="animate-spin border-2 border-neutral-300 border-t-neutral-600 rounded-full w-4 h-4" />
+                            Đang hủy…
+                          </>
+                        ) : (
+                          <>
+                            <span className="material-symbols-outlined text-[16px]">cancel</span>
+                            Hủy tìm tình nguyện viên
+                          </>
+                        )}
+                      </button>
+                      <p className="text-[10px] text-neutral-400 text-center mt-1.5">
+                        Sau khi hủy, bạn vẫn có thể đến lấy trực tiếp
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Cảnh báo hết giờ — hiện rõ ràng */}
+                  {countdownExpired && (
+                    <div className="mt-4 pt-3 border-t border-neutral-100">
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                        <p className="text-xs text-red-700 font-semibold mb-2">
+                          Không có tình nguyện viên nào nhận đơn trong thời gian chờ.
+                        </p>
+                        <button
+                          onClick={() => setDeliveryMethod('pickup')}
+                          className="w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all"
+                        >
+                          Đến lấy trực tiếp
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 (() => {
@@ -529,7 +695,9 @@ export default function ReservationDetailsPage() {
                       {isDelivered
                         ? 'Đã hoàn thành'
                         : useRealDelivery && realDeliveryStatus === 'pending_assignment'
-                          ? 'Đang tìm tình nguyện viên'
+                          ? countdown !== null && countdown > 0
+                            ? <span className="font-mono text-amber-600">{fmtCountdown(countdown)} nữa</span>
+                            : 'Hết hạn tìm TNV'
                           : '10-15 phút nữa'}
                     </span>
                   </div>
