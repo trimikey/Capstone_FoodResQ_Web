@@ -1,45 +1,25 @@
 import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  View,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  TextInput,
-  Button,
-  Text,
-  Checkbox,
-  ActivityIndicator,
-} from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Checkbox, Text, TextInput } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { signUpBasicInfoSchema, SignUpBasicInfoInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
-import { AppImage } from './ui/AppImage';
-import { FadeInUp, FadeInView } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  secondary: '#855300',
-  secondaryContainer: '#ffddb8',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLowest: '#ffffff',
-  surfaceContainerLow: '#eff4ff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#F3F4F6',
-  outlineVariant: '#bbcabf',
-};
+import { FadeInUp } from './ui/Motion';
+import {
+  AuthCard,
+  AuthField,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  ProgressDots,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface SignUpBasicScreenProps {
-  onSuccess?: (data: SignUpBasicInfoInput) => void;
+  onSuccess?: (data: SignUpBasicInfoInput) => void | Promise<void>;
   onBack?: () => void;
   onNavigateToSignIn?: () => void;
   isLoading?: boolean;
@@ -51,8 +31,6 @@ export function SignUpBasicScreen({
   onNavigateToSignIn,
   isLoading = false,
 }: SignUpBasicScreenProps) {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
@@ -71,114 +49,57 @@ export function SignUpBasicScreen({
     },
   });
 
-  const onSubmit = (data: SignUpBasicInfoInput) => {
+  const onSubmit = async (data: SignUpBasicInfoInput) => {
     try {
       clearError();
-      
       if (!agreedToTerms) {
-        showError('You must agree to Terms & Conditions', 2000);
+        showError('Bạn cần đồng ý điều khoản trước khi đăng ký.', 2000);
         return;
       }
-      
-      onSuccess?.(data);
+      await onSuccess?.(data);
     } catch (error) {
       showError(getErrorMessage(error), 3000);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{
-        flex: 1,
-        backgroundColor: COLORS.background,
-        paddingTop: insets.top,
-      }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <AuthScaffold
+      footer={
+        <Button
+          mode="contained"
+          onPress={handleSubmit(onSubmit)}
+          disabled={isLoading || !agreedToTerms}
+          loading={isLoading}
+          buttonColor={COLORS.primary}
+          style={authStyles.primaryButton}
+          contentStyle={authStyles.buttonContent}
+          labelStyle={authStyles.buttonLabel}
+          accessibilityLabel="Tiếp tục đăng ký"
+          accessibilityState={{ disabled: isLoading || !agreedToTerms }}
+        >
+          {isLoading ? 'Đang xử lý' : 'Tiếp tục'}
+        </Button>
+      }
     >
-      {/* Header */}
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.background,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
-        >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 24,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Tạo tài khoản"
+      />
 
-      <View style={{ flex: 1 }}>
-        {/* Hero Image */}
-        <FadeInView
-          style={{
-            width: '100%',
-            flex: 1,
-            minHeight: 80,
-            maxHeight: 160,
-            marginBottom: 12,
-          }}
-        >
-          <AppImage
-            source={{
-              uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDOcc2WP0BUcN0sLxOgDhGpAcoMhOF6iprt8IndevCN03HnrKsqttOj58XRHmwWCMbGdIMlMMb5pUb7r__kYrOG4bgbGrxEE5hq1dbE79QmsP_uCw4n580Le938C0vnziR-A1VJPxh2keWX4mhtjFwrstxaQ48hcLvF-x4xOPn9AlVXV_eWG5OZsLMjaOFf3GLitHvoRUsmcmACZ62YRa5GZZR6cdVB6pB1GBpOlL5i_Kfr9sl2kSQO-v3Kgm419bANa6xwFderrh_J',
-            }}
-            style={{ width: '100%', height: '100%' }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 16,
-              left: 16,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 28,
-                fontWeight: '700',
-                color: '#ffffff',
-              }}
-            >
-              Đăng ký tài khoản
-            </Text>
-          </View>
-        </FadeInView>
+      <ProgressDots total={2} active={0} label="Bước 1: Thông tin đăng nhập" />
 
-        {/* Form */}
-        <View style={{ paddingHorizontal: 20, gap: 16, marginBottom: 8 }}>
-          {/* Full Name */}
-          <FadeInUp delay={80}>
+      <AuthIntro
+        icon="account-plus-outline"
+        eyebrow="Đăng ký"
+        title="Tạo tài khoản FoodResQ"
+        description="Thông tin này dùng để đăng nhập và nhận thông báo trong các luồng nhận, chia sẻ hoặc hỗ trợ thực phẩm."
+      />
+
+      <FadeInUp delay={80}>
+        <AuthCard>
+          <AuthField label="Họ và tên" error={errors.name?.message}>
             <Controller
               control={control}
               name="name"
@@ -189,34 +110,21 @@ export function SignUpBasicScreen({
                   placeholder="Nhập tên của bạn"
                   value={value}
                   onChangeText={onChange}
+                  autoComplete="name"
+                  textContentType="name"
                   editable={!isLoading}
-                  left={
-                    <TextInput.Icon icon="account" color={COLORS.outlineVariant} />
-                  }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLow,
-                  }}
+                  left={<TextInput.Icon icon="account-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.name}
+                  dense
                 />
               )}
             />
-            {errors.name && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.name.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
 
-          {/* Email */}
-          <FadeInUp delay={140}>
+          <AuthField label="Email" error={errors.email?.message}>
             <Controller
               control={control}
               name="email"
@@ -229,34 +137,21 @@ export function SignUpBasicScreen({
                   onChangeText={onChange}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  autoComplete="email"
+                  textContentType="emailAddress"
                   editable={!isLoading}
-                  left={
-                    <TextInput.Icon icon="email" color={COLORS.outlineVariant} />
-                  }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLow,
-                  }}
+                  left={<TextInput.Icon icon="email-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.email}
+                  dense
                 />
               )}
             />
-            {errors.email && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.email.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
 
-          {/* Password */}
-          <FadeInUp delay={200}>
+          <AuthField label="Mật khẩu" error={errors.password?.message}>
             <Controller
               control={control}
               name="password"
@@ -264,192 +159,136 @@ export function SignUpBasicScreen({
                 <TextInput
                   mode="outlined"
                   label="Mật khẩu"
-                  placeholder="••••••••"
+                  placeholder="Tối thiểu 6 ký tự"
                   value={value}
                   onChangeText={onChange}
                   secureTextEntry={!showPassword}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                   editable={!isLoading}
-                  left={
-                    <TextInput.Icon icon="lock" color={COLORS.outlineVariant} />
-                  }
+                  left={<TextInput.Icon icon="lock-outline" color={COLORS.onSurfaceVariant} />}
                   right={
                     <TextInput.Icon
-                      icon={showPassword ? 'eye-off' : 'eye'}
-                      onPress={() => setShowPassword(!showPassword)}
-                      color={COLORS.outlineVariant}
+                      icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      onPress={() => setShowPassword((current) => !current)}
+                      color={COLORS.onSurfaceVariant}
+                      forceTextInputFocus={false}
                     />
                   }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLow,
-                  }}
+                  style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.password}
+                  dense
                 />
               )}
             />
-            {errors.password && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.password.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
 
-          {/* Confirm Password */}
-          <FadeInUp delay={260}>
+          <AuthField label="Xác nhận mật khẩu" error={errors.confirmPassword?.message}>
             <Controller
               control={control}
               name="confirmPassword"
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   mode="outlined"
-                  label="Xác nhận mật khẩu"
-                  placeholder="••••••••"
+                  label="Nhập lại mật khẩu"
+                  placeholder="Nhập lại mật khẩu"
                   value={value}
                   onChangeText={onChange}
                   secureTextEntry={!showPassword}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                   editable={!isLoading}
-                  left={
-                    <TextInput.Icon
-                      icon="lock-reset"
-                      color={COLORS.outlineVariant}
-                    />
-                  }
-                  style={{
-                    backgroundColor: COLORS.surfaceContainerLow,
-                  }}
+                  left={<TextInput.Icon icon="lock-check-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.confirmPassword}
+                  dense
                 />
               )}
             />
-            {errors.confirmPassword && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: COLORS.error,
-                  marginTop: 4,
-                }}
-              >
-                {errors.confirmPassword.message}
-              </Text>
-            )}
-          </FadeInUp>
+          </AuthField>
 
-          {/* Terms Checkbox */}
-          <FadeInUp
-            delay={320}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              gap: 8,
-              marginTop: 8,
-            }}
+          <Pressable
+            onPress={() => setAgreedToTerms((current) => !current)}
+            disabled={isLoading}
+            style={({ pressed }) => [styles.termsBox, pressed && authStyles.pressed]}
+            accessibilityRole="checkbox"
+            accessibilityLabel="Đồng ý điều khoản sử dụng và chính sách bảo mật"
+            accessibilityState={{ checked: agreedToTerms, disabled: isLoading }}
           >
             <Checkbox
               status={agreedToTerms ? 'checked' : 'unchecked'}
-              onPress={() => setAgreedToTerms(!agreedToTerms)}
               disabled={isLoading}
               color={COLORS.primary}
             />
-            <Text
-              style={{
-                fontSize: 13,
-                color: COLORS.onSurfaceVariant,
-                flex: 1,
-                lineHeight: 18,
-              }}
-            >
-              Tôi đồng ý với các{' '}
-              <Text style={{ color: COLORS.primary, fontWeight: '700' }}>
-                Điều khoản sử dụng
-              </Text>{' '}
-              và{' '}
-              <Text style={{ color: COLORS.primary, fontWeight: '700' }}>
-                Chính sách bảo mật
-              </Text>{' '}
-              của FoodResQ.
-            </Text>
-          </FadeInUp>
-        </View>
-      </View>
-
-      {/* Submit Button */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surfaceContainerLowest,
-        }}
-      >
-        <FadeInUp delay={380}>
-          <Button
-            mode="contained"
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || !agreedToTerms}
-            loading={isLoading}
-            style={{
-              backgroundColor: COLORS.primaryContainer,
-              borderRadius: 16,
-              paddingVertical: 8,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Đang xử lý...' : 'Đăng ký'}
-          </Button>
-        </FadeInUp>
-      </View>
-
-      {/* Sign In Link */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          alignItems: 'center',
-        }}
-      >
-        <View style={{ flexDirection: 'row' }}>
-          <Text style={{ fontSize: 14, color: COLORS.onSurfaceVariant }}>
-            Đã có tài khoản?{' '}
-          </Text>
-          <Pressable
-            onPress={onNavigateToSignIn}
-            disabled={isLoading}
-            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '700',
-                color: COLORS.primary,
-              }}
-            >
-              Đăng nhập
+            <Text style={styles.termsText}>
+              Tôi đồng ý với <Text style={styles.termsLink}>Điều khoản sử dụng</Text> và{' '}
+              <Text style={styles.termsLink}>Chính sách bảo mật</Text> của FoodResQ.
             </Text>
           </Pressable>
-        </View>
+        </AuthCard>
+      </FadeInUp>
+
+      <View style={styles.signInRow}>
+        <Text style={styles.signInText}>Đã có tài khoản?</Text>
+        <Pressable
+          onPress={onNavigateToSignIn}
+          disabled={isLoading}
+          hitSlop={8}
+          style={({ pressed }) => [pressed && authStyles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Đăng nhập"
+        >
+          <Text style={authStyles.textButtonLabel}>Đăng nhập</Text>
+        </Pressable>
       </View>
 
-      {/* Error Toast */}
       <ErrorToast
         visible={isVisible}
         message={error?.message || ''}
         onDismiss={clearError}
         duration={3000}
       />
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
+
+const styles = StyleSheet.create({
+  termsBox: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerLow,
+    paddingRight: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  termsText: {
+    flex: 1,
+    paddingTop: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.onSurfaceVariant,
+  },
+  termsLink: {
+    color: COLORS.primary,
+    fontWeight: '900',
+  },
+  signInRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  signInText: {
+    fontSize: 14,
+    color: COLORS.onSurfaceVariant,
+  },
+});
 
 export default SignUpBasicScreen;

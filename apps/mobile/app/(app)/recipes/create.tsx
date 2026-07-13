@@ -26,16 +26,7 @@ import { pickImageFromLibrary, captureImage } from '@/services/faceCapture';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { mobileColors as COLORS } from '@/theme/design';
 
 const DIFFICULTIES: RecipeDifficulty[] = ['easy', 'medium', 'hard'];
 
@@ -83,22 +74,25 @@ export default function RecipeFormScreen() {
   // Prefill khi sửa (1 lần khi data về).
   useEffect(() => {
     if (!isEdit || prefilled || !existing) return;
-    setName(existing.name);
-    setDescription(existing.description ?? '');
-    setServings(existing.servings ? String(existing.servings) : '');
-    setPrep(existing.prepMinutes ? String(existing.prepMinutes) : '');
-    setCook(existing.cookMinutes ? String(existing.cookMinutes) : '');
-    setDifficulty(existing.difficulty);
-    setInstructions(existing.instructions ?? '');
-    setImageUrls(existing.imageUrls ?? []);
-    setIngredients(
-      existing.ingredients.map((i: RecipeIngredient) => ({
-        name: i.name,
-        quantity: i.quantity ?? '',
-        unit: i.unit ?? '',
-      }))
-    );
-    setPrefilled(true);
+    const t = setTimeout(() => {
+      setName(existing.name);
+      setDescription(existing.description ?? '');
+      setServings(existing.servings ? String(existing.servings) : '');
+      setPrep(existing.prepMinutes ? String(existing.prepMinutes) : '');
+      setCook(existing.cookMinutes ? String(existing.cookMinutes) : '');
+      setDifficulty(existing.difficulty);
+      setInstructions(existing.instructions ?? '');
+      setImageUrls(existing.imageUrls ?? []);
+      setIngredients(
+        existing.ingredients.map((i: RecipeIngredient) => ({
+          name: i.name,
+          quantity: i.quantity ?? '',
+          unit: i.unit ?? '',
+        }))
+      );
+      setPrefilled(true);
+    }, 0);
+    return () => clearTimeout(t);
   }, [isEdit, prefilled, existing]);
 
   const addIngredient = () => {
@@ -304,10 +298,10 @@ export default function RecipeFormScreen() {
               </View>
             ) : (
               <View style={{ gap: 8 }}>
-                <Pressable style={[styles.img, styles.imgAdd]} onPress={() => uploadPhoto(pickImageFromLibrary)}>
+                <Pressable style={[styles.img, styles.imgAdd]} onPress={() => uploadPhoto(() => pickImageFromLibrary('recipe'))}>
                   <MaterialCommunityIcons name="image-plus" size={26} color={COLORS.primary} />
                 </Pressable>
-                <Pressable style={[styles.img, styles.imgAdd]} onPress={() => uploadPhoto(() => captureImage('id_card'))}>
+                <Pressable style={[styles.img, styles.imgAdd]} onPress={() => uploadPhoto(() => captureImage('id_card', 'recipe'))}>
                   <MaterialCommunityIcons name="camera-plus-outline" size={26} color={COLORS.primary} />
                 </Pressable>
               </View>

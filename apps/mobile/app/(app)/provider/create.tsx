@@ -6,8 +6,9 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -29,16 +30,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { AddressPicker } from '@/components/AddressPicker';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 const UNIT_KEYS = Object.keys(UNIT_LABELS);
@@ -68,6 +60,9 @@ function openDateTimePicker(current: Date, onPick: (d: Date) => void) {
 }
 
 export default function CreateListingScreen() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const compactLayout = width < 390;
   const createListing = useCreateListing();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -116,7 +111,7 @@ export default function CreateListingScreen() {
     try {
       setUploading(true);
       const urls = await pickAndUploadListingImages(5);
-      setImageUrls(urls);
+      setImageUrls((prev) => [...prev, ...urls].slice(0, 5));
       Popup.show({ type: 'success', text1: `Đã tải ${urls.length} ảnh` });
     } catch (err) {
       if (err instanceof ImagePickCancelledError) return;
@@ -124,6 +119,10 @@ export default function CreateListingScreen() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const removeImage = (url: string) => {
+    setImageUrls((prev) => prev.filter((item) => item !== url));
   };
 
   const onSubmit = async (form: CreateListingFormInput) => {
@@ -164,184 +163,495 @@ export default function CreateListingScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại"
+        >
           <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
         </Pressable>
-        <Text variant="titleMedium" style={styles.headerTitle}>Đăng tin mới</Text>
+        <View style={styles.headerCenter}>
+          <Text variant="titleMedium" style={styles.headerTitle}>Đăng tin mới</Text>
+          <Text style={styles.headerSub} numberOfLines={1}>Tạo nháp trước, đăng sau khi kiểm tra</Text>
+        </View>
         <View style={{ width: 24 }} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {/* Ảnh */}
-          <Text style={styles.label}>Ảnh món ăn</Text>
-          <View style={styles.imageRow}>
-            {imageUrls.map((u) => (
-              <AppImage key={u} source={{ uri: u }} style={styles.thumb} />
-            ))}
-            <Pressable style={styles.addImage} onPress={handlePickImages} disabled={uploading}>
-              <MaterialCommunityIcons
-                name={uploading ? 'progress-upload' : 'camera-plus'}
-                size={28}
-                color={COLORS.primary}
-              />
-              <Text style={styles.addImageText}>{uploading ? 'Đang tải...' : 'Thêm ảnh'}</Text>
-            </Pressable>
-          </View>
-
-          {/* Tiêu đề */}
-          <Field label="Tiêu đề *" error={errors.title?.message}>
-            <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" placeholder="VD: Cơm hộp thừa cuối ngày" value={value} onChangeText={onChange}
-                outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.title} />
-            )} />
-          </Field>
-
-          {/* Loại */}
-          <Field label="Loại thực phẩm *" error={errors.category?.message}>
-            <View style={styles.chips}>
-              {CATEGORY_KEYS.map((k) => (
-                <Chip key={k} selected={category === k} showSelectedCheck
-                  onPress={() => setValue('category', k, { shouldValidate: true })}
-                  selectedColor={COLORS.primary} style={styles.chip}>
-                  {CATEGORY_LABELS[k]}
-                </Chip>
-              ))}
-            </View>
-          </Field>
-
-          {/* Số lượng + đơn vị */}
-          <View style={styles.rowFields}>
-            <View style={{ flex: 1 }}>
-              <Field label="Số lượng *" error={errors.quantityTotal?.message}>
-                <Controller control={control} name="quantityTotal" render={({ field: { onChange, value } }) => (
-                  <TextInput mode="outlined" keyboardType="numeric" placeholder="VD: 20"
-                    value={value ? String(value) : ''} onChangeText={onChange}
-                    outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.quantityTotal} />
-                )} />
-              </Field>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Đơn vị *">
-                <View style={styles.chips}>
-                  {UNIT_KEYS.map((u) => (
-                    <Chip key={u} selected={quantityUnit === u} compact
-                      onPress={() => setValue('quantityUnit', u, { shouldValidate: true })}
-                      selectedColor={COLORS.primary} style={styles.chip}>
-                      {UNIT_LABELS[u]}
-                    </Chip>
-                  ))}
+      <KeyboardAvoidingView
+        style={styles.formArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: 132 + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Section
+            icon="image-multiple-outline"
+            title="Ảnh món ăn"
+            helper="Tối đa 5 ảnh rõ món ăn và bao bì nếu có."
+          >
+            <View style={styles.imageRow}>
+              {imageUrls.map((u, index) => (
+                <View key={u} style={styles.thumbWrap}>
+                  <AppImage source={{ uri: u }} style={styles.thumb} />
+                  <Pressable
+                    onPress={() => removeImage(u)}
+                    hitSlop={8}
+                    style={styles.removeImageBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Xoá ảnh ${index + 1}`}
+                  >
+                    <MaterialCommunityIcons name="close" size={16} color="#ffffff" />
+                  </Pressable>
                 </View>
-              </Field>
+              ))}
+              {imageUrls.length < 5 ? (
+                <Pressable
+                  style={[styles.addImage, uploading && styles.controlDisabled]}
+                  onPress={handlePickImages}
+                  disabled={uploading}
+                  accessibilityRole="button"
+                  accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Thêm ảnh món ăn'}
+                  accessibilityState={{ disabled: uploading }}
+                >
+                  <MaterialCommunityIcons
+                    name={uploading ? 'progress-upload' : 'camera-plus-outline'}
+                    size={26}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.addImageText}>{uploading ? 'Đang tải' : 'Thêm ảnh'}</Text>
+                </Pressable>
+              ) : null}
             </View>
-          </View>
+          </Section>
 
-          {/* Max per reservation */}
-          <Field label="Tối đa mỗi lượt đặt (1-10) *" error={errors.maxPerReservation?.message}>
-            <Controller control={control} name="maxPerReservation" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" keyboardType="numeric" value={value ? String(value) : ''} onChangeText={onChange}
-                outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.maxPerReservation} />
-            )} />
-          </Field>
+          <Section icon="food-apple-outline" title="Thông tin thực phẩm">
+            <Field label="Tiêu đề *" error={errors.title?.message}>
+              <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Tên món hoặc loại thực phẩm"
+                  placeholder="VD: Cơm hộp cuối ngày"
+                  value={value}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  dense
+                  error={!!errors.title}
+                />
+              )} />
+            </Field>
 
-          {/* Thời gian */}
-          <Field label="Giờ bắt đầu lấy *">
-            <DateButton value={pickupStart} onPress={() => openDateTimePicker(pickupStart, (d) => setValue('pickupStartTime', d, { shouldValidate: true }))} />
-          </Field>
-          <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
-            <DateButton value={pickupEnd} onPress={() => openDateTimePicker(pickupEnd, (d) => setValue('pickupEndTime', d, { shouldValidate: true }))} />
-          </Field>
-          <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
-            <DateButton value={expiry} onPress={() => openDateTimePicker(expiry, (d) => setValue('expiryTime', d, { shouldValidate: true }))} />
-          </Field>
+            <Field label="Loại thực phẩm *" error={errors.category?.message}>
+              <View style={styles.chips}>
+                {CATEGORY_KEYS.map((k) => {
+                  const selected = category === k;
+                  return (
+                    <Chip
+                      key={k}
+                      selected={selected}
+                      showSelectedCheck
+                      onPress={() => setValue('category', k, { shouldValidate: true })}
+                      selectedColor={selected ? COLORS.primary : COLORS.onSurface}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                      textStyle={[styles.chipText, selected && styles.chipTextSelected]}
+                    >
+                      {CATEGORY_LABELS[k]}
+                    </Chip>
+                  );
+                })}
+              </View>
+            </Field>
+          </Section>
 
-          {/* Địa chỉ lấy hàng — search gợi ý (chính) + tinh chỉnh trên map (phụ) */}
-          <Field label="Địa chỉ lấy hàng *">
-            <AddressPicker
-              initialCoords={coords}
-              value={
-                pickupAddress && coords
-                  ? { address: pickupAddress, lat: coords.lat, lng: coords.lng }
-                  : null
-              }
-              onChange={({ address, lat, lng }) => {
-                setValue('pickupAddress', address, { shouldValidate: true });
-                setCoords({ lat, lng });
-              }}
-              error={errors.pickupAddress?.message}
-            />
-          </Field>
+          <Section icon="scale-balance" title="Số lượng">
+            <View style={[styles.rowFields, compactLayout && styles.rowFieldsStacked]}>
+              <View style={styles.rowField}>
+                <Field
+                  label="Số lượng *"
+                  helper="Nhập tổng số phần có thể chia sẻ."
+                  error={errors.quantityTotal?.message}
+                >
+                  <Controller control={control} name="quantityTotal" render={({ field: { onChange, value } }) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Tổng số lượng"
+                      keyboardType="numeric"
+                      placeholder="VD: 20"
+                      value={value ? String(value) : ''}
+                      onChangeText={onChange}
+                      outlineColor={COLORS.outline}
+                      activeOutlineColor={COLORS.primary}
+                      style={styles.input}
+                      dense
+                      error={!!errors.quantityTotal}
+                    />
+                  )} />
+                </Field>
+              </View>
+              <View style={styles.rowField}>
+                <Field label="Đơn vị *">
+                  <View style={styles.chips}>
+                    {UNIT_KEYS.map((u) => {
+                      const selected = quantityUnit === u;
+                      return (
+                        <Chip
+                          key={u}
+                          selected={selected}
+                          compact={false}
+                          onPress={() => setValue('quantityUnit', u, { shouldValidate: true })}
+                          selectedColor={selected ? COLORS.primary : COLORS.onSurface}
+                          style={[styles.chip, selected && styles.chipSelected]}
+                          textStyle={[styles.chipText, selected && styles.chipTextSelected]}
+                        >
+                          {UNIT_LABELS[u]}
+                        </Chip>
+                      );
+                    })}
+                  </View>
+                </Field>
+              </View>
+            </View>
 
-          {/* Optional */}
-          <Field label="Mô tả (tuỳ chọn)">
-            <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" multiline numberOfLines={3} value={value} onChangeText={onChange}
-                outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
-            )} />
-          </Field>
-          <Field label="Lưu ý dị ứng (tuỳ chọn)">
-            <Controller control={control} name="allergenNotes" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" value={value} onChangeText={onChange}
-                outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
-            )} />
-          </Field>
+            <Field
+              label="Tối đa mỗi lượt đặt *"
+              helper="Giới hạn 1-10 để nhiều người cùng nhận được."
+              error={errors.maxPerReservation?.message}
+            >
+              <Controller control={control} name="maxPerReservation" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Số phần tối đa"
+                  keyboardType="numeric"
+                  value={value ? String(value) : ''}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  dense
+                  error={!!errors.maxPerReservation}
+                />
+              )} />
+            </Field>
 
-          <Button mode="contained" onPress={handleSubmit(onSubmit)} loading={submitting}
-            disabled={submitting || uploading} buttonColor={COLORS.primary} style={styles.submitBtn}
-            labelStyle={{ fontSize: 16, fontWeight: 'bold' }}>
+            <Field label="Khối lượng mỗi phần (tuỳ chọn)" helper="Dùng kg, ví dụ 0.35 nếu biết rõ.">
+              <Controller control={control} name="weightPerUnitKg" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Kg mỗi phần"
+                  keyboardType="numeric"
+                  placeholder="VD: 0.35"
+                  value={value ? String(value) : ''}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  dense
+                />
+              )} />
+            </Field>
+          </Section>
+
+          <Section
+            icon="clock-outline"
+            title="Thời gian nhận"
+            helper="Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
+          >
+            <Field label="Giờ bắt đầu lấy *">
+              <DateButton
+                label="Bắt đầu"
+                value={pickupStart}
+                onPress={() => openDateTimePicker(pickupStart, (d) => setValue('pickupStartTime', d, { shouldValidate: true }))}
+              />
+            </Field>
+            <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
+              <DateButton
+                label="Kết thúc"
+                value={pickupEnd}
+                onPress={() => openDateTimePicker(pickupEnd, (d) => setValue('pickupEndTime', d, { shouldValidate: true }))}
+              />
+            </Field>
+            <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
+              <DateButton
+                label="Hạn dùng"
+                value={expiry}
+                onPress={() => openDateTimePicker(expiry, (d) => setValue('expiryTime', d, { shouldValidate: true }))}
+              />
+            </Field>
+          </Section>
+
+          <Section
+            icon="map-marker-radius-outline"
+            title="Địa chỉ lấy hàng"
+            helper="Chọn gợi ý địa chỉ để hệ thống lưu đúng toạ độ."
+          >
+            <Field label="Địa chỉ lấy hàng *">
+              <AddressPicker
+                initialCoords={coords}
+                value={
+                  pickupAddress && coords
+                    ? { address: pickupAddress, lat: coords.lat, lng: coords.lng }
+                    : null
+                }
+                onChange={({ address, lat, lng }) => {
+                  setValue('pickupAddress', address, { shouldValidate: true });
+                  setCoords({ lat, lng });
+                }}
+                error={errors.pickupAddress?.message}
+              />
+            </Field>
+          </Section>
+
+          <Section icon="shield-check-outline" title="Ghi chú an toàn">
+            <Field label="Mô tả (tuỳ chọn)" helper="Ghi tình trạng món, cách đóng gói hoặc thời điểm nấu.">
+              <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Mô tả ngắn"
+                  multiline
+                  numberOfLines={3}
+                  value={value}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={[styles.input, styles.multilineInput]}
+                />
+              )} />
+            </Field>
+            <Field label="Điều kiện bảo quản (tuỳ chọn)" helper="VD: giữ lạnh, dùng trong ngày, tránh nắng.">
+              <Controller control={control} name="storageConditions" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Điều kiện bảo quản"
+                  value={value}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  dense
+                />
+              )} />
+            </Field>
+            <Field label="Lưu ý dị ứng (tuỳ chọn)" helper="VD: có đậu phộng, sữa, hải sản hoặc trứng.">
+              <Controller control={control} name="allergenNotes" render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Thông tin dị ứng"
+                  value={value}
+                  onChangeText={onChange}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={styles.input}
+                  dense
+                />
+              )} />
+            </Field>
+          </Section>
+        </ScrollView>
+
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            loading={submitting}
+            disabled={submitting || uploading}
+            buttonColor={COLORS.primary}
+            style={styles.submitBtn}
+            contentStyle={styles.submitContent}
+            labelStyle={styles.submitLabel}
+            accessibilityLabel="Tạo tin thực phẩm"
+            accessibilityState={{ disabled: submitting || uploading, busy: submitting }}
+          >
             Tạo tin
           </Button>
-        </ScrollView>
+          <Text style={styles.footerHint} numberOfLines={2}>
+            Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.
+          </Text>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function Section({
+  icon,
+  title,
+  helper,
+  children,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  helper?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={{ marginBottom: 12 }}>
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <View style={styles.sectionIcon}>
+          <MaterialCommunityIcons name={icon} size={18} color={COLORS.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {helper ? <Text style={styles.sectionHelper}>{helper}</Text> : null}
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Field({
+  label,
+  helper,
+  error,
+  children,
+}: {
+  label: string;
+  helper?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       {children}
+      {helper && !error ? <Text style={styles.helperText}>{helper}</Text> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 }
 
-function DateButton({ value, onPress }: { value: Date; onPress: () => void }) {
+function DateButton({ label, value, onPress }: { label: string; value: Date; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={styles.dateBtn}>
-      <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.onSurfaceVariant} />
-      <Text style={styles.dateText}>{fmtDateTime(value)}</Text>
+    <Pressable
+      onPress={onPress}
+      style={styles.dateBtn}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Chọn ${label.toLowerCase()}: ${fmtDateTime(value)}`}
+    >
+      <View style={styles.dateIcon}>
+        <MaterialCommunityIcons name="calendar-clock" size={19} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.dateLabel}>{label}</Text>
+        <Text style={styles.dateText}>{fmtDateTime(value)}</Text>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  formArea: { flex: 1 },
   header: {
-    height: 56, paddingHorizontal: 16, backgroundColor: COLORS.surface,
+    minHeight: 64, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: COLORS.surface,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderBottomWidth: 1, borderBottomColor: COLORS.outline,
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  content: { padding: 20, paddingBottom: 40 },
-  label: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant, marginBottom: 8 },
-  input: { backgroundColor: COLORS.surface },
-  errorText: { fontSize: 12, color: COLORS.error, marginTop: 4 },
+  backBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  headerTitle: { fontWeight: '800', color: COLORS.onSurface },
+  headerSub: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  content: { padding: spacing.lg, gap: spacing.md },
+  section: {
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  sectionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  sectionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.onSurface },
+  sectionHelper: { marginTop: 2, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  field: { gap: 7 },
+  label: { fontSize: 14, fontWeight: '700', color: COLORS.onSurface },
+  helperText: { fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
+  input: { minHeight: 48, backgroundColor: COLORS.surface },
+  multilineInput: { minHeight: 96, textAlignVertical: 'top' },
+  errorText: { fontSize: 12, lineHeight: 17, color: COLORS.error, fontWeight: '600' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { marginBottom: 4 },
-  rowFields: { flexDirection: 'row', gap: 12 },
-  imageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  thumb: { width: 80, height: 80, borderRadius: 12, backgroundColor: COLORS.outline },
+  chip: { minHeight: 38, marginBottom: 2, borderRadius: radius.pill, backgroundColor: COLORS.surfaceContainerLow },
+  chipSelected: { backgroundColor: COLORS.primaryContainer },
+  chipText: { color: COLORS.onSurface, fontWeight: '600' },
+  chipTextSelected: { color: COLORS.primary, fontWeight: '800' },
+  rowFields: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  rowFieldsStacked: { flexDirection: 'column', gap: 0 },
+  rowField: { flex: 1, minWidth: 0, alignSelf: 'stretch' },
+  imageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  thumbWrap: { width: 82, height: 82 },
+  thumb: { width: 82, height: 82, borderRadius: radius.md, backgroundColor: COLORS.outline },
+  removeImageBtn: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(18,28,42,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addImage: {
-    width: 80, height: 80, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed',
-    borderColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', gap: 2,
+    width: 118,
+    height: 82,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
-  addImageText: { fontSize: 10, color: COLORS.primary, fontWeight: '600' },
+  controlDisabled: { opacity: 0.6 },
+  addImageText: { fontSize: 12, color: COLORS.primary, fontWeight: '800' },
   dateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 14,
-    backgroundColor: COLORS.surface, borderRadius: 8, borderWidth: 1, borderColor: COLORS.outline,
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
   },
-  dateText: { fontSize: 15, color: COLORS.onSurface },
-  submitBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 4 },
+  dateIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateLabel: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  dateText: { marginTop: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '700' },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  submitBtn: { borderRadius: radius.md },
+  submitContent: { minHeight: 50 },
+  submitLabel: { fontSize: 16, fontWeight: '800' },
+  footerHint: { marginTop: 7, fontSize: 12, lineHeight: 16, color: COLORS.onSurfaceVariant, textAlign: 'center' },
 });
