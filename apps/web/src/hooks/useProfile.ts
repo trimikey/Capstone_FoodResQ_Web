@@ -1,12 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { UserRole, UserStatus, type ApiResponse } from '@foodresq/types';
+import { useAuthStore } from '@/stores/auth.store';
 
+/**
+ * Thống kê hiển thị trên trang Hồ sơ — phạm vi trường phụ thuộc vào role.
+ *
+ * - Receiver: kgSaved / completedCount / cancelledCount / providersHelped
+ * - Provider: listingsCount / activeListingsCount / completedOrdersCount / receiversHelped / totalKgRescued
+ * - Volunteer: deliveriesCompleted / deliveriesInProgress / campaignsJoined
+ *
+ * Mọi role luôn có `kind` để FE phân biệt nhanh mà không cần switch trên role.
+ */
 export interface MeStats {
-  kgSaved: number;
-  completedCount: number;
-  cancelledCount: number;
-  providersHelped: number;
+  kind: 'receiver' | 'provider' | 'volunteer' | 'admin';
+
+  // Receiver
+  kgSaved?: number;
+  completedCount?: number;
+  cancelledCount?: number;
+  providersHelped?: number;
+
+  // Provider
+  listingsCount?: number;
+  activeListingsCount?: number;
+  completedOrdersCount?: number;
+  receiversHelped?: number;
+  totalKgRescued?: number;
+
+  // Volunteer (shipper)
+  deliveriesCompleted?: number;
+  deliveriesInProgress?: number;
+  campaignsJoined?: number;
 }
 
 export interface VolunteerInfo {
@@ -23,6 +48,7 @@ export interface MeProvider {
   contactPhone: string | null;
   taxCode: string | null;
   isVerified: boolean;
+  avgRating: number | null;
   verificationStatus: 'pending' | 'under_review' | 'approved' | 'rejected' | string;
   /** Tọa độ cửa hàng đã đăng ký — dùng để prefill khi tạo listing. */
   lng: number | null;
@@ -41,7 +67,14 @@ export interface Me {
   createdAt: string;
   stats: MeStats;
   volunteer: VolunteerInfo | null;
-  receiver: { isCharityOrg: boolean; organizationName: string | null } | null;
+  receiver: {
+    isCharityOrg: boolean;
+    organizationName: string | null;
+    /** Địa chỉ + toạ độ điểm giao mặc định (đơn nhờ tình nguyện viên giao). */
+    address: string | null;
+    lng: number | null;
+    lat: number | null;
+  } | null;
   /** Chỉ có khi role = provider. Null với các role khác. */
   provider: MeProvider | null;
 }
@@ -50,6 +83,10 @@ interface UpdateMeInput {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  /** Provider: địa chỉ + vị trí cửa hàng · Receiver: điểm giao mặc định. */
+  address?: string;
+  lng?: number;
+  lat?: number;
 }
 
 async function fetchMe(): Promise<Me> {
@@ -63,11 +100,13 @@ async function updateMe(input: UpdateMeInput): Promise<Me> {
 }
 
 export function useMe(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // Cache theo userId — mỗi user có entry riêng → tránh hiển thị profile user cũ khi đăng nhập user mới
   return useQuery({
-    queryKey: ['users', 'me'],
+    queryKey: ['users', 'me', userId],
     queryFn: fetchMe,
     staleTime: 5 * 60_000,
-    enabled,
+    enabled: enabled && !!userId,
   });
 }
 

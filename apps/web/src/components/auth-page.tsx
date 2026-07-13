@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -272,6 +273,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   const { setTokens, setUser } = useAuthStore();
+  const queryClient = useQueryClient();
   const uploadEvidence = useUploadVerificationImage();
 
   const onLoginSubmit = async (data: LoginFormValues) => {
@@ -287,6 +289,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       }>('/auth/login', { email: data.email, password: data.password });
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
+      // Xóa sạch cache của user cũ (['users','me', oldId] etc.) trước khi điều hướng → tránh hiển thị nhầm hồ sơ
+      queryClient.clear();
       toast.success("Đăng nhập thành công!");
       let redirectUrl = '/listings';
       const role = res.data.data.user.role;
@@ -339,6 +343,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       }>('/auth/google', { idToken });
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
+      // Xóa cache user cũ để chắc chắn hiển thị profile của user vừa đăng nhập
+      queryClient.clear();
       toast.success('Đăng nhập Google thành công!');
       redirectByRole(res.data.data.user.role);
     } catch (err: unknown) {
@@ -410,6 +416,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         toast.info('Đã tạo tài khoản. Vui lòng đăng ký khuôn mặt để hoàn tất.');
         setTokens(res.data.data.accessToken, res.data.data.refreshToken);
         setUser(res.data.data.user);
+        queryClient.clear();
         setEnrollRole(data.role === 'volunteer' ? 'volunteer' : 'receiver');
         setShowFaceEnrollment(true);
       } else {
@@ -1132,27 +1139,18 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant">
                                 location_on
                               </span>
+                              {/* Chỉ đọc: địa chỉ luôn lấy theo ghim trên bản đồ (reverse geocode)
+                                  để chữ và toạ độ không lệch nhau — không cho gõ tay. */}
                               <input
                                 id="provider-address"
                                 type="text"
-                                placeholder="Số nhà, tên đường, quận/huyện..."
-                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                readOnly
+                                placeholder="Bấm nút định vị bên dưới hoặc ghim trên bản đồ"
+                                className={`w-full pl-12 pr-4 py-3 bg-neutral-50 border-2 rounded-xl focus:ring-0 transition-all font-medium outline-none cursor-default placeholder:text-outline-variant ${
                                   registerErrors.providerAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
-                                {...(() => {
-                                  const r = registerSignup("providerAddress");
-                                  return {
-                                    ...r,
-                                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
-                                      void r.onChange(e);
-                                      if (geoCoords) {
-                                        setGeoCoords(null);
-                                        setGeoStatus("idle");
-                                      }
-                                    },
-                                  };
-                                })()}
+                                {...registerSignup("providerAddress")}
                               />
                             </div>
                             <button
@@ -1284,28 +1282,18 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant">
                                 home
                               </span>
+                              {/* Chỉ đọc: địa chỉ luôn lấy theo ghim trên bản đồ (reverse geocode)
+                                  để chữ và toạ độ không lệch nhau — không cho gõ tay. */}
                               <input
                                 id="receiver-address"
                                 type="text"
-                                placeholder="Số nhà, tên đường, quận/huyện..."
-                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                readOnly
+                                placeholder="Bấm nút định vị bên dưới hoặc ghim trên bản đồ"
+                                className={`w-full pl-12 pr-4 py-3 bg-neutral-50 border-2 rounded-xl focus:ring-0 transition-all font-medium outline-none cursor-default placeholder:text-outline-variant ${
                                   registerErrors.receiverAddress ? "border-error" : "border-neutral-200/30"
                                 }`}
                                 disabled={isSubmitting}
-                                {...(() => {
-                                  const r = registerSignup("receiverAddress");
-                                  return {
-                                    ...r,
-                                    // Người dùng tự sửa tay → toạ độ GPS cũ không còn khớp, bỏ đi
-                                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
-                                      void r.onChange(e);
-                                      if (geoCoords) {
-                                        setGeoCoords(null);
-                                        setGeoStatus("idle");
-                                      }
-                                    },
-                                  };
-                                })()}
+                                {...registerSignup("receiverAddress")}
                               />
                             </div>
                             <button

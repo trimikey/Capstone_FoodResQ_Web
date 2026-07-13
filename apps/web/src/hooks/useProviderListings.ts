@@ -165,3 +165,39 @@ export function useConfirmPickup() {
     },
   });
 }
+
+export interface ProviderOrderItem {
+  id: string;
+  status: string;
+  quantity: number;
+  createdAt: string;
+  receiver: {
+    user: { fullName: string; phone: string | null; avatarUrl: string | null };
+  };
+  listing: {
+    title: string;
+    imageUrls: string[];
+    category: string;
+    quantityUnit: string;
+    weightPerUnitKg: string | null;
+    pickupAddress: string;
+  };
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export function useProviderOrders(page = 1, limit = 20) {
+  return useQuery({
+    queryKey: ['reservations', 'provider', 'my', page],
+    queryFn: async () => {
+      const { data } = await api.get('/reservations/provider/my', { params: { page, limit } });
+      return data.data as PaginatedResult<ProviderOrderItem>;
+    },
+    staleTime: 15_000,
+  });
+}
