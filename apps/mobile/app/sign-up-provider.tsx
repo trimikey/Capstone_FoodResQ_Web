@@ -7,7 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -23,16 +23,7 @@ import { type Coords } from '@/services/geolocation';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { MapPicker } from '@/components/MapPicker';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const BUSINESS_TYPES: { key: SignUpProviderFormInput['businessType']; label: string }[] = [
   { key: 'restaurant', label: 'Nhà hàng / Quán ăn' },
@@ -48,8 +39,10 @@ const BUSINESS_TYPES: { key: SignUpProviderFormInput['businessType']; label: str
  * địa chỉ/định vị/SĐT rồi gọi register với đầy đủ field.
  */
 export default function SignUpProviderScreen() {
-  const { register } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { register, initialize } = useAuth();
   const basicInfo = useOnboardingStore((s) => s.basicInfo);
+  const resetOnboarding = useOnboardingStore((s) => s.reset);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -89,6 +82,8 @@ export default function SignUpProviderScreen() {
         ...(form.phone ? { phone: form.phone } : {}),
         ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
       } as any);
+      await initialize();
+      resetOnboarding();
       Popup.show({
         type: 'success',
         text1: 'Đăng ký thành công',
@@ -105,25 +100,59 @@ export default function SignUpProviderScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại"
+        >
           <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
         </Pressable>
-        <Text variant="titleMedium" style={styles.headerTitle}>Thông tin cơ sở</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerCopy}>
+          <Text variant="titleMedium" style={styles.headerTitle}>FoodResQ</Text>
+          <Text style={styles.headerSubtitle}>Thông tin nhà cung cấp</Text>
+        </View>
+        <Text style={styles.stepText}>2/2</Text>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.subtitle}>
-            Bước cuối — cung cấp thông tin cơ sở để người nhận tìm tới lấy thực phẩm.
-          </Text>
+      <KeyboardAvoidingView
+        style={styles.formArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: 132 + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.progressWrap}>
+            <View style={styles.progressDots}>
+              <View style={styles.progressDotActive} />
+              <View style={styles.progressDotActive} />
+            </View>
+            <Text style={styles.progressLabel}>Bước 2: Hồ sơ cơ sở</Text>
+          </View>
+
+          <View style={styles.intro}>
+            <View style={styles.introIcon}>
+              <MaterialCommunityIcons name="storefront-outline" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.eyebrow}>Nhà cung cấp</Text>
+            <Text style={styles.title}>Cung cấp thông tin cơ sở</Text>
+            <Text style={styles.subtitle}>
+              Người nhận và tình nguyện viên cần địa chỉ, liên hệ và vị trí rõ ràng để tới lấy thực phẩm đúng giờ.
+            </Text>
+          </View>
+
+          <View style={styles.card}>
 
           {/* Tên cơ sở */}
           <Field label="Tên cơ sở *" error={errors.businessName?.message}>
             <Controller control={control} name="businessName" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" placeholder="VD: Quán Cơm Tấm Cô Ba" value={value} onChangeText={onChange}
+              <TextInput mode="outlined" label="Tên cơ sở" placeholder="VD: Quán Cơm Tấm Cô Ba" value={value} onChangeText={onChange}
                 left={<TextInput.Icon icon="storefront" />} outlineColor={COLORS.outline}
-                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.businessName} />
+                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.businessName} dense />
             )} />
           </Field>
 
@@ -133,7 +162,9 @@ export default function SignUpProviderScreen() {
               {BUSINESS_TYPES.map((b) => (
                 <Chip key={b.key} selected={businessType === b.key} showSelectedCheck
                   onPress={() => setValue('businessType', b.key, { shouldValidate: true })}
-                  selectedColor={COLORS.primary} style={styles.chip}>
+                  selectedColor={businessType === b.key ? COLORS.primary : COLORS.onSurface}
+                  style={[styles.chip, businessType === b.key && styles.chipSelected]}
+                  textStyle={[styles.chipText, businessType === b.key && styles.chipTextSelected]}>
                   {b.label}
                 </Chip>
               ))}
@@ -143,32 +174,47 @@ export default function SignUpProviderScreen() {
           {/* Địa chỉ */}
           <Field label="Địa chỉ *" error={errors.address?.message}>
             <Controller control={control} name="address" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" placeholder="Số nhà, đường, phường, quận" value={value} onChangeText={onChange}
+              <TextInput mode="outlined" label="Địa chỉ cơ sở" placeholder="Số nhà, đường, phường, quận" value={value} onChangeText={onChange}
                 left={<TextInput.Icon icon="map-marker" />} outlineColor={COLORS.outline}
-                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.address} />
+                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.address} dense />
             )} />
           </Field>
 
           {/* Định vị trên bản đồ (OpenStreetMap) */}
           <Field label="Vị trí cơ sở trên bản đồ *">
             <MapPicker onPick={(lat, lng) => setCoords({ lat, lng })} />
+            <Text style={styles.helperText}>
+              Chạm trên bản đồ để lưu toạ độ lấy hàng chính xác.
+            </Text>
           </Field>
 
           {/* SĐT */}
           <Field label="Số điện thoại liên hệ" error={errors.phone?.message}>
             <Controller control={control} name="phone" render={({ field: { onChange, value } }) => (
-              <TextInput mode="outlined" placeholder="0912345678" value={value} onChangeText={onChange}
+              <TextInput mode="outlined" label="Số điện thoại" placeholder="0912345678" value={value} onChangeText={onChange}
                 keyboardType="phone-pad" left={<TextInput.Icon icon="phone" />} outlineColor={COLORS.outline}
-                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.phone} />
+                activeOutlineColor={COLORS.primary} style={styles.input} error={!!errors.phone} dense />
             )} />
           </Field>
+          </View>
+        </ScrollView>
 
-          <Button mode="contained" onPress={handleSubmit(onSubmit)} loading={submitting}
-            disabled={submitting} buttonColor={COLORS.primary} style={styles.submitBtn}
-            labelStyle={{ fontSize: 16, fontWeight: 'bold' }}>
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <Button
+            mode="contained"
+            onPress={handleSubmit(onSubmit)}
+            loading={submitting}
+            disabled={submitting}
+            buttonColor={COLORS.primary}
+            style={styles.submitBtn}
+            contentStyle={styles.submitContent}
+            labelStyle={styles.submitLabel}
+            accessibilityLabel="Hoàn tất đăng ký nhà cung cấp"
+            accessibilityState={{ disabled: submitting }}
+          >
             Hoàn tất đăng ký
           </Button>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -176,7 +222,7 @@ export default function SignUpProviderScreen() {
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
-    <View style={{ marginBottom: 14 }}>
+    <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       {children}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -186,19 +232,74 @@ function Field({ label, error, children }: { label: string; error?: string; chil
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  formArea: { flex: 1 },
   header: {
-    height: 56, paddingHorizontal: 16, backgroundColor: COLORS.surface,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderBottomWidth: 1, borderBottomColor: COLORS.outline,
+    minHeight: 60,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: COLORS.background,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  content: { padding: 20, paddingBottom: 40 },
-  subtitle: { color: COLORS.onSurfaceVariant, marginBottom: 16, lineHeight: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant, marginBottom: 8 },
-  input: { backgroundColor: COLORS.surface },
-  errorText: { fontSize: 12, color: COLORS.error, marginTop: 4 },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: { flex: 1 },
+  headerTitle: { fontWeight: '900', color: COLORS.onSurface },
+  headerSubtitle: { marginTop: 1, fontSize: 12, color: COLORS.onSurfaceVariant },
+  stepText: { fontSize: 12, fontWeight: '900', color: COLORS.primary },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
+  progressWrap: { alignItems: 'center', gap: 7 },
+  progressDots: { flexDirection: 'row', gap: 7 },
+  progressDotActive: { width: 34, height: 7, borderRadius: radius.pill, backgroundColor: COLORS.primary },
+  progressLabel: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  intro: { paddingVertical: spacing.sm },
+  introIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  eyebrow: { fontSize: 12, fontWeight: '900', color: COLORS.primary, textTransform: 'uppercase' },
+  title: { marginTop: 4, fontSize: 28, lineHeight: 34, fontWeight: '900', color: COLORS.onSurface },
+  subtitle: { marginTop: 7, color: COLORS.onSurfaceVariant, lineHeight: 20 },
+  card: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    ...elevation.card,
+  },
+  field: { gap: 7 },
+  label: { fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
+  helperText: { fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
+  input: { minHeight: 50, backgroundColor: COLORS.surface },
+  errorText: { fontSize: 12, lineHeight: 17, color: COLORS.error, fontWeight: '600' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { marginBottom: 4 },
-  gpsBtn: { borderColor: COLORS.primary, borderRadius: 12, marginBottom: 14 },
-  submitBtn: { marginTop: 8, borderRadius: 12, paddingVertical: 4 },
+  chip: { minHeight: 38, marginBottom: 2, borderRadius: radius.pill, backgroundColor: COLORS.surfaceContainerLow },
+  chipSelected: { backgroundColor: COLORS.primaryContainer },
+  chipText: { color: COLORS.onSurface, fontWeight: '600' },
+  chipTextSelected: { color: COLORS.primary, fontWeight: '800' },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  submitBtn: { borderRadius: radius.md },
+  submitContent: { minHeight: 52 },
+  submitLabel: { fontSize: 15, fontWeight: '900' },
 });

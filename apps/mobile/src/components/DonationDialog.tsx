@@ -1,6 +1,13 @@
-import { useState } from 'react';
-import { StyleSheet } from 'react-native';
-import { Portal, Dialog, Button, TextInput, Text } from 'react-native-paper';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetTextInput,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
+import { Button, Text } from 'react-native-paper';
 import { Popup } from '@/components/ui/AppPopup';
 import { usePledgeDonation } from '@/hooks/useCampaigns';
 
@@ -26,10 +33,24 @@ const COLORS = {
  * itemName bắt buộc; quantity + note tuỳ chọn. POST /campaigns/:id/donations.
  */
 export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }: Props) {
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['CONTENT_HEIGHT'], []);
   const [itemName, setItemName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
   const pledgeMut = usePledgeDonation();
+
+  useEffect(() => {
+    if (visible) sheetRef.current?.present();
+    else sheetRef.current?.dismiss();
+  }, [visible]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
 
   const reset = () => {
     setItemName('');
@@ -70,49 +91,51 @@ export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }
   };
 
   return (
-    <Portal>
-      <Dialog visible={visible} onDismiss={handleDismiss} style={styles.dialog}>
-        <Dialog.Title style={styles.title}>Quyên góp nguyên liệu</Dialog.Title>
-        <Dialog.Content>
+    <BottomSheetModal
+      ref={sheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing
+      backdropComponent={renderBackdrop}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={handleDismiss}
+      handleIndicatorStyle={styles.handle}
+      accessibilityLabel="Quyên góp nguyên liệu"
+    >
+      <BottomSheetView style={styles.sheet}>
+        <Text style={styles.title}>Quyên góp nguyên liệu</Text>
+        <View>
           {campaignTitle ? (
             <Text style={styles.subtitle}>Cho chiến dịch: {campaignTitle}</Text>
           ) : null}
-          <TextInput
-            mode="outlined"
-            label="Tên nguyên liệu *"
+          <BottomSheetTextInput
             placeholder="VD: Gạo, Trứng, Rau cải…"
             value={itemName}
             onChangeText={setItemName}
-            outlineColor={COLORS.outline}
-            activeOutlineColor={COLORS.primary}
             style={styles.input}
-            disabled={pledgeMut.isPending}
+            editable={!pledgeMut.isPending}
+            accessibilityLabel="Tên nguyên liệu bắt buộc"
           />
-          <TextInput
-            mode="outlined"
-            label="Số lượng (tuỳ chọn)"
+          <BottomSheetTextInput
             placeholder="VD: 20 kg, 10 thùng…"
             value={quantity}
             onChangeText={setQuantity}
-            outlineColor={COLORS.outline}
-            activeOutlineColor={COLORS.primary}
             style={styles.input}
-            disabled={pledgeMut.isPending}
+            editable={!pledgeMut.isPending}
+            accessibilityLabel="Số lượng quyên góp"
           />
-          <TextInput
-            mode="outlined"
-            label="Ghi chú (tuỳ chọn)"
+          <BottomSheetTextInput
+            placeholder="Ghi chú (tuỳ chọn)"
             value={note}
             onChangeText={setNote}
             multiline
             numberOfLines={2}
-            outlineColor={COLORS.outline}
-            activeOutlineColor={COLORS.primary}
             style={styles.input}
-            disabled={pledgeMut.isPending}
+            editable={!pledgeMut.isPending}
+            accessibilityLabel="Ghi chú quyên góp"
           />
-        </Dialog.Content>
-        <Dialog.Actions>
+        </View>
+        <View style={styles.actions}>
           <Button onPress={handleDismiss} textColor={COLORS.onSurfaceVariant} disabled={pledgeMut.isPending}>
             Huỷ
           </Button>
@@ -125,15 +148,27 @@ export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }
           >
             Gửi quyên góp
           </Button>
-        </Dialog.Actions>
-      </Dialog>
-    </Portal>
+        </View>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  dialog: { borderRadius: 20 },
+  sheet: { paddingHorizontal: 20, paddingBottom: 28 },
+  handle: { backgroundColor: COLORS.outline },
   title: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
   subtitle: { fontSize: 13, color: COLORS.onSurfaceVariant, marginBottom: 12 },
-  input: { backgroundColor: COLORS.surface, marginBottom: 12 },
+  input: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    color: COLORS.onSurface,
+  },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
 });

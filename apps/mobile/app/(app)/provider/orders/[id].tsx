@@ -9,18 +9,11 @@ import {
   reservationStatusDisplay,
   useCountdown,
 } from '@/components/ProviderReservationCard';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 function fmtDateTime(iso?: string): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -48,11 +41,11 @@ export default function ProviderOrderDetailScreen() {
       </View>
 
       {!order ? (
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant }}>
-            {isLoading ? 'Đang tải…' : 'Không tìm thấy đơn. Hãy quay lại danh sách.'}
-          </Text>
-        </View>
+        <ScreenState
+          kind={isLoading ? 'loading' : 'empty'}
+          title={isLoading ? 'Đang tải đơn' : 'Không tìm thấy đơn'}
+          message={isLoading ? 'Vui lòng chờ trong giây lát.' : 'Quay lại danh sách để chọn một đơn khác.'}
+        />
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.content}>

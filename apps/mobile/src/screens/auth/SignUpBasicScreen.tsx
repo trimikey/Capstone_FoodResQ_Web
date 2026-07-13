@@ -12,10 +12,9 @@ interface SignUpBasicScreenProps {
 }
 
 /**
- * Sign Up Basic Screen Container — BƯỚC CUỐI của đăng ký.
- * Đăng ký tối thiểu: tên/email/mật khẩu + role (role chọn ở SelectRole).
- * ID/địa chỉ/đặc thù role (Recipient/Volunteer) ĐÃ BỎ khỏi luồng đăng ký,
- * hoàn thiện sau ở Hồ sơ (tài khoản tạo ở trạng thái pending_verification).
+ * Sign Up Basic Screen Container — bước 1 của đăng ký.
+ * Lưu credential vào onboarding store rồi chuyển sang bước nhập thông tin theo role;
+ * provider giữ flow nhập thông tin cơ sở riêng.
  */
 export default function SignUpBasicScreen({
   navigation,
@@ -27,12 +26,26 @@ export default function SignUpBasicScreen({
   const selectedRole = route?.params?.role || 'receiver';
 
   const handleSuccess = async (data: SignUpBasicInfoInput) => {
+    setBasicInfo({ email: data.email, password: data.password, name: data.name });
+
     // Provider: chưa đăng ký ngay — sang màn nhập thông tin cơ sở rồi mới register.
     if (selectedRole === 'provider') {
-      setBasicInfo({ email: data.email, password: data.password, name: data.name });
       navigation.navigate('SignUpProvider');
       return;
     }
+
+    if (selectedRole === 'receiver') {
+      navigation.navigate('SignUpRecipient', {
+        recipientType: route?.params?.recipientType ?? 'individual',
+      });
+      return;
+    }
+
+    if (selectedRole === 'volunteer') {
+      navigation.navigate('SignUpVolunteer');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       await register({ ...data, role: selectedRole } as any);

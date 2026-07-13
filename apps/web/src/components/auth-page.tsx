@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -273,6 +274,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   const { setTokens, setUser } = useAuthStore();
+  const queryClient = useQueryClient();
   const uploadEvidence = useUploadVerificationImage();
 
   const onLoginSubmit = async (data: LoginFormValues) => {
@@ -288,6 +290,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       }>('/auth/login', { email: data.email, password: data.password });
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
+      // Xóa sạch cache của user cũ (['users','me', oldId] etc.) trước khi điều hướng → tránh hiển thị nhầm hồ sơ
+      queryClient.clear();
       toast.success("Đăng nhập thành công!");
       let redirectUrl = '/listings';
       const role = res.data.data.user.role;
@@ -340,6 +344,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       }>('/auth/google', { idToken });
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
+      // Xóa cache user cũ để chắc chắn hiển thị profile của user vừa đăng nhập
+      queryClient.clear();
       toast.success('Đăng nhập Google thành công!');
       redirectByRole(res.data.data.user.role);
     } catch (err: unknown) {

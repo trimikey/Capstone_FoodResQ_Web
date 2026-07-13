@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, FAB, Chip, Button } from 'react-native-paper';
+import { Text, FAB, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
@@ -11,13 +11,8 @@ import { ProviderListingCard } from '@/components/ProviderListingCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  onSurface: '#121c2a',
-  outline: '#e5e7eb',
-};
+import { FilterPill } from '@/components/ui/FilterPill';
+import { mobileColors as COLORS, radius } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom các status backend thành nhóm dễ hiểu cho provider. */
 type FilterKey = 'all' | 'active' | 'draft' | 'completed' | 'cancelled';
@@ -39,7 +34,7 @@ export default function ProviderListingsScreen() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [checking, setChecking] = useState(false);
 
-  const all = data ?? [];
+  const all = useMemo(() => data ?? [], [data]);
   const items = useMemo(() => {
     const f = FILTERS.find((x) => x.key === filter)!;
     return all.filter((l) => f.match(l.status));
@@ -112,17 +107,13 @@ export default function ProviderListingsScreen() {
         {FILTERS.map((f) => {
           const count = f.key === 'all' ? all.length : all.filter((l) => f.match(l.status)).length;
           return (
-            <Chip
+            <FilterPill
               key={f.key}
-              selected={filter === f.key}
-              showSelectedCheck={false}
+              active={filter === f.key}
               onPress={() => setFilter(f.key)}
-              style={[styles.chip, filter === f.key && styles.chipActive]}
-              textStyle={filter === f.key ? styles.chipTextActive : undefined}
-            >
-              {f.label}
-              {count > 0 ? ` (${count})` : ''}
-            </Chip>
+              label={f.label}
+              count={count}
+            />
           );
         })}
       </ScrollView>
@@ -136,7 +127,6 @@ export default function ProviderListingsScreen() {
             onPress={() => router.push(`/(app)/provider/${item.id}`)}
           />
         )}
-        estimatedItemSize={120}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
         refreshing={isRefetching}
@@ -160,18 +150,15 @@ const styles = StyleSheet.create({
   title: { fontWeight: '700', color: COLORS.onSurface },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
-  chip: { backgroundColor: '#fff', borderColor: COLORS.outline },
-  chipActive: { backgroundColor: COLORS.primary },
-  chipTextActive: { color: '#fff', fontWeight: '700' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
   fab: { position: 'absolute', right: 20, bottom: 24, backgroundColor: COLORS.primary },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   pendingIcon: {
-    width: 96, height: 96, borderRadius: 48, backgroundColor: '#ecfdf5',
+    width: 96, height: 96, borderRadius: radius.pill, backgroundColor: COLORS.primaryContainer,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
   pendingTitle: { fontSize: 20, fontWeight: '700', color: COLORS.onSurface, marginBottom: 12, textAlign: 'center' },
-  pendingBody: { fontSize: 15, color: '#6b7280', textAlign: 'center', lineHeight: 22, marginBottom: 10 },
-  pendingHint: { fontSize: 13, color: '#9ca3af', textAlign: 'center', marginBottom: 28 },
-  recheckBtn: { borderRadius: 12, paddingHorizontal: 8 },
+  pendingBody: { fontSize: 15, color: COLORS.onSurfaceVariant, textAlign: 'center', lineHeight: 22, marginBottom: 10 },
+  pendingHint: { fontSize: 13, color: COLORS.onSurfaceVariant, textAlign: 'center', marginBottom: 28 },
+  recheckBtn: { borderRadius: radius.md, paddingHorizontal: 8 },
 });

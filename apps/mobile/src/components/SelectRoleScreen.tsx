@@ -1,33 +1,22 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Pressable,
-  useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Text, Card } from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Text } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FadeInUp } from './ui/Motion';
-
-const COLORS = {
-  primary: '#10b981',
-  primaryLight: '#f0fdf4',
-  primaryContainer: '#4edea3',
-  secondary: '#855300',
-  background: '#ffffff',
-  surface: '#ffffff',
-  onSurface: '#1a1a1a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#F3F4F6',
-  outlineVariant: '#bbcabf',
-  warningContainer: '#f59e0b',
-};
+import {
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  ProgressDots,
+  authStyles,
+} from './auth/AuthLayout';
+import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 export type UserRole = 'individual' | 'charity' | 'volunteer' | 'provider';
 
 interface RoleOption {
   id: UserRole;
-  emoji: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
   title: string;
   description: string;
 }
@@ -35,27 +24,27 @@ interface RoleOption {
 const ROLE_OPTIONS: RoleOption[] = [
   {
     id: 'individual',
-    emoji: '👤',
-    title: 'Cá nhân',
-    description: 'Nhận hỗ trợ thực phẩm cho cá nhân',
+    icon: 'account-heart-outline',
+    title: 'Cá nhân nhận hỗ trợ',
+    description: 'Tìm và đặt phần thực phẩm phù hợp cho bản thân.',
   },
   {
     id: 'charity',
-    emoji: '🤲',
+    icon: 'hand-heart-outline',
     title: 'Tổ chức từ thiện',
-    description: 'Nhận thực phẩm cho tổ chức',
+    description: 'Nhận thực phẩm cho cộng đồng hoặc điểm phân phát.',
   },
   {
     id: 'volunteer',
-    emoji: '🤝',
+    icon: 'account-hard-hat-outline',
     title: 'Tình nguyện viên',
-    description: 'Hỗ trợ vận chuyển & phân phát thực phẩm',
+    description: 'Hỗ trợ vận chuyển, bếp hoặc phục vụ tại chiến dịch.',
   },
   {
     id: 'provider',
-    emoji: '🏪',
-    title: 'Nhà cung cấp / Cơ sở kinh doanh',
-    description: 'Đăng tin chia sẻ thực phẩm dư cho cộng đồng',
+    icon: 'storefront-outline',
+    title: 'Nhà cung cấp',
+    description: 'Đăng tin chia sẻ thực phẩm dư từ cơ sở kinh doanh.',
   },
 ];
 
@@ -70,260 +59,163 @@ export function SelectRoleScreen({
   onBack,
   isLoading = false,
 }: SelectRoleScreenProps) {
-  const insets = useSafeAreaInsets();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>('individual');
 
-  const handleSelectRole = (role: UserRole) => {
-    if (!isLoading) {
-      setSelectedRole(role);
-    }
-  };
-
   const handleContinue = () => {
-    if (selectedRole) {
-      onSelectRole?.(selectedRole);
-    }
+    if (selectedRole) onSelectRole?.(selectedRole);
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-      {/* Header */}
-      <View
-        style={{
-          height: 56,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.background,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottomWidth: 1,
-          borderBottomColor: COLORS.outline,
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
+    <AuthScaffold
+      footer={
+        <Button
+          mode="contained"
+          onPress={handleContinue}
+          disabled={!selectedRole || isLoading}
+          loading={isLoading}
+          buttonColor={COLORS.primary}
+          style={authStyles.primaryButton}
+          contentStyle={authStyles.buttonContent}
+          labelStyle={authStyles.buttonLabel}
+          accessibilityLabel="Tiếp tục với vai trò đã chọn"
+          accessibilityState={{ disabled: !selectedRole || isLoading }}
         >
-          <Text style={{ fontSize: 24, color: COLORS.onSurface }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 24,
-            fontWeight: '600',
-            color: COLORS.onSurface,
-          }}
-        >
-          Who are you?
-        </Text>
-        <View style={{ width: 40 }} />
-      </View>
+          {isLoading ? 'Đang tiếp tục' : 'Tiếp tục'}
+        </Button>
+      }
+    >
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle="Thiết lập tài khoản"
+        right={<Text style={styles.stepText}>1/2</Text>}
+      />
 
-      {/* Main Content */}
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: COLORS.background,
-        }}
-      >
-        {/* Subtitle & Progress Section */}
-        <View
-          style={{
-            alignItems: 'center',
-            marginTop: 12,
-            marginBottom: 12,
-            paddingHorizontal: 20,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              color: COLORS.onSurfaceVariant,
-              marginBottom: 8,
-            }}
-          >
-            Choose your role to get started
-          </Text>
-          <Text
-            style={{
-              fontSize: 12,
-              color: COLORS.warningContainer,
-              marginBottom: 12,
-              fontWeight: '500',
-            }}
-          >
-            Step 1 of 2
-          </Text>
+      <ProgressDots total={2} active={0} label="Bước 1: Chọn vai trò" />
 
-          {/* Progress Bar */}
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <View
-              style={{
-                height: 6,
-                width: 48,
-                borderRadius: 3,
-                backgroundColor: COLORS.warningContainer,
-              }}
-            />
-            <View
-              style={{
-                height: 6,
-                width: 48,
-                borderRadius: 3,
-                backgroundColor: COLORS.outline,
-              }}
-            />
-          </View>
-        </View>
+      <AuthIntro
+        icon="account-switch-outline"
+        eyebrow="Vai trò"
+        title="Bạn muốn dùng FoodResQ theo cách nào?"
+        description="Chọn đúng vai trò để app mở đúng luồng đăng ký và tính năng sau khi đăng nhập."
+      />
 
-        {/* Role Cards */}
-        <View
-          style={{
-            flex: 1,
-            paddingHorizontal: 20,
-            paddingBottom: 8,
-            gap: 16,
-            justifyContent: 'center',
-          }}
-        >
-          {ROLE_OPTIONS.map((role, index) => {
-            const isSelected = selectedRole === role.id;
-
-            return (
-              <FadeInUp key={role.id} delay={80 + index * 80}>
-                <Pressable
-                  onPress={() => handleSelectRole(role.id)}
-                  disabled={isLoading}
-                  style={({ pressed }) => ({
-                    opacity: pressed ? 0.8 : 1,
-                  })}
-                >
-                <View
-                  style={{
-                    backgroundColor: isSelected
-                      ? COLORS.primaryLight
-                      : COLORS.surface,
-                    borderWidth: isSelected ? 2 : 1,
-                    borderColor: isSelected
-                      ? COLORS.primary
-                      : COLORS.outline,
-                    borderRadius: 12,
-                    padding: 16,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 16,
-                    shadowColor: '#000',
-                    shadowOffset: {
-                      width: 0,
-                      height: isSelected ? 4 : 2,
-                    },
-                    shadowOpacity: isSelected ? 0.08 : 0.05,
-                    shadowRadius: isSelected ? 12 : 8,
-                    elevation: isSelected ? 8 : 4,
-                  }}
-                >
-                  {/* Icon Circle */}
-                  <View
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 28,
-                      backgroundColor: isSelected
-                        ? `${COLORS.primary}20`
-                        : '#f3f4f6',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Text style={{ fontSize: 28 }}>{role.emoji}</Text>
-                  </View>
-
-                  {/* Content */}
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 16,
-                        fontWeight: '600',
-                        color: isSelected
-                          ? COLORS.primary
-                          : COLORS.onSurface,
-                        marginBottom: 4,
-                      }}
-                    >
-                      {role.title}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        color: isSelected
-                          ? `${COLORS.primary}80`
-                          : COLORS.onSurfaceVariant,
-                      }}
-                    >
-                      {role.description}
-                    </Text>
-                  </View>
-
-                  {/* Radio Button */}
-                  <View
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 10,
-                      borderWidth: isSelected ? 6 : 2,
-                      borderColor: isSelected
-                        ? COLORS.primary
-                        : COLORS.outlineVariant,
-                      backgroundColor: isSelected
-                        ? COLORS.surface
-                        : 'transparent',
-                    }}
+      <View style={styles.roleList}>
+        {ROLE_OPTIONS.map((role, index) => {
+          const isSelected = selectedRole === role.id;
+          return (
+            <FadeInUp key={role.id} delay={70 + index * 50}>
+              <Pressable
+                onPress={() => setSelectedRole(role.id)}
+                disabled={isLoading}
+                style={({ pressed }) => [
+                  styles.roleCard,
+                  isSelected && styles.roleCardSelected,
+                  pressed && authStyles.pressed,
+                ]}
+                accessibilityRole="radio"
+                accessibilityLabel={`${role.title}. ${role.description}`}
+                accessibilityState={{ selected: isSelected, disabled: isLoading }}
+              >
+                <View style={[styles.roleIcon, isSelected && styles.roleIconSelected]}>
+                  <MaterialCommunityIcons
+                    name={role.icon}
+                    size={25}
+                    color={isSelected ? COLORS.primary : COLORS.onSurfaceVariant}
                   />
-                  </View>
-                </Pressable>
-              </FadeInUp>
-            );
-          })}
-        </View>
+                </View>
+                <View style={styles.roleCopy}>
+                  <Text style={[styles.roleTitle, isSelected && styles.roleTitleSelected]}>
+                    {role.title}
+                  </Text>
+                  <Text style={styles.roleDescription}>{role.description}</Text>
+                </View>
+                <View style={[styles.radio, isSelected && styles.radioSelected]}>
+                  {isSelected ? <View style={styles.radioDot} /> : null}
+                </View>
+              </Pressable>
+            </FadeInUp>
+          );
+        })}
       </View>
-
-      {/* Continue Button */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surface,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.outline,
-        }}
-      >
-        <FadeInUp delay={320}>
-          <Button
-            mode="contained"
-            onPress={handleContinue}
-            disabled={!selectedRole || isLoading}
-            loading={isLoading}
-            style={{
-              backgroundColor: COLORS.primary,
-              borderRadius: 16,
-              paddingVertical: 8,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Continuing...' : 'Continue'}
-          </Button>
-        </FadeInUp>
-      </View>
-    </View>
+    </AuthScaffold>
   );
 }
+
+const styles = StyleSheet.create({
+  stepText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  roleList: {
+    gap: spacing.sm,
+  },
+  roleCard: {
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+  },
+  roleCardSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+    ...elevation.pressed,
+  },
+  roleIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleIconSelected: {
+    backgroundColor: COLORS.surface,
+  },
+  roleCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  roleTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  roleTitleSelected: {
+    color: COLORS.primary,
+  },
+  roleDescription: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: COLORS.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.surface,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.primary,
+  },
+});
 
 export default SelectRoleScreen;

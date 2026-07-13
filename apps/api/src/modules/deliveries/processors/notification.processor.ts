@@ -8,7 +8,7 @@ interface ShipperBroadcastJob {
   pickupLat: number;
 }
 
-interface TaskOfferJob {
+interface DeliveryOfferTimeoutJob {
   shipperId: string;
   deliveryId: string;
   expiresAt: string;
@@ -20,7 +20,7 @@ export class NotificationProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<ShipperBroadcastJob | TaskOfferJob>) {
+  async process(job: Job<ShipperBroadcastJob | DeliveryOfferTimeoutJob>) {
     if (job.name === 'shipper-broadcast') {
       const data = job.data as ShipperBroadcastJob;
       await this.deliveriesService.broadcastToNearbyShippers(
@@ -29,6 +29,9 @@ export class NotificationProcessor extends WorkerHost {
         data.pickupLat,
       );
     }
-    // 'task-offer' jobs are push-only (FCM) — handled separately when FCM is wired
+    if (job.name === 'delivery-offer-timeout') {
+      const data = job.data as DeliveryOfferTimeoutJob;
+      await this.deliveriesService.expireOfferAndOfferNext(data.deliveryId, data.shipperId);
+    }
   }
 }

@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToBackend } from './imageUpload';
+import { preprocessImage } from './imagePreprocess';
 
 /** Người dùng huỷ chọn ảnh — phân biệt với lỗi thật để không hiện toast lỗi. */
 export class ImagePickCancelledError extends Error {
@@ -30,7 +31,7 @@ export async function pickAvatarImage(): Promise<string> {
   if (result.canceled || !result.assets?.length) {
     throw new ImagePickCancelledError();
   }
-  return result.assets[0].uri;
+  return preprocessImage(result.assets[0].uri, 'avatar');
 }
 
 /**

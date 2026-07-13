@@ -286,6 +286,14 @@ export const endpoints = {
     update: (id: string) => `/recipes/${id}`,
     delete: (id: string) => `/recipes/${id}`,
   },
+  kitchen: {
+    // Vận hành bếp trong 1 chiến dịch: ca làm việc + thực đơn (nối công thức)
+    shifts: (campaignId: string) => `/campaigns/${campaignId}/shifts`,
+    applyShift: (campaignId: string, shiftId: string) =>
+      `/campaigns/${campaignId}/shifts/${shiftId}/apply`,
+    menuItems: (campaignId: string) => `/campaigns/${campaignId}/menu-items`,
+    removeMenuItem: (itemId: string) => `/campaigns/menu-items/${itemId}`,
+  },
   notifications: {
     my: '/notifications/my',
     unreadCount: '/notifications/unread-count',
