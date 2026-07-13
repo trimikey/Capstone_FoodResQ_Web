@@ -1,0 +1,20 @@
+Receiver->ReservationScreen:tap Reserve
+    ReservationScreen->ReservationsController:POST /reservations (CreateReservationDto)
+        ReservationsController->ReservationsService:create(receiverUserId, dto)
+            ReservationsService->PrismaService:receiverProfile.findUnique(userId)
+                PrismaService->Database:SELECT receiver_profiles
+            ReservationsService->SystemConfigService:getNumber(MAX_RESERVATIONS_PER_DAY)
+            ReservationsService->Redlock:acquire(lock reservation listingId, 10s)
+            ReservationsService->PrismaService:queryRaw SELECT listing (qty, status, max)
+                PrismaService->Database:SELECT food_listings
+            ReservationsService->PrismaService:reservation.findFirst(active existing)
+                PrismaService->Database:SELECT reservations
+            ReservationsService->SystemConfigService:getNumber(QR_VALIDITY_MINUTES)
+            ReservationsService->PrismaService:UPDATE food_listings decrement quantity
+                PrismaService->Database:UPDATE food_listings
+            ReservationsService->PrismaService:INSERT reservation (qr_token, qr_expires_at)
+                PrismaService->Database:INSERT reservations
+            ReservationsService->PrismaService:receiverProfile reservationsToday +1
+                PrismaService->Database:UPDATE receiver_profiles
+            ReservationsService->ReservationsService:createDeliveryAsync(reservationId)
+            ReservationsService->Redlock:release()

@@ -1,0 +1,314 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Kitchen Operations (kitchen-ops controller)
+' Create shift · Apply shift · Add menu item · List shifts ·
+' Add safety log · Add distribution · Distribution summary · Add feedback
+'==============================================================
+
+'──────────────────── 1. Create Shift ────────────────────────
+@startuml seq-kitchen-create-shift
+!include _seq-style.iuml
+title Create Campaign Shift Sequence Diagram
+
+actor "Charity" as User
+participant "KitchenOpsScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : add shift (label, role, time, slots)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/shifts (CreateShiftDto)
+activate Ctrl
+Ctrl -> Svc : createShift(campaignId, userId, dto)
+activate Svc
+Svc -> Svc : assertCampaignOwner(campaignId, userId)
+Svc -> Repo : kitchenCampaign + receiverProfile.findUnique
+Repo --> Svc : campaign
+alt Not owner OR endTime <= startTime
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  Svc -> Repo : campaignShift.create(label, role, times, slotsNeeded)
+  Repo -> DB : INSERT campaign_shifts
+  Svc --> Ctrl : shift
+  Ctrl --> Screen : return data (201)
+  Screen --> User : shift added
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. Apply to Shift ──────────────────────
+@startuml seq-kitchen-apply-shift
+!include _seq-style.iuml
+title Apply to Shift Sequence Diagram
+
+actor "Volunteer" as User
+participant "CampaignDetailScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : apply to a shift
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/shifts/:shiftId/apply (ApplyShiftDto)
+activate Ctrl
+Ctrl -> Svc : applyToShift(campaignId, shiftId, userId, dto)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique include specializations, user.status
+Svc -> Repo : campaignShift.findUnique(shiftId)
+Svc -> Repo : kitchenCampaign.findUnique(status)
+Repo --> Svc : volunteer, shift, campaign
+alt banned/suspended OR shift not found OR campaign closed OR wrong specialization OR shift full OR already applied
+  Svc --> Ctrl : 400 / 403 / 409 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else eligible
+  group $transaction
+    Svc -> Repo : campaignVolunteerAssignment.create(shiftId, role, status=assigned)
+    Svc -> Repo : campaignShift.slotsFilled +1
+    Repo -> DB : INSERT assignment / UPDATE campaign_shifts
+  end
+  Svc --> Ctrl : { message: shift applied }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : registered for shift
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. List Shifts ─────────────────────────
+@startuml seq-kitchen-list-shifts
+!include _seq-style.iuml
+title List Campaign Shifts Sequence Diagram
+
+actor "User" as User
+participant "CampaignDetailScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open shifts tab
+activate Screen
+Screen -> Ctrl : GET /campaigns/:id/shifts
+activate Ctrl
+Ctrl -> Svc : listShifts(campaignId)
+activate Svc
+Svc -> Repo : campaignShift.findMany(campaignId) include assignments.volunteer
+Repo -> DB : SELECT campaign_shifts JOIN ...
+DB --> Repo : shifts[]
+Svc --> Ctrl : shifts[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render shifts
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. Add Menu Item ───────────────────────
+@startuml seq-kitchen-add-menu
+!include _seq-style.iuml
+title Add Menu Item Sequence Diagram
+
+actor "Charity" as User
+participant "KitchenOpsScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : add dish (recipe or custom)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/menu-items (AddMenuItemDto)
+activate Ctrl
+Ctrl -> Svc : addMenuItem(campaignId, userId, dto)
+activate Svc
+Svc -> Svc : assertCampaignOwner(campaignId, userId)
+alt No recipe and no custom name
+  Svc --> Ctrl : 400 BadRequest
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  opt recipeId provided
+    Svc -> Repo : recipe.findFirst(recipeId)
+  end
+  group $transaction
+    Svc -> Repo : campaignMenuItem.create(recipeId/customName, plannedServings)
+    opt linked recipe
+      Svc -> Repo : recipe.timesUsed +1
+    end
+    Repo -> DB : INSERT campaign_menu_items
+  end
+  Svc --> Ctrl : menu item
+  Ctrl --> Screen : return data (201)
+  Screen --> User : dish added
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 5. Add Safety Log (Chef) ───────────────
+@startuml seq-kitchen-safety-log
+!include _seq-style.iuml
+title Add Kitchen Safety Log Sequence Diagram
+
+actor "Chef" as User
+participant "KitchenOpsScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Repo
+participant "NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : log safety check (+ photo)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/safety-logs (CreateSafetyLogDto, photo?)
+activate Ctrl
+opt photo attached
+  Ctrl -> Svc : saveProofPhoto(photo)
+  Svc -> Store : saveImage(photo, 'campaign-proofs')
+  Store --> Ctrl : photoUrl
+end
+Ctrl -> Svc : createSafetyLog(campaignId, userId, dto, photoUrl)
+activate Svc
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'chef')
+Svc -> Repo : kitchenCampaign.findUnique include charityReceiver
+Repo --> Svc : campaign
+alt Not assigned chef OR campaign not open/in_progress
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  Svc -> Repo : kitchenSafetyLog.create(checkType, result, photo)
+  Repo -> DB : INSERT kitchen_safety_logs
+  opt result = warning / fail
+    Svc -> Notif : notify(charity, "Food safety alert")
+  end
+  Svc --> Ctrl : safety log
+  Ctrl --> Screen : return data (201)
+  Screen --> User : log saved
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 6. Add Distribution (Waiter) ───────────
+@startuml seq-kitchen-distribution
+!include _seq-style.iuml
+title Record Meal Distribution Sequence Diagram
+
+actor "Waiter" as User
+participant "KitchenOpsScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "StorageService" as Store
+participant "PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : record a serving round (+ photo, location)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/distributions (CreateDistributionDto, photo?)
+activate Ctrl
+opt photo attached
+  Ctrl -> Svc : saveProofPhoto(photo)
+  Svc -> Store : saveImage(photo, 'campaign-proofs')
+  Store --> Ctrl : photoUrl
+end
+Ctrl -> Svc : createDistribution(campaignId, userId, dto, photoUrl)
+activate Svc
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'waiter')
+Svc -> Repo : kitchenCampaign.findUnique(status)
+Repo --> Svc : campaign
+alt Not assigned waiter OR invalid status OR lng/lat mismatch
+  Svc --> Ctrl : 400 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  Svc -> Repo : mealDistribution.create(servings, people, leftover)
+  Repo -> DB : INSERT meal_distributions
+  opt has coordinates
+    Svc -> Repo : UPDATE location (ST_MakePoint)
+    Repo -> DB : UPDATE meal_distributions
+  end
+  Svc --> Ctrl : distribution
+  Ctrl --> Screen : return data (201)
+  Screen --> User : round recorded
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Distribution Summary ────────────────
+@startuml seq-kitchen-distribution-summary
+!include _seq-style.iuml
+title Distribution Summary Sequence Diagram
+
+actor "Charity" as User
+participant "KitchenOpsScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open distribution dashboard
+activate Screen
+Screen -> Ctrl : GET /campaigns/:id/distributions/summary
+activate Ctrl
+Ctrl -> Svc : distributionSummary(campaignId)
+activate Svc
+Svc -> Repo : mealDistribution.aggregate(sum servings/people/leftover, count)
+Repo -> DB : SELECT SUM/COUNT meal_distributions
+DB --> Repo : totals
+Svc --> Ctrl : { rounds, totalServings, totalPeople, totalLeftover }
+Ctrl --> Screen : return data (200)
+Screen --> User : render summary
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 8. Add Meal Feedback ───────────────────
+@startuml seq-kitchen-feedback
+!include _seq-style.iuml
+title Add Meal Feedback Sequence Diagram
+
+actor "Beneficiary" as User
+participant "FeedbackScreen" as Screen
+participant "KitchenOpsController" as Ctrl
+participant "KitchenOpsService" as Svc
+participant "PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : rate the meal (satisfaction, comment)
+activate Screen
+Screen -> Ctrl : POST /campaigns/distributions/:distId/feedback (CreateMealFeedbackDto)
+activate Ctrl
+Ctrl -> Svc : addFeedback(distributionId, dto)
+activate Svc
+Svc -> Repo : mealDistribution.findUnique(distributionId)
+Repo --> Svc : distribution | null
+alt Distribution not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : mealFeedback.create(satisfaction, comment)
+  Repo -> DB : INSERT meal_feedback
+  Svc --> Ctrl : feedback
+  Ctrl --> Screen : return data (201)
+  Screen --> User : feedback submitted
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

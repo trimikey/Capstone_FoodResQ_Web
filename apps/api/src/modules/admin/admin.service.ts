@@ -837,12 +837,42 @@ export class AdminService {
         id: true,
         businessName: true,
         businessType: true,
+        taxCode: true,
         address: true,
+        contactPhone: true,
         createdAt: true,
         user: { select: { id: true, email: true, fullName: true, phone: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Lấy documents (evidenceUrls) từ verification_requests mới nhất theo user
+    const userIds = providers.map((p) => p.user.id);
+    const verificationDocs = userIds.length
+      ? await this.prisma.verificationRequest.findMany({
+          where: { userId: { in: userIds }, requestType: 'provider_registration' },
+          orderBy: { submittedAt: 'desc' },
+          distinct: ['userId'],
+          select: { userId: true, documents: true },
+        })
+      : [];
+    const docsByUser = new Map(verificationDocs.map((d) => [d.userId, d.documents]));
+
+    // Lấy toạ độ provider (geography → ST_X/ST_Y)
+    const providerIds = providers.map((p) => p.id);
+    const coordRows = providerIds.length
+      ? await this.prisma.$queryRaw<
+          { id: string; lng: number | null; lat: number | null }[]
+        >(Prisma.sql`
+          SELECT id::text AS id,
+                 ST_X(location::geometry) AS lng,
+                 ST_Y(location::geometry) AS lat
+          FROM provider_profiles
+          WHERE id = ANY(${providerIds}::uuid[])
+        `)
+      : [];
+    const coordByProvider = new Map(coordRows.map((c) => [c.id, { lng: c.lng, lat: c.lat }]));
+
     const volunteers = await this.prisma.volunteerProfile.findMany({
       where: { verificationStatus: 'pending' },
       select: {
@@ -856,17 +886,39 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
+    type EvidenceDocs = {
+      evidenceUrls?: string[];
+      description?: string;
+      lng?: number | null;
+      lat?: number | null;
+    };
+
     return [
-      ...providers.map((p) => ({
-        type: 'provider' as ProfileType,
-        profileId: p.id,
-        userId: p.user.id,
-        fullName: p.user.fullName,
-        email: p.user.email,
-        phone: p.user.phone,
-        detail: `${p.businessName} · ${p.businessType} · ${p.address}`,
-        createdAt: p.createdAt,
-      })),
+      ...providers.map((p) => {
+        const docs = (docsByUser.get(p.user.id) as EvidenceDocs | undefined) ?? {};
+        const coords = coordByProvider.get(p.id);
+        const evidenceUrls = Array.isArray(docs.evidenceUrls) ? docs.evidenceUrls : [];
+        return {
+          type: 'provider' as ProfileType,
+          profileId: p.id,
+          userId: p.user.id,
+          fullName: p.user.fullName,
+          email: p.user.email,
+          phone: p.user.phone,
+          detail: `${p.businessName} · ${p.businessType} · ${p.address}`,
+          // thêm các field mở rộng để admin duyệt
+          businessName: p.businessName,
+          businessType: p.businessType,
+          taxCode: p.taxCode,
+          address: p.address,
+          contactPhone: p.contactPhone ?? p.user.phone,
+          evidenceUrls,
+          description: docs.description ?? null,
+          lng: coords?.lng ?? docs.lng ?? null,
+          lat: coords?.lat ?? docs.lat ?? null,
+          createdAt: p.createdAt,
+        };
+      }),
       ...volunteers.map((v) => ({
         type: 'volunteer' as ProfileType,
         profileId: v.id,

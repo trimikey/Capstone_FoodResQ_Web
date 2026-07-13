@@ -1,0 +1,9 @@
+User->ProfileScreen:open profile
+    ProfileScreen->UsersController:GET /users/me
+        UsersController->UsersService:getMe(userId)
+            UsersService->PrismaService:user.findUnique(userId)
+                PrismaService->Database:SELECT users
+            UsersService->PrismaService:queryRaw receiver impact stats
+                PrismaService->Database:SELECT reservations aggregate
+            UsersService->PrismaService:volunteerProfile / receiverProfile.findUnique
+                PrismaService->Database:SELECT profile

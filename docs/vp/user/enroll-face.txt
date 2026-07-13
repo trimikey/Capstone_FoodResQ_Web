@@ -1,0 +1,11 @@
+User->FaceEnrollmentPanel:capture selfie + ID card
+    FaceEnrollmentPanel->UsersController:POST /users/me/face-enrollment (photos)
+        UsersController->UsersService:enrollFace(userId, idCardPhoto, selfiePhoto)
+            UsersService->PrismaService:user.findUnique(role)
+                PrismaService->Database:SELECT users
+            UsersService->FaceMatchService:getFaceDescriptor(selfie)
+            UsersService->FaceMatchService:getFaceDescriptor(idCard)
+            UsersService->FaceMatchService:compare(selfie, idCard)
+            UsersService->StorageService:saveImage(idCard, selfie)
+            UsersService->PrismaService:receiverProfile / volunteerProfile.update(faceDescriptor)
+                PrismaService->Database:UPDATE profile

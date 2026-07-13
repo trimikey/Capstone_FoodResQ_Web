@@ -1,0 +1,12 @@
+Shipper->ActiveTaskScreen:cancel before pickup (reason)
+    ActiveTaskScreen->DeliveriesController:POST /deliveries/:id/cancel
+        DeliveriesController->DeliveriesService:cancelAssignment(id, shipperUserId, reason)
+            DeliveriesService->PrismaService:volunteerProfile.findUnique(userId)
+                PrismaService->Database:SELECT volunteer_profiles
+            DeliveriesService->PrismaService:delivery.findUnique(id)
+                PrismaService->Database:SELECT deliveries
+            DeliveriesService->PrismaService:delivery.update(shipperId=null, status=pending_assignment)
+                PrismaService->Database:UPDATE deliveries
+            DeliveriesService->PrismaService:offer.updateMany(accepted to rejected)
+                PrismaService->Database:UPDATE shipper_task_offers
+            DeliveriesService->DeliveriesService:broadcastToNearbyShippers(deliveryId)

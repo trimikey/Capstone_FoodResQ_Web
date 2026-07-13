@@ -1,0 +1,51 @@
+@startuml state-delivery
+title Delivery State Machine Diagram
+
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #CFE8FF
+  BorderColor #2E6DA4
+  ArrowColor #333333
+  FontName Segoe UI
+}
+hide empty description
+
+[*] --> pending_assignment : reservation created\n(requestDelivery = true)
+
+pending_assignment : Waiting for a shipper
+pending_assignment --> assigned : shipper accepts offer\n(acceptOffer)
+
+assigned : Shipper assigned
+assigned --> heading_to_provider : updateStatus
+assigned --> pending_assignment : cancelAssignment\n(re-broadcast offers)
+
+heading_to_provider : Going to pickup point
+heading_to_provider --> qc_completed : updateStatus\n(+ QC photo)
+heading_to_provider --> pending_assignment : cancelAssignment\n(re-broadcast offers)
+
+qc_completed : Food picked up & QC done
+qc_completed --> in_transit : updateStatus
+qc_completed --> failed : failDelivery (reason)
+
+in_transit : Delivering to receiver
+in_transit --> delivered : updateStatus\n(+ dedication points +5,\nreservation completed)
+in_transit --> failed : failDelivery (reason)
+
+delivered : Completed successfully
+failed : Delivery failed
+
+delivered --> [*]
+failed --> [*]
+
+note right of assigned
+  Cancel is only allowed
+  before pickup
+  (assigned / heading_to_provider)
+end note
+
+note right of qc_completed
+  After pickup, problems are
+  reported via failDelivery,
+  not cancel
+end note
+@enduml

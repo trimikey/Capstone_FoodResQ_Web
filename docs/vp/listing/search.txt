@@ -1,0 +1,6 @@
+Receiver->ListingsScreen:open map (lat, lng, radius)
+    ListingsScreen->ListingsController:GET /listings (lat, lng, radiusKm, category)
+        ListingsController->ListingsService:findNearby(query)
+            ListingsService->PrismaService:queryRaw spatial search (ST_DWithin, ST_Distance)
+                PrismaService->Database:SELECT food_listings JOIN provider_profiles
+            ListingsService->ListingsService:map rows to DTO (distance, coords)

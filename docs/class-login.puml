@@ -1,0 +1,85 @@
+  class-login
+title 3.1.1 Class Diagram — Login (FoodResQ)
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor White
+  BorderColor #444444
+  ArrowColor #444444
+  FontName Segoe UI
+}
+skinparam defaultFontSize 12
+hide empty members
+
+' ── Presentation layer ───────────────────────────────
+class AuthController {
+  - authService : AuthService
+  + login(dto: LoginDto, ua: string, ip: string) : AuthResult
+}
+
+' ── Business layer ───────────────────────────────────
+class AuthService {
+  - prisma : PrismaService
+  - jwt : JwtService
+  - config : ConfigService
+  + login(dto: LoginDto, deviceInfo?, ipAddress?) : AuthResult
+  - issueTokens(user: User, deviceInfo?, ipAddress?) : AuthResult
+}
+
+' ── DTOs ─────────────────────────────────────────────
+class LoginDto {
+  + email : string
+  + password : string
+}
+
+class AuthResult {
+  + accessToken : string
+  + refreshToken : string
+  + user : UserInfo
+}
+
+' ── Domain / Infrastructure ──────────────────────────
+class User {
+  + id : string
+  + email : string
+  + passwordHash : string
+  + role : UserRole
+  + status : UserStatus
+  + trustScore : number
+}
+
+class PrismaService {
+  + user
+  + refreshToken
+}
+
+class JwtService {
+  + sign(payload, options) : string
+}
+
+class ConfigService {
+  + getOrThrow(key) : string
+}
+
+class RefreshToken {
+  + tokenHash : string
+  + expiresAt : Date
+}
+
+' ── Relationships ────────────────────────────────────
+AuthController ..> AuthService  : delegates
+AuthController ..> LoginDto     : uses
+AuthController ..> AuthResult   : returns
+
+AuthService ..> LoginDto      : receives
+AuthService ..> AuthResult    : returns
+AuthService ..> PrismaService : queries\n(email + verify password)
+AuthService ..> JwtService    : generates tokens
+AuthService ..> ConfigService : gets config\n(JWT secrets)
+AuthService ..> RefreshToken  : persists (hashed)
+
+PrismaService ..> User        : reads/updates
+AuthResult *-- User           : contains (UserInfo)
+
+@enduml

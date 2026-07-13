@@ -1,0 +1,5 @@
+User->NotificationBell:open notifications
+    NotificationBell->NotificationsController:GET /notifications/my
+        NotificationsController->NotificationsService:listMine(userId)
+            NotificationsService->PrismaService:notification.findMany(userId) take 50
+                PrismaService->Database:SELECT notifications

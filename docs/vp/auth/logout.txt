@@ -1,0 +1,5 @@
+User->AuthController:POST /auth/logout (Bearer token)
+    AuthController->JwtAuthGuard:validate JWT
+    AuthController->AuthService:logout(userId)
+        AuthService->PrismaService:refreshToken.updateMany(isRevoked=true)
+            PrismaService->Database:UPDATE refresh_tokens

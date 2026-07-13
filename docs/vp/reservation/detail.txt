@@ -1,0 +1,7 @@
+Receiver->DetailScreen:open reservation detail
+    DetailScreen->ReservationsController:GET /reservations/:id
+        ReservationsController->ReservationsService:findOne(id, userId)
+            ReservationsService->PrismaService:receiverProfile.findUnique(userId)
+                PrismaService->Database:SELECT receiver_profiles
+            ReservationsService->PrismaService:reservation.findFirst include listing, delivery, shipper
+                PrismaService->Database:SELECT reservations JOIN

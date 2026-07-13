@@ -136,11 +136,10 @@ function ListingsPageContent() {
               <button
                 onClick={locate}
                 disabled={locStatus === 'locating'}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm disabled:opacity-60 ${
-                  locStatus === 'gps'
-                    ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
-                    : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm disabled:opacity-60 ${locStatus === 'gps'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
+                  : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
+                  }`}
                 title="Định vị lại theo GPS"
               >
                 <span className={`material-symbols-outlined text-[18px] ${locStatus === 'locating' ? 'animate-spin' : ''}`}>
@@ -148,20 +147,13 @@ function ListingsPageContent() {
                 </span>
                 {locStatus === 'locating' ? 'Đang định vị…' : 'Định vị lại'}
               </button>
-              <button
-                onClick={() => refetch()}
-                className="p-2.5 rounded-full text-neutral-500 hover:bg-white hover:text-neutral-900 transition-colors border border-neutral-200 bg-transparent shadow-sm"
-                title="Làm mới"
-              >
-                <span className="material-symbols-outlined text-[20px]">refresh</span>
-              </button>
+
             </div>
           </div>
 
           {/* Trạng thái định vị */}
-          <div className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${
-            locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
-          }`}>
+          <div className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
+            }`}>
             <span className="material-symbols-outlined text-[14px]">
               {locStatus === 'gps' ? 'location_on' : locStatus === 'denied' ? 'location_off' : 'location_searching'}
             </span>
@@ -202,7 +194,7 @@ function ListingsPageContent() {
               <span className="material-symbols-outlined text-[16px]">filter_list</span>
               Bộ lọc:
             </span>
-            
+
             {/* Distance Filter Dropdown */}
             <div className="relative">
               <button
@@ -278,11 +270,10 @@ function ListingsPageContent() {
               <button
                 key={pill}
                 onClick={() => handlePillClick(pill)}
-                className={`px-5 py-2 rounded-full border transition-all text-[13px] font-medium shrink-0 ${
-                  activePill === pill
-                    ? 'bg-[#236c2a] text-white border-[#236c2a] shadow-md'
-                    : 'bg-white border-neutral-200 text-neutral-600 hover:border-[#236c2a]/50 hover:text-[#236c2a]'
-                }`}
+                className={`px-5 py-2 rounded-full border transition-all text-[13px] font-medium shrink-0 ${activePill === pill
+                  ? 'bg-[#236c2a] text-white border-[#236c2a] shadow-md'
+                  : 'bg-white border-neutral-200 text-neutral-600 hover:border-[#236c2a]/50 hover:text-[#236c2a]'
+                  }`}
               >
                 {pill}
               </button>
@@ -322,9 +313,8 @@ function ListingsPageContent() {
                 <div
                   key={item.id}
                   onMouseEnter={() => setSelectedPinId(item.id)}
-                  className={`transition-all duration-300 rounded-2xl ${
-                    selectedPinId === item.id ? 'ring-[3px] ring-[#236c2a] ring-offset-2 ring-offset-[#fcf9f2]' : ''
-                  }`}
+                  className={`transition-all duration-300 rounded-2xl ${selectedPinId === item.id ? 'ring-[3px] ring-[#236c2a] ring-offset-2 ring-offset-[#fcf9f2]' : ''
+                    }`}
                 >
                   <ListingCard listing={item} />
                 </div>

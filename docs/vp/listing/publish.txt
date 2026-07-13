@@ -1,0 +1,9 @@
+Provider->ProviderScreen:tap Publish
+    ProviderScreen->ListingsController:PATCH /listings/:id/publish
+        ListingsController->ListingsService:publish(listingId, userId)
+            ListingsService->PrismaService:providerProfile.findUnique(userId)
+                PrismaService->Database:SELECT provider_profiles
+            ListingsService->PrismaService:foodListing.findUnique(listingId)
+                PrismaService->Database:SELECT food_listings
+            ListingsService->PrismaService:foodListing.update(status=active)
+                PrismaService->Database:UPDATE food_listings

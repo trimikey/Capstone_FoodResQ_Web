@@ -141,11 +141,12 @@ export function useDeliveryHistory(params: { page?: number; limit?: number; enab
     placeholderData: (prev) => prev, // giữ trang cũ khi đang tải trang mới
   });
 }
-export function useActiveDelivery() {
+export function useActiveDelivery(enabled = true) {
   return useQuery({
     queryKey: ['deliveries', 'active'],
     queryFn: fetchActiveDelivery,
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
@@ -243,11 +244,16 @@ export function useDeliveryTracking(reservationId: string, enabled: boolean) {
     });
     socket.on('delivery:location', (p: { reservationId: string; lng: number; lat: number }) => {
       if (p.reservationId !== reservationId) return;
-      qc.setQueryData<DeliveryTracking>(['deliveries', 'track', reservationId], (prev) =>
-        prev && prev.shipper
-          ? { ...prev, shipper: { ...prev.shipper, location: { lng: p.lng, lat: p.lat } } }
-          : prev,
-      );
+      const prev = qc.getQueryData<DeliveryTracking>(['deliveries', 'track', reservationId]);
+      if (prev?.shipper) {
+        qc.setQueryData<DeliveryTracking>(['deliveries', 'track', reservationId], {
+          ...prev,
+          shipper: { ...prev.shipper, location: { lng: p.lng, lat: p.lat } },
+        });
+      } else {
+        // Cache chưa có shipper (snapshot lúc còn pending_assignment) → refetch để lấy tên/SĐT + vị trí
+        void qc.invalidateQueries({ queryKey: ['deliveries', 'track', reservationId] });
+      }
     });
     return () => {
       socket.off('delivery:location');
@@ -293,10 +299,11 @@ export function useFailDelivery() {
 export function useUpdateDeliveryStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { deliveryId: string; status: string; photo?: File }) => {
+    mutationFn: async (params: { deliveryId: string; status: string; photo?: File; qrToken?: string }) => {
       const form = new FormData();
       form.append('status', params.status);
       if (params.photo) form.append('photo', params.photo);
+      if (params.qrToken) form.append('qrToken', params.qrToken);
       const { data } = await api.patch(`/deliveries/${params.deliveryId}/status`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });

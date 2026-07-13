@@ -1,0 +1,11 @@
+Receiver->TrackScreen:open tracking map
+    TrackScreen->DeliveriesController:GET /deliveries/track/:reservationId
+        DeliveriesController->DeliveriesService:getTrackingForReceiver(reservationId, receiverUserId)
+            DeliveriesService->PrismaService:receiverProfile.findUnique(userId)
+                PrismaService->Database:SELECT receiver_profiles
+            DeliveriesService->PrismaService:delivery.findUnique(reservationId) include shipper
+                PrismaService->Database:SELECT deliveries JOIN
+            DeliveriesService->PrismaService:getDeliveryCoords (ST_X, ST_Y)
+                PrismaService->Database:SELECT deliveries geography
+            DeliveriesService->PrismaService:queryRaw shipper current_location
+                PrismaService->Database:SELECT volunteer_profiles

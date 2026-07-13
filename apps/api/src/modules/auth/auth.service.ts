@@ -3,12 +3,14 @@ import {
   ConflictException,
   UnauthorizedException,
   ServiceUnavailableException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -18,6 +20,14 @@ import { User } from '@prisma/client';
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_DAYS = 30;
+
+/** BusinessType cần MST + ảnh GPKD/ĐKKD (cá nhân/hộ gia đình thì miễn). */
+const BUSINESS_TYPE_REQUIRES_TAXCODE = new Set([
+  'restaurant',
+  'supermarket',
+  'bakery',
+  'hotel',
+]);
 
 @Injectable()
 export class AuthService {
@@ -37,7 +47,22 @@ export class AuthService {
       if (phoneExists) throw new ConflictException('Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.');
     }
 
+    // Chuẩn hoá chuỗi để giảm khoảng trắng trước khi validate/insert.
+    const fullName = dto.fullName.trim();
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    if (dto.role === 'provider') {
+      if (!dto.businessName?.trim() || !dto.address?.trim()) {
+        throw new BadRequestException('Nhà cung cấp cần nhập tên cửa hàng và địa chỉ.');
+      }
+      if (dto.businessType && BUSINESS_TYPE_REQUIRES_TAXCODE.has(dto.businessType) && !dto.taxCode) {
+        throw new BadRequestException(
+          `Loại hình "${dto.businessType}" yêu cầu mã số thuế (taxCode) để admin xác minh doanh nghiệp.`,
+        );
+      }
+      // evidenceUrls: optional nhưng nếu gửi thì phải có ít nhất 1 ảnh GPKD/ĐKKD ở index 0
+      // (soft-check phía client, BE không ép vì có thể NCC cá nhân gửi ảnh CCCD sau).
+    }
 
     // Tạo user + profile theo role trong 1 transaction — các flow sau
     // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
@@ -46,7 +71,7 @@ export class AuthService {
         data: {
           email: dto.email,
           passwordHash,
-          fullName: dto.fullName,
+          fullName,
           role: dto.role,
           phone: dto.phone,
           status: 'pending_verification',
@@ -55,11 +80,11 @@ export class AuthService {
 
       if (dto.role === 'receiver') {
         await tx.receiverProfile.create({
-          data: { 
-            userId: created.id, 
+          data: {
+            userId: created.id,
             address: dto.address ?? null,
             isCharityOrg: dto.isCharityOrg ?? false,
-            organizationName: dto.isCharityOrg ? (dto.businessName ?? dto.fullName) : null
+            organizationName: dto.isCharityOrg ? (dto.businessName ?? fullName) : null,
           },
         });
       } else if (dto.role === 'volunteer') {
@@ -67,17 +92,56 @@ export class AuthService {
           data: { userId: created.id, vehicleType: dto.vehicleType ?? null },
         });
         if (dto.volunteerRole) {
-           await tx.volunteerSpecializationEntry.create({
-              data: { volunteerId: vp.id, specialization: dto.volunteerRole }
-           });
+          await tx.volunteerSpecializationEntry.create({
+            data: { volunteerId: vp.id, specialization: dto.volunteerRole },
+          });
         }
       } else if (dto.role === 'provider') {
-        await tx.providerProfile.create({
+        const businessType = dto.businessType ?? 'other';
+        const taxCode = dto.taxCode ?? null;
+        const evidenceUrls = dto.evidenceUrls ?? [];
+
+        // Insert location qua raw SQL vì cột là Unsupported("geography(Point,4326)")
+        const providerProfile = await tx.providerProfile.create({
           data: {
             userId: created.id,
-            businessName: dto.businessName ?? dto.fullName,
-            businessType: 'other',
+            businessName: dto.businessName ?? fullName,
+            businessType: businessType as never,
+            taxCode,
+            description: dto.description ?? null,
             address: dto.address ?? '',
+            contactPhone: dto.phone ?? null,
+          },
+          select: { id: true, businessName: true },
+        });
+
+        if (dto.lng != null && dto.lat != null) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE provider_profiles
+            SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
+                updated_at = NOW()
+            WHERE id = ${providerProfile.id}::uuid
+          `);
+        }
+
+        // Tạo verification_request cho admin duyệt — bundle tất cả bằng chứng vào documents JSON
+        const documents = {
+          businessName: providerProfile.businessName,
+          businessType,
+          taxCode,
+          address: dto.address ?? '',
+          lng: dto.lng ?? null,
+          lat: dto.lat ?? null,
+          description: dto.description ?? null,
+          phone: dto.phone ?? null,
+          evidenceUrls,
+        };
+        await tx.verificationRequest.create({
+          data: {
+            userId: created.id,
+            requestType: 'provider_registration',
+            status: 'pending',
+            documents: documents as never,
           },
         });
       }

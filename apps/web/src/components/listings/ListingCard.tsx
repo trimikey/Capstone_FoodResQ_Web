@@ -51,14 +51,24 @@ export default function ListingCard({ listing }: Props) {
 
   // Custom fallback images for mock display
   const fallbackImage = listing.category === 'bakery'
-    ? '/banh-mi-ngot-thap-cam.png'
+    ? '/banh-mi.png'
     : listing.category === 'cooked_meal'
-    ? '/com-ga-hoi-an.png'
+    ? '/com-ga.png'
     : listing.category === 'fresh_fruit' || listing.category === 'vegetables'
-    ? '/food_salad.png'
-    : '/banh-mi-lua-mach-tuoi.png';
+    ? '/rau-cu.png'
+    : '/hu-tieu.png';
 
-  const imageUrl = listing.imageUrls.length > 0 ? listing.imageUrls[0] : fallbackImage;
+  const oldMocks = [
+    '/banh-mi-ngot-thap-cam.png', 
+    '/com-ga-hoi-an.png', 
+    '/food_salad.png', 
+    '/banh-mi-lua-mach-tuoi.png', 
+    '/food_bread.png', 
+    '/food_lunchbox.png'
+  ];
+  const imageUrl = (listing.imageUrls.length > 0 && !oldMocks.includes(listing.imageUrls[0])) 
+    ? listing.imageUrls[0] 
+    : fallbackImage;
 
   return (
     <Link

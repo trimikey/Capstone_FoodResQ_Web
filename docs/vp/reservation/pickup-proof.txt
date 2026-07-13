@@ -1,0 +1,11 @@
+Receiver->DetailScreen:capture selfie / ID photo
+    DetailScreen->ReservationsController:POST /reservations/:id/pickup-proof (photo, type)
+        ReservationsController->ReservationsService:submitPickupProof(id, userId, type, photo)
+            ReservationsService->PrismaService:reservation.findUnique(id) include receiver
+                PrismaService->Database:SELECT reservations
+            ReservationsService->FaceMatchService:getFaceDescriptor(photo)
+            ReservationsService->FaceMatchService:compare(enrolled, live)
+            ReservationsService->StorageService:saveImage(photo, pickup-proofs)
+            ReservationsService->PrismaService:reservation.update(status=completed, pickupProofUrl)
+                PrismaService->Database:UPDATE reservations
+            ReservationsService->ReservationsService:applyTrustDelta(successful_rescue, +2)

@@ -251,11 +251,12 @@ export default function HomeContent() {
       <section id="about" className="w-full px-6 md:px-16 lg:px-24 py-20 grid grid-cols-1 lg:grid-cols-12 gap-16 items-center animate-fade-in-up [animation-delay:300ms]">
         
         {/* Left Side: 2x2 Image Grid */}
+        {/* Left Side: 2x2 Image Grid */}
         <div className="lg:col-span-6 grid grid-cols-2 gap-3">
-          <img src="/eco_volunteers.png" alt="Volunteers" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/eco_delivery.png" alt="Delivery 1" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/eco_delivery.png" alt="Delivery 2" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/eco_cooking.png" alt="Cooking" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          <img src="/xehang_TC.png" alt="Volunteers and Logistics" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          <img src="/shipper_TC.png" alt="Delivery" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          <img src="/giaohang_TC.png" alt="Beneficiary" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          <img src="/nauan_TC.png" alt="Cooking" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
         </div>
 
         {/* Right Side: Description and 3 Pillars */}

@@ -1,0 +1,13 @@
+    User->LoginScreen:submit login form
+        LoginScreen->AuthController:POST /auth/login (LoginDto)
+            AuthController->AuthService:login(dto, ua, ip)
+                AuthService->PrismaService:user.findUnique(email)
+                    PrismaService->Database:SELECT users WHERE email
+                AuthService->bcrypt:compare(password, passwordHash)
+                AuthService->PrismaService:user.update(lastLoginAt)
+                    PrismaService->Database:UPDATE users
+                AuthService->JwtService:sign(access 15m)
+                AuthService->JwtService:sign(refresh 30d)
+                AuthService->bcrypt:hash(refreshToken)
+                AuthService->PrismaService:refreshToken.create(tokenHash, expiresAt)
+                    PrismaService->Database:INSERT refresh_tokens

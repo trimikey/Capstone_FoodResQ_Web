@@ -15,6 +15,7 @@ import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { TrustService } from '@/modules/trust/trust.service';
 import { PickupVerificationType } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
@@ -30,8 +31,20 @@ export class ReservationsService {
     private faceMatch: FaceMatchService,
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
+    private trust: TrustService,
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {}
+
+  /** Định dạng giờ VN (HH:mm dd/MM) cho thông báo lỗi hiển thị tới người dùng. */
+  private formatVN(d: Date): string {
+    return new Intl.DateTimeFormat('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).format(d);
+  }
 
   async create(receiverUserId: string, dto: CreateReservationDto) {
     // 1. Load receiver profile
@@ -48,6 +61,20 @@ export class ReservationsService {
       );
     }
 
+    // 2b. Yêu cầu giao tận nơi → phải có địa chỉ + toạ độ trong hồ sơ,
+    // nếu không delivery sẽ không có điểm giao (shipper không điều hướng được).
+    if (dto.requestDelivery) {
+      const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
+        SELECT (location IS NOT NULL) AS has_location
+        FROM receiver_profiles WHERE id = ${receiver.id}::uuid
+      `);
+      if (!receiver.address || !loc?.has_location) {
+        throw new BadRequestException(
+          'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ trước khi yêu cầu tình nguyện viên giao tận nơi.',
+        );
+      }
+    }
+
     // 3. Acquire distributed lock on this listing
     const lockKey = `lock:reservation:${dto.listingId}`;
     const lock = await this.redlock
@@ -59,10 +86,19 @@ export class ReservationsService {
     try {
       // 4. Re-read listing inside the lock (prevent race condition)
       const [listingRow] = await this.prisma.$queryRaw<
-        { id: string; quantity_remaining: number; status: string; max_per_reservation: number }[]
+        {
+          id: string;
+          quantity_remaining: number;
+          status: string;
+          max_per_reservation: number;
+          pickup_start_time: Date;
+          pickup_end_time: Date;
+          expiry_time: Date;
+        }[]
       >(
         Prisma.sql`
-          SELECT id, quantity_remaining, status, max_per_reservation
+          SELECT id, quantity_remaining, status, max_per_reservation,
+                 pickup_start_time, pickup_end_time, expiry_time
           FROM food_listings
           WHERE id = ${dto.listingId}::uuid AND deleted_at IS NULL
         `,
@@ -72,12 +108,28 @@ export class ReservationsService {
       if (listingRow.status !== 'active') {
         throw new BadRequestException('Tin thực phẩm này không còn nhận đặt.');
       }
+
+      // Chỉ cho đặt TRONG khung giờ nhận hàng. QR chỉ hiệu lực 30 phút — nếu đặt
+      // lúc 2h sáng (cửa hàng chưa mở) thì QR hết hạn trước khi mở cửa → bị đánh
+      // no_show oan. Vì vậy chặn từ đầu, báo rõ khung giờ cho người dùng.
+      const nowTs = new Date();
+      if (nowTs < listingRow.pickup_start_time) {
+        throw new BadRequestException(
+          `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
+        );
+      }
+      if (nowTs > listingRow.pickup_end_time || nowTs > listingRow.expiry_time) {
+        throw new BadRequestException(
+          'Đã quá giờ nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
+        );
+      }
+
       if (listingRow.quantity_remaining < dto.quantity) {
         throw new BadRequestException('Số lượng còn lại không đủ.');
       }
       if (dto.quantity > listingRow.max_per_reservation) {
         throw new BadRequestException(
-          `Max ${listingRow.max_per_reservation} units per reservation`,
+          `Tối đa ${listingRow.max_per_reservation} phần cho mỗi lượt đặt.`,
         );
       }
 
@@ -410,7 +462,13 @@ export class ReservationsService {
   async cancel(reservationId: string, userId: string, reason?: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
-      include: { receiver: true },
+      include: {
+        receiver: true,
+        listing: { select: { pickupEndTime: true, title: true } },
+        delivery: {
+          select: { id: true, status: true, shipperId: true, shipper: { select: { userId: true } } },
+        },
+      },
     });
 
     if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
@@ -419,10 +477,18 @@ export class ReservationsService {
       throw new BadRequestException('Chỉ huỷ được đơn đang ở trạng thái đã xác nhận.');
     }
 
-    const isLateCancellation =
-      reservation.createdAt.getTime() > Date.now() - 30 * 60 * 1000;
+    // Đơn giao hàng: shipper ĐÃ lấy hàng thì không huỷ được nữa (hàng đã rời bếp)
+    if (reservation.delivery && ['qc_completed', 'in_transit'].includes(reservation.delivery.status)) {
+      throw new BadRequestException(
+        'Tình nguyện viên đã lấy hàng và đang trên đường giao — không thể huỷ lúc này.',
+      );
+    }
 
-    await this.prisma.$transaction([
+    // Huỷ trễ = còn dưới 30 phút trước giờ kết thúc nhận hàng (CLAUDE.md §9)
+    const isLateCancellation =
+      reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
+
+    const ops: Prisma.PrismaPromise<unknown>[] = [
       // Cancel reservation
       this.prisma.reservation.update({
         where: { id: reservationId },
@@ -435,18 +501,52 @@ export class ReservationsService {
       // Restore quantity safely using LEAST to avoid exceeding quantityTotal
       this.prisma.$executeRaw(Prisma.sql`
         UPDATE food_listings
-        SET 
+        SET
           quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(reservation.quantity)}),
           status = 'active'::listing_status,
           updated_at = NOW()
         WHERE id = ${reservation.listingId}::uuid
       `),
-      // Decrement daily count
-      this.prisma.receiverProfile.update({
-        where: { id: reservation.receiverId },
+      // Decrement daily count (guard gt:0 để không âm sau lúc reset nửa đêm)
+      this.prisma.receiverProfile.updateMany({
+        where: { id: reservation.receiverId, reservationsToday: { gt: 0 } },
         data: { reservationsToday: { decrement: 1 } },
       }),
-    ]);
+    ];
+
+    // Đơn giao chưa lấy hàng: đóng delivery + thu hồi mọi lời mời + giải phóng shipper
+    if (reservation.delivery) {
+      ops.push(
+        this.prisma.delivery.update({
+          where: { id: reservation.delivery.id },
+          data: { status: 'failed', failedReason: 'Người nhận đã huỷ đơn.' },
+        }),
+        this.prisma.shipperTaskOffer.updateMany({
+          where: { deliveryId: reservation.delivery.id, status: 'pending' },
+          data: { status: 'expired', respondedAt: new Date() },
+        }),
+      );
+      if (reservation.delivery.shipperId) {
+        ops.push(
+          this.prisma.volunteerProfile.update({
+            where: { id: reservation.delivery.shipperId },
+            data: { isAvailable: true },
+          }),
+        );
+      }
+    }
+
+    await this.prisma.$transaction(ops);
+
+    // Báo cho shipper đang trên đường đến lấy biết đơn đã bị huỷ
+    if (reservation.delivery?.shipper?.userId) {
+      void this.notifications.notify(reservation.delivery.shipper.userId, {
+        type: 'delivery',
+        title: 'Đơn giao đã bị huỷ',
+        body: `Người nhận đã huỷ đơn "${reservation.listing.title}". Bạn có thể nhận đơn khác.`,
+        data: { deliveryId: reservation.delivery.id, status: 'failed' },
+      });
+    }
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
@@ -557,12 +657,22 @@ export class ReservationsService {
   }
 
   /**
-   * Cron: chuyển các đơn `confirmed` đã quá hạn QR thành `no_show`,
-   * hoàn lại số lượng listing, trừ daily count, phạt trust −20 (CLAUDE.md §9).
+   * Cron: xử lý các đơn `confirmed` đã quá hạn QR.
+   *
+   * Đơn TỰ ĐẾN LẤY (không có delivery row) → `no_show`: hoàn số lượng listing,
+   * trả daily count, phạt trust −20 (CLAUDE.md §9).
+   *
+   * Đơn GIAO HÀNG được xử lý khác:
+   * - Đang giao (assigned → in_transit): KHÔNG đụng tới — QR lúc này là mã xác nhận
+   *   nhận hàng, không phải deadline đến lấy; vòng đời do delivery quyết định
+   *   (delivered → completed, failed → xử lý riêng).
+   * - Chưa ai nhận (pending_assignment) quá hạn → `expired` KHÔNG phạt trust
+   *   (không phải lỗi người nhận): hoàn số lượng, trả daily count, đóng delivery.
    */
   async expireNoShows(): Promise<number> {
+    const now = new Date();
     const overdue = await this.prisma.reservation.findMany({
-      where: { status: 'confirmed', qrExpiresAt: { lt: new Date() } },
+      where: { status: 'confirmed', qrExpiresAt: { lt: now }, delivery: { is: null } },
       include: { receiver: { select: { id: true, userId: true } } },
       take: 200,
     });
@@ -575,7 +685,7 @@ export class ReservationsService {
         }),
         this.prisma.$executeRaw(Prisma.sql`
           UPDATE food_listings
-          SET 
+          SET
             quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(r.quantity)}),
             status = 'active'::listing_status,
             updated_at = NOW()
@@ -589,7 +699,44 @@ export class ReservationsService {
       await this.applyTrustDelta(r.receiver.userId, r.id, 'no_show', -20);
     }
 
-    return overdue.length;
+    // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt
+    const unassigned = await this.prisma.reservation.findMany({
+      where: {
+        status: 'confirmed',
+        qrExpiresAt: { lt: now },
+        delivery: { status: 'pending_assignment' },
+      },
+      include: { delivery: { select: { id: true } } },
+      take: 200,
+    });
+
+    for (const r of unassigned) {
+      await this.prisma.$transaction([
+        this.prisma.reservation.update({
+          where: { id: r.id },
+          data: { status: 'expired' },
+        }),
+        this.prisma.delivery.update({
+          where: { id: r.delivery!.id },
+          data: { status: 'failed', failedReason: 'Không tìm được tình nguyện viên giao hàng trong thời gian hiệu lực.' },
+        }),
+        this.prisma.$executeRaw(Prisma.sql`
+          UPDATE food_listings
+          SET
+            quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(r.quantity)}),
+            status = 'active'::listing_status,
+            updated_at = NOW()
+          WHERE id = ${r.listingId}::uuid
+        `),
+        // updateMany + gt:0 để không âm counter khi đơn hết hạn sau lúc reset nửa đêm
+        this.prisma.receiverProfile.updateMany({
+          where: { id: r.receiverId, reservationsToday: { gt: 0 } },
+          data: { reservationsToday: { decrement: 1 } },
+        }),
+      ]);
+    }
+
+    return overdue.length + unassigned.length;
   }
 
   /** Cron: reset bộ đếm đặt chỗ trong ngày của tất cả receiver (chạy lúc nửa đêm). */
@@ -642,59 +789,35 @@ export class ReservationsService {
     return reservation;
   }
 
+  /** Đơn hết hạn QR → expired + hoàn số lượng listing + trả daily count (không phạt trust). */
   private async expire(reservationId: string) {
+    const r = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: { quantity: true, listingId: true, receiverId: true },
+    });
+    if (!r) return;
     await this.prisma.$transaction([
       this.prisma.reservation.update({
         where: { id: reservationId },
         data: { status: 'expired' },
       }),
+      this.prisma.$executeRaw(Prisma.sql`
+        UPDATE food_listings
+        SET
+          quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(r.quantity)}),
+          status = 'active'::listing_status,
+          updated_at = NOW()
+        WHERE id = ${r.listingId}::uuid
+      `),
+      this.prisma.receiverProfile.updateMany({
+        where: { id: r.receiverId, reservationsToday: { gt: 0 } },
+        data: { reservationsToday: { decrement: 1 } },
+      }),
     ]);
   }
 
-  private async applyTrustDelta(
-    userId: string,
-    referenceId: string,
-    reason: string,
-    delta: number,
-  ) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return;
-
-    const newScore = Math.min(100, Math.max(0, user.trustScore + delta));
-
-    // Ngưỡng khoá/hạn chế đọc live từ system_configs (admin chỉnh được)
-    const banThreshold = await this.systemConfig.getNumber('TRUST_BAN_THRESHOLD');
-    const restrictThreshold = await this.systemConfig.getNumber('TRUST_RESTRICT_THRESHOLD');
-
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          trustScore: newScore,
-          // Auto-ban/suspend theo ngưỡng cấu hình
-          status: newScore <= banThreshold ? 'banned' : newScore <= restrictThreshold ? 'suspended' : user.status,
-        },
-      }),
-      this.prisma.trustScoreHistory.create({
-        data: {
-          userId,
-          delta,
-          reason: reason as never,
-          referenceType: 'reservation',
-          referenceId,
-          scoreBefore: user.trustScore,
-          scoreAfter: newScore,
-        },
-      }),
-      // Force-revoke all refresh tokens on ban
-      ...(newScore <= banThreshold
-        ? [
-            this.prisma.refreshToken.updateMany({
-              where: { userId, isRevoked: false },
-              data: { isRevoked: true, revokedAt: new Date() },
-            }),
-          ]
-        : []),
-    ]);
+  /** Uỷ quyền cho TrustService dùng chung (giữ wrapper để không đổi các call-site cũ). */
+  private applyTrustDelta(userId: string, referenceId: string, reason: string, delta: number) {
+    return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
   }
 }
