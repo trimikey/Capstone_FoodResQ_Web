@@ -16,18 +16,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useVolunteerMe, useSetAvailability } from '@/hooks/useVolunteer';
 import { volunteerRankLabel } from '@/utils/userFormat';
 import { getCurrentCoords } from '@/services/geolocation';
-import { Popup } from '@/components/ui/AppPopup';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-  warning: '#f59e0b',
-};
+import { Popup, Toast } from '@/components/ui/AppPopup';
+import { ScreenState } from '@/components/ui/ScreenState';
+import { notifyError, notifySuccess, notifyWarning, selectionFeedback } from '@/services/haptics';
+import { mobileColors as COLORS } from '@/theme/design';
 
 function vehicleLabel(t?: string | null): string {
   switch (t) {
@@ -69,12 +61,14 @@ export default function VolunteerProfileScreen() {
   const [toggling, setToggling] = useState(false);
 
   const handleToggle = async (next: boolean) => {
+    void selectionFeedback();
     setToggling(true);
     try {
       if (next) {
         const { coords, isFallback } = await getCurrentCoords();
         await setAvailability.mutateAsync({ isAvailable: true, lng: coords.lng, lat: coords.lat });
-        Popup.show({
+        void (isFallback ? notifyWarning() : notifySuccess());
+        Toast.show({
           type: isFallback ? 'warning' : 'success',
           text1: 'Đã bật sẵn sàng nhận đơn',
           text2: isFallback
@@ -83,9 +77,11 @@ export default function VolunteerProfileScreen() {
         });
       } else {
         await setAvailability.mutateAsync({ isAvailable: false });
-        Popup.show({ type: 'info', text1: 'Đã tắt nhận đơn' });
+        void notifySuccess();
+        Toast.show({ type: 'info', text1: 'Đã tắt nhận đơn' });
       }
     } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
         text1: 'Cập nhật trạng thái thất bại',
@@ -121,14 +117,14 @@ export default function VolunteerProfileScreen() {
           </Text>
           {vol ? (
             <View style={styles.badgeRow}>
-              <View style={[styles.badge, { backgroundColor: '#eef2ff' }]}>
-                <Text style={[styles.badgeText, { color: '#4338ca' }]}>
+              <View style={[styles.badge, { backgroundColor: COLORS.primaryContainer }]}>
+                <Text style={[styles.badgeText, { color: COLORS.primary }]}>
                   Hạng {volunteerRankLabel(vol.rank)}
                 </Text>
               </View>
               {vol.avgRating != null ? (
-                <View style={[styles.badge, { backgroundColor: '#fef3c7' }]}>
-                  <Text style={[styles.badgeText, { color: '#b45309' }]}>
+                <View style={[styles.badge, { backgroundColor: COLORS.secondaryContainer }]}>
+                  <Text style={[styles.badgeText, { color: COLORS.warning }]}>
                     ★ {vol.avgRating.toFixed(1)}
                   </Text>
                 </View>
@@ -138,16 +134,9 @@ export default function VolunteerProfileScreen() {
         </View>
 
         {isLoading && !vol ? (
-          <ActivityIndicator style={{ marginTop: 24 }} color={COLORS.primary} />
+          <ScreenState kind="loading" title="Đang tải hồ sơ" />
         ) : isError && !vol ? (
-          <View style={styles.errorBox}>
-            <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 8 }}>
-              Không tải được hồ sơ tình nguyện viên.
-            </Text>
-            <Button mode="text" onPress={() => refetch()} textColor={COLORS.primary}>
-              Thử lại
-            </Button>
-          </View>
+          <ScreenState kind="error" title="Không tải được hồ sơ" actionLabel="Thử lại" onAction={() => refetch()} />
         ) : vol ? (
           <>
             {/* Công tắc sẵn sàng nhận đơn */}
@@ -162,8 +151,8 @@ export default function VolunteerProfileScreen() {
                   <Text style={styles.availTitle}>Sẵn sàng nhận đơn</Text>
                   <Text style={styles.availSub}>
                     {vol.isAvailable
-                      ? 'Đang bật — nhận lời mời giao hàng gần bạn'
-                      : 'Đang tắt — không nhận lời mời mới'}
+                      ? 'Đang bật - nhận lời mời giao hàng gần bạn'
+                      : 'Đang tắt - không nhận lời mời mới'}
                   </Text>
                 </View>
                 {busy ? (
@@ -180,7 +169,7 @@ export default function VolunteerProfileScreen() {
                 <View style={styles.warnBox}>
                   <MaterialCommunityIcons name="alert" size={18} color={COLORS.warning} />
                   <Text style={styles.warnText}>
-                    Chuyên môn "Giao hàng" của bạn chưa được xác minh. Bạn có thể chưa nhận được
+                    Chuyên môn &quot;Giao hàng&quot; của bạn chưa được xác minh. Bạn có thể chưa nhận được
                     lời mời cho đến khi quản trị viên duyệt.
                   </Text>
                 </View>
@@ -298,14 +287,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     padding: 10,
     borderRadius: 12,
-    backgroundColor: '#fffbeb',
+    backgroundColor: COLORS.secondaryContainer,
   },
-  warnText: { flex: 1, fontSize: 12, color: '#92400e', lineHeight: 17 },
+  warnText: { flex: 1, fontSize: 12, color: COLORS.warning, lineHeight: 17 },
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pointLabel: { flex: 1, fontSize: 15, color: COLORS.onSurface },
   pointValue: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { backgroundColor: '#f9fafb' },
+  chip: { backgroundColor: COLORS.surfaceContainerLow },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600' },

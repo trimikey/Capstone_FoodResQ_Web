@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Portal, Dialog, Button, Text } from 'react-native-paper';
+import { Portal, Dialog, Button, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { create } from 'zustand';
 
@@ -14,11 +14,21 @@ export interface PopupOptions {
   text2?: string;
   /** ms tự đóng; 0/undefined → không tự đóng (chỉ đóng khi bấm OK). Mặc định 2800. */
   duration?: number;
+  primaryAction?: {
+    label: string;
+    onPress: () => void | Promise<void>;
+  };
+  secondaryAction?: {
+    label: string;
+    onPress: () => void | Promise<void>;
+  };
 }
 
-interface PopupState extends Required<Omit<PopupOptions, 'text2'>> {
+interface PopupState extends Required<Omit<PopupOptions, 'text2' | 'primaryAction' | 'secondaryAction'>> {
   visible: boolean;
   text2?: string;
+  primaryAction?: PopupOptions['primaryAction'];
+  secondaryAction?: PopupOptions['secondaryAction'];
   show: (o: PopupOptions) => void;
   hide: () => void;
 }
@@ -36,6 +46,32 @@ const usePopupStore = create<PopupState>((set) => ({
       text1: o.text1 ?? '',
       text2: o.text2,
       duration: o.duration ?? 2800,
+      primaryAction: o.primaryAction,
+      secondaryAction: o.secondaryAction,
+    }),
+  hide: () => set({ visible: false, primaryAction: undefined, secondaryAction: undefined }),
+}));
+
+interface ToastState extends Required<Pick<PopupOptions, 'type' | 'text1' | 'duration'>> {
+  visible: boolean;
+  text2?: string;
+  show: (o: PopupOptions) => void;
+  hide: () => void;
+}
+
+const useToastStore = create<ToastState>((set) => ({
+  visible: false,
+  type: 'info',
+  text1: '',
+  text2: undefined,
+  duration: 2600,
+  show: (o) =>
+    set({
+      visible: true,
+      type: o.type ?? 'info',
+      text1: o.text1 ?? '',
+      text2: o.text2,
+      duration: o.duration ?? 2600,
     }),
   hide: () => set({ visible: false }),
 }));
@@ -47,6 +83,12 @@ const usePopupStore = create<PopupState>((set) => ({
 export const Popup = {
   show: (o: PopupOptions) => usePopupStore.getState().show(o),
   hide: () => usePopupStore.getState().hide(),
+};
+
+/** Toast nhẹ cho feedback ngắn, không chặn thao tác chính. */
+export const Toast = {
+  show: (o: PopupOptions) => useToastStore.getState().show(o),
+  hide: () => useToastStore.getState().hide(),
 };
 
 const META: Record<PopupType, { icon: string; color: string }> = {
@@ -61,7 +103,7 @@ const META: Record<PopupType, { icon: string; color: string }> = {
  * `duration` ms; người dùng cũng có thể bấm OK để đóng ngay.
  */
 export function AppPopupHost() {
-  const { visible, type, text1, text2, duration, hide } = usePopupStore();
+  const { visible, type, text1, text2, duration, primaryAction, secondaryAction, hide } = usePopupStore();
 
   useEffect(() => {
     if (!visible || !duration) return;
@@ -70,6 +112,13 @@ export function AppPopupHost() {
   }, [visible, duration, hide]);
 
   const meta = META[type] ?? META.info;
+  const runAction = (action?: PopupOptions['primaryAction']) => {
+    if (!action) {
+      hide();
+      return;
+    }
+    void Promise.resolve(action.onPress()).catch(() => undefined);
+  };
 
   return (
     <Portal>
@@ -94,12 +143,44 @@ export function AppPopupHost() {
           ) : null}
         </Dialog.Content>
         <Dialog.Actions>
-          <Button onPress={hide} textColor={meta.color} labelStyle={styles.okLabel}>
-            OK
+          {secondaryAction ? (
+            <Button onPress={() => runAction(secondaryAction)} textColor="#6b7280" labelStyle={styles.okLabel}>
+              {secondaryAction.label}
+            </Button>
+          ) : null}
+          <Button onPress={() => runAction(primaryAction)} textColor={meta.color} labelStyle={styles.okLabel}>
+            {primaryAction?.label ?? 'OK'}
           </Button>
         </Dialog.Actions>
       </Dialog>
     </Portal>
+  );
+}
+
+export function AppToastHost() {
+  const { visible, type, text1, text2, duration, hide } = useToastStore();
+  const meta = META[type] ?? META.info;
+
+  return (
+    <Snackbar
+      visible={visible}
+      onDismiss={hide}
+      duration={duration}
+      icon={({ size }) => (
+        <MaterialCommunityIcons
+          name={meta.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+          size={size}
+          color="#ffffff"
+        />
+      )}
+      style={[styles.toast, { backgroundColor: meta.color }]}
+      wrapperStyle={styles.toastWrap}
+      accessibilityLabel={[text1, text2].filter(Boolean).join('. ')}
+    >
+      <Text style={styles.toastText} numberOfLines={2}>
+        {text2 ? `${text1} - ${text2}` : text1}
+      </Text>
+    </Snackbar>
   );
 }
 
@@ -110,4 +191,7 @@ const styles = StyleSheet.create({
   title: { textAlign: 'center', fontWeight: '700', color: '#121c2a' },
   message: { textAlign: 'center', color: '#6b7280', marginTop: 6 },
   okLabel: { fontWeight: '700' },
+  toastWrap: { bottom: 78 },
+  toast: { borderRadius: 12 },
+  toastText: { color: '#ffffff', fontWeight: '700' },
 });

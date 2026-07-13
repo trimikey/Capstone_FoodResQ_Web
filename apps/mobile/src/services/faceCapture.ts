@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+import { preprocessImage } from './imagePreprocess';
+import type { ImageKind } from './imagePreprocess';
 
 /** Ảnh đã chụp/chọn, sẵn sàng nhét vào FormData (RN multipart). */
 export interface CapturedImage {
@@ -18,7 +20,7 @@ function toCaptured(uri: string): CapturedImage {
  * Mở camera chụp ảnh xác minh. `face` dùng camera trước (selfie),
  * `id_card` dùng camera sau để chụp CCCD. Trả null nếu người dùng huỷ.
  */
-export async function captureImage(type: 'face' | 'id_card'): Promise<CapturedImage | null> {
+export async function captureImage(type: 'face' | 'id_card', imageKind: ImageKind = 'proof'): Promise<CapturedImage | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) throw new Error('Cần quyền camera để chụp ảnh xác minh.');
 
@@ -28,11 +30,12 @@ export async function captureImage(type: 'face' | 'id_card'): Promise<CapturedIm
     quality: 0.7,
   });
   if (result.canceled || !result.assets?.length) return null;
-  return toCaptured(result.assets[0].uri);
+  const uri = await preprocessImage(result.assets[0].uri, imageKind);
+  return toCaptured(uri);
 }
 
 /** Chọn ảnh có sẵn từ thư viện (hữu ích để test trên emulator). */
-export async function pickImageFromLibrary(): Promise<CapturedImage | null> {
+export async function pickImageFromLibrary(imageKind: ImageKind = 'proof'): Promise<CapturedImage | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) throw new Error('Cần quyền thư viện ảnh.');
 
@@ -41,5 +44,6 @@ export async function pickImageFromLibrary(): Promise<CapturedImage | null> {
     quality: 0.7,
   });
   if (result.canceled || !result.assets?.length) return null;
-  return toCaptured(result.assets[0].uri);
+  const uri = await preprocessImage(result.assets[0].uri, imageKind);
+  return toCaptured(uri);
 }

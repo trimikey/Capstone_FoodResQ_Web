@@ -1,23 +1,15 @@
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, ActivityIndicator, Button, Portal, Dialog } from 'react-native-paper';
+import { Text, Button, Portal, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRecipeDetail, useDeleteRecipe, difficultyMeta } from '@/hooks/useRecipes';
 import { useMyProfile } from '@/hooks/useProfile';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /** Một chỉ số nhỏ (servings/prep/cook). */
 function Stat({ icon, label, value }: { icon: any; label: string; value: string }) {
@@ -55,7 +47,7 @@ export default function RecipeDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <ActivityIndicator style={{ marginTop: 48 }} color={COLORS.primary} />
+        <ScreenState kind="loading" title="Đang tải công thức" />
       </SafeAreaView>
     );
   }
@@ -64,10 +56,7 @@ export default function RecipeDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 12 }}>Không tải được công thức.</Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => refetch()}>Thử lại</Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được công thức" actionLabel="Thử lại" onAction={() => refetch()} />
       </SafeAreaView>
     );
   }
@@ -104,7 +93,7 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
         <Text style={styles.author}>
-          {r.createdBy.fullName}{r.timesUsed > 0 ? ` · đã dùng ${r.timesUsed} lần` : ''}
+          {r.createdBy.fullName}{r.timesUsed > 0 ? ` - đã dùng ${r.timesUsed} lần` : ''}
         </Text>
 
         {r.description ? <Text style={styles.description}>{r.description}</Text> : null}
@@ -123,7 +112,7 @@ export default function RecipeDetailScreen() {
                 <MaterialCommunityIcons name="circle-small" size={20} color={COLORS.primary} />
                 <Text style={styles.ingText}>
                   <Text style={styles.ingName}>{ing.name}</Text>
-                  {ing.quantity || ing.unit ? ` — ${[ing.quantity, ing.unit].filter(Boolean).join(' ')}` : ''}
+                  {ing.quantity || ing.unit ? ` - ${[ing.quantity, ing.unit].filter(Boolean).join(' ')}` : ''}
                   {ing.note ? ` (${ing.note})` : ''}
                 </Text>
               </View>
@@ -200,7 +189,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { padding: 20, paddingBottom: 40 },
-  hero: { width: '100%', height: 200, borderRadius: 16, marginBottom: 16, backgroundColor: '#f3f4f6' },
+  hero: { width: '100%', height: 200, borderRadius: 16, marginBottom: 16, backgroundColor: COLORS.surfaceContainerLow },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   title: { flex: 1, fontSize: 22, fontWeight: '800', color: COLORS.onSurface, lineHeight: 29 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, marginTop: 4 },

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { CapturedImage } from '../services/faceCapture';
+import { useNetworkStatus } from './useNetworkStatus';
 
 export type DeliveryStatus =
   | 'pending_assignment'
@@ -30,10 +31,11 @@ export interface DeliveryTracking {
  * Poll mỗi 15s để cập nhật trạng thái + vị trí shipper (backend pull-based).
  */
 export function useDeliveryTracking(reservationId?: string, enabled = true) {
+  const { isOnline } = useNetworkStatus();
   return useQuery({
     queryKey: ['delivery-tracking', reservationId],
-    enabled: !!reservationId && enabled,
-    refetchInterval: 15000,
+    enabled: !!reservationId && enabled && isOnline,
+    refetchInterval: isOnline ? 15000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<DeliveryTracking>>(
         endpoints.deliveries.track(reservationId!)
@@ -131,10 +133,11 @@ interface Paginated<T> {
 
 /** Lời mời giao hàng đang chờ. Poll 15s để bắt offer mới. */
 export function useMyOffers(enabled = true) {
+  const { isOnline } = useNetworkStatus();
   return useQuery({
     queryKey: ['deliveries', 'offers'],
-    enabled,
-    refetchInterval: 15_000,
+    enabled: enabled && isOnline,
+    refetchInterval: isOnline ? 15_000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<TaskOffer[]>>(endpoints.deliveries.myOffers);
       return res.data.data;
@@ -144,10 +147,11 @@ export function useMyOffers(enabled = true) {
 
 /** Đơn đang giao (1 đơn tại 1 thời điểm). Poll 15s. */
 export function useActiveDelivery(enabled = true) {
+  const { isOnline } = useNetworkStatus();
   return useQuery({
     queryKey: ['deliveries', 'active'],
-    enabled,
-    refetchInterval: 15_000,
+    enabled: enabled && isOnline,
+    refetchInterval: isOnline ? 15_000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<ActiveDelivery | null>>(
         endpoints.deliveries.myActive

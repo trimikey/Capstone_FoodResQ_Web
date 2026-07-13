@@ -11,3 +11,8 @@ apps/api/uploads/
 # File giao việc nội bộ (không commit)
 Quan_tasks.md
 me_tasks.md
+
+# Local Codex/agent guidance (không push)
+AGENTS.md
+apps/mobile/AGENTS.md
+apps/mobile/UI_UX_TASTE_GUIDE.md

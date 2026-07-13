@@ -1,40 +1,26 @@
 import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator } from 'react-native-paper';
-import { FlashList } from '@shopify/flash-list';
+import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import {
   useMyOffers,
   useAcceptOffer,
   useRejectOffer,
   type TaskOffer,
-  type DeliveryCoords,
 } from '@/hooks/useDeliveries';
-import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { ListingsStateView } from '@/components/ListingsStateView';
-import { Popup } from '@/components/ui/AppPopup';
+import { Popup, Toast } from '@/components/ui/AppPopup';
+import { ScreenState } from '@/components/ui/ScreenState';
+import { notifyError, notifySuccess } from '@/services/haptics';
+import { mobileColors as COLORS } from '@/theme/design';
 
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
-
-function toLatLng(lat: number | null, lng: number | null): LatLng | null {
-  return lat != null && lng != null ? { lat, lng } : null;
-}
-function pickupOf(c: DeliveryCoords | null): LatLng | null {
-  return c ? toLatLng(c.pickupLat, c.pickupLng) : null;
-}
-function dropoffOf(c: DeliveryCoords | null): LatLng | null {
-  return c ? toLatLng(c.deliveryLat, c.deliveryLng) : null;
+function formatKm(km: unknown): string | null {
+  if (km == null) return null;
+  const n = Number(km);
+  return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
 }
 
 /** Đếm ngược tới hạn hết hiệu lực lời mời. */
@@ -70,9 +56,11 @@ export default function VolunteerOffersScreen() {
     setActingId(offer.id);
     try {
       await accept.mutateAsync(offer.deliveryId);
-      Popup.show({ type: 'success', text1: 'Đã nhận đơn', text2: 'Bắt đầu hành trình giao hàng nhé!' });
+      void notifySuccess();
+      Toast.show({ type: 'success', text1: 'Đã nhận đơn', text2: 'Bắt đầu hành trình giao hàng.' });
       router.replace('/(app)/volunteer/active');
     } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
         text1: 'Nhận đơn thất bại',
@@ -86,12 +74,14 @@ export default function VolunteerOffersScreen() {
   const handleReject = async (offer: TaskOffer) => {
     setActingId(offer.id);
     try {
-      await reject.mutateAsync({ deliveryId: offer.deliveryId });
-      Popup.show({ type: 'info', text1: 'Đã từ chối lời mời' });
+      await reject.mutateAsync({ deliveryId: offer.deliveryId, reason: 'Shipper bỏ qua' });
+      void notifySuccess();
+      Toast.show({ type: 'info', text1: 'Đã bỏ qua lời mời', text2: 'Đơn sẽ chuyển cho shipper tiếp theo.' });
     } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
-        text1: 'Từ chối thất bại',
+        text1: 'Bỏ qua thất bại',
         text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
       });
     } finally {
@@ -100,46 +90,58 @@ export default function VolunteerOffersScreen() {
   };
 
   const renderEmpty = () => {
-    if (isLoading) return <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />;
-    if (isError) return <ListingsStateView variant="error" onRetry={() => refetch()} />;
-    return <ListingsStateView variant="empty" />;
+    if (isLoading) return <ScreenState kind="loading" title="Đang tải lời mời" />;
+    if (isError) return <ScreenState kind="error" title="Không tải được lời mời" onAction={() => refetch()} />;
+    return (
+      <ScreenState
+        kind="empty"
+        icon="truck-delivery-outline"
+        title="Chưa có đơn cần giao"
+        message="Khi có lời mời phù hợp, đơn sẽ xuất hiện tại đây."
+      />
+    );
   };
 
   const renderItem = ({ item }: { item: TaskOffer }) => {
-    const { delivery } = item;
-    const { listing, receiver } = delivery.reservation;
+    const delivery = item.delivery;
+    const reservation = delivery?.reservation;
+    const listing = reservation?.listing;
+    const receiver = reservation?.receiver;
     const expired = new Date(item.expiresAt).getTime() - now <= 0;
     const busy = actingId === item.id;
+    const distanceLabel = formatKm(delivery?.distanceKm);
+    const title = listing?.title ?? 'Đơn giao hàng';
+    const pickupAddress = listing?.pickupAddress ?? 'Chưa có địa chỉ lấy hàng';
+    const dropoffAddress = receiver?.address ?? 'Theo địa chỉ người nhận';
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHead}>
           <Text style={styles.title} numberOfLines={1}>
-            {listing.title}
+            {title}
           </Text>
-          {delivery.distanceKm != null ? (
+          {distanceLabel ? (
             <View style={styles.distBadge}>
               <MaterialCommunityIcons name="map-marker-distance" size={14} color={COLORS.primary} />
-              <Text style={styles.distText}>{delivery.distanceKm.toFixed(1)} km</Text>
+              <Text style={styles.distText}>{distanceLabel}</Text>
             </View>
           ) : null}
         </View>
 
         <View style={styles.locRow}>
-          <MaterialCommunityIcons name="storefront-outline" size={18} color="#f97316" />
+          <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.secondary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.locLabel}>Điểm lấy hàng</Text>
-            <Text style={styles.locValue}>{listing.pickupAddress}</Text>
+            <Text style={styles.locValue}>{pickupAddress}</Text>
           </View>
         </View>
         <View style={styles.locRow}>
           <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.locLabel}>Điểm giao hàng</Text>
-            <Text style={styles.locValue}>{receiver?.address ?? 'Theo địa chỉ người nhận'}</Text>
+            <Text style={styles.locValue}>{dropoffAddress}</Text>
           </View>
         </View>
-
-        <DeliveryRouteMap pickup={pickupOf(delivery.coords)} dropoff={dropoffOf(delivery.coords)} />
 
         <View style={styles.countdownRow}>
           <MaterialCommunityIcons
@@ -161,7 +163,7 @@ export default function VolunteerOffersScreen() {
             textColor={COLORS.danger}
             style={[styles.btn, { borderColor: COLORS.danger }]}
           >
-            Từ chối
+            Bỏ qua
           </Button>
           <Button
             mode="contained"
@@ -183,8 +185,9 @@ export default function VolunteerOffersScreen() {
       <ScreenHeader title="Đơn cần giao" />
       <FlashList
         data={offers}
-        keyExtractor={(item: TaskOffer) => item.id}
+        keyExtractor={(item: TaskOffer, index) => item.id ?? `${item.deliveryId}-${index}`}
         renderItem={renderItem}
+        extraData={now}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
         refreshing={isRefetching}
@@ -208,7 +211,7 @@ const styles = StyleSheet.create({
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.onSurface },
-  distBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  distBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.primaryContainer, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   distText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
   locRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   locLabel: { fontSize: 11, fontWeight: '700', color: COLORS.onSurfaceVariant, textTransform: 'uppercase' },

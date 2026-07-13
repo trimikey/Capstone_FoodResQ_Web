@@ -15,11 +15,15 @@ export function getErrorMessage(error: unknown): string {
 
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as
-      | { error?: { message?: string }; message?: string }
+      | { error?: { message?: string | string[] }; message?: string | string[] }
       | undefined;
+    const rawMessage = data?.error?.message || data?.message;
+    if (Array.isArray(rawMessage)) return rawMessage.join('\n');
+    if (typeof rawMessage === 'string') return rawMessage;
+    if (!error.response) {
+      return 'Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại.';
+    }
     return (
-      data?.error?.message ||
-      data?.message ||
       error.message ||
       'Có lỗi kết nối, vui lòng thử lại.'
     );

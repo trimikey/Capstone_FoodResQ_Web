@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Text,
   Button,
-  ActivityIndicator,
   Portal,
   Dialog,
 } from 'react-native-paper';
@@ -21,16 +20,8 @@ import {
 } from '@/utils/listingFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ProviderListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -82,12 +73,9 @@ export default function ProviderListingDetailScreen() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
+        <ScreenState kind="loading" title="Đang tải tin" />
       ) : isError || !listing ? (
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 8 }}>Không tải được tin.</Text>
-          <Button mode="text" onPress={() => refetch()} textColor={COLORS.primary}>Thử lại</Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được tin" actionLabel="Thử lại" onAction={() => refetch()} />
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.content}>
@@ -141,7 +129,7 @@ export default function ProviderListingDetailScreen() {
         <Dialog visible={confirmCancel} onDismiss={() => setConfirmCancel(false)}>
           <Dialog.Title>Huỷ tin này?</Dialog.Title>
           <Dialog.Content>
-            <Text>Tin sẽ chuyển sang trạng thái "Đã huỷ" và không còn hiển thị.</Text>
+            <Text>Tin sẽ chuyển sang trạng thái &quot;Đã huỷ&quot; và không còn hiển thị.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setConfirmCancel(false)}>Đóng</Button>

@@ -17,16 +17,7 @@ import { getCurrentCoords, type Coords } from '@/services/geolocation';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { mobileColors as COLORS } from '@/theme/design';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -278,7 +269,7 @@ export default function CreateCampaignScreen() {
           {scheduleItems.map((s, i) => (
             <ListRow
               key={i}
-              text={`${s.time ? `${s.time} · ` : ''}${s.label}`}
+              text={`${s.time ? `${s.time} - ` : ''}${s.label}`}
               onRemove={() => setScheduleItems((prev) => prev.filter((_, idx) => idx !== i))}
             />
           ))}
@@ -307,7 +298,7 @@ export default function CreateCampaignScreen() {
           ))}
           <View style={styles.rowFields}>
             <TextInput
-              mode="outlined" dense placeholder="VD: Gạo, Dầu ăn…" value={supplyText} onChangeText={setSupplyText}
+              mode="outlined" dense placeholder="VD: Gạo, dầu ăn" value={supplyText} onChangeText={setSupplyText}
               outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={[styles.input, { flex: 1 }]}
               onSubmitEditing={addSupply}
             />
@@ -365,7 +356,7 @@ function ListRow({ text, onRemove }: { text: string; onRemove: () => void }) {
       <MaterialCommunityIcons name="circle-small" size={20} color={COLORS.onSurfaceVariant} />
       <Text style={styles.listText}>{text}</Text>
       <Pressable onPress={onRemove} hitSlop={8}>
-        <MaterialCommunityIcons name="close-circle" size={20} color="#ef4444" />
+        <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.error} />
       </Pressable>
     </View>
   );

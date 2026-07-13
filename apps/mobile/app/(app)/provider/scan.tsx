@@ -9,16 +9,8 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { notifyError, notifySuccess, selectionFeedback } from '@/services/haptics';
+import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ScanQrScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -35,8 +27,10 @@ export default function ScanQrScreen() {
     try {
       setScanning(true);
       const data = await scan.mutateAsync(token);
+      void notifySuccess();
       setResult(data);
     } catch (err) {
+      void notifyError();
       Popup.show({ type: 'error', text1: 'Quét thất bại', text2: getErrorMessage(err) });
     } finally {
       setScanning(false);
@@ -48,9 +42,11 @@ export default function ScanQrScreen() {
     try {
       setScanning(true);
       await confirm.mutateAsync(result.id);
+      void notifySuccess();
       Popup.show({ type: 'success', text1: 'Đã xác nhận giao hàng', text2: 'Đơn chuyển sang hoàn tất.' });
       reset();
     } catch (err) {
+      void notifyError();
       Popup.show({ type: 'error', text1: 'Xác nhận thất bại', text2: getErrorMessage(err) });
     } finally {
       setScanning(false);
@@ -82,7 +78,7 @@ export default function ScanQrScreen() {
           {r.phone ? <Text style={styles.meta}>{r.phone}</Text> : null}
           <View style={[styles.enrollBadge, { backgroundColor: r.enrolled ? '#dcfce7' : '#fef3c7' }]}>
             <Text style={{ color: r.enrolled ? '#15803d' : '#b45309', fontWeight: '700', fontSize: 12 }}>
-              {r.enrolled ? '✓ Đã đăng ký khuôn mặt' : '⚠ Chưa đăng ký khuôn mặt'}
+              {r.enrolled ? 'Đã đăng ký khuôn mặt' : 'Chưa đăng ký khuôn mặt'}
             </Text>
           </View>
 
@@ -126,7 +122,16 @@ export default function ScanQrScreen() {
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onBarcodeScanned={scanning ? undefined : ({ data }) => handleScan(data)}
               />
-              <Pressable style={styles.torchBtn} onPress={() => setTorch((t) => !t)} hitSlop={8}>
+              <Pressable
+                style={styles.torchBtn}
+                onPress={() => {
+                  void selectionFeedback();
+                  setTorch((t) => !t);
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
+              >
                 <MaterialCommunityIcons
                   name={torch ? 'flash' : 'flash-off'}
                   size={24}

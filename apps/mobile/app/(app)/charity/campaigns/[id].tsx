@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator, Portal, Dialog, TextInput } from 'react-native-paper';
+import { Text, Button, Portal, Dialog, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
@@ -10,6 +10,9 @@ import {
   useCompleteCampaign,
   useConfirmDonation,
 } from '@/hooks/useCampaigns';
+import { useShifts, useMenuItems, useRemoveMenuItem } from '@/hooks/useKitchenOps';
+import { ShiftDialog } from '@/components/kitchen/ShiftDialog';
+import { MenuItemDialog } from '@/components/kitchen/MenuItemDialog';
 import {
   statusMeta,
   formatDate,
@@ -22,15 +25,8 @@ import {
 } from '@/utils/campaign';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -60,8 +56,13 @@ export default function CharityCampaignDetailScreen() {
   const startMut = useStartCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
+  const { data: shifts = [] } = useShifts(id);
+  const { data: kitchenMenu = [] } = useMenuItems(id);
+  const removeMenuMut = useRemoveMenuItem();
   const [completeVisible, setCompleteVisible] = useState(false);
   const [servings, setServings] = useState('');
+  const [shiftDialog, setShiftDialog] = useState(false);
+  const [menuDialog, setMenuDialog] = useState(false);
 
   const Header = (
     <View style={styles.header}>
@@ -77,9 +78,7 @@ export default function CharityCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <ScreenState kind="loading" title="Đang tải chiến dịch" />
       </SafeAreaView>
     );
   }
@@ -88,10 +87,7 @@ export default function CharityCampaignDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}
-        <View style={styles.center}>
-          <Text style={{ color: COLORS.onSurfaceVariant, marginBottom: 12 }}>Không tải được chiến dịch.</Text>
-          <Button mode="contained" buttonColor={COLORS.primary} onPress={() => refetch()}>Thử lại</Button>
-        </View>
+        <ScreenState kind="error" title="Không tải được chiến dịch" actionLabel="Thử lại" onAction={() => refetch()} />
       </SafeAreaView>
     );
   }
@@ -136,6 +132,15 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
+  const handleRemoveMenu = async (itemId: string) => {
+    try {
+      await removeMenuMut.mutateAsync({ itemId, campaignId: c.id });
+      Popup.show({ type: 'info', text1: 'Đã xoá món' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Xoá món thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {Header}
@@ -152,7 +157,7 @@ export default function CharityCampaignDetailScreen() {
         <View style={styles.card}>
           <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
           <InfoRow icon="calendar-clock">
-            {formatDate(c.scheduledDate)} · {formatTime(c.startTime)}–{formatTime(c.endTime)}
+            {formatDate(c.scheduledDate)} - {formatTime(c.startTime)}-{formatTime(c.endTime)}
           </InfoRow>
           <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
           {c.expectedServings ? (
@@ -195,8 +200,60 @@ export default function CharityCampaignDetailScreen() {
           )}
         </Section>
 
+        {/* Ca làm việc (kitchen-ops) */}
+        <Section title={`Ca làm việc (${shifts.length})`}>
+          {shifts.length === 0 ? (
+            <Text style={styles.muted}>Chưa có ca làm việc nào.</Text>
+          ) : (
+            shifts.map((s) => {
+              const full = s.slotsFilled >= s.slotsNeeded;
+              return (
+                <View key={s.id} style={styles.shiftRow}>
+                  <MaterialCommunityIcons name="clock-outline" size={18} color={COLORS.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.shiftLabel}>{s.label}</Text>
+                    <Text style={styles.muted}>
+                      {s.startTime}-{s.endTime}
+                      {s.role ? ` - ${ASSIGNMENT_ROLE_LABEL[s.role] ?? s.role}` : ' - Chung'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.slotCount, full && { color: COLORS.primary }]}>
+                    {s.slotsFilled}/{s.slotsNeeded}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+          <Button mode="text" icon="plus" textColor={COLORS.primary} onPress={() => setShiftDialog(true)} compact style={styles.addBtn}>
+            Thêm ca
+          </Button>
+        </Section>
+
+        {/* Món theo công thức (kitchen-ops menu-items) */}
+        <Section title={`Món theo công thức (${kitchenMenu.length})`}>
+          {kitchenMenu.length === 0 ? (
+            <Text style={styles.muted}>Chưa có món nào. Thêm từ thư viện công thức hoặc món tự do.</Text>
+          ) : (
+            kitchenMenu.map((m) => (
+              <View key={m.id} style={styles.menuRow}>
+                <MaterialCommunityIcons name="silverware-fork-knife" size={16} color={COLORS.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bulletText}>{m.recipe?.name ?? m.customName ?? 'Món'}</Text>
+                  {m.plannedServings ? <Text style={styles.muted}>Dự kiến {m.plannedServings} suất</Text> : null}
+                </View>
+                <Pressable onPress={() => handleRemoveMenu(m.id)} hitSlop={8} disabled={removeMenuMut.isPending}>
+                  <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.error} />
+                </Pressable>
+              </View>
+            ))
+          )}
+          <Button mode="text" icon="plus" textColor={COLORS.primary} onPress={() => setMenuDialog(true)} compact style={styles.addBtn}>
+            Thêm món
+          </Button>
+        </Section>
+
         {c.menuItems && c.menuItems.length > 0 ? (
-          <Section title="Thực đơn">
+          <Section title="Thực đơn dự kiến (lúc tạo)">
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
@@ -241,9 +298,9 @@ export default function CharityCampaignDetailScreen() {
                     color={received ? COLORS.primary : COLORS.onSurfaceVariant}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.donationItem}>{d.itemName}{d.quantity ? ` · ${d.quantity}` : ''}</Text>
+                    <Text style={styles.donationItem}>{d.itemName}{d.quantity ? ` - ${d.quantity}` : ''}</Text>
                     <Text style={styles.muted}>
-                      {d.provider.businessName} · {received ? 'Đã nhận' : 'Chờ xác nhận'}
+                      {d.provider.businessName} - {received ? 'Đã nhận' : 'Chờ xác nhận'}
                     </Text>
                     {d.note ? <Text style={styles.donationNote}>“{d.note}”</Text> : null}
                   </View>
@@ -317,6 +374,9 @@ export default function CharityCampaignDetailScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      <ShiftDialog visible={shiftDialog} campaignId={c.id} onDismiss={() => setShiftDialog(false)} />
+      <MenuItemDialog visible={menuDialog} campaignId={c.id} onDismiss={() => setMenuDialog(false)} />
     </SafeAreaView>
   );
 }
@@ -348,13 +408,17 @@ const styles = StyleSheet.create({
   slotCount: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant },
   assignRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   assignName: { flex: 1, fontSize: 14, color: COLORS.onSurface },
-  rolePill: { backgroundColor: '#ecfdf5', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  shiftRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.outline },
+  shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  addBtn: { alignSelf: 'flex-start', marginTop: 8 },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'center' },

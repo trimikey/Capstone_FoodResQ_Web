@@ -5,7 +5,6 @@ import {
   Chip,
   Button,
   Icon,
-  ActivityIndicator,
   Portal,
   Dialog,
   TextInput,
@@ -19,21 +18,13 @@ import { Popup } from '@/components/ui/AppPopup';
 import { useListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservations';
 import { ImageCarousel } from '@/components/ImageCarousel';
-import { ListingsStateView } from '@/components/ListingsStateView';
 import {
   categoryLabel,
   quantityLabel,
   formatPickupWindow,
 } from '@/utils/listingFormat';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outlineVariant: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 interface Props {
   id: string;
@@ -52,14 +43,14 @@ export default function ListingDetailScreen({ id }: Props) {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={COLORS.primary} />
+        <ScreenState kind="loading" title="Đang tải tin thực phẩm" />
       </View>
     );
   }
   if (isError || !listing) {
     return (
       <View style={styles.center}>
-        <ListingsStateView variant="error" onRetry={() => refetch()} />
+        <ScreenState kind="error" title="Không tải được tin" actionLabel="Thử lại" onAction={() => refetch()} />
       </View>
     );
   }

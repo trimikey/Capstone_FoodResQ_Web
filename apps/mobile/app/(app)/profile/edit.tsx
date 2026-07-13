@@ -26,16 +26,7 @@ import {
 } from '@/services/avatarUpload';
 import { AppImage } from '@/components/ui/AppImage';
 import type { UpdateProfileInput } from '@/api/client';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  error: '#ba1a1a',
-};
+import { mobileColors as COLORS } from '@/theme/design';
 
 /**
  * Chỉnh sửa hồ sơ — PATCH /users/me ({ fullName?, phone?, avatarUrl? }).
@@ -75,7 +66,7 @@ export default function EditProfileScreen() {
       setValue('avatarUrl', url, { shouldValidate: true });
       Popup.show({ type: 'success', text1: 'Đã tải ảnh lên' });
     } catch (err) {
-      if (err instanceof ImagePickCancelledError) return; // huỷ — không báo lỗi
+      if (err instanceof ImagePickCancelledError) return; // huỷ, không báo lỗi
       Popup.show({
         type: 'error',
         text1: 'Tải ảnh thất bại',

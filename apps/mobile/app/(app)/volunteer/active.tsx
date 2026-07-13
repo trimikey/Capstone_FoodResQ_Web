@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Linking, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, Button } from 'react-native-paper';
 import {
-  Text,
-  Button,
-  ActivityIndicator,
-  Portal,
-  Dialog,
-  TextInput,
-} from 'react-native-paper';
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetTextInput,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   useActiveDelivery,
@@ -22,7 +22,9 @@ import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ReportDialog } from '@/components/ReportDialog';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup } from '@/components/ui/AppPopup';
+import { ScreenState } from '@/components/ui/ScreenState';
 import { captureImage } from '@/services/faceCapture';
+import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import {
   DELIVERY_STEPS,
   DELIVERY_STEP_ORDER,
@@ -30,17 +32,7 @@ import {
   nextDeliveryStatus,
   requiresQcPhoto,
 } from '@/utils/delivery';
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  muted: '#d1d5db',
-};
+import { mobileColors as COLORS } from '@/theme/design';
 
 function toLatLng(lat: number | null, lng: number | null): LatLng | null {
   return lat != null && lng != null ? { lat, lng } : null;
@@ -51,6 +43,11 @@ function pickupOf(c: DeliveryCoords | null): LatLng | null {
 function dropoffOf(c: DeliveryCoords | null): LatLng | null {
   return c ? toLatLng(c.deliveryLat, c.deliveryLng) : null;
 }
+function formatKm(km: unknown): string | null {
+  if (km == null) return null;
+  const n = Number(km);
+  return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
+}
 
 /** Nhãn nút chuyển bước theo trạng thái hiện tại. */
 function advanceLabel(status: string): string {
@@ -58,7 +55,7 @@ function advanceLabel(status: string): string {
     case 'assigned':
       return 'Lên đường lấy hàng';
     case 'heading_to_provider':
-      return 'Đã lấy hàng — chụp ảnh QC';
+      return 'Đã lấy hàng - chụp ảnh QC';
     case 'qc_completed':
       return 'Bắt đầu giao hàng';
     case 'in_transit':
@@ -75,6 +72,8 @@ function advanceLabel(status: string): string {
  * (sau lấy hàng) + báo cáo sự cố. Poll 15s.
  */
 export default function VolunteerActiveScreen() {
+  const reasonSheetRef = useRef<BottomSheetModal>(null);
+  const reasonSnapPoints = useMemo(() => ['CONTENT_HEIGHT'], []);
   const { data, isLoading, isError, refetch, isRefetching } = useActiveDelivery();
   const updateStatus = useUpdateDeliveryStatus();
   const failDelivery = useFailDelivery();
@@ -86,6 +85,23 @@ export default function VolunteerActiveScreen() {
 
   const delivery = data ?? null;
   const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending;
+
+  useEffect(() => {
+    if (reasonMode) reasonSheetRef.current?.present();
+    else reasonSheetRef.current?.dismiss();
+  }, [reasonMode]);
+
+  const renderReasonBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
+
+  const closeReasonSheet = () => {
+    if (busy) return;
+    setReasonMode(null);
+  };
 
   const handleAdvance = async (d: ActiveDelivery) => {
     const next = nextDeliveryStatus(d.status);
@@ -105,12 +121,14 @@ export default function VolunteerActiveScreen() {
     }
     try {
       await updateStatus.mutateAsync({ deliveryId: d.id, status: next, photo });
+      void notifySuccess();
       Popup.show({
         type: 'success',
-        text1: next === 'delivered' ? 'Đã giao thành công 🎉' : 'Đã cập nhật trạng thái',
+        text1: next === 'delivered' ? 'Đã giao thành công' : 'Đã cập nhật trạng thái',
         text2: next === 'delivered' ? 'Cảm ơn bạn đã giải cứu bữa ăn này!' : undefined,
       });
     } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
         text1: 'Cập nhật thất bại',
@@ -124,19 +142,23 @@ export default function VolunteerActiveScreen() {
     const reason = reasonText.trim();
     if (reasonMode === 'fail' && !reason) {
       Popup.show({ type: 'warning', text1: 'Vui lòng nhập lý do giao thất bại' });
+      void notifyWarning();
       return;
     }
     try {
       if (reasonMode === 'fail') {
         await failDelivery.mutateAsync({ deliveryId: delivery.id, reason });
+        void notifyWarning();
         Popup.show({ type: 'info', text1: 'Đã báo giao thất bại' });
       } else {
         await cancelAssignment.mutateAsync({ deliveryId: delivery.id, reason: reason || undefined });
+        void notifySuccess();
         Popup.show({ type: 'info', text1: 'Đã huỷ nhận đơn' });
       }
       setReasonMode(null);
       setReasonText('');
     } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
         text1: 'Thao tác thất bại',
@@ -149,7 +171,7 @@ export default function VolunteerActiveScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScreenHeader title="Đang giao" />
-        <ActivityIndicator style={{ marginTop: 48 }} color={COLORS.primary} />
+        <ScreenState kind="loading" title="Đang tải đơn giao" />
       </SafeAreaView>
     );
   }
@@ -181,6 +203,7 @@ export default function VolunteerActiveScreen() {
   const canCancel = ['assigned', 'heading_to_provider'].includes(delivery.status);
   const canFail = ['qc_completed', 'in_transit'].includes(delivery.status);
   const phone = receiver?.user.phone ?? null;
+  const distanceLabel = formatKm(delivery.distanceKm);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -192,8 +215,8 @@ export default function VolunteerActiveScreen() {
         {/* Trạng thái hiện tại */}
         <View style={[styles.statusBanner, { backgroundColor: meta.bg }]}>
           <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-          {delivery.distanceKm != null ? (
-            <Text style={[styles.statusDist, { color: meta.color }]}>{delivery.distanceKm.toFixed(1)} km</Text>
+          {distanceLabel ? (
+            <Text style={[styles.statusDist, { color: meta.color }]}>{distanceLabel}</Text>
           ) : null}
         </View>
 
@@ -210,7 +233,7 @@ export default function VolunteerActiveScreen() {
           <Text style={styles.qty}>Số lượng: {delivery.reservation.quantity}</Text>
 
           <View style={styles.locRow}>
-            <MaterialCommunityIcons name="storefront-outline" size={18} color="#f97316" />
+            <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.secondary} />
             <View style={{ flex: 1 }}>
               <Text style={styles.locLabel}>Điểm lấy hàng</Text>
               <Text style={styles.locValue}>{listing.pickupAddress}</Text>
@@ -328,15 +351,23 @@ export default function VolunteerActiveScreen() {
         </Button>
       </ScrollView>
 
-      {/* Dialog lý do huỷ / thất bại */}
-      <Portal>
-        <Dialog visible={reasonMode != null} onDismiss={() => setReasonMode(null)} style={styles.dialog}>
-          <Dialog.Title style={styles.dialogTitle}>
+      {/* Bottom sheet lý do huỷ / thất bại */}
+      <BottomSheetModal
+        ref={reasonSheetRef}
+        snapPoints={reasonSnapPoints}
+        enableDynamicSizing
+        backdropComponent={renderReasonBackdrop}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        onDismiss={closeReasonSheet}
+        handleIndicatorStyle={styles.sheetHandle}
+        accessibilityLabel={reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
+      >
+        <BottomSheetView style={styles.reasonSheet}>
+          <Text style={styles.dialogTitle}>
             {reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
-          </Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              mode="outlined"
+          </Text>
+          <BottomSheetTextInput
               placeholder={
                 reasonMode === 'fail'
                   ? 'Lý do giao thất bại (bắt buộc)'
@@ -346,13 +377,12 @@ export default function VolunteerActiveScreen() {
               onChangeText={setReasonText}
               multiline
               numberOfLines={3}
-              outlineColor={COLORS.outline}
-              activeOutlineColor={COLORS.primary}
-              disabled={busy}
+              editable={!busy}
+              style={styles.reasonInput}
+              accessibilityLabel={reasonMode === 'fail' ? 'Lý do giao thất bại' : 'Lý do huỷ nhận đơn'}
             />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setReasonMode(null)} textColor={COLORS.onSurfaceVariant} disabled={busy}>
+          <View style={styles.sheetActions}>
+            <Button onPress={closeReasonSheet} textColor={COLORS.onSurfaceVariant} disabled={busy}>
               Đóng
             </Button>
             <Button
@@ -364,9 +394,9 @@ export default function VolunteerActiveScreen() {
             >
               Xác nhận
             </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+          </View>
+        </BottomSheetView>
+      </BottomSheetModal>
 
       {/* Báo cáo sự cố — target là delivery */}
       <ReportDialog
@@ -421,6 +451,19 @@ const styles = StyleSheet.create({
   primaryBtn: { borderRadius: 14 },
   secondaryRow: { flexDirection: 'row', gap: 12 },
   secondaryBtn: { flex: 1, borderRadius: 12 },
-  dialog: { borderRadius: 20 },
   dialogTitle: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
+  sheetHandle: { backgroundColor: COLORS.outline },
+  reasonSheet: { paddingHorizontal: 20, paddingBottom: 28, gap: 14 },
+  reasonInput: {
+    minHeight: 92,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: COLORS.onSurface,
+    textAlignVertical: 'top',
+  },
+  sheetActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
 });
