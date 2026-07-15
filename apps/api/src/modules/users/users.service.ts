@@ -127,7 +127,6 @@ export class UsersService {
       contactPhone: string | null;
       taxCode: string | null;
       isVerified: boolean;
-      avgRating: number | null;
       verificationStatus: string;
       avgRating: number | null;
       lng: number | null;
