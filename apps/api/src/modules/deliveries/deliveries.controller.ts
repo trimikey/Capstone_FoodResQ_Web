@@ -105,6 +105,16 @@ export class DeliveriesController {
     return this.deliveriesService.cancelAssignment(id, user.id, dto.reason);
   }
 
+  @Post(':id/receiver-cancel')
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Người nhận: Huỷ tìm shipper → chuyển đơn sang tự đến lấy' })
+  receiverCancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.deliveriesService.cancelDeliverySearchByReceiver(id, user.id);
+  }
+
   @Post(':id/fail')
   @Roles(UserRole.VOLUNTEER)
   @ApiOperation({ summary: 'Shipper: Báo giao thất bại (sau khi đã lấy hàng), kèm lý do' })

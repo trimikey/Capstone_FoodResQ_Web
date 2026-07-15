@@ -53,6 +53,14 @@ export class ReservationsService {
     });
     if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
+    // 1b. eKYC bắt buộc với cá nhân: tài khoản social login (Google) bỏ qua bước
+    // selfie lúc đăng ký → chặn tại đây, FE sẽ bật modal đăng ký khuôn mặt.
+    if (!receiver.isCharityOrg && !receiver.faceDescriptor) {
+      throw new BadRequestException(
+        'FACE_NOT_ENROLLED: Bạn cần đăng ký khuôn mặt trước khi đặt chỗ (dùng để đối chiếu khi nhận hàng).',
+      );
+    }
+
     // 2. Check daily limit (đọc cấu hình live từ system_configs)
     const maxPerDay = await this.systemConfig.getNumber('MAX_RESERVATIONS_PER_DAY');
     if (receiver.reservationsToday >= maxPerDay) {
@@ -572,6 +580,8 @@ export class ReservationsService {
               category: true,
               quantityUnit: true,
               weightPerUnitKg: true,
+              // FE cần để cảnh báo huỷ trễ (< 30 phút trước giờ kết thúc nhận → -10 điểm)
+              pickupEndTime: true,
               provider: { select: { id: true, businessName: true, userId: true } },
             },
           },

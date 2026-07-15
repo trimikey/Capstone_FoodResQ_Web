@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // prisma db push/migrate cần kết nối trực tiếp (session mode 5432),
+  // trong khi app chạy qua pooler transaction mode (6543).
+  directUrl = env("DIRECT_URL")
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -292,6 +295,7 @@ model ProviderProfile {
   foodListings FoodListing[]
   esgSnapshots EsgSnapshot[]
   campaignDonations CampaignDonation[]
+  bulkRuns     BulkRun[]
 
   @@index([userId])
   @@index([location], map: "idx_provider_location", type: Gist)
@@ -356,6 +360,7 @@ model VolunteerProfile {
   campaignExperiences    CampaignExperience[]
   kitchenSafetyLogs      KitchenSafetyLog[]
   mealDistributions      MealDistribution[]
+  bulkRuns               BulkRun[]
 
   @@index([userId])
   @@index([isAvailable])
@@ -410,6 +415,8 @@ model FoodListing {
   allergenNotes      String?       @map("allergen_notes")
   maxPerReservation  Int           @default(1) @map("max_per_reservation") @db.SmallInt
   imageUrls          Json          @default("[]") @map("image_urls")
+  // Cột có sẵn trong DB (túi bất ngờ) — khai báo để db push không drop mất dữ liệu
+  isSurpriseBag      Boolean       @default(false) @map("is_surprise_bag")
   status             ListingStatus @default(draft)
   cancelledReason    String?       @map("cancelled_reason")
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
@@ -418,6 +425,7 @@ model FoodListing {
 
   provider     ProviderProfile @relation(fields: [providerId], references: [id])
   reservations Reservation[]
+  bulkRuns     BulkRun[]
 
   @@index([providerId])
   @@index([pickupLocation], map: "idx_listing_location", type: Gist)
@@ -482,6 +490,68 @@ model Delivery {
   @@index([shipperId])
   @@index([status])
   @@map("deliveries")
+}
+
+enum BulkRunStatus {
+  requested
+  approved
+  rejected
+  picked_up
+  completed
+  cancelled
+
+  @@map("bulk_run_status")
+}
+
+/// Chuyến GIAO SỈ: shipper nhận số lượng lớn (≥10 phần) từ 1 listing rồi phát
+/// tại nhiều điểm trên tuyến đường (điểm do nhà cung cấp hoặc shipper ghim).
+model BulkRun {
+  id                  String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  listingId           String        @map("listing_id") @db.Uuid
+  providerId          String        @map("provider_id") @db.Uuid
+  shipperId           String        @map("shipper_id") @db.Uuid
+  quantity            Int
+  quantityDistributed Int           @default(0) @map("quantity_distributed")
+  status              BulkRunStatus @default(requested)
+  note                String?
+  rejectReason        String?       @map("reject_reason")
+  qcPhotoUrl          String?       @map("qc_photo_url")
+  approvedAt          DateTime?     @map("approved_at") @db.Timestamptz
+  pickedUpAt          DateTime?     @map("picked_up_at") @db.Timestamptz
+  completedAt         DateTime?     @map("completed_at") @db.Timestamptz
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  listing  FoodListing      @relation(fields: [listingId], references: [id])
+  provider ProviderProfile  @relation(fields: [providerId], references: [id])
+  shipper  VolunteerProfile @relation(fields: [shipperId], references: [id])
+  stops    BulkRunStop[]
+
+  @@index([shipperId, status])
+  @@index([providerId, status])
+  @@map("bulk_runs")
+}
+
+/// Điểm phát trên tuyến giao sỉ (ghim ad-hoc bởi 'provider' hoặc 'shipper')
+model BulkRunStop {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  runId      String    @map("run_id") @db.Uuid
+  label      String    @db.VarChar(255)
+  address    String?
+  location   Unsupported("geography(Point, 4326)")?
+  plannedQty Int?      @map("planned_qty")
+  servedQty  Int       @default(0) @map("served_qty")
+  photoUrl   String?   @map("photo_url")
+  note       String?
+  createdBy  String    @map("created_by") @db.VarChar(10)
+  orderIndex Int       @default(0) @map("order_index")
+  servedAt   DateTime? @map("served_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  run BulkRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("bulk_run_stops")
 }
 
 model KitchenCampaign {

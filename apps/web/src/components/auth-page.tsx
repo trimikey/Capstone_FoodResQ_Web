@@ -47,7 +47,6 @@ const registerSchema = z.object({
   
   // Provider fields
   storeName: z.string().optional(),
-  foodCategory: z.string().optional(),
   providerAddress: z.string().optional(),
   // Provider verification (P3): thêm loại hình + MST + toạ độ + ảnh GPKD
   providerBusinessType: z
@@ -199,7 +198,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       confirmPassword: "",
       role: "receiver",
       storeName: "",
-      foodCategory: "Đồ tươi sống",
       providerAddress: "",
       providerBusinessType: undefined,
       taxCode: "",
@@ -992,26 +990,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             )}
                           </div>
 
-                          {/* Food Category */}
-                          {selectedRole === "provider" && (
-                            <div className="space-y-1.5">
-                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="food-category">
-                                Loại thực phẩm chính
-                              </label>
-                              <select
-                                id="food-category"
-                                className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
-                                disabled={isSubmitting}
-                                {...registerSignup("foodCategory")}
-                              >
-                                <option value="Đồ tươi sống">Đồ tươi sống</option>
-                                <option value="Bánh mì & Bánh ngọt">Bánh mì & Bánh ngọt</option>
-                                <option value="Đồ ăn đã chế biến">Đồ ăn đã chế biến</option>
-                                <option value="Rau củ quả">Rau củ quả</option>
-                              </select>
-                            </div>
-                          )}
-
                           {/* Provider: loại hình kinh doanh (P3) */}
                           {selectedRole === "provider" && (
                             <div className="space-y-1.5">
@@ -1036,9 +1014,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               {registerErrors.providerBusinessType && (
                                 <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.providerBusinessType.message}</p>
                               )}
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Quyết định bạn có cần cung cấp MST hay không.
-                              </p>
                             </div>
                           )}
 
@@ -1062,9 +1037,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               {registerErrors.taxCode && (
                                 <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.taxCode.message}</p>
                               )}
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Admin dùng MST để tra cứu doanh nghiệp. Hộ cá nhân chọn loại hình &quot;Khác&quot; ở trên thì không cần nhập.
-                              </p>
                             </div>
                           )}
 
@@ -1095,9 +1067,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <label className="font-semibold text-base text-neutral-500 ml-1">
                                 Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)
                               </label>
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Ảnh đầu tiên nên là giấy phép ĐKKD/GPKD để admin xác minh nhanh. Có thể thêm ảnh mặt tiền, kệ hàng, biển hiệu...
-                              </p>
 
                               {/* Danh sách URL đã upload */}
                               <div className="grid grid-cols-3 gap-2">
@@ -1417,8 +1386,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
             </div>
           </div>
 
-          {/* Social Logins */}
-          <div className="grid grid-cols-2 gap-4 items-center">
+          {/* Social Logins — chỉ Google */}
+          <div className="grid grid-cols-1 gap-4 items-center">
             {GOOGLE_ENABLED ? (
               <button
                 type="button"
@@ -1439,14 +1408,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 <span className="font-semibold text-base">Google</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => toast.info('Đăng nhập Facebook sắp ra mắt.')}
-              className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5"><path fill="#1976D2" d="M42,37c0,2.762-2.238,5-5,5H11c-2.761,0-5-2.238-5-5V11c0-2.762,2.239-5,5-5h26c2.762,0,5,2.238,5,5V37z"/><path fill="#FFF" d="M34.368,25H31v13h-5V25h-3v-4h3v-2.41c0.002-4.078,2.417-5.59,5.096-5.59h3.904v4h-2.604c-1.078,0-1.396,0.675-1.396,1.405V21h4.097L34.368,25z"/></svg>
-              <span className="font-semibold text-base">Facebook</span>
-            </button>
           </div>
 
           {/* Footer Terms */}
@@ -1482,7 +1443,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       {/* eKYC BẮT BUỘC (người nhận cá nhân & tình nguyện viên): chụp khuôn mặt TRƯỚC —
           tài khoản chỉ được tạo khi BE xác thực được khuôn mặt trong cùng request đăng ký. */}
       {pendingFaceData && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-3xl w-full sm:max-w-3xl shadow-12 flex flex-col gap-6 p-6 sm:p-10 max-h-[90vh] overflow-y-auto">
             <div className="flex flex-col items-center text-center">

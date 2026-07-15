@@ -1,4 +1,15 @@
-import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMeDto {
@@ -22,4 +33,28 @@ export class UpdateMeDto {
   @IsString()
   @IsUrl({ require_tld: false })
   avatarUrl?: string;
+
+  // ── Địa chỉ + vị trí (provider: vị trí cửa hàng · receiver: điểm giao) ────
+
+  @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Q1, TP.HCM' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  address?: string;
+
+  @ApiPropertyOptional({ example: 106.6297 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({ example: 10.8231 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+  lat?: number;
 }

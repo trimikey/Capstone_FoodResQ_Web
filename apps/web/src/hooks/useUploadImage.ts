@@ -25,12 +25,24 @@ export function useUploadImage() {
   });
 }
 
-/** Convenience wrapper riêng cho ảnh minh chứng duyệt NCC (GPKD, mặt tiền, ...). */
+/**
+ * Ảnh minh chứng lúc ĐĂNG KÝ NCC (GPKD, mặt tiền, ...) — dùng endpoint công khai
+ * /uploads/register-evidence vì lúc đăng ký CHƯA có JWT (endpoint /uploads/image
+ * yêu cầu đăng nhập nên trước đây upload luôn thất bại 401).
+ */
 export function useUploadVerificationImage() {
-  const inner = useUploadImage();
+  const inner = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post<UploadResponse>("/uploads/register-evidence", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.data.url;
+    },
+  });
   return {
     ...inner,
-    uploadVerificationImage: async (file: File) =>
-      inner.mutateAsync({ file, kind: "verification" as UploadKind }),
+    uploadVerificationImage: async (file: File) => inner.mutateAsync(file),
   };
 }

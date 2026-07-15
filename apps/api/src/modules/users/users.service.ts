@@ -61,14 +61,38 @@ export class UsersService {
       }
     }
 
-    // Nếu là người nhận → kèm cờ tổ chức từ thiện để FE hiển thị nhãn đúng
-    let receiver: { isCharityOrg: boolean; organizationName: string | null } | null = null;
+    // Nếu là người nhận → kèm cờ tổ chức từ thiện + địa chỉ/toạ độ điểm giao
+    let receiver: {
+      isCharityOrg: boolean;
+      organizationName: string | null;
+      address: string | null;
+      lng: number | null;
+      lat: number | null;
+    } | null = null;
     if (user.role === 'receiver') {
-      const rp = await this.prisma.receiverProfile.findUnique({
-        where: { userId },
-        select: { isCharityOrg: true, organizationName: true },
-      });
-      if (rp) receiver = { isCharityOrg: rp.isCharityOrg, organizationName: rp.organizationName };
+      const [rp] = await this.prisma.$queryRaw<
+        {
+          is_charity_org: boolean;
+          organization_name: string | null;
+          address: string | null;
+          lng: number | null;
+          lat: number | null;
+        }[]
+      >(Prisma.sql`
+        SELECT is_charity_org, organization_name, address,
+               ST_X(location::geometry) AS lng,
+               ST_Y(location::geometry) AS lat
+        FROM receiver_profiles WHERE user_id = ${userId}::uuid
+      `);
+      if (rp) {
+        receiver = {
+          isCharityOrg: rp.is_charity_org,
+          organizationName: rp.organization_name,
+          address: rp.address,
+          lng: rp.lng !== null ? Number(rp.lng) : null,
+          lat: rp.lat !== null ? Number(rp.lat) : null,
+        };
+      }
     }
 
     // Nếu là NCC → kèm địa chỉ + toạ độ cửa hàng (đã đăng ký) để FE điền sẵn khi tạo listing
@@ -126,7 +150,10 @@ export class UsersService {
     return { ...user, stats, volunteer, receiver, provider };
   }
 
-  /** Cập nhật hồ sơ cơ bản: họ tên, số điện thoại, avatar. */
+  /**
+   * Cập nhật hồ sơ: họ tên, số điện thoại, avatar; kèm địa chỉ + vị trí theo role
+   * (provider: vị trí cửa hàng — dùng làm điểm lấy hàng · receiver: điểm giao mặc định).
+   */
   async updateMe(userId: string, dto: UpdateMeDto) {
     try {
       const user = await this.prisma.user.update({
@@ -147,6 +174,27 @@ export class UsersService {
           trustScore: true,
         },
       });
+
+      // Địa chỉ + toạ độ nằm ở bảng profile theo role (location là geography → raw SQL)
+      const hasCoords = dto.lng != null && dto.lat != null;
+      if (dto.address !== undefined || hasCoords) {
+        const table =
+          user.role === 'provider'
+            ? Prisma.raw('provider_profiles')
+            : user.role === 'receiver'
+              ? Prisma.raw('receiver_profiles')
+              : null;
+        if (table) {
+          await this.prisma.$executeRaw(Prisma.sql`
+            UPDATE ${table}
+            SET ${dto.address !== undefined ? Prisma.sql`address = ${dto.address},` : Prisma.empty}
+                ${hasCoords ? Prisma.sql`location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
+                updated_at = NOW()
+            WHERE user_id = ${userId}::uuid
+          `);
+        }
+      }
+
       return user;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
