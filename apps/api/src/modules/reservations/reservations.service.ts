@@ -612,6 +612,50 @@ export class ReservationsService {
     return { items: itemsWithRating, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  /** Provider: xem các đơn đặt trên listings do mình đăng. */
+  async findProviderReservations(providerUserId: string, page = 1, limit = 20) {
+    const provider = await this.prisma.providerProfile.findUnique({ where: { userId: providerUserId } });
+    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.reservation.findMany({
+        where: { listing: { providerId: provider.id } },
+        include: {
+          receiver: {
+            select: {
+              id: true,
+              user: { select: { fullName: true, phone: true, avatarUrl: true } },
+            },
+          },
+          listing: {
+            select: {
+              id: true,
+              title: true,
+              imageUrls: true,
+              category: true,
+              quantityUnit: true,
+              weightPerUnitKg: true,
+              pickupAddress: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.reservation.count({ where: { listing: { providerId: provider.id } } }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   /** Receiver đánh giá nhà cung cấp sau khi nhận hàng (đơn completed). */
   async rateReservation(
     reservationId: string,

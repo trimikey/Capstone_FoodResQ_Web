@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, ActivityIndicator } from 'react-native-paper';
+import { Text, Button } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -12,42 +12,39 @@ import {
 } from '@/hooks/useDeliveries';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { deliveryStatusMeta } from '@/utils/delivery';
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+function formatKm(km: unknown): string | null {
+  if (km == null) return null;
+  const n = Number(km);
+  return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
 }
 
 function StatsHeader({ stats }: { stats?: DeliveryStats }) {
   if (!stats) return null;
   const cards: { icon: string; label: string; value: string; tint: string }[] = [
-    { icon: 'truck-check', label: 'Tổng chuyến', value: String(stats.totalDelivered), tint: '#10b981' },
-    { icon: 'map-marker-distance', label: 'Quãng đường', value: `${stats.totalKm} km`, tint: '#0d9488' },
-    { icon: 'calendar-today', label: 'Hôm nay', value: String(stats.todayDelivered), tint: '#f97316' },
+    { icon: 'truck-check', label: 'Tổng chuyến', value: String(stats.totalDelivered), tint: COLORS.primary },
+    { icon: 'map-marker-distance', label: 'Quãng đường', value: `${stats.totalKm} km`, tint: COLORS.info },
+    { icon: 'calendar-today', label: 'Hôm nay', value: String(stats.todayDelivered), tint: COLORS.secondary },
     {
       icon: 'check-decagram',
       label: 'Tỉ lệ hoàn thành',
-      value: stats.completionRate != null ? `${stats.completionRate}%` : '—',
-      tint: '#4338ca',
+      value: stats.completionRate != null ? `${stats.completionRate}%` : '-',
+      tint: COLORS.info,
     },
-    { icon: 'medal-outline', label: 'Điểm cống hiến', value: String(stats.dedicationPoints), tint: '#b45309' },
+    { icon: 'medal-outline', label: 'Điểm cống hiến', value: String(stats.dedicationPoints), tint: COLORS.warning },
     {
       icon: 'star',
       label: 'Đánh giá',
-      value: stats.avgRating != null ? stats.avgRating.toFixed(1) : '—',
-      tint: '#eab308',
+      value: stats.avgRating != null ? stats.avgRating.toFixed(1) : '-',
+      tint: COLORS.warning,
     },
   ];
   return (
@@ -79,6 +76,7 @@ export default function VolunteerHistoryScreen() {
   const renderItem = ({ item }: { item: DeliveryHistoryItem }) => {
     const meta = deliveryStatusMeta(item.status);
     const failed = item.status === 'failed';
+    const distanceLabel = formatKm(item.distanceKm);
     return (
       <View style={styles.card}>
         <View style={styles.cardHead}>
@@ -101,7 +99,7 @@ export default function VolunteerHistoryScreen() {
         </View>
         <View style={styles.metaRow}>
           <Text style={styles.metaText}>SL: {item.reservation.quantity}</Text>
-          {item.distanceKm != null ? <Text style={styles.metaText}>{item.distanceKm.toFixed(1)} km</Text> : null}
+          {distanceLabel ? <Text style={styles.metaText}>{distanceLabel}</Text> : null}
         </View>
         {failed && item.failedReason ? (
           <Text style={styles.failReason}>Lý do: {item.failedReason}</Text>
@@ -111,20 +109,9 @@ export default function VolunteerHistoryScreen() {
   };
 
   const renderEmpty = () => {
-    if (isLoading) return <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />;
-    return (
-      <View style={styles.emptyWrap}>
-        <MaterialCommunityIcons name="history" size={56} color={COLORS.outline} />
-        <Text style={styles.emptyTitle}>
-          {isError ? 'Không tải được lịch sử' : 'Chưa có chuyến giao nào'}
-        </Text>
-        {isError ? (
-          <Button mode="text" onPress={() => refetch()} textColor={COLORS.primary}>
-            Thử lại
-          </Button>
-        ) : null}
-      </View>
-    );
+    if (isLoading) return <ScreenState kind="loading" title="Đang tải lịch sử" />;
+    if (isError) return <ScreenState kind="error" title="Không tải được lịch sử" onAction={() => refetch()} />;
+    return <ScreenState kind="empty" icon="history" title="Chưa có chuyến giao nào" />;
   };
 
   return (

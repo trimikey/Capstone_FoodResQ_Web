@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, TextInput, ActivityIndicator, FAB, Chip } from 'react-native-paper';
+import { Text, TextInput, FAB, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
@@ -13,16 +13,8 @@ import {
 } from '@/hooks/useRecipes';
 import { useMyProfile } from '@/hooks/useProfile';
 import { AppImage } from '@/components/ui/AppImage';
-import { ListingsStateView } from '@/components/ListingsStateView';
-
-const COLORS = {
-  primary: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { ScreenState } from '@/components/ui/ScreenState';
+import { mobileColors as COLORS } from '@/theme/design';
 
 type Tab = 'all' | 'mine';
 
@@ -51,7 +43,7 @@ function RecipeCard({ item, onPress }: { item: RecipeListItem; onPress: () => vo
           <Text style={styles.metaText}>{item.ingredientCount} nguyên liệu</Text>
         </View>
         <Text style={styles.author} numberOfLines={1}>
-          {item.authorName}{item.timesUsed > 0 ? ` · dùng ${item.timesUsed} lần` : ''}
+          {item.authorName}{item.timesUsed > 0 ? ` - dùng ${item.timesUsed} lần` : ''}
         </Text>
       </View>
     </Pressable>
@@ -86,25 +78,20 @@ export default function RecipesScreen() {
 
   const renderEmpty = () => {
     if (query.isLoading) {
-      return <ActivityIndicator style={{ marginTop: 48 }} color={COLORS.primary} />;
+      return <ScreenState kind="loading" title="Đang tải công thức" />;
     }
     if (query.isError) {
-      return <ListingsStateView variant="error" onRetry={() => query.refetch()} />;
+      return <ScreenState kind="error" title="Không tải được công thức" onAction={() => query.refetch()} />;
     }
     return (
-      <View style={styles.emptyWrap}>
-        <View style={styles.emptyIcon}>
-          <MaterialCommunityIcons name="chef-hat" size={44} color={COLORS.primary} />
-        </View>
-        <Text style={styles.emptyTitle}>
-          {tab === 'mine' ? 'Bạn chưa có công thức nào' : 'Chưa có công thức phù hợp'}
-        </Text>
-        <Text style={styles.emptyBody}>
-          {tab === 'mine'
-            ? 'Tạo công thức đầu tiên để chia sẻ với cộng đồng bếp ăn.'
-            : 'Thử từ khoá khác hoặc quay lại sau.'}
-        </Text>
-      </View>
+      <ScreenState
+        kind="empty"
+        icon="chef-hat"
+        title={tab === 'mine' ? 'Bạn chưa có công thức nào' : 'Chưa có công thức phù hợp'}
+        message={tab === 'mine'
+          ? 'Tạo công thức đầu tiên để chia sẻ với cộng đồng bếp ăn.'
+          : 'Thử từ khóa khác hoặc quay lại sau.'}
+      />
     );
   };
 

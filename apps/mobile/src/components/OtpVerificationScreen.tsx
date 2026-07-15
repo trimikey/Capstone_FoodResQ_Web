@@ -1,42 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  View,
-  Pressable,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  TextInput,
-  Button,
-  Text,
-} from 'react-native-paper';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Text, TextInput } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { otpVerificationSchema, OtpVerificationInput } from '../utils/validators';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
 import ErrorToast from './ErrorToast';
 import { FadeInUp } from './ui/Motion';
-
-const COLORS = {
-  primary: '#006c49',
-  primaryContainer: '#10b981',
-  background: '#f8f9ff',
-  surface: '#ffffff',
-  surfaceContainerLow: '#f3f4f6',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  error: '#ba1a1a',
-  outline: '#6c7a71',
-  outlineVariant: '#bbcabf',
-};
+import {
+  AuthCard,
+  AuthField,
+  AuthHeader,
+  AuthIntro,
+  AuthScaffold,
+  authStyles,
+} from './auth/AuthLayout';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface OtpVerificationScreenProps {
   email: string;
   type?: 'forgot_password' | 'signup_email';
-  onSuccess?: (otp: string) => void;
+  onSuccess?: (otp: string) => void | Promise<void>;
   onBack?: () => void;
-  onResend?: () => void;
+  onResend?: () => void | Promise<void>;
   isLoading?: boolean;
 }
 
@@ -50,11 +36,10 @@ export function OtpVerificationScreen({
   onResend,
   isLoading = false,
 }: OtpVerificationScreenProps) {
-  const destination = email;
-  const insets = useSafeAreaInsets();
   const [timeLeft, setTimeLeft] = useState(RESEND_COOLDOWN);
   const [canResend, setCanResend] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
+  const isPasswordReset = type === 'forgot_password';
 
   const {
     control,
@@ -70,7 +55,7 @@ export function OtpVerificationScreen({
   });
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
+    let timer: ReturnType<typeof setInterval> | undefined;
     if (!canResend && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => {
@@ -82,218 +67,126 @@ export function OtpVerificationScreen({
         });
       }, 1000);
     }
-    return () => clearInterval(timer);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [timeLeft, canResend]);
 
   const handleResend = async () => {
-    if (canResend) {
-      try {
-        clearError();
-        setTimeLeft(RESEND_COOLDOWN);
-        setCanResend(false);
-        await onResend?.();
-      } catch (error) {
-        showError(getErrorMessage(error), 3000);
-      }
+    if (!canResend) return;
+    try {
+      clearError();
+      setTimeLeft(RESEND_COOLDOWN);
+      setCanResend(false);
+      await onResend?.();
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
     }
   };
 
-  const onSubmit = (data: OtpVerificationInput) => {
+  const onSubmit = async (data: OtpVerificationInput) => {
     try {
       clearError();
-      onSuccess?.(data.otp);
+      await onSuccess?.(data.otp);
     } catch (error) {
       showError(getErrorMessage(error), 3000);
     }
   };
 
   const otp = watch('otp');
+  const canSubmit = otp.length === 6 && !isLoading;
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: COLORS.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <AuthScaffold
+      scrollMode="keyboard"
+      footer={
+        <Button
+          mode="contained"
+          onPress={handleSubmit(onSubmit)}
+          disabled={!canSubmit}
+          loading={isLoading}
+          buttonColor={COLORS.primary}
+          style={authStyles.primaryButton}
+          contentStyle={authStyles.buttonContent}
+          labelStyle={authStyles.buttonLabel}
+          accessibilityLabel="Xác nhận mã OTP"
+          accessibilityState={{ disabled: !canSubmit }}
+        >
+          {isLoading ? 'Đang xác thực' : 'Xác nhận mã'}
+        </Button>
+      }
     >
-      <View
-        style={{
-          height: 64,
-          paddingHorizontal: 20,
-          backgroundColor: COLORS.surface,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-            padding: 8,
-            marginLeft: -8,
-          })}
-        >
-          <Text style={{ fontSize: 24, color: COLORS.primary }}>←</Text>
-        </Pressable>
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: '700',
-            color: COLORS.primary,
-          }}
-        >
-          FoodResQ
-        </Text>
-      </View>
+      <AuthHeader
+        onBack={onBack}
+        disabled={isLoading}
+        title="FoodResQ"
+        subtitle={isPasswordReset ? 'Đặt lại mật khẩu' : 'Xác thực email'}
+      />
 
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: COLORS.background,
-          paddingHorizontal: 20,
-          paddingTop: 24,
-          paddingBottom: 8,
-        }}
-      >
-        <View style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: '700',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
-          >
-            Verify Email
-          </Text>
-          <Text
-            style={{
-              fontSize: 14,
-              color: COLORS.onSurfaceVariant,
-              lineHeight: 20,
-            }}
-          >
-            We sent a 6-digit code to{' '}
-            <Text style={{ fontWeight: '700', color: COLORS.onSurface }}>
-              {destination}
-            </Text>
-            . Please enter it below.
-          </Text>
-        </View>
+      <AuthIntro
+        icon="shield-key-outline"
+        eyebrow="Mã OTP"
+        title={isPasswordReset ? 'Nhập mã để đặt lại mật khẩu' : 'Xác thực email của bạn'}
+        description={
+          <>
+            Chúng tôi đã gửi mã 6 chữ số tới{' '}
+            <Text style={styles.emailText}>{email}</Text>.
+          </>
+        }
+      />
 
-        <FadeInUp delay={80} style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: COLORS.onSurface,
-              marginBottom: 8,
-            }}
+      <FadeInUp delay={80}>
+        <AuthCard>
+          <AuthField
+            label="Mã xác thực"
+            error={errors.otp?.message}
+            helper="Mã gồm 6 chữ số, thường có hiệu lực trong vài phút."
           >
-            Verification Code
-          </Text>
-          <Controller
-            control={control}
-            name="otp"
-            render={({ field: { onChange, value } }) => (
-              <TextInput
-                mode="outlined"
-                label="000000"
-                placeholder="Enter 6-digit code"
-                value={value}
-                onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))}
-                keyboardType="numeric"
-                maxLength={6}
-                editable={!isLoading}
-                style={{
-                  backgroundColor: COLORS.surfaceContainerLow,
-                  fontSize: 24,
-                  letterSpacing: 4,
-                  textAlign: 'center',
-                }}
-                outlineColor={COLORS.outline}
-                activeOutlineColor={COLORS.primary}
-                error={!!errors.otp}
-              />
-            )}
-          />
-          {errors.otp && (
-            <Text
-              style={{
-                fontSize: 12,
-                color: COLORS.error,
-                marginTop: 4,
-              }}
+            <Controller
+              control={control}
+              name="otp"
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="000000"
+                  placeholder="Nhập 6 chữ số"
+                  value={value}
+                  onChangeText={(text) => onChange(text.replace(/[^0-9]/g, '').slice(0, 6))}
+                  keyboardType="numeric"
+                  maxLength={6}
+                  editable={!isLoading}
+                  style={[authStyles.input, styles.otpInput]}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  error={!!errors.otp}
+                  accessibilityLabel="Mã OTP gồm 6 chữ số"
+                />
+              )}
+            />
+          </AuthField>
+
+          <View style={styles.resendBox}>
+            <Text style={styles.resendHint}>Chưa nhận được mã?</Text>
+            <Pressable
+              onPress={handleResend}
+              disabled={!canResend || isLoading}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.resendButton,
+                pressed && authStyles.pressed,
+                (!canResend || isLoading) && authStyles.disabled,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={canResend ? 'Gửi lại mã OTP' : `Gửi lại mã sau ${timeLeft} giây`}
+              accessibilityState={{ disabled: !canResend || isLoading }}
             >
-              {errors.otp.message}
-            </Text>
-          )}
-        </FadeInUp>
-
-        <FadeInUp delay={140} style={{ marginBottom: 12 }}>
-          <Text
-            style={{
-              fontSize: 14,
-              color: COLORS.onSurfaceVariant,
-              textAlign: 'center',
-              marginBottom: 8,
-            }}
-          >
-            Didn't receive the code?
-          </Text>
-          <Pressable
-            onPress={handleResend}
-            disabled={!canResend || isLoading}
-            style={({ pressed }) => ({
-              opacity: canResend ? (pressed ? 0.7 : 1) : 0.5,
-            })}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: canResend ? COLORS.primary : COLORS.outlineVariant,
-                textAlign: 'center',
-              }}
-            >
-              {canResend ? 'Resend Code' : `Resend in ${timeLeft}s`}
-            </Text>
-          </Pressable>
-        </FadeInUp>
-
-        <View style={{ flex: 1 }} />
-      </View>
-
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 16,
-          paddingTop: 16,
-          backgroundColor: COLORS.surface,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.outline,
-        }}
-      >
-        <FadeInUp delay={200}>
-          <Button
-            mode="contained"
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || !otp || otp.length < 6}
-            loading={isLoading}
-            style={{
-              backgroundColor: COLORS.primaryContainer,
-              borderRadius: 16,
-              paddingVertical: 8,
-            }}
-            labelStyle={{
-              fontSize: 14,
-              fontWeight: '600',
-            }}
-          >
-            {isLoading ? 'Verifying...' : 'Verify Code'}
-          </Button>
-        </FadeInUp>
-      </View>
+              <Text style={styles.resendText}>
+                {canResend ? 'Gửi lại mã' : `Gửi lại sau ${timeLeft}s`}
+              </Text>
+            </Pressable>
+          </View>
+        </AuthCard>
+      </FadeInUp>
 
       <ErrorToast
         visible={isVisible}
@@ -301,8 +194,44 @@ export function OtpVerificationScreen({
         onDismiss={clearError}
         duration={3000}
       />
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
+
+const styles = StyleSheet.create({
+  emailText: {
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  otpInput: {
+    fontSize: 24,
+    textAlign: 'center',
+  },
+  resendBox: {
+    minHeight: 52,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerLow,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  resendHint: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.onSurfaceVariant,
+  },
+  resendButton: {
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  resendText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+});
 
 export default OtpVerificationScreen;

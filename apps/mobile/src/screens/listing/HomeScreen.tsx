@@ -16,8 +16,7 @@ import { CategoryFilterSheet } from '@/components/CategoryFilterSheet';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
 import { categoryLabel } from '@/utils/listingFormat';
-
-const COLORS = { primary: '#10b981', background: '#f8f9ff', onSurfaceVariant: '#6b7280' };
+import { mobileColors as COLORS } from '@/theme/design';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -81,7 +80,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text variant="headlineSmall" style={styles.greeting}>
-            Xin chào{user?.name ? `, ${user.name}` : ''} 👋
+            Xin chào{user?.name ? `, ${user.name}` : ''}
           </Text>
           <Text variant="bodySmall" style={styles.subtitle}>
             {category ? `Đang lọc: ${categoryLabel(category)}` : 'Thực phẩm gần bạn'}

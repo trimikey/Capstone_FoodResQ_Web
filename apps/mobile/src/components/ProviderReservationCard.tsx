@@ -49,9 +49,13 @@ export function useCountdown(targetIso?: string | null): string | null {
   };
   const [left, setLeft] = useState<string | null>(compute);
   useEffect(() => {
-    setLeft(compute());
-    const t = setInterval(() => setLeft(compute()), 1000);
-    return () => clearInterval(t);
+    const update = () => setLeft(compute());
+    const initial = setTimeout(update, 0);
+    const t = setInterval(update, 1000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetIso]);
   return left;

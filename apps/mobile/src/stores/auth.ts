@@ -193,10 +193,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         role?: string;
         phone?: string;
         businessName?: string;
-        businessType?: string;
         address?: string;
-        lat?: number;
-        lng?: number;
+        vehicleType?: string;
+        volunteerRole?: 'shipper' | 'chef' | 'waiter';
+        isCharityOrg?: boolean;
       };
       const response = await apiClient.post<ApiResponse<LoginResponse>>(
         endpoints.auth.register,
@@ -207,10 +207,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           role: extra.role ?? 'receiver',
           ...(extra.phone ? { phone: extra.phone } : {}),
           ...(extra.businessName ? { businessName: extra.businessName } : {}),
-          ...(extra.businessType ? { businessType: extra.businessType } : {}),
           ...(extra.address ? { address: extra.address } : {}),
-          ...(extra.lat != null ? { lat: extra.lat } : {}),
-          ...(extra.lng != null ? { lng: extra.lng } : {}),
+          ...(extra.vehicleType ? { vehicleType: extra.vehicleType } : {}),
+          ...(extra.volunteerRole ? { volunteerRole: extra.volunteerRole } : {}),
+          ...(extra.isCharityOrg != null ? { isCharityOrg: extra.isCharityOrg } : {}),
         }
       );
 

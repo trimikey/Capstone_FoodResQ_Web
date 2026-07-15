@@ -1,3 +1,5 @@
+'use client';
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserRole, UserStatus } from '@foodresq/types';
@@ -39,8 +41,12 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
 
       logout: () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        if (typeof window !== 'undefined') {
+          // Xóa sạch mọi thứ liên quan đến session để tránh cache user cũ bị "rò rỉ" sang user mới
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('foodresq-auth');
+        }
         set({ user: null, accessToken: null, refreshToken: null });
       },
 

@@ -26,6 +26,11 @@ const STEPS: { key: DeliveryStatus; label: string }[] = [
   { key: 'delivered', label: 'Đã giao thành công' },
 ];
 const ORDER = ['pending_assignment', 'assigned', 'heading_to_provider', 'qc_completed', 'in_transit', 'delivered'];
+function formatKm(km: unknown): string | null {
+  if (km == null) return null;
+  const n = Number(km);
+  return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
+}
 
 /** Thẻ theo dõi giao hàng tận nơi: timeline trạng thái + thông tin shipper + khoảng cách. */
 export function DeliveryTrackingCard({ reservationId }: Props) {
@@ -48,14 +53,15 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
 
   const failed = data.status === 'failed';
   const currentIndex = ORDER.indexOf(data.status);
+  const distanceLabel = formatKm(data.distanceKm);
 
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.primary} />
         <Text style={styles.title}>Theo dõi giao hàng</Text>
-        {data.distanceKm != null ? (
-          <Text style={styles.distance}>{data.distanceKm.toFixed(1)} km</Text>
+        {distanceLabel ? (
+          <Text style={styles.distance}>{distanceLabel}</Text>
         ) : null}
       </View>
 
