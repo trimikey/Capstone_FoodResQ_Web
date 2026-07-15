@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
 import { useDeliveryTracking } from '@/hooks/useDeliveries';
+import { useMe } from '@/hooks/useProfile';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -42,9 +43,26 @@ interface Reservation {
     quantityUnit: string;
     imageUrls: string[];
     category: string;
+    pickupEndTime: string;
     provider: { businessName: string };
   };
   delivery: { id: string; status: string } | null;
+}
+
+// Luật điểm uy tín (CLAUDE.md §8/§9 — mặc định của system_configs)
+const LATE_CANCEL_PENALTY = 10; // huỷ khi còn < 30 phút trước giờ kết thúc nhận
+const NO_SHOW_PENALTY = 20; // không đến nhận trước khi QR hết hạn
+const LATE_WINDOW_MS = 30 * 60 * 1000;
+const BAN_THRESHOLD = 30; // ≤ 30 điểm → khoá tài khoản
+const RESTRICT_THRESHOLD = 60; // ≤ 60 điểm → hạn chế (1 đơn/ngày)
+
+/** Cảnh báo hậu quả sau khi bị trừ điểm: khoá / hạn chế / an toàn. */
+function penaltyOutcome(scoreAfter: number): { text: string; severe: boolean } | null {
+  if (scoreAfter <= BAN_THRESHOLD)
+    return { text: `Điểm sẽ còn ${scoreAfter} (≤ ${BAN_THRESHOLD}) — tài khoản sẽ bị KHOÁ.`, severe: true };
+  if (scoreAfter <= RESTRICT_THRESHOLD)
+    return { text: `Điểm sẽ còn ${scoreAfter} (≤ ${RESTRICT_THRESHOLD}) — tài khoản sẽ bị hạn chế (tối đa 1 đơn/ngày).`, severe: false };
+  return null;
 }
 
 const CATEGORY_FALLBACK: Record<string, string> = {
@@ -69,6 +87,7 @@ const STATUS_META: Record<
 
 export default function ReservationsPage() {
   const { data, isLoading, isError } = useMyReservations();
+  const { data: me } = useMe(); // điểm uy tín hiện tại — dự báo hậu quả khi huỷ trễ
   const cancelMutation = useCancelReservation();
 
   const [tab, setTab] = useState<'active' | 'history'>('active');
@@ -248,6 +267,40 @@ export default function ReservationsPage() {
 
                     {confirmCancel === r.id ? (
                       <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 space-y-3">
+                        {/* Cảnh báo trừ điểm uy tín trước khi huỷ */}
+                        {(() => {
+                          const isLate =
+                            new Date(r.listing.pickupEndTime).getTime() - Date.now() < LATE_WINDOW_MS;
+                          const score = me?.trustScore;
+                          const after = score != null ? Math.max(0, score - LATE_CANCEL_PENALTY) : null;
+                          const outcome = after != null ? penaltyOutcome(after) : null;
+                          return isLate ? (
+                            <div className="flex items-start gap-2 bg-white border border-rose-300 rounded-lg p-3">
+                              <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
+                              <div className="text-xs leading-relaxed">
+                                <p className="font-bold text-rose-700">
+                                  Huỷ lúc này là HUỶ TRỄ (còn dưới 30 phút trước giờ kết thúc nhận) —
+                                  bạn sẽ bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
+                                  {score != null ? ` (${score} → ${after})` : ''}.
+                                </p>
+                                {outcome && (
+                                  <p className={`mt-1 font-bold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
+                                    ⚠ {outcome.text}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-2 bg-white border border-neutral-200 rounded-lg p-3">
+                              <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                              <p className="text-xs text-neutral-600 leading-relaxed">
+                                Huỷ bây giờ <b>chưa bị trừ điểm</b> (còn hơn 30 phút trước giờ kết thúc nhận).
+                                Lưu ý: nếu giữ đơn mà <b>không đến nhận</b>, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm uy tín
+                                — điểm ≤ {BAN_THRESHOLD} sẽ bị khoá tài khoản.
+                              </p>
+                            </div>
+                          );
+                        })()}
                         <p className="text-sm font-bold text-neutral-800">Vì sao bạn huỷ đơn này?</p>
                         {/* Lý do nhanh */}
                         <div className="flex flex-wrap gap-1.5">
@@ -282,9 +335,16 @@ export default function ReservationsPage() {
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => { setConfirmCancel(r.id); setCancelReason(''); }} className="self-start text-rose-500 text-xs font-semibold hover:underline">
-                        Huỷ đặt chỗ
-                      </button>
+                      <div className="space-y-1.5">
+                        {/* Nhắc luật no-show thường trực để người nhận không "quên" đơn */}
+                        <p className="text-[11px] text-neutral-400 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px]">info</span>
+                          Không đến nhận đúng hạn sẽ bị trừ {NO_SHOW_PENALTY} điểm uy tín.
+                        </p>
+                        <button onClick={() => { setConfirmCancel(r.id); setCancelReason(''); }} className="self-start text-rose-500 text-xs font-semibold hover:underline">
+                          Huỷ đặt chỗ
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

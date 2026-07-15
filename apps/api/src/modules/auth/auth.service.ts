@@ -12,6 +12,8 @@ import * as crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { FaceMatchService } from '@/common/face-match/face-match.service';
+import { StorageService } from '@/common/storage/storage.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { FirebaseAdminService } from './firebase-admin.service';
@@ -36,15 +38,39 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private firebaseAdmin: FirebaseAdminService,
+    private faceMatch: FaceMatchService,
+    private storage: StorageService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, selfie?: Express.Multer.File) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
 
     if (dto.phone) {
       const phoneExists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
       if (phoneExists) throw new ConflictException('Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.');
+    }
+
+    // eKYC BẮT BUỘC khi đăng ký: người nhận cá nhân & tình nguyện viên phải có
+    // khuôn mặt hợp lệ TRƯỚC khi tạo tài khoản — không có/không nhận diện được
+    // thì đăng ký THẤT BẠI (không tạo user). Tổ chức từ thiện & NCC không cần.
+    const needsFace =
+      (dto.role === 'receiver' && !dto.isCharityOrg) || dto.role === 'volunteer';
+    let faceDescriptor: number[] | null = null;
+    let faceImageUrl: string | null = null;
+    if (needsFace) {
+      if (!selfie) {
+        throw new BadRequestException(
+          'Cần ảnh khuôn mặt (selfie) để đăng ký. Vui lòng chụp ảnh rõ nét trước khi gửi.',
+        );
+      }
+      faceDescriptor = await this.faceMatch.getFaceDescriptor(selfie);
+      if (!faceDescriptor) {
+        throw new BadRequestException(
+          'Không nhận diện được khuôn mặt trong ảnh — đăng ký thất bại. Vui lòng chụp lại nơi đủ sáng, thấy rõ khuôn mặt.',
+        );
+      }
+      faceImageUrl = await this.storage.saveImage(selfie, 'faces');
     }
 
     // Chuẩn hoá chuỗi để giảm khoảng trắng trước khi validate/insert.
@@ -79,17 +105,34 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
-        await tx.receiverProfile.create({
+        const rp = await tx.receiverProfile.create({
           data: {
             userId: created.id,
             address: dto.address ?? null,
             isCharityOrg: dto.isCharityOrg ?? false,
             organizationName: dto.isCharityOrg ? (dto.businessName ?? fullName) : null,
+            // eKYC đã xác thực ở trên (bắt buộc với cá nhân)
+            ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
+          select: { id: true },
         });
+        // Lưu toạ độ đăng ký làm điểm giao mặc định (cột geography → raw SQL)
+        if (dto.lng != null && dto.lat != null) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE receiver_profiles
+            SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
+                updated_at = NOW()
+            WHERE id = ${rp.id}::uuid
+          `);
+        }
       } else if (dto.role === 'volunteer') {
         const vp = await tx.volunteerProfile.create({
-          data: { userId: created.id, vehicleType: dto.vehicleType ?? null },
+          data: {
+            userId: created.id,
+            vehicleType: dto.vehicleType ?? null,
+            // eKYC đã xác thực ở trên (bắt buộc với tình nguyện viên)
+            ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
+          },
         });
         if (dto.volunteerRole) {
           await tx.volunteerSpecializationEntry.create({

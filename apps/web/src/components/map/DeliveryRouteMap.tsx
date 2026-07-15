@@ -38,14 +38,33 @@ function FitBounds({ points }: { points: Pt[] }) {
   return null;
 }
 
+// Marker số thứ tự cho điểm phát trên tuyến giao sỉ (xanh khi đã phát, cam khi chưa)
+function stopPin(index: number, served: boolean) {
+  return L.divIcon({
+    className: 'foodresq-stop-pin',
+    html: `<div style="
+      width:30px;height:30px;border-radius:9999px;background:${served ? '#059669' : '#f59e0b'};
+      display:flex;align-items:center;justify-content:center;color:#fff;
+      border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);
+      font-weight:800;font-size:13px;font-family:sans-serif;">${index}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+}
+
+export type RouteStop = Pt & { served?: boolean };
+
 export default function DeliveryRouteMap({
   pickup,
   delivery,
   shipper,
+  stops,
 }: {
   pickup?: Pt | null;
   delivery?: Pt | null;
   shipper?: Pt | null;
+  /** Điểm phát trên tuyến giao sỉ — vẽ marker đánh số + nối tuyến pickup → các điểm theo thứ tự. */
+  stops?: RouteStop[];
 }) {
   const [route, setRoute] = useState<[number, number][] | null>(null);
 
@@ -69,8 +88,15 @@ export default function DeliveryRouteMap({
     };
   }, [pickup?.lat, pickup?.lng, delivery?.lat, delivery?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Tuyến giao sỉ: nối pickup → các điểm phát theo thứ tự (đường thẳng nối điểm)
+  const stopLine: [number, number][] | null =
+    stops && stops.length > 0
+      ? [...(pickup ? [[pickup.lat, pickup.lng] as [number, number]] : []), ...stops.map((s) => [s.lat, s.lng] as [number, number])]
+      : null;
+
   // Fallback: đường thẳng pickup → delivery khi chưa lấy được tuyến thật
   const line: [number, number][] | null =
+    stopLine ??
     route ??
     (pickup && delivery
       ? [
@@ -78,7 +104,7 @@ export default function DeliveryRouteMap({
           [delivery.lat, delivery.lng],
         ]
       : null);
-  const points = [pickup, delivery, shipper].filter((p): p is Pt => p != null);
+  const points = [pickup, delivery, shipper, ...(stops ?? [])].filter((p): p is Pt => p != null);
   const center = points[0] ?? HCMC;
 
   return (
@@ -87,6 +113,8 @@ export default function DeliveryRouteMap({
       zoom={13}
       scrollWheelZoom={false}
       style={{ height: '100%', width: '100%' }}
+      // z-0: nhốt z-index nội bộ của Leaflet để không đè lên modal của trang
+      className="relative z-0"
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -96,6 +124,9 @@ export default function DeliveryRouteMap({
       {pickup && <Marker position={[pickup.lat, pickup.lng]} icon={pin('#236c2a', 'storefront')} />}
       {delivery && <Marker position={[delivery.lat, delivery.lng]} icon={pin('#dc2626', 'home')} />}
       {shipper && <Marker position={[shipper.lat, shipper.lng]} icon={pin('#0ea5e9', 'two_wheeler')} />}
+      {(stops ?? []).map((s, i) => (
+        <Marker key={`${s.lat}-${s.lng}-${i}`} position={[s.lat, s.lng]} icon={stopPin(i + 1, !!s.served)} />
+      ))}
       <FitBounds points={points} />
     </MapContainer>
   );

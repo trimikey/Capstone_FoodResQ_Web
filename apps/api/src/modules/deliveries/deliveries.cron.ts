@@ -20,8 +20,10 @@ export class DeliveriesCron {
     }
   }
 
-  // Mỗi phút: đóng offer quá hạn + mời lại shipper cho đơn chưa ai nhận còn hiệu lực
-  @Cron(CronExpression.EVERY_MINUTE)
+  // Mỗi 30s: đóng offer quá hạn + mời lại shipper cho đơn chưa ai nhận còn hiệu lực.
+  // Chạy dày để thu hẹp "khoảng chết" giữa lúc đợt offer cũ hết hạn (TTL 2 phút)
+  // và đợt mời lại — nếu quét theo phút, shipper có thể thấy trống tới ~60s.
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async handleOfferSweep() {
     try {
       const n = await this.deliveries.sweepOffersAndRebroadcast();

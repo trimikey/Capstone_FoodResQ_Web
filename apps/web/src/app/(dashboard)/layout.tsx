@@ -8,6 +8,7 @@ import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
 import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
+import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 // Bottom nav (mobile) theo vai trò
 function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
@@ -82,6 +83,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex flex-col min-h-screen bg-[#fcf9f2]">
       {/* Popup nhận đơn giao toàn cục cho shipper (hiện ở mọi trang) */}
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
+
+      {/* Cổng eKYC: tài khoản social login chưa có khuôn mặt → bắt enroll ngay,
+          chặn mọi trang cho đến khi xong (BE cũng chặn đặt chỗ/nhận đơn) */}
+      <FaceEnrollmentGate />
 
       {/* Desktop Top Header replaced with PublicHeader */}
       {!pathname.startsWith('/admin') && (

@@ -1,5 +1,18 @@
-import { Body, Controller, Headers, Ip, Post, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  FileTypeValidator,
+  Headers,
+  Ip,
+  MaxFileSizeValidator,
+  ParseFilePipe,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -17,9 +30,27 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a new account' })
-  register(@Body() dto: RegisterDto, @Ip() ip: string) {
-    return this.authService.register(dto);
+  @UseInterceptors(FileInterceptor('selfie'))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiOperation({
+    summary:
+      'Register a new account. Receiver (cá nhân) & volunteer BẮT BUỘC gửi kèm ảnh selfie (multipart) — không có/không nhận diện được khuôn mặt thì đăng ký thất bại.',
+  })
+  register(
+    @Body() dto: RegisterDto,
+    @Ip() ip: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: false, // provider/charity đăng ký JSON không kèm ảnh
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    selfie?: Express.Multer.File,
+  ) {
+    return this.authService.register(dto, selfie);
   }
 
   @Post('login')

@@ -240,7 +240,16 @@ export default function DeliveriesPage() {
         {/* Header + availability toggle */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="font-extrabold text-3xl text-neutral-900">Trung tâm giao hàng</h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="font-extrabold text-3xl text-neutral-900">Trung tâm giao hàng</h1>
+              <Link
+                href="/deliveries/bulk"
+                className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-full text-xs font-extrabold flex items-center gap-1 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">local_shipping</span>
+                Giao sỉ nhiều điểm
+              </Link>
+            </div>
             <p className="text-sm text-neutral-500 mt-1">
               {me ? (
                 <>

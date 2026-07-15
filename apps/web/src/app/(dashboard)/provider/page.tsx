@@ -16,6 +16,7 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { FoodCategory, FoodGroup, QuantityUnit, FOOD_CATEGORY_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
+import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
@@ -370,6 +371,9 @@ export default function ProviderListingsPage() {
             <EsgStat icon="diversity_3" value={String(esg.peopleHelped)} label="Người được giúp" />
           </div>
         )}
+
+        {/* Yêu cầu giao sỉ từ tình nguyện viên (duyệt/theo dõi) — tự ẩn khi trống */}
+        <BulkRunRequests />
 
         {isLoading && (
           <div className="space-y-4">

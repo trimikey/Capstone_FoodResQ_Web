@@ -64,7 +64,9 @@ export default function LocationPicker({ lng, lat, onPick }: Props) {
   }
 
   return (
-    <MapContainer key={`${lat.toFixed(6)}-${lng.toFixed(6)}`} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full">
+    // relative z-0: tạo stacking context để pane/control của Leaflet (z-index 400–1000)
+    // không tràn ra ngoài đè lên modal của trang (modal thường chỉ z-50)
+    <MapContainer key={`${lat.toFixed(6)}-${lng.toFixed(6)}`} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full relative z-0">
       <TileLayer
         attribution='&copy; OpenStreetMap'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
