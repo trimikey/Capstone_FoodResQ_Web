@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button } from 'react-native-paper';
+import { Text, Button, ActivityIndicator } from 'react-native-paper';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -26,11 +27,10 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { FadeInUp } from '@/components/ui/Motion';
-import { captureImage } from '@/services/faceCapture';
-import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
+import { captureImage, type CapturedImage } from '@/services/faceCapture';
+import { notifyError, notifySuccess, notifyWarning, selectionFeedback } from '@/services/haptics';
 import {
   DELIVERY_STEPS,
-  DELIVERY_STEP_ORDER,
   deliveryStatusMeta,
   nextDeliveryStatus,
   requiresQcPhoto,
@@ -81,34 +81,51 @@ function mapsUrls(target: RouteTarget): { primary: string; fallback: string } | 
   if (Platform.OS === 'ios') return { primary: `comgooglemaps://?daddr=${encoded}&directionsmode=driving`, fallback };
   return { primary: fallback, fallback };
 }
-function advanceLabel(status: string): string {
+function advanceLabel(status: string, hasPickupPhoto: boolean): string {
   switch (status) {
     case 'assigned':
       return 'Đi tới điểm lấy';
     case 'heading_to_provider':
-      return 'Chụp xác nhận lấy hàng';
+      return hasPickupPhoto ? 'Xác nhận đã lấy hàng' : 'Chụp ảnh hàng';
     case 'qc_completed':
-      return 'Đi giao hàng';
+      return 'Chỉ đường đến điểm giao';
     case 'in_transit':
-      return 'Nhập mã người nhận';
+      return 'Hoàn tất giao hàng';
     default:
       return 'Cập nhật trạng thái';
   }
 }
-function advanceIcon(status: string): keyof typeof MaterialCommunityIcons.glyphMap {
+function advanceIcon(status: string, hasPickupPhoto: boolean): keyof typeof MaterialCommunityIcons.glyphMap {
   switch (status) {
     case 'heading_to_provider':
-      return 'camera';
+      return hasPickupPhoto ? 'check-circle-outline' : 'camera';
     case 'in_transit':
       return 'qrcode-scan';
     default:
       return 'arrow-right-circle';
   }
 }
+function statusHint(status: string, hasPickupPhoto: boolean): string {
+  switch (status) {
+    case 'assigned':
+      return 'Chờ đi lấy hàng';
+    case 'heading_to_provider':
+      return hasPickupPhoto ? 'Ảnh đã chụp, chờ xác nhận' : 'Đang tới điểm lấy';
+    case 'qc_completed':
+      return 'Đã lấy hàng, chờ đi giao';
+    case 'in_transit':
+      return 'Đang giao, chờ mã người nhận';
+    case 'delivered':
+      return 'Đơn đã hoàn tất';
+    default:
+      return 'Theo dõi tiến trình giao hàng';
+  }
+}
 
 export default function VolunteerActiveScreen() {
   const reasonSheetRef = useRef<BottomSheetModal>(null);
   const qrSheetRef = useRef<BottomSheetModal>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { data, isLoading, isError, refetch, isRefetching } = useActiveDelivery();
   const updateStatus = useUpdateDeliveryStatus();
   const failDelivery = useFailDelivery();
@@ -118,9 +135,13 @@ export default function VolunteerActiveScreen() {
   const [reasonText, setReasonText] = useState('');
   const [qrToken, setQrToken] = useState('');
   const [reportVisible, setReportVisible] = useState(false);
+  const [pendingPickupPhoto, setPendingPickupPhoto] = useState<{ deliveryId: string; photo: CapturedImage } | null>(null);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrScanning, setQrScanning] = useState(false);
+  const [torch, setTorch] = useState(false);
 
   const delivery = data ?? null;
-  const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending;
+  const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
   useShipperLocationBroadcast(isActiveDeliveryStatus(delivery?.status));
 
   const renderBackdrop = useCallback(
@@ -142,6 +163,8 @@ export default function VolunteerActiveScreen() {
   };
   const openQrSheet = () => {
     setQrToken('');
+    setQrScannerOpen(false);
+    setTorch(false);
     qrSheetRef.current?.present();
   };
   const openMaps = async (target: RouteTarget) => {
@@ -167,30 +190,72 @@ export default function VolunteerActiveScreen() {
     }
   };
 
-  const handleAdvance = async (d: ActiveDelivery) => {
+  const updateDeliveryStatus = async (
+    d: ActiveDelivery,
+    status: DeliveryStatus,
+    options?: { photo?: CapturedImage; qrToken?: string; successText?: string }
+  ) => {
+    await updateStatus.mutateAsync({
+      deliveryId: d.id,
+      status,
+      photo: options?.photo,
+      qrToken: options?.qrToken,
+    });
+    void notifySuccess();
+    Popup.show({
+      type: 'success',
+      text1: options?.successText ?? 'Đã cập nhật tiến trình',
+      text2: deliveryStatusMeta(status).label,
+    });
+  };
+
+  const handleAdvance = async (d: ActiveDelivery, pickupTarget: RouteTarget, dropoffTarget: RouteTarget) => {
     const next = nextDeliveryStatus(d.status);
     if (!next) return;
     if (next === 'delivered') {
       openQrSheet();
       return;
     }
-    let photo;
-    if (requiresQcPhoto(next)) {
+
+    if (d.status === 'assigned') {
       try {
-        photo = (await captureImage('id_card')) ?? undefined;
+        await updateDeliveryStatus(d, next, { successText: 'Đang tới điểm lấy' });
+        await openMaps(pickupTarget);
+      } catch (e: any) {
+        void notifyError();
+        Popup.show({
+          type: 'error',
+          text1: 'Cập nhật thất bại',
+          text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
+        });
+      }
+      return;
+    }
+
+    const pendingPhoto = pendingPickupPhoto?.deliveryId === d.id ? pendingPickupPhoto.photo : null;
+
+    if (requiresQcPhoto(next) && !pendingPhoto) {
+      try {
+        const photo = await captureImage('id_card');
+        if (!photo) {
+          Popup.show({ type: 'info', text1: 'Cần ảnh lấy hàng', text2: 'Hãy chụp ảnh hàng trước khi xác nhận.' });
+          return;
+        }
+        setPendingPickupPhoto({ deliveryId: d.id, photo });
+        void notifySuccess();
+        Popup.show({ type: 'success', text1: 'Ảnh đã sẵn sàng', text2: 'Bấm xác nhận để chuyển sang bước giao hàng.' });
       } catch (e: any) {
         Popup.show({ type: 'error', text1: 'Không mở được camera', text2: e?.message ?? 'Cần quyền camera.' });
-        return;
       }
-      if (!photo) {
-        Popup.show({ type: 'info', text1: 'Cần ảnh lấy hàng', text2: 'Hãy chụp ảnh hàng hoá để xác nhận đã lấy hàng.' });
-        return;
-      }
+      return;
     }
+
     try {
-      await updateStatus.mutateAsync({ deliveryId: d.id, status: next, photo });
-      void notifySuccess();
-      Popup.show({ type: 'success', text1: 'Đã cập nhật tiến trình', text2: deliveryStatusMeta(next).label });
+      await updateDeliveryStatus(d, next, { photo: pendingPhoto ?? undefined });
+      setPendingPickupPhoto(null);
+      if (d.status === 'qc_completed') {
+        await openMaps(dropoffTarget);
+      }
     } catch (e: any) {
       void notifyError();
       Popup.show({
@@ -201,18 +266,27 @@ export default function VolunteerActiveScreen() {
     }
   };
 
-  const submitQrToken = async () => {
+  const openQrScanner = async () => {
+    setQrScannerOpen(true);
+    if (!cameraPermission?.granted) {
+      await requestCameraPermission();
+    }
+  };
+
+  const submitQrToken = async (tokenOverride?: string) => {
     if (!delivery) return;
-    const token = qrToken.trim();
+    const token = (tokenOverride ?? qrToken).trim();
     if (!token) {
       Popup.show({ type: 'warning', text1: 'Nhập mã người nhận', text2: 'Mã QR nằm trên màn nhận hàng của receiver.' });
       void notifyWarning();
       return;
     }
     try {
+      setQrScanning(true);
       await updateStatus.mutateAsync({ deliveryId: delivery.id, status: 'delivered' as DeliveryStatus, qrToken: token });
       qrSheetRef.current?.dismiss();
       setQrToken('');
+      setQrScannerOpen(false);
       void notifySuccess();
       Popup.show({ type: 'success', text1: 'Đã giao thành công', text2: 'Đơn đã hoàn tất.' });
     } catch (e: any) {
@@ -222,6 +296,8 @@ export default function VolunteerActiveScreen() {
         text1: 'Không xác nhận được mã',
         text2: e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.',
       });
+    } finally {
+      setQrScanning(false);
     }
   };
 
@@ -288,7 +364,6 @@ export default function VolunteerActiveScreen() {
   const pickup = pickupOf(delivery.coords);
   const dropoff = dropoffOf(delivery.coords);
   const meta = deliveryStatusMeta(delivery.status);
-  const currentIndex = DELIVERY_STEP_ORDER.indexOf(delivery.status);
   const canAdvance = nextDeliveryStatus(delivery.status) != null;
   const canCancel = ['assigned', 'heading_to_provider'].includes(delivery.status);
   const canFail = ['qc_completed', 'in_transit'].includes(delivery.status);
@@ -316,6 +391,14 @@ export default function VolunteerActiveScreen() {
   ];
   const targetKey = activeTargetKey(delivery.status);
   const activeTarget = routeTargets.find((target) => target.key === targetKey) ?? routeTargets[0];
+  const pickupTarget = routeTargets[0];
+  const dropoffTarget = routeTargets[1];
+  const progressSteps = DELIVERY_STEPS;
+  const displayIndex = Math.max(
+    progressSteps.findIndex((step) => step.key === delivery.status),
+    0
+  );
+  const hasPickupPhoto = delivery.status === 'heading_to_provider' && pendingPickupPhoto?.deliveryId === delivery.id;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -329,9 +412,7 @@ export default function VolunteerActiveScreen() {
             <View style={[styles.pulseDot, { backgroundColor: meta.color }]} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-              <Text style={styles.statusSub}>
-                {activeTarget.key === 'pickup' ? 'Ưu tiên tới điểm lấy hàng' : 'Tiếp tục giao cho người nhận'}
-              </Text>
+              <Text style={styles.statusSub}>{statusHint(delivery.status, hasPickupPhoto)}</Text>
             </View>
           </View>
           {distanceLabel ? <Text style={[styles.statusDist, { color: meta.color }]}>{distanceLabel}</Text> : null}
@@ -422,52 +503,50 @@ export default function VolunteerActiveScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Tiến trình giao hàng</Text>
             <Text style={styles.stepCount}>
-              {Math.max(currentIndex, 0)}/{DELIVERY_STEPS.length}
+              {displayIndex + 1}/{progressSteps.length}
             </Text>
           </View>
-          <View style={styles.timeline}>
-            {DELIVERY_STEPS.map((step, i) => {
-              const stepIndex = DELIVERY_STEP_ORDER.indexOf(step.key);
-              const done = currentIndex >= stepIndex;
-              const active = currentIndex === stepIndex;
+          <View style={styles.compactTimeline}>
+            {progressSteps.map((step) => {
+              const stepIndex = progressSteps.findIndex((item) => item.key === step.key);
+              const done = displayIndex >= stepIndex;
+              const active = delivery.status === step.key;
               return (
-                <View key={step.key} style={styles.stepRow}>
-                  <View style={styles.stepIconCol}>
-                    <View style={[styles.stepDot, done && styles.stepDotDone, active && styles.stepDotActive]}>
-                      <MaterialCommunityIcons
-                        name={done ? 'check' : 'circle'}
-                        size={done ? 14 : 8}
-                        color={done ? COLORS.surface : COLORS.muted}
-                      />
-                    </View>
-                    {i < DELIVERY_STEPS.length - 1 ? (
-                      <View style={[styles.connector, done ? styles.connectorDone : styles.connectorTodo]} />
-                    ) : null}
+                <View key={step.key} style={[styles.stepChip, done && styles.stepChipDone, active && styles.stepChipActive]}>
+                  <View style={[styles.stepMiniDot, done && styles.stepMiniDotDone, active && styles.stepMiniDotActive]}>
+                    <MaterialCommunityIcons
+                      name={done ? 'check' : 'circle'}
+                      size={done ? 11 : 6}
+                      color={done ? COLORS.surface : COLORS.muted}
+                    />
                   </View>
-                  <View style={styles.stepTextWrap}>
-                    <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
-                      {step.label}
-                    </Text>
-                    {active ? <Text style={styles.stepHint}>Bước hiện tại</Text> : null}
-                  </View>
+                  <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
+                    {step.label}
+                  </Text>
                 </View>
               );
             })}
           </View>
+          {hasPickupPhoto ? (
+            <View style={styles.photoReady}>
+              <MaterialCommunityIcons name="image-check-outline" size={18} color={COLORS.success} />
+              <Text style={styles.photoReadyText}>Ảnh hàng đã sẵn sàng, chờ xác nhận.</Text>
+            </View>
+          ) : null}
         </FadeInUp>
 
         {canAdvance ? (
           <Button
             mode="contained"
-            icon={advanceIcon(delivery.status)}
-            onPress={() => handleAdvance(delivery)}
+            icon={advanceIcon(delivery.status, hasPickupPhoto)}
+            onPress={() => handleAdvance(delivery, pickupTarget, dropoffTarget)}
             loading={updateStatus.isPending}
             disabled={busy}
             buttonColor={COLORS.primary}
             style={styles.primaryBtn}
             contentStyle={styles.primaryContent}
           >
-            {advanceLabel(delivery.status)}
+            {advanceLabel(delivery.status, hasPickupPhoto)}
           </Button>
         ) : null}
 
@@ -565,9 +644,62 @@ export default function VolunteerActiveScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.dialogTitle}>Mã người nhận</Text>
-              <Text style={styles.sheetSub}>Nhập token QR trên màn nhận hàng để hoàn tất giao hàng.</Text>
+              <Text style={styles.sheetSub}>Quét hoặc nhập mã QR trên màn nhận hàng để hoàn tất.</Text>
             </View>
           </View>
+          <Button
+            mode={qrScannerOpen ? 'contained-tonal' : 'outlined'}
+            icon="qrcode-scan"
+            onPress={() => void openQrScanner()}
+            disabled={busy}
+            style={styles.scanToggle}
+          >
+            Scan QR
+          </Button>
+          {qrScannerOpen ? (
+            <View style={styles.scannerBox}>
+              {!cameraPermission ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : !cameraPermission.granted ? (
+                <View style={styles.scannerPerm}>
+                  <MaterialCommunityIcons name="camera-off" size={38} color={COLORS.onSurfaceVariant} />
+                  <Text style={styles.scannerHint}>Cần quyền camera để quét mã QR.</Text>
+                  <Button mode="contained" buttonColor={COLORS.primary} onPress={requestCameraPermission}>
+                    Cấp quyền camera
+                  </Button>
+                </View>
+              ) : (
+                <>
+                  <CameraView
+                    style={StyleSheet.absoluteFill}
+                    facing="back"
+                    enableTorch={torch}
+                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                    onBarcodeScanned={busy ? undefined : ({ data }) => void submitQrToken(data)}
+                  />
+                  <Pressable
+                    style={styles.torchBtn}
+                    onPress={() => {
+                      void selectionFeedback();
+                      setTorch((value) => !value);
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
+                  >
+                    <MaterialCommunityIcons name={torch ? 'flash' : 'flash-off'} size={22} color="#fff" />
+                  </Pressable>
+                  <View style={styles.scanFrame} />
+                </>
+              )}
+              {qrScanning ? (
+                <View style={styles.scanningOverlay}>
+                  <ActivityIndicator color="#fff" />
+                  <Text style={styles.scanningText}>Đang xác nhận</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
           <BottomSheetTextInput
             placeholder="Dán hoặc nhập mã QR"
             value={qrToken}
@@ -584,7 +716,7 @@ export default function VolunteerActiveScreen() {
             <Button
               mode="contained"
               icon="check-circle-outline"
-              onPress={submitQrToken}
+              onPress={() => void submitQrToken()}
               loading={updateStatus.isPending}
               disabled={busy}
               buttonColor={COLORS.primary}
@@ -686,29 +818,43 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stepCount: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
-  timeline: { gap: 0 },
-  stepRow: { flexDirection: 'row', gap: 12 },
-  stepIconCol: { alignItems: 'center', width: 28 },
-  stepDot: {
-    width: 24,
-    height: 24,
+  compactTimeline: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  stepChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+  },
+  stepChipDone: { backgroundColor: COLORS.primaryContainer, borderColor: COLORS.primaryContainer },
+  stepChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.surface },
+  stepMiniDot: {
+    width: 18,
+    height: 18,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.surfaceVariant,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
   },
-  stepDotDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  stepDotActive: { borderWidth: 3, borderColor: COLORS.primary },
-  connector: { width: 2, flex: 1, minHeight: 18, marginVertical: 3 },
-  connectorDone: { backgroundColor: COLORS.primary },
-  connectorTodo: { backgroundColor: COLORS.outline },
-  stepTextWrap: { flex: 1, minHeight: 42 },
-  stepLabel: { fontSize: 14, color: COLORS.onSurface, fontWeight: '600' },
+  stepMiniDotDone: { backgroundColor: COLORS.primary },
+  stepMiniDotActive: { borderWidth: 2, borderColor: COLORS.primary },
+  stepLabel: { fontSize: 12, color: COLORS.onSurface, fontWeight: '700' },
   stepLabelActive: { fontWeight: '800', color: COLORS.primary },
-  stepLabelTodo: { color: COLORS.onSurfaceVariant, fontWeight: '500' },
-  stepHint: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  stepLabelTodo: { color: COLORS.onSurfaceVariant, fontWeight: '600' },
+  photoReady: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#dcfce7',
+  },
+  photoReadyText: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.success },
   primaryBtn: { borderRadius: 14 },
   primaryContent: { paddingVertical: 6 },
   secondaryRow: { flexDirection: 'row', gap: 12 },
@@ -746,5 +892,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: COLORS.onSurface,
   },
+  scanToggle: { alignSelf: 'flex-start', borderRadius: 999 },
+  scannerBox: {
+    width: '100%',
+    aspectRatio: 1.35,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerPerm: { alignItems: 'center', gap: 10, padding: 18 },
+  scannerHint: { color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  torchBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanFrame: {
+    width: 156,
+    height: 156,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#fff',
+    backgroundColor: 'transparent',
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  scanningText: { color: '#fff', marginTop: 8, fontWeight: '700' },
   sheetActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
 });
