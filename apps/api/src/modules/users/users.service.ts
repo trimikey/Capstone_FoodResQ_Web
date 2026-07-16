@@ -104,6 +104,7 @@ export class UsersService {
       taxCode: string | null;
       isVerified: boolean;
       verificationStatus: string;
+      avgRating: number | null;
       lng: number | null;
       lat: number | null;
     } | null = null;
