@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { mediaUrl } from '@/lib/utils';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -158,10 +159,10 @@ export default function ListingDetailPage({ params }: Props) {
             <img
               src={
                 (listing.imageUrls[0] && ![
-                  '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                  '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
                   '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                 ].includes(listing.imageUrls[0]))
-                  ? listing.imageUrls[0]
+                  ? mediaUrl(listing.imageUrls[0])
                   : fallbackImage(listing.category)
               }
               alt={listing.title}

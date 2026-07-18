@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { toast } from 'sonner';
 import { useScanQr, useConfirmPickup, type ScanResult } from '@/hooks/useProviderListings';
+import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 
 type Phase = 'scanning' | 'submitting' | 'verify' | 'result';
 
@@ -132,19 +133,14 @@ export default function ProviderScanPage() {
   }, [phase]);
 
   return (
-    <div className="min-h-screen bg-mesh-brand pb-24">
-      <div className="max-w-xl mx-auto px-6 py-10 space-y-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-brand-gradient flex items-center justify-center elevation-brand shrink-0">
-            <span className="material-symbols-outlined text-white text-[28px]">qr_code_scanner</span>
-          </div>
-          <div>
-            <h1 className="font-headline-lg font-extrabold text-3xl text-neutral-900">Quét mã QR nhận hàng</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">
-              Quét mã của người nhận, đối chiếu ảnh rồi xác nhận bàn giao.
-            </p>
-          </div>
-        </div>
+    <div className="flex-1 min-w-0 bg-mesh-brand">
+      <div className="max-w-xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
+        <ProviderHeaderCard
+          crumbs={[{ href: '/provider', label: 'Cửa hàng' }, { label: 'Quét QR' }]}
+          eyebrow="Xác nhận lấy hàng"
+          title="Quét mã QR nhận hàng"
+          description="Quét mã của người nhận, đối chiếu ảnh rồi xác nhận bàn giao."
+        />
 
         {/* ===== ĐỐI CHIẾU THÔNG TIN NGƯỜI NHẬN ===== */}
         {phase === 'verify' && scan ? (
@@ -275,11 +271,11 @@ export default function ProviderScanPage() {
             </label>
             <p className="text-[11px] text-neutral-400 text-center -mt-1">Chụp/lưu ảnh mã QR của người nhận rồi tải lên — ổn định hơn quét qua màn hình.</p>
 
-        
+
           </div>
         )}
+        </div>
       </div>
-    </div>
   );
 }
 

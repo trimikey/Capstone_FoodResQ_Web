@@ -20,6 +20,7 @@ const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), 
   ),
 });
 import { api } from "@/lib/api";
+import { mediaUrl } from "@/lib/utils";
 import { reverseGeocode } from "@/lib/geocode";
 import { useAuthStore } from "@/stores/auth.store";
 import CameraCapture from "@/components/shared/CameraCapture";
@@ -55,7 +56,8 @@ const registerSchema = z.object({
     .optional(),
   taxCode: z.string().optional(),
   providerDescription: z.string().max(1000).optional(),
-  evidenceUrls: z.array(z.string().url()).optional(),
+  // URL upload trả về là đường dẫn tương đối (/uploads/...) → không dùng .url()
+  evidenceUrls: z.array(z.string().min(1)).optional(),
 
   // Volunteer fields
   volunteerRole: z.string().optional(),
@@ -1078,7 +1080,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <div className="grid grid-cols-3 gap-2">
                                 {evidenceUrls.map((u: string, idx: number) => (
                                   <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
-                                    <img src={u} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                                    {/* Ảnh lưu ở API (/uploads/...) — phải ghép origin :3001, để trần sẽ 404 vì trỏ vào :3000 */}
+                                    <img src={mediaUrl(u)} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
                                     <button
                                       type="button"
                                       onClick={() =>

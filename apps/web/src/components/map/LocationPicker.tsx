@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import type { Marker as LeafletMarker } from 'leaflet';
+import { useEffect, useId, useState } from 'react';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -19,41 +18,46 @@ const pin = L.divIcon({
   iconAnchor: [17, 17],
 });
 
+// Lắng nghe click trực tiếp trên container DOM (qua Leaflet internal handler)
+// để tránh trường hợp useMapEvents không nhận event khi nằm trong modal/Dialog
+// có stacking context hoặc pointer-events đặc biệt.
 function ClickHandler({ onPick }: { onPick: (lng: number, lat: number) => void }) {
-  useMapEvents({
-    click(e) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => {
+      map.flyTo([e.latlng.lat, e.latlng.lng], map.getZoom(), { duration: 0.3 });
       onPick(e.latlng.lng, e.latlng.lat);
-    },
-  });
+    };
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+    };
+  }, [map, onPick]);
   return null;
 }
 
-// Đồng bộ tâm bản đồ khi toạ độ đổi từ bên ngoài (vd: bấm nút định vị GPS)
+// Đồng bộ tâm bản đồ khi toạ độ đổi từ bên ngoài (vd: bấm nút định vị GPS).
+// KHÔNG can thiệp vào thao tác click/drag của user trên map — chỉ pan khi
+// parent chủ động set toạ độ mới khác xa tâm hiện tại (>50m).
 function Recenter({ lng, lat }: { lng: number; lat: number }) {
   const map = useMap();
   useEffect(() => {
-    map.setView([lat, lng], map.getZoom());
+    const c = map.getCenter();
+    if (Math.abs(c.lat - lat) > 0.0005 || Math.abs(c.lng - lng) > 0.0005) {
+      map.setView([lat, lng], map.getZoom());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, lat, lng]);
   return null;
 }
 
 /** Bản đồ cho phép bấm hoặc kéo ghim để chọn toạ độ chính xác. */
 export default function LocationPicker({ lng, lat, onPick }: Props) {
-  const markerRef = useRef<LeafletMarker | null>(null);
+  // useId() đảm bảo mỗi lần mount (vd: mở/đóng modal) tạo key hoàn toàn mới,
+  // tránh việc Leaflet "tái sử dụng" DOM cũ với instance cũ, dẫn đến click/drag
+  // bị nuốt bởi handler của instance trước.
+  const mapId = useId();
   const [isMounted, setIsMounted] = useState(false);
-
-  const dragHandlers = useMemo(
-    () => ({
-      dragend() {
-        const m = markerRef.current;
-        if (m) {
-          const p = m.getLatLng();
-          onPick(p.lng, p.lat);
-        }
-      },
-    }),
-    [onPick],
-  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -65,8 +69,11 @@ export default function LocationPicker({ lng, lat, onPick }: Props) {
 
   return (
     // relative z-0: tạo stacking context để pane/control của Leaflet (z-index 400–1000)
-    // không tràn ra ngoài đè lên modal của trang (modal thường chỉ z-50)
-    <MapContainer key={`${lat.toFixed(6)}-${lng.toFixed(6)}`} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full relative z-0">
+    // không tràn ra ngoài đè lên modal của trang (modal thường chỉ z-50).
+    // Key duy nhất mỗi mount: nếu parent dùng key gắn lat/lng hoặc key cố định, Leaflet
+    // sẽ cố tái sử dụng DOM cũ đã bị React clear → "Map container is being reused".
+    // Pan bản đồ được <Recenter /> xử lý ở dưới.
+    <MapContainer key={mapId} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full relative z-0">
       <TileLayer
         attribution='&copy; OpenStreetMap'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -75,8 +82,13 @@ export default function LocationPicker({ lng, lat, onPick }: Props) {
         position={[lat, lng]}
         icon={pin}
         draggable
-        eventHandlers={dragHandlers}
-        ref={markerRef}
+        eventHandlers={{
+          dragend: (e) => {
+            const m = e.target as L.Marker;
+            const p = m.getLatLng();
+            onPick(p.lng, p.lat);
+          },
+        }}
       />
       <ClickHandler onPick={onPick} />
       <Recenter lng={lng} lat={lat} />

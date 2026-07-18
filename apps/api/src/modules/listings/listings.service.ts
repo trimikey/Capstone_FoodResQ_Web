@@ -19,6 +19,7 @@ const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
   'imageUrls',
   'storageConditions',
   'allergenNotes',
+  'isSurpriseBag',
 ]);
 
 export interface NearbyRow {
@@ -83,7 +84,7 @@ export class ListingsService {
         pickup_start_time, pickup_end_time, expiry_time,
         pickup_address, pickup_location,
         storage_conditions, allergen_notes, max_per_reservation, image_urls,
-        status, created_at, updated_at
+        is_surprise_bag, status, created_at, updated_at
       ) VALUES (
         ${providerId}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.category}::food_category,
         ${dto.quantityTotal}, ${dto.quantityTotal}, ${dto.quantityUnit}::quantity_unit,
@@ -93,7 +94,7 @@ export class ListingsService {
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
         ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
-        'draft'::listing_status, NOW(), NOW()
+        ${dto.isSurpriseBag ?? false}, 'draft'::listing_status, NOW(), NOW()
       )
       RETURNING id
     `);
@@ -371,6 +372,7 @@ export class ListingsService {
     if (dto.allergenNotes !== undefined) data.allergenNotes = dto.allergenNotes ?? null;
     if (dto.maxPerReservation !== undefined) data.maxPerReservation = dto.maxPerReservation;
     if (dto.imageUrls !== undefined) data.imageUrls = dto.imageUrls as never;
+    if (dto.isSurpriseBag !== undefined) data.isSurpriseBag = dto.isSurpriseBag;
 
     await this.prisma.$transaction(async (tx) => {
       if (Object.keys(data).length > 0) {

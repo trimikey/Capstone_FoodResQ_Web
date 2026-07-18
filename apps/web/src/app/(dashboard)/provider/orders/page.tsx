@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
 import { useProviderOrders, type ProviderOrderItem } from '@/hooks/useProviderListings';
-import { useMe } from '@/hooks/useProfile';
+import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import StatCell from '@/components/provider/StatCell';
+import DataTable, { type Column } from '@/components/provider/DataTable';
+import FilterBar, { type FilterOption } from '@/components/provider/FilterBar';
 
 interface StatusMeta {
   label: string;
@@ -28,6 +30,8 @@ const FALLBACK_IMAGE: Record<string, string> = {
   vegetables: '/food_salad.png',
 };
 
+type OrderFilter = 'all' | 'active' | 'done' | 'cancelled';
+
 function formatWeight(item: ProviderOrderItem): string {
   if (item.listing.weightPerUnitKg) {
     return `${(Number(item.quantity) * Number(item.listing.weightPerUnitKg)).toFixed(1)}kg`;
@@ -35,8 +39,12 @@ function formatWeight(item: ProviderOrderItem): string {
   return `${item.quantity} ${item.listing.quantityUnit}`;
 }
 
+const formatDateTime = (iso: string) =>
+  new Date(iso).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+const formatDate = (iso: string) => new Date(iso).toLocaleDateString('vi-VN');
+
 export default function ProviderOrdersPage() {
-  const { data: me } = useMe();
   const [page, setPage] = useState(1);
   const { data, isLoading, isError, refetch } = useProviderOrders(page);
 
@@ -49,47 +57,111 @@ export default function ProviderOrdersPage() {
     ));
   }, [data]);
 
-  const [filter, setFilter] = useState<'all' | 'active' | 'done' | 'cancelled'>('all');
-  const [showFilter, setShowFilter] = useState(false);
-
-  const filtered = useMemo(() => {
-    return items.filter((item) => {
-      const meta = STATUS_META[item.status];
-      if (!meta) return true;
-      if (filter === 'all') return true;
-      return meta.group === filter;
-    });
-  }, [items, filter]);
+  const [filter, setFilter] = useState<OrderFilter>('all');
 
   const totalPages = data?.totalPages || 1;
   const total = data?.total || 0;
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: total };
+  const statusCounts = (() => {
+    const counts: Record<string, number> = { all: total, active: 0, done: 0, cancelled: 0 };
     for (const item of items) {
       const meta = STATUS_META[item.status];
       if (!meta) continue;
       counts[meta.group] = (counts[meta.group] || 0) + 1;
     }
     return counts;
-  }, [items, total]);
+  })();
 
-  return (
-    <div className="min-h-screen bg-mesh-brand pb-24 relative">
-      <div className="max-w-7xl mx-auto px-6 md:px-16 lg:px-24 py-10 space-y-8">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-brand-gradient elevation-brand flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-white text-[28px]">receipt_long</span>
-          </div>
-          <div>
-            <h1 className="font-headline-lg font-extrabold text-3xl sm:text-4xl text-neutral-900">Lịch sử đơn hàng</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">Các đơn nhận thực phẩm từ cửa hàng của bạn.</p>
+  const filtered = items.filter((item) => {
+    const meta = STATUS_META[item.status];
+    if (!meta) return true;
+    if (filter === 'all') return true;
+    return meta.group === filter;
+  });
+
+  const filterOptions: FilterOption<OrderFilter>[] = [
+    { value: 'all',       label: 'Tất cả',         count: statusCounts.all       ?? 0 },
+    { value: 'active',    label: 'Đang xử lý',     count: statusCounts.active    ?? 0 },
+    { value: 'done',      label: 'Hoàn thành',     count: statusCounts.done      ?? 0 },
+    { value: 'cancelled', label: 'Đã huỷ / hết',  count: statusCounts.cancelled ?? 0 },
+  ];
+
+  const orderColumns: Column<ProviderOrderItem>[] = [
+    {
+      key: 'code',
+      header: 'Mã đơn',
+      width: '120px',
+      cell: (i) => <span className="font-mono text-[12px] text-neutral-500">#{i.id.slice(0, 8).toUpperCase()}</span>,
+    },
+    {
+      key: 'item',
+      header: 'Thực phẩm',
+      cell: (i) => (
+        <div className="flex items-center gap-3 min-w-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={i.listing.imageUrls[0] || FALLBACK_IMAGE[i.listing.category] || '/food_salad.png'}
+            alt={i.listing.title}
+            className="w-10 h-10 rounded-lg object-cover bg-neutral-100 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="font-bold text-neutral-900 truncate">{i.listing.title}</p>
+            <p className="text-[11px] text-neutral-500 truncate">{i.listing.pickupAddress}</p>
           </div>
         </div>
+      ),
+    },
+    {
+      key: 'receiver',
+      header: 'Người nhận',
+      cell: (i) => (
+        <div className="min-w-0">
+          <p className="font-bold text-neutral-800 truncate">{i.receiver.user.fullName}</p>
+          {i.receiver.user.phone && <p className="text-[11px] text-neutral-500">{i.receiver.user.phone}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'qty',
+      header: 'Số lượng',
+      align: 'right',
+      width: '120px',
+      cell: (i) => <span className="font-bold text-neutral-800 tabular-nums">{formatWeight(i)}</span>,
+    },
+    {
+      key: 'createdAt',
+      header: 'Ngày đặt',
+      width: '140px',
+      cell: (i) => <span className="text-[12px] text-neutral-600 tabular-nums">{formatDateTime(i.createdAt)}</span>,
+    },
+    {
+      key: 'status',
+      header: 'Trạng thái',
+      width: '160px',
+      cell: (i) => {
+        const meta = STATUS_META[i.status] ?? { label: i.status, badge: 'badge-neutral', accent: 'bg-neutral-300', group: 'active' as const };
+        return <span className={`badge ${meta.badge}`}>{meta.label}</span>;
+      },
+    },
+  ];
 
-        {/* Error */}
+  return (
+    <div className="flex-1 min-w-0 bg-mesh-brand">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
+        <ProviderHeaderCard
+          crumbs={[{ href: '/provider', label: 'Cửa hàng' }, { label: 'Đơn hàng' }]}
+          eyebrow="Lịch sử"
+          title="Đơn nhận thực phẩm"
+          description="Tất cả đơn người dùng đã nhận từ cửa hàng của bạn, kèm trạng thái giao nhận và thời gian xử lý."
+          meta={
+            <p className="text-xs text-neutral-500">
+              Tổng cộng <b className="text-neutral-800">{total}</b> đơn · trang {page}/{totalPages}
+            </p>
+          }
+        />
+
         {isError && (
-          <div className="text-center py-12 bg-white rounded-3xl border border-rose-100 elevation-1">
+          <div className="text-center py-12 bg-white rounded-2xl border border-rose-100 shadow-sm">
             <div className="w-16 h-16 mx-auto rounded-full bg-rose-50 flex items-center justify-center">
               <span className="material-symbols-outlined text-rose-500 text-[36px]">wifi_off</span>
             </div>
@@ -102,139 +174,39 @@ export default function ProviderOrdersPage() {
 
         {!isError && (
           <>
-            {/* Stats row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Tổng đơn', value: statusCounts.all ?? 0, icon: 'inventory_2', color: 'from-emerald-600 to-teal-700' },
-                { label: 'Đang xử lý', value: statusCounts['active'] ?? 0, icon: 'hourglass_top', color: 'from-sky-500 to-blue-600' },
-                { label: 'Hoàn thành', value: statusCounts['done'] ?? 0, icon: 'check_circle', color: 'from-emerald-500 to-green-600' },
-                { label: 'Đã huỷ/hết', value: statusCounts['cancelled'] ?? 0, icon: 'cancel', color: 'from-neutral-400 to-neutral-500' },
-              ].map((stat) => (
-                <div key={stat.label} className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm">
-                  <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center mb-2`}>
-                    <span className="material-symbols-outlined text-white text-[18px]">{stat.icon}</span>
-                  </div>
-                  <p className="text-2xl font-extrabold text-neutral-900">{stat.value}</p>
-                  <p className="text-[11px] text-neutral-500 font-bold">{stat.label}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <StatCell tone="sage"    icon="inventory_2"    value={statusCounts.all ?? 0}      label="Tổng đơn" />
+              <StatCell tone="sky"     icon="hourglass_top"  value={statusCounts.active ?? 0}   label="Đang xử lý" />
+              <StatCell tone="sage"    icon="check_circle"   value={statusCounts.done ?? 0}     label="Hoàn thành" />
+              <StatCell tone="neutral" icon="cancel"         value={statusCounts.cancelled ?? 0} label="Đã huỷ/hết" />
+            </div>
+
+            <FilterBar<OrderFilter>
+              value={filter}
+              onChange={setFilter}
+              options={filterOptions}
+            />
+
+            <DataTable<ProviderOrderItem>
+              rows={filtered}
+              rowKey={(i) => i.id}
+              loading={isLoading && items.length === 0}
+              columns={orderColumns}
+              empty={
+                <div className="py-6 flex flex-col items-center gap-2 text-neutral-450">
+                  <span className="material-symbols-outlined text-[44px] text-neutral-250">receipt_long</span>
+                  <p className="font-extrabold text-sm text-neutral-600">Chưa có đơn hàng nào</p>
+                  <p className="text-xs">Khi người dùng nhận thực phẩm của bạn, đơn sẽ hiện ở đây.</p>
                 </div>
-              ))}
-            </div>
+              }
+            />
 
-            {/* Filter */}
-            <div className="relative">
-              <button
-                onClick={() => setShowFilter(!showFilter)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-neutral-700 hover:bg-neutral-50 transition-colors shadow-sm"
-              >
-                <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                {filter === 'all' ? 'Tất cả' : filter === 'active' ? 'Đang xử lý' : filter === 'done' ? 'Hoàn thành' : 'Đã huỷ/hết'}
-                <span className="material-symbols-outlined text-[16px] text-neutral-400">keyboard_arrow_down</span>
-              </button>
-              {showFilter && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setShowFilter(false)} />
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-30 py-2">
-                    {[
-                      ['all', 'Tất cả'],
-                      ['active', 'Đang xử lý'],
-                      ['done', 'Hoàn thành'],
-                      ['cancelled', 'Đã huỷ/hết'],
-                    ].map(([val, label]) => (
-                      <button
-                        key={val}
-                        onClick={() => { setFilter(val as typeof filter); setShowFilter(false); }}
-                        className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors hover:bg-neutral-50 ${
-                          filter === val ? 'text-emerald-700 bg-emerald-50' : 'text-neutral-600'
-                        }`}
-                      >
-                        {label} ({statusCounts[val] ?? 0})
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Loading */}
-            {isLoading && items.length === 0 && (
-              <div className="space-y-4">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-28 rounded-2xl bg-white border border-neutral-200 animate-pulse" />
-                ))}
-              </div>
-            )}
-
-            {/* Empty */}
-            {!isLoading && !isError && filtered.length === 0 && (
-              <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-neutral-200">
-                <div className="w-20 h-20 mx-auto rounded-full bg-brand-gradient-soft flex items-center justify-center">
-                  <span className="material-symbols-outlined text-emerald-600 text-[44px]">receipt_long</span>
-                </div>
-                <h3 className="font-extrabold text-lg text-neutral-800 mt-4">Chưa có đơn hàng nào</h3>
-                <p className="text-sm text-neutral-500 mt-1">Khi người dùng nhận thực phẩm của bạn, đơn sẽ hiện ở đây.</p>
-              </div>
-            )}
-
-            {/* Cards */}
-            <div className="space-y-4">
-              {filtered.map((item) => {
-                const meta = STATUS_META[item.status] || { label: item.status, badge: 'badge-neutral', accent: 'bg-neutral-300', group: 'active' as const };
-                return (
-                  <div
-                    key={item.id}
-                    className="bg-white rounded-2xl border border-neutral-150 shadow-sm overflow-hidden"
-                  >
-                    <div className="flex items-center gap-4 p-5">
-                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
-                        <img
-                          src={item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png'}
-                          alt={item.listing.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-extrabold text-neutral-900 text-base truncate">{item.listing.title}</h3>
-                          <span className={`badge ${meta.badge} shrink-0`}>{meta.label}</span>
-                        </div>
-                        <p className="text-xs text-neutral-500 font-bold mt-1 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">person</span>
-                          {item.receiver.user.fullName}
-                          {item.receiver.user.phone && <span className="text-neutral-400">· {item.receiver.user.phone}</span>}
-                        </p>
-                        <div className="flex items-center gap-4 text-[11px] text-neutral-500 font-bold mt-1.5">
-                          <span className="flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-                            {new Date(item.createdAt).toLocaleDateString('vi-VN')}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px]">scale</span>
-                            {formatWeight(item)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="shrink-0">
-                        <span className={`inline-block w-1 h-10 rounded-full ${meta.accent}`} />
-                      </div>
-                    </div>
-                    {item.listing.pickupAddress && (
-                      <div className="border-t border-neutral-100 px-5 py-2.5 flex items-center gap-1.5 text-[11px] text-neutral-500">
-                        <span className="material-symbols-outlined text-[14px]">place</span>
-                        {item.listing.pickupAddress}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-2 mt-10">
+              <div className="flex justify-center items-center gap-2 mt-6">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
-                  className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
+                  className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors bg-white"
                 >
                   <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                 </button>
@@ -244,7 +216,7 @@ export default function ProviderOrdersPage() {
                       key={p}
                       onClick={() => setPage(p)}
                       className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
-                        p === page ? 'bg-emerald-600 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                        p === page ? 'bg-emerald-700 text-white' : 'text-neutral-600 hover:bg-neutral-100 bg-white border border-neutral-150'
                       }`}
                     >
                       {p}
@@ -254,7 +226,7 @@ export default function ProviderOrdersPage() {
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
-                  className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
+                  className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors bg-white"
                 >
                   <span className="material-symbols-outlined text-[20px]">chevron_right</span>
                 </button>
