@@ -11,7 +11,6 @@ import {
   Min,
   MinLength,
   IsArray,
-  IsUrl,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -125,10 +124,16 @@ export class RegisterDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Provider: URL ảnh minh chứng (ảnh GPKD/giấy ĐKKD ở index 0, các ảnh khác là mặt tiền/kệ/biển hiệu). Upload qua POST /uploads/image?kind=verification trước khi gửi register.',
+      'Provider: ảnh minh chứng (GPKD/giấy ĐKKD ở index 0, các ảnh khác là mặt tiền/kệ/biển hiệu). Upload qua POST /uploads/register-evidence trước khi gửi register — trả về đường dẫn tương đối /uploads/verifications/...',
   })
   @IsOptional()
   @IsArray()
-  @IsUrl({}, { each: true })
+  // Upload trả đường dẫn tương đối (/uploads/...) — @IsUrl sẽ đánh rớt (và còn chặn
+  // cả http://localhost vì require_tld), nên chỉ chấp nhận đúng 2 dạng an toàn này.
+  @IsString({ each: true })
+  @Matches(/^(\/uploads\/|https?:\/\/)/, {
+    each: true,
+    message: 'Mỗi ảnh minh chứng phải là đường dẫn /uploads/... hoặc URL http(s)',
+  })
   evidenceUrls?: string[];
 }

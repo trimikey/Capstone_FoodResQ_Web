@@ -45,6 +45,7 @@ import {
   type CreateUserInput,
 } from '@/hooks/useAdmin';
 import { useListings } from '@/hooks/useListings';
+import { mediaUrl } from '@/lib/utils';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import { useAuthStore } from '@/stores/auth.store';
 import NotificationBell from '@/components/shared/NotificationBell';
@@ -90,7 +91,8 @@ const MAIN_TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
   { key: 'campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
   { key: 'food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
-  { key: 'volunteers', label: 'Duyệt hồ sơ NCC/TNV mới', icon: 'group' },
+  // Tab "Duyệt hồ sơ NCC/TNV mới" đã gộp vào "Quản lý tài khoản": bấm Chi tiết
+  // trên tài khoản chờ duyệt sẽ mở modal hồ sơ đầy đủ (GPKD, địa chỉ, duyệt/từ chối).
   { key: 'reports', label: 'Xử lý khiếu nại', icon: 'warning' },
   { key: 'monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
   { key: 'users', label: 'Quản lý tài khoản (khoá/mở)', icon: 'manage_accounts' },
@@ -223,7 +225,6 @@ export default function AdminPage() {
           {tab === 'donations' && <DonationsTab />}
           {tab === 'campaigns' && <CampaignsAdminTab />}
           {tab === 'food' && <FoodAdminTab />}
-          {tab === 'volunteers' && <VerifyTab />}
           {tab === 'reports' && <ReportsTab />}
           {tab === 'monitor' && <MonitorTab />}
           {tab === 'users' && <UsersTab />}
@@ -454,7 +455,7 @@ function DashboardTab() {
                   return (
                     <div key={i} className="absolute w-8 h-8 -ml-4 -mt-4 flex justify-center group cursor-pointer z-10" style={{ left: `${x}%`, top: `${y}%` }}>
                       <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900 text-white text-[10px] py-1 px-2 rounded-md font-bold whitespace-nowrap shadow-lg">
-                        {fmtKg(t.kg)}
+                        Thg {Number(t.ym.split('-')[1])} · {fmtKg(t.kg)}
                       </div>
                     </div>
                   );
@@ -1753,14 +1754,15 @@ function VerifyTab() {
                                       {v.evidenceUrls.map((u: string, i: number) => (
                                         <a
                                           key={u}
-                                          href={u}
+                                          /* Ảnh lưu ở API — ghép origin :3001, để trần sẽ 404 vì trỏ vào web :3000 */
+                                          href={mediaUrl(u)}
                                           target="_blank"
                                           rel="noreferrer"
                                           className="relative w-16 h-16 rounded-lg overflow-hidden border border-neutral-200 hover:opacity-90"
                                           title={i === 0 ? 'GPKD / ĐKKD' : `Ảnh ${i + 1}`}
                                         >
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                                          <img src={u} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                                          <img src={mediaUrl(u)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
                                           {i === 0 && (
                                             <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-emerald-700 text-white text-center py-0.5">
                                               GPKD
@@ -1940,12 +1942,12 @@ function VerifyTab() {
                         <button
                           type="button"
                           key={u}
-                          onClick={() => setZoomedImg(u)}
+                          onClick={() => setZoomedImg(mediaUrl(u))}
                           className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group"
                           title="Bấm để phóng to"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL: Next/Image not configured for arbitrary user paths */}
-                          <img src={u} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                          <img src={mediaUrl(u)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
                           <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">
                             #{i + 1}
                           </span>
@@ -2378,7 +2380,7 @@ function UsersTab() {
       </button>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} />}
-      {detailUser && <UserDetailModal u={detailUser} onClose={() => setDetailUser(null)} onAct={act} reviewProfile={reviewUserProfile} />}
+      {detailUser && <UserDetailModal u={detailUser} onClose={() => setDetailUser(null)} onAct={act} />}
     </div>
   );
 }
@@ -2455,42 +2457,228 @@ function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser;
   );
 }
 
-function UserDetailModal({ u, onClose, onAct, reviewProfile }: { u: AdminUser; onClose: () => void; onAct: (id: string, s: 'active' | 'banned') => void; reviewProfile?: (profileId: string, decision: 'approved' | 'rejected') => void }) {
+/**
+ * Modal chi tiết tài khoản trong "Quản lý tài khoản" — thay thế tab duyệt riêng:
+ * tài khoản đang CHỜ DUYỆT sẽ hiện đầy đủ hồ sơ (liên hệ, doanh nghiệp, GPKD,
+ * ghi chú) + nút Duyệt/Từ chối như màn duyệt NCC/TNV cũ; tài khoản thường thì
+ * hiện thông tin + khoá/mở.
+ */
+function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => void; onAct: (id: string, s: 'active' | 'banned') => void }) {
+  const { data: verifs } = useVerifications();
+  const review = useReviewVerification();
+  const [note, setNote] = useState('');
+  const [zoomedImg, setZoomedImg] = useState<string | null>(null);
+
+  // Hồ sơ chờ duyệt tương ứng tài khoản này (khớp profileId, fallback email)
+  const verif =
+    (verifs ?? []).find((v) => u.profileId && v.profileId === u.profileId) ??
+    (verifs ?? []).find((v) => v.email?.toLowerCase() === u.email.toLowerCase());
+
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
-  const canApprove = u.role !== 'admin' && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
+
+  async function decide(decision: 'approved' | 'rejected') {
+    if (!verif) return;
+    try {
+      await review.mutateAsync({ type: verif.type, id: verif.profileId, decision, note: note.trim() || undefined });
+      toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
+      onClose();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
+      toast.error(msg);
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#166534] px-6 py-6 text-white flex flex-col items-center text-center relative">
-          <button onClick={onClose} className="absolute top-3 right-3 p-1 hover:bg-white/15 rounded-full"><span className="material-symbols-outlined">close</span></button>
-          <div className="w-20 h-20 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center font-extrabold text-3xl overflow-hidden">
-            {u.avatarUrl ? (/* eslint-disable-next-line @next/next/no-img-element */ <img src={u.avatarUrl} alt={u.fullName} className="w-full h-full object-cover" />) : u.fullName.charAt(0).toUpperCase()}
-          </div>
-          <p className="font-extrabold text-xl mt-3">{u.fullName}</p>
-          <span className={`badge ${role.cls} mt-1`}>{role.label}</span>
-        </div>
-        <div className="p-6 space-y-3">
-          <AccountRow icon="mail" label="Email" value={u.email} />
-          <AccountRow icon="verified_user" label="Điểm uy tín" value={`${u.trustScore}/100 (${trustToFive(u.trustScore).toFixed(1)}/5.0)`} />
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0"><span className="material-symbols-outlined text-[20px] text-neutral-500">toggle_on</span></div>
-            <div><p className="text-[11px] text-neutral-400 font-bold uppercase tracking-wide">Trạng thái</p><span className={`inline-flex items-center gap-1.5 text-sm font-bold ${st.text}`}><span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}</span></div>
-          </div>
-          <AccountRow icon="schedule" label="Ngày tạo" value={new Date(u.createdAt).toLocaleDateString('vi-VN')} />
-          {u.role !== 'admin' && (
-            <div className="flex gap-2 pt-2">
-              {u.status === 'banned' ? (
-                <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="flex-1 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl transition-colors">Khôi phục tài khoản</button>
-              ) : u.status === 'pending_verification' ? (
-                <button onClick={() => { canApprove ? reviewProfile(u.profileId!, 'approved') : onAct(u.id, 'active'); onClose(); }} className="flex-1 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl transition-colors">Xét duyệt</button>
-              ) : (
-                <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-sm rounded-xl transition-colors">Khoá tài khoản</button>
+      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="p-6 border-b border-neutral-100 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`badge ${role.cls}`}>{role.label}</span>
+              {verif?.type === 'provider' && verif.businessType && (
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] font-semibold">
+                  {verif.businessType === 'restaurant' && '🍜 Nhà hàng'}
+                  {verif.businessType === 'supermarket' && '🛒 Siêu thị'}
+                  {verif.businessType === 'bakery' && '🥖 Tiệm bánh'}
+                  {verif.businessType === 'hotel' && '🏨 Khách sạn'}
+                  {verif.businessType === 'other' && '📦 Khác'}
+                </span>
               )}
+              <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${st.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
+              </span>
             </div>
+            <h2 className="font-extrabold text-2xl text-neutral-900 mt-1.5">{u.fullName}</h2>
+            <p className="text-sm text-neutral-500 mt-1">Đăng ký lúc {new Date(u.createdAt).toLocaleString('vi-VN')}</p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0" aria-label="Đóng">
+            <span className="material-symbols-outlined text-neutral-700">close</span>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-5 max-h-[62vh] overflow-y-auto">
+          {/* Thông tin liên hệ */}
+          <section>
+            <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin liên hệ</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+              <div>
+                <p className="text-[11px] text-neutral-500">Email</p>
+                <p className="font-semibold text-neutral-900 break-all">{u.email}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-neutral-500">Số điện thoại</p>
+                <p className="font-semibold text-neutral-900">{verif?.phone || '—'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-neutral-500">Điểm uy tín</p>
+                <p className="font-semibold text-neutral-900">{u.trustScore}/100 ({trustToFive(u.trustScore).toFixed(1)}/5.0)</p>
+              </div>
+            </div>
+          </section>
+
+          {/* Provider chờ duyệt: thông tin doanh nghiệp */}
+          {verif?.type === 'provider' && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin doanh nghiệp</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+                <div className="sm:col-span-2">
+                  <p className="text-[11px] text-neutral-500">Tên cửa hàng</p>
+                  <p className="font-bold text-neutral-900">{verif.businessName || u.fullName}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-neutral-500">Mã số thuế</p>
+                  <p className="font-mono font-semibold text-neutral-900">
+                    {verif.taxCode ?? <span className="text-rose-600 italic">Không có (cá nhân/hộ gia đình)</span>}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-neutral-500">Liên hệ NCC</p>
+                  <p className="font-semibold text-neutral-900">{verif.contactPhone || verif.phone || '—'}</p>
+                </div>
+                {verif.address && (
+                  <div className="sm:col-span-2">
+                    <p className="text-[11px] text-neutral-500">Địa chỉ</p>
+                    <p className="font-semibold text-neutral-900">{verif.address}</p>
+                    {verif.lng != null && verif.lat != null && (
+                      <a
+                        href={`https://www.google.com/maps?q=${verif.lat},${verif.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-1"
+                      >
+                        <span className="material-symbols-outlined text-sm">map</span>
+                        Mở Google Maps ({verif.lat.toFixed(5)}, {verif.lng.toFixed(5)})
+                      </a>
+                    )}
+                  </div>
+                )}
+                {verif.description && (
+                  <div className="sm:col-span-2">
+                    <p className="text-[11px] text-neutral-500">Mô tả</p>
+                    <p className="italic text-neutral-800">&ldquo;{verif.description}&rdquo;</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Provider chờ duyệt: bằng chứng GPKD / mặt tiền */}
+          {verif?.type === 'provider' && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Bằng chứng ({verif.evidenceUrls?.length ?? 0} ảnh)</h3>
+              {!verif.evidenceUrls || verif.evidenceUrls.length === 0 ? (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+                  <strong>Không có ảnh minh chứng.</strong> Cân nhắc từ chối vì không đủ điều kiện xác minh.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {verif.evidenceUrls.map((eu: string, i: number) => (
+                    <button
+                      type="button"
+                      key={eu}
+                      onClick={() => setZoomedImg(mediaUrl(eu))}
+                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group"
+                      title="Bấm để phóng to"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                      <img src={mediaUrl(eu)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                      <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">#{i + 1}</span>
+                      {i === 0 && (
+                        <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">GPKD / ĐKKD</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* TNV chờ duyệt: chuyên môn / phương tiện */}
+          {verif?.type === 'volunteer' && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Mô tả năng lực</h3>
+              <div className="bg-neutral-50 rounded-2xl p-4 text-sm text-neutral-800">{verif.detail}</div>
+            </section>
+          )}
+
+          {/* Ghi chú kèm kết quả duyệt */}
+          {verif && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Ghi chú cho NCC/TNV (tuỳ chọn, sẽ gửi kèm kết quả)</h3>
+              <textarea
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={verif.type === 'provider' ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.' : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'}
+                className="w-full px-4 py-3 bg-white border-2 border-neutral-200 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-neutral-400 resize-none"
+              />
+            </section>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex gap-3 justify-end">
+          <button onClick={onClose} disabled={review.isPending} className="px-5 py-2.5 bg-white border border-neutral-200 text-neutral-700 rounded-full font-bold text-sm hover:bg-neutral-50">
+            Đóng
+          </button>
+          {verif ? (
+            <>
+              <button onClick={() => void decide('rejected')} disabled={review.isPending} className="px-5 py-2.5 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full font-bold text-sm disabled:opacity-50">
+                Từ chối
+              </button>
+              <button onClick={() => void decide('approved')} disabled={review.isPending} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm disabled:opacity-50 shadow-sm">
+                Duyệt hồ sơ
+              </button>
+            </>
+          ) : u.role !== 'admin' && (
+            u.status === 'banned' ? (
+              <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm shadow-sm">
+                Khôi phục tài khoản
+              </button>
+            ) : (
+              <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full font-bold text-sm">
+                Khoá tài khoản
+              </button>
+            )
           )}
         </div>
       </div>
+
+      {/* Lightbox phóng to ảnh */}
+      {zoomedImg && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => { e.stopPropagation(); setZoomedImg(null); }}
+          className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-6 cursor-zoom-out"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- dynamic URL served by /uploads */}
+          <img src={zoomedImg} alt="zoom" className="max-w-full max-h-full object-contain cursor-default" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }

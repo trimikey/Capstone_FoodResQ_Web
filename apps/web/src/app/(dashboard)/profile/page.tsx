@@ -266,7 +266,7 @@ export default function ProfilePage() {
         <div className="absolute -top-12 -left-12 w-40 h-40 rounded-full bg-emerald-400/10" />
         <div className="absolute bottom-0 -left-16 w-56 h-56 rounded-full bg-white/5" />
 
-        <div className="relative max-w-5xl mx-auto px-6 md:px-12 pt-10 pb-14">
+        <div className="relative max-w-5xl mx-auto px-6 md:px-12 pt-10 pb-14 md:pt-14 md:pb-20">
           <div className="flex flex-col md:flex-row items-start gap-8">
             {/* Avatar */}
             <div className="relative shrink-0">
@@ -368,7 +368,7 @@ export default function ProfilePage() {
       </div>
 
       {/* ── MAIN CONTENT ────────────────────────────────────── */}
-      <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12 mt-0">
+      <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12 -mt-6 md:-mt-10 pb-12 md:pb-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* LEFT: Trust + contact */}
           <div className="lg:col-span-4 space-y-6">

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { mediaUrl } from '@/lib/utils';
 
 export interface ListingItem {
   id: string;
@@ -66,8 +67,9 @@ export default function ListingCard({ listing }: Props) {
     '/food_bread.png', 
     '/food_lunchbox.png'
   ];
-  const imageUrl = (listing.imageUrls.length > 0 && !oldMocks.includes(listing.imageUrls[0])) 
-    ? listing.imageUrls[0] 
+  // mediaUrl: ảnh upload (/uploads/...) phải ghép origin API :3001, ảnh public giữ nguyên
+  const imageUrl = (listing.imageUrls.length > 0 && !oldMocks.includes(listing.imageUrls[0]))
+    ? mediaUrl(listing.imageUrls[0])
     : fallbackImage;
 
   return (

@@ -5,11 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Ảnh upload nằm ở /uploads trên API server (cổng 3001) → ghép origin (bỏ đuôi /api/v1)
+// Ảnh upload nằm ở /uploads trên API server (cổng 3001) → ghép origin (bỏ đuôi /api/v1).
+// CHỈ prefix đường dẫn /uploads — ảnh tĩnh của web (/banh-mi.png trong public/) và
+// URL http(s) giữ nguyên, nếu prefix bừa sẽ 404 vì API không serve chúng.
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
-  return path.startsWith('http') ? path : `${API_ORIGIN}${path}`;
+  if (path.startsWith('http')) return path;
+  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
 }
 
 // Link điều hướng Google Maps tới một toạ độ
