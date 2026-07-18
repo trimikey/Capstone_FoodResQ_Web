@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -165,6 +165,16 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   // null = chưa định vị (BE sẽ chỉ lưu địa chỉ dạng text, không lưu location).
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
+  // Check email trùng real-time (debounce 500ms)
+  const [emailExists, setEmailExists] = useState<{ checking: boolean; exists: boolean }>({
+    checking: false,
+    exists: false,
+  });
+  // Check phone trùng real-time (debounce 500ms)
+  const [phoneExists, setPhoneExists] = useState<{ checking: boolean; exists: boolean }>({
+    checking: false,
+    exists: false,
+  });
   const router = useRouter();
 
   // 1. Login form setup
@@ -215,11 +225,84 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   });
 
   const selectedRole = watchRegister("role");
+  const watchedEmail = watchRegister("email");
+  const watchedPhone = watchRegister("phone");
+
+  // Debounce check email trùng real-time (500ms sau khi ngừng gõ)
+  useEffect(() => {
+    if (!watchedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(watchedEmail)) {
+      setEmailExists({ checking: false, exists: false });
+      return;
+    }
+    setEmailExists((prev) => ({ ...prev, checking: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.post("/auth/check-email", { email: watchedEmail });
+        // Support both { data: { exists: true } } and { exists: true }
+        const exists = res.data?.data?.exists ?? res.data?.exists ?? false;
+        setEmailExists({ checking: false, exists });
+      } catch {
+        // Nếu API fail, reset state
+        setEmailExists({ checking: false, exists: false });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [watchedEmail]);
+
+  // Debounce check phone trùng real-time (500ms sau khi ngừng gõ)
+  useEffect(() => {
+    if (!watchedPhone || !/^0[35789][0-9]{8}$/.test(watchedPhone)) {
+      setPhoneExists({ checking: false, exists: false });
+      return;
+    }
+    setPhoneExists((prev) => ({ ...prev, checking: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.post("/auth/check-phone", { phone: watchedPhone });
+        const exists = res.data?.data?.exists ?? res.data?.exists ?? false;
+        setPhoneExists({ checking: false, exists });
+      } catch {
+        setPhoneExists({ checking: false, exists: false });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [watchedPhone]);
 
   const handleNextStep = async () => {
     // Validate Step 1 fields before proceeding
     const isValid = await trigger(["fullName", "email", "phone", "password", "confirmPassword", "role"]);
-    if (isValid) {
+    if (!isValid) return;
+
+    // Check trùng email/phone trước khi cho qua bước tiếp theo
+    const email = watchRegister("email");
+    const phone = watchRegister("phone");
+    let hasDuplicate = false;
+
+    try {
+      // Check email trùng
+      if (email) {
+        const emailRes = await api.post("/auth/check-email", { email });
+        if (emailRes.data?.data?.exists ?? emailRes.data?.exists) {
+          setEmailExists({ checking: false, exists: true });
+          toast.error("Email này đã được đăng ký. Vui lòng dùng email khác.");
+          hasDuplicate = true;
+        }
+      }
+
+      // Check phone trùng
+      if (phone && !hasDuplicate) {
+        const phoneRes = await api.post("/auth/check-phone", { phone });
+        if (phoneRes.data?.data?.exists ?? phoneRes.data?.exists) {
+          setPhoneExists({ checking: false, exists: true });
+          toast.error("Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.");
+          hasDuplicate = true;
+        }
+      }
+    } catch {
+      // Nếu API lỗi thì cho qua (BE sẽ validate lại khi submit)
+    }
+
+    if (!hasDuplicate) {
       setRegisterStep(2);
     }
   };
@@ -470,7 +553,16 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       toast.success('Đăng ký thành công!');
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
-      router.push(data.role === 'volunteer' ? '/deliveries' : '/listings');
+
+      // Redirect volunteer theo specialization: chef/waiter → campaigns, shipper → deliveries
+      const volRole = data.volunteerRole;
+      const redirect =
+        data.role === 'volunteer' && (volRole === 'chef' || volRole === 'waiter')
+          ? '/campaigns'
+          : data.role === 'volunteer'
+            ? '/deliveries'
+            : '/listings';
+      router.push(redirect);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -794,15 +886,34 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-email"
                             type="email"
                             placeholder="example@email.com"
-                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
-                              registerErrors.email ? "border-error" : "border-neutral-200/30"
+                            className={`w-full pl-12 pr-10 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.email || emailExists.exists
+                                ? "border-error"
+                                : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("email")}
                           />
+                          {/* Check icon hoặc loading spinner */}
+                          {watchedEmail && !registerErrors.email && (
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                              {emailExists.checking ? (
+                                <span className="animate-spin material-symbols-outlined text-neutral-400 text-lg">progress_activity</span>
+                              ) : emailExists.exists ? (
+                                <span className="material-symbols-outlined text-rose-500 text-lg">error</span>
+                              ) : (
+                                <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                         {registerErrors.email && (
                           <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.email.message}</p>
+                        )}
+                        {emailExists.exists && !registerErrors.email && (
+                          <p className="text-rose-600 text-sm ml-1 mt-2">
+                            Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.
+                          </p>
                         )}
                       </div>
 
@@ -819,15 +930,33 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-phone"
                             type="text"
                             placeholder="0912345678"
-                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
-                              registerErrors.phone ? "border-error" : "border-neutral-200/30"
+                            className={`w-full pl-12 pr-10 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.phone || phoneExists.exists
+                                ? "border-error"
+                                : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("phone")}
                           />
+                          {watchedPhone && !registerErrors.phone && (
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                              {phoneExists.checking ? (
+                                <span className="animate-spin material-symbols-outlined text-neutral-400 text-lg">progress_activity</span>
+                              ) : phoneExists.exists ? (
+                                <span className="material-symbols-outlined text-rose-500 text-lg">error</span>
+                              ) : (
+                                <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                         {registerErrors.phone && (
                           <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.phone.message}</p>
+                        )}
+                        {phoneExists.exists && !registerErrors.phone && (
+                          <p className="text-rose-600 text-sm ml-1 mt-2">
+                            Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.
+                          </p>
                         )}
                       </div>
 
@@ -967,10 +1096,20 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <button
                         type="button"
                         onClick={handleNextStep}
-                        className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
+                        disabled={emailExists.exists || emailExists.checking || phoneExists.exists || phoneExists.checking}
+                        className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Tiếp tục
-                        <span className="material-symbols-outlined">arrow_forward</span>
+                        {emailExists.checking ? (
+                          <>
+                            <span className="animate-spin border-2 border-white border-t-transparent rounded-full w-5 h-5 mr-2"></span>
+                            Đang kiểm tra email...
+                          </>
+                        ) : (
+                          <>
+                            Tiếp tục
+                            <span className="material-symbols-outlined">arrow_forward</span>
+                          </>
+                        )}
                       </button>
                     </>
                   ) : (

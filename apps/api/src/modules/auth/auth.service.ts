@@ -392,6 +392,28 @@ export class AuthService {
     });
   }
 
+  async checkEmailExists(email: string) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { exists: false };
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    return { exists: !!user };
+  }
+
+  async checkPhoneExists(phone: string) {
+    if (!phone || !/^0[35789][0-9]{8}$/.test(phone)) {
+      return { exists: false };
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      select: { id: true },
+    });
+    return { exists: !!user };
+  }
+
   private async issueTokens(user: User, deviceInfo?: string, ipAddress?: string) {
     const payload = { sub: user.id, email: user.email, role: user.role };
 

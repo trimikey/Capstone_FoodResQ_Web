@@ -73,6 +73,18 @@ export class AuthController {
     return this.authService.loginWithGoogle(dto.idToken, ua, ip);
   }
 
+  @Post('check-email')
+  @ApiOperation({ summary: 'Kiểm tra email đã được đăng ký chưa' })
+  checkEmail(@Body('email') email: string) {
+    return this.authService.checkEmailExists(email);
+  }
+
+  @Post('check-phone')
+  @ApiOperation({ summary: 'Kiểm tra số điện thoại đã được đăng ký chưa' })
+  checkPhone(@Body('phone') phone: string) {
+    return this.authService.checkPhoneExists(phone);
+  }
+
   @Post('firebase')
   @ApiOperation({ summary: 'Login/Register bằng Firebase ID token (Google sign-in)' })
   firebase(
