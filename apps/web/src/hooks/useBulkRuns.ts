@@ -1,45 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { ApiResponse } from '@foodresq/types';
+import { BulkRunStatus, type ApiResponse, type BulkRun, type BulkRunStop } from '@foodresq/types';
 
 // Ngưỡng giao sỉ — khớp BULK_MIN_QTY phía BE
 export const BULK_MIN_QTY = 10;
 
-export interface BulkStop {
-  id: string;
-  label: string;
-  address: string | null;
-  plannedQty: number | null;
-  servedQty: number;
-  photoUrl: string | null;
-  note: string | null;
-  createdBy: 'provider' | 'shipper';
-  orderIndex: number;
-  servedAt: string | null;
-  coords: { lng: number; lat: number } | null;
-}
+export type { BulkRun, BulkRunStop } from '@foodresq/types';
+export type BulkStop = BulkRunStop;
 
-export interface BulkRun {
-  id: string;
-  listingId: string;
-  quantity: number;
-  quantityDistributed: number;
-  status: 'requested' | 'approved' | 'rejected' | 'picked_up' | 'completed' | 'cancelled';
-  note: string | null;
-  rejectReason: string | null;
-  qcPhotoUrl: string | null;
-  createdAt: string;
-  approvedAt: string | null;
-  pickedUpAt: string | null;
-  completedAt: string | null;
-  pickupCoords: { lng: number; lat: number } | null;
-  listing: { title: string; pickupAddress: string; imageUrls?: string[] };
-  provider?: { businessName: string; contactPhone: string | null };
-  shipper?: { rank: string; dedicationPoints: number; user: { fullName: string; phone: string | null } };
-  stops: BulkStop[];
-}
-
-const ACTIVE_STATUSES: BulkRun['status'][] = ['requested', 'approved', 'picked_up'];
+const ACTIVE_STATUSES: BulkRun['status'][] = [
+  BulkRunStatus.REQUESTED,
+  BulkRunStatus.APPROVED,
+  BulkRunStatus.PICKED_UP,
+];
 export const isActiveRun = (r: BulkRun) => ACTIVE_STATUSES.includes(r.status);
 
 // ── Queries ──────────────────────────────────────────────────────────────────

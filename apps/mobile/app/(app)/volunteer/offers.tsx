@@ -654,6 +654,27 @@ export default function VolunteerOffersScreen() {
           </Button>
         ) : null}
       </View>
+      <View style={styles.bulkEntry}>
+        <View style={styles.bulkEntryIcon}>
+          <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.primary} />
+        </View>
+        <View style={styles.bulkEntryText}>
+          <Text style={styles.bulkEntryTitle}>Giao sỉ nhiều điểm</Text>
+          <Text style={styles.bulkEntrySub} numberOfLines={2}>
+            Nhận từ 10 phần, lấy tại provider rồi phát dọc tuyến.
+          </Text>
+        </View>
+        <Button
+          mode="contained-tonal"
+          compact
+          onPress={() => router.push('/(app)/volunteer/bulk')}
+          buttonColor={COLORS.primaryContainer}
+          textColor={COLORS.primary}
+          labelStyle={styles.bulkEntryActionLabel}
+        >
+          Mở
+        </Button>
+      </View>
       {needsFaceEnrollment ? (
         <View style={styles.faceBanner}>
           <View style={styles.faceBannerIcon}>
@@ -1034,6 +1055,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  bulkEntry: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bulkEntryIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  bulkEntryText: { flex: 1 },
+  bulkEntryTitle: { fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
+  bulkEntrySub: { marginTop: 2, fontSize: 12, lineHeight: 16, color: COLORS.onSurfaceVariant },
+  bulkEntryActionLabel: { fontSize: 12, fontWeight: '800', marginHorizontal: 8 },
   faceBanner: {
     flexDirection: 'row',
     alignItems: 'center',
