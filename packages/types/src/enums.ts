@@ -154,6 +154,15 @@ export enum DeliveryStatus {
   FAILED = 'failed',
 }
 
+export enum BulkRunStatus {
+  REQUESTED = 'requested',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  PICKED_UP = 'picked_up',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
 export enum CampaignStatus {
   DRAFT = 'draft',
   OPEN = 'open',

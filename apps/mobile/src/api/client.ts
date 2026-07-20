@@ -273,6 +273,15 @@ export const endpoints = {
     // PATCH multipart {status, photo?} — chuyển bước (kèm ảnh QC/proof)
     updateStatus: (id: string) => `/deliveries/${id}/status`,
   },
+  bulkRuns: {
+    my: '/bulk-runs/my',
+    request: '/bulk-runs',
+    pickup: (id: string) => `/bulk-runs/${id}/pickup`,
+    addStop: (id: string) => `/bulk-runs/${id}/stops`,
+    serveStop: (id: string, stopId: string) => `/bulk-runs/${id}/stops/${stopId}/serve`,
+    complete: (id: string) => `/bulk-runs/${id}/complete`,
+    cancel: (id: string) => `/bulk-runs/${id}/cancel`,
+  },
   volunteers: {
     // Hồ sơ tình nguyện viên + trạng thái sẵn sàng + vị trí hiện tại
     me: '/volunteers/me',
