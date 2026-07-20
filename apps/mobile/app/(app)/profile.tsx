@@ -149,10 +149,16 @@ export default function ProfileTab() {
               </View>
             ) : null}
 
-            {/* Số điện thoại */}
-            {profile?.phone ? (
+            {/* Số điện thoại + địa chỉ theo vai trò */}
+            {profile?.phone || profile?.provider?.address || profile?.receiver?.address ? (
               <View style={styles.card}>
-                <Row label="Số điện thoại" value={profile.phone} />
+                {profile?.phone ? <Row label="Số điện thoại" value={profile.phone} /> : null}
+                {profile?.provider?.address ? (
+                  <Row label="Địa chỉ cửa hàng" value={profile.provider.address} />
+                ) : null}
+                {profile?.receiver?.address ? (
+                  <Row label="Điểm giao mặc định" value={profile.receiver.address} />
+                ) : null}
               </View>
             ) : null}
           </>

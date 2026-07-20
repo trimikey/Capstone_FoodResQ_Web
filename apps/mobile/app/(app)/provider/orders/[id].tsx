@@ -2,9 +2,10 @@ import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
-import { useProviderReservations } from '@/hooks/useProviderReservations';
+import { useAuth } from '@/hooks/useAuth';
+import { useProviderReservationDetail, useProviderReservations } from '@/hooks/useProviderReservations';
 import {
   reservationStatusDisplay,
   useCountdown,
@@ -22,13 +23,20 @@ function fmtDateTime(iso?: string): string {
 /** Chi tiết 1 đơn đặt — đọc từ cache danh sách provider (không cần endpoint riêng). */
 export default function ProviderOrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, isLoading } = useProviderReservations();
-  const order = (data ?? []).find((r) => r.id === id);
+  const { user } = useAuth();
+  const { data, isLoading, refetch } = useProviderReservations();
+  const cachedOrder = (data ?? []).find((r) => r.id === id);
+  const detail = useProviderReservationDetail(cachedOrder ? undefined : id);
+  const order = cachedOrder ?? detail.data;
 
   const sd = reservationStatusDisplay(order?.status);
   const countdown = useCountdown(
     order?.status === 'confirmed' ? order.qrExpiresAt : null
   );
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -42,9 +50,17 @@ export default function ProviderOrderDetailScreen() {
 
       {!order ? (
         <ScreenState
-          kind={isLoading ? 'loading' : 'empty'}
-          title={isLoading ? 'Đang tải đơn' : 'Không tìm thấy đơn'}
-          message={isLoading ? 'Vui lòng chờ trong giây lát.' : 'Quay lại danh sách để chọn một đơn khác.'}
+          kind={isLoading || detail.isLoading ? 'loading' : detail.isError ? 'error' : 'empty'}
+          title={isLoading || detail.isLoading ? 'Đang tải đơn' : detail.isError ? 'Không tải được đơn' : 'Không tìm thấy đơn'}
+          message={
+            isLoading || detail.isLoading
+              ? 'Vui lòng chờ trong giây lát.'
+              : detail.isError
+                ? 'Thử tải lại hoặc quay về danh sách đơn.'
+                : 'Quay lại danh sách để chọn một đơn khác.'
+          }
+          actionLabel={detail.isError ? 'Thử lại' : undefined}
+          onAction={detail.isError ? () => { void detail.refetch(); void refetch(); } : undefined}
         />
       ) : (
         <>

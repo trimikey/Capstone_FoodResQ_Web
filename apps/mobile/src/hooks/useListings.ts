@@ -29,11 +29,13 @@ export interface Listing {
   id: string;
   title: string;
   category: FoodCategory;
+  quantityTotal?: number;
   quantityRemaining: number;
   quantityUnit: QuantityUnit;
   weightPerUnitKg: number | null;
   pickupStartTime: string; // ISO
   pickupEndTime: string; // ISO
+  expiryTime?: string; // ISO
   pickupAddress: string;
   storageConditions?: string | null;
   allergenNotes?: string | null;

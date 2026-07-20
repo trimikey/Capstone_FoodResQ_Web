@@ -159,6 +159,22 @@ export interface ApiUserProfile extends ApiUser {
   receiver?: {
     isCharityOrg: boolean;
     organizationName: string | null;
+    address?: string | null;
+    lng?: number | null;
+    lat?: number | null;
+  } | null;
+  provider?: {
+    id: string;
+    businessName: string;
+    businessType: string;
+    address: string | null;
+    contactPhone: string | null;
+    taxCode?: string | null;
+    isVerified?: boolean;
+    avgRating?: number | null;
+    verificationStatus?: string;
+    lng?: number | null;
+    lat?: number | null;
   } | null;
 }
 
@@ -167,6 +183,9 @@ export interface UpdateProfileInput {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  address?: string;
+  lng?: number;
+  lat?: number;
 }
 
 /**
@@ -211,6 +230,7 @@ export const endpoints = {
     // Provider (nhà cung cấp đăng tin)
     create: '/listings',
     providerMy: '/listings/provider/my',
+    update: (id: string) => `/listings/${id}`,
     publish: (id: string) => `/listings/${id}/publish`,
     cancel: (id: string) => `/listings/${id}/cancel`,
   },
@@ -233,6 +253,9 @@ export const endpoints = {
     // Báo cáo vấn đề (listing/user/delivery/campaign)
     create: '/reports',
     my: '/reports/my',
+  },
+  esg: {
+    providerMe: '/esg/provider/me',
   },
   deliveries: {
     // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
