@@ -37,6 +37,10 @@ function formatKm(km: unknown): string | null {
   return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
 }
 
+function isFiniteCoord(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -130,7 +134,11 @@ export default function VolunteerOffersScreen() {
     () => offers.filter((offer) => offer.id !== activeOffer?.id),
     [activeOffer?.id, offers]
   );
-  const currentLocation = volunteer?.currentLocation ?? null;
+  const rawCurrentLocation = volunteer?.currentLocation ?? null;
+  const currentLocation =
+    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng)
+      ? rawCurrentLocation
+      : null;
   const currentLat = currentLocation?.lat;
   const currentLng = currentLocation?.lng;
   const nearbyListings = useListings({

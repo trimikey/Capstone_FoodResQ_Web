@@ -24,6 +24,9 @@ export function isNearCoords(a: Coords, b: Coords, tolerance = 0.003): boolean {
 }
 
 export function getLocationLabel(coords: Coords, isFallback = false): string {
+  if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+    return isFallback ? `${DEFAULT_LOCATION_LABEL} (mặc định)` : DEFAULT_LOCATION_LABEL;
+  }
   if (isNearCoords(coords, DEFAULT_COORDS)) return DEFAULT_LOCATION_LABEL;
   const raw = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
   return isFallback ? `${raw} (mặc định)` : raw;

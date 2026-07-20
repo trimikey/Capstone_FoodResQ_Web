@@ -15,6 +15,16 @@ import { AppImage } from '@/components/ui/AppImage';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS } from '@/theme/design';
 
+function formatDecimal(value: unknown, fallback = '-'): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(1) : fallback;
+}
+
+function formatCount(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : '0';
+}
+
 /**
  * Tài khoản (Luồng 4) — hiển thị hồ sơ đầy đủ từ GET /users/me:
  * avatar, vai trò, trạng thái xác minh, điểm uy tín, thống kê đóng góp.
@@ -105,19 +115,19 @@ export default function ProfileTab() {
                 <View style={styles.statsGrid}>
                   <Stat
                     label="Kg đã cứu"
-                    value={profile.stats.kgSaved.toFixed(1)}
+                    value={formatDecimal(profile.stats.kgSaved, '0.0')}
                   />
                   <Stat
                     label="Hoàn thành"
-                    value={String(profile.stats.completedCount)}
+                    value={formatCount(profile.stats.completedCount)}
                   />
                   <Stat
                     label="Đã huỷ"
-                    value={String(profile.stats.cancelledCount)}
+                    value={formatCount(profile.stats.cancelledCount)}
                   />
                   <Stat
                     label="NCC đã giúp"
-                    value={String(profile.stats.providersHelped)}
+                    value={formatCount(profile.stats.providersHelped)}
                   />
                 </View>
               </View>
