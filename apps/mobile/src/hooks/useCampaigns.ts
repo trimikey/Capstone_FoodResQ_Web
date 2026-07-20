@@ -86,9 +86,56 @@ export interface CreateCampaignInput {
   waiterSlotsNeeded?: number;
   shipperSlotsNeeded?: number;
   expectedServings?: number;
+  imageUrls?: string[];
   menuItems?: MenuItem[];
   scheduleItems?: ScheduleItem[];
   supplyItems?: string[];
+}
+
+export interface CampaignChangeRequest {
+  id: string;
+  campaignId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | (string & {});
+  reason: string | null;
+  scheduledDate: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  kitchenAddress: string | null;
+  lng: number | null;
+  lat: number | null;
+  chefSlotsNeeded: number | null;
+  waiterSlotsNeeded: number | null;
+  shipperSlotsNeeded: number | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface SubmitCampaignChangeInput {
+  scheduledDate?: string;
+  startTime?: string;
+  endTime?: string;
+  kitchenAddress?: string;
+  lng?: number;
+  lat?: number;
+  chefSlotsNeeded?: number;
+  waiterSlotsNeeded?: number;
+  shipperSlotsNeeded?: number;
+  reason?: string;
+}
+
+export interface CompletedCampaign {
+  id: string;
+  title: string;
+  description: string | null;
+  scheduledDate: string;
+  kitchenAddress: string;
+  imageUrls: string[];
+  actualServings: number | null;
+  peopleServed: number;
+  volunteers: number;
+  experienceCount: number;
+  organizationName: string | null;
 }
 
 /**
@@ -152,6 +199,19 @@ export function useMyCampaigns(enabled: boolean = true) {
   });
 }
 
+/** Chiến dịch đã hoàn tất để hiển thị câu chuyện thành công. GET /campaigns/completed */
+export function useCompletedCampaigns(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'completed'],
+    enabled,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CompletedCampaign[]>>(endpoints.campaigns.completed);
+      return res.data.data;
+    },
+  });
+}
+
 /** Charity-org tạo chiến dịch mới (gửi yêu cầu, chờ admin duyệt). POST /campaigns */
 export function useCreateCampaign() {
   const queryClient = useQueryClient();
@@ -162,6 +222,20 @@ export function useCreateCampaign() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+    },
+  });
+}
+
+/** Charity upload ảnh chiến dịch trước khi submit form. POST /campaigns/upload-image */
+export function useUploadCampaignImage() {
+  return useMutation({
+    mutationFn: async (photo: CapturedImage) => {
+      const form = new FormData();
+      form.append('image', photo as unknown as Blob);
+      const res = await apiClient.post<ApiResponse<{ url: string }>>(endpoints.campaigns.uploadImage, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data.data;
     },
   });
 }
@@ -177,6 +251,23 @@ export function useStartCampaign() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', id] });
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+    },
+  });
+}
+
+/** Charity huỷ chiến dịch đang open. PATCH /campaigns/:id/cancel */
+export function useCancelCampaign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiClient.patch<ApiResponse<Campaign>>(endpoints.campaigns.cancel(id));
+      return res.data.data;
+    },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', id] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
     },
   });
 }
@@ -194,6 +285,8 @@ export function useCompleteCampaign() {
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', id] });
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'completed'] });
     },
   });
 }
@@ -210,6 +303,58 @@ export function useConfirmDonation() {
     },
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+    },
+  });
+}
+
+/** Charity xem lịch sử yêu cầu thay đổi của campaign. GET /campaigns/:id/change-requests */
+export function useCampaignChangeRequests(campaignId?: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'change-requests', campaignId],
+    enabled: enabled && !!campaignId,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CampaignChangeRequest[]>>(
+        endpoints.campaigns.changeRequests(campaignId!)
+      );
+      return res.data.data;
+    },
+  });
+}
+
+/** Charity gửi yêu cầu thay đổi campaign đang open. POST /campaigns/:id/change-requests */
+export function useSubmitCampaignChange() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: SubmitCampaignChangeInput }) => {
+      const res = await apiClient.post<ApiResponse<CampaignChangeRequest>>(
+        endpoints.campaigns.changeRequests(id),
+        input
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', id] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'change-requests', id] });
+    },
+  });
+}
+
+/** Charity huỷ một change request đang pending. PATCH /campaigns/change-requests/:id/cancel */
+export function useCancelCampaignChange() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ changeRequestId }: { changeRequestId: string; campaignId: string }) => {
+      const res = await apiClient.patch<ApiResponse<CampaignChangeRequest>>(
+        endpoints.campaigns.cancelChangeRequest(changeRequestId)
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'change-requests', campaignId] });
     },
   });
 }
