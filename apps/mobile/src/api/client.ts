@@ -288,8 +288,13 @@ export const endpoints = {
     // Charity-org (receiver isCharityOrg) quản lý bếp ăn của mình
     my: '/campaigns/my',
     create: '/campaigns',
+    completed: '/campaigns/completed',
+    uploadImage: '/campaigns/upload-image',
     start: (id: string) => `/campaigns/${id}/start`,
+    cancel: (id: string) => `/campaigns/${id}/cancel`,
     complete: (id: string) => `/campaigns/${id}/complete`,
+    changeRequests: (id: string) => `/campaigns/${id}/change-requests`,
+    cancelChangeRequest: (id: string) => `/campaigns/change-requests/${id}/cancel`,
     // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
     confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
     // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch

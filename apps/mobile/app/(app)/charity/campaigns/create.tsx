@@ -12,11 +12,17 @@ import { Text, TextInput, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { useCreateCampaign, type CreateCampaignInput } from '@/hooks/useCampaigns';
+import {
+  useCreateCampaign,
+  useUploadCampaignImage,
+  type CreateCampaignInput,
+} from '@/hooks/useCampaigns';
 import { getCurrentCoords, type Coords } from '@/services/geolocation';
+import { captureImage, pickImageFromLibrary, type CapturedImage } from '@/services/faceCapture';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
+import { AppImage } from '@/components/ui/AppImage';
 import { mobileColors as COLORS } from '@/theme/design';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -40,8 +46,10 @@ interface ScheduleRow { time: string; label: string }
  */
 export default function CreateCampaignScreen() {
   const createCampaign = useCreateCampaign();
+  const uploadCampaignImage = useUploadCampaignImage();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   const now = new Date();
   const [title, setTitle] = useState('');
@@ -99,6 +107,33 @@ export default function CreateCampaignScreen() {
     setSupplyText('');
   };
 
+  const uploadImage = async (photo: CapturedImage | null) => {
+    if (!photo) return;
+    try {
+      const res = await uploadCampaignImage.mutateAsync(photo);
+      setImageUrl(res.url);
+      Popup.show({ type: 'success', text1: 'Đã tải ảnh chiến dịch' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Tải ảnh thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  const pickCampaignImage = async () => {
+    try {
+      await uploadImage(await pickImageFromLibrary('listing'));
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Không chọn được ảnh', text2: getErrorMessage(err) });
+    }
+  };
+
+  const captureCampaignImage = async () => {
+    try {
+      await uploadImage(await captureImage('id_card', 'listing'));
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(err) });
+    }
+  };
+
   const onSubmit = async () => {
     if (title.trim().length < 5) {
       Popup.show({ type: 'warning', text1: 'Tiêu đề quá ngắn', text2: 'Tiêu đề cần tối thiểu 5 ký tự.' });
@@ -126,6 +161,7 @@ export default function CreateCampaignScreen() {
       shipperSlotsNeeded: toInt(shipperSlots),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(toInt(expectedServings) ? { expectedServings: toInt(expectedServings) } : {}),
+      ...(imageUrl ? { imageUrls: [imageUrl] } : {}),
       ...(menuItems.length ? { menuItems } : {}),
       ...(scheduleItems.length ? { scheduleItems } : {}),
       ...(supplyItems.length ? { supplyItems } : {}),
@@ -171,6 +207,47 @@ export default function CreateCampaignScreen() {
               mode="outlined" multiline numberOfLines={3} value={description} onChangeText={setDescription}
               outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input}
             />
+          </Field>
+
+          <Field label="Ảnh chiến dịch (tuỳ chọn)">
+            {imageUrl ? (
+              <View style={styles.imagePreview}>
+                <AppImage source={{ uri: imageUrl }} style={styles.image} />
+                <Pressable
+                  onPress={() => setImageUrl(null)}
+                  style={styles.removeImageBtn}
+                  hitSlop={8}
+                  disabled={uploadCampaignImage.isPending}
+                >
+                  <MaterialCommunityIcons name="close" size={18} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.imageActions}>
+                <Button
+                  mode="outlined"
+                  icon="image-plus"
+                  onPress={pickCampaignImage}
+                  loading={uploadCampaignImage.isPending}
+                  disabled={uploadCampaignImage.isPending}
+                  textColor={COLORS.primary}
+                  style={styles.imageActionBtn}
+                >
+                  Chọn ảnh
+                </Button>
+                <Button
+                  mode="outlined"
+                  icon="camera"
+                  onPress={captureCampaignImage}
+                  loading={uploadCampaignImage.isPending}
+                  disabled={uploadCampaignImage.isPending}
+                  textColor={COLORS.primary}
+                  style={styles.imageActionBtn}
+                >
+                  Chụp ảnh
+                </Button>
+              </View>
+            )}
           </Field>
 
           <Field label="Địa chỉ bếp *">
@@ -384,6 +461,28 @@ const styles = StyleSheet.create({
   addBtn: { alignSelf: 'flex-start', marginTop: 4, marginBottom: 8 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   listText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  imagePreview: {
+    height: 176,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+  },
+  image: { width: '100%', height: '100%' },
+  imageActions: { flexDirection: 'row', gap: 10 },
+  imageActionBtn: { flex: 1, borderColor: COLORS.outline },
+  removeImageBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   submitBtn: { marginTop: 16, borderRadius: 12, paddingVertical: 4 },
   note: { fontSize: 12, color: COLORS.onSurfaceVariant, textAlign: 'center', marginTop: 12, fontStyle: 'italic' },
 });
