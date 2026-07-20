@@ -165,6 +165,7 @@ export const updateProfileSchema = z.object({
     .string()
     .url('Đường dẫn ảnh không hợp lệ')
     .or(z.literal('')),
+  address: z.string().optional(),
 });
 
 export type UpdateProfileFormInput = z.infer<typeof updateProfileSchema>;

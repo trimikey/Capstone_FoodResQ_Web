@@ -57,3 +57,17 @@ export function useProviderReservations(status?: string) {
     },
   });
 }
+
+/** Fallback chi tiết reservation khi màn provider order được mở trực tiếp và cache list rỗng. */
+export function useProviderReservationDetail(id?: string) {
+  return useQuery({
+    queryKey: ['provider-reservation', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ProviderReservation>>(
+        endpoints.reservations.detail(id!)
+      );
+      return res.data.data;
+    },
+  });
+}
