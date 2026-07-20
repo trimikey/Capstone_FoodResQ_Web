@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import {
   Text,
@@ -7,12 +8,15 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
+import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useMyProfile } from '@/hooks/useProfile';
 import { roleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat';
 import { AppImage } from '@/components/ui/AppImage';
+import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS } from '@/theme/design';
 
 function formatDecimal(value: unknown, fallback = '-'): string {
@@ -35,6 +39,9 @@ export default function ProfileTab() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const { data: profile, isLoading, isError, refetch, isRefetching } =
     useMyProfile();
+  const faceEnrollment = useFaceEnrollment();
+  const enrollFace = useEnrollFace();
+  const [enrolling, setEnrolling] = useState(false);
 
   // Ưu tiên dữ liệu /users/me; fallback về user trong store khi đang tải lần đầu.
   const name = profile?.fullName ?? user?.name ?? 'Người dùng';
@@ -44,6 +51,25 @@ export default function ProfileTab() {
   const avatarUrl = profile?.avatarUrl ?? user?.avatarUrl;
   const trustScore = profile?.trustScore ?? user?.trustScore;
   const sd = statusDisplay(status);
+  const isReceiver = role === 'receiver';
+
+  const handleEnrollFace = async (source: 'camera' | 'library') => {
+    try {
+      setEnrolling(true);
+      const photo = source === 'camera' ? await captureImage('face') : await pickImageFromLibrary();
+      if (!photo) return;
+      await enrollFace.mutateAsync({ selfie: photo });
+      Popup.show({ type: 'success', text1: 'Đã đăng ký khuôn mặt' });
+    } catch (e: any) {
+      Popup.show({
+        type: 'error',
+        text1: 'Đăng ký khuôn mặt thất bại',
+        text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+      });
+    } finally {
+      setEnrolling(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -161,10 +187,70 @@ export default function ProfileTab() {
                 ) : null}
               </View>
             ) : null}
+
+            {isReceiver ? (
+              <View style={styles.card}>
+                <View style={styles.faceHead}>
+                  <View style={styles.faceIcon}>
+                    <MaterialCommunityIcons
+                      name={faceEnrollment.data?.enrolled ? 'face-recognition' : 'face-man-profile'}
+                      size={22}
+                      color={COLORS.primary}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
+                    <Text style={styles.faceStatus}>
+                      {faceEnrollment.isLoading
+                        ? 'Đang kiểm tra trạng thái...'
+                        : faceEnrollment.data?.enrolled
+                          ? 'Đã đăng ký'
+                          : 'Chưa đăng ký'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.faceHint}>
+                  Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.
+                </Text>
+                <View style={styles.faceActions}>
+                  <Button
+                    mode="contained"
+                    icon="camera"
+                    buttonColor={COLORS.primary}
+                    loading={enrolling || enrollFace.isPending}
+                    disabled={enrolling || enrollFace.isPending}
+                    onPress={() => handleEnrollFace('camera')}
+                    style={styles.faceButton}
+                  >
+                    {faceEnrollment.data?.enrolled ? 'Cập nhật selfie' : 'Đăng ký selfie'}
+                  </Button>
+                  <Button
+                    mode="text"
+                    icon="image-outline"
+                    textColor={COLORS.onSurfaceVariant}
+                    disabled={enrolling || enrollFace.isPending}
+                    onPress={() => handleEnrollFace('library')}
+                  >
+                    Chọn ảnh
+                  </Button>
+                </View>
+              </View>
+            ) : null}
           </>
         )}
 
         {/* Hành động */}
+        {isReceiver ? (
+          <Button
+            mode="outlined"
+            icon="flag-outline"
+            onPress={() => router.push('/reports' as Href)}
+            style={styles.reportsBtn}
+            textColor={COLORS.primary}
+          >
+            Báo cáo của tôi
+          </Button>
+        ) : null}
         <Button
           mode="outlined"
           icon="chef-hat"
@@ -251,7 +337,21 @@ const styles = StyleSheet.create({
   },
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600' },
-  recipesBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
+  faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  faceIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceStatus: { marginTop: 2, fontSize: 13, color: COLORS.onSurfaceVariant, fontWeight: '600' },
+  faceHint: { marginTop: 10, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  faceActions: { marginTop: 12, gap: 8 },
+  faceButton: { borderRadius: 12 },
+  reportsBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
+  recipesBtn: { marginTop: 12, borderRadius: 12, borderColor: COLORS.primary },
   editBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 4 },
   logout: { marginTop: 12, borderRadius: 12, borderColor: COLORS.error },
 });

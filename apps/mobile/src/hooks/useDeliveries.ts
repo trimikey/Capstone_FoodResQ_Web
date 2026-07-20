@@ -37,8 +37,8 @@ export interface DeliveryTracking {
 
 /**
  * Theo dõi đơn giao tận nơi (receiver). GET /deliveries/track/:reservationId
- * Realtime qua socket `delivery:location` (cập nhật vị trí shipper tức thì);
- * vẫn giữ poll 15s làm fallback khi socket rớt.
+ * Realtime qua socket `delivery:location`, `delivery:assigned`, `delivery:unassigned`;
+ * vẫn giữ poll 15s làm fallback và cho các status không có event riêng.
  */
 export function useDeliveryTracking(reservationId?: string, enabled = true) {
   const { isOnline } = useNetworkStatus();
@@ -56,7 +56,7 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
     },
   });
 
-  // Nghe `delivery:location` → cập nhật vị trí shipper trong cache ngay, không chờ poll.
+  // Nghe các event backend đang phát cho receiver; status khác vẫn dựa poll 15s.
   useEffect(() => {
     if (!reservationId || !enabled || !accessToken) return;
     let socket: Socket | null = null;
@@ -73,10 +73,20 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
             : prev
         );
       });
+      const refetchTracking = (p: { reservationId: string }) => {
+        if (p.reservationId !== reservationId) return;
+        void qc.invalidateQueries({ queryKey: ['delivery-tracking', reservationId] });
+        void qc.invalidateQueries({ queryKey: ['reservations'] });
+        void qc.invalidateQueries({ queryKey: ['reservation', reservationId] });
+      };
+      socket.on('delivery:assigned', refetchTracking);
+      socket.on('delivery:unassigned', refetchTracking);
     })();
     return () => {
       cancelled = true;
       socket?.off('delivery:location');
+      socket?.off('delivery:assigned');
+      socket?.off('delivery:unassigned');
       socket?.disconnect();
     };
   }, [reservationId, enabled, accessToken, qc]);

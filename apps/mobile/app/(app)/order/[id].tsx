@@ -23,6 +23,7 @@ import {
 import { formatPickupWindow } from '@/utils/listingFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS } from '@/theme/design';
+import type { ReportTargetType } from '@/hooks/useReports';
 
 function fmtDateTime(iso?: string): string {
   if (!iso) return '-';
@@ -50,6 +51,11 @@ export default function OrderDetailScreen() {
   const [justRatedScore, setJustRatedScore] = useState<number | null>(null);
   const [proofVisible, setProofVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{
+    type: ReportTargetType;
+    id: string;
+    title: string;
+  } | null>(null);
 
   const onSubmitRating = (score: number, comment?: string) => {
     if (!id) return;
@@ -247,15 +253,33 @@ export default function OrderDetailScreen() {
         ) : null}
 
         {/* Báo cáo vấn đề */}
+        <Text style={styles.sectionLabel}>Báo cáo</Text>
         <Button
           mode="text"
           icon="flag-outline"
           textColor={COLORS.onSurfaceVariant}
-          onPress={() => setReportVisible(true)}
+          onPress={() => {
+            setReportTarget({ type: 'listing', id: order.listingId, title: 'Báo cáo tin thực phẩm' });
+            setReportVisible(true);
+          }}
           style={styles.reportBtn}
         >
-          Báo cáo vấn đề
+          Báo cáo tin thực phẩm
         </Button>
+        {order.delivery?.id ? (
+          <Button
+            mode="text"
+            icon="truck-alert-outline"
+            textColor={COLORS.onSurfaceVariant}
+            onPress={() => {
+              setReportTarget({ type: 'delivery', id: order.delivery!.id, title: 'Báo cáo giao hàng' });
+              setReportVisible(true);
+            }}
+            style={styles.reportBtn}
+          >
+            Báo cáo giao hàng
+          </Button>
+        ) : null}
       </ScrollView>
 
       {order.status === 'confirmed' ? (
@@ -321,8 +345,13 @@ export default function OrderDetailScreen() {
 
       <ReportDialog
         visible={reportVisible}
-        listingId={order.listingId}
-        onDismiss={() => setReportVisible(false)}
+        targetType={reportTarget?.type ?? 'listing'}
+        targetId={reportTarget?.id ?? order.listingId}
+        title={reportTarget?.title ?? 'Báo cáo vấn đề'}
+        onDismiss={() => {
+          setReportVisible(false);
+          setReportTarget(null);
+        }}
       />
     </SafeAreaView>
   );

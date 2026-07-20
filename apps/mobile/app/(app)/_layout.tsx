@@ -184,6 +184,7 @@ export default function AppTabsLayout() {
       {/* Màn chi tiết — route push, ẩn khỏi tab bar */}
       <Tabs.Screen name="listing/[id]" options={{ href: null }} />
       <Tabs.Screen name="order/[id]" options={{ href: null }} />
+      <Tabs.Screen name="reports" options={{ href: null }} />
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="provider/create" options={{ href: null }} />
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
