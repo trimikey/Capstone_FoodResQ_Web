@@ -186,6 +186,7 @@ function TaskCard({
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
+  const hasKitchenOps = task.role === 'chef' || task.role === 'waiter';
 
   return (
     <View style={styles.taskCard}>
@@ -256,6 +257,19 @@ function TaskCard({
       ) : (
         <Text style={styles.doneNote}>Bạn đã hoàn thành công việc này. Cảm ơn bạn! 💚</Text>
       )}
+
+      {hasKitchenOps ? (
+        <Button
+          mode="outlined"
+          icon={task.role === 'chef' ? 'clipboard-pulse-outline' : 'silverware-fork-knife'}
+          textColor={COLORS.primary}
+          onPress={onOpen}
+          style={styles.kitchenBtn}
+          contentStyle={{ height: 42 }}
+        >
+          {task.role === 'chef' ? 'Ghi nhật ký ATTP' : 'Ghi phân phát'}
+        </Button>
+      ) : null}
     </View>
   );
 }
@@ -297,5 +311,6 @@ const styles = StyleSheet.create({
   stepLabelActive: { fontWeight: '700', color: COLORS.primary },
   stepLabelTodo: { color: COLORS.onSurfaceVariant },
   taskBtn: { borderRadius: 12, marginTop: 6 },
+  kitchenBtn: { borderRadius: 12, marginTop: 8, borderColor: COLORS.primary },
   doneNote: { fontSize: 13, color: COLORS.primary, textAlign: 'center', marginTop: 8, fontWeight: '600' },
 });
