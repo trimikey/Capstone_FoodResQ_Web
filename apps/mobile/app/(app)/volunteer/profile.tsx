@@ -49,6 +49,11 @@ function specializationLabel(s: string): string {
   }
 }
 
+function formatDecimal(value: unknown): string | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(1) : null;
+}
+
 /**
  * Hồ sơ Tình nguyện viên (tab "Hồ sơ") — hạng, điểm cống hiến, đánh giá,
  * chuyên môn, phương tiện + công tắc "Sẵn sàng nhận đơn" (kèm vị trí từ
@@ -94,6 +99,7 @@ export default function VolunteerProfileScreen() {
 
   const name = user?.name || user?.email || 'Tình nguyện viên';
   const busy = toggling || setAvailability.isPending;
+  const avgRatingLabel = formatDecimal(vol?.avgRating);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -122,10 +128,10 @@ export default function VolunteerProfileScreen() {
                   Hạng {volunteerRankLabel(vol.rank)}
                 </Text>
               </View>
-              {vol.avgRating != null ? (
+              {avgRatingLabel ? (
                 <View style={[styles.badge, { backgroundColor: COLORS.secondaryContainer }]}>
                   <Text style={[styles.badgeText, { color: COLORS.warning }]}>
-                    ★ {vol.avgRating.toFixed(1)}
+                    ★ {avgRatingLabel}
                   </Text>
                 </View>
               ) : null}
