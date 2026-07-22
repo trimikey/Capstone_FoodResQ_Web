@@ -10,7 +10,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
   useAcceptOffer,
@@ -107,6 +107,7 @@ export default function VolunteerOffersScreen() {
   const reject = useRejectOffer();
   const setAvailability = useSetAvailability();
   const faceEnrollment = useFaceEnrollment();
+  const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
   const [now, setNow] = useState(() => Date.now());
   const [actingId, setActingId] = useState<string | null>(null);
@@ -115,6 +116,12 @@ export default function VolunteerOffersScreen() {
   const [facePromptVisible, setFacePromptVisible] = useState(false);
   const lastPromptedIdRef = useRef<string | null>(null);
   const needsFaceEnrollment = faceEnrollment.data?.enrolled === false;
+
+  useFocusEffect(
+    useCallback(() => {
+      void Promise.all([refetchFaceEnrollment(), refetchVolunteer(), refetch()]);
+    }, [refetchFaceEnrollment, refetchVolunteer, refetch])
+  );
 
   const offers = useMemo(
     () => [...(data ?? [])].sort((a, b) => offerSortValue(a) - offerSortValue(b)),
@@ -250,7 +257,7 @@ export default function VolunteerOffersScreen() {
       const img = mode === 'camera' ? await captureImage('face') : await pickImageFromLibrary();
       if (!img) return;
       await enrollFace.mutateAsync({ selfie: img });
-      await faceEnrollment.refetch();
+      await Promise.all([refetchFaceEnrollment(), refetchVolunteer(), refetch()]);
       setFacePromptVisible(false);
       void notifySuccess();
       Toast.show({

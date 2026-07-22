@@ -19,6 +19,11 @@ import { ScreenState } from '@/components/ui/ScreenState';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS } from '@/theme/design';
 
+type FaceFeedback = {
+  type: 'info' | 'success' | 'error';
+  message: string;
+};
+
 function formatDecimal(value: unknown, fallback = '-'): string {
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(1) : fallback;
@@ -27,6 +32,18 @@ function formatDecimal(value: unknown, fallback = '-'): string {
 function formatCount(value: unknown): string {
   const n = Number(value);
   return Number.isFinite(n) ? String(n) : '0';
+}
+
+function getFaceFeedbackStyle(type: FaceFeedback['type']) {
+  if (type === 'success') return styles.faceFeedbackSuccess;
+  if (type === 'error') return styles.faceFeedbackError;
+  return styles.faceFeedbackInfo;
+}
+
+function getFaceFeedbackTextStyle(type: FaceFeedback['type']) {
+  if (type === 'success') return styles.faceFeedbackTextSuccess;
+  if (type === 'error') return styles.faceFeedbackTextError;
+  return styles.faceFeedbackTextInfo;
 }
 
 /**
@@ -42,6 +59,8 @@ export default function ProfileTab() {
   const faceEnrollment = useFaceEnrollment();
   const enrollFace = useEnrollFace();
   const [enrolling, setEnrolling] = useState(false);
+  const [faceFeedback, setFaceFeedback] = useState<FaceFeedback | null>(null);
+  const [confirmedFaceEnrollment, setConfirmedFaceEnrollment] = useState(false);
 
   // Ưu tiên dữ liệu /users/me; fallback về user trong store khi đang tải lần đầu.
   const name = profile?.fullName ?? user?.name ?? 'Người dùng';
@@ -52,19 +71,56 @@ export default function ProfileTab() {
   const trustScore = profile?.trustScore ?? user?.trustScore;
   const sd = statusDisplay(status);
   const isReceiver = role === 'receiver';
+  const faceBusy = enrolling || enrollFace.isPending;
+  const faceEnrolled = confirmedFaceEnrollment || faceEnrollment.data?.enrolled === true;
 
   const handleEnrollFace = async (source: 'camera' | 'library') => {
     try {
       setEnrolling(true);
+      setFaceFeedback({
+        type: 'info',
+        message: source === 'camera' ? 'Đang mở camera để chụp selfie...' : 'Đang mở thư viện ảnh...',
+      });
       const photo = source === 'camera' ? await captureImage('face') : await pickImageFromLibrary();
-      if (!photo) return;
-      await enrollFace.mutateAsync({ selfie: photo });
-      Popup.show({ type: 'success', text1: 'Đã đăng ký khuôn mặt' });
-    } catch (e: any) {
+      if (!photo) {
+        setFaceFeedback({
+          type: 'info',
+          message: source === 'camera' ? 'Bạn đã huỷ chụp selfie.' : 'Bạn chưa chọn ảnh nào.',
+        });
+        return;
+      }
+      setFaceFeedback({ type: 'info', message: 'Đang tải ảnh selfie lên hệ thống...' });
+      const result = await enrollFace.mutateAsync({ selfie: photo });
+      if (!result?.enrolled) {
+        throw new Error(result?.message ?? 'Hệ thống chưa xác nhận đăng ký khuôn mặt.');
+      }
+      setConfirmedFaceEnrollment(true);
+      setFaceFeedback({
+        type: 'success',
+        message: 'Cập nhật khuôn mặt thành công. Hệ thống đã tải lại trạng thái xác minh mới nhất.',
+      });
+      await Promise.all([faceEnrollment.refetch(), refetch()]);
+      Popup.show({
+        type: 'success',
+        text1: 'Cập nhật khuôn mặt thành công',
+        text2: 'Trạng thái xác minh đã được làm mới.',
+      });
+    } catch (e: unknown) {
+      const message =
+        typeof e === 'object' && e && 'response' in e
+          ? (e as { response?: { data?: { error?: { message?: string } } }; message?: string }).response?.data?.error?.message ??
+            (e as { message?: string }).message
+          : e instanceof Error
+            ? e.message
+            : undefined;
+      setFaceFeedback({
+        type: 'error',
+        message: message ?? 'Không thể đăng ký khuôn mặt. Vui lòng thử lại.',
+      });
       Popup.show({
         type: 'error',
         text1: 'Đăng ký khuôn mặt thất bại',
-        text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+        text2: message ?? 'Vui lòng thử lại.',
       });
     } finally {
       setEnrolling(false);
@@ -193,7 +249,7 @@ export default function ProfileTab() {
                 <View style={styles.faceHead}>
                   <View style={styles.faceIcon}>
                     <MaterialCommunityIcons
-                      name={faceEnrollment.data?.enrolled ? 'face-recognition' : 'face-man-profile'}
+                      name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
                       size={22}
                       color={COLORS.primary}
                     />
@@ -203,37 +259,67 @@ export default function ProfileTab() {
                     <Text style={styles.faceStatus}>
                       {faceEnrollment.isLoading
                         ? 'Đang kiểm tra trạng thái...'
-                        : faceEnrollment.data?.enrolled
-                          ? 'Đã đăng ký'
+                        : faceBusy
+                          ? 'Đang cập nhật selfie...'
+                          : faceEnrolled
+                          ? 'Đã đăng ký khuôn mặt'
                           : 'Chưa đăng ký'}
                     </Text>
                   </View>
                 </View>
                 <Text style={styles.faceHint}>
-                  Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.
+                  {faceEnrolled
+                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng.'
+                    : 'Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.'}
                 </Text>
-                <View style={styles.faceActions}>
-                  <Button
-                    mode="contained"
-                    icon="camera"
-                    buttonColor={COLORS.primary}
-                    loading={enrolling || enrollFace.isPending}
-                    disabled={enrolling || enrollFace.isPending}
-                    onPress={() => handleEnrollFace('camera')}
-                    style={styles.faceButton}
-                  >
-                    {faceEnrollment.data?.enrolled ? 'Cập nhật selfie' : 'Đăng ký selfie'}
-                  </Button>
-                  <Button
-                    mode="text"
-                    icon="image-outline"
-                    textColor={COLORS.onSurfaceVariant}
-                    disabled={enrolling || enrollFace.isPending}
-                    onPress={() => handleEnrollFace('library')}
-                  >
-                    Chọn ảnh
-                  </Button>
-                </View>
+                {faceFeedback ? (
+                  <View style={[styles.faceFeedback, getFaceFeedbackStyle(faceFeedback.type)]}>
+                    <MaterialCommunityIcons
+                      name={
+                        faceFeedback.type === 'success'
+                          ? 'check-circle-outline'
+                          : faceFeedback.type === 'error'
+                            ? 'alert-circle-outline'
+                            : 'progress-upload'
+                      }
+                      size={18}
+                      color={
+                        faceFeedback.type === 'success'
+                          ? COLORS.primary
+                          : faceFeedback.type === 'error'
+                            ? COLORS.error
+                            : COLORS.onSurfaceVariant
+                      }
+                    />
+                    <Text style={[styles.faceFeedbackText, getFaceFeedbackTextStyle(faceFeedback.type)]}>
+                      {faceFeedback.message}
+                    </Text>
+                  </View>
+                ) : null}
+                {!faceEnrolled ? (
+                  <View style={styles.faceActions}>
+                    <Button
+                      mode="contained"
+                      icon="camera"
+                      buttonColor={COLORS.primary}
+                      loading={faceBusy}
+                      disabled={faceBusy}
+                      onPress={() => handleEnrollFace('camera')}
+                      style={styles.faceButton}
+                    >
+                      {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
+                    </Button>
+                    <Button
+                      mode="text"
+                      icon="image-outline"
+                      textColor={COLORS.onSurfaceVariant}
+                      disabled={faceBusy}
+                      onPress={() => handleEnrollFace('library')}
+                    >
+                      Chọn ảnh
+                    </Button>
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </>
@@ -348,6 +434,32 @@ const styles = StyleSheet.create({
   },
   faceStatus: { marginTop: 2, fontSize: 13, color: COLORS.onSurfaceVariant, fontWeight: '600' },
   faceHint: { marginTop: 10, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  faceFeedback: {
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  faceFeedbackInfo: {
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderColor: COLORS.outline,
+  },
+  faceFeedbackSuccess: {
+    backgroundColor: COLORS.primaryContainer,
+    borderColor: COLORS.primary,
+  },
+  faceFeedbackError: {
+    backgroundColor: '#fef2f2',
+    borderColor: COLORS.error,
+  },
+  faceFeedbackText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  faceFeedbackTextInfo: { color: COLORS.onSurfaceVariant },
+  faceFeedbackTextSuccess: { color: COLORS.primary },
+  faceFeedbackTextError: { color: COLORS.error },
   faceActions: { marginTop: 12, gap: 8 },
   faceButton: { borderRadius: 12 },
   reportsBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
