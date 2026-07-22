@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import {
   Text,
   Button,
   Avatar,
   ActivityIndicator,
+  Dialog,
   Divider,
+  Portal,
   Switch,
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
+import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useVolunteerMe, useSetAvailability } from '@/hooks/useVolunteer';
 import { volunteerRankLabel } from '@/utils/userFormat';
+import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
@@ -62,8 +66,47 @@ function formatDecimal(value: unknown): string | null {
 export default function VolunteerProfileScreen() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const { data: vol, isLoading, isError, refetch, isRefetching } = useVolunteerMe();
+  const faceEnrollment = useFaceEnrollment();
+  const refetchFaceEnrollment = faceEnrollment.refetch;
+  const enrollFace = useEnrollFace();
   const setAvailability = useSetAvailability();
   const [toggling, setToggling] = useState(false);
+  const [facePromptVisible, setFacePromptVisible] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      void Promise.all([refetch(), refetchFaceEnrollment()]);
+    }, [refetch, refetchFaceEnrollment])
+  );
+
+  const handleEnrollFace = async (mode: 'camera' | 'library') => {
+    try {
+      const img = mode === 'camera' ? await captureImage('face') : await pickImageFromLibrary();
+      if (!img) return;
+      await enrollFace.mutateAsync({ selfie: img });
+      await Promise.all([refetchFaceEnrollment(), refetch()]);
+      setFacePromptVisible(false);
+      void notifySuccess();
+      Toast.show({
+        type: 'success',
+        text1: 'Đã cập nhật khuôn mặt',
+        text2: 'Bạn có thể bật sẵn sàng nhận đơn ngay bây giờ.',
+      });
+    } catch (e: any) {
+      void notifyError();
+      Popup.show({
+        type: 'error',
+        text1: 'Cập nhật khuôn mặt thất bại',
+        text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+      });
+    }
+  };
+
+  const isFaceNotEnrolledError = (e: any) => {
+    const code = e?.response?.data?.error?.code;
+    const message = e?.response?.data?.error?.message ?? e?.message ?? '';
+    return code === 'FACE_NOT_ENROLLED' || String(message).includes('FACE_NOT_ENROLLED');
+  };
 
   const handleToggle = async (next: boolean) => {
     void selectionFeedback();
@@ -87,6 +130,10 @@ export default function VolunteerProfileScreen() {
       }
     } catch (e: any) {
       void notifyError();
+      if (isFaceNotEnrolledError(e)) {
+        setFacePromptVisible(true);
+        return;
+      }
       Popup.show({
         type: 'error',
         text1: 'Cập nhật trạng thái thất bại',
@@ -99,6 +146,8 @@ export default function VolunteerProfileScreen() {
 
   const name = user?.name || user?.email || 'Tình nguyện viên';
   const busy = toggling || setAvailability.isPending;
+  const faceBusy = enrollFace.isPending;
+  const faceEnrolled = faceEnrollment.data?.enrolled === true;
   const avgRatingLabel = formatDecimal(vol?.avgRating);
 
   return (
@@ -182,6 +231,60 @@ export default function VolunteerProfileScreen() {
               ) : null}
             </View>
 
+            {/* Xác minh khuôn mặt */}
+            <View style={styles.card}>
+              <View style={styles.faceHead}>
+                <View style={styles.faceIcon}>
+                  <MaterialCommunityIcons
+                    name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
+                    size={22}
+                    color={COLORS.primary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
+                  <Text style={styles.faceStatus}>
+                    {faceEnrollment.isLoading
+                      ? 'Đang kiểm tra trạng thái...'
+                      : faceBusy
+                        ? 'Đang cập nhật selfie...'
+                        : faceEnrolled
+                          ? 'Đã đăng ký khuôn mặt'
+                          : 'Chưa đăng ký'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.faceHint}>
+                {faceEnrolled
+                  ? 'Bạn đã đủ điều kiện xác minh khi giao nhận.'
+                  : 'Bắt buộc để bật sẵn sàng nhận đơn và xác minh khi giao nhận.'}
+              </Text>
+              {!faceEnrolled ? (
+                <View style={styles.faceActions}>
+                  <Button
+                    mode="contained"
+                    icon="camera"
+                    buttonColor={COLORS.primary}
+                    loading={faceBusy}
+                    disabled={faceBusy}
+                    onPress={() => handleEnrollFace('camera')}
+                    style={styles.faceButton}
+                  >
+                    {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
+                  </Button>
+                  <Button
+                    mode="text"
+                    icon="image-outline"
+                    textColor={COLORS.onSurfaceVariant}
+                    disabled={faceBusy}
+                    onPress={() => handleEnrollFace('library')}
+                  >
+                    Chọn ảnh
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+
             {/* Điểm cống hiến */}
             <View style={styles.card}>
               <View style={styles.pointRow}>
@@ -253,6 +356,12 @@ export default function VolunteerProfileScreen() {
           Đăng xuất
         </Button>
       </ScrollView>
+      <FaceEnrollmentPrompt
+        visible={facePromptVisible}
+        busy={faceBusy}
+        onDismiss={() => setFacePromptVisible(false)}
+        onEnroll={handleEnrollFace}
+      />
     </SafeAreaView>
   );
 }
@@ -263,6 +372,57 @@ function Row({ label, value }: { label: string; value: string }) {
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value}</Text>
     </View>
+  );
+}
+
+function FaceEnrollmentPrompt({
+  visible,
+  busy,
+  onDismiss,
+  onEnroll,
+}: {
+  visible: boolean;
+  busy: boolean;
+  onDismiss: () => void;
+  onEnroll: (mode: 'camera' | 'library') => void;
+}) {
+  return (
+    <Portal>
+      <Dialog visible={visible} onDismiss={busy ? undefined : onDismiss} style={styles.faceDialog}>
+        <Dialog.Content style={styles.faceDialogContent}>
+          <View style={styles.faceDialogIcon}>
+            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.primary} />
+          </View>
+          <Text style={styles.faceDialogTitle}>Cần cập nhật khuôn mặt</Text>
+          <Text style={styles.faceDialogText}>
+            Bạn cần đăng ký khuôn mặt trước khi bật sẵn sàng nhận đơn. Thông tin này dùng để xác minh khi giao nhận.
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={onDismiss} textColor={COLORS.onSurfaceVariant} disabled={busy}>
+            Để sau
+          </Button>
+          <Button
+            mode="contained"
+            icon={busy ? undefined : 'camera'}
+            buttonColor={COLORS.primary}
+            onPress={() => onEnroll('camera')}
+            disabled={busy}
+            style={styles.faceDialogPrimary}
+          >
+            {busy ? <ActivityIndicator color="#ffffff" size={16} /> : 'Cập nhật ngay'}
+          </Button>
+          <Button
+            icon="image-outline"
+            onPress={() => onEnroll('library')}
+            textColor={COLORS.primary}
+            disabled={busy}
+          >
+            Chọn ảnh
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
   );
 }
 
@@ -287,6 +447,39 @@ const styles = StyleSheet.create({
   availRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   availTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
   availSub: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  faceIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceStatus: { marginTop: 2, fontSize: 13, color: COLORS.onSurfaceVariant, fontWeight: '600' },
+  faceHint: { marginTop: 10, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  faceActions: { marginTop: 12, gap: 8 },
+  faceButton: { borderRadius: 12 },
+  faceDialog: { borderRadius: 24, backgroundColor: COLORS.surface },
+  faceDialogContent: { alignItems: 'center', paddingTop: 8 },
+  faceDialogIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+    marginBottom: 12,
+  },
+  faceDialogTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface, textAlign: 'center' },
+  faceDialogText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.onSurfaceVariant,
+    textAlign: 'center',
+  },
+  faceDialogPrimary: { borderRadius: 12 },
   warnBox: {
     flexDirection: 'row',
     gap: 8,
