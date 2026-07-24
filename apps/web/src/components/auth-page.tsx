@@ -756,7 +756,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <label className="font-semibold text-base text-neutral-500" htmlFor="login-password">
                         Mật khẩu
                       </label>
-                      <a className="font-medium text-sm text-emerald-800 font-bold hover:underline" href="#">
+                      <a className="font-medium text-sm text-emerald-800 font-bold hover:underline" href="/forgot-password">
                         Quên mật khẩu?
                       </a>
                     </div>

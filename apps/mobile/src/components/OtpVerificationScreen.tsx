@@ -94,7 +94,7 @@ export function OtpVerificationScreen({
   };
 
   const otp = watch('otp');
-  const canSubmit = otp.length === 6 && !isLoading;
+  const canSubmit = (isPasswordReset ? otp.length >= 16 : otp.length === 6) && !isLoading;
 
   return (
     <AuthScaffold
@@ -109,10 +109,10 @@ export function OtpVerificationScreen({
           style={authStyles.primaryButton}
           contentStyle={authStyles.buttonContent}
           labelStyle={authStyles.buttonLabel}
-          accessibilityLabel="Xác nhận mã OTP"
+          accessibilityLabel={isPasswordReset ? 'Xác nhận mã đặt lại mật khẩu' : 'Xác nhận mã OTP'}
           accessibilityState={{ disabled: !canSubmit }}
         >
-          {isLoading ? 'Đang xác thực' : 'Xác nhận mã'}
+          {isLoading ? 'Đang xác thực' : isPasswordReset ? 'Tiếp tục' : 'Xác nhận mã'}
         </Button>
       }
     >
@@ -125,11 +125,11 @@ export function OtpVerificationScreen({
 
       <AuthIntro
         icon="shield-key-outline"
-        eyebrow="Mã OTP"
-        title={isPasswordReset ? 'Nhập mã để đặt lại mật khẩu' : 'Xác thực email của bạn'}
+        eyebrow={isPasswordReset ? 'Mã email' : 'Mã OTP'}
+        title={isPasswordReset ? 'Nhập mã trong email' : 'Xác thực email của bạn'}
         description={
           <>
-            Chúng tôi đã gửi mã 6 chữ số tới{' '}
+            Chúng tôi đã gửi {isPasswordReset ? 'mã đặt lại mật khẩu' : 'mã 6 chữ số'} tới{' '}
             <Text style={styles.emailText}>{email}</Text>.
           </>
         }
@@ -140,7 +140,7 @@ export function OtpVerificationScreen({
           <AuthField
             label="Mã xác thực"
             error={errors.otp?.message}
-            helper="Mã gồm 6 chữ số, thường có hiệu lực trong vài phút."
+            helper={isPasswordReset ? 'Dán mã đặt lại mật khẩu trong email FoodResQ.' : 'Mã gồm 6 chữ số, thường có hiệu lực trong vài phút.'}
           >
             <Controller
               control={control}
@@ -148,18 +148,25 @@ export function OtpVerificationScreen({
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   mode="outlined"
-                  label="000000"
-                  placeholder="Nhập 6 chữ số"
+                  label={isPasswordReset ? 'Mã trong email' : '000000'}
+                  placeholder={isPasswordReset ? 'Dán mã đặt lại mật khẩu' : 'Nhập 6 chữ số'}
                   value={value}
-                  onChangeText={(text) => onChange(text.replace(/[^0-9]/g, '').slice(0, 6))}
-                  keyboardType="numeric"
-                  maxLength={6}
+                  onChangeText={(text) =>
+                    onChange(
+                      isPasswordReset
+                        ? text.replace(/\s/g, '').slice(0, 128)
+                        : text.replace(/[^0-9]/g, '').slice(0, 6),
+                    )
+                  }
+                  keyboardType={isPasswordReset ? 'default' : 'numeric'}
+                  autoCapitalize="none"
+                  maxLength={isPasswordReset ? 128 : 6}
                   editable={!isLoading}
                   style={[authStyles.input, styles.otpInput]}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.otp}
-                  accessibilityLabel="Mã OTP gồm 6 chữ số"
+                  accessibilityLabel={isPasswordReset ? 'Mã đặt lại mật khẩu trong email' : 'Mã OTP gồm 6 chữ số'}
                 />
               )}
             />
@@ -177,7 +184,7 @@ export function OtpVerificationScreen({
                 (!canResend || isLoading) && authStyles.disabled,
               ]}
               accessibilityRole="button"
-              accessibilityLabel={canResend ? 'Gửi lại mã OTP' : `Gửi lại mã sau ${timeLeft} giây`}
+              accessibilityLabel={canResend ? 'Gửi lại mã' : `Gửi lại mã sau ${timeLeft} giây`}
               accessibilityState={{ disabled: !canResend || isLoading }}
             >
               <Text style={styles.resendText}>

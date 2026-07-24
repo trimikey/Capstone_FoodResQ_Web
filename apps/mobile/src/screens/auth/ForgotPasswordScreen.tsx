@@ -12,8 +12,8 @@ interface ForgotPasswordScreenProps {
 }
 
 /**
- * Forgot Password Container — gửi OTP đặt lại mật khẩu qua email,
- * rồi điều hướng sang màn nhập OTP.
+ * Forgot Password Container — gửi mã đặt lại mật khẩu qua email,
+ * rồi điều hướng sang màn nhập mã.
  */
 export default function ForgotPasswordScreen({
   navigation,
@@ -35,14 +35,14 @@ export default function ForgotPasswordScreen({
 
       Popup.show({
         type: 'success',
-        text1: 'Đã gửi mã OTP',
+        text1: 'Đã gửi email đặt lại mật khẩu',
         text2: 'Vui lòng kiểm tra email của bạn',
       });
       navigation.navigate('OtpVerification', { email, type: 'forgot_password' });
     } catch (error) {
       Popup.show({
         type: 'error',
-        text1: 'Gửi OTP thất bại',
+        text1: 'Gửi email thất bại',
         text2: getErrorMessage(error),
       });
     } finally {
