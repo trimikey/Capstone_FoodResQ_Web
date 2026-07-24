@@ -107,8 +107,8 @@ export type SignUpRecipientInfoInput = z.infer<typeof signUpRecipientInfoSchema>
 export const otpVerificationSchema = z.object({
   otp: z
     .string()
-    .length(6, 'OTP must be 6 digits')
-    .regex(/^\d+$/, 'OTP must contain only numbers'),
+    .min(6, 'Mã xác thực không hợp lệ')
+    .max(128, 'Mã xác thực không hợp lệ'),
   // email là metadata truyền qua prop (không bắt buộc) — verify thực ở backend.
   email: z.string().optional(),
 });

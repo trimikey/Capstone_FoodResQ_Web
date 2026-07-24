@@ -13,16 +13,15 @@ export default function ResetPasswordScreen({
   navigation,
   route,
 }: ResetPasswordScreenProps) {
-  const { email, otp } = route.params || {};
+  const { email, token } = route.params || {};
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSuccess = async (newPassword: string) => {
     try {
       setIsLoading(true);
       await apiClient.post(endpoints.auth.resetPassword, {
-        email: String(email),
-        otp: String(otp),
-        newPassword,
+        token: String(token),
+        password: newPassword,
       });
 
       Popup.show({
@@ -49,7 +48,7 @@ export default function ResetPasswordScreen({
   return (
     <ResetPasswordScreenComponent
       email={email || ''}
-      otp={otp || ''}
+      token={token || ''}
       onSuccess={handleSuccess}
       onBack={handleBack}
       isLoading={isLoading}

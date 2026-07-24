@@ -20,7 +20,7 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface ResetPasswordScreenProps {
   email: string;
-  otp: string;
+  token: string;
   onSuccess?: (newPassword: string) => void | Promise<void>;
   onBack?: () => void;
   isLoading?: boolean;
@@ -28,7 +28,7 @@ interface ResetPasswordScreenProps {
 
 export function ResetPasswordScreen({
   email,
-  otp,
+  token,
   onSuccess,
   onBack,
   isLoading = false,
@@ -54,7 +54,7 @@ export function ResetPasswordScreen({
 
   const strength = getPasswordStrength(password);
   const passwordsMatch = password === confirmPassword && password.length > 0;
-  const canSubmit = passwordsMatch && !isLoading;
+  const canSubmit = passwordsMatch && token.length >= 16 && !isLoading;
 
   const onSubmit = async (data: ResetPasswordInput) => {
     try {
@@ -97,7 +97,7 @@ export function ResetPasswordScreen({
         title="Tạo mật khẩu an toàn"
         description={
           <>
-            Tài khoản <Text style={styles.emailText}>{email}</Text> đã được xác thực bằng mã OTP.
+            Tài khoản <Text style={styles.emailText}>{email}</Text> đã được xác thực bằng mã trong email.
           </>
         }
       />
