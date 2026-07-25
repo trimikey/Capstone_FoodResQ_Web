@@ -8,7 +8,8 @@ import {
   Dialog,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
 import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
 import { listingStatusDisplay } from '@/components/ProviderListingCard';
@@ -25,6 +26,7 @@ import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ProviderListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const { data: listing, isLoading, isError, refetch } = useListingDetail(id);
   const publish = usePublishListing();
   const cancel = useCancelListing();
@@ -61,6 +63,11 @@ export default function ProviderListingDetailScreen() {
   const sd = listingStatusDisplay(listing?.status);
   const canPublish = listing?.status === 'draft';
   const canCancel = listing?.status === 'draft' || listing?.status === 'active';
+  const canEdit = listing?.status === 'draft' || listing?.status === 'active' || listing?.status === 'fully_reserved';
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -109,6 +116,17 @@ export default function ProviderListingDetailScreen() {
           </ScrollView>
 
           <View style={[styles.footer]}>
+            {canEdit ? (
+              <Button
+                mode="contained-tonal"
+                icon="pencil-outline"
+                onPress={() => router.push(`/(app)/provider/create?editId=${id}`)}
+                disabled={busy}
+                style={styles.actionBtn}
+              >
+                Sửa
+              </Button>
+            ) : null}
             {canPublish ? (
               <Button mode="contained" icon="send" onPress={handlePublish} loading={busy} disabled={busy}
                 buttonColor={COLORS.primary} style={styles.actionBtn}>

@@ -27,6 +27,11 @@ function formatKm(km: unknown): string | null {
   return Number.isFinite(n) ? `${n.toFixed(1)} km` : null;
 }
 
+function formatDecimal(value: unknown): string | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(1) : null;
+}
+
 function StatsHeader({ stats }: { stats?: DeliveryStats }) {
   if (!stats) return null;
   const cards: { icon: string; label: string; value: string; tint: string }[] = [
@@ -43,7 +48,7 @@ function StatsHeader({ stats }: { stats?: DeliveryStats }) {
     {
       icon: 'star',
       label: 'Đánh giá',
-      value: stats.avgRating != null ? stats.avgRating.toFixed(1) : '-',
+      value: formatDecimal(stats.avgRating) ?? '-',
       tint: COLORS.warning,
     },
   ];

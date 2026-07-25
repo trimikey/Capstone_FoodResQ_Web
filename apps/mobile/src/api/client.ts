@@ -159,6 +159,22 @@ export interface ApiUserProfile extends ApiUser {
   receiver?: {
     isCharityOrg: boolean;
     organizationName: string | null;
+    address?: string | null;
+    lng?: number | null;
+    lat?: number | null;
+  } | null;
+  provider?: {
+    id: string;
+    businessName: string;
+    businessType: string;
+    address: string | null;
+    contactPhone: string | null;
+    taxCode?: string | null;
+    isVerified?: boolean;
+    avgRating?: number | null;
+    verificationStatus?: string;
+    lng?: number | null;
+    lat?: number | null;
   } | null;
 }
 
@@ -167,6 +183,9 @@ export interface UpdateProfileInput {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  address?: string;
+  lng?: number;
+  lat?: number;
 }
 
 /**
@@ -211,6 +230,7 @@ export const endpoints = {
     // Provider (nhà cung cấp đăng tin)
     create: '/listings',
     providerMy: '/listings/provider/my',
+    update: (id: string) => `/listings/${id}`,
     publish: (id: string) => `/listings/${id}/publish`,
     cancel: (id: string) => `/listings/${id}/cancel`,
   },
@@ -234,6 +254,9 @@ export const endpoints = {
     create: '/reports',
     my: '/reports/my',
   },
+  esg: {
+    providerMe: '/esg/provider/me',
+  },
   deliveries: {
     // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
     track: (reservationId: string) => `/deliveries/track/${reservationId}`,
@@ -250,6 +273,15 @@ export const endpoints = {
     // PATCH multipart {status, photo?} — chuyển bước (kèm ảnh QC/proof)
     updateStatus: (id: string) => `/deliveries/${id}/status`,
   },
+  bulkRuns: {
+    my: '/bulk-runs/my',
+    request: '/bulk-runs',
+    pickup: (id: string) => `/bulk-runs/${id}/pickup`,
+    addStop: (id: string) => `/bulk-runs/${id}/stops`,
+    serveStop: (id: string, stopId: string) => `/bulk-runs/${id}/stops/${stopId}/serve`,
+    complete: (id: string) => `/bulk-runs/${id}/complete`,
+    cancel: (id: string) => `/bulk-runs/${id}/cancel`,
+  },
   volunteers: {
     // Hồ sơ tình nguyện viên + trạng thái sẵn sàng + vị trí hiện tại
     me: '/volunteers/me',
@@ -265,8 +297,13 @@ export const endpoints = {
     // Charity-org (receiver isCharityOrg) quản lý bếp ăn của mình
     my: '/campaigns/my',
     create: '/campaigns',
+    completed: '/campaigns/completed',
+    uploadImage: '/campaigns/upload-image',
     start: (id: string) => `/campaigns/${id}/start`,
+    cancel: (id: string) => `/campaigns/${id}/cancel`,
     complete: (id: string) => `/campaigns/${id}/complete`,
+    changeRequests: (id: string) => `/campaigns/${id}/change-requests`,
+    cancelChangeRequest: (id: string) => `/campaigns/change-requests/${id}/cancel`,
     // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
     confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
     // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch

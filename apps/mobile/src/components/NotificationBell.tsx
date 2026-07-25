@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
-import { Text, Portal, Modal } from 'react-native-paper';
+import { Button, Text, Portal, Modal } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import {
   useNotifications,
   useUnreadCount,
   useMarkAllRead,
+  useMarkRead,
   type AppNotification,
 } from '../hooks/useNotifications';
 
@@ -34,16 +35,17 @@ export function NotificationBell() {
   const { data: unread = 0, refetch: refetchUnread } = useUnreadCount();
   const { data: items = [], refetch: refetchList } = useNotifications();
   const markAllRead = useMarkAllRead();
+  const markRead = useMarkRead();
 
   const openSheet = () => {
     setOpen(true);
     // Luôn lấy danh sách mới nhất khi mở (không phụ thuộc WS).
     void refetchList();
     void refetchUnread();
-    if (unread > 0) markAllRead.mutate();
   };
 
   const onItemPress = (n: AppNotification) => {
+    if (!n.isRead) markRead.mutate(n.id);
     setOpen(false);
     const resId = n.data?.['reservationId'];
     if (n.type === 'reservation' && typeof resId === 'string') {
@@ -68,7 +70,20 @@ export function NotificationBell() {
           onDismiss={() => setOpen(false)}
           contentContainerStyle={styles.sheet}
         >
-          <Text variant="titleMedium" style={styles.sheetTitle}>Thông báo</Text>
+          <View style={styles.sheetHeader}>
+            <Text variant="titleMedium" style={styles.sheetTitle}>Thông báo</Text>
+            {unread > 0 ? (
+              <Button
+                mode="text"
+                compact
+                onPress={() => markAllRead.mutate()}
+                loading={markAllRead.isPending}
+                disabled={markAllRead.isPending}
+              >
+                Đọc tất cả
+              </Button>
+            ) : null}
+          </View>
           {items.length === 0 ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons name="bell-sleep-outline" size={40} color={COLORS.onSurfaceVariant} />
@@ -82,7 +97,10 @@ export function NotificationBell() {
                   onPress={() => onItemPress(n)}
                   style={[styles.item, !n.isRead && styles.itemUnread]}
                 >
-                  <Text style={styles.itemTitle}>{n.title}</Text>
+                  <View style={styles.itemTitleRow}>
+                    <Text style={styles.itemTitle}>{n.title}</Text>
+                    {!n.isRead ? <View style={styles.unreadDot} /> : null}
+                  </View>
                   <Text style={styles.itemBody}>{n.body}</Text>
                   <Text style={styles.itemTime}>{timeAgo(n.createdAt)}</Text>
                 </Pressable>
@@ -106,11 +124,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, marginHorizontal: 20, borderRadius: 16,
     paddingVertical: 16, maxHeight: '70%',
   },
-  sheetTitle: { fontWeight: '700', color: COLORS.onSurface, paddingHorizontal: 20, marginBottom: 8 },
+  sheetHeader: {
+    paddingHorizontal: 20,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sheetTitle: { fontWeight: '700', color: COLORS.onSurface },
   list: { paddingHorizontal: 12 },
   item: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4 },
   itemUnread: { backgroundColor: COLORS.unreadBg },
-  itemTitle: { fontWeight: '700', color: COLORS.onSurface, fontSize: 14 },
+  itemTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemTitle: { flex: 1, fontWeight: '700', color: COLORS.onSurface, fontSize: 14 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.badge },
   itemBody: { color: COLORS.onSurfaceVariant, fontSize: 13, marginTop: 2 },
   itemTime: { color: '#9ca3af', fontSize: 11, marginTop: 4 },
   empty: { alignItems: 'center', paddingVertical: 32, gap: 8 },

@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 
 export type ReportTargetType = 'user' | 'listing' | 'delivery' | 'campaign';
@@ -16,6 +16,21 @@ export interface CreateReportInput {
   description?: string;
 }
 
+export interface MyReport {
+  id: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: ReportReason;
+  description: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+interface MyReportsPage {
+  items: MyReport[];
+}
+
 /** Gửi báo cáo. POST /reports */
 export function useCreateReport() {
   return useMutation({
@@ -25,6 +40,17 @@ export function useCreateReport() {
         input
       );
       return res.data.data;
+    },
+  });
+}
+
+/** Báo cáo của tôi. GET /reports/my */
+export function useMyReports() {
+  return useQuery({
+    queryKey: ['reports', 'my'],
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<MyReport[] | MyReportsPage>>(endpoints.reports.my);
+      return Array.isArray(res.data.data) ? res.data.data : res.data.data.items;
     },
   });
 }

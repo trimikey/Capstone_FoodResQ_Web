@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
-import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
+import { useProviderEsg, useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
 import { ProviderListingCard } from '@/components/ProviderListingCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
@@ -31,6 +31,7 @@ const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[
 export default function ProviderListingsScreen() {
   const { user, initialize } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProviderListings();
+  const { data: esg } = useProviderEsg();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [checking, setChecking] = useState(false);
 
@@ -128,6 +129,7 @@ export default function ProviderListingsScreen() {
           />
         )}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={esg ? <EsgCard esg={esg} /> : null}
         ListEmptyComponent={renderEmpty}
         refreshing={isRefetching}
         onRefresh={() => refetch()}
@@ -144,6 +146,41 @@ export default function ProviderListingsScreen() {
   );
 }
 
+function EsgCard({
+  esg,
+}: {
+  esg: {
+    kgRescued: number;
+    co2SavedKg: number;
+    mealsServed: number;
+    peopleHelped: number;
+  };
+}) {
+  return (
+    <View style={styles.esgCard}>
+      <View style={styles.esgHead}>
+        <MaterialCommunityIcons name="leaf-circle-outline" size={20} color={COLORS.primary} />
+        <Text style={styles.esgTitle}>Tác động ESG</Text>
+      </View>
+      <View style={styles.esgGrid}>
+        <EsgItem label="Kg đã cứu" value={`${esg.kgRescued} kg`} />
+        <EsgItem label="CO2 giảm" value={`${esg.co2SavedKg} kg`} />
+        <EsgItem label="Suất trao" value={String(esg.mealsServed)} />
+        <EsgItem label="Người giúp" value={String(esg.peopleHelped)} />
+      </View>
+    </View>
+  );
+}
+
+function EsgItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.esgItem}>
+      <Text style={styles.esgValue}>{value}</Text>
+      <Text style={styles.esgLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: { height: 56, paddingHorizontal: 20, justifyContent: 'center' },
@@ -151,6 +188,25 @@ const styles = StyleSheet.create({
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
+  esgCard: {
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  esgHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  esgTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  esgGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  esgItem: {
+    width: '48%',
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  esgValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
+  esgLabel: { marginTop: 2, fontSize: 12, fontWeight: '600', color: COLORS.onSurfaceVariant },
   fab: { position: 'absolute', right: 20, bottom: 24, backgroundColor: COLORS.primary },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   pendingIcon: {

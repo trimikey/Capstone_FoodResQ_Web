@@ -7,8 +7,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
   useCampaignDetail,
   useStartCampaign,
+  useCancelCampaign,
   useCompleteCampaign,
   useConfirmDonation,
+  useCampaignChangeRequests,
+  useSubmitCampaignChange,
+  useCancelCampaignChange,
+  type Campaign,
+  type CampaignChangeRequest,
+  type SubmitCampaignChangeInput,
 } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useRemoveMenuItem } from '@/hooks/useKitchenOps';
 import { ShiftDialog } from '@/components/kitchen/ShiftDialog';
@@ -27,6 +34,13 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS } from '@/theme/design';
+
+const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: 'Chờ duyệt', color: '#d97706', bg: '#fffbeb' },
+  approved: { label: 'Đã duyệt', color: '#059669', bg: '#ecfdf5' },
+  rejected: { label: 'Bị từ chối', color: '#dc2626', bg: '#fef2f2' },
+  cancelled: { label: 'Đã huỷ', color: '#6b7280', bg: '#f3f4f6' },
+};
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -54,6 +68,7 @@ export default function CharityCampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
   const startMut = useStartCampaign();
+  const cancelMut = useCancelCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
   const { data: shifts = [] } = useShifts(id);
@@ -63,6 +78,8 @@ export default function CharityCampaignDetailScreen() {
   const [servings, setServings] = useState('');
   const [shiftDialog, setShiftDialog] = useState(false);
   const [menuDialog, setMenuDialog] = useState(false);
+  const [changeDialog, setChangeDialog] = useState(false);
+  const [cancelVisible, setCancelVisible] = useState(false);
 
   const Header = (
     <View style={styles.header}>
@@ -104,6 +121,16 @@ export default function CharityCampaignDetailScreen() {
       Popup.show({ type: 'success', text1: 'Đã bắt đầu chiến dịch' });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Không bắt đầu được', text2: getErrorMessage(err) });
+    }
+  };
+
+  const handleCancelCampaign = async () => {
+    try {
+      await cancelMut.mutateAsync(c.id);
+      setCancelVisible(false);
+      Popup.show({ type: 'success', text1: 'Đã huỷ chiến dịch' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Huỷ chiến dịch thất bại', text2: getErrorMessage(err) });
     }
   };
 
@@ -167,6 +194,21 @@ export default function CharityCampaignDetailScreen() {
             <InfoRow icon="check-circle-outline">Đã phục vụ thực tế {c.actualServings} suất</InfoRow>
           ) : null}
         </View>
+
+        <Section title="Yêu cầu thay đổi">
+          <Text style={styles.muted}>
+            Xem lịch sử và gửi yêu cầu thay đổi ngày, giờ, địa chỉ hoặc số lượng tình nguyện viên khi chiến dịch đang tuyển.
+          </Text>
+          <Button
+            mode="outlined"
+            icon="tune"
+            textColor={COLORS.primary}
+            style={styles.outlineAction}
+            onPress={() => setChangeDialog(true)}
+          >
+            Chi tiết & yêu cầu thay đổi
+          </Button>
+        </Section>
 
         {slots.length > 0 ? (
           <Section title="Tình nguyện viên cần tuyển">
@@ -326,13 +368,26 @@ export default function CharityCampaignDetailScreen() {
       {/* Footer: hành động theo trạng thái */}
       <View style={styles.footer}>
         {canStartCampaign(c.status) ? (
-          <Button
-            mode="contained" icon="play-circle-outline" buttonColor={COLORS.primary}
-            loading={startMut.isPending} disabled={startMut.isPending}
-            onPress={handleStart} contentStyle={{ height: 48 }} style={styles.footerBtn}
-          >
-            Bắt đầu chiến dịch
-          </Button>
+          <View style={styles.footerActions}>
+            <Button
+              mode="outlined"
+              icon="close-circle-outline"
+              textColor={COLORS.error}
+              disabled={cancelMut.isPending || startMut.isPending}
+              onPress={() => setCancelVisible(true)}
+              contentStyle={{ height: 48 }}
+              style={[styles.footerBtn, styles.cancelBtn]}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained" icon="play-circle-outline" buttonColor={COLORS.primary}
+              loading={startMut.isPending} disabled={startMut.isPending || cancelMut.isPending}
+              onPress={handleStart} contentStyle={{ height: 48 }} style={[styles.footerBtn, { flex: 1 }]}
+            >
+              Bắt đầu chiến dịch
+            </Button>
+          </View>
         ) : canCompleteCampaign(c.status) ? (
           <Button
             mode="contained" icon="flag-checkered" buttonColor={COLORS.primary}
@@ -373,11 +428,242 @@ export default function CharityCampaignDetailScreen() {
             </Button>
           </Dialog.Actions>
         </Dialog>
+
+        <Dialog visible={cancelVisible} onDismiss={() => !cancelMut.isPending && setCancelVisible(false)} style={styles.dialog}>
+          <Dialog.Title style={styles.dialogTitle}>Huỷ chiến dịch?</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.muted}>Chiến dịch đang mở sẽ chuyển sang trạng thái đã huỷ. Hành động này không thể hoàn tác.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setCancelVisible(false)} textColor={COLORS.onSurfaceVariant} disabled={cancelMut.isPending}>
+              Để sau
+            </Button>
+            <Button mode="contained" buttonColor={COLORS.error} onPress={handleCancelCampaign} loading={cancelMut.isPending} disabled={cancelMut.isPending}>
+              Huỷ chiến dịch
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
 
+      <CampaignChangeDialog
+        visible={changeDialog}
+        campaign={c}
+        onDismiss={() => setChangeDialog(false)}
+      />
       <ShiftDialog visible={shiftDialog} campaignId={c.id} onDismiss={() => setShiftDialog(false)} />
       <MenuItemDialog visible={menuDialog} campaignId={c.id} onDismiss={() => setMenuDialog(false)} />
     </SafeAreaView>
+  );
+}
+
+function CampaignChangeDialog({
+  visible,
+  campaign,
+  onDismiss,
+}: {
+  visible: boolean;
+  campaign: Campaign;
+  onDismiss: () => void;
+}) {
+  const { data: requests = [], isLoading } = useCampaignChangeRequests(campaign.id, visible);
+  const submitMut = useSubmitCampaignChange();
+  const cancelChangeMut = useCancelCampaignChange();
+  const editable = campaign.status === 'open';
+  const hasPending = requests.some((r) => r.status === 'pending');
+
+  const [scheduledDate, setScheduledDate] = useState(campaign.scheduledDate.slice(0, 10));
+  const [startTime, setStartTime] = useState(campaign.startTime.slice(0, 5));
+  const [endTime, setEndTime] = useState(campaign.endTime.slice(0, 5));
+  const [kitchenAddress, setKitchenAddress] = useState(campaign.kitchenAddress);
+  const [chefSlots, setChefSlots] = useState(String(campaign.chefSlotsNeeded));
+  const [waiterSlots, setWaiterSlots] = useState(String(campaign.waiterSlotsNeeded));
+  const [shipperSlots, setShipperSlots] = useState(String(campaign.shipperSlotsNeeded));
+  const [reason, setReason] = useState('');
+
+  const original = {
+    scheduledDate: campaign.scheduledDate.slice(0, 10),
+    startTime: campaign.startTime.slice(0, 5),
+    endTime: campaign.endTime.slice(0, 5),
+    kitchenAddress: campaign.kitchenAddress,
+    chefSlotsNeeded: campaign.chefSlotsNeeded,
+    waiterSlotsNeeded: campaign.waiterSlotsNeeded,
+    shipperSlotsNeeded: campaign.shipperSlotsNeeded,
+  };
+
+  const diffInput = (): SubmitCampaignChangeInput => {
+    const input: SubmitCampaignChangeInput = {};
+    if (scheduledDate !== original.scheduledDate) input.scheduledDate = scheduledDate;
+    if (startTime !== original.startTime) input.startTime = startTime;
+    if (endTime !== original.endTime) input.endTime = endTime;
+    if (kitchenAddress.trim() !== original.kitchenAddress) input.kitchenAddress = kitchenAddress.trim();
+
+    const chef = parseInt(chefSlots, 10);
+    const waiter = parseInt(waiterSlots, 10);
+    const shipper = parseInt(shipperSlots, 10);
+    if (Number.isFinite(chef) && chef !== original.chefSlotsNeeded) input.chefSlotsNeeded = chef;
+    if (Number.isFinite(waiter) && waiter !== original.waiterSlotsNeeded) input.waiterSlotsNeeded = waiter;
+    if (Number.isFinite(shipper) && shipper !== original.shipperSlotsNeeded) input.shipperSlotsNeeded = shipper;
+    if (reason.trim()) input.reason = reason.trim();
+    return input;
+  };
+
+  const handleSubmit = async () => {
+    if (!editable) {
+      Popup.show({ type: 'warning', text1: 'Chưa thể gửi yêu cầu', text2: 'Chỉ gửi được khi chiến dịch đang tuyển.' });
+      return;
+    }
+    if (endTime <= startTime) {
+      Popup.show({ type: 'warning', text1: 'Giờ không hợp lệ', text2: 'Giờ kết thúc phải sau giờ bắt đầu.' });
+      return;
+    }
+    if (kitchenAddress.trim().length < 5) {
+      Popup.show({ type: 'warning', text1: 'Địa chỉ quá ngắn' });
+      return;
+    }
+    const input = diffInput();
+    const { reason: _reason, ...changes } = input;
+    if (Object.keys(changes).length === 0) {
+      Popup.show({ type: 'warning', text1: 'Chưa có thay đổi nào' });
+      return;
+    }
+    try {
+      await submitMut.mutateAsync({ id: campaign.id, input });
+      setReason('');
+      Popup.show({ type: 'success', text1: 'Đã gửi yêu cầu thay đổi' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Gửi yêu cầu thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  const handleCancelChange = async (changeRequestId: string) => {
+    try {
+      await cancelChangeMut.mutateAsync({ changeRequestId, campaignId: campaign.id });
+      Popup.show({ type: 'success', text1: 'Đã huỷ yêu cầu thay đổi' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Huỷ yêu cầu thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  return (
+    <Portal>
+      <Dialog visible={visible} onDismiss={onDismiss} style={styles.dialogLarge}>
+        <Dialog.Title style={styles.dialogTitle}>Yêu cầu thay đổi</Dialog.Title>
+        <Dialog.ScrollArea style={styles.changeScrollArea}>
+          <ScrollView contentContainerStyle={styles.changeContent}>
+            {!editable ? (
+              <Text style={styles.changeNotice}>
+                Chỉ gửi được yêu cầu thay đổi khi chiến dịch đang ở trạng thái Đang tuyển. Trạng thái hiện tại: {statusMeta(campaign.status).label}.
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.formHint}>Nhập trường cần đổi, hệ thống chỉ gửi phần khác với thông tin hiện tại.</Text>
+                <View style={styles.changeGrid}>
+                  <TextInput mode="outlined" dense label="Ngày" value={scheduledDate} onChangeText={setScheduledDate} style={styles.changeInput} />
+                  <TextInput mode="outlined" dense label="Bắt đầu" value={startTime} onChangeText={setStartTime} style={styles.changeInput} />
+                  <TextInput mode="outlined" dense label="Kết thúc" value={endTime} onChangeText={setEndTime} style={styles.changeInput} />
+                </View>
+                <TextInput mode="outlined" dense label="Địa chỉ bếp" value={kitchenAddress} onChangeText={setKitchenAddress} style={styles.changeInput} />
+                <View style={styles.changeGrid}>
+                  <TextInput mode="outlined" dense label="Đầu bếp" keyboardType="numeric" value={chefSlots} onChangeText={setChefSlots} style={styles.changeInput} />
+                  <TextInput mode="outlined" dense label="Phục vụ" keyboardType="numeric" value={waiterSlots} onChangeText={setWaiterSlots} style={styles.changeInput} />
+                  <TextInput mode="outlined" dense label="Giao hàng" keyboardType="numeric" value={shipperSlots} onChangeText={setShipperSlots} style={styles.changeInput} />
+                </View>
+                <TextInput
+                  mode="outlined"
+                  dense
+                  multiline
+                  numberOfLines={2}
+                  label="Lý do (tuỳ chọn)"
+                  value={reason}
+                  onChangeText={setReason}
+                  style={styles.changeInput}
+                />
+                <Button
+                  mode="contained"
+                  icon="send"
+                  buttonColor={COLORS.primary}
+                  onPress={handleSubmit}
+                  loading={submitMut.isPending}
+                  disabled={submitMut.isPending || hasPending}
+                >
+                  {hasPending ? 'Đã có yêu cầu chờ duyệt' : 'Gửi yêu cầu'}
+                </Button>
+              </>
+            )}
+
+            <Text style={styles.historyTitle}>Lịch sử yêu cầu</Text>
+            {isLoading ? (
+              <Text style={styles.muted}>Đang tải lịch sử...</Text>
+            ) : requests.length === 0 ? (
+              <Text style={styles.muted}>Chưa có yêu cầu thay đổi nào.</Text>
+            ) : (
+              requests.map((request) => (
+                <ChangeRequestRow
+                  key={request.id}
+                  request={request}
+                  onCancel={handleCancelChange}
+                  cancelling={cancelChangeMut.isPending}
+                />
+              ))
+            )}
+          </ScrollView>
+        </Dialog.ScrollArea>
+        <Dialog.Actions>
+          <Button onPress={onDismiss} textColor={COLORS.onSurfaceVariant}>
+            Đóng
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
+  );
+}
+
+function ChangeRequestRow({
+  request,
+  onCancel,
+  cancelling,
+}: {
+  request: CampaignChangeRequest;
+  onCancel: (id: string) => void;
+  cancelling: boolean;
+}) {
+  const meta = CHANGE_STATUS_META[request.status] ?? { label: request.status, color: '#6b7280', bg: '#f3f4f6' };
+  const parts = [
+    request.scheduledDate ? `Ngày: ${formatDate(request.scheduledDate)}` : '',
+    request.startTime || request.endTime ? `Giờ: ${formatTime(request.startTime ?? '')}-${formatTime(request.endTime ?? '')}` : '',
+    request.kitchenAddress ? `Địa chỉ: ${request.kitchenAddress}` : '',
+    request.chefSlotsNeeded != null ? `Đầu bếp: ${request.chefSlotsNeeded}` : '',
+    request.waiterSlotsNeeded != null ? `Phục vụ: ${request.waiterSlotsNeeded}` : '',
+    request.shipperSlotsNeeded != null ? `Giao hàng: ${request.shipperSlotsNeeded}` : '',
+  ].filter(Boolean);
+
+  return (
+    <View style={styles.changeRow}>
+      <View style={styles.changeRowHeader}>
+        <View style={[styles.changeBadge, { backgroundColor: meta.bg }]}>
+          <Text style={[styles.changeBadgeText, { color: meta.color }]}>{meta.label}</Text>
+        </View>
+        <Text style={styles.changeDate}>{new Date(request.createdAt).toLocaleDateString('vi-VN')}</Text>
+      </View>
+      {parts.map((part) => (
+        <Text key={part} style={styles.changePart}>{part}</Text>
+      ))}
+      {request.reason ? <Text style={styles.changeReason}>Lý do: {request.reason}</Text> : null}
+      {request.reviewNote ? <Text style={styles.changeReview}>Ghi chú admin: {request.reviewNote}</Text> : null}
+      {request.status === 'pending' ? (
+        <Button
+          mode="text"
+          compact
+          textColor={COLORS.error}
+          onPress={() => onCancel(request.id)}
+          loading={cancelling}
+          disabled={cancelling}
+          style={styles.cancelChangeBtn}
+        >
+          Huỷ yêu cầu
+        </Button>
+      ) : null}
+    </View>
   );
 }
 
@@ -416,6 +702,7 @@ const styles = StyleSheet.create({
   shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   addBtn: { alignSelf: 'flex-start', marginTop: 8 },
+  outlineAction: { alignSelf: 'flex-start', borderColor: COLORS.outline, marginTop: 10 },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
@@ -428,8 +715,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
     borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,
   },
+  footerActions: { flexDirection: 'row', gap: 10 },
   footerBtn: { borderRadius: 12 },
+  cancelBtn: { borderColor: COLORS.error, minWidth: 104 },
   footerNote: { textAlign: 'center', fontSize: 14, color: COLORS.onSurfaceVariant },
   dialog: { borderRadius: 20 },
+  dialogLarge: { borderRadius: 20, maxHeight: '88%' },
   dialogTitle: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
+  changeScrollArea: { paddingHorizontal: 0 },
+  changeContent: { paddingHorizontal: 24, paddingBottom: 8 },
+  changeNotice: {
+    fontSize: 13,
+    color: COLORS.onSurfaceVariant,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 12,
+    lineHeight: 19,
+  },
+  formHint: { fontSize: 12, color: COLORS.onSurfaceVariant, marginBottom: 10, lineHeight: 18 },
+  changeGrid: { flexDirection: 'row', gap: 8 },
+  changeInput: { flex: 1, backgroundColor: COLORS.surface, marginBottom: 10 },
+  historyTitle: { fontSize: 14, fontWeight: '800', color: COLORS.onSurface, marginTop: 18, marginBottom: 8 },
+  changeRow: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  changeRowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  changeBadge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  changeBadgeText: { fontSize: 11, fontWeight: '800' },
+  changeDate: { fontSize: 11, color: COLORS.onSurfaceVariant },
+  changePart: { fontSize: 12, color: COLORS.onSurface, marginBottom: 3 },
+  changeReason: { fontSize: 12, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 4 },
+  changeReview: { fontSize: 12, color: COLORS.error, marginTop: 4 },
+  cancelChangeBtn: { alignSelf: 'flex-start', marginTop: 4 },
 });

@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
 import { useMyProfile } from '@/hooks/useProfile';
+import { VolunteerKitchenOpsPanel } from '@/components/kitchen/VolunteerKitchenOpsPanel';
 import {
   statusMeta,
   formatDate,
@@ -88,6 +89,9 @@ export default function VolunteerCampaignDetailScreen() {
   const open = canApplyCampaign(c.status);
   // Chuyên môn TNV đang đăng nhập (chef/waiter/shipper).
   const mySpecs = new Set((profile?.volunteer?.specializations ?? []).map((s) => s.specialization));
+  const verifiedSpecs = new Set(
+    (profile?.volunteer?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
+  );
   // Vai trò TNV đã đăng ký ở chính chiến dịch này.
   const appliedRoles = new Set((myTasks ?? []).filter((t) => t.campaign.id === c.id).map((t) => t.role));
 
@@ -279,6 +283,12 @@ export default function VolunteerCampaignDetailScreen() {
             </View>
           </Section>
         ) : null}
+
+        <VolunteerKitchenOpsPanel
+          campaignId={c.id}
+          isChef={verifiedSpecs.has('chef')}
+          isWaiter={verifiedSpecs.has('waiter')}
+        />
       </ScrollView>
     </SafeAreaView>
   );

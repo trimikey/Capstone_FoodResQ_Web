@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, TextInput, ActivityIndicator, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Redirect } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
 import { useScanQr, useConfirmPickup, type ScanResult } from '@/hooks/useProviderScan';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
@@ -13,6 +15,7 @@ import { notifyError, notifySuccess, selectionFeedback } from '@/services/haptic
 import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ScanQrScreen() {
+  const { user } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const scan = useScanQr();
   const confirm = useConfirmPickup();
@@ -21,6 +24,10 @@ export default function ScanQrScreen() {
   const [scanning, setScanning] = useState(false); // khoá khi đang gọi API
   const [manualToken, setManualToken] = useState('');
   const [torch, setTorch] = useState(false); // đèn flash
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   const handleScan = async (token: string) => {
     if (scanning || !token) return;

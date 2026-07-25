@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Popup } from '@/components/ui/AppPopup';
+import { useAuth } from '@/hooks/useAuth';
 
 import { useListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservations';
@@ -32,6 +33,7 @@ interface Props {
 
 export default function ListingDetailScreen({ id }: Props) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { data: listing, isLoading, isError, refetch } = useListingDetail(id);
   const createMut = useCreateReservation();
 
@@ -61,6 +63,7 @@ export default function ListingDetailScreen({ id }: Props) {
     Math.min(listing.maxPerReservation, listing.quantityRemaining, 10)
   );
   const soldOut = listing.quantityRemaining <= 0 || listing.status !== 'active';
+  const providerBlocked = user?.role === 'provider';
   const unit = listing.quantityUnit;
 
   const openDialog = () => {
@@ -150,10 +153,10 @@ export default function ListingDetailScreen({ id }: Props) {
           buttonColor={COLORS.primary}
           style={styles.cta}
           contentStyle={styles.ctaContent}
-          disabled={soldOut}
-          onPress={openDialog}
+          disabled={soldOut && !providerBlocked}
+          onPress={providerBlocked ? () => router.replace('/(app)/provider/listings') : openDialog}
         >
-          {soldOut ? 'Đã hết phần' : 'Đặt chỗ'}
+          {providerBlocked ? 'Về Tin của tôi' : soldOut ? 'Đã hết phần' : 'Đặt chỗ'}
         </Button>
       </View>
 

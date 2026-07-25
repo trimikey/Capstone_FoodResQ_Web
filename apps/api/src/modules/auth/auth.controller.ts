@@ -17,6 +17,8 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -61,6 +63,20 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.authService.login(dto, ua, ip);
+  }
+
+  @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Gửi email đặt lại mật khẩu nếu tài khoản tồn tại' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng token nhận qua email' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Post('google')

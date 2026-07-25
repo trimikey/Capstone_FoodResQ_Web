@@ -64,8 +64,8 @@ export function ForgotPasswordScreen({
       <AuthIntro
         icon="lock-question"
         eyebrow="Quên mật khẩu"
-        title="Nhận mã xác thực qua email"
-        description="Nhập email đã đăng ký. FoodResQ sẽ gửi mã OTP để bạn đặt lại mật khẩu an toàn."
+        title="Nhận mã đặt lại qua email"
+        description="Nhập email đã đăng ký. FoodResQ sẽ gửi liên kết và mã để bạn đặt lại mật khẩu an toàn."
       />
 
       <FadeInUp delay={80}>
@@ -106,10 +106,10 @@ export function ForgotPasswordScreen({
             style={authStyles.primaryButton}
             contentStyle={authStyles.buttonContent}
             labelStyle={authStyles.buttonLabel}
-            accessibilityLabel="Gửi mã OTP đặt lại mật khẩu"
+            accessibilityLabel="Gửi email đặt lại mật khẩu"
             accessibilityState={{ disabled: isLoading }}
           >
-            {isLoading ? 'Đang gửi mã' : 'Gửi mã OTP'}
+            {isLoading ? 'Đang gửi email' : 'Gửi email đặt lại mật khẩu'}
           </Button>
         </AuthCard>
       </FadeInUp>

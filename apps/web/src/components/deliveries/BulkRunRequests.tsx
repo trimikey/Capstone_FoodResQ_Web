@@ -55,7 +55,7 @@ export default function BulkRunRequests() {
         </p>
       </div>
       <p className="text-xs text-neutral-500 -mt-1">
-        Tình nguyện viên nhận ≥10 phần một lần và phát tại nhiều điểm. Duyệt xong kho sẽ trừ tương ứng; phần phát dư được hoàn lại khi chuyến kết thúc.
+        Tình nguyện viên nhận ≥10 phần một lần và phát tại nhiều điểm. Duyệt xong kho sẽ trừ tương ứng; phần dư chưa phát được hoàn lại khi chuyến kết thúc.
       </p>
 
       {visible.map((r) => (

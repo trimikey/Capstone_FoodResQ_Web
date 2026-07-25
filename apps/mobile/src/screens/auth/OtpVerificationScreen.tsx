@@ -18,7 +18,7 @@ export default function OtpVerificationScreen({
 
   const handleSuccess = async (otp: string) => {
     if (type === 'forgot_password') {
-      navigation.navigate('ResetPassword', { email, otp });
+      navigation.navigate('ResetPassword', { email, token: otp });
     } else {
       navigation.navigate('SignUpBasic', { email, verifiedOtp: otp });
     }
@@ -32,14 +32,14 @@ export default function OtpVerificationScreen({
     try {
       setIsLoading(true);
       if (type === 'forgot_password' && email) {
-        // Backend không có endpoint resend riêng — gọi lại forgot-password để sinh OTP mới
+        // Backend không có endpoint resend riêng — gọi lại forgot-password để sinh token mới
         await apiClient.post(endpoints.auth.forgotPassword, { email });
       }
-      Popup.show({ type: 'success', text1: 'Đã gửi lại mã OTP' });
+      Popup.show({ type: 'success', text1: 'Đã gửi lại email đặt lại mật khẩu' });
     } catch (error) {
       Popup.show({
         type: 'error',
-        text1: 'Gửi lại OTP thất bại',
+        text1: 'Gửi lại email thất bại',
         text2: getErrorMessage(error),
       });
     } finally {
