@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
 import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import { useMe } from '@/hooks/useProfile';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -209,7 +211,7 @@ export default function ReservationsPage() {
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-neutral-500">
                       <span className="flex items-center gap-1">
                         <span className="material-symbols-outlined text-[14px]">inventory_2</span>
-                        {r.quantity} {r.listing.quantityUnit}
+                        {r.quantity} {UNIT_LABEL[r.listing.quantityUnit as QuantityUnit] ?? r.listing.quantityUnit}
                       </span>
                       <span className="flex items-center gap-1 min-w-0">
                         <span className="material-symbols-outlined text-[14px]">place</span>

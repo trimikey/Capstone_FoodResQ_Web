@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -170,7 +171,7 @@ export default function ListingDetailPage({ params }: Props) {
             />
             <div className="absolute top-4 left-4 flex gap-2">
               <span className="bg-black/50 backdrop-blur-md text-white font-label-lg text-xs px-3 py-1.5 rounded-full">
-                Còn {listing.quantityRemaining} {listing.quantityUnit}
+                Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
               </span>
               <span className="bg-primary/95 text-white font-label-lg text-xs px-3 py-1.5 rounded-full shadow-sm">
                 Cứu trợ 0đ
@@ -466,7 +467,7 @@ export default function ListingDetailPage({ params }: Props) {
                     <p className="text-[11px] text-on-surface-variant/80">{item.provider.businessName}</p>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-on-surface-variant/70 mt-2">
-                    <span>Còn {item.quantityRemaining} {item.quantityUnit}</span>
+                    <span>Còn {item.quantityRemaining} {UNIT_LABEL[item.quantityUnit as QuantityUnit] ?? item.quantityUnit}</span>
                     <span>• {formatDistance(item.distanceM)}</span>
                   </div>
                 </div>

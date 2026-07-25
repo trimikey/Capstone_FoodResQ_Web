@@ -81,6 +81,15 @@ export class ListingsController {
     return this.listingsService.findByProvider(user.id, page, limit);
   }
 
+  @Get('provider/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Provider: Get listing statistics' })
+  getStats(@CurrentUser() user: User) {
+    return this.listingsService.getProviderStats(user.id);
+  }
+
   @Patch(':id/publish')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.PROVIDER)
@@ -101,5 +110,17 @@ export class ListingsController {
     @Body('reason') reason?: string,
   ) {
     return this.listingsService.cancel(id, user.id, reason);
+  }
+
+  @Post(':id/duplicate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Provider: Duplicate an existing listing as new draft' })
+  duplicate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.listingsService.duplicate(id, user.id);
   }
 }

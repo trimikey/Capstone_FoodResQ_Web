@@ -1,0 +1,385 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { useManageContext } from '../../../_components/ManageShell';
+import AddSupplyModal from '../../../_components/AddSupplyModal';
+
+type MealTab = 'breakfast' | 'lunch' | 'dinner';
+const MEAL_TABS: Array<{ key: MealTab; label: string; icon: string }> = [
+  { key: 'breakfast', label: 'Bữa sáng', icon: 'free_breakfast' },
+  { key: 'lunch', label: 'Bữa trưa', icon: 'rice_bowl' },
+  { key: 'dinner', label: 'Bữa tối', icon: 'dinner_dining' },
+];
+
+const NUTRITION_TAGS = ['High Protein', 'Ít đường', 'Vitamins', 'GLUTEN-FREE', 'Lactose-Free'];
+
+export default function MenuPage() {
+  const { campaign: c } = useManageContext();
+  const [meal, setMeal] = useState<MealTab>('lunch');
+  const [addSupplyOpen, setAddSupplyOpen] = useState(false);
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+
+  function toggleTag(tag: string) {
+    setActiveTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  }
+
+  function shareCampaign() {
+    if (typeof window === 'undefined') return;
+    const url = `${window.location.origin}/campaigns/${c!.id}`;
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(url).then(
+        () => toast.success('Đã sao chép link chiến dịch — chia sẻ cho cộng đồng nhé!'),
+        () => toast.info(url),
+      );
+    } else {
+      toast.info(url);
+    }
+  }
+
+  // Lọc món theo bữa (nếu type trùng) — nếu không có type thì hiện tất cả khi tab "all"
+  const allItems = c?.menuItems ?? [];
+  const itemsByMeal = useMemo(() => {
+    const map: Record<MealTab, typeof allItems> = { breakfast: [], lunch: [], dinner: [] };
+    for (const it of allItems) {
+      if (it.type === 'breakfast' || it.type === 'lunch' || it.type === 'dinner') {
+        map[it.type as MealTab].push(it);
+      }
+    }
+    return map;
+  }, [allItems]);
+
+  const items = itemsByMeal[meal];
+
+  // Vật phẩm cần chuẩn bị — lấy từ c.supplyItems (hỗ trợ cả string[] và object[])
+  const supplies = useMemo(() => {
+    const raw = c?.supplyItems ?? [];
+    return raw.map((s, idx) => {
+      if (typeof s === 'string') {
+        return { id: `s-${idx}`, name: s, unit: '', pledged: 0, need: 0 };
+      }
+      return {
+        id: `s-${idx}`,
+        name: s.name,
+        unit: s.unit ?? '',
+        pledged: 0,
+        need: s.quantity ?? 0,
+      };
+    });
+  }, [c?.supplyItems]);
+
+  const pledgeStats = useMemo(() => {
+    const pledged = supplies.reduce((s, i) => s + i.pledged, 0);
+    const need = supplies.reduce((s, i) => s + i.need, 0);
+    return {
+      pledged,
+      need,
+      pct: need > 0 ? Math.min(100, Math.round((pledged / need) * 100)) : 0,
+      remaining: Math.max(0, need - pledged),
+    };
+  }, [supplies]);
+
+  // Nguồn thực phẩm — tính từ c.donations thực
+  const sourceData = useMemo(() => {
+    const donations = c?.donations ?? [];
+    const confirmed = donations.filter((d) => d.status === 'confirmed' || d.status === 'received').length;
+    const total = donations.length;
+    const donationPct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+    return {
+      donationPct,
+      purchasePct: 100 - donationPct,
+      raw: total,
+    };
+  }, [c?.donations]);
+
+  if (!c) return null;
+
+  return (
+    <>
+    <div className="cm-manage-2col">
+      {/* Main */}
+      <div className="cm-manage-2col-main space-y-4">
+        {/* Thực đơn trong ngày */}
+        <section className="cm-manage-card !p-0">
+          <div className="px-5 pt-5 pb-3">
+            <h2 className="cm-manage-card-title !mb-3">
+              <span className="material-symbols-outlined">restaurant_menu</span>
+              Thực đơn trong ngày
+            </h2>
+
+            <div className="cm-mini-tabs">
+              {MEAL_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  aria-pressed={meal === t.key}
+                  onClick={() => setMeal(t.key)}
+                  className={`cm-mini-tab inline-flex items-center gap-1.5 ${
+                    meal === t.key ? '!bg-emerald-700 !text-white !border-emerald-700' : ''
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">{t.icon}</span>
+                  {t.label} ({itemsByMeal[t.key].length})
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="px-5 pb-5">
+            {items.length === 0 ? (
+              <div className="cm-mini-empty">
+                <span className="material-symbols-outlined">restaurant</span>
+                Chưa có món nào cho bữa này trong chiến dịch.
+              </div>
+            ) : (
+              <ul className="cm-menu-meal">
+                {items.map((it, idx) => {
+                  const tags = it.plannedServings ? ['High Protein'] : ['Món chính'];
+                  return (
+                    <li key={`${it.name}-${idx}`} className="cm-menu-meal-item">
+                      <span className="cm-menu-meal-icon">
+                        <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="cm-menu-meal-name">{it.name}</p>
+                        <div className="cm-menu-meal-tags">
+                          {tags.map((tg) => (
+                            <span key={tg} className="cm-nutri-chip cm-nutri-chip--emerald">
+                              {tg}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {it.plannedServings != null && it.plannedServings > 0 && (
+                        <span className="cm-menu-meal-cal">{it.plannedServings} suất</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        {/* Danh sách nguyên liệu */}
+        <section className="cm-manage-card !p-0">
+          <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+            <h2 className="cm-manage-card-title !mb-0">
+              <span className="material-symbols-outlined">inventory_2</span>
+              Vật phẩm cần chuẩn bị
+            </h2>
+            <button
+              type="button"
+              onClick={() => setAddSupplyOpen(true)}
+              className="cm-manage-card-link inline-flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[14px]">add</span>
+              Thêm
+            </button>
+          </div>
+          <div className="px-5 pb-3">
+            {supplies.length === 0 ? (
+              <div className="cm-mini-empty">
+                <span className="material-symbols-outlined">inventory_2</span>
+                Chưa có vật phẩm nào được liệt kê.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {supplies.map((it) => (
+                  <li key={it.id} className="cm-ingredient-row">
+                    <div className="cm-ingredient-info">
+                      <p className="cm-ingredient-name">{it.name}</p>
+                      <p className="cm-ingredient-meta">
+                        {it.need > 0
+                          ? `Cần ${it.need}${it.unit ? ` ${it.unit}` : ''}`
+                          : it.unit
+                            ? `Đơn vị: ${it.unit}`
+                            : 'Chưa ghi rõ số lượng'}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* Sidebar phải */}
+      <aside className="cm-manage-2col-side space-y-4">
+        {/* Mục tiêu quyên góp */}
+        <section className="cm-manage-card text-center">
+          <h3 className="cm-manage-card-title justify-center">
+            <span className="material-symbols-outlined">volunteer_activism</span>
+            Mục tiêu quyên góp hôm nay
+          </h3>
+          <div className="relative w-32 h-32 mx-auto mt-3">
+            <DonutRing pct={pledgeStats.pct} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <p className="font-display text-2xl font-extrabold text-emerald-700">
+                {pledgeStats.pledged.toLocaleString('vi-VN')}
+              </p>
+              <p className="text-[10px] font-bold text-neutral-500 mt-1">
+                / {pledgeStats.need.toLocaleString('vi-VN')}
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-rose-700 mt-3 font-bold inline-flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">priority_high</span>
+            Còn thiếu {pledgeStats.remaining.toLocaleString('vi-VN')} phần
+          </p>
+          <button
+            type="button"
+            onClick={shareCampaign}
+            className="cm-manage-cta-primary w-full mt-4 inline-flex items-center justify-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px]">share</span>
+            Chia sẻ để kêu gọi
+          </button>
+        </section>
+
+        {/* Nguồn thực phẩm */}
+        <section className="cm-manage-card">
+          <h3 className="cm-manage-card-title">
+            <span className="material-symbols-outlined">pie_chart</span>
+            Nguồn thực phẩm
+          </h3>
+          {sourceData.raw === 0 ? (
+            <p className="text-xs text-neutral-400 mt-3">Chưa có cam kết quyên góp nào.</p>
+          ) : (
+            <div className="flex items-center gap-4 mt-3">
+              <div className="relative w-24 h-24 shrink-0">
+                <SourceDonut
+                  donationPct={sourceData.donationPct}
+                  purchasePct={sourceData.purchasePct}
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-neutral-500">{sourceData.raw} món</span>
+                </div>
+              </div>
+              <div className="flex-1 space-y-2">
+                <SourceLegend
+                  color="#10B981"
+                  label="Đã xác nhận"
+                  pct={sourceData.donationPct}
+                />
+                <SourceLegend
+                  color="#F97066"
+                  label="Chờ xác nhận"
+                  pct={sourceData.purchasePct}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Tags nutrition filter */}
+        <section className="cm-manage-card">
+          <h3 className="cm-manage-card-title">
+            <span className="material-symbols-outlined">label</span>
+            Tiêu chí dinh dưỡng
+          </h3>
+          <div className="cm-chip-row mt-3">
+            {NUTRITION_TAGS.map((tag) => {
+              const active = activeTags.has(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleTag(tag)}
+                  className={`cm-chip-toggle ${active ? '!bg-emerald-700 !text-white !border-emerald-700' : ''}`}
+                >
+                  {active && (
+                    <span className="material-symbols-outlined text-[12px] mr-1">check</span>
+                  )}
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+          {activeTags.size > 0 && (
+            <p className="text-[10px] text-neutral-500 mt-2">
+              Đã chọn {activeTags.size} tiêu chí — sẽ áp dụng khi tạo chiến dịch mới.
+            </p>
+          )}
+          <p className="text-[10px] text-neutral-400 mt-3">
+            <span className="material-symbols-outlined text-[12px] align-middle">info</span>{' '}
+            Tiêu chí dinh dưỡng giúp lọc nhanh khi nhà hảo tâm chọn món phù hợp.
+          </p>
+        </section>
+      </aside>
+    </div>
+
+    {addSupplyOpen && (
+      <AddSupplyModal
+        campaignId={c!.id}
+        onClose={() => setAddSupplyOpen(false)}
+      />
+    )}
+    </>
+  );
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────
+
+function DonutRing({ pct }: { pct: number }) {
+  const r = 50;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - pct / 100);
+  return (
+    <svg viewBox="0 0 120 120" className="w-32 h-32 -rotate-90">
+      <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(16, 185, 129, 0.12)" strokeWidth="10" />
+      <circle
+        cx="60"
+        cy="60"
+        r={r}
+        fill="none"
+        stroke="#10B981"
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      />
+    </svg>
+  );
+}
+
+function SourceDonut({ donationPct, purchasePct }: { donationPct: number; purchasePct: number }) {
+  const r = 36;
+  const c = 2 * Math.PI * r;
+  const donationLen = c * (donationPct / 100);
+  return (
+    <svg viewBox="0 0 90 90" className="w-24 h-24 -rotate-90">
+      <circle cx="45" cy="45" r={r} fill="none" stroke="#F97066" strokeWidth="14" />
+      <circle
+        cx="45"
+        cy="45"
+        r={r}
+        fill="none"
+        stroke="#10B981"
+        strokeWidth="14"
+        strokeDasharray={`${donationLen} ${c - donationLen}`}
+      />
+    </svg>
+  );
+}
+
+function SourceLegend({ color, label, pct }: { color: string; label: string; pct: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className="w-3 h-3 rounded-full shrink-0"
+        style={{ background: color }}
+      />
+      <span className="text-xs font-bold text-neutral-700 flex-1">{label}</span>
+      <span className="text-xs font-extrabold text-neutral-900">{pct}%</span>
+    </div>
+  );
+}

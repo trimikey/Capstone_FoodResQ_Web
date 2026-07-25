@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 import type { ApiResponse } from '@foodresq/types';
 
 // Ngưỡng giao sỉ — khớp BULK_MIN_QTY phía BE
-export const BULK_MIN_QTY = 10;
+export const BULK_MIN_QTY = 2;
 
 export interface BulkStop {
   id: string;
@@ -17,6 +17,13 @@ export interface BulkStop {
   orderIndex: number;
   servedAt: string | null;
   coords: { lng: number; lat: number } | null;
+  /** QR code + status của reservation tương ứng (null nếu chưa lấy hàng) */
+  reservation?: {
+    id: string;
+    qrToken: string;
+    status: string;
+    qrExpiresAt: string;
+  } | null;
 }
 
 export interface BulkRun {

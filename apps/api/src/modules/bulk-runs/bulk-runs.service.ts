@@ -3,16 +3,22 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { RequestBulkRunDto, AddStopDto, ServeStopDto } from './dto/bulk-run.dto';
 
+// UUID cố định cho placeholder receiver — hệ thống tự tạo user/receiver profile khi app khởi động.
+const BULK_PLACEHOLDER_USER_ID = '00000000-0000-0000-0000-000000000001';
+
 // Ngưỡng giao sỉ: từ số phần này trở lên mới được yêu cầu (CLAUDE.md-style constant)
-export const BULK_MIN_QTY = 10;
+export const BULK_MIN_QTY = 2;
 // Yêu cầu chờ NCC duyệt quá lâu → tự hết hạn (không giữ slot vô hạn)
 const REQUEST_EXPIRY_HOURS = 24;
 // Chuyến đã duyệt/đã lấy hàng mà không có cập nhật quá lâu → tự đóng, hoàn kho phần chưa phát
@@ -22,13 +28,70 @@ const ACTIVE_RUN_STATUSES = ['requested', 'approved', 'picked_up'] as const;
 const ACTIVE_DELIVERY_STATUSES = ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] as const;
 
 @Injectable()
-export class BulkRunsService {
+export class BulkRunsService implements OnModuleInit {
+  // Cache placeholder receiver ID sau khi upsert
+  private bulkPlaceholderReceiverId: string | null = null;
+
   constructor(
     private prisma: PrismaService,
     private redlock: Redlock,
     private storage: StorageService,
     private notifications: NotificationsService,
+    private systemConfig: SystemConfigService,
   ) {}
+
+  /** Chạy 1 lần khi module khởi tạo — đảm bảo placeholder receiver luôn tồn tại. */
+  async onModuleInit() {
+    await this.getBulkPlaceholderReceiverId();
+  }
+
+  /** Lazy-init và cache placeholder receiver ID. */
+  private async getBulkPlaceholderReceiverId(): Promise<string> {
+    if (this.bulkPlaceholderReceiverId) return this.bulkPlaceholderReceiverId;
+
+    // Tạo placeholder user bằng raw SQL (bypass passwordHash bắt buộc của User.create)
+    // Cung cấp dummy password_hash vì đây là system account không bao giờ dùng để login
+    await this.prisma.$executeRaw(Prisma.sql`
+      INSERT INTO users (id, email, password_hash, full_name, role, created_at, updated_at)
+      VALUES (
+        ${BULK_PLACEHOLDER_USER_ID}::uuid,
+        'bulk-run@foodresq.internal',
+        'BULK_RUN_PLACEHOLDER_HASH',
+        'Hệ thống — Giao sỉ (Bulk)',
+        'receiver',
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
+    `);
+
+    // Upsert receiver profile bằng Prisma (userId là @unique nên hoạt động)
+    await this.prisma.receiverProfile.upsert({
+      where: { userId: BULK_PLACEHOLDER_USER_ID },
+      create: {
+        userId: BULK_PLACEHOLDER_USER_ID,
+        isCharityOrg: true,
+        organizationName: 'Tổ chức từ thiện (Bulk Run)',
+        verificationStatus: 'approved',
+        verifiedAt: new Date(),
+      },
+      update: {},
+    });
+
+    const profile = await this.prisma.receiverProfile.findUnique({
+      where: { userId: BULK_PLACEHOLDER_USER_ID },
+      select: { id: true },
+    });
+    this.bulkPlaceholderReceiverId = profile!.id;
+    return profile!.id;
+  }
+
+  /** Tạo QR token đơn giản dạng hex (không cần JWT). */
+  private makeQrToken(runId: string, stopId: string): string {
+    const ts = Date.now().toString(16);
+    const rand = randomBytes(8).toString('hex');
+    return `br-${runId.slice(0, 8)}-${stopId.slice(0, 8)}-${ts}-${rand}`;
+  }
 
   async saveProofPhoto(photo: Express.Multer.File): Promise<string> {
     return this.storage.saveImage(photo, 'bulk-proofs');
@@ -107,7 +170,10 @@ export class BulkRunsService {
     return runs.map((r) => ({
       ...r,
       pickupCoords: pickupMap.get(r.listingId) ?? null,
-      stops: r.stops.map((s) => ({ ...s, coords: stopCoords.get(s.id) ?? null })),
+      stops: r.stops.map((s) => ({
+        ...s,
+        coords: stopCoords.get(s.id) ?? null,
+      })),
     }));
   }
 
@@ -273,14 +339,63 @@ export class BulkRunsService {
     if (run.status !== 'approved') {
       throw new BadRequestException('Chuyến chưa được duyệt hoặc đã lấy hàng rồi.');
     }
-    await this.prisma.bulkRun.update({
-      where: { id: runId },
-      data: { status: 'picked_up', pickedUpAt: new Date(), ...(qcPhotoUrl ? { qcPhotoUrl } : {}) },
+
+    // QR có hiệu lực 24 giờ cho bulk run (dài hơn bình thường 30 phút vì có nhiều điểm phát)
+    const qrValidityMinutes = 24 * 60;
+    const qrExpiresAt = new Date(Date.now() + qrValidityMinutes * 60 * 1000);
+
+    // Lấy danh sách stops tại thời điểm lấy hàng
+    const stops = await this.prisma.bulkRunStop.findMany({
+      where: { runId },
+      orderBy: { orderIndex: 'asc' },
+      select: { id: true, label: true, plannedQty: true },
     });
-    return { id: runId, status: 'picked_up' };
+
+    // Đảm bảo placeholder receiver tồn tại (lazy init)
+    const receiverId = await this.getBulkPlaceholderReceiverId();
+
+    // 1 reservation mỗi stop — QR code để shipper quét tại mỗi điểm phát
+    const reservationOps: Prisma.PrismaPromise<unknown>[] = stops.map((stop) => {
+      const token = this.makeQrToken(runId, stop.id);
+      const qty = stop.plannedQty ?? 1;
+      return this.prisma.reservation.create({
+        data: {
+          listingId: run.listingId,
+          receiverId,
+          bulkRunStopId: stop.id,
+          quantity: qty,
+          status: 'confirmed',
+          qrToken: token,
+          qrExpiresAt,
+          receiverNotes: `Bulk Run: ${stop.label}`,
+        },
+      });
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.bulkRun.update({
+        where: { id: runId },
+        data: { status: 'picked_up', pickedUpAt: new Date(), ...(qcPhotoUrl ? { qcPhotoUrl } : {}) },
+      }),
+      ...reservationOps,
+    ]);
+
+    // Thông báo cho shipper
+    void this.notifications.notify(shipperUserId, {
+      type: 'bulk_run',
+      title: 'Đã lấy hàng & tạo mã QR',
+      body:
+        stops.length > 0
+          ? `${stops.length} mã QR đã được tạo cho ${stops.length} điểm phát. Mỗi mã QR tương ứng 1 điểm.`
+          : 'Đã lấy hàng. Thêm điểm phát để nhận mã QR.',
+      data: { bulkRunId: runId, status: 'picked_up', stopCount: stops.length },
+    });
+
+    return { id: runId, status: 'picked_up', stopCount: stops.length };
   }
 
-  /** NCC (chủ tin) hoặc shipper của chuyến đều ghim được điểm phát. */
+  /** NCC (chủ tin) hoặc shipper của chuyến đều ghim được điểm phát.
+   *  Nếu chuyến đã lấy hàng (picked_up) → tạo reservation + QR luôn. */
   async addStop(runId: string, userId: string, dto: AddStopDto) {
     const run = await this.prisma.bulkRun.findUnique({
       where: { id: runId },
@@ -299,6 +414,57 @@ export class BulkRunsService {
       throw new BadRequestException('Chuyến đã kết thúc — không thêm được điểm phát.');
     }
 
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+
+    // Tạo reservation nếu chuyến đã lấy hàng
+    let reservationId: string | undefined;
+    if (run.status === 'picked_up') {
+      const receiverId = await this.getBulkPlaceholderReceiverId();
+      const qrToken = this.makeQrToken(runId, 'pending');
+      const qrExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const qty = dto.plannedQty ?? 1;
+
+      // Tạo reservation trước để có stopId gắn vào
+      const stop = await this.prisma.bulkRunStop.create({
+        data: {
+          runId,
+          label: dto.label.trim(),
+          address: dto.address?.trim() || null,
+          plannedQty: dto.plannedQty ?? null,
+          createdBy,
+          orderIndex: run._count.stops,
+        },
+      });
+      await this.prisma.$executeRaw(Prisma.sql`
+        UPDATE bulk_run_stops
+        SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
+        WHERE id = ${stop.id}::uuid
+      `);
+
+      const realToken = this.makeQrToken(runId, stop.id);
+      const reservation = await this.prisma.reservation.create({
+        data: {
+          listingId: run.listingId,
+          receiverId,
+          bulkRunStopId: stop.id,
+          quantity: qty,
+          status: 'confirmed',
+          qrToken: realToken,
+          qrExpiresAt,
+          receiverNotes: `Bulk Run: ${dto.label.trim()}`,
+        },
+      });
+
+      return {
+        ...stop,
+        coords: { lng: dto.lng, lat: dto.lat },
+        reservationId: reservation.id,
+        qrToken: realToken,
+        qrExpiresAt,
+      };
+    }
+
+    // Chưa lấy hàng: chỉ tạo stop bình thường
     const stop = await this.prisma.bulkRunStop.create({
       data: {
         runId,
@@ -315,17 +481,24 @@ export class BulkRunsService {
       WHERE id = ${stop.id}::uuid
     `);
 
-    return { ...stop, coords: { lng: dto.lng, lat: dto.lat } };
+    return { ...stop, coords: { lng: dto.lng, lat: dto.lat }, reservationId: undefined };
   }
 
-  /** Ghi nhận đã phát N phần tại một điểm; phát đủ thì tự hoàn tất chuyến. */
+  /** Ghi nhận đã phát N phần tại một điểm; phát đủ thì tự hoàn tất chuyến.
+   *  Đồng thời chuyển reservation tương ứng → picked_up. */
   async serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl?: string) {
     const run = await this.ownedRun(runId, shipperUserId);
     if (run.status !== 'picked_up') {
       throw new BadRequestException('Chỉ ghi nhận phát hàng sau khi đã lấy hàng.');
     }
-    const stop = await this.prisma.bulkRunStop.findFirst({ where: { id: stopId, runId } });
+    // Dùng raw query vì reservationId là 1:1 FK từ phía Reservation (Prisma không expose trong BulkRunStopSelect)
+    const [stop] = await this.prisma.$queryRaw<{ id: string; reservation_id: string | null }[]>(
+      Prisma.sql`SELECT id, reservation_id FROM bulk_run_stops WHERE id = ${stopId}::uuid AND run_id = ${runId}::uuid`,
+    );
     if (!stop) throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
+    if (!stop.reservation_id) {
+      throw new BadRequestException('Điểm phát này chưa có mã QR — hãy thêm điểm phát sau khi lấy hàng.');
+    }
 
     // Cộng dồn CÓ ĐIỀU KIỆN trong 1 câu SQL (atomic) — chặn race khi bấm nhanh
     // 2 lần / 2 thiết bị làm tổng phát vượt quá số phần đã nhận.
@@ -345,15 +518,24 @@ export class BulkRunsService {
       throw new BadRequestException(`Chỉ còn ${remaining} phần chưa phát — không thể ghi ${dto.servedQty} phần.`);
     }
 
-    await this.prisma.bulkRunStop.update({
-      where: { id: stopId },
-      data: {
-        servedQty: { increment: dto.servedQty },
-        servedAt: new Date(),
-        ...(dto.note ? { note: dto.note.trim() } : {}),
-        ...(photoUrl ? { photoUrl } : {}),
-      },
-    });
+    const ops: Prisma.PrismaPromise<unknown>[] = [
+      this.prisma.bulkRunStop.update({
+        where: { id: stopId },
+        data: {
+          servedQty: { increment: dto.servedQty },
+          servedAt: new Date(),
+          ...(dto.note ? { note: dto.note.trim() } : {}),
+          ...(photoUrl ? { photoUrl } : {}),
+        },
+      }),
+      // Chuyển reservation → picked_up để đánh dấu đã giao tại điểm này
+      this.prisma.reservation.update({
+        where: { id: stop.reservation_id },
+        data: { status: 'picked_up' },
+      }),
+    ];
+
+    await this.prisma.$transaction(ops);
 
     // Phát đủ số phần → hoàn tất luôn, khỏi bắt shipper bấm thêm
     const after = run.quantityDistributed + dto.servedQty;
@@ -393,7 +575,9 @@ export class BulkRunsService {
         listing: { select: { title: true } },
         shipper: { select: { id: true, userId: true, dedicationPoints: true } },
         provider: { select: { userId: true } },
-        stops: { select: { servedQty: true } },
+        stops: {
+          select: { id: true, servedQty: true, reservationId: true },
+        },
       },
     });
     if (!run) throw new NotFoundException('Không tìm thấy chuyến giao sỉ.');
@@ -402,6 +586,18 @@ export class BulkRunsService {
     const stopsServed = run.stops.filter((s) => s.servedQty > 0).length;
     // Thưởng: +5 gốc + 2 điểm/điểm phát có hàng (khuyến khích rải nhiều điểm)
     const points = 5 + stopsServed * 2;
+
+    // Hoàn tất mọi reservation còn lại (chưa picked_up → completed)
+    const remainingReservations = run.stops
+      .filter((s) => s.servedQty === 0 && s.reservationId)
+      .map((s) => s.reservationId!);
+
+    const reservationOps: Prisma.PrismaPromise<unknown>[] = remainingReservations.map((rid: string) =>
+      this.prisma.reservation.update({
+        where: { id: rid },
+        data: { status: 'completed' },
+      }),
+    );
 
     await this.prisma.$transaction([
       ...(leftover > 0 ? [this.restockSql(run.listingId, leftover)] : []),
@@ -420,6 +616,7 @@ export class BulkRunsService {
           pointsAfter: run.shipper.dedicationPoints + points,
         },
       }),
+      ...reservationOps,
     ]);
 
     void this.notifications.notify(run.provider.userId, {
@@ -490,7 +687,14 @@ export class BulkRunsService {
       include: {
         listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
         provider: { select: { businessName: true, contactPhone: true } },
-        stops: { orderBy: { orderIndex: 'asc' } },
+        stops: {
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            reservation: {
+              select: { id: true, qrToken: true, status: true, qrExpiresAt: true },
+            },
+          },
+        },
       },
     });
     return this.hydrateRuns(runs);
@@ -500,13 +704,19 @@ export class BulkRunsService {
     const provider = await this.resolveProvider(providerUserId);
     const runs = await this.prisma.bulkRun.findMany({
       where: { providerId: provider.id },
-      // requested lên đầu để duyệt, sau đó mới nhất trước
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       take: 30,
       include: {
         listing: { select: { title: true, pickupAddress: true } },
         shipper: { select: { rank: true, dedicationPoints: true, user: { select: { fullName: true, phone: true } } } },
-        stops: { orderBy: { orderIndex: 'asc' } },
+        stops: {
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            reservation: {
+              select: { id: true, qrToken: true, status: true, qrExpiresAt: true },
+            },
+          },
+        },
       },
     });
     return this.hydrateRuns(runs);

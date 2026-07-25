@@ -564,6 +564,108 @@ export class ReservationsService {
     return { message: 'Reservation cancelled' };
   }
 
+  /** Provider huỷ đơn của người nhận — không phạt trust của người nhận (lỗi của provider, không phải receiver).
+   *  Chỉ cho phép khi đơn ở 'confirmed' và provider là chủ listing.
+   *  Hoàn quantity + daily count, đóng delivery (nếu có), không broadcast lại shipper.
+   */
+  async providerCancel(reservationId: string, providerUserId: string, reason?: string) {
+    const provider = await this.prisma.providerProfile.findUnique({ where: { userId: providerUserId } });
+    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: {
+        listing: { select: { providerId: true, title: true } },
+        receiver: { select: { userId: true } },
+        delivery: {
+          select: { id: true, status: true, shipperId: true, shipper: { select: { userId: true } } },
+        },
+      },
+    });
+    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (reservation.listing.providerId !== provider.id) {
+      throw new ForbiddenException('Bạn không phải chủ tin đăng của đơn này.');
+    }
+    if (reservation.status !== 'confirmed') {
+      throw new BadRequestException(
+        'Chỉ huỷ được đơn ở trạng thái "Đã xác nhận". Đơn đã chuyển sang giao nhận — liên hệ người nhận để xử lý.',
+      );
+    }
+
+    const ops: Prisma.PrismaPromise<unknown>[] = [
+      this.prisma.reservation.update({
+        where: { id: reservationId },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancellationReason: reason ? `[Provider] ${reason}` : '[Provider] Đơn bị nhà cung cấp huỷ.',
+        },
+      }),
+      // Hoàn số lượng cho listing (LEAST để không vượt total)
+      this.prisma.$executeRaw(Prisma.sql`
+        UPDATE food_listings
+        SET
+          quantity_remaining = LEAST(quantity_total, quantity_remaining + ${Number(reservation.quantity)}),
+          status = 'active'::listing_status,
+          updated_at = NOW()
+        WHERE id = ${reservation.listingId}::uuid
+      `),
+      // Trả daily count cho receiver
+      this.prisma.receiverProfile.updateMany({
+        where: { id: reservation.receiverId, reservationsToday: { gt: 0 } },
+        data: { reservationsToday: { decrement: 1 } },
+      }),
+    ];
+
+    // Nếu có delivery, đóng + thu hồi offer pending (không phạt shipper)
+    if (reservation.delivery) {
+      ops.push(
+        this.prisma.delivery.update({
+          where: { id: reservation.delivery.id },
+          data: { status: 'failed', failedReason: 'Nhà cung cấp đã huỷ đơn.' },
+        }),
+        this.prisma.shipperTaskOffer.updateMany({
+          where: { deliveryId: reservation.delivery.id, status: 'pending' },
+          data: { status: 'expired', respondedAt: new Date() },
+        }),
+      );
+      if (reservation.delivery.shipperId) {
+        ops.push(
+          this.prisma.volunteerProfile.update({
+            where: { id: reservation.delivery.shipperId },
+            data: { isAvailable: true },
+          }),
+        );
+      }
+    }
+
+    await this.prisma.$transaction(ops);
+
+    // Báo cho người nhận
+    void this.notifications.notify(reservation.receiver.userId, {
+      type: 'reservation',
+      title: 'Đơn đã bị nhà cung cấp huỷ',
+      body: `Đơn "${reservation.listing.title}" đã bị nhà cung cấp huỷ${reason ? `: ${reason}` : ''}. Bạn không bị trừ điểm uy tín.`,
+      data: { reservationId, status: 'cancelled', cancelledByProvider: true },
+    });
+
+    // Báo cho shipper nếu đã nhận
+    if (reservation.delivery?.shipper?.userId) {
+      void this.notifications.notify(reservation.delivery.shipper.userId, {
+        type: 'delivery',
+        title: 'Đơn giao đã bị huỷ bởi nhà cung cấp',
+        body: `Đơn "${reservation.listing.title}" đã bị huỷ — bạn có thể nhận đơn khác.`,
+        data: { deliveryId: reservation.delivery.id, status: 'failed' },
+      });
+    }
+
+    return {
+      message: 'Đã huỷ đơn và hoàn số lượng cho tin đăng.',
+      reservationId,
+      quantityRestored: Number(reservation.quantity),
+    };
+  }
+
   async findMyReservations(userId: string, page = 1, limit = 20) {
     const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
     if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');

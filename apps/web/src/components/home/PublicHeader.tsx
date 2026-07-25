@@ -33,9 +33,10 @@ function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: strin
     { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận của tôi' },
     { href: '/history', icon: 'history', label: 'Lịch sử đơn hàng' },
   ];
-  // Tổ chức từ thiện (receiver + isCharityOrg) → thêm Quản lý chiến dịch
+  // Tổ chức từ thiện (receiver + isCharityOrg) → dropdown chỉ giữ Chiến dịch.
+  // "Đơn nhận" & "Lịch sử" chuyển sang sidebar trái (CharitySidebar).
   if (isCharityOrg) {
-    links.unshift({ href: '/campaigns', icon: 'soup_kitchen', label: 'Quản lý chiến dịch' });
+    return [{ href: '/campaigns', icon: 'soup_kitchen', label: 'Quản lý chiến dịch' }];
   }
   return links;
 }
@@ -68,13 +69,17 @@ export default function PublicHeader() {
 
   const isAuthed = mounted && !!user;
   const isProvider = isAuthed && user?.role === UserRole.PROVIDER;
-  const foodNavLink = isProvider
-    ? { href: '/provider', label: 'Cửa hàng của tôi' }
-    : { href: '/listings', label: 'Tìm thực phẩm' };
   const isSolid = scrolled || pathname !== '/';
-  // Lấy cờ tổ chức từ thiện để thêm link Quản lý chiến dịch (chỉ fetch khi đã đăng nhập)
+  // Lấy cờ tổ chức từ thiện để thay link "Tìm thực phẩm" thành "Chiến dịch"
   const { data: me } = useMe(isAuthed);
   const isCharityOrg = !!me?.receiver?.isCharityOrg;
+
+  // Charity: nav chính = Chiến dịch; khác: Cửa hàng (provider) hoặc Tìm thực phẩm
+  const foodNavLink = isProvider
+    ? { href: '/provider', label: 'Cửa hàng của tôi' }
+    : isCharityOrg
+      ? { href: '/campaigns', label: 'Chiến dịch' }
+      : { href: '/listings', label: 'Tìm thực phẩm' };
 
   const handleLogout = () => {
     logout();

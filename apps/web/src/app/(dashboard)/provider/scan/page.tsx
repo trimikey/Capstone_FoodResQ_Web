@@ -5,6 +5,8 @@ import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { toast } from 'sonner';
 import { useScanQr, useConfirmPickup, type ScanResult } from '@/hooks/useProviderListings';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 
 type Phase = 'scanning' | 'submitting' | 'verify' | 'result';
 
@@ -181,7 +183,7 @@ export default function ProviderScanPage() {
                 <InfoRow icon="person" label="Họ tên" value={scan.receiver.fullName} strong />
                 {scan.receiver.phone && <InfoRow icon="call" label="Điện thoại" value={scan.receiver.phone} />}
                 {scan.receiver.idCardNumber && <InfoRow icon="badge" label="Số CCCD" value={scan.receiver.idCardNumber} />}
-                <InfoRow icon="lunch_dining" label="Đơn hàng" value={`${scan.listing.title} · ${scan.quantity} ${scan.listing.quantityUnit}`} />
+                <InfoRow icon="lunch_dining" label="Đơn hàng" value={`${scan.listing.title} · ${scan.quantity} ${UNIT_LABEL[scan.listing.quantityUnit as QuantityUnit] ?? scan.listing.quantityUnit}`} />
               </div>
 
               {!scan.receiver.enrolled && (
