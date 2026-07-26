@@ -530,4 +530,114 @@ export class UsersService {
       message: 'Face enrolled successfully',
     };
   }
+
+  /**
+   * Danh sách nhà cung cấp đang có tin đăng active — dùng cho charity gửi yêu cầu donation.
+   * Chỉ trả providers đã duyệt (verificationStatus = 'approved') và có ít nhất 1 listing
+   * status = 'active', deleted_at IS NULL.
+   */
+  async getProviders() {
+    const rows = await this.prisma.$queryRaw<
+      {
+        id: string;
+        full_name: string;
+        avatar_url: string | null;
+        phone: string | null;
+        created_at: Date;
+        provider_id: string;
+        business_name: string;
+        business_type: string;
+        verification_status: string;
+        address: string;
+        active_listings_count: bigint;
+        earliest_pickup_end: Date | null;
+      }[]
+    >(Prisma.sql`
+      SELECT u.id, u.full_name, u.avatar_url, u.phone, u.created_at,
+             pp.id AS provider_id, pp.business_name, pp.business_type,
+             pp.verification_status, pp.address,
+             COALESCE(
+               (SELECT COUNT(*)::bigint FROM food_listings fl
+                WHERE fl.provider_id = pp.id
+                  AND fl.status = 'active'
+                  AND fl.deleted_at IS NULL
+                  AND fl.pickup_end_time > NOW()),
+               0
+             ) AS active_listings_count,
+             MIN(fl.pickup_end_time) AS earliest_pickup_end
+      FROM users u
+      JOIN provider_profiles pp ON pp.user_id = u.id
+      LEFT JOIN food_listings fl
+        ON fl.provider_id = pp.id
+       AND fl.status = 'active'
+       AND fl.deleted_at IS NULL
+       AND fl.pickup_end_time > NOW()
+      WHERE u.role = 'provider'
+        AND u.status = 'active'
+        AND pp.verification_status = 'approved'
+      GROUP BY u.id, u.full_name, u.avatar_url, u.phone, u.created_at,
+               pp.id, pp.business_name, pp.business_type,
+               pp.verification_status, pp.address
+      HAVING COUNT(fl.id) > 0
+      ORDER BY MIN(fl.pickup_end_time) ASC
+    `);
+
+    return rows.map((r) => ({
+      id: r.id,
+      fullName: r.full_name,
+      avatarUrl: r.avatar_url,
+      phone: r.phone,
+      providerProfile: {
+        id: r.provider_id,
+        businessName: r.business_name,
+        businessType: r.business_type,
+        verificationStatus: r.verification_status,
+        address: r.address,
+      },
+      activeListingsCount: Number(r.active_listings_count),
+    }));
+  }
+
+  /** Chi tiết tin đăng còn hạn của một NCC — dùng để charity biết NCC đang có gì */
+  async getProviderListings(providerProfileId: string) {
+    const rows = await this.prisma.$queryRaw<
+      {
+        id: string;
+        title: string;
+        description: string | null;
+        category: string;
+        quantity_remaining: Prisma.Decimal;
+        quantity_unit: string;
+        pickup_start_time: Date;
+        pickup_end_time: Date;
+        pickup_address: string;
+        status: string;
+        weight_per_unit_kg: Prisma.Decimal | null;
+      }[]
+    >(Prisma.sql`
+      SELECT id, title, description, category::text, quantity_remaining, quantity_unit::text,
+             pickup_start_time, pickup_end_time, pickup_address, status::text,
+             weight_per_unit_kg
+      FROM food_listings
+      WHERE provider_id = ${providerProfileId}::uuid
+        AND status = 'active'
+        AND deleted_at IS NULL
+        AND pickup_end_time > NOW()
+      ORDER BY pickup_end_time ASC
+    `);
+
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      category: r.category,
+      quantityRemaining: Number(r.quantity_remaining),
+      quantityUnit: r.quantity_unit,
+      pickupStartTime: r.pickup_start_time.toISOString(),
+      pickupEndTime: r.pickup_end_time.toISOString(),
+      pickupAddress: r.pickup_address,
+      status: r.status,
+      weightPerUnitKg: r.weight_per_unit_kg != null ? Number(r.weight_per_unit_kg) : null,
+    }));
+  }
 }

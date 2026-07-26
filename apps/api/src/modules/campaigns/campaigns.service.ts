@@ -10,7 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
-import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto } from './dto/campaign.dto';
 
 // State machine cho công việc của TNV trong chiến dịch
 const ASSIGN_NEXT: Record<string, string> = {
@@ -75,26 +75,84 @@ export class CampaignsService {
       throw new ForbiddenException('Chỉ tổ chức từ thiện mới được gửi yêu cầu tạo chiến dịch bếp ăn.');
     }
 
-    const [row] = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-      INSERT INTO kitchen_campaigns (
-        charity_receiver_id, title, description, kitchen_address, kitchen_location,
-        scheduled_date, start_time, end_time,
-        chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
-        expected_servings, image_urls, menu_items, schedule_items, supply_items,
-        status, created_at, updated_at
-      ) VALUES (
-        ${receiver.id}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
-        ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
-        ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
-        ${dto.chefSlotsNeeded ?? 0}, ${dto.waiterSlotsNeeded ?? 0}, ${dto.shipperSlotsNeeded ?? 0},
-        ${dto.expectedServings ?? null}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
-        ${JSON.stringify(dto.menuItems ?? [])}::jsonb,
-        ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
-        ${JSON.stringify(dto.supplyItems ?? [])}::jsonb,
-        'draft'::campaign_status, NOW(), NOW()
-      )
-      RETURNING id
-    `);
+    // Validate ca trực trước khi INSERT (nếu giờ kết thúc <= bắt đầu → fail-fast)
+    if (dto.shifts?.length) {
+      for (const [i, s] of dto.shifts.entries()) {
+        if (s.endTime <= s.startTime) {
+          throw new BadRequestException(
+            `Ca thứ ${i + 1} "${s.label}": giờ kết thúc phải sau giờ bắt đầu (${s.startTime} → ${s.endTime}).`,
+          );
+        }
+      }
+    }
+
+    // Chỉ lưu menu/supply có name (tránh row rỗng)
+    const menuRows = (dto.menuItems ?? [])
+      .filter((m) => m.name?.trim())
+      .map((m, sortOrder) => ({
+        customName: m.name.trim(),
+        plannedServings: m.plannedServings ?? null,
+        recipeId: m.recipeId ?? null,
+        sortOrder,
+      }));
+
+    // supplyItems sau @Transform ở DTO đã là SupplyItemDto[] (string[] được wrap thành {name})
+    const supplyJson = (dto.supplyItems ?? [])
+      .filter((s) => s.name?.trim())
+      .map((s) => ({ name: s.name.trim(), quantity: s.quantity ?? null, unit: s.unit ?? null }));
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      // INSERT campaign (raw SQL vì cần ST_SetSRID cho geography)
+      const [row] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        INSERT INTO kitchen_campaigns (
+          charity_receiver_id, title, description, kitchen_address, kitchen_location,
+          scheduled_date, start_time, end_time,
+          chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
+          expected_servings, image_urls, menu_items, schedule_items, supply_items,
+          status, created_at, updated_at
+        ) VALUES (
+          ${receiver.id}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
+          ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
+          ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
+          ${dto.chefSlotsNeeded ?? 0}, ${dto.waiterSlotsNeeded ?? 0}, ${dto.shipperSlotsNeeded ?? 0},
+          ${dto.expectedServings ?? null}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
+          ${JSON.stringify(menuRows)}::jsonb,
+          ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
+          ${JSON.stringify(supplyJson)}::jsonb,
+          'draft'::campaign_status, NOW(), NOW()
+        )
+        RETURNING id
+      `);
+
+      // INSERT shifts (bảng thật, mỗi shift 1 row)
+      if (dto.shifts?.length) {
+        await tx.campaignShift.createMany({
+          data: dto.shifts.map((s) => ({
+            campaignId: row.id,
+            label: s.label.trim(),
+            role: s.role ?? null,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            slotsNeeded: s.slotsNeeded,
+          })),
+        });
+      }
+
+      // INSERT menu items (bảng thật) — recipeId sẽ null tới khi FE bổ sung picker
+      if (menuRows.length) {
+        await tx.campaignMenuItem.createMany({
+          data: menuRows.map((m) => ({
+            campaignId: row.id,
+            customName: m.customName,
+            plannedServings: m.plannedServings,
+            recipeId: m.recipeId,
+            sortOrder: m.sortOrder,
+          })),
+        });
+      }
+
+      return row.id;
+    });
 
     // Báo cho tất cả admin có yêu cầu chiến dịch cần duyệt
     const admins = await this.prisma.user.findMany({
@@ -106,11 +164,11 @@ export class CampaignsService {
         type: 'campaign',
         title: 'Yêu cầu chiến dịch mới',
         body: `Tổ chức gửi yêu cầu tạo chiến dịch "${dto.title}". Vui lòng xem & duyệt.`,
-        data: { campaignId: row.id, status: 'draft' },
+        data: { campaignId: created, status: 'draft' },
       });
     }
 
-    return this.findOne(row.id);
+    return this.findOne(created);
   }
 
   /**
@@ -243,6 +301,13 @@ export class CampaignsService {
             volunteer: { select: { rank: true, user: { select: { fullName: true, avatarUrl: true } } } },
           },
         },
+        shifts: {
+          orderBy: { startTime: 'asc' },
+          select: {
+            id: true, label: true, role: true, startTime: true, endTime: true,
+            slotsNeeded: true, slotsFilled: true,
+          },
+        },
       },
     });
     if (!c || !['open', 'in_progress', 'completed'].includes(c.status)) {
@@ -336,6 +401,15 @@ export class CampaignsService {
       avgSatisfaction,
       feedbackCount: allFeedback.length,
       experiences,
+      shifts: c.shifts.map((s) => ({
+        id: s.id,
+        label: s.label,
+        role: s.role,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        slotsNeeded: s.slotsNeeded,
+        slotsFilled: s.slotsFilled,
+      })),
     };
   }
 
@@ -464,6 +538,22 @@ export class CampaignsService {
       where: { id },
       include: {
         charityReceiver: { select: { organizationName: true, user: { select: { fullName: true } } } },
+        shifts: {
+          orderBy: { startTime: 'asc' },
+          select: {
+            id: true,
+            label: true,
+            role: true,
+            startTime: true,
+            endTime: true,
+            slotsNeeded: true,
+            slotsFilled: true,
+          },
+        },
+        menuItemRefs: {
+          orderBy: { sortOrder: 'asc' },
+          select: { id: true, customName: true, plannedServings: true, recipeId: true, sortOrder: true },
+        },
         assignments: {
           select: {
             id: true,
@@ -853,5 +943,415 @@ export class CampaignsService {
       data: { status: 'cancelled' },
     });
     return { id: changeRequestId, status: 'cancelled' };
+  }
+
+  /** Charity gửi yêu cầu hợp tác đến provider → gửi notification */
+  async sendProviderRequest(charityUserId: string, dto: SendProviderRequestDto) {
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: {
+        id: true,
+        user: { select: { fullName: true } },
+      },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+
+    const provider = await this.prisma.user.findFirst({
+      where: { providerProfile: { id: dto.providerId } },
+      include: { providerProfile: { select: { id: true, businessName: true } } },
+    });
+    if (!provider || !provider.providerProfile) {
+      throw new NotFoundException('Không tìm thấy nhà cung cấp.');
+    }
+
+    const orgName = receiver.user.fullName;
+    const providerName = provider.providerProfile.businessName ?? provider.fullName;
+
+    // Upsert request record (tránh gửi trùng)
+    const request = await this.prisma.campaignProviderRequest.upsert({
+      where: {
+        campaignId_providerId: {
+          campaignId: dto.campaignId ?? '00000000-0000-0000-0000-000000000000',
+          providerId: provider.providerProfile.id,
+        },
+      },
+      create: {
+        campaignId: dto.campaignId ?? '00000000-0000-0000-0000-000000000000',
+        receiverId: receiver.id,
+        providerId: provider.providerProfile.id,
+        message: dto.message,
+        durationMonths: dto.durationMonths ?? 1,
+        status: 'pending',
+      },
+      update: {
+        status: 'pending',
+        message: dto.message,
+        durationMonths: dto.durationMonths,
+        reviewedAt: null,
+        reviewedNote: null,
+      },
+    });
+
+    // Gửi notification cho provider
+    await this.notifications.notify(provider.id, {
+      type: 'provider_request',
+      title: 'Yêu cầu hợp tác mới',
+      body: `Tổ chức "${orgName}" muốn hợp tác cung cấp thực phẩm cho chiến dịch.${
+        dto.message ? ` Ghi chú: ${dto.message}` : ''
+      }`,
+      data: { requestId: request.id, charityUserId, providerId: provider.id },
+    });
+
+    return {
+      message: `Đã gửi yêu cầu đến ${providerName}`,
+      requestId: request.id,
+      providerId: provider.id,
+    };
+  }
+
+  /** Provider: lấy danh sách request nhận được */
+  async listMyProviderRequests(providerUserId: string) {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+      select: { id: true },
+    });
+    if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ provider.');
+
+    return this.prisma.campaignProviderRequest.findMany({
+      where: { providerId: profile.id },
+      include: {
+        receiver: {
+          include: { user: { select: { fullName: true, email: true } } },
+        },
+        campaign: { select: { id: true, title: true, scheduledDate: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Provider: chấp nhận hoặc từ chối request */
+  async reviewProviderRequest(providerUserId: string, requestId: string, action: 'accept' | 'reject', note?: string) {
+    const profile = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+      select: { id: true },
+    });
+    if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ provider.');
+
+    const request = await this.prisma.campaignProviderRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request) throw new NotFoundException('Không tìm thấy yêu cầu.');
+    if (request.providerId !== profile.id) throw new ForbiddenException('Bạn không sở hữu yêu cầu này.');
+    if (request.status !== 'pending') throw new BadRequestException(`Yêu cầu đang ở trạng thái "${request.status}", không thể duyệt.`);
+
+    const newStatus = action === 'accept' ? 'accepted' : 'rejected';
+    const updated = await this.prisma.campaignProviderRequest.update({
+      where: { id: requestId },
+      data: { status: newStatus, reviewedAt: new Date(), reviewedNote: note ?? null },
+      include: { receiver: { include: { user: { select: { fullName: true } } } } },
+    });
+
+    // Gửi thông báo về cho charity
+    const receiverUser = await this.prisma.receiverProfile.findUnique({
+      where: { id: request.receiverId },
+      select: { userId: true },
+    });
+    if (receiverUser) {
+      await this.notifications.notify(receiverUser.userId, {
+        type: 'charity_notification',
+        title: action === 'accept' ? 'Nhà cung cấp chấp nhận hợp tác' : 'Nhà cung cấp từ chối hợp tác',
+        body:
+          action === 'accept'
+            ? `Nhà cung cấp đã đồng ý hợp tác. Vui lòng chờ họ đăng thực phẩm cho chiến dịch.`
+            : `Nhà cung cấp đã từ chối. Lý do: ${note ?? 'Không có'}`,
+        data: { requestId },
+      });
+    }
+
+    return updated;
+  }
+
+  /** Charity: xem danh sách request đã gửi */
+  async listMySentRequests(charityUserId: string) {
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: { id: true },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+
+    return this.prisma.campaignProviderRequest.findMany({
+      where: { receiverId: receiver.id },
+      include: {
+        provider: {
+          include: {
+            user: { select: { fullName: true, email: true } },
+          },
+        },
+        campaign: { select: { id: true, title: true, scheduledDate: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Charity đề xuất thêm 1 NCC mới (khi chưa có NCC nào trong hệ thống)
+   * hoặc muốn gia hạn 1 NCC hiện có thêm 1 tháng.
+   * → Lưu vào ProviderProposal, admin review.
+   */
+  async submitProviderProposal(charityUserId: string, dto: SubmitProviderProposalDto) {
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: { id: true, user: { select: { fullName: true } } },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+
+    const durationMonths = dto.durationMonths ?? 1;
+
+    const proposal = await this.prisma.providerProposal.create({
+      data: {
+        proposedByUserId: charityUserId,
+        businessName: dto.businessName.trim(),
+        contactName: dto.contactName?.trim(),
+        contactPhone: dto.contactPhone?.trim(),
+        contactEmail: dto.contactEmail?.trim(),
+        address: dto.address?.trim(),
+        note: dto.note?.trim(),
+        durationMonths,
+      },
+      select: { id: true, status: true, durationMonths: true, createdAt: true },
+    });
+
+    return {
+      ...proposal,
+      message: `Đã ghi nhận đề xuất NCC "${dto.businessName}" — admin sẽ duyệt trong 24h. Thời hạn đề xuất: ${durationMonths} tháng.`,
+    };
+  }
+
+  // ─── Manage endpoints ──────────────────────────────────────────────────────
+
+  /**
+   * Tổ chức duyệt / từ chối 1 đăng ký TNV.
+   * - Duyệt: pending → assigned, tăng slot_filled cho role tương ứng (transactional).
+   * - Từ chối: pending → rejected, không thay đổi slot.
+   * Không cho duyệt khi slot đã đầy (fail-fast).
+   */
+  async reviewAssignment(campaignId: string, assignmentId: string, userId: string, dto: ReviewAssignmentDto) {
+    await this.assertOwner(campaignId, userId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const a = await tx.campaignVolunteerAssignment.findUnique({ where: { id: assignmentId } });
+      if (!a || a.campaignId !== campaignId) {
+        throw new NotFoundException('Không tìm thấy đăng ký.');
+      }
+      if (a.status !== 'pending') {
+        throw new BadRequestException(`Đăng ký này đã ở trạng thái "${a.status}", không thể duyệt lại.`);
+      }
+
+      if (dto.action === 'rejected') {
+        const updated = await tx.campaignVolunteerAssignment.update({
+          where: { id: assignmentId },
+          data: { status: 'rejected', notes: dto.note ?? null },
+        });
+        // Báo cho TNV biết
+        const vol = await tx.volunteerProfile.findUnique({
+          where: { id: a.volunteerId },
+          select: { userId: true },
+        });
+        if (vol) {
+          void this.notifications.notify(vol.userId, {
+            type: 'campaign',
+            title: 'Đăng ký bị từ chối',
+            body: `Rất tiếc, tổ chức không thể nhận bạn vào ca này.${dto.note ? ` Lý do: ${dto.note}` : ''}`,
+            data: { campaignId, assignmentId },
+          });
+        }
+        return updated;
+      }
+
+      // action === 'approved' → check slot
+      const c = await tx.kitchenCampaign.findUnique({ where: { id: campaignId } });
+      if (!c) throw new NotFoundException('Không tìm thấy chiến dịch.');
+      const slot = SLOT_FIELD[a.role];
+      const needed = c[slot.needed] as number;
+      const filled = c[slot.filled] as number;
+      if (filled >= needed) {
+        throw new BadRequestException(
+          `Đã đủ ${ROLE_VN[a.role]} cho chiến dịch này (${filled}/${needed}). Hãy tăng số slot hoặc chờ admin duyệt.`,
+        );
+      }
+
+      const updated = await tx.campaignVolunteerAssignment.update({
+        where: { id: assignmentId },
+        data: { status: 'assigned', notes: dto.note ?? null },
+      });
+      await tx.kitchenCampaign.update({
+        where: { id: campaignId },
+        data: { [slot.filled]: { increment: 1 } },
+      });
+
+      // Báo cho TNV
+      const vol = await tx.volunteerProfile.findUnique({
+        where: { id: a.volunteerId },
+        select: { userId: true },
+      });
+      if (vol) {
+        void this.notifications.notify(vol.userId, {
+          type: 'campaign',
+          title: 'Đăng ký được duyệt',
+          body: `Bạn đã được nhận vào chiến dịch với vai trò ${ROLE_VN[a.role]}. Hẹn gặp bạn tại bếp!`,
+          data: { campaignId, assignmentId },
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  /**
+   * Tổ chức ghi nhận 1 đợt phát suất ăn. ServedByVolunteerId lấy từ currentUser
+   * (charity userId → tìm volunteerProfile liên kết qua user chung;
+   * nếu charity user không có volunteer profile thì fallback về 1 volunteer
+   * đã được duyệt của campaign để giữ ràng buộc FK).
+   */
+  async createDistribution(campaignId: string, userId: string, dto: CreateDistributionDto) {
+    await this.assertOwner(campaignId, userId);
+    const campaign = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true, status: true },
+    });
+    if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    if (!['in_progress', 'completed'].includes(campaign.status)) {
+      throw new BadRequestException('Chỉ ghi nhận đợt phát khi chiến dịch đang diễn ra.');
+    }
+
+    // Tìm 1 volunteer đã được duyệt để gán "servedBy" (đảm bảo FK không null).
+    // Ưu tiên waiter > shipper > chef; nếu chưa có ai thì lấy assignment đầu tiên.
+    let servedByVolunteerId: string | null = null;
+    const a = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: { campaignId, status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] } },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+      select: { volunteerId: true },
+    });
+    if (a) servedByVolunteerId = a.volunteerId;
+
+    // Nếu vẫn chưa có (campaign chưa có TNV nào được duyệt), tạo 1 "ghost" record
+    // thông qua volunteer profile gắn với charity user nếu có.
+    if (!servedByVolunteerId) {
+      const ghost = await this.prisma.volunteerProfile.findFirst({ select: { id: true } });
+      if (!ghost) throw new BadRequestException('Chưa có tình nguyện viên nào để ghi nhận. Hãy duyệt ít nhất 1 đăng ký trước.');
+      servedByVolunteerId = ghost.id;
+    }
+
+    return this.prisma.mealDistribution.create({
+      data: {
+        campaignId,
+        servedByVolunteerId,
+        roundLabel: dto.roundLabel ?? null,
+        servingsServed: dto.servingsServed,
+        peopleServed: dto.peopleServed,
+        leftoverServings: dto.leftoverServings ?? 0,
+        note: dto.note ?? null,
+        distributedAt: new Date(),
+      },
+    });
+  }
+
+  /** Ca trực CRUD. */
+  async addShift(campaignId: string, userId: string, dto: CreateShiftDto) {
+    await this.assertOwner(campaignId, userId);
+    if (dto.endTime <= dto.startTime) {
+      throw new BadRequestException('Giờ kết thúc ca phải sau giờ bắt đầu.');
+    }
+    return this.prisma.campaignShift.create({
+      data: {
+        campaignId,
+        label: dto.label.trim(),
+        role: dto.role ?? null,
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        slotsNeeded: dto.slotsNeeded,
+      },
+    });
+  }
+
+  async updateShift(campaignId: string, shiftId: string, userId: string, dto: UpdateShiftDto) {
+    await this.assertOwner(campaignId, userId);
+    const shift = await this.prisma.campaignShift.findUnique({ where: { id: shiftId } });
+    if (!shift || shift.campaignId !== campaignId) {
+      throw new NotFoundException('Không tìm thấy ca trực.');
+    }
+    if (dto.endTime && dto.startTime && dto.endTime <= dto.startTime) {
+      throw new BadRequestException('Giờ kết thúc ca phải sau giờ bắt đầu.');
+    }
+    const finalStart = dto.startTime ?? shift.startTime;
+    const finalEnd = dto.endTime ?? shift.endTime;
+    if (finalEnd <= finalStart) {
+      throw new BadRequestException('Giờ kết thúc ca phải sau giờ bắt đầu.');
+    }
+    return this.prisma.campaignShift.update({
+      where: { id: shiftId },
+      data: {
+        label: dto.label?.trim(),
+        role: dto.role ?? undefined,
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        slotsNeeded: dto.slotsNeeded,
+      },
+    });
+  }
+
+  async deleteShift(campaignId: string, shiftId: string, userId: string) {
+    await this.assertOwner(campaignId, userId);
+    const shift = await this.prisma.campaignShift.findUnique({ where: { id: shiftId } });
+    if (!shift || shift.campaignId !== campaignId) {
+      throw new NotFoundException('Không tìm thấy ca trực.');
+    }
+    // Không cho xoá ca đã có TNV đăng ký
+    const assignedCount = await this.prisma.campaignVolunteerAssignment.count({
+      where: { shiftId, status: { in: ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'] } },
+    });
+    if (assignedCount > 0) {
+      throw new BadRequestException(`Ca này đang có ${assignedCount} TNV đăng ký, không thể xoá.`);
+    }
+    await this.prisma.campaignShift.delete({ where: { id: shiftId } });
+    return { id: shiftId, deleted: true };
+  }
+
+  /** Thêm món vào menu_items (jsonb). */
+  async appendMenuItem(campaignId: string, userId: string, dto: AppendMenuItemDto) {
+    const c = await this.assertOwner(campaignId, userId);
+    const list = Array.isArray(c.menuItems) ? (c.menuItems as Array<Record<string, unknown>>) : [];
+    const next = [
+      ...list,
+      {
+        name: dto.name.trim(),
+        type: dto.type.trim(),
+        plannedServings: dto.plannedServings ?? null,
+      },
+    ];
+    await this.prisma.kitchenCampaign.update({
+      where: { id: campaignId },
+      data: { menuItems: next as unknown as Prisma.InputJsonValue },
+    });
+    return { menuItems: next };
+  }
+
+  /** Thêm vật phẩm vào supply_items (jsonb). */
+  async appendSupplyItem(campaignId: string, userId: string, dto: AppendSupplyItemDto) {
+    const c = await this.assertOwner(campaignId, userId);
+    const list = Array.isArray(c.supplyItems) ? (c.supplyItems as Array<Record<string, unknown>>) : [];
+    const next = [
+      ...list,
+      {
+        name: dto.name.trim(),
+        quantity: dto.quantity ?? null,
+        unit: dto.unit ?? null,
+      },
+    ];
+    await this.prisma.kitchenCampaign.update({
+      where: { id: campaignId },
+      data: { supplyItems: next as unknown as Prisma.InputJsonValue },
+    });
+    return { supplyItems: next };
   }
 }

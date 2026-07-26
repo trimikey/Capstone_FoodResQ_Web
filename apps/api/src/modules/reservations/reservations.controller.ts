@@ -153,6 +153,18 @@ export class ReservationsController {
     return this.reservationsService.cancel(id, user.id, dto.reason);
   }
 
+  @Patch(':id/provider-cancel')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: Huỷ đơn của người nhận (vd: gian lận, thông tin sai) — không phạt trust' })
+  providerCancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: CancelReservationDto,
+  ) {
+    return this.reservationsService.providerCancel(id, user.id, dto.reason);
+  }
+
   @Post(':id/rating')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)

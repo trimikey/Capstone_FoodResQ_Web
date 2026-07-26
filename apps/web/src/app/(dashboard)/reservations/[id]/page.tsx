@@ -10,6 +10,8 @@ import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservat
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
 import { haversineKm } from '@/lib/utils';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
+import ReportIssueModal from '@/components/reservations/ReportIssueModal';
+import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -1014,9 +1016,20 @@ export default function ReservationDetailsPage() {
 
       </div>
 
-      {/* Floating Emergency Help Action Button */}
-      <div className="fixed bottom-6 right-6 z-40">
-        <button 
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+        {/* Báo cáo vấn đề (chỉ đơn thật, có ID thật) */}
+        {!isMock && (
+          <button
+            onClick={() => setReportOpen(true)}
+            title="Báo cáo vấn đề về đơn này"
+            className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-4 py-2.5 rounded-full shadow-lg font-bold text-xs flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[18px]">flag</span>
+            <span>Báo cáo</span>
+          </button>
+        )}
+        <button
           onClick={() => {
             toast.info('Đang kết nối đến trung tâm trợ giúp khẩn cấp FoodResQ...');
             window.location.href = 'tel:19001000';
@@ -1027,6 +1040,16 @@ export default function ReservationDetailsPage() {
           <span>Hỗ trợ khẩn cấp</span>
         </button>
       </div>
+
+      {/* Modal báo cáo vấn đề */}
+      {reportOpen && !isMock && (
+        <ReportIssueModal
+          targetKind={ReportTargetType.RESERVATION}
+          targetId={id}
+          listingTitle={reservation.listing.title}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
 
       {/* ========================================================================= */}
       {/* MOCK CHAT DRAWER OVERLAY SIMULATION                                        */}

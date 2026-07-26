@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 import { BulkRunStatus, type ApiResponse, type BulkRun, type BulkRunStop } from '@foodresq/types';
 
 // Ngưỡng giao sỉ — khớp BULK_MIN_QTY phía BE
-export const BULK_MIN_QTY = 10;
+export const BULK_MIN_QTY = 2;
 
 export type { BulkRun, BulkRunStop } from '@foodresq/types';
 export type BulkStop = BulkRunStop;

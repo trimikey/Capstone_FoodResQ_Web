@@ -45,7 +45,8 @@ import {
   type CreateUserInput,
 } from '@/hooks/useAdmin';
 import { useListings } from '@/hooks/useListings';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import { useAuthStore } from '@/stores/auth.store';
 import NotificationBell from '@/components/shared/NotificationBell';
@@ -702,7 +703,7 @@ function DonationsTab() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="bg-neutral-100 px-4 py-1.5 rounded-full text-xs font-bold text-neutral-700 whitespace-nowrap">{r.quantity} {r.quantityUnit}</span>
+                        <span className="bg-neutral-100 px-4 py-1.5 rounded-full text-xs font-bold text-neutral-700 whitespace-nowrap">{r.quantity} {UNIT_LABEL[r.quantityUnit as QuantityUnit] ?? r.quantityUnit}</span>
                       </td>
                       <td className="px-6 py-4 font-semibold text-neutral-800 truncate max-w-[160px]">{r.receiver}</td>
                       <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">{new Date(r.createdAt).toLocaleDateString('vi-VN')}</td>
@@ -1206,7 +1207,7 @@ function FoodAdminTab() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-neutral-600 truncate max-w-[160px]">{it.businessName ?? '—'}</td>
-                      <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">{it.quantityRemaining}/{it.quantityTotal} {it.quantityUnit}</td>
+                      <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">{it.quantityRemaining}/{it.quantityTotal} {UNIT_LABEL[it.quantityUnit as QuantityUnit] ?? it.quantityUnit}</td>
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
                       </td>

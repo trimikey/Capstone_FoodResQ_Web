@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 import { useListing } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { createReservationSchema, type CreateReservationInput } from '@/schemas/reservation.schema';
 
 interface Props {
@@ -100,7 +102,7 @@ export default function ReservationModal({ listingId, onClose }: Props) {
                     {listing.provider.businessName}
                   </p>
                   <p className="font-label-sm text-label-sm text-primary mt-xs">
-                    Còn {listing.quantityRemaining} {listing.quantityUnit} • Tối đa {listing.maxPerReservation} mỗi lần
+                    Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit} • Tối đa {listing.maxPerReservation} mỗi lần
                   </p>
                 </div>
 

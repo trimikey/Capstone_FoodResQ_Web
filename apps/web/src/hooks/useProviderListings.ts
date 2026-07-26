@@ -121,6 +121,40 @@ export function useCancelListing() {
   });
 }
 
+/** Nhân bản một tin đã tồn tại thành tin nháp mới */
+export function useDuplicateListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.post(`/listings/${id}/duplicate`);
+      return data.data as ProviderListing;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['listings', 'provider'] });
+    },
+  });
+}
+
+/** Thống kê tổng quan cho provider */
+export interface ProviderStats {
+  totalListings: number;
+  activeListings: number;
+  totalReservations: number;
+  completedReservations: number;
+  completionRate: number;
+}
+
+export function useProviderStats() {
+  return useQuery({
+    queryKey: ['listings', 'provider', 'stats'],
+    queryFn: async () => {
+      const { data } = await api.get('/listings/provider/stats');
+      return data.data as ProviderStats;
+    },
+    staleTime: 30_000,
+  });
+}
+
 // Thông tin người nhận trả về sau khi quét QR — để provider đối chiếu trực tiếp
 export interface ScanResult {
   id: string;
@@ -162,6 +196,21 @@ export function useConfirmPickup() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['reservations'] });
+    },
+  });
+}
+
+/** Provider huỷ đơn của người nhận (vd: gian lận, thông tin sai) */
+export function useProviderCancelReservation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
+      const { data } = await api.patch(`/reservations/${id}/provider-cancel`, { reason });
+      return data.data as { message: string; reservationId: string; quantityRestored: number };
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reservations'] });
+      void qc.invalidateQueries({ queryKey: ['listings'] });
     },
   });
 }

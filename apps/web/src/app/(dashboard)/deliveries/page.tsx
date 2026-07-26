@@ -21,7 +21,7 @@ import {
   type ActiveDelivery,
   type DeliveryHistoryItem,
 } from '@/hooks/useDeliveries';
-import { mediaUrl, mapsDirUrl, haversineKm } from '@/lib/utils';
+import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
 import { OfferCountdown } from '@/components/deliveries/OfferPopup';
