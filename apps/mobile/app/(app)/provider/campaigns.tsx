@@ -1,5 +1,6 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,7 +8,7 @@ import { useCampaigns, type Campaign } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /**
  * Bếp ăn (Provider) — danh sách chiến dịch cộng đồng đang mở/đang diễn ra.
@@ -58,6 +59,7 @@ export default function ProviderCampaignsScreen() {
           <CampaignCard campaign={item} onPress={() => router.push(`/(app)/provider/campaigns/${item.id}`)} />
         )}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={<ProviderCampaignHero total={items.length} />}
         ListEmptyComponent={renderEmpty}
         refreshing={isRefetching}
         onRefresh={() => refetch()}
@@ -66,7 +68,36 @@ export default function ProviderCampaignsScreen() {
   );
 }
 
+function ProviderCampaignHero({ total }: { total: number }) {
+  return (
+    <View style={styles.hero}>
+      <Text style={styles.heroKicker}>Donation missions</Text>
+      <Text style={styles.heroTitle}>Góp nguyên liệu cho bếp ăn đang mở</Text>
+      <View style={styles.heroStat}>
+        <Text style={styles.heroStatValue}>{total}</Text>
+        <Text style={styles.heroStatLabel}>chiến dịch có thể hỗ trợ</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  hero: {
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
+  heroStat: {
+    marginTop: spacing.lg,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    backgroundColor: COLORS.surface,
+  },
+  heroStatValue: { color: COLORS.onSurface, fontSize: 20, fontWeight: '900' },
+  heroStatLabel: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
 });

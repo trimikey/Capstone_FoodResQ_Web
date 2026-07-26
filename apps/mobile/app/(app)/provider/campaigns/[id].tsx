@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail } from '@/hooks/useCampaigns';
 import { DonationDialog } from '@/components/DonationDialog';
 import {
@@ -14,7 +14,9 @@ import {
   slotProgress,
   canDonate,
 } from '@/utils/campaign';
+import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /** Hàng thông tin có icon. */
@@ -48,9 +50,7 @@ export default function ProviderCampaignDetailScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={8}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-      </Pressable>
+      <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
       <View style={{ width: 24 }} />
     </View>
@@ -124,7 +124,7 @@ export default function ProviderCampaignDetailScreen() {
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.bulletText}>{m.name}{m.type ? ` (${m.type})` : ''}</Text>
+                <Text style={styles.bulletText}>{formatMenuItem(m)}</Text>
               </View>
             ))}
           </Section>
@@ -146,7 +146,7 @@ export default function ProviderCampaignDetailScreen() {
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
                 <View key={i} style={styles.tag}>
-                  <Text style={styles.tagText}>{s}</Text>
+                  <Text style={styles.tagText}>{formatSupplyItem(s)}</Text>
                 </View>
               ))}
             </View>

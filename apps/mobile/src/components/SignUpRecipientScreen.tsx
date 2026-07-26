@@ -26,28 +26,14 @@ const signUpRecipientSchema = z.object({
   idNumber: z.string().optional(),
   organizationName: z.string().optional(),
   taxId: z.string().optional(),
-  address: z.string().min(10, 'Địa chỉ cần tối thiểu 10 ký tự'),
+  address: z.string().trim().min(5, 'Địa chỉ hoạt động phải từ 5 ký tự'),
 }).superRefine((data, ctx) => {
-  if (data.recipientType === 'individual' && !data.idNumber?.trim()) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['idNumber'],
-      message: 'Cần nhập số giấy tờ tùy thân',
-    });
-  }
   if (data.recipientType === 'charity') {
-    if (!data.organizationName?.trim()) {
+    if (!data.organizationName?.trim() || data.organizationName.trim().length < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['organizationName'],
-        message: 'Cần nhập tên tổ chức',
-      });
-    }
-    if (!data.taxId?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['taxId'],
-        message: 'Cần nhập mã số thuế',
+        message: 'Tên tổ chức phải từ 2 ký tự',
       });
     }
   }
@@ -168,30 +154,7 @@ export function SignUpRecipientScreen({
             </View>
           </AuthField>
 
-          {recipientType === 'individual' ? (
-            <AuthField label="Số giấy tờ tùy thân" error={errors.idNumber?.message}>
-              <Controller
-                control={control}
-                name="idNumber"
-                render={({ field: { onChange, value } }) => (
-                  <TextInput
-                    mode="outlined"
-                    label="CCCD/CMND hoặc giấy tờ tương đương"
-                    placeholder="VD: 012345678901"
-                    value={value}
-                    onChangeText={onChange}
-                    editable={!isLoading}
-                    left={<TextInput.Icon icon="card-account-details-outline" color={COLORS.onSurfaceVariant} />}
-                    style={authStyles.input}
-                    outlineColor={COLORS.outline}
-                    activeOutlineColor={COLORS.primary}
-                    error={!!errors.idNumber}
-                    dense
-                  />
-                )}
-              />
-            </AuthField>
-          ) : (
+          {recipientType === 'charity' ? (
             <>
               <AuthField label="Tên tổ chức" error={errors.organizationName?.message}>
                 <Controller
@@ -215,34 +178,11 @@ export function SignUpRecipientScreen({
                   )}
                 />
               </AuthField>
-
-              <AuthField label="Mã số thuế / mã đăng ký" error={errors.taxId?.message}>
-                <Controller
-                  control={control}
-                  name="taxId"
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      mode="outlined"
-                      label="Mã số thuế hoặc giấy phép"
-                      placeholder="VD: 0312345678"
-                      value={value}
-                      onChangeText={onChange}
-                      editable={!isLoading}
-                      left={<TextInput.Icon icon="file-document-outline" color={COLORS.onSurfaceVariant} />}
-                      style={authStyles.input}
-                      outlineColor={COLORS.outline}
-                      activeOutlineColor={COLORS.primary}
-                      error={!!errors.taxId}
-                      dense
-                    />
-                  )}
-                />
-              </AuthField>
             </>
-          )}
+          ) : null}
 
           <AuthField
-            label="Địa chỉ nhận hỗ trợ"
+            label={recipientType === 'charity' ? 'Địa chỉ hoạt động' : 'Địa chỉ nhận hỗ trợ'}
             helper="Dùng để gợi ý các tin thực phẩm gần bạn hơn."
             error={errors.address?.message}
           >

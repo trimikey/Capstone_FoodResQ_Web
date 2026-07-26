@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Text,
@@ -22,6 +22,7 @@ import {
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ProviderListingDetailScreen() {
@@ -72,9 +73,7 @@ export default function ProviderListingDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-        </Pressable>
+        <BackButton />
         <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết tin</Text>
         <View style={{ width: 24 }} />
       </View>

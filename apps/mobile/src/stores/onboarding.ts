@@ -10,6 +10,7 @@ export interface OnboardingState {
     email?: string;
     password?: string;
     name?: string;
+    phone?: string;
   };
 
   recipientInfo?: {

@@ -23,7 +23,7 @@ export default function SignUpRecipientScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSuccess = async (recipientData: SignUpRecipientInput) => {
-    if (!basicInfo.email || !basicInfo.password || !basicInfo.name) {
+    if (!basicInfo.email || !basicInfo.password || !basicInfo.name || !basicInfo.phone) {
       Popup.show({
         type: 'error',
         text1: 'Thiếu thông tin tài khoản',
@@ -39,13 +39,13 @@ export default function SignUpRecipientScreen({
         email: basicInfo.email,
         password: basicInfo.password,
         name: basicInfo.name,
+        phone: basicInfo.phone,
         role: 'receiver',
-        address: recipientData.address,
+        address: recipientData.address.trim(),
         isCharityOrg: isCharity,
-        ...(isCharity && recipientData.organizationName
-          ? { businessName: recipientData.organizationName }
+        ...(isCharity && recipientData.organizationName?.trim()
+          ? { businessName: recipientData.organizationName.trim() }
           : {}),
-        // TODO(Profile API): backend register/PATCH users/me chưa nhận idNumber/taxId.
       } as any);
       await initialize();
       resetOnboarding();

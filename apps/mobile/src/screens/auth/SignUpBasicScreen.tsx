@@ -26,7 +26,12 @@ export default function SignUpBasicScreen({
   const selectedRole = route?.params?.role || 'receiver';
 
   const handleSuccess = async (data: SignUpBasicInfoInput) => {
-    setBasicInfo({ email: data.email, password: data.password, name: data.name });
+    setBasicInfo({
+      email: data.email.trim(),
+      password: data.password,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+    });
 
     // Provider: chưa đăng ký ngay — sang màn nhập thông tin cơ sở rồi mới register.
     if (selectedRole === 'provider') {

@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { Portal, Dialog, Button, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { create } from 'zustand';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 export type PopupType = 'success' | 'error' | 'info' | 'warning';
 
@@ -92,10 +93,10 @@ export const Toast = {
 };
 
 const META: Record<PopupType, { icon: string; color: string }> = {
-  success: { icon: 'check-circle', color: '#10b981' },
-  error: { icon: 'alert-circle', color: '#ef4444' },
-  warning: { icon: 'alert', color: '#f59e0b' },
-  info: { icon: 'information', color: '#3b82f6' },
+  success: { icon: 'check-circle', color: COLORS.success },
+  error: { icon: 'alert-circle', color: COLORS.error },
+  warning: { icon: 'alert', color: COLORS.warning },
+  info: { icon: 'information', color: COLORS.info },
 };
 
 /**
@@ -144,7 +145,7 @@ export function AppPopupHost() {
         </Dialog.Content>
         <Dialog.Actions>
           {secondaryAction ? (
-            <Button onPress={() => runAction(secondaryAction)} textColor="#6b7280" labelStyle={styles.okLabel}>
+            <Button onPress={() => runAction(secondaryAction)} textColor={COLORS.onSurfaceVariant} labelStyle={styles.okLabel}>
               {secondaryAction.label}
             </Button>
           ) : null}
@@ -170,7 +171,7 @@ export function AppToastHost() {
         <MaterialCommunityIcons
           name={meta.icon as keyof typeof MaterialCommunityIcons.glyphMap}
           size={size}
-          color="#ffffff"
+          color={COLORS.onPrimary}
         />
       )}
       style={[styles.toast, { backgroundColor: meta.color }]}
@@ -185,13 +186,13 @@ export function AppToastHost() {
 }
 
 const styles = StyleSheet.create({
-  dialog: { borderRadius: 20 },
+  dialog: { borderRadius: radius.xl },
   iconWrap: { alignItems: 'center', paddingTop: 24 },
   content: { alignItems: 'center', paddingTop: 12 },
-  title: { textAlign: 'center', fontWeight: '700', color: '#121c2a' },
-  message: { textAlign: 'center', color: '#6b7280', marginTop: 6 },
+  title: { textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
+  message: { textAlign: 'center', color: COLORS.onSurfaceVariant, marginTop: spacing.sm },
   okLabel: { fontWeight: '700' },
   toastWrap: { bottom: 78 },
-  toast: { borderRadius: 12 },
-  toastText: { color: '#ffffff', fontWeight: '700' },
+  toast: { borderRadius: radius.md },
+  toastText: { color: COLORS.onPrimary, fontWeight: '700' },
 });

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, ScrollView, View } from 'react-native';
+import { Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,9 +8,12 @@ import { useProviderReservations, type ProviderReservation } from '@/hooks/usePr
 import { ProviderReservationCard } from '@/components/ProviderReservationCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, spacing } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom status reservation thành nhóm dễ hiểu cho provider. */
 type FilterKey = 'all' | 'confirmed' | 'picked_up' | 'completed' | 'cancelled';
@@ -49,8 +52,18 @@ export default function ProviderOrdersScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <AppScreen>
       <ScreenHeader title="Đơn đặt" />
+
+      <View style={styles.summaryWrap}>
+        <SurfaceCard style={styles.summaryCard}>
+          <SectionHeader
+            title="Xử lý đơn nhận món"
+            subtitle="Ưu tiên đơn chờ lấy, kiểm tra QR và chuyển trạng thái đúng thực tế."
+            action={<Text style={styles.summaryCount}>{all.length}</Text>}
+          />
+        </SurfaceCard>
+      </View>
 
       <ScrollView
         horizontal
@@ -86,12 +99,15 @@ export default function ProviderOrdersScreen() {
         refreshing={isRefetching}
         onRefresh={() => refetch()}
       />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  summaryWrap: { paddingHorizontal: spacing.xl, paddingBottom: spacing.sm },
+  summaryCard: { padding: spacing.lg },
+  summaryCount: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },

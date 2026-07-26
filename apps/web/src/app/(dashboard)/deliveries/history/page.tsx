@@ -3,11 +3,28 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useVolunteerMe, useDeliveryHistory, type DeliveryHistoryItem } from '@/hooks/useDeliveries';
+import { useCreateReport } from '@/hooks/useReports';
 import { mediaUrl } from '@/lib/utils';
+import { ReportReason, ReportTargetType } from '@foodresq/types';
+import { toast } from 'sonner';
 
 const PER_PAGE = 8;
 
-function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
+const REPORT_REASONS = [
+  { value: ReportReason.OTHER, label: 'Sự cố khác' },
+  { value: ReportReason.HARASSMENT, label: 'Ứng xử không phù hợp' },
+  { value: ReportReason.FRAUD, label: 'Thông tin không đúng' },
+  { value: ReportReason.NO_SHOW_PROVIDER, label: 'Không gặp được bên liên quan' },
+  { value: ReportReason.UNSAFE_FOOD, label: 'Thực phẩm không an toàn' },
+] as const;
+
+function HistoryRow({
+  h,
+  onReport,
+}: {
+  h: DeliveryHistoryItem;
+  onReport: (delivery: DeliveryHistoryItem) => void;
+}) {
   const delivered = h.status === 'delivered';
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-md transition-shadow">
@@ -32,10 +49,18 @@ function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
         </p>
         {!delivered && h.failedReason && <p className="text-xs text-rose-600 mt-1 font-medium">Lý do: {h.failedReason}</p>}
       </div>
-      <div className="flex justify-center sm:justify-end shrink-0">
+      <div className="flex flex-col items-center sm:items-end gap-2 shrink-0">
         <span className={`px-4 py-2 rounded-full text-xs font-bold ${delivered ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}`}>
           {delivered ? 'Đã giao thành công' : 'Giao thất bại'}
         </span>
+        <button
+          type="button"
+          onClick={() => onReport(h)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-200 text-xs font-bold text-neutral-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[15px]">flag</span>
+          Báo cáo
+        </button>
       </div>
     </div>
   );
@@ -44,12 +69,41 @@ function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
 export default function DeliveryHistoryPage() {
   const { data: me, isLoading: meLoading } = useVolunteerMe();
   const [page, setPage] = useState(1);
+  const [reporting, setReporting] = useState<DeliveryHistoryItem | null>(null);
+  const [reportReason, setReportReason] = useState<ReportReason>(ReportReason.OTHER);
+  const [reportDescription, setReportDescription] = useState('');
   const { data, isLoading: historyLoading } = useDeliveryHistory({ page, limit: PER_PAGE, enabled: !!me?.isShipper });
+  const reportMutation = useCreateReport();
 
   const items = data?.items ?? [];
   const total = data?.meta.total ?? 0;
   const totalPages = data?.meta.totalPages ?? 1;
   const curPage = data?.meta.page ?? page;
+
+  const closeReport = () => {
+    setReporting(null);
+    setReportReason(ReportReason.OTHER);
+    setReportDescription('');
+  };
+
+  const submitReport = async () => {
+    if (!reporting) return;
+    try {
+      await reportMutation.mutateAsync({
+        targetType: ReportTargetType.DELIVERY,
+        targetId: reporting.id,
+        reason: reportReason,
+        description: reportDescription.trim() || undefined,
+      });
+      toast.success('Đã gửi báo cáo sự cố.');
+      closeReport();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Không gửi được báo cáo';
+      toast.error(msg);
+    }
+  };
 
   if (meLoading || (historyLoading && !data)) {
     return (
@@ -79,6 +133,70 @@ export default function DeliveryHistoryPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50/50 pb-24">
+      {reporting && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-3xl border border-neutral-200 shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-neutral-100 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-extrabold text-neutral-900">Báo cáo sự cố giao hàng</h2>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Đơn: {reporting.reservation.listing.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReport}
+                className="w-9 h-9 rounded-full hover:bg-neutral-100 text-neutral-500 flex items-center justify-center"
+                aria-label="Đóng"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <label className="block">
+                <span className="text-xs font-bold text-neutral-500 uppercase">Lý do</span>
+                <select
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value as ReportReason)}
+                  className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500"
+                >
+                  {REPORT_REASONS.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-neutral-500 uppercase">Mô tả sự cố</span>
+                <textarea
+                  value={reportDescription}
+                  onChange={(e) => setReportDescription(e.target.value)}
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Mô tả ngắn gọn sự cố trong quá trình giao hàng..."
+                  className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 resize-none"
+                />
+              </label>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={closeReport}
+                  className="flex-1 py-3 rounded-xl border border-neutral-200 text-neutral-600 text-sm font-bold hover:bg-neutral-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={submitReport}
+                  disabled={reportMutation.isPending}
+                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50"
+                >
+                  {reportMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-4xl mx-auto px-6 md:px-12 py-10 space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 pb-6">
@@ -118,7 +236,7 @@ export default function DeliveryHistoryPage() {
           <>
             <div className="space-y-4">
               {items.map((h) => (
-                <HistoryRow key={h.id} h={h} />
+                <HistoryRow key={h.id} h={h} onReport={setReporting} />
               ))}
             </div>
 

@@ -1,11 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { Text, Button, Icon } from 'react-native-paper';
-
-const COLORS = {
-  primary: '#10b981',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   variant: 'empty' | 'error';
@@ -57,8 +52,8 @@ export function ListingsStateView({ variant, onRetry, onClear, hasFilters }: Pro
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: 8 },
+  container: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: spacing.sm },
   title: { fontWeight: '700', color: COLORS.onSurface, textAlign: 'center', marginTop: 8 },
   subtitle: { color: COLORS.onSurfaceVariant, textAlign: 'center', paddingHorizontal: 32 },
-  btn: { marginTop: 12, borderRadius: 12 },
+  btn: { marginTop: 12, borderRadius: radius.md },
 });

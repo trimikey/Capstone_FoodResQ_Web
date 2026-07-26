@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, Portal, Dialog, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import {
   useCampaignDetail,
   useStartCampaign,
@@ -30,9 +30,11 @@ import {
   canCompleteCampaign,
   ASSIGNMENT_ROLE_LABEL,
 } from '@/utils/campaign';
+import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -83,9 +85,7 @@ export default function CharityCampaignDetailScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={8}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-      </Pressable>
+      <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Quản lý chiến dịch</Text>
       <View style={{ width: 24 }} />
     </View>
@@ -299,7 +299,7 @@ export default function CharityCampaignDetailScreen() {
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.bulletText}>{m.name}{m.type ? ` (${m.type})` : ''}</Text>
+                <Text style={styles.bulletText}>{formatMenuItem(m)}</Text>
               </View>
             ))}
           </Section>
@@ -320,7 +320,7 @@ export default function CharityCampaignDetailScreen() {
           <Section title="Vật phẩm cần hỗ trợ">
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
-                <View key={i} style={styles.tag}><Text style={styles.tagText}>{s}</Text></View>
+                <View key={i} style={styles.tag}><Text style={styles.tagText}>{formatSupplyItem(s)}</Text></View>
               ))}
             </View>
           </Section>

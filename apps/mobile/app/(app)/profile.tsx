@@ -4,7 +4,6 @@ import {
   Text,
   Button,
   Avatar,
-  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,12 +11,14 @@ import { router, type Href } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useMyProfile } from '@/hooks/useProfile';
-import { roleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat';
+import { displayRoleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
-import { mobileColors as COLORS } from '@/theme/design';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 type FaceFeedback = {
   type: 'info' | 'success' | 'error';
@@ -71,6 +72,8 @@ export default function ProfileTab() {
   const trustScore = profile?.trustScore ?? user?.trustScore;
   const sd = statusDisplay(status);
   const isReceiver = role === 'receiver';
+  const receiver = profile?.receiver ?? user?.receiver;
+  const isCharityOrg = !!receiver?.isCharityOrg;
   const faceBusy = enrolling || enrollFace.isPending;
   const faceEnrolled = confirmedFaceEnrollment || faceEnrollment.data?.enrolled === true;
 
@@ -135,18 +138,17 @@ export default function ProfileTab() {
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
         }
       >
-        {/* Header: avatar + tên + email */}
-        <View style={styles.header}>
+        <View style={styles.hero}>
           {avatarUrl ? (
             <AppImage source={{ uri: avatarUrl }} style={styles.avatarImg} />
           ) : (
             <Avatar.Text
               size={84}
               label={(name || email || '?').charAt(0).toUpperCase()}
-              style={{ backgroundColor: COLORS.primary }}
+              style={styles.avatarFallback}
             />
           )}
-          <Text variant="titleLarge" style={styles.name}>
+          <Text variant="titleLarge" style={styles.name} numberOfLines={2}>
             {name}
           </Text>
           {email ? (
@@ -155,15 +157,10 @@ export default function ProfileTab() {
             </Text>
           ) : null}
 
-          {/* Badge vai trò + trạng thái */}
           <View style={styles.badgeRow}>
-            <View style={[styles.badge, { backgroundColor: COLORS.primaryContainer }]}>
-              <Text style={[styles.badgeText, { color: COLORS.primary }]}>
-                {roleLabel(role)}
-              </Text>
-            </View>
-            <View style={[styles.badge, { backgroundColor: sd.bg }]}>
-              <Text style={[styles.badgeText, { color: sd.fg }]}>{sd.label}</Text>
+            <StatusBadge label={displayRoleLabel(role, isCharityOrg)} tone="info" />
+            <View style={[styles.statusBadge, { backgroundColor: sd.bg }]}>
+              <Text style={[styles.statusBadgeText, { color: sd.fg }]}>{sd.label}</Text>
             </View>
           </View>
         </View>
@@ -176,24 +173,24 @@ export default function ProfileTab() {
           <>
             {/* Điểm uy tín */}
             {typeof trustScore === 'number' ? (
-              <View style={styles.card}>
+              <SurfaceCard style={styles.trustCard}>
                 <View style={styles.trustRow}>
-                  <MaterialCommunityIcons
-                    name="shield-check"
-                    size={22}
-                    color={COLORS.primary}
-                  />
-                  <Text style={styles.trustLabel}>Điểm uy tín</Text>
+                  <View style={styles.trustIcon}>
+                    <MaterialCommunityIcons name="shield-check" size={22} color={COLORS.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.trustLabel}>Điểm uy tín</Text>
+                    <Text style={styles.trustHint}>Dùng cho xác minh, nhận món và giao hàng</Text>
+                  </View>
                   <Text style={styles.trustValue}>{trustScore}</Text>
                 </View>
-              </View>
+              </SurfaceCard>
             ) : null}
 
             {/* Thống kê đóng góp */}
             {profile?.stats ? (
-              <View style={styles.card}>
+              <SurfaceCard style={styles.card}>
                 <Text style={styles.cardTitle}>Thống kê</Text>
-                <Divider style={{ marginVertical: 8 }} />
                 <View style={styles.statsGrid}>
                   <Stat
                     label="Kg đã cứu"
@@ -212,14 +209,13 @@ export default function ProfileTab() {
                     value={formatCount(profile.stats.providersHelped)}
                   />
                 </View>
-              </View>
+              </SurfaceCard>
             ) : null}
 
             {/* Thông tin tình nguyện viên */}
             {profile?.volunteer ? (
-              <View style={styles.card}>
+              <SurfaceCard style={styles.card}>
                 <Text style={styles.cardTitle}>Tình nguyện viên</Text>
-                <Divider style={{ marginVertical: 8 }} />
                 <Row
                   label="Hạng"
                   value={volunteerRankLabel(profile.volunteer.rank)}
@@ -228,12 +224,12 @@ export default function ProfileTab() {
                   label="Điểm cống hiến"
                   value={String(profile.volunteer.dedicationPoints)}
                 />
-              </View>
+              </SurfaceCard>
             ) : null}
 
             {/* Số điện thoại + địa chỉ theo vai trò */}
-            {profile?.phone || profile?.provider?.address || profile?.receiver?.address ? (
-              <View style={styles.card}>
+            {profile?.phone || profile?.provider?.address || profile?.receiver?.address || receiver?.isCharityOrg ? (
+              <SurfaceCard style={styles.card}>
                 {profile?.phone ? <Row label="Số điện thoại" value={profile.phone} /> : null}
                 {profile?.provider?.address ? (
                   <Row label="Địa chỉ cửa hàng" value={profile.provider.address} />
@@ -241,11 +237,14 @@ export default function ProfileTab() {
                 {profile?.receiver?.address ? (
                   <Row label="Điểm giao mặc định" value={profile.receiver.address} />
                 ) : null}
-              </View>
+                {receiver?.isCharityOrg ? (
+                  <Row label="Tên tổ chức" value={receiver.organizationName ?? 'Chưa cập nhật'} />
+                ) : null}
+              </SurfaceCard>
             ) : null}
 
-            {isReceiver ? (
-              <View style={styles.card}>
+            {isReceiver && !isCharityOrg ? (
+              <SurfaceCard style={styles.card}>
                 <View style={styles.faceHead}>
                   <View style={styles.faceIcon}>
                     <MaterialCommunityIcons
@@ -320,7 +319,7 @@ export default function ProfileTab() {
                     </Button>
                   </View>
                 ) : null}
-              </View>
+              </SurfaceCard>
             ) : null}
           </>
         )}
@@ -337,35 +336,37 @@ export default function ProfileTab() {
             Báo cáo của tôi
           </Button>
         ) : null}
-        <Button
-          mode="outlined"
-          icon="chef-hat"
-          onPress={() => router.push('/(app)/recipes')}
-          style={styles.recipesBtn}
-          textColor={COLORS.primary}
-        >
-          Công thức nấu ăn
-        </Button>
-        <Button
-          mode="contained"
-          icon="account-edit"
-          onPress={() => router.push('/(app)/profile/edit')}
-          style={styles.editBtn}
-          buttonColor={COLORS.primary}
-        >
-          Chỉnh sửa hồ sơ
-        </Button>
-        <Button
-          mode="outlined"
-          icon="logout"
-          onPress={logout}
-          loading={authLoading}
-          disabled={authLoading}
-          style={styles.logout}
-          textColor={COLORS.error}
-        >
-          Đăng xuất
-        </Button>
+        <SurfaceCard style={styles.actionCard}>
+          <Button
+            mode="outlined"
+            icon="chef-hat"
+            onPress={() => router.push('/(app)/recipes')}
+            style={styles.actionBtn}
+            textColor={COLORS.primary}
+          >
+            Công thức nấu ăn
+          </Button>
+          <Button
+            mode="contained"
+            icon="account-edit"
+            onPress={() => router.push('/(app)/profile/edit')}
+            style={styles.actionBtn}
+            buttonColor={COLORS.primary}
+          >
+            Chỉnh sửa hồ sơ
+          </Button>
+          <Button
+            mode="outlined"
+            icon="logout"
+            onPress={logout}
+            loading={authLoading}
+            disabled={authLoading}
+            style={[styles.actionBtn, styles.logout]}
+            textColor={COLORS.error}
+          >
+            Đăng xuất
+          </Button>
+        </SurfaceCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -391,35 +392,56 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 },
-  header: { alignItems: 'center', gap: 4 },
-  avatarImg: { width: 84, height: 84, borderRadius: 42 },
-  name: { fontWeight: '700', marginTop: 10, color: COLORS.onSurface },
-  email: { color: COLORS.onSurfaceVariant },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.section },
+  hero: {
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 30,
+    padding: spacing.xxl,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  avatarImg: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: COLORS.surface },
+  avatarFallback: { backgroundColor: COLORS.surface },
+  name: { fontWeight: '900', marginTop: 10, color: COLORS.onPrimary, textAlign: 'center' },
+  email: { color: COLORS.secondaryContainer },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  badge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
+  statusBadgeText: { fontSize: 12, fontWeight: '800' },
   errorBox: { alignItems: 'center', marginTop: 24 },
   card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
   },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
+  cardTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface, marginBottom: spacing.md },
+  trustCard: { marginTop: spacing.lg, padding: spacing.lg },
   trustRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  trustLabel: { flex: 1, fontSize: 15, color: COLORS.onSurface },
-  trustValue: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  statItem: { width: '50%', paddingVertical: 8, alignItems: 'center' },
-  statValue: { fontSize: 20, fontWeight: '800', color: COLORS.onSurface },
-  statLabel: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  trustIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  trustLabel: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface },
+  trustHint: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  trustValue: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statItem: {
+    width: '48%',
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  statValue: { fontSize: 20, fontWeight: '900', color: COLORS.onSurface },
+  statLabel: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2, fontWeight: '700' },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outlineVariant,
   },
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600' },
@@ -453,7 +475,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   faceFeedbackError: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: COLORS.errorContainer,
     borderColor: COLORS.error,
   },
   faceFeedbackText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '600' },
@@ -463,7 +485,7 @@ const styles = StyleSheet.create({
   faceActions: { marginTop: 12, gap: 8 },
   faceButton: { borderRadius: 12 },
   reportsBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
-  recipesBtn: { marginTop: 12, borderRadius: 12, borderColor: COLORS.primary },
-  editBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 4 },
+  actionCard: { marginTop: spacing.xl, padding: spacing.md, gap: spacing.sm },
+  actionBtn: { borderRadius: radius.md, paddingVertical: 3 },
   logout: { marginTop: 12, borderRadius: 12, borderColor: COLORS.error },
 });

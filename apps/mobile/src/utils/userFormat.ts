@@ -20,6 +20,12 @@ export function roleLabel(role?: string | null): string {
   }
 }
 
+/** Nhãn vai trò có xét thêm cờ tổ chức từ thiện của receiver. */
+export function displayRoleLabel(role?: string | null, isCharityOrg?: boolean | null): string {
+  if (role === 'receiver' && isCharityOrg) return 'Tổ chức từ thiện';
+  return roleLabel(role);
+}
+
 export interface StatusDisplay {
   label: string;
   /** Màu nền badge (nhạt) */

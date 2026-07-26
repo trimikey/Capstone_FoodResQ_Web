@@ -1,8 +1,8 @@
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
 import { useMyProfile } from '@/hooks/useProfile';
@@ -16,17 +16,19 @@ import {
   canApplyCampaign,
   ASSIGNMENT_ROLE_LABEL,
 } from '@/utils/campaign';
+import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { BackButton } from '@/components/ui/BackButton';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const ASSIGNMENT_ROLES: AssignmentRole[] = ['chef', 'waiter', 'shipper'];
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
     <View style={styles.infoRow}>
-      <MaterialCommunityIcons name={icon} size={18} color={COLORS.primary} />
+      <MaterialCommunityIcons name={icon} size={18} color={COLORS.purple} />
       <Text style={styles.infoText}>{children}</Text>
     </View>
   );
@@ -58,9 +60,7 @@ export default function VolunteerCampaignDetailScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={8}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-      </Pressable>
+      <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
       <View style={{ width: 24 }} />
     </View>
@@ -170,13 +170,13 @@ export default function VolunteerCampaignDetailScreen() {
                 <View key={s.role} style={styles.roleRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.roleLabel}>{s.label}</Text>
-                    <Text style={[styles.roleCount, full && { color: COLORS.primary }]}>
+                    <Text style={[styles.roleCount, full && { color: COLORS.teal }]}>
                       {s.filled}/{s.needed} {full ? '- Đủ' : 'đã đăng ký'}
                     </Text>
                   </View>
                   {applied ? (
                     <View style={styles.appliedPill}>
-                      <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.primary} />
+                      <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.teal} />
                       <Text style={styles.appliedPillText}>Đã đăng ký</Text>
                     </View>
                   ) : (
@@ -257,7 +257,7 @@ export default function VolunteerCampaignDetailScreen() {
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.bulletText}>{m.name}{m.type ? ` (${m.type})` : ''}</Text>
+                <Text style={styles.bulletText}>{formatMenuItem(m)}</Text>
               </View>
             ))}
           </Section>
@@ -278,7 +278,7 @@ export default function VolunteerCampaignDetailScreen() {
           <Section title="Vật phẩm cần hỗ trợ">
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
-                <View key={i} style={styles.tag}><Text style={styles.tagText}>{s}</Text></View>
+                <View key={i} style={styles.tag}><Text style={styles.tagText}>{formatSupplyItem(s)}</Text></View>
               ))}
             </View>
           </Section>
@@ -300,42 +300,52 @@ const styles = StyleSheet.create({
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
+  headerTitle: { fontWeight: '900', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
-  title: { flex: 1, fontSize: 20, fontWeight: '700', color: COLORS.onSurface, lineHeight: 27 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 30,
+    backgroundColor: COLORS.heroCampaign,
+    ...elevation.card,
+  },
+  title: { flex: 1, fontSize: 22, fontWeight: '900', color: COLORS.onPrimary, lineHeight: 28 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, marginTop: 2 },
   badgeText: { fontSize: 12, fontWeight: '700' },
   description: { fontSize: 14, color: COLORS.onSurfaceVariant, lineHeight: 21, marginBottom: 14 },
   card: {
-    backgroundColor: COLORS.surface, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: COLORS.outline, gap: 10,
+    backgroundColor: COLORS.surface, borderRadius: 28, padding: spacing.lg,
+    borderWidth: 1, borderColor: COLORS.outlineVariant, gap: 10,
+    ...elevation.card,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   infoText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
-  section: { marginTop: 20 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface, marginBottom: 10 },
+  section: { marginTop: spacing.xl, padding: spacing.lg, borderRadius: 28, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outlineVariant, ...elevation.card },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface, marginBottom: 10 },
   roleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: COLORS.outline,
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: COLORS.outlineVariant,
   },
-  roleLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
+  roleLabel: { fontSize: 14, fontWeight: '900', color: COLORS.onSurface },
   roleCount: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
-  appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  appliedPillText: { fontSize: 13, fontWeight: '600', color: COLORS.primary },
+  appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.tealContainer, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  appliedPillText: { fontSize: 13, fontWeight: '600', color: COLORS.teal },
   hint: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   shiftRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: COLORS.outline,
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: COLORS.outlineVariant,
   },
   shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   shiftMeta: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
-  scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
+  scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.indigo, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  tag: { backgroundColor: COLORS.surfaceContainerLow, borderWidth: 1, borderColor: COLORS.outlineVariant, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
 });

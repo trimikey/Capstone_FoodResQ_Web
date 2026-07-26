@@ -62,6 +62,9 @@ export const signUpBasicInfoSchema = z
       .string()
       .min(2, 'Name must be at least 2 characters')
       .max(50, 'Name must not exceed 50 characters'),
+    phone: z
+      .string()
+      .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại Việt Nam không hợp lệ'),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',

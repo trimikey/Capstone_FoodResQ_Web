@@ -46,6 +46,8 @@ export function useUpdateProfile() {
         name: data.fullName ?? data.name ?? '',
         phone: data.phone ?? null,
         avatarUrl: data.avatarUrl ?? null,
+        receiver: data.receiver ?? null,
+        provider: data.provider ?? null,
       });
       queryClient.invalidateQueries({ queryKey: ['profile', 'me'] });
     },
