@@ -13,7 +13,7 @@ import {
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { deliveryStatusMeta } from '@/utils/delivery';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '-';
@@ -35,7 +35,7 @@ function formatDecimal(value: unknown): string | null {
 function StatsHeader({ stats }: { stats?: DeliveryStats }) {
   if (!stats) return null;
   const cards: { icon: string; label: string; value: string; tint: string }[] = [
-    { icon: 'truck-check', label: 'Tổng chuyến', value: String(stats.totalDelivered), tint: COLORS.primary },
+    { icon: 'truck-check', label: 'Tổng chuyến', value: String(stats.totalDelivered), tint: COLORS.teal },
     { icon: 'map-marker-distance', label: 'Quãng đường', value: `${stats.totalKm} km`, tint: COLORS.info },
     { icon: 'calendar-today', label: 'Hôm nay', value: String(stats.todayDelivered), tint: COLORS.secondary },
     {
@@ -53,14 +53,23 @@ function StatsHeader({ stats }: { stats?: DeliveryStats }) {
     },
   ];
   return (
-    <View style={styles.statsGrid}>
-      {cards.map((c) => (
-        <View key={c.label} style={styles.statCard}>
-          <MaterialCommunityIcons name={c.icon as never} size={22} color={c.tint} />
-          <Text style={styles.statValue}>{c.value}</Text>
-          <Text style={styles.statLabel}>{c.label}</Text>
+    <View style={styles.statsPanel}>
+      <View style={styles.statsHero}>
+        <View>
+          <Text style={styles.statsKicker}>Hiệu suất shipper</Text>
+          <Text style={styles.statsTitle}>{stats.totalDelivered} chuyến hoàn tất</Text>
         </View>
-      ))}
+        <MaterialCommunityIcons name="medal-outline" size={34} color={COLORS.onPrimary} />
+      </View>
+      <View style={styles.statsGrid}>
+        {cards.slice(1).map((c) => (
+          <View key={c.label} style={styles.statCard}>
+            <MaterialCommunityIcons name={c.icon as never} size={20} color={c.tint} />
+            <Text style={styles.statValue}>{c.value}</Text>
+            <Text style={styles.statLabel}>{c.label}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -83,27 +92,33 @@ export default function VolunteerHistoryScreen() {
     const failed = item.status === 'failed';
     const distanceLabel = formatKm(item.distanceKm);
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, failed && styles.cardFailed]}>
         <View style={styles.cardHead}>
-          <Text style={styles.date}>{formatDate(item.deliveredAt)}</Text>
+          <View style={styles.datePill}>
+            <MaterialCommunityIcons name="calendar-check-outline" size={14} color={COLORS.indigo} />
+            <Text style={styles.date}>{formatDate(item.deliveredAt)}</Text>
+          </View>
           <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
             <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
           </View>
         </View>
-        <View style={styles.locRow}>
-          <MaterialCommunityIcons name="storefront-outline" size={16} color={COLORS.onSurfaceVariant} />
-          <Text style={styles.locText} numberOfLines={1}>
-            {item.reservation.listing.title}
-          </Text>
-        </View>
-        <View style={styles.locRow}>
-          <MaterialCommunityIcons name="map-marker-radius-outline" size={16} color={COLORS.primary} />
-          <Text style={styles.locText} numberOfLines={1}>
-            {item.reservation.receiver?.user.fullName ?? 'Người nhận'}
-          </Text>
+        <View style={styles.routeBlock}>
+          <View style={styles.locRow}>
+            <View style={styles.routeDotPickup} />
+            <Text style={styles.locText} numberOfLines={1}>
+              {item.reservation.listing.title}
+            </Text>
+          </View>
+          <View style={styles.routeLine} />
+          <View style={styles.locRow}>
+            <View style={styles.routeDotDropoff} />
+            <Text style={styles.locText} numberOfLines={1}>
+              {item.reservation.receiver?.user.fullName ?? 'Người nhận'}
+            </Text>
+          </View>
         </View>
         <View style={styles.metaRow}>
-          <Text style={styles.metaText}>SL: {item.reservation.quantity}</Text>
+          <Text style={styles.metaText}>{item.reservation.quantity} phần</Text>
           {distanceLabel ? <Text style={styles.metaText}>{distanceLabel}</Text> : null}
         </View>
         {failed && item.failedReason ? (
@@ -134,7 +149,7 @@ export default function VolunteerHistoryScreen() {
               mode="outlined"
               onPress={() => setLimit((l) => l + 20)}
               loading={isFetching && !isRefetching}
-              textColor={COLORS.primary}
+              textColor={COLORS.indigo}
               style={styles.moreBtn}
             >
               Xem thêm
@@ -151,39 +166,60 @@ export default function VolunteerHistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  statsPanel: { marginBottom: spacing.lg, gap: spacing.md },
+  statsHero: {
+    minHeight: 118,
+    borderRadius: 30,
+    padding: spacing.lg,
+    backgroundColor: COLORS.heroBlue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...elevation.card,
+  },
+  statsKicker: { color: COLORS.blueContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  statsTitle: { marginTop: 5, color: COLORS.onPrimary, fontSize: 25, lineHeight: 31, fontWeight: '900' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   statCard: {
     width: '31.5%',
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
+    borderRadius: radius.xl,
     paddingVertical: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     gap: 4,
+    ...elevation.card,
   },
   statValue: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface },
   statLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, textAlign: 'center' },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 26,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    gap: 8,
+    borderColor: COLORS.outlineVariant,
+    gap: spacing.md,
+    ...elevation.card,
   },
+  cardFailed: { borderColor: COLORS.errorContainer },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  date: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
+  datePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, backgroundColor: COLORS.indigoContainer },
+  date: { fontSize: 12, fontWeight: '900', color: COLORS.indigo },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
   statusText: { fontSize: 12, fontWeight: '700' },
+  routeBlock: { gap: 4 },
   locRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  locText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  routeLine: { width: 2, height: 12, marginLeft: 5, backgroundColor: COLORS.outlineVariant },
+  routeDotPickup: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.secondary },
+  routeDotDropoff: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.blue },
+  locText: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
   metaRow: { flexDirection: 'row', gap: 16 },
-  metaText: { fontSize: 12, color: COLORS.onSurfaceVariant },
+  metaText: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '800' },
   failReason: { fontSize: 13, color: COLORS.danger },
   emptyWrap: { alignItems: 'center', paddingTop: 48, gap: 8 },
   emptyTitle: { fontSize: 15, color: COLORS.onSurfaceVariant },
-  moreBtn: { borderRadius: 12, borderColor: COLORS.primary, marginTop: 4 },
+  moreBtn: { borderRadius: 12, borderColor: COLORS.indigo, marginTop: 4 },
 });

@@ -374,7 +374,7 @@ export function useShipperLocationBroadcast(enabled: boolean, intervalMs = 15000
     const push = async () => {
       try {
         const { coords, isFallback } = await getCurrentCoords();
-        if (cancelled || isFallback) return;
+        if (cancelled || isFallback || !coords) return;
         await apiClient.patch(endpoints.volunteers.location, { lng: coords.lng, lat: coords.lat });
       } catch {
         // im lặng — chu kỳ sau thử lại

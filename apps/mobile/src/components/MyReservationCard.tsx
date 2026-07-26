@@ -1,16 +1,12 @@
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppImage } from './ui/AppImage';
+import { StatusBadge } from './ui/StatusBadge';
+import { SurfaceCard } from './ui/SurfaceCard';
 import { reservationStatusDisplay, useCountdown } from './ProviderReservationCard';
 import type { MyReservation } from '../hooks/useReservations';
-
-const COLORS = {
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   reservation: MyReservation;
@@ -25,20 +21,20 @@ export function MyReservationCard({ reservation, onPress }: Props) {
   );
 
   return (
-    <Pressable
+    <SurfaceCard
       onPress={onPress}
-      style={({ pressed }) => [styles.card, { opacity: pressed ? 0.85 : 1 }]}
+      style={styles.card}
     >
-      <AppImage source={{ uri: reservation.listing.imageUrls?.[0] }} style={styles.image} />
-      <View style={styles.body}>
-        <View style={styles.topRow}>
-          <View style={[styles.badge, { backgroundColor: sd.bg }]}>
-            <Text style={[styles.badgeText, { color: sd.fg }]}>{sd.label}</Text>
-          </View>
+      <View style={styles.header}>
+        <StatusBadge label={sd.label} tone={sd.tone} />
+        <View style={styles.qtyPill}>
           <Text style={styles.qty}>
             {reservation.quantity} {reservation.listing.quantityUnit}
           </Text>
         </View>
+      </View>
+      <AppImage source={{ uri: reservation.listing.imageUrls?.[0] }} style={styles.image} />
+      <View style={styles.body}>
         <Text variant="titleMedium" style={styles.title} numberOfLines={1}>
           {reservation.listing.title}
         </Text>
@@ -49,35 +45,46 @@ export function MyReservationCard({ reservation, onPress }: Props) {
           </Text>
         </View>
         {countdown ? (
-          <View style={styles.metaRow}>
-            <MaterialCommunityIcons name="qrcode" size={14} color="#1d4ed8" />
-            <Text style={[styles.meta, { color: '#1d4ed8', fontWeight: '600' }]}>
+          <View style={styles.qrRow}>
+            <MaterialCommunityIcons name="qrcode" size={14} color={COLORS.onInfoContainer} />
+            <Text style={styles.qrText}>
               QR còn {countdown}
             </Text>
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </SurfaceCard>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  image: { width: 96, height: 96, backgroundColor: COLORS.outline },
-  body: { flex: 1, padding: 12, gap: 4 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  qty: { fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant },
-  title: { fontWeight: '700', color: COLORS.onSurface },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  qtyPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    backgroundColor: COLORS.warningContainer,
+  },
+  qty: { fontSize: 12, fontWeight: '900', color: COLORS.onWarningContainer },
+  image: { width: '100%', height: 118, borderRadius: radius.lg, backgroundColor: COLORS.outline },
+  body: { gap: spacing.sm },
+  title: { fontWeight: '800', color: COLORS.onSurface },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   meta: { fontSize: 13, color: COLORS.onSurfaceVariant, flexShrink: 1 },
+  qrRow: {
+    alignSelf: 'flex-start',
+    minHeight: 30,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.infoContainer,
+  },
+  qrText: { color: COLORS.onInfoContainer, fontSize: 12, fontWeight: '800' },
 });

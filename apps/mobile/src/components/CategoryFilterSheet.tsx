@@ -8,8 +8,7 @@ import BottomSheet, {
 import { Text, Chip } from 'react-native-paper';
 import type { FoodCategory } from '../hooks/useListings';
 import { CATEGORY_LABELS } from '../utils/listingFormat';
-
-const COLORS = { primary: '#10b981', onSurface: '#121c2a', onSurfaceVariant: '#6b7280' };
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /** Các category cho phép lọc (khớp nhãn vi-VN). */
 const FILTER_CATEGORIES = Object.keys(CATEGORY_LABELS) as FoodCategory[];
@@ -78,8 +77,8 @@ export const CategoryFilterSheet = forwardRef<BottomSheet, Props>(
 CategoryFilterSheet.displayName = 'CategoryFilterSheet';
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
-  title: { fontWeight: '700', color: COLORS.onSurface, marginBottom: 16 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { marginBottom: 4 },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.section },
+  title: { fontWeight: '900', color: COLORS.onSurface, marginBottom: spacing.lg },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chip: { marginBottom: 4, borderRadius: radius.pill },
 });

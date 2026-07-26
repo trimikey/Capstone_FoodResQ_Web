@@ -1,12 +1,14 @@
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Chip } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { useMyReports, type MyReport } from '@/hooks/useReports';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const TARGET_LABEL: Record<string, string> = {
   listing: 'Tin thực phẩm',
@@ -29,9 +31,9 @@ function fmtDate(iso: string): string {
 }
 
 function statusColor(status: string) {
-  if (status === 'resolved' || status === 'closed') return { bg: '#dcfce7', fg: '#15803d' };
-  if (status === 'rejected') return { bg: '#fee2e2', fg: '#b91c1c' };
-  return { bg: '#fef3c7', fg: '#b45309' };
+  if (status === 'resolved' || status === 'closed') return 'success';
+  if (status === 'rejected') return 'danger';
+  return 'warning';
 }
 
 export default function MyReportsScreen() {
@@ -51,7 +53,14 @@ export default function MyReportsScreen() {
         ) : data.length === 0 ? (
           <ScreenState kind="empty" title="Chưa có báo cáo nào" />
         ) : (
-          data.map((report) => <ReportCard key={report.id} report={report} />)
+          <>
+            <View style={styles.hero}>
+              <Text style={styles.heroKicker}>Safety center</Text>
+              <Text style={styles.heroTitle}>Theo dõi các báo cáo đã gửi</Text>
+              <Text style={styles.heroMeta}>{data.length} báo cáo trong tài khoản</Text>
+            </View>
+            {data.map((report) => <ReportCard key={report.id} report={report} />)}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -61,7 +70,7 @@ export default function MyReportsScreen() {
 function ReportCard({ report }: { report: MyReport }) {
   const sc = statusColor(report.status);
   return (
-    <View style={styles.card}>
+    <SurfaceCard style={styles.card}>
       <View style={styles.cardHead}>
         <View style={styles.iconBox}>
           <MaterialCommunityIcons name="flag-outline" size={20} color={COLORS.primary} />
@@ -70,9 +79,7 @@ function ReportCard({ report }: { report: MyReport }) {
           <Text style={styles.cardTitle}>{TARGET_LABEL[report.targetType] ?? report.targetType}</Text>
           <Text style={styles.meta}>{fmtDate(report.createdAt)}</Text>
         </View>
-        <Chip compact style={{ backgroundColor: sc.bg }} textStyle={{ color: sc.fg, fontWeight: '700' }}>
-          {report.status}
-        </Chip>
+        <StatusBadge label={report.status} tone={sc} />
       </View>
       <Text style={styles.reason}>{REASON_LABEL[report.reason] ?? report.reason}</Text>
       {report.description ? <Text style={styles.description}>{report.description}</Text> : null}
@@ -81,26 +88,31 @@ function ReportCard({ report }: { report: MyReport }) {
       ) : report.targetType === 'listing' ? (
         <Text style={styles.targetHint}>Mã tin: {report.targetId}</Text>
       ) : null}
-    </View>
+    </SurfaceCard>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32, gap: 12 },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section, gap: spacing.md },
+  hero: {
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
+  heroMeta: { marginTop: spacing.md, color: COLORS.secondaryContainer, fontSize: 13, fontWeight: '700' },
   card: {
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    gap: 10,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconBox: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     backgroundColor: COLORS.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',

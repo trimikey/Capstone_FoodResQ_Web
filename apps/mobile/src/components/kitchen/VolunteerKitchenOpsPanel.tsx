@@ -16,7 +16,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { captureImage, pickImageFromLibrary, type CapturedImage } from '@/services/faceCapture';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const CHECK_TYPE_OPTIONS = [
   { value: SafetyCheckType.TEMPERATURE, label: 'Nhiệt độ' },
@@ -188,6 +188,15 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
 
   return (
     <View style={styles.wrap}>
+      <View style={styles.opsHero}>
+        <View style={styles.opsIcon}>
+          <MaterialCommunityIcons name="clipboard-pulse-outline" size={24} color={COLORS.onPrimary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.opsKicker}>Kitchen ops</Text>
+          <Text style={styles.opsTitle}>Ghi nhận minh chứng ca làm</Text>
+        </View>
+      </View>
       {isChef ? (
         <View style={styles.section}>
           <View style={styles.sectionHead}>
@@ -195,11 +204,11 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
               <Text style={styles.sectionTitle}>Nhật ký ATTP</Text>
               <Text style={styles.muted}>Chef ghi kiểm tra kèm ảnh</Text>
             </View>
-            <Button mode="contained" compact icon="camera-plus" buttonColor={COLORS.primary} onPress={() => setSafetyOpen(true)}>
+            <Button mode="contained" compact icon="camera-plus" buttonColor={COLORS.purple} onPress={() => setSafetyOpen(true)}>
               Ghi
             </Button>
           </View>
-          {safetyLogs.isLoading ? <ActivityIndicator color={COLORS.primary} /> : null}
+          {safetyLogs.isLoading ? <ActivityIndicator color={COLORS.purple} /> : null}
           {safetyItems.length === 0 && !safetyLogs.isLoading ? <Text style={styles.empty}>Chưa có nhật ký.</Text> : null}
           {safetyItems.slice(0, 4).map((item) => (
             <View key={item.id} style={styles.row}>
@@ -225,7 +234,7 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
               <Text style={styles.sectionTitle}>Phân phát suất ăn</Text>
               <Text style={styles.muted}>Waiter ghi đợt phát và phản hồi</Text>
             </View>
-            <Button mode="contained" compact icon="silverware-fork-knife" buttonColor={COLORS.primary} onPress={() => setDistOpen(true)}>
+            <Button mode="contained" compact icon="silverware-fork-knife" buttonColor={COLORS.orange} onPress={() => setDistOpen(true)}>
               Ghi
             </Button>
           </View>
@@ -235,7 +244,7 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
             <Metric label="Người" value={summaryData?.totalPeople ?? 0} />
             <Metric label="Dư" value={summaryData?.totalLeftover ?? 0} />
           </View>
-          {distributions.isLoading || summary.isLoading ? <ActivityIndicator color={COLORS.primary} /> : null}
+          {distributions.isLoading || summary.isLoading ? <ActivityIndicator color={COLORS.orange} /> : null}
           {distItems.length === 0 && !distributions.isLoading ? <Text style={styles.empty}>Chưa có đợt phân phát.</Text> : null}
           {distItems.map((item) => (
             <View key={item.id} style={styles.row}>
@@ -248,7 +257,7 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
                 <Text style={styles.muted}>{formatDateTime(item.distributedAt)} - {item.feedbackCount} phản hồi</Text>
               </View>
               <Pressable style={styles.iconButton} onPress={() => setFeedbackTarget(item)} hitSlop={8}>
-                <MaterialCommunityIcons name="message-text-outline" size={20} color={COLORS.primary} />
+                <MaterialCommunityIcons name="message-text-outline" size={20} color={COLORS.blue} />
               </Pressable>
             </View>
           ))}
@@ -359,70 +368,90 @@ function PhotoPicker({ photo, onCamera, onLibrary }: { photo: CapturedImage | nu
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 20, gap: 18 },
+  wrap: { marginTop: spacing.xl, gap: spacing.md },
+  opsHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 28,
+    backgroundColor: COLORS.heroCampaign,
+    ...elevation.card,
+  },
+  opsIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.purple,
+  },
+  opsKicker: { color: COLORS.purpleContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  opsTitle: { marginTop: 3, color: COLORS.onPrimary, fontSize: 20, lineHeight: 25, fontWeight: '900' },
   section: {
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    padding: 14,
-    gap: 10,
+    borderColor: COLORS.outlineVariant,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...elevation.card,
   },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
+  sectionTitle: { fontSize: 17, fontWeight: '900', color: COLORS.onSurface },
   muted: { fontSize: 12, color: COLORS.onSurfaceVariant, lineHeight: 17 },
   empty: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingTop: 10,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: COLORS.outline,
+    borderTopColor: COLORS.outlineVariant,
   },
-  thumb: { width: 52, height: 52, borderRadius: 10, backgroundColor: COLORS.surfaceVariant },
+  thumb: { width: 58, height: 58, borderRadius: radius.lg, backgroundColor: COLORS.surfaceVariant },
   thumbFallback: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
+    width: 58,
+    height: 58,
+    borderRadius: radius.lg,
     backgroundColor: COLORS.surfaceVariant,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
   },
   rowBody: { flex: 1, minWidth: 0 },
-  rowTitle: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface, marginBottom: 2 },
+  rowTitle: { fontSize: 14, fontWeight: '900', color: COLORS.onSurface, marginBottom: 2 },
   note: { fontSize: 12, color: COLORS.onSurface, lineHeight: 17, marginTop: 2 },
-  summaryRow: { flexDirection: 'row', gap: 8 },
+  summaryRow: { flexDirection: 'row', gap: spacing.sm },
   metric: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    backgroundColor: COLORS.surfaceContainerLow,
-    paddingVertical: 8,
+    borderColor: COLORS.purpleContainer,
+    backgroundColor: COLORS.purpleContainer,
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  metricValue: { fontSize: 16, fontWeight: '800', color: COLORS.primary },
-  metricLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginTop: 1 },
+  metricValue: { fontSize: 18, fontWeight: '900', color: COLORS.purple },
+  metricLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginTop: 1, fontWeight: '800' },
   iconButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
   },
-  dialogBody: { gap: 12 },
+  dialogBody: { gap: spacing.md },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inputGrid: { flexDirection: 'row', gap: 10 },
   inputHalf: { flex: 1 },
   photoBox: {
-    borderRadius: 12,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    padding: 10,
-    gap: 10,
+    borderColor: COLORS.outlineVariant,
+    padding: spacing.md,
+    gap: spacing.sm,
     backgroundColor: COLORS.surfaceContainerLow,
   },
   photoEmpty: { height: 90, alignItems: 'center', justifyContent: 'center', gap: 6 },

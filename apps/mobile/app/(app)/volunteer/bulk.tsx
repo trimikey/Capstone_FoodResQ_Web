@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Button, ProgressBar, Text, TextInput } from 'react-native-paper';
@@ -20,19 +20,20 @@ import { useListings, type Listing } from '@/hooks/useListings';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { captureImage } from '@/services/faceCapture';
-import { DEFAULT_COORDS, getCurrentCoords } from '@/services/geolocation';
+import { getCurrentCoords, type Coords } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  requested: { label: 'Chờ duyệt', color: '#b45309', bg: '#fef3c7' },
-  approved: { label: 'Đã duyệt', color: '#0369a1', bg: '#e0f2fe' },
-  picked_up: { label: 'Đang phát', color: '#047857', bg: '#d1fae5' },
-  completed: { label: 'Hoàn tất', color: '#ffffff', bg: '#059669' },
-  rejected: { label: 'Bị từ chối', color: '#be123c', bg: '#ffe4e6' },
-  cancelled: { label: 'Đã huỷ', color: '#4b5563', bg: '#e5e7eb' },
+  requested: { label: 'Chờ duyệt', color: COLORS.onWarningContainer, bg: COLORS.warningContainer },
+  approved: { label: 'Đã duyệt', color: COLORS.onInfoContainer, bg: COLORS.infoContainer },
+  picked_up: { label: 'Đang phát', color: COLORS.onSuccessContainer, bg: COLORS.successContainer },
+  completed: { label: 'Hoàn tất', color: COLORS.onTealContainer, bg: COLORS.tealContainer },
+  rejected: { label: 'Bị từ chối', color: COLORS.onErrorContainer, bg: COLORS.errorContainer },
+  cancelled: { label: 'Đã huỷ', color: COLORS.onNeutralContainer, bg: COLORS.neutralContainer },
 };
 
 function errorMessage(e: unknown, fallback: string): string {
@@ -47,8 +48,13 @@ function formatQty(value: number): string {
   return `${value} phần`;
 }
 
-function statusMeta(status: string) {
-  return STATUS_LABEL[status] ?? { label: status, color: COLORS.onSurfaceVariant, bg: '#f3f4f6' };
+function statusMeta(status: string): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' } {
+  const label = STATUS_LABEL[status]?.label ?? status;
+  if (status === 'completed' || status === 'picked_up') return { label, tone: 'success' };
+  if (status === 'requested') return { label, tone: 'warning' };
+  if (status === 'rejected') return { label, tone: 'danger' };
+  if (status === 'approved') return { label, tone: 'info' };
+  return { label, tone: 'neutral' };
 }
 
 function mapsUrl(address?: string | null, coords?: { lat: number; lng: number } | null): string | null {
@@ -178,7 +184,8 @@ function StopItem({
 
 export default function VolunteerBulkRunScreen() {
   const { data: runs, isLoading, isError, refetch, isRefetching } = useMyBulkRuns();
-  const listings = useListings({ coords: DEFAULT_COORDS, radiusKm: 15, limit: 20 });
+  const [currentCoords, setCurrentCoords] = useState<Coords | null>(null);
+  const listings = useListings({ coords: currentCoords, radiusKm: 15, limit: 20 });
   const requestRun = useRequestBulkRun();
   const pickupRun = usePickupBulkRun();
   const addStop = useAddBulkStop();
@@ -192,6 +199,16 @@ export default function VolunteerBulkRunScreen() {
   const [stopLabel, setStopLabel] = useState('');
   const [stopAddress, setStopAddress] = useState('');
   const [plannedQty, setPlannedQty] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    getCurrentCoords().then(({ coords }) => {
+      if (active && coords) setCurrentCoords(coords);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const active = useMemo(() => (runs ?? []).find(isActiveRun) ?? null, [runs]);
   const history = useMemo(() => (runs ?? []).filter((r) => !isActiveRun(r)).slice(0, 5), [runs]);
@@ -252,6 +269,14 @@ export default function VolunteerBulkRunScreen() {
     }
     void act(async () => {
       const pos = await getCurrentCoords();
+      if (!pos.coords) {
+        Popup.show({
+          type: 'warning',
+          text1: 'Chưa lấy được vị trí hiện tại',
+          text2: 'Hãy bật GPS để ghim điểm phát chính xác.',
+        });
+        return;
+      }
       const address = stopAddress.trim() || (await reverseGeocode(pos.coords.lat, pos.coords.lng)) || undefined;
       await addStop.mutateAsync({
         runId: run.id,
@@ -329,7 +354,7 @@ export default function VolunteerBulkRunScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.heroIcon}>
-            <MaterialCommunityIcons name="truck-delivery-outline" size={26} color={COLORS.primary} />
+            <MaterialCommunityIcons name="truck-delivery-outline" size={26} color={COLORS.amber} />
           </View>
           <View style={styles.heroText}>
             <Text style={styles.heroTitle}>Nhận nhiều phần, phát nhiều điểm</Text>
@@ -348,11 +373,7 @@ export default function VolunteerBulkRunScreen() {
                   Lấy tại: {active.listing.pickupAddress}
                 </Text>
               </View>
-              <View style={[styles.badge, { backgroundColor: statusMeta(active.status).bg }]}>
-                <Text style={[styles.badgeText, { color: statusMeta(active.status).color }]}>
-                  {statusMeta(active.status).label}
-                </Text>
-              </View>
+              <StatusBadge label={statusMeta(active.status).label} tone={statusMeta(active.status).tone} />
             </View>
 
             <View style={styles.progressBlock}>
@@ -362,12 +383,12 @@ export default function VolunteerBulkRunScreen() {
                 </Text>
                 <Text style={styles.progressText}>{remaining} còn lại</Text>
               </View>
-              <ProgressBar progress={active.quantity > 0 ? active.quantityDistributed / active.quantity : 0} color={COLORS.primary} />
+              <ProgressBar progress={active.quantity > 0 ? active.quantityDistributed / active.quantity : 0} color={COLORS.amber} />
             </View>
 
             {active.status === 'requested' ? (
               <View style={styles.notice}>
-                <MaterialCommunityIcons name="clock-outline" size={20} color="#b45309" />
+                <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.onWarningContainer} />
                 <Text style={styles.noticeText}>Đang chờ nhà cung cấp duyệt {formatQty(active.quantity)}.</Text>
                 <Button mode="text" textColor={COLORS.danger} disabled={busy} onPress={() => void act(() => cancelRun.mutateAsync(active.id), 'Đã huỷ yêu cầu.')}>
                   Huỷ
@@ -503,7 +524,7 @@ export default function VolunteerBulkRunScreen() {
             {history.map((run) => (
               <View key={run.id} style={styles.historyRow}>
                 <View style={styles.historyIcon}>
-                  <MaterialCommunityIcons name="history" size={18} color={COLORS.primary} />
+                  <MaterialCommunityIcons name="history" size={18} color={COLORS.indigo} />
                 </View>
                 <View style={styles.historyText}>
                   <Text style={styles.historyTitle} numberOfLines={1}>
@@ -526,45 +547,48 @@ export default function VolunteerBulkRunScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: 16, paddingBottom: 40, gap: 14 },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  content: { padding: spacing.xl, paddingBottom: spacing.section, gap: spacing.lg },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: '#ecfdf5',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
+    gap: spacing.md,
+    padding: spacing.xl,
+    borderRadius: 32,
+    backgroundColor: COLORS.heroBulk,
+    ...elevation.card,
   },
   heroIcon: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
   },
   heroText: { flex: 1 },
-  heroTitle: { fontWeight: '800', color: COLORS.onSurface, fontSize: 16 },
-  heroSub: { color: COLORS.onSurfaceVariant, marginTop: 3, fontSize: 12 },
+  heroTitle: { fontWeight: '900', color: COLORS.onPrimary, fontSize: 23, lineHeight: 29 },
+  heroSub: { color: COLORS.amberContainer, marginTop: 5, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   card: {
     gap: 14,
-    padding: 16,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
+    padding: spacing.xl,
+    borderRadius: 28,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
   runHead: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   runTitleWrap: { flex: 1 },
-  runTitle: { fontWeight: '800', color: COLORS.onSurface, fontSize: 18 },
+  runTitle: { fontWeight: '900', color: COLORS.onSurface, fontSize: 20, lineHeight: 25 },
   muted: { color: COLORS.onSurfaceVariant, fontSize: 12 },
-  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  badgeText: { fontWeight: '800', fontSize: 11 },
-  progressBlock: { gap: 6 },
+  progressBlock: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: COLORS.amberContainer,
+  },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between' },
   progressText: { color: COLORS.onSurfaceVariant, fontWeight: '700', fontSize: 12 },
   notice: {
@@ -573,18 +597,25 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     padding: 10,
-    backgroundColor: '#fffbeb',
+    backgroundColor: COLORS.warningContainer,
     borderWidth: 1,
-    borderColor: '#fde68a',
+    borderColor: COLORS.warningContainer,
   },
-  noticeText: { flex: 1, color: '#92400e', fontWeight: '700', fontSize: 12 },
-  actions: { gap: 8 },
-  stopAddBox: { gap: 10, padding: 12, borderRadius: 16, backgroundColor: '#f9fafb' },
+  noticeText: { flex: 1, color: COLORS.onWarningContainer, fontWeight: '700', fontSize: 12 },
+  actions: { gap: spacing.sm },
+  stopAddBox: { gap: 10, padding: spacing.md, borderRadius: radius.xl, backgroundColor: COLORS.surfaceContainerLow },
   section: { gap: 8 },
   sectionTitle: { fontWeight: '800', color: COLORS.onSurface, fontSize: 15 },
   emptyHint: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 18 },
-  stopCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 16, padding: 12, gap: 10 },
-  stopCardDone: { borderColor: '#a7f3d0', backgroundColor: '#ecfdf5' },
+  stopCard: {
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: 10,
+    backgroundColor: COLORS.surface,
+  },
+  stopCardDone: { borderColor: COLORS.successContainer, backgroundColor: COLORS.successContainer },
   stopTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   stopIndex: {
     width: 28,
@@ -592,37 +623,44 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f59e0b',
+    backgroundColor: COLORS.warning,
   },
-  stopIndexDone: { backgroundColor: COLORS.primary },
-  stopIndexText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  stopIndexDone: { backgroundColor: COLORS.teal },
+  stopIndexText: { color: COLORS.onPrimary, fontWeight: '800', fontSize: 12 },
   stopInfo: { flex: 1 },
   stopTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   stopSub: { color: COLORS.onSurfaceVariant, fontSize: 11, marginTop: 2 },
-  stopDoneText: { color: COLORS.primary, fontWeight: '800', fontSize: 12 },
+  stopDoneText: { color: COLORS.teal, fontWeight: '800', fontSize: 12 },
   stopForm: { gap: 8 },
   row: { flexDirection: 'row', gap: 8 },
   flexBtn: { flex: 1 },
   listingList: { gap: 8, maxHeight: 320 },
   listingCard: {
-    borderRadius: 14,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 12,
-    backgroundColor: '#ffffff',
+    borderColor: COLORS.outlineVariant,
+    padding: spacing.md,
+    backgroundColor: COLORS.surface,
   },
-  listingCardSelected: { backgroundColor: '#ecfdf5', borderColor: COLORS.primary },
+  listingCardSelected: { backgroundColor: COLORS.blueContainer, borderColor: COLORS.blue },
   listingTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   listingSub: { color: COLORS.onSurfaceVariant, fontSize: 11 },
-  listingQty: { color: COLORS.primary, fontWeight: '800', fontSize: 11, marginTop: 2 },
-  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  listingQty: { color: COLORS.blue, fontWeight: '800', fontSize: 11, marginTop: 2 },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outlineVariant,
+  },
   historyIcon: {
     width: 34,
     height: 34,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ecfdf5',
+    backgroundColor: COLORS.indigoContainer,
   },
   historyText: { flex: 1 },
   historyTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },

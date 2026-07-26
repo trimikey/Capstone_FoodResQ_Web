@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, ScrollView, View } from 'react-native';
+import { Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { useMyReservations, type MyReservation } from '@/hooks/useReservations';
 import { MyReservationCard } from '@/components/MyReservationCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, spacing } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom status reservation thành nhóm dễ hiểu cho receiver. */
 type FilterKey = 'all' | 'confirmed' | 'picked_up' | 'completed' | 'cancelled';
@@ -46,8 +49,18 @@ export default function OrdersTab() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <AppScreen>
       <ScreenHeader title="Đơn của tôi" />
+
+      <View style={styles.summaryWrap}>
+        <SurfaceCard style={styles.summaryCard}>
+          <SectionHeader
+            title="Theo dõi đơn đã đặt"
+            subtitle="Mã QR, trạng thái lấy hàng và giao hàng nằm trong từng đơn."
+            action={<Text style={styles.summaryCount}>{all.length}</Text>}
+          />
+        </SurfaceCard>
+      </View>
 
       <ScrollView
         horizontal
@@ -84,12 +97,15 @@ export default function OrdersTab() {
         refreshing={isRefetching}
         onRefresh={() => refetch()}
       />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  summaryWrap: { paddingHorizontal: spacing.xl, paddingBottom: spacing.sm },
+  summaryCard: { padding: spacing.lg },
+  summaryCount: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },

@@ -34,13 +34,28 @@ export class ListingsController {
     return this.listingsService.findNearby(query);
   }
 
+  // ── Provider endpoints ──────────────────────────────────────────────────────
+
+  @Get('provider/my')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Provider: Get my listings' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  myListings(
+    @CurrentUser() user: User,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.listingsService.findByProvider(user.id, page, limit);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get listing detail' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.listingsService.findOne(id);
   }
-
-  // ── Provider endpoints ──────────────────────────────────────────────────────
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)

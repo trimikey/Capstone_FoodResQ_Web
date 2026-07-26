@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Portal, Dialog, Button, TextInput, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { mobileColors as COLORS, radius } from '@/theme/design';
 
 interface Props {
   visible: boolean;
@@ -10,14 +11,6 @@ interface Props {
   onDismiss: () => void;
   onSubmit: (score: number, comment?: string) => void;
 }
-
-const COLORS = {
-  primary: '#10b981',
-  star: '#f59e0b',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
 
 /** Hộp thoại đánh giá nhà cung cấp: chọn 1-5 sao + nhận xét tuỳ chọn. */
 export function RatingDialog({ visible, providerName, submitting, onDismiss, onSubmit }: Props) {
@@ -53,7 +46,7 @@ export function RatingDialog({ visible, providerName, submitting, onDismiss, onS
                 <MaterialCommunityIcons
                   name={n <= score ? 'star' : 'star-outline'}
                   size={40}
-                  color={n <= score ? COLORS.star : COLORS.outline}
+                  color={n <= score ? COLORS.warning : COLORS.outline}
                 />
               </Pressable>
             ))}
@@ -92,9 +85,9 @@ export function RatingDialog({ visible, providerName, submitting, onDismiss, onS
 }
 
 const styles = StyleSheet.create({
-  dialog: { borderRadius: 20 },
-  title: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
-  providerName: { fontSize: 15, fontWeight: '600', color: COLORS.onSurface, textAlign: 'center' },
+  dialog: { borderRadius: radius.xl, backgroundColor: COLORS.surface },
+  title: { fontSize: 18, fontWeight: '900', color: COLORS.onSurface },
+  providerName: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface, textAlign: 'center' },
   stars: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginVertical: 18 },
-  input: { backgroundColor: '#fff' },
+  input: { backgroundColor: COLORS.surface },
 });

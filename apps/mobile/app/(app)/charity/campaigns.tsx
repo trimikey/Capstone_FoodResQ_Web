@@ -12,9 +12,10 @@ import {
 } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { AppImage } from '@/components/ui/AppImage';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /**
  * Bếp ăn của tôi (Charity-org) — danh sách chiến dịch do tổ chức tự tạo
@@ -67,7 +68,7 @@ export default function CharityCampaignsScreen() {
             icon="plus"
             mode="contained"
             containerColor={COLORS.primary}
-            iconColor="#fff"
+            iconColor={COLORS.onPrimary}
             size={20}
             onPress={() => router.push('/(app)/charity/campaigns/create')}
           />
@@ -81,11 +82,32 @@ export default function CharityCampaignsScreen() {
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
+        ListHeaderComponent={<CampaignHero total={items.length} completed={completedCampaigns.length} />}
         ListFooterComponent={<CompletedStories items={completedCampaigns} />}
         refreshing={isRefetching}
         onRefresh={() => refetch()}
       />
     </SafeAreaView>
+  );
+}
+
+function CampaignHero({ total, completed }: { total: number; completed: number }) {
+  return (
+    <View style={styles.hero}>
+      <Text style={styles.heroKicker}>Charity kitchen</Text>
+      <Text style={styles.heroTitle}>Quản lý chiến dịch bếp ăn</Text>
+      <View style={styles.heroStats}>
+        <View style={styles.heroStat}>
+          <Text style={styles.heroStatValue}>{total}</Text>
+          <Text style={styles.heroStatLabel}>đang quản lý</Text>
+        </View>
+        <View style={styles.heroDivider} />
+        <View style={styles.heroStat}>
+          <Text style={styles.heroStatValue}>{completed}</Text>
+          <Text style={styles.heroStatLabel}>thành công</Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -96,7 +118,7 @@ function CompletedStories({ items }: { items: CompletedCampaign[] }) {
     <View style={styles.completedSection}>
       <Text style={styles.sectionTitle}>Câu chuyện thành công</Text>
       {items.map((item) => (
-        <View key={item.id} style={styles.completedCard}>
+        <SurfaceCard key={item.id} style={styles.completedCard}>
           {item.imageUrls?.[0] ? (
             <AppImage source={{ uri: item.imageUrls[0] }} style={styles.completedImage} />
           ) : (
@@ -116,7 +138,7 @@ function CompletedStories({ items }: { items: CompletedCampaign[] }) {
               <Text style={styles.completedStat}>{item.volunteers} TNV</Text>
             </View>
           </View>
-        </View>
+        </SurfaceCard>
       ))}
     </View>
   );
@@ -124,16 +146,31 @@ function CompletedStories({ items }: { items: CompletedCampaign[] }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  hero: {
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
+  heroStats: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    backgroundColor: COLORS.surface,
+  },
+  heroStat: { flex: 1 },
+  heroStatValue: { color: COLORS.onSurface, fontSize: 20, fontWeight: '900' },
+  heroStatLabel: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
+  heroDivider: { width: 1, backgroundColor: COLORS.outlineVariant, marginHorizontal: spacing.md },
   completedSection: { marginTop: 12, paddingTop: 10 },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.onSurface, marginBottom: 12 },
   completedCard: {
     flexDirection: 'row',
     gap: 12,
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
     padding: 12,
     marginBottom: 12,
   },

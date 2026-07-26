@@ -35,7 +35,7 @@ import {
   nextDeliveryStatus,
   requiresQcPhoto,
 } from '@/utils/delivery';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 type RouteTarget = {
   key: 'pickup' | 'dropoff';
@@ -471,7 +471,7 @@ export default function VolunteerActiveScreen() {
         <FadeInUp delay={200} style={styles.infoPanel}>
           <View style={styles.infoTop}>
             <View style={styles.foodIcon}>
-              <MaterialCommunityIcons name="food-variant" size={22} color={COLORS.primary} />
+              <MaterialCommunityIcons name="food-variant" size={22} color={COLORS.orange} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{listing.title}</Text>
@@ -640,7 +640,7 @@ export default function VolunteerActiveScreen() {
         <BottomSheetView style={styles.sheet}>
           <View style={styles.qrHeader}>
             <View style={styles.qrIcon}>
-              <MaterialCommunityIcons name="qrcode-scan" size={22} color={COLORS.primary} />
+              <MaterialCommunityIcons name="qrcode-scan" size={22} color={COLORS.purple} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.dialogTitle}>Mã người nhận</Text>
@@ -740,32 +740,34 @@ export default function VolunteerActiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 96, gap: 14 },
-  emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 8 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: COLORS.onSurface, marginTop: 8 },
-  emptySub: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 96, gap: spacing.md },
+  emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.section, gap: spacing.sm },
+  emptyTitle: { fontSize: 20, fontWeight: '900', color: COLORS.onSurface, marginTop: 8 },
+  emptySub: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center', lineHeight: 20 },
   statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.blueContainer,
+    ...elevation.card,
   },
   statusLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   pulseDot: { width: 10, height: 10, borderRadius: 999 },
-  statusText: { fontSize: 16, fontWeight: '800' },
+  statusText: { fontSize: 18, fontWeight: '900' },
   statusSub: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
   statusDist: { fontSize: 13, fontWeight: '800', marginLeft: 10 },
   routePanel: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 28,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    gap: 10,
+    borderColor: COLORS.outlineVariant,
+    gap: spacing.md,
+    ...elevation.card,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
@@ -773,25 +775,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 10,
-    borderRadius: 12,
+    padding: spacing.md,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     backgroundColor: COLORS.surface,
   },
-  routeRowActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryContainer },
-  routeIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  routeRowActive: { borderColor: COLORS.blue, backgroundColor: COLORS.blueContainer },
+  routeIcon: { width: 40, height: 40, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
   routeText: { flex: 1, minWidth: 0 },
   routeTitle: { fontSize: 13, fontWeight: '800', color: COLORS.onSurface },
   routeSubtitle: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2, lineHeight: 16 },
-  mapButton: { borderRadius: 10 },
+  mapButton: { borderRadius: radius.md },
   infoPanel: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 28,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    gap: 14,
+    borderColor: COLORS.outlineVariant,
+    gap: spacing.md,
+    ...elevation.card,
   },
   infoTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   foodIcon: {
@@ -800,9 +803,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.orangeContainer,
   },
-  title: { fontSize: 17, fontWeight: '800', color: COLORS.onSurface },
+  title: { fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24 },
   qty: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   receiverRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   locLabel: { fontSize: 11, fontWeight: '800', color: COLORS.onSurfaceVariant, textTransform: 'uppercase' },
@@ -811,27 +814,28 @@ const styles = StyleSheet.create({
   callButton: { borderRadius: 10 },
   progressPanel: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 28,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     gap: 12,
+    ...elevation.card,
   },
-  stepCount: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  stepCount: { fontSize: 12, fontWeight: '800', color: COLORS.indigo },
   compactTimeline: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   stepChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: spacing.md,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: COLORS.outline,
     backgroundColor: COLORS.surface,
   },
-  stepChipDone: { backgroundColor: COLORS.primaryContainer, borderColor: COLORS.primaryContainer },
-  stepChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.surface },
+  stepChipDone: { backgroundColor: COLORS.tealContainer, borderColor: COLORS.tealContainer },
+  stepChipActive: { borderColor: COLORS.indigo, backgroundColor: COLORS.indigoContainer },
   stepMiniDot: {
     width: 18,
     height: 18,
@@ -840,10 +844,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.surfaceVariant,
   },
-  stepMiniDotDone: { backgroundColor: COLORS.primary },
-  stepMiniDotActive: { borderWidth: 2, borderColor: COLORS.primary },
+  stepMiniDotDone: { backgroundColor: COLORS.teal },
+  stepMiniDotActive: { borderWidth: 2, borderColor: COLORS.indigo },
   stepLabel: { fontSize: 12, color: COLORS.onSurface, fontWeight: '700' },
-  stepLabelActive: { fontWeight: '800', color: COLORS.primary },
+  stepLabelActive: { fontWeight: '800', color: COLORS.indigo },
   stepLabelTodo: { color: COLORS.onSurfaceVariant, fontWeight: '600' },
   photoReady: {
     flexDirection: 'row',
@@ -856,7 +860,7 @@ const styles = StyleSheet.create({
   },
   photoReadyText: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.success },
   primaryBtn: { borderRadius: 14 },
-  primaryContent: { paddingVertical: 6 },
+  primaryContent: { paddingVertical: 8 },
   secondaryRow: { flexDirection: 'row', gap: 12 },
   secondaryBtn: { flex: 1, borderRadius: 12 },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface },
@@ -881,7 +885,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.purpleContainer,
   },
   qrInput: {
     minHeight: 48,

@@ -2,8 +2,7 @@ import { ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { NotificationBell } from '../NotificationBell';
-
-const COLORS = { onSurface: '#121c2a' };
+import { mobileColors as COLORS, spacing } from '@/theme/design';
 
 interface Props {
   title: string;
@@ -28,7 +27,7 @@ export function ScreenHeader({ title, showBell = true, right }: Props) {
 const styles = StyleSheet.create({
   header: {
     height: 56,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

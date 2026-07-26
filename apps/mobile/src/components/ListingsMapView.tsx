@@ -1,5 +1,6 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { IconButton } from 'react-native-paper';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import type { Listing } from '@/hooks/useListings';
 
@@ -105,13 +106,15 @@ function buildHtml(listings: Listing[], lat: number, lng: number, route?: Delive
       + '</div>';
     m.bindPopup(html);
   });
-  window.sel = function(id){ window.ReactNativeWebView.postMessage(id); };
+  window.sel = function(id){ window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectListing', id: id })); };
+  window.recenterUser = function(){ map.setView(user, 15, { animate: true }); };
   if (bounds.length > 1) { map.fitBounds(bounds, { padding: [30, 30], maxZoom: route.pickup || route.dropoff ? 15 : 14 }); }
 </script></body></html>`;
 }
 
 /** Bản đồ khám phá: hiển thị các listing gần đây dạng pin trên Leaflet (WebView). */
 function ListingsMapViewBase({ listings, center, route, onSelect }: Props) {
+  const webRef = useRef<WebView>(null);
   const lat = isNum(center?.lat) ? center.lat : DEFAULT.lat;
   const lng = isNum(center?.lng) ? center.lng : DEFAULT.lng;
   const html = useMemo(() => buildHtml(listings, lat, lng, route), [lat, lng, listings, route]);
@@ -119,21 +122,41 @@ function ListingsMapViewBase({ listings, center, route, onSelect }: Props) {
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
-      const id = e.nativeEvent.data;
+      let id = e.nativeEvent.data;
+      try {
+        const message = JSON.parse(e.nativeEvent.data) as { type?: string; id?: string };
+        id = message.type === 'selectListing' ? message.id ?? '' : '';
+      } catch {
+        // Backward-compatible fallback for older injected popup handlers.
+      }
       if (id) onSelect(id);
     },
     [onSelect]
   );
+  const recenter = useCallback(() => {
+    webRef.current?.injectJavaScript('window.recenterUser && window.recenterUser(); true;');
+  }, []);
 
   return (
     <View style={styles.container}>
       <WebView
+        ref={webRef}
         originWhitelist={['*']}
         source={source}
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled
         style={styles.webview}
+      />
+      <IconButton
+        icon="crosshairs-gps"
+        mode="contained"
+        iconColor="#10b981"
+        containerColor="#ffffff"
+        size={22}
+        onPress={recenter}
+        style={styles.locateBtn}
+        accessibilityLabel="Định vị trên bản đồ"
       />
     </View>
   );
@@ -181,4 +204,17 @@ function sameRoute(a?: DeliveryMapRoute | null, b?: DeliveryMapRoute | null) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#e5e7eb' },
   webview: { flex: 1 },
+  locateBtn: {
+    position: 'absolute',
+    right: 14,
+    top: 14,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    elevation: 5,
+    shadowColor: '#111827',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
 });

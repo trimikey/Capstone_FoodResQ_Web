@@ -43,6 +43,7 @@ export function SignUpBasicScreen({
     resolver: zodResolver(signUpBasicInfoSchema),
     defaultValues: {
       name: '',
+      phone: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -118,6 +119,32 @@ export function SignUpBasicScreen({
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
                   error={!!errors.name}
+                  dense
+                />
+              )}
+            />
+          </AuthField>
+
+          <AuthField label="Số điện thoại" error={errors.phone?.message}>
+            <Controller
+              control={control}
+              name="phone"
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Số điện thoại"
+                  placeholder="0912345678"
+                  value={value}
+                  onChangeText={onChange}
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  editable={!isLoading}
+                  left={<TextInput.Icon icon="phone-outline" color={COLORS.onSurfaceVariant} />}
+                  style={authStyles.input}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  error={!!errors.phone}
                   dense
                 />
               )}
