@@ -25,6 +25,8 @@ import {
   ImagePickCancelledError,
 } from '@/services/avatarUpload';
 import { AppImage } from '@/components/ui/AppImage';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
 import type { UpdateProfileInput } from '@/api/client';
 import { mobileColors as COLORS } from '@/theme/design';
@@ -166,8 +168,11 @@ export default function EditProfileScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Ảnh đại diện: preview + nút chọn/upload */}
-          <View style={styles.avatarBlock}>
+          <SurfaceCard style={styles.avatarCard}>
+            <SectionHeader
+              title="Hồ sơ hiển thị"
+              subtitle="Ảnh đại diện, tên và thông tin liên hệ dùng trong các luồng nhận - cho thực phẩm."
+            />
             {avatarUrl ? (
               <AppImage source={{ uri: avatarUrl }} style={styles.avatarPreview} />
             ) : (
@@ -188,72 +193,78 @@ export default function EditProfileScreen() {
             >
               {uploading ? 'Đang tải lên...' : 'Đổi ảnh'}
             </Button>
-          </View>
+          </SurfaceCard>
 
-          {/* Họ tên */}
-          <Field label="Họ và tên">
-            <Controller
-              control={control}
-              name="fullName"
-              render={({ field: { onChange, value } }) => (
-                <TextInput
-                  mode="outlined"
-                  placeholder="Nguyễn Văn A"
-                  value={value}
-                  onChangeText={onChange}
-                  editable={!submitting}
-                  left={<TextInput.Icon icon="account" />}
-                  outlineColor={COLORS.outline}
-                  activeOutlineColor={COLORS.primary}
-                  style={styles.input}
-                  error={!!errors.fullName}
-                />
-              )}
+          <SurfaceCard style={styles.formCard}>
+            <SectionHeader
+              title="Thông tin liên hệ"
+              subtitle="Cập nhật tên, số điện thoại và địa chỉ dùng cho các luồng nhận - cho thực phẩm."
             />
-            <FieldError message={errors.fullName?.message} />
-          </Field>
-
-          {/* Số điện thoại */}
-          <Field label="Số điện thoại">
-            <Controller
-              control={control}
-              name="phone"
-              render={({ field: { onChange, value } }) => (
-                <TextInput
-                  mode="outlined"
-                  placeholder="0912345678"
-                  value={value}
-                  onChangeText={onChange}
-                  keyboardType="phone-pad"
-                  editable={!submitting}
-                  left={<TextInput.Icon icon="phone" />}
-                  outlineColor={COLORS.outline}
-                  activeOutlineColor={COLORS.primary}
-                  style={styles.input}
-                  error={!!errors.phone}
-                />
-              )}
-            />
-            <FieldError message={errors.phone?.message} />
-          </Field>
-
-          {canEditAddress ? (
-            <Field label={profile?.role === 'provider' ? 'Địa chỉ cửa hàng' : 'Điểm giao mặc định'}>
-              <AddressPicker
-                initialCoords={
-                  currentLat != null && currentLng != null
-                    ? { lat: currentLat, lng: currentLng }
-                    : null
-                }
-                value={effectiveAddress}
-                onChange={(next) => {
-                  setAddressValue(next);
-                  setValue('address', next.address, { shouldValidate: true });
-                }}
-                error={errors.address?.message}
+            {/* Họ tên */}
+            <Field label="Họ và tên">
+              <Controller
+                control={control}
+                name="fullName"
+                render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    placeholder="Nguyễn Văn A"
+                    value={value}
+                    onChangeText={onChange}
+                    editable={!submitting}
+                    left={<TextInput.Icon icon="account" />}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    error={!!errors.fullName}
+                  />
+                )}
               />
+              <FieldError message={errors.fullName?.message} />
             </Field>
-          ) : null}
+
+            {/* Số điện thoại */}
+            <Field label="Số điện thoại">
+              <Controller
+                control={control}
+                name="phone"
+                render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    placeholder="0912345678"
+                    value={value}
+                    onChangeText={onChange}
+                    keyboardType="phone-pad"
+                    editable={!submitting}
+                    left={<TextInput.Icon icon="phone" />}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    error={!!errors.phone}
+                  />
+                )}
+              />
+              <FieldError message={errors.phone?.message} />
+            </Field>
+
+            {canEditAddress ? (
+              <Field label={profile?.role === 'provider' ? 'Địa chỉ cửa hàng' : 'Điểm giao mặc định'}>
+                <AddressPicker
+                  initialCoords={
+                    currentLat != null && currentLng != null
+                      ? { lat: currentLat, lng: currentLng }
+                      : null
+                  }
+                  value={effectiveAddress}
+                  onChange={(next) => {
+                    setAddressValue(next);
+                    setValue('address', next.address, { shouldValidate: true });
+                  }}
+                  error={errors.address?.message}
+                />
+              </Field>
+            ) : null}
+          </SurfaceCard>
 
           <Button
             mode="contained"
@@ -306,8 +317,9 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 8, marginLeft: -8 },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  content: { padding: 20 },
-  avatarBlock: { alignItems: 'center', marginBottom: 20, gap: 12 },
+  content: { padding: 20, gap: 14 },
+  avatarCard: { alignItems: 'center', padding: 16, gap: 14 },
+  formCard: { padding: 16, gap: 14 },
   avatarPreview: { width: 96, height: 96, borderRadius: 48 },
   changeAvatarBtn: { borderColor: COLORS.primary, borderRadius: 12 },
   label: {

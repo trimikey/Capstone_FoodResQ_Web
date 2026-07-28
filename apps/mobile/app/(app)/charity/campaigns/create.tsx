@@ -36,8 +36,15 @@ function toInt(s: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+function isInvalidCount(s: string, allowEmpty = false): boolean {
+  if (allowEmpty && !s.trim()) return false;
+  const n = Number(s);
+  return !Number.isFinite(n) || n < 0;
+}
+
 interface MenuRow { name: string; type: string }
 interface ScheduleRow { time: string; label: string }
+interface SupplyRow { name: string; quantity?: number; unit?: string }
 
 /**
  * Charity-org tạo chiến dịch bếp ăn. Gửi đi với status 'draft' (chờ admin duyệt).
@@ -79,8 +86,10 @@ export default function CreateCampaignScreen() {
   const [scheduleTime, setScheduleTime] = useState('');
   const [scheduleLabel, setScheduleLabel] = useState('');
 
-  const [supplyItems, setSupplyItems] = useState<string[]>([]);
+  const [supplyItems, setSupplyItems] = useState<SupplyRow[]>([]);
   const [supplyText, setSupplyText] = useState('');
+  const [supplyQuantity, setSupplyQuantity] = useState('');
+  const [supplyUnit, setSupplyUnit] = useState('');
 
   useEffect(() => {
     getCurrentCoords().then(({ coords }) => setCoords(coords));
@@ -103,8 +112,22 @@ export default function CreateCampaignScreen() {
   const addSupply = () => {
     const s = supplyText.trim();
     if (!s) return;
-    setSupplyItems((prev) => [...prev, s]);
+    const quantity = parseInt(supplyQuantity, 10);
+    if (supplyQuantity.trim() && (!Number.isFinite(quantity) || quantity <= 0)) {
+      Popup.show({ type: 'warning', text1: 'Số lượng vật phẩm không hợp lệ' });
+      return;
+    }
+    setSupplyItems((prev) => [
+      ...prev,
+      {
+        name: s,
+        ...(Number.isFinite(quantity) && quantity > 0 ? { quantity } : {}),
+        ...(supplyUnit.trim() ? { unit: supplyUnit.trim() } : {}),
+      },
+    ]);
     setSupplyText('');
+    setSupplyQuantity('');
+    setSupplyUnit('');
   };
 
   const uploadImage = async (photo: CapturedImage | null) => {
@@ -145,6 +168,14 @@ export default function CreateCampaignScreen() {
     }
     if (toTimeStr(endTime) <= toTimeStr(startTime)) {
       Popup.show({ type: 'warning', text1: 'Giờ không hợp lệ', text2: 'Giờ kết thúc phải sau giờ bắt đầu.' });
+      return;
+    }
+    if ([chefSlots, waiterSlots, shipperSlots].some((value) => isInvalidCount(value))) {
+      Popup.show({ type: 'warning', text1: 'Số lượng TNV không hợp lệ', text2: 'Vui lòng nhập số không âm.' });
+      return;
+    }
+    if (isInvalidCount(expectedServings, true) || (expectedServings.trim() && toInt(expectedServings) === 0)) {
+      Popup.show({ type: 'warning', text1: 'Số suất không hợp lệ', text2: 'Số suất dự kiến phải lớn hơn 0.' });
       return;
     }
 
@@ -195,6 +226,13 @@ export default function CreateCampaignScreen() {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <CreateIntro />
+
+          <FormSection
+            icon="clipboard-text-outline"
+            title="Thông tin cơ bản"
+            helper="Tên ngắn, rõ mục tiêu để TNV và nhà cung cấp hiểu nhanh."
+          >
           <Field label="Tên chiến dịch *">
             <TextInput
               mode="outlined" placeholder="VD: Bếp ăn 0 đồng cuối tuần" value={title} onChangeText={setTitle}
@@ -208,7 +246,13 @@ export default function CreateCampaignScreen() {
               outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input}
             />
           </Field>
+          </FormSection>
 
+          <FormSection
+            icon="image-outline"
+            title="Ảnh chiến dịch"
+            helper="Ảnh giúp chiến dịch đáng tin hơn. Có thể bổ sung sau nếu chưa sẵn sàng."
+          >
           <Field label="Ảnh chiến dịch (tuỳ chọn)">
             {imageUrl ? (
               <View style={styles.imagePreview}>
@@ -249,7 +293,13 @@ export default function CreateCampaignScreen() {
               </View>
             )}
           </Field>
+          </FormSection>
 
+          <FormSection
+            icon="map-clock-outline"
+            title="Thời gian & địa điểm"
+            helper="Địa điểm và khung giờ cần chính xác để phối hợp giao nhận."
+          >
           <Field label="Địa chỉ bếp *">
             <AddressPicker
               initialCoords={coords}
@@ -303,8 +353,14 @@ export default function CreateCampaignScreen() {
               </Field>
             </View>
           </View>
+          </FormSection>
 
-          <Text style={styles.sectionLabel}>Số lượng tình nguyện viên cần</Text>
+          <FormSection
+            icon="account-group-outline"
+            title="Mục tiêu phục vụ"
+            helper="Đặt số suất và số người hỗ trợ cần tuyển cho từng vai trò."
+          >
+          <Text style={styles.sectionLabel}>Nhân sự tình nguyện</Text>
           <View style={styles.rowFields}>
             <SlotInput label="Đầu bếp" value={chefSlots} onChange={setChefSlots} />
             <SlotInput label="Phục vụ" value={waiterSlots} onChange={setWaiterSlots} />
@@ -317,9 +373,14 @@ export default function CreateCampaignScreen() {
               outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input}
             />
           </Field>
+          </FormSection>
 
           {/* Thực đơn (tuỳ chọn) */}
-          <Text style={styles.sectionLabel}>Thực đơn (tuỳ chọn)</Text>
+          <FormSection
+            icon="silverware-fork-knife"
+            title="Thực đơn"
+            helper="Thêm món chính hoặc nhóm món để bếp và TNV chuẩn bị trước."
+          >
           {menuItems.map((m, i) => (
             <ListRow
               key={i}
@@ -340,9 +401,14 @@ export default function CreateCampaignScreen() {
           <Button mode="text" icon="plus" textColor={COLORS.primary} onPress={addMenu} compact style={styles.addBtn}>
             Thêm món
           </Button>
+          </FormSection>
 
           {/* Lịch trình (tuỳ chọn) */}
-          <Text style={styles.sectionLabel}>Lịch trình (tuỳ chọn)</Text>
+          <FormSection
+            icon="timeline-clock-outline"
+            title="Lịch trình"
+            helper="Các mốc như nhận nguyên liệu, nấu, chia suất, phát cơm."
+          >
           {scheduleItems.map((s, i) => (
             <ListRow
               key={i}
@@ -363,19 +429,33 @@ export default function CreateCampaignScreen() {
           <Button mode="text" icon="plus" textColor={COLORS.primary} onPress={addSchedule} compact style={styles.addBtn}>
             Thêm mốc
           </Button>
+          </FormSection>
 
           {/* Vật phẩm cần hỗ trợ (tuỳ chọn) */}
-          <Text style={styles.sectionLabel}>Vật phẩm cần hỗ trợ (tuỳ chọn)</Text>
+          <FormSection
+            icon="basket-outline"
+            title="Vật phẩm cần hỗ trợ"
+            helper="Nhập rõ tên, số lượng và đơn vị để nhà cung cấp biết cần hỗ trợ gì."
+          >
           {supplyItems.map((s, i) => (
             <ListRow
               key={i}
-              text={s}
+              text={`${s.name}${s.quantity ? ` - ${s.quantity}${s.unit ? ` ${s.unit}` : ''}` : ''}`}
               onRemove={() => setSupplyItems((prev) => prev.filter((_, idx) => idx !== i))}
             />
           ))}
           <View style={styles.rowFields}>
             <TextInput
-              mode="outlined" dense placeholder="VD: Gạo, dầu ăn" value={supplyText} onChangeText={setSupplyText}
+              mode="outlined" dense placeholder="Tên vật phẩm" value={supplyText} onChangeText={setSupplyText}
+              outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={[styles.input, { flex: 2 }]}
+            />
+            <TextInput
+              mode="outlined" dense placeholder="SL" value={supplyQuantity} onChangeText={setSupplyQuantity}
+              keyboardType="numeric"
+              outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={[styles.input, { flex: 1 }]}
+            />
+            <TextInput
+              mode="outlined" dense placeholder="Đơn vị" value={supplyUnit} onChangeText={setSupplyUnit}
               outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={[styles.input, { flex: 1 }]}
               onSubmitEditing={addSupply}
             />
@@ -383,6 +463,7 @@ export default function CreateCampaignScreen() {
           <Button mode="text" icon="plus" textColor={COLORS.primary} onPress={addSupply} compact style={styles.addBtn}>
             Thêm vật phẩm
           </Button>
+          </FormSection>
 
           <Button
             mode="contained" onPress={onSubmit} loading={submitting} disabled={submitting}
@@ -401,6 +482,49 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={styles.label}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function CreateIntro() {
+  return (
+    <View style={styles.intro}>
+      <View style={styles.introIcon}>
+        <MaterialCommunityIcons name="pot-steam-outline" size={24} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.introTitle}>Điều phối một bếp ăn cộng đồng</Text>
+        <Text style={styles.introText}>
+          Tạo bản nháp đầy đủ để admin duyệt, sau đó tổ chức có thể tuyển TNV và nhận hỗ trợ nguyên liệu.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function FormSection({
+  icon,
+  title,
+  helper,
+  children,
+}: {
+  icon: any;
+  title: string;
+  helper: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.formSection}>
+      <View style={styles.formSectionHead}>
+        <View style={styles.formSectionIcon}>
+          <MaterialCommunityIcons name={icon} size={19} color={COLORS.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.formSectionTitle}>{title}</Text>
+          <Text style={styles.formSectionHelper}>{helper}</Text>
+        </View>
+      </View>
       {children}
     </View>
   );
@@ -448,6 +572,45 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
   content: { padding: 20, paddingBottom: 48 },
+  intro: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 16,
+    marginBottom: 14,
+  },
+  introIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  introTitle: { fontSize: 17, fontWeight: '900', color: COLORS.onSurface },
+  introText: { marginTop: 3, fontSize: 13, lineHeight: 19, color: COLORS.onSurfaceVariant },
+  formSection: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 14,
+    marginBottom: 14,
+  },
+  formSectionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
+  formSectionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formSectionTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface },
+  formSectionHelper: { marginTop: 2, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
   label: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant, marginBottom: 8 },
   sectionLabel: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface, marginTop: 8, marginBottom: 10 },
   input: { backgroundColor: COLORS.surface },

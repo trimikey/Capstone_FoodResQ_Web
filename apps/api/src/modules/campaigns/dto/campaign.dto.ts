@@ -243,6 +243,24 @@ export class ApplyCampaignDto {
   role!: AssignmentRole;
 }
 
+export class ReviewCampaignAssignmentDto {
+  @ApiPropertyOptional({ enum: ['approved', 'rejected'], description: 'Mobile charity action: duyệt hoặc từ chối đăng ký TNV' })
+  @IsOptional()
+  @IsIn(['approved', 'rejected'])
+  action?: 'approved' | 'rejected';
+
+  @ApiPropertyOptional({ enum: ['approve', 'reject'], description: 'Alias tương thích với admin/web' })
+  @IsOptional()
+  @IsIn(['approve', 'reject'])
+  decision?: 'approve' | 'reject';
+
+  @ApiPropertyOptional({ description: 'Ghi chú hoặc lý do từ chối' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class AddExperienceDto {
   @ApiProperty({ example: 'Một buổi sáng thật ý nghĩa, được nấu và trao tận tay những suất cơm ấm...' })
   @IsString({ message: 'Cảm nhận phải là chuỗi' })

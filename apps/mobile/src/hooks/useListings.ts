@@ -79,16 +79,14 @@ export function useListings({
 }: ListingQuery) {
   return useQuery({
     queryKey: ['listings', coords, search ?? '', category ?? null, radiusKm, page, limit],
-    enabled: coords != null,
     placeholderData: (previous) => previous,
     queryFn: async () => {
+      const hasCoords = coords != null;
       const res = await apiClient.get<ApiResponse<Listing[]>>(
         endpoints.listings.search,
         {
           params: {
-            lat: coords!.lat,
-            lng: coords!.lng,
-            radiusKm,
+            ...(hasCoords ? { lat: coords.lat, lng: coords.lng, radiusKm } : {}),
             search: search || undefined,
             category: category || undefined,
             page,

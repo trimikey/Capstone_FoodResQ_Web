@@ -140,6 +140,7 @@ export interface ApiUser {
   receiver?: {
     isCharityOrg: boolean;
     organizationName: string | null;
+    verificationStatus?: string | null;
     address?: string | null;
     lng?: number | null;
     lat?: number | null;
@@ -221,6 +222,8 @@ export const endpoints = {
   users: {
     // Hồ sơ người dùng đang đăng nhập (GET lấy chi tiết, PATCH cập nhật)
     me: '/users/me',
+    providers: '/users/providers',
+    providerListings: (providerProfileId: string) => `/users/providers/${providerProfileId}/listings`,
     // Đăng ký/kiểm tra khuôn mặt (GET trạng thái, POST enroll selfie/CCCD)
     faceEnrollment: '/users/me/face-enrollment',
   },
@@ -292,6 +295,8 @@ export const endpoints = {
     // Chiến dịch bếp ăn cộng đồng (charity tạo). Provider: xem + quyên góp nguyên liệu.
     list: '/campaigns',
     detail: (id: string) => `/campaigns/${id}`,
+    public: '/campaigns/public',
+    publicDetail: (id: string) => `/campaigns/public/${id}`,
     // Provider quyên góp nguyên liệu cho 1 chiến dịch (status pledged → charity xác nhận)
     donate: (id: string) => `/campaigns/${id}/donations`,
     // Charity-org (receiver isCharityOrg) quản lý bếp ăn của mình
@@ -299,11 +304,21 @@ export const endpoints = {
     create: '/campaigns',
     completed: '/campaigns/completed',
     uploadImage: '/campaigns/upload-image',
+    uploadExperienceImage: '/campaigns/experiences/upload-image',
+    addExperience: (id: string) => `/campaigns/${id}/experiences`,
     start: (id: string) => `/campaigns/${id}/start`,
     cancel: (id: string) => `/campaigns/${id}/cancel`,
     complete: (id: string) => `/campaigns/${id}/complete`,
     changeRequests: (id: string) => `/campaigns/${id}/change-requests`,
     cancelChangeRequest: (id: string) => `/campaigns/change-requests/${id}/cancel`,
+    reviewAssignment: (campaignId: string, assignmentId: string) =>
+      `/campaigns/${campaignId}/assignments/${assignmentId}/review`,
+    sendProviderRequest: '/campaigns/requests',
+    providerRequests: '/campaigns/provider-requests',
+    mySentRequests: '/campaigns/my-sent-requests',
+    reviewProviderRequest: (requestId: string) => `/campaigns/provider-requests/${requestId}/review`,
+    providerProposals: '/campaigns/provider-proposals',
+    addSupplyItem: (id: string) => `/campaigns/${id}/supply-items`,
     // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
     confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
     // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch

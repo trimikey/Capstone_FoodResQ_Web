@@ -1,13 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import { Button, Text } from 'react-native-paper';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Button, Modal, Portal, Text, TextInput } from 'react-native-paper';
 import { Popup } from '@/components/ui/AppPopup';
 import { usePledgeDonation } from '@/hooks/useCampaigns';
 
@@ -17,6 +10,8 @@ interface Props {
   campaignId: string;
   /** Tên chiến dịch (hiển thị nhắc người dùng). */
   campaignTitle?: string;
+  /** Nguyên liệu đã chọn từ danh sách cần hỗ trợ; nếu có thì khóa tên món. */
+  initialItem?: { name: string; unit?: string | null };
   onDismiss: () => void;
 }
 
@@ -32,25 +27,12 @@ const COLORS = {
  * Provider quyên góp nguyên liệu cho 1 chiến dịch bếp ăn.
  * itemName bắt buộc; quantity + note tuỳ chọn. POST /campaigns/:id/donations.
  */
-export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }: Props) {
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const snapPoints = useMemo(() => ['CONTENT_HEIGHT'], []);
+export function DonationDialog({ visible, campaignId, campaignTitle, initialItem, onDismiss }: Props) {
   const [itemName, setItemName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
   const pledgeMut = usePledgeDonation();
-
-  useEffect(() => {
-    if (visible) sheetRef.current?.present();
-    else sheetRef.current?.dismiss();
-  }, [visible]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
-    ),
-    []
-  );
+  const effectiveItemName = initialItem?.name ?? itemName;
 
   const reset = () => {
     setItemName('');
@@ -65,7 +47,7 @@ export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }
   };
 
   const handleSubmit = async () => {
-    const name = itemName.trim();
+    const name = effectiveItemName.trim();
     if (!name) return;
     try {
       await pledgeMut.mutateAsync({
@@ -91,84 +73,82 @@ export function DonationDialog({ visible, campaignId, campaignTitle, onDismiss }
   };
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      snapPoints={snapPoints}
-      enableDynamicSizing
-      backdropComponent={renderBackdrop}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      onDismiss={handleDismiss}
-      handleIndicatorStyle={styles.handle}
-      accessibilityLabel="Quyên góp nguyên liệu"
-    >
-      <BottomSheetView style={styles.sheet}>
-        <Text style={styles.title}>Quyên góp nguyên liệu</Text>
-        <View>
-          {campaignTitle ? (
-            <Text style={styles.subtitle}>Cho chiến dịch: {campaignTitle}</Text>
-          ) : null}
-          <BottomSheetTextInput
-            placeholder="VD: Gạo, Trứng, Rau cải…"
-            value={itemName}
-            onChangeText={setItemName}
-            style={styles.input}
-            editable={!pledgeMut.isPending}
-            accessibilityLabel="Tên nguyên liệu bắt buộc"
-          />
-          <BottomSheetTextInput
-            placeholder="VD: 20 kg, 10 thùng…"
-            value={quantity}
-            onChangeText={setQuantity}
-            style={styles.input}
-            editable={!pledgeMut.isPending}
-            accessibilityLabel="Số lượng quyên góp"
-          />
-          <BottomSheetTextInput
-            placeholder="Ghi chú (tuỳ chọn)"
-            value={note}
-            onChangeText={setNote}
-            multiline
-            numberOfLines={2}
-            style={styles.input}
-            editable={!pledgeMut.isPending}
-            accessibilityLabel="Ghi chú quyên góp"
-          />
-        </View>
-        <View style={styles.actions}>
-          <Button onPress={handleDismiss} textColor={COLORS.onSurfaceVariant} disabled={pledgeMut.isPending}>
-            Huỷ
-          </Button>
-          <Button
-            mode="contained"
-            onPress={handleSubmit}
-            buttonColor={COLORS.primary}
-            loading={pledgeMut.isPending}
-            disabled={pledgeMut.isPending || !itemName.trim()}
-          >
-            Gửi quyên góp
-          </Button>
-        </View>
-      </BottomSheetView>
-    </BottomSheetModal>
+    <Portal>
+      <Modal
+        visible={visible}
+        onDismiss={handleDismiss}
+        contentContainerStyle={styles.modal}
+        dismissable={!pledgeMut.isPending}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={styles.title}>Quyên góp nguyên liệu</Text>
+            {campaignTitle ? <Text style={styles.subtitle}>Cho chiến dịch: {campaignTitle}</Text> : null}
+
+            <TextInput
+              mode="outlined"
+              label="Tên nguyên liệu"
+              placeholder="VD: Gạo, Trứng, Rau cải..."
+              value={effectiveItemName}
+              onChangeText={setItemName}
+              editable={!pledgeMut.isPending && !initialItem?.name}
+              accessibilityLabel="Tên nguyên liệu bắt buộc"
+              style={styles.input}
+            />
+            <TextInput
+              mode="outlined"
+              label="Số lượng"
+              placeholder={initialItem?.unit ? `VD: 20 ${initialItem.unit}` : 'VD: 20 kg, 10 thùng...'}
+              value={quantity}
+              onChangeText={setQuantity}
+              editable={!pledgeMut.isPending}
+              accessibilityLabel="Số lượng quyên góp"
+              style={styles.input}
+            />
+            <TextInput
+              mode="outlined"
+              label="Ghi chú"
+              placeholder="Thông tin giao nhận, chất lượng, thời gian có thể giao..."
+              value={note}
+              onChangeText={setNote}
+              multiline
+              numberOfLines={3}
+              editable={!pledgeMut.isPending}
+              accessibilityLabel="Ghi chú quyên góp"
+              style={styles.input}
+            />
+
+            <View style={styles.actions}>
+              <Button onPress={handleDismiss} textColor={COLORS.onSurfaceVariant} disabled={pledgeMut.isPending}>
+                Huỷ
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleSubmit}
+                buttonColor={COLORS.primary}
+                loading={pledgeMut.isPending}
+                disabled={pledgeMut.isPending || !effectiveItemName.trim()}
+              >
+                Gửi quyên góp
+              </Button>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+    </Portal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: { paddingHorizontal: 20, paddingBottom: 28 },
-  handle: { backgroundColor: COLORS.outline },
+  modal: {
+    marginHorizontal: 18,
+    maxHeight: '88%',
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    padding: 18,
+  },
   title: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
   subtitle: { fontSize: 13, color: COLORS.onSurfaceVariant, marginBottom: 12 },
-  input: {
-    minHeight: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    color: COLORS.onSurface,
-  },
+  input: { marginBottom: 12, backgroundColor: COLORS.surface },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
 });
