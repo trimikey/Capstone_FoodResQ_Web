@@ -1,12 +1,8 @@
-<<<<<<< HEAD
-import axios from 'axios';
-import { translateApiMessage } from '@/lib/utils';
-=======
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth.store';
+import { translateApiMessage } from '@/lib/utils';
 
 const apiBaseURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
->>>>>>> origin/master
 
 export const api = axios.create({
   baseURL: apiBaseURL,
@@ -18,6 +14,11 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 type QueuedRequest = {
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
+};
+type ApiErrorPayload = {
+  error?: {
+    message?: string;
+  };
 };
 
 function getStoredTokens() {
@@ -31,31 +32,13 @@ function getStoredTokens() {
   return { accessToken, refreshToken };
 }
 
-function expireSession() {
-  if (typeof window === 'undefined') return;
-
-  useAuthStore.getState().logout();
-  if (window.location.pathname !== '/login') {
-    window.location.href = '/login';
-  }
-}
-
-// Attach access token from localStorage/Zustand persist
-api.interceptors.request.use((config) => {
-  const { accessToken } = getStoredTokens();
-  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
-  return config;
-});
-
-// Auto-refresh on 401
-let isRefreshing = false;
-let queue: QueuedRequest[] = [];
-
 function clearLocalSession() {
   if (typeof window === 'undefined') return;
+
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('foodresq-auth');
+  useAuthStore.getState().logout();
 }
 
 function redirectToLogin() {
@@ -64,22 +47,33 @@ function redirectToLogin() {
   }
 }
 
+function expireSession() {
+  clearLocalSession();
+  redirectToLogin();
+}
+
+api.interceptors.request.use((config) => {
+  const { accessToken } = getStoredTokens();
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+  return config;
+});
+
+let isRefreshing = false;
+let queue: QueuedRequest[] = [];
+
 api.interceptors.response.use(
   (res) => res,
-<<<<<<< HEAD
-  async (error) => {
-    const original = error.config;
-    const apiMessage = error.response?.data?.error?.message;
-    if (typeof apiMessage === 'string') {
-      error.response.data.error.message = translateApiMessage(apiMessage);
-    }
-=======
   async (error: AxiosError) => {
+    const errorPayload = error.response?.data as ApiErrorPayload | undefined;
+    const apiMessage = errorPayload?.error?.message;
+    if (typeof apiMessage === 'string' && errorPayload?.error) {
+      errorPayload.error.message = translateApiMessage(apiMessage);
+    }
+
     const original = error.config as RetryableRequestConfig | undefined;
->>>>>>> origin/master
 
     if (!original || error.response?.status !== 401 || original._retry) {
-      return Promise.reject(error as Error);
+      return Promise.reject(error);
     }
 
     original._retry = true;
@@ -91,24 +85,15 @@ api.interceptors.response.use(
             original.headers.Authorization = `Bearer ${token}`;
             resolve(api(original));
           },
-          reject: (queueError) => {
-            reject(queueError);
-          },
+          reject,
         });
       });
     }
 
     const { refreshToken } = getStoredTokens();
-
-    // Chưa có refresh token -> session hết hạn, xoá cả Zustand persist để tránh user cũ tiếp tục gọi API
     if (!refreshToken) {
-<<<<<<< HEAD
-      clearLocalSession();
-      redirectToLogin();
-=======
       expireSession();
->>>>>>> origin/master
-      return Promise.reject(error as Error);
+      return Promise.reject(error);
     }
 
     isRefreshing = true;
@@ -123,23 +108,16 @@ api.interceptors.response.use(
       const newRefresh = data.data.refreshToken;
       useAuthStore.getState().setTokens(newAccess, newRefresh);
 
-      queue.forEach(({ resolve: resolveQueued }) => resolveQueued(newAccess));
+      queue.forEach(({ resolve }) => resolve(newAccess));
       queue = [];
 
       original.headers.Authorization = `Bearer ${newAccess}`;
       return api(original);
-<<<<<<< HEAD
-    } catch {
-      clearLocalSession();
-      redirectToLogin();
-      return Promise.reject(error as Error);
-=======
     } catch (refreshError) {
-      queue.forEach(({ reject: rejectQueued }) => rejectQueued(refreshError));
+      queue.forEach(({ reject }) => reject(refreshError));
       queue = [];
       expireSession();
-      return Promise.reject(refreshError as Error);
->>>>>>> origin/master
+      return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
     }
