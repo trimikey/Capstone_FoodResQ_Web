@@ -42,12 +42,14 @@ export function SearchBar({ value, onChangeText, onPressFilter, filterActive }: 
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   search: {
     flex: 1,
+    minWidth: 0,
+    height: 52,
     backgroundColor: COLORS.surfaceVariant,
     borderRadius: 14,
   },
   input: { fontSize: 15, minHeight: 0 },
-  filterBtn: { margin: 0, borderRadius: 14 },
+  filterBtn: { width: 52, height: 52, margin: 0, borderRadius: 14 },
 });

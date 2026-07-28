@@ -26,7 +26,12 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess } from '@/services/haptics';
-import { DEFAULT_COORDS, DEFAULT_LOCATION_LABEL, getLocationLabel } from '@/services/geolocation';
+import {
+  LEGACY_TEST_COORDS,
+  LEGACY_TEST_LOCATION_LABEL,
+  getLocationLabel,
+  isLegacyTestLocation,
+} from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS } from '@/theme/design';
@@ -143,7 +148,10 @@ export default function VolunteerOffersScreen() {
   );
   const rawCurrentLocation = volunteer?.currentLocation ?? null;
   const currentLocation =
-    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng)
+    rawCurrentLocation &&
+    isFiniteCoord(rawCurrentLocation.lat) &&
+    isFiniteCoord(rawCurrentLocation.lng) &&
+    !isLegacyTestLocation(rawCurrentLocation)
       ? rawCurrentLocation
       : null;
   const currentLat = currentLocation?.lat;
@@ -193,14 +201,14 @@ export default function VolunteerOffersScreen() {
     ? getLocationLabel({ lat: currentLocation.lat, lng: currentLocation.lng })
     : '';
   const locationAddress =
-    currentLocationLabel === DEFAULT_LOCATION_LABEL
-      ? `${DEFAULT_LOCATION_LABEL}, TP. Thủ Đức`
+    currentLocationLabel === LEGACY_TEST_LOCATION_LABEL
+      ? `${LEGACY_TEST_LOCATION_LABEL}, TP. Thủ Đức`
       : resolvedAddress?.key === currentLocationKey
         ? resolvedAddress.value
         : '';
 
   useEffect(() => {
-    if (!currentLocation || currentLocationLabel === DEFAULT_LOCATION_LABEL) return;
+    if (!currentLocation || currentLocationLabel === LEGACY_TEST_LOCATION_LABEL) return;
 
     const controller = new AbortController();
     reverseGeocode(currentLocation.lat, currentLocation.lng, controller.signal)
@@ -228,8 +236,8 @@ export default function VolunteerOffersScreen() {
     try {
       await setAvailability.mutateAsync({
         isAvailable: true,
-        lng: DEFAULT_COORDS.lng,
-        lat: DEFAULT_COORDS.lat,
+        lng: LEGACY_TEST_COORDS.lng,
+        lat: LEGACY_TEST_COORDS.lat,
       });
       await Promise.all([refetchVolunteer(), refetch()]);
       void notifySuccess();

@@ -1,6 +1,6 @@
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
-import { AppImage } from './ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from './ui/AppImage';
 import { categoryLabel, quantityLabel } from '../utils/listingFormat';
 import type { ProviderListing } from '../hooks/useProviderListings';
 
@@ -47,7 +47,11 @@ export function ProviderListingCard({ listing, onPress }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.85 : 1 }]}
     >
-      <AppImage source={{ uri: listing.imageUrls?.[0] }} style={styles.image} />
+      <AppImage
+        source={{ uri: listing.imageUrls?.[0] }}
+        fallbackSource={foodFallbackSourceForCategory(listing.category)}
+        style={styles.image}
+      />
       <View style={styles.body}>
         <View style={styles.topRow}>
           <View style={[styles.badge, { backgroundColor: sd.bg }]}>

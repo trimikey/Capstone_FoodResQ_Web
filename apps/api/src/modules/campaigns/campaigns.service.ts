@@ -10,7 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
-import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto, ReviewCampaignAssignmentDto } from './dto/campaign.dto';
 
 // State machine cho công việc của TNV trong chiến dịch
 const ASSIGN_NEXT: Record<string, string> = {
@@ -669,6 +669,90 @@ export class CampaignsService {
 
     await this.prisma.campaignVolunteerAssignment.update({ where: { id: assignmentId }, data });
     return { id: assignmentId, status: next };
+  }
+
+  /** Tổ chức chủ chiến dịch duyệt/từ chối TNV ứng tuyển. */
+  async reviewAssignment(campaignId: string, assignmentId: string, charityUserId: string, dto: ReviewCampaignAssignmentDto) {
+    const decision = dto.decision ?? (dto.action === 'approved' ? 'approve' : dto.action === 'rejected' ? 'reject' : undefined);
+    if (!decision) throw new BadRequestException('Thiếu quyết định duyệt hoặc từ chối đăng ký.');
+
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: { id: true, isCharityOrg: true },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+    if (!receiver.isCharityOrg) {
+      throw new ForbiddenException('Chỉ tổ chức từ thiện mới được duyệt tình nguyện viên cho chiến dịch.');
+    }
+
+    const a = await this.prisma.campaignVolunteerAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        campaign: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            charityReceiverId: true,
+            chefSlotsNeeded: true,
+            waiterSlotsNeeded: true,
+            shipperSlotsNeeded: true,
+            chefSlotsFilled: true,
+            waiterSlotsFilled: true,
+            shipperSlotsFilled: true,
+          },
+        },
+        volunteer: { select: { user: { select: { id: true } } } },
+      },
+    });
+    if (!a || a.campaign.id !== campaignId) throw new NotFoundException('Không tìm thấy đăng ký trong chiến dịch này.');
+    if (a.campaign.charityReceiverId !== receiver.id) {
+      throw new ForbiddenException('Chỉ tổ chức chủ chiến dịch mới được duyệt đăng ký này.');
+    }
+    if (a.status !== 'pending') throw new BadRequestException('Đăng ký này đã được xử lý.');
+
+    const roleVN = ROLE_VN[a.role] ?? a.role;
+
+    if (decision === 'approve') {
+      if (!['open', 'in_progress'].includes(a.campaign.status)) {
+        throw new BadRequestException('Chiến dịch không còn nhận tình nguyện viên.');
+      }
+      const slot = SLOT_FIELD[a.role];
+      const needed = a.campaign[slot.needed];
+      const filled = a.campaign[slot.filled];
+      if (filled >= needed) throw new BadRequestException(`Đã đủ tình nguyện viên vai trò ${roleVN}.`);
+
+      await this.prisma.$transaction([
+        this.prisma.campaignVolunteerAssignment.update({
+          where: { id: assignmentId },
+          data: { status: 'assigned', notes: dto.note ?? null },
+        }),
+        this.prisma.kitchenCampaign.update({
+          where: { id: campaignId },
+          data: { [slot.filled]: { increment: 1 } },
+        }),
+      ]);
+
+      void this.notifications.notify(a.volunteer.user.id, {
+        type: 'campaign',
+        title: 'Đăng ký được duyệt',
+        body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" đã được duyệt. Hẹn gặp bạn tại bếp!`,
+        data: { campaignId, assignmentId, status: 'assigned' },
+      });
+      return { id: assignmentId, status: 'assigned' };
+    }
+
+    await this.prisma.campaignVolunteerAssignment.update({
+      where: { id: assignmentId },
+      data: { status: 'rejected', notes: dto.note ?? null },
+    });
+    void this.notifications.notify(a.volunteer.user.id, {
+      type: 'campaign',
+      title: 'Đăng ký chưa được duyệt',
+      body: `Đăng ký vai trò ${roleVN} cho chiến dịch "${a.campaign.title}" chưa được duyệt.${dto.note ? ' Lý do: ' + dto.note : ''}`,
+      data: { campaignId, assignmentId, status: 'rejected' },
+    });
+    return { id: assignmentId, status: 'rejected' };
   }
 
   /** Nhà cung cấp quyên góp nguyên liệu cho chiến dịch (đang tuyển/đang diễn ra). */

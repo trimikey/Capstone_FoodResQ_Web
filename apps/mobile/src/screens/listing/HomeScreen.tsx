@@ -7,11 +7,12 @@ import { useRouter } from 'expo-router';
 import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useListings, type FoodCategory, type Listing } from '@/hooks/useListings';
+import { useListings, LISTING_PAGE_SIZE, type FoodCategory, type Listing } from '@/hooks/useListings';
+import { useMyProfile } from '@/hooks/useProfile';
 import {
   getCurrentCoords,
-  DEFAULT_COORDS,
   getLocationLabel,
+  isNearCoords,
   type Coords,
 } from '@/services/geolocation';
 import { ListingCard } from '@/components/ListingCard';
@@ -20,8 +21,15 @@ import { SearchBar } from '@/components/SearchBar';
 import { CategoryFilterSheet } from '@/components/CategoryFilterSheet';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { categoryLabel } from '@/utils/listingFormat';
 import { mobileColors as COLORS } from '@/theme/design';
+
+const HCM_CENTER: Coords = { lat: 10.8231, lng: 106.6297 };
+
+function isFiniteCoord(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -29,10 +37,16 @@ export default function HomeScreen() {
   const sheetRef = useRef<BottomSheet>(null);
   const listRef = useRef<ElementRef<typeof FlashList<Listing>>>(null);
 
-  // Khởi tạo bằng DEFAULT_COORDS để feed fetch NGAY, không chờ định vị (tránh skeleton lâu).
-  // Khi có toạ độ thật → cập nhật → React Query tự refetch theo đúng vị trí.
-  const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
+  const { data: profile } = useMyProfile();
+  const profileCoords = useMemo<Coords | null>(() => {
+    const lat = profile?.receiver?.lat ?? profile?.provider?.lat;
+    const lng = profile?.receiver?.lng ?? profile?.provider?.lng;
+    return isFiniteCoord(lat) && isFiniteCoord(lng) ? { lat, lng } : null;
+  }, [profile?.provider?.lat, profile?.provider?.lng, profile?.receiver?.lat, profile?.receiver?.lng]);
+
+  const [gpsCoords, setGpsCoords] = useState<Coords | null>(null);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
+  const [locating, setLocating] = useState(true);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -45,9 +59,15 @@ export default function HomeScreen() {
     let active = true;
     getCurrentCoords().then(({ coords, isFallback }) => {
       if (!active) return;
-      setCoords(coords);
+      setGpsCoords(isFallback ? null : coords);
       setIsFallbackLocation(isFallback);
+      setLocating(false);
       setPage(1);
+    }).catch(() => {
+      if (!active) return;
+      setGpsCoords(null);
+      setIsFallbackLocation(true);
+      setLocating(false);
     });
     return () => {
       active = false;
@@ -63,25 +83,45 @@ export default function HomeScreen() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  const effectiveCoords = gpsCoords ?? profileCoords;
+
   const { data, isLoading, isFetching, isError, refetch, isRefetching, isPlaceholderData } = useListings({
-    coords,
+    coords: effectiveCoords,
     search: debouncedSearch,
     category,
     page,
+    limit: viewMode === 'map' ? 100 : LISTING_PAGE_SIZE,
   });
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const hasNextPage = data?.hasNextPage ?? false;
   const hasFilters = searchInput.trim().length > 0 || category != null;
-  const locationLabel = getLocationLabel(coords, isFallbackLocation);
-  // coords luôn có (khởi tạo DEFAULT_COORDS) → chỉ hiện skeleton khi đang fetch, không chờ định vị.
+  const locationLabel = effectiveCoords
+    ? getLocationLabel(effectiveCoords, gpsCoords ? isFallbackLocation : false)
+    : locating
+      ? 'Đang định vị...'
+      : 'Tất cả khu vực';
+  const locationHint = effectiveCoords
+    ? isNearCoords(effectiveCoords, HCM_CENTER, 0.08)
+      ? 'Đang tìm quanh TP.HCM'
+      : gpsCoords
+        ? 'Đang tìm quanh vị trí GPS của bạn'
+        : 'Đang tìm quanh địa chỉ hồ sơ'
+    : 'Chưa có GPS, đang hiển thị dữ liệu như web';
+  const mapCenter = effectiveCoords ?? items.find((item) => isFiniteCoord(item.lat) && isFiniteCoord(item.lng)) ?? HCM_CENTER;
   const showSkeleton = isLoading && items.length === 0;
+  const resultCountLabel = isFetching && !isRefetching ? 'Đang cập nhật' : `${items.length} tin`;
 
   const refreshLocation = async () => {
-    const result = await getCurrentCoords();
-    setCoords(result.coords);
-    setIsFallbackLocation(result.isFallback);
-    setPage(1);
+    try {
+      setLocating(true);
+      const result = await getCurrentCoords();
+      setGpsCoords(result.isFallback ? null : result.coords);
+      setIsFallbackLocation(result.isFallback);
+      setPage(1);
+    } finally {
+      setLocating(false);
+    }
   };
 
   const clearFilters = () => {
@@ -166,51 +206,59 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text variant="headlineSmall" style={styles.greeting}>
-            Xin chào{user?.name ? `, ${user.name}` : ''}
-          </Text>
-          <Text variant="bodySmall" style={styles.subtitle}>
-            {category ? `Đang lọc: ${categoryLabel(category)}` : 'Thực phẩm gần bạn'}
-          </Text>
+      <SurfaceCard style={styles.heroCard}>
+        <View style={styles.header}>
+          <SectionHeader
+            icon="silverware-fork-knife"
+            title={`Xin chào${user?.name ? `, ${user.name}` : ''}`}
+            subtitle={category ? `Đang lọc: ${categoryLabel(category)}` : 'Thực phẩm sẵn sàng nhận quanh bạn'}
+          />
+          <IconButton
+            icon={viewMode === 'list' ? 'map-outline' : 'format-list-bulleted'}
+            mode="contained-tonal"
+            iconColor={COLORS.primary}
+            onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
+            accessibilityLabel={viewMode === 'list' ? 'Xem bản đồ' : 'Xem danh sách'}
+            style={styles.viewToggle}
+          />
         </View>
-        <IconButton
-          icon={viewMode === 'list' ? 'map-outline' : 'format-list-bulleted'}
-          mode="contained-tonal"
-          iconColor={COLORS.primary}
-          onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
-          accessibilityLabel={viewMode === 'list' ? 'Xem bản đồ' : 'Xem danh sách'}
-        />
-      </View>
 
-      <View style={styles.locationWrap}>
-        <Chip
-          compact
-          icon="crosshairs-gps"
-          style={styles.locationChip}
-          textStyle={styles.locationChipText}
-        >
-          {locationLabel}
-        </Chip>
-        <IconButton
-          icon="refresh"
-          size={18}
-          mode="contained-tonal"
-          onPress={refreshLocation}
-          style={styles.refreshBtn}
-          accessibilityLabel="Làm mới vị trí"
-        />
-      </View>
+        <View style={styles.locationWrap}>
+          <Chip
+            compact
+            icon="crosshairs-gps"
+            style={styles.locationChip}
+            textStyle={styles.locationChipText}
+          >
+            {locationLabel}
+          </Chip>
+          <IconButton
+            icon="refresh"
+            size={18}
+            mode="contained-tonal"
+            onPress={refreshLocation}
+            loading={locating}
+            disabled={locating}
+            style={styles.refreshBtn}
+            accessibilityLabel="Làm mới vị trí"
+          />
+        </View>
+        <View style={styles.metricRow}>
+          <MetricPill icon="basket-outline" label={resultCountLabel} tone="primary" />
+          <MetricPill icon={viewMode === 'map' ? 'map-marker-multiple-outline' : 'format-list-bulleted'} label={viewMode === 'map' ? 'Bản đồ' : `Trang ${page}`} />
+          {hasFilters ? <MetricPill icon="filter-check-outline" label="Đang lọc" tone="warning" /> : null}
+        </View>
+        <Text style={styles.locationHint}>{locationHint}</Text>
 
-      <View style={styles.searchWrap}>
-        <SearchBar
-          value={searchInput}
-          onChangeText={setSearchInput}
-          onPressFilter={() => sheetRef.current?.expand()}
-          filterActive={category != null}
-        />
-      </View>
+        <View style={styles.searchWrap}>
+          <SearchBar
+            value={searchInput}
+            onChangeText={setSearchInput}
+            onPressFilter={() => sheetRef.current?.expand()}
+            filterActive={category != null}
+          />
+        </View>
+      </SurfaceCard>
 
       {viewMode === 'list' && !showSkeleton && !isError && (
         <View style={styles.resultBar}>
@@ -243,14 +291,24 @@ export default function HomeScreen() {
           <View style={styles.center}>
             <ActivityIndicator color={COLORS.primary} />
           </View>
-        ) : items.length === 0 ? (
+        ) : isError ? (
           <ListingsStateView variant={isError ? 'error' : 'empty'} onRetry={() => refetch()} />
         ) : (
-          <ListingsMapView
-            listings={items}
-            center={coords ?? { lat: 10.7769, lng: 106.7009 }}
-            onSelect={(id) => router.push(`/listing/${id}`)}
-          />
+          <View style={styles.mapPane}>
+            <ListingsMapView
+              listings={items}
+              center={mapCenter}
+              onSelect={(id) => router.push(`/listing/${id}`)}
+            />
+            {items.length === 0 ? (
+              <View style={styles.mapEmptyPanel}>
+                <Text style={styles.mapEmptyTitle}>Chưa có pin thực phẩm</Text>
+                <Text style={styles.mapEmptyText}>
+                  Bản đồ vẫn hiển thị khu vực hiện tại. Thử xoá bộ lọc hoặc tải lại dữ liệu.
+                </Text>
+              </View>
+            ) : null}
+          </View>
         )
       ) : (
         <View style={styles.listPane}>
@@ -288,12 +346,11 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { paddingHorizontal: 20, paddingTop: 8, flexDirection: 'row', alignItems: 'center' },
+  heroCard: { marginHorizontal: 12, marginTop: 6, padding: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  greeting: { fontWeight: '700' },
-  subtitle: { color: COLORS.onSurfaceVariant, marginTop: 2 },
+  viewToggle: { margin: 0, borderRadius: 12 },
   locationWrap: {
-    paddingHorizontal: 20,
     paddingTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,10 +359,13 @@ const styles = StyleSheet.create({
   locationChip: { flex: 1, backgroundColor: COLORS.primaryContainer },
   locationChipText: { color: COLORS.primary, fontWeight: '700', lineHeight: 16 },
   refreshBtn: { margin: 0, borderRadius: 12, backgroundColor: COLORS.surfaceContainerLow },
-  searchWrap: { paddingHorizontal: 20, paddingTop: 10 },
+  locationHint: { paddingTop: 7, color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '600' },
+  metricRow: { paddingTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  searchWrap: { paddingTop: 10 },
   resultBar: {
-    marginHorizontal: 20,
-    marginBottom: 8,
+    marginHorizontal: 16,
+    marginBottom: 6,
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -315,18 +375,32 @@ const styles = StyleSheet.create({
   resultTitle: { color: COLORS.onSurfaceVariant, fontWeight: '700', fontSize: 13 },
   clearFilterContent: { paddingHorizontal: 0 },
   listPane: { flex: 1 },
-  listContent: { paddingHorizontal: 20, paddingBottom: 12 },
+  mapPane: { flex: 1, marginTop: 8 },
+  mapEmptyPanel: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 20,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 14,
+  },
+  mapEmptyTitle: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface },
+  mapEmptyText: { marginTop: 3, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
+  listContent: { paddingHorizontal: 16, paddingBottom: 112 },
   paginationWrap: {
-    marginHorizontal: 20,
-    marginBottom: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
   },
-  pageStatus: { alignItems: 'center', gap: 2, minWidth: 88 },
+  pageStatus: { alignItems: 'center', gap: 2, minWidth: 74 },
   pageText: { color: COLORS.onSurface, fontWeight: '800', fontSize: 15 },
   pageHint: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '600' },
   pagination: {
@@ -336,7 +410,7 @@ const styles = StyleSheet.create({
   },
   pageBtn: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 40,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, ScrollView } from 'react-native';
+import { StyleSheet, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
@@ -9,6 +9,7 @@ import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { FilterPill } from '@/components/ui/FilterPill';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom status reservation thành nhóm dễ hiểu cho receiver. */
@@ -38,6 +39,8 @@ export default function OrdersTab() {
     const f = FILTERS.find((x) => x.key === filter)!;
     return all.filter((r) => f.match(r.status));
   }, [all, filter]);
+  const confirmedCount = useMemo(() => all.filter((r) => r.status === 'confirmed').length, [all]);
+  const deliveryCount = useMemo(() => all.filter((r) => r.status === 'picked_up').length, [all]);
 
   const renderEmpty = () => {
     if (isLoading) return <ListingListSkeleton count={4} />;
@@ -48,6 +51,19 @@ export default function OrdersTab() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader title="Đơn của tôi" />
+
+      <SurfaceCard style={styles.summaryCard}>
+        <SectionHeader
+          icon="clipboard-list-outline"
+          title="Theo dõi đơn đặt"
+          subtitle="Quét QR khi lấy hàng, theo dõi giao tận nơi và đánh giá sau khi hoàn tất."
+        />
+        <View style={styles.metricRow}>
+          <MetricPill icon="basket-outline" label={`${all.length} đơn`} tone="primary" />
+          <MetricPill icon="clock-outline" label={`${confirmedCount} chờ lấy`} />
+          <MetricPill icon="truck-delivery-outline" label={`${deliveryCount} đang giao`} />
+        </View>
+      </SurfaceCard>
 
       <ScrollView
         horizontal
@@ -90,6 +106,8 @@ export default function OrdersTab() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  summaryCard: { marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 },
+  metricRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },

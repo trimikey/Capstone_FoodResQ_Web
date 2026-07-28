@@ -4,13 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { AppImage } from '@/components/ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import { QRDisplay } from '@/components/QRDisplay';
 import { RatingDialog } from '@/components/RatingDialog';
 import { PickupProofDialog } from '@/components/PickupProofDialog';
 import { ReportDialog } from '@/components/ReportDialog';
 import { DeliveryTrackingCard } from '@/components/DeliveryTrackingCard';
 import { Popup } from '@/components/ui/AppPopup';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import {
   reservationStatusDisplay,
   useCountdown,
@@ -187,50 +188,57 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
-        {/* Món + đơn */}
-        <Text style={styles.sectionLabel}>Món đã đặt</Text>
-        <View style={styles.itemRow}>
-          <AppImage source={{ uri: order.listing.imageUrls?.[0] }} style={styles.itemImage} />
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={styles.itemTitle} numberOfLines={2}>{order.listing.title}</Text>
-            <Text style={styles.meta}>
-              Số lượng: {order.quantity} {order.listing.quantityUnit}
-            </Text>
+        <SurfaceCard style={styles.detailCard}>
+          <SectionHeader
+            icon="basket-outline"
+            title="Món đã đặt"
+            subtitle={formatPickupWindow(order.listing.pickupStartTime, order.listing.pickupEndTime)}
+            right={<MetricPill icon="package-variant-closed" label={`${order.quantity} ${order.listing.quantityUnit}`} tone="primary" />}
+          />
+          <View style={styles.itemRow}>
+            <AppImage
+              source={{ uri: order.listing.imageUrls?.[0] }}
+              fallbackSource={foodFallbackSourceForCategory(order.listing.category)}
+              style={styles.itemImage}
+            />
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.itemTitle} numberOfLines={2}>{order.listing.title}</Text>
+              <Text style={styles.meta}>
+                Số lượng: {order.quantity} {order.listing.quantityUnit}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <Row
-          icon="clock-outline"
-          text={formatPickupWindow(order.listing.pickupStartTime, order.listing.pickupEndTime)}
-        />
-        <Row icon="map-marker-outline" text={order.listing.pickupAddress} />
-        {order.receiverNotes ? (
-          <Row icon="note-text-outline" text={order.receiverNotes} />
-        ) : null}
-        <Row icon="calendar-outline" text={`Đặt lúc ${fmtDateTime(order.createdAt)}`} />
+          <Row icon="map-marker-outline" text={order.listing.pickupAddress} />
+          {order.receiverNotes ? (
+            <Row icon="note-text-outline" text={order.receiverNotes} />
+          ) : null}
+          <Row icon="calendar-outline" text={`Đặt lúc ${fmtDateTime(order.createdAt)}`} />
+        </SurfaceCard>
 
-        {/* Nhà cung cấp */}
-        <Text style={styles.sectionLabel}>Nhà cung cấp</Text>
-        <View style={styles.providerRow}>
-          <View style={[styles.avatar, styles.avatarEmpty]}>
-            <MaterialCommunityIcons name="store" size={26} color={COLORS.onSurfaceVariant} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.providerName}>{provider.businessName}</Text>
-            {provider.address ? (
-              <Text style={styles.meta} numberOfLines={1}>{provider.address}</Text>
+        <SurfaceCard style={styles.detailCard}>
+          <SectionHeader icon="storefront-outline" title="Nhà cung cấp" subtitle="Liên hệ và địa chỉ lấy hàng" />
+          <View style={styles.providerRow}>
+            <View style={[styles.avatar, styles.avatarEmpty]}>
+              <MaterialCommunityIcons name="store" size={26} color={COLORS.onSurfaceVariant} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.providerName}>{provider.businessName}</Text>
+              {provider.address ? (
+                <Text style={styles.meta} numberOfLines={2}>{provider.address}</Text>
+              ) : null}
+            </View>
+            {provider.contactPhone ? (
+              <Pressable
+                onPress={() => Linking.openURL(`tel:${provider.contactPhone}`)}
+                hitSlop={8}
+                style={styles.callBtn}
+              >
+                <MaterialCommunityIcons name="phone" size={20} color={COLORS.primary} />
+              </Pressable>
             ) : null}
           </View>
-          {provider.contactPhone ? (
-            <Pressable
-              onPress={() => Linking.openURL(`tel:${provider.contactPhone}`)}
-              hitSlop={8}
-              style={styles.callBtn}
-            >
-              <MaterialCommunityIcons name="phone" size={20} color={COLORS.primary} />
-            </Pressable>
-          ) : null}
-        </View>
+        </SurfaceCard>
 
         {/* Theo dõi giao hàng (đơn giao tận nơi) */}
         {order.delivery ? <DeliveryTrackingCard reservationId={order.id} /> : null}
@@ -252,34 +260,35 @@ export default function OrderDetailScreen() {
           </>
         ) : null}
 
-        {/* Báo cáo vấn đề */}
-        <Text style={styles.sectionLabel}>Báo cáo</Text>
-        <Button
-          mode="text"
-          icon="flag-outline"
-          textColor={COLORS.onSurfaceVariant}
-          onPress={() => {
-            setReportTarget({ type: 'listing', id: order.listingId, title: 'Báo cáo tin thực phẩm' });
-            setReportVisible(true);
-          }}
-          style={styles.reportBtn}
-        >
-          Báo cáo tin thực phẩm
-        </Button>
-        {order.delivery?.id ? (
+        <SurfaceCard style={styles.detailCard}>
+          <SectionHeader icon="flag-outline" title="Báo cáo" subtitle="Gửi vấn đề nếu đơn hoặc giao hàng có bất thường" />
           <Button
             mode="text"
-            icon="truck-alert-outline"
+            icon="flag-outline"
             textColor={COLORS.onSurfaceVariant}
             onPress={() => {
-              setReportTarget({ type: 'delivery', id: order.delivery!.id, title: 'Báo cáo giao hàng' });
+              setReportTarget({ type: 'listing', id: order.listingId, title: 'Báo cáo tin thực phẩm' });
               setReportVisible(true);
             }}
             style={styles.reportBtn}
           >
-            Báo cáo giao hàng
+            Báo cáo tin thực phẩm
           </Button>
-        ) : null}
+          {order.delivery?.id ? (
+            <Button
+              mode="text"
+              icon="truck-alert-outline"
+              textColor={COLORS.onSurfaceVariant}
+              onPress={() => {
+                setReportTarget({ type: 'delivery', id: order.delivery!.id, title: 'Báo cáo giao hàng' });
+                setReportVisible(true);
+              }}
+              style={styles.reportBtn}
+            >
+              Báo cáo giao hàng
+            </Button>
+          ) : null}
+        </SurfaceCard>
       </ScrollView>
 
       {order.status === 'confirmed' ? (
@@ -397,6 +406,7 @@ const styles = StyleSheet.create({
   },
   tokenLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginBottom: 4 },
   tokenText: { fontSize: 12, color: COLORS.onSurface, fontFamily: 'monospace' },
+  detailCard: { marginTop: 14, padding: 16, gap: 12 },
   sectionLabel: {
     fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant,
     marginTop: 22, marginBottom: 8, textTransform: 'uppercase',
@@ -405,14 +415,14 @@ const styles = StyleSheet.create({
   itemImage: { width: 72, height: 72, borderRadius: 12, backgroundColor: COLORS.outline },
   itemTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
   meta: { fontSize: 14, color: COLORS.onSurfaceVariant },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowText: { flex: 1, fontSize: 15, color: COLORS.onSurface },
   providerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.outline },
   avatarEmpty: { alignItems: 'center', justifyContent: 'center' },
   providerName: { fontSize: 16, fontWeight: '700', color: COLORS.onSurface },
   ratedRow: { flexDirection: 'row', gap: 4 },
-  reportBtn: { alignSelf: 'center', marginTop: 24 },
+  reportBtn: { alignSelf: 'flex-start', marginTop: 4 },
   callBtn: {
     width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#ecfdf5',

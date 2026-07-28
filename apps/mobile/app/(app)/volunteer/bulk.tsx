@@ -21,7 +21,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { captureImage } from '@/services/faceCapture';
-import { DEFAULT_COORDS, getCurrentCoords } from '@/services/geolocation';
+import { getCurrentCoords } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import { mobileColors as COLORS } from '@/theme/design';
@@ -178,7 +178,7 @@ function StopItem({
 
 export default function VolunteerBulkRunScreen() {
   const { data: runs, isLoading, isError, refetch, isRefetching } = useMyBulkRuns();
-  const listings = useListings({ coords: DEFAULT_COORDS, radiusKm: 15, limit: 20 });
+  const listings = useListings({ coords: null, limit: 20 });
   const requestRun = useRequestBulkRun();
   const pickupRun = usePickupBulkRun();
   const addStop = useAddBulkStop();

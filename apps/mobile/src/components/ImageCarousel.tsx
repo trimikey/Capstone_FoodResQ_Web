@@ -1,25 +1,24 @@
 import { useState } from 'react';
 import { View, StyleSheet, useWindowDimensions, FlatList } from 'react-native';
-import { Icon } from 'react-native-paper';
 import { AppImage } from './ui/AppImage';
+import type { ImageProps } from 'expo-image';
 
 const COLORS = { primary: '#10b981', outlineVariant: '#e5e7eb', onSurfaceVariant: '#6b7280' };
 
 interface Props {
   imageUrls: string[];
   height?: number;
+  fallbackSource?: ImageProps['source'];
 }
 
 /** Carousel ảnh ngang có dot indicator. Rỗng → ô placeholder. */
-export function ImageCarousel({ imageUrls, height = 280 }: Props) {
+export function ImageCarousel({ imageUrls, height = 280, fallbackSource }: Props) {
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
 
   if (!imageUrls || imageUrls.length === 0) {
     return (
-      <View style={[styles.placeholder, { width, height }]}>
-        <Icon source="image-off-outline" size={48} color={COLORS.onSurfaceVariant} />
-      </View>
+      <AppImage source={fallbackSource} fallbackSource={fallbackSource} style={[styles.placeholder, { width, height }]} />
     );
   }
 
@@ -35,7 +34,7 @@ export function ImageCarousel({ imageUrls, height = 280 }: Props) {
           setIndex(Math.round(e.nativeEvent.contentOffset.x / width))
         }
         renderItem={({ item }) => (
-          <AppImage source={{ uri: item }} style={{ width, height }} />
+          <AppImage source={{ uri: item }} fallbackSource={fallbackSource} style={{ width, height }} />
         )}
       />
       {imageUrls.length > 1 && (

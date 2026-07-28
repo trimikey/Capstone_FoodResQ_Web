@@ -14,6 +14,7 @@ import {
 import { useMyProfile } from '@/hooks/useProfile';
 import { AppImage } from '@/components/ui/AppImage';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { mobileColors as COLORS } from '@/theme/design';
 
 type Tab = 'all' | 'mine';
@@ -105,33 +106,41 @@ export default function RecipesScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <TextInput
-        mode="outlined"
-        placeholder="Tìm công thức…"
-        value={rawSearch}
-        onChangeText={setRawSearch}
-        left={<TextInput.Icon icon="magnify" />}
-        right={rawSearch ? <TextInput.Icon icon="close" onPress={() => setRawSearch('')} /> : undefined}
-        outlineColor={COLORS.outline}
-        activeOutlineColor={COLORS.primary}
-        style={styles.search}
-        dense
-      />
+      <SurfaceCard style={styles.toolbarCard}>
+        <SectionHeader
+          icon="chef-hat"
+          title="Thư viện món ăn"
+          subtitle="Tìm công thức để tận dụng thực phẩm còn tốt và chia sẻ cho bếp ăn."
+          right={<MetricPill icon="book-open-page-variant-outline" label={`${items.length} món`} tone="primary" />}
+        />
+        <TextInput
+          mode="outlined"
+          placeholder="Tìm công thức..."
+          value={rawSearch}
+          onChangeText={setRawSearch}
+          left={<TextInput.Icon icon="magnify" />}
+          right={rawSearch ? <TextInput.Icon icon="close" onPress={() => setRawSearch('')} /> : undefined}
+          outlineColor={COLORS.outline}
+          activeOutlineColor={COLORS.primary}
+          style={styles.search}
+          dense
+        />
 
-      <View style={styles.tabs}>
-        {(['all', 'mine'] as Tab[]).map((t) => (
-          <Chip
-            key={t}
-            selected={tab === t}
-            showSelectedCheck={false}
-            onPress={() => setTab(t)}
-            style={[styles.tabChip, tab === t && styles.tabChipActive]}
-            textStyle={tab === t ? styles.tabTextActive : undefined}
-          >
-            {t === 'all' ? 'Tất cả' : 'Của tôi'}
-          </Chip>
-        ))}
-      </View>
+        <View style={styles.tabs}>
+          {(['all', 'mine'] as Tab[]).map((t) => (
+            <Chip
+              key={t}
+              selected={tab === t}
+              showSelectedCheck={false}
+              onPress={() => setTab(t)}
+              style={[styles.tabChip, tab === t && styles.tabChipActive]}
+              textStyle={tab === t ? styles.tabTextActive : undefined}
+            >
+              {t === 'all' ? 'Tất cả' : 'Của tôi'}
+            </Chip>
+          ))}
+        </View>
+      </SurfaceCard>
 
       <FlashList
         data={items}
@@ -165,8 +174,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'space-between',
   },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  search: { marginHorizontal: 16, backgroundColor: COLORS.surface },
-  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  toolbarCard: { marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 },
+  search: { backgroundColor: COLORS.surface },
+  tabs: { flexDirection: 'row', gap: 8 },
   tabChip: { backgroundColor: COLORS.surface, borderColor: COLORS.outline },
   tabChipActive: { backgroundColor: COLORS.primary },
   tabTextActive: { color: '#fff', fontWeight: '700' },

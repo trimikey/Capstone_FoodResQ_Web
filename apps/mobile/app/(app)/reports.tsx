@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { useMyReports, type MyReport } from '@/hooks/useReports';
 import { mobileColors as COLORS } from '@/theme/design';
 
@@ -36,10 +37,22 @@ function statusColor(status: string) {
 
 export default function MyReportsScreen() {
   const { data = [], isLoading, isError, refetch, isRefetching } = useMyReports();
+  const openCount = data.filter((report) => report.status !== 'resolved' && report.status !== 'closed').length;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader title="Báo cáo của tôi" showBell={false} />
+      <SurfaceCard style={styles.summaryCard}>
+        <SectionHeader
+          icon="flag-outline"
+          title="Theo dõi báo cáo"
+          subtitle="Các vấn đề bạn đã gửi cho tin thực phẩm, giao hàng hoặc người dùng."
+        />
+        <View style={styles.metricRow}>
+          <MetricPill icon="flag-checkered" label={`${data.length} báo cáo`} tone="primary" />
+          <MetricPill icon="progress-clock" label={`${openCount} đang xử lý`} tone={openCount > 0 ? 'warning' : 'neutral'} />
+        </View>
+      </SurfaceCard>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
@@ -87,7 +100,9 @@ function ReportCard({ report }: { report: MyReport }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32, gap: 12 },
+  summaryCard: { marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 },
+  metricRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, gap: 12 },
   card: {
     padding: 16,
     borderRadius: 16,

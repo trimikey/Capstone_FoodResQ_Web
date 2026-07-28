@@ -1,7 +1,7 @@
 import { View, StyleSheet } from 'react-native';
 import { Card, Text, Chip, Icon } from 'react-native-paper';
 import type { Listing } from '../hooks/useListings';
-import { AppImage } from './ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from './ui/AppImage';
 import { FadeInUp } from './ui/Motion';
 import {
   categoryLabel,
@@ -28,20 +28,14 @@ interface Props {
 export function ListingCard({ listing, onPress, index = 0 }: Props) {
   const distance = formatDistance(listing.distanceM);
   const imageUri = listing.imageUrls?.[0];
-  const canRenderImage = imageUri != null && /^(https?:|file:|data:)/.test(imageUri);
+  const fallbackSource = foodFallbackSourceForCategory(listing.category);
 
   return (
     <FadeInUp delay={Math.min(index, 8) * 40} style={styles.wrap}>
       <Card style={styles.card} onPress={onPress} mode="elevated">
         <View style={styles.row}>
           <View style={styles.imageWrap}>
-          {canRenderImage ? (
-            <AppImage source={{ uri: imageUri }} style={styles.image} />
-          ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <Icon source="image-off-outline" size={32} color={COLORS.onSurfaceVariant} />
-            </View>
-          )}
+            <AppImage source={{ uri: imageUri }} fallbackSource={fallbackSource} style={styles.image} />
           </View>
 
           <Card.Content style={styles.content}>
@@ -93,30 +87,25 @@ export function ListingCard({ listing, onPress, index = 0 }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 10 },
+  wrap: { marginBottom: 12 },
   card: { backgroundColor: COLORS.surface, borderRadius: 14, overflow: 'hidden' },
-  row: { flexDirection: 'row', minHeight: 132 },
-  imageWrap: { width: 112, backgroundColor: COLORS.outlineVariant },
-  image: { width: 112, height: '100%', minHeight: 132 },
-  imagePlaceholder: {
-    backgroundColor: COLORS.outlineVariant,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, gap: 6 },
+  row: { flexDirection: 'row', minHeight: 124 },
+  imageWrap: { width: 104, backgroundColor: COLORS.outlineVariant },
+  image: { width: 104, height: '100%', minHeight: 124 },
+  content: { flex: 1, minWidth: 0, paddingVertical: 10, paddingHorizontal: 10, gap: 5 },
   topLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  title: { fontWeight: '700', color: COLORS.onSurface, lineHeight: 22 },
+  title: { fontWeight: '700', color: COLORS.onSurface, lineHeight: 21 },
   catChip: { backgroundColor: '#ecfdf5' },
   catChipText: { color: COLORS.primary, fontSize: 11, lineHeight: 14 },
   distance: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
   distanceText: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
-  iconText: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconText: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
   metaText: { fontSize: 13, color: COLORS.onSurfaceVariant, flexShrink: 1 },
   bottomLine: { gap: 6, alignItems: 'flex-start' },
   actionLine: {
     alignSelf: 'stretch',
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: 8,
   },

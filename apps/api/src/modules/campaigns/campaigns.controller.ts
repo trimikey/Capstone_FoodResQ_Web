@@ -14,7 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, ReviewCampaignAssignmentDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -208,6 +208,19 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Charity: xác nhận đã nhận nguyên liệu quyên góp' })
   confirmDonation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.campaignsService.confirmDonation(id, user.id);
+  }
+
+  @Patch(':campaignId/assignments/:assignmentId/review')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: duyệt/từ chối TNV đăng ký vào chiến dịch của mình' })
+  reviewAssignment(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ReviewCampaignAssignmentDto,
+  ) {
+    return this.campaignsService.reviewAssignment(campaignId, assignmentId, user.id, dto);
   }
 
   @Post('assignments/:id/advance')

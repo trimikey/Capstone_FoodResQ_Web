@@ -5,10 +5,14 @@ export interface Coords {
   lng: number;
 }
 
-/** Fallback/dev test: Vinhomes Grand Park, TP. Thủ Đức. */
-export const DEFAULT_COORDS: Coords = { lat: 10.8416, lng: 106.8370 };
+/** Fallback an toàn để mở map khi chưa có GPS, không dùng làm bộ lọc "gần tôi". */
+export const DEFAULT_COORDS: Coords = { lat: 10.8231, lng: 106.6297 };
 
-export const DEFAULT_LOCATION_LABEL = 'Vinhomes Grand Park';
+export const DEFAULT_LOCATION_LABEL = 'Trung tâm TP.HCM';
+
+/** Vị trí test cũ chỉ dùng khi người dùng bấm rõ nút môi trường dev. */
+export const LEGACY_TEST_COORDS: Coords = { lat: 10.8416, lng: 106.8370 };
+export const LEGACY_TEST_LOCATION_LABEL = 'Vinhomes Grand Park';
 
 export interface CoordsResult {
   coords: Coords;
@@ -23,10 +27,15 @@ export function isNearCoords(a: Coords, b: Coords, tolerance = 0.003): boolean {
   return Math.abs(a.lat - b.lat) <= tolerance && Math.abs(a.lng - b.lng) <= tolerance;
 }
 
+export function isLegacyTestLocation(coords?: Coords | null): boolean {
+  return !!coords && isNearCoords(coords, LEGACY_TEST_COORDS);
+}
+
 export function getLocationLabel(coords: Coords, isFallback = false): string {
   if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
     return isFallback ? `${DEFAULT_LOCATION_LABEL} (mặc định)` : DEFAULT_LOCATION_LABEL;
   }
+  if (isLegacyTestLocation(coords)) return LEGACY_TEST_LOCATION_LABEL;
   if (isNearCoords(coords, DEFAULT_COORDS)) return DEFAULT_LOCATION_LABEL;
   const raw = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
   return isFallback ? `${raw} (mặc định)` : raw;

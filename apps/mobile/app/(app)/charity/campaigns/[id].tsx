@@ -13,9 +13,15 @@ import {
   useCampaignChangeRequests,
   useSubmitCampaignChange,
   useCancelCampaignChange,
+  useReviewAssignment,
+  useProviders,
+  useSendProviderRequest,
+  useMySentProviderRequests,
+  useSubmitProviderProposal,
   type Campaign,
   type CampaignChangeRequest,
   type SubmitCampaignChangeInput,
+  type ProviderSummary,
 } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useRemoveMenuItem } from '@/hooks/useKitchenOps';
 import { ShiftDialog } from '@/components/kitchen/ShiftDialog';
@@ -30,6 +36,7 @@ import {
   canCompleteCampaign,
   ASSIGNMENT_ROLE_LABEL,
 } from '@/utils/campaign';
+import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
@@ -60,6 +67,78 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function MetricTile({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <View style={styles.metricTile}>
+      <MaterialCommunityIcons name={icon} size={18} color={COLORS.primary} />
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricHelper} numberOfLines={1}>{helper}</Text>
+    </View>
+  );
+}
+
+function Lifecycle({ status }: { status: Campaign['status'] }) {
+  const steps: { key: Campaign['status']; label: string; icon: any }[] = [
+    { key: 'draft', label: 'Chờ duyệt', icon: 'file-document-outline' },
+    { key: 'open', label: 'Tuyển TNV', icon: 'account-plus-outline' },
+    { key: 'in_progress', label: 'Đang nấu', icon: 'pot-steam-outline' },
+    { key: 'completed', label: 'Hoàn tất', icon: 'check-circle-outline' },
+  ];
+  const order = steps.findIndex((step) => step.key === status);
+
+  if (status === 'cancelled') {
+    return (
+      <View style={styles.lifecycle}>
+        <MaterialCommunityIcons name="close-circle-outline" size={18} color={COLORS.error} />
+        <Text style={[styles.lifecycleText, { color: COLORS.error }]}>Chiến dịch đã huỷ</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.lifecycle}>
+      {steps.map((step, index) => {
+        const active = index <= order;
+        return (
+          <View key={step.key} style={styles.lifecycleStep}>
+            <View style={[styles.lifecycleIcon, active && styles.lifecycleIconActive]}>
+              <MaterialCommunityIcons name={step.icon} size={15} color={active ? '#fff' : COLORS.onSurfaceVariant} />
+            </View>
+            <Text style={[styles.lifecycleText, active && styles.lifecycleTextActive]} numberOfLines={1}>
+              {step.label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function assignmentReviewLabel(status: string): string {
+  switch (status) {
+    case 'assigned':
+    case 'approved':
+      return 'Đã duyệt';
+    case 'rejected':
+      return 'Đã từ chối';
+    case 'pending':
+      return 'Chờ duyệt';
+    default:
+      return status;
+  }
+}
+
 /**
  * Quản lý chiến dịch bếp ăn (Charity-org) — xem chi tiết + bắt đầu/kết thúc
  * chiến dịch, xác nhận nguyên liệu quyên góp, xem danh sách TNV đã ứng tuyển.
@@ -71,6 +150,12 @@ export default function CharityCampaignDetailScreen() {
   const cancelMut = useCancelCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
+  const reviewAssignmentMut = useReviewAssignment();
+  const canRequestProviders = c?.status === 'open' || c?.status === 'in_progress';
+  const { data: providers = [] } = useProviders(canRequestProviders);
+  const { data: sentProviderRequests = [] } = useMySentProviderRequests(canRequestProviders);
+  const sendProviderRequestMut = useSendProviderRequest();
+  const submitProviderProposalMut = useSubmitProviderProposal();
   const { data: shifts = [] } = useShifts(id);
   const { data: kitchenMenu = [] } = useMenuItems(id);
   const removeMenuMut = useRemoveMenuItem();
@@ -80,6 +165,7 @@ export default function CharityCampaignDetailScreen() {
   const [menuDialog, setMenuDialog] = useState(false);
   const [changeDialog, setChangeDialog] = useState(false);
   const [cancelVisible, setCancelVisible] = useState(false);
+  const [proposalVisible, setProposalVisible] = useState(false);
 
   const Header = (
     <View style={styles.header}>
@@ -114,6 +200,11 @@ export default function CharityCampaignDetailScreen() {
   const donations = c.donations ?? [];
   const assignments = c.assignments ?? [];
   const pendingDonations = donations.filter((d) => d.status !== 'received').length;
+  const receivedDonations = donations.length - pendingDonations;
+  const pendingAssignments = assignments.filter((assignment) => assignment.status === 'pending').length;
+  const totalSlots = slots.reduce((sum, slot) => sum + slot.needed, 0);
+  const filledSlots = slots.reduce((sum, slot) => sum + slot.filled, 0);
+  const actualServed = c.actualServings ?? c.distributionSummary?.servingsServed ?? null;
 
   const handleStart = async () => {
     try {
@@ -168,32 +259,64 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
+  const handleReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected') => {
+    try {
+      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action });
+      Popup.show({
+        type: 'success',
+        text1: action === 'approved' ? 'Đã duyệt tình nguyện viên' : 'Đã từ chối đăng ký',
+      });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Cập nhật đăng ký thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  const handleSendProviderRequest = async (provider: ProviderSummary) => {
+    const providerId = provider.providerProfile?.id;
+    if (!providerId) return;
+    try {
+      await sendProviderRequestMut.mutateAsync({
+        campaignId: c.id,
+        providerId,
+        message: `Tổ chức cần hỗ trợ nguyên liệu cho chiến dịch "${c.title}".`,
+        durationMonths: 1,
+      });
+      Popup.show({ type: 'success', text1: 'Đã gửi yêu cầu hợp tác', text2: provider.providerProfile?.businessName ?? provider.fullName });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Gửi yêu cầu thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {Header}
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>{c.title}</Text>
-          <View style={[styles.badge, { backgroundColor: sm.bg }]}>
-            <Text style={[styles.badgeText, { color: sm.color }]}>{sm.label}</Text>
+        <View style={styles.heroCard}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{c.title}</Text>
+            <View style={[styles.badge, { backgroundColor: sm.bg }]}>
+              <Text style={[styles.badgeText, { color: sm.color }]}>{sm.label}</Text>
+            </View>
+          </View>
+
+          {c.description ? <Text style={styles.description}>{c.description}</Text> : null}
+
+          <View style={styles.heroInfo}>
+            <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
+            <InfoRow icon="calendar-clock">
+              {formatDate(c.scheduledDate)} - {formatTime(c.startTime)} đến {formatTime(c.endTime)}
+            </InfoRow>
+            <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
           </View>
         </View>
 
-        {c.description ? <Text style={styles.description}>{c.description}</Text> : null}
-
-        <View style={styles.card}>
-          <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
-          <InfoRow icon="calendar-clock">
-            {formatDate(c.scheduledDate)} - {formatTime(c.startTime)}-{formatTime(c.endTime)}
-          </InfoRow>
-          <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
-          {c.expectedServings ? (
-            <InfoRow icon="food-outline">Dự kiến phục vụ {c.expectedServings} suất</InfoRow>
-          ) : null}
-          {c.status === 'completed' && c.actualServings != null ? (
-            <InfoRow icon="check-circle-outline">Đã phục vụ thực tế {c.actualServings} suất</InfoRow>
-          ) : null}
+        <View style={styles.metricDeck}>
+          <MetricTile icon="food-outline" label="Suất ăn" value={actualServed != null ? String(actualServed) : String(c.expectedServings ?? 0)} helper={actualServed != null ? 'thực tế' : 'dự kiến'} />
+          <MetricTile icon="account-group-outline" label="TNV" value={`${filledSlots}/${totalSlots}`} helper={pendingAssignments > 0 ? `${pendingAssignments} chờ duyệt` : 'đã đăng ký'} />
+          <MetricTile icon="basket-check-outline" label="Donation" value={`${receivedDonations}/${donations.length}`} helper={pendingDonations > 0 ? `${pendingDonations} chờ nhận` : 'đã xử lý'} />
         </View>
+
+        <Lifecycle status={c.status} />
 
         <Section title="Yêu cầu thay đổi">
           <Text style={styles.muted}>
@@ -209,6 +332,53 @@ export default function CharityCampaignDetailScreen() {
             Chi tiết & yêu cầu thay đổi
           </Button>
         </Section>
+
+        {(c.status === 'open' || c.status === 'in_progress') ? (
+          <Section title="Nhà cung cấp có thể hỗ trợ">
+            {providers.length === 0 ? (
+              <Text style={styles.muted}>Chưa có nhà cung cấp active listing phù hợp để gửi yêu cầu.</Text>
+            ) : (
+              providers.slice(0, 5).map((provider) => {
+                const providerProfileId = provider.providerProfile?.id;
+                const alreadySent = !!providerProfileId && sentProviderRequests.some((request) => {
+                  const requestProvider = request.provider?.businessName;
+                  return requestProvider && requestProvider === provider.providerProfile?.businessName && request.status === 'pending';
+                });
+                return (
+                  <View key={provider.id} style={styles.providerRow}>
+                    <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.providerName}>{provider.providerProfile?.businessName ?? provider.fullName}</Text>
+                      <Text style={styles.muted}>
+                        {provider.activeListingsCount ?? 0} tin đang mở
+                        {provider.providerProfile?.address ? ` - ${provider.providerProfile.address}` : ''}
+                      </Text>
+                    </View>
+                    <Button
+                      mode="contained-tonal"
+                      compact
+                      textColor={COLORS.primary}
+                      disabled={!providerProfileId || alreadySent || sendProviderRequestMut.isPending}
+                      loading={sendProviderRequestMut.isPending && sendProviderRequestMut.variables?.providerId === providerProfileId}
+                      onPress={() => handleSendProviderRequest(provider)}
+                    >
+                      {alreadySent ? 'Đã gửi' : 'Mời'}
+                    </Button>
+                  </View>
+                );
+              })
+            )}
+            <Button
+              mode="outlined"
+              icon="store-plus-outline"
+              textColor={COLORS.primary}
+              style={styles.outlineAction}
+              onPress={() => setProposalVisible(true)}
+            >
+              Đề xuất NCC mới
+            </Button>
+          </Section>
+        ) : null}
 
         {slots.length > 0 ? (
           <Section title="Tình nguyện viên cần tuyển">
@@ -237,6 +407,30 @@ export default function CharityCampaignDetailScreen() {
                 <View style={styles.rolePill}>
                   <Text style={styles.rolePillText}>{ASSIGNMENT_ROLE_LABEL[a.role] ?? a.role}</Text>
                 </View>
+                {a.status === 'pending' ? (
+                  <View style={styles.reviewActions}>
+                    <Button
+                      mode="text"
+                      compact
+                      textColor={COLORS.error}
+                      disabled={reviewAssignmentMut.isPending}
+                      onPress={() => handleReviewAssignment(a.id, 'rejected')}
+                    >
+                      Từ chối
+                    </Button>
+                    <Button
+                      mode="contained-tonal"
+                      compact
+                      textColor={COLORS.primary}
+                      disabled={reviewAssignmentMut.isPending}
+                      onPress={() => handleReviewAssignment(a.id, 'approved')}
+                    >
+                      Duyệt
+                    </Button>
+                  </View>
+                ) : (
+                  <Text style={styles.assignmentStatus}>{assignmentReviewLabel(a.status)}</Text>
+                )}
               </View>
             ))
           )}
@@ -299,7 +493,7 @@ export default function CharityCampaignDetailScreen() {
             {c.menuItems.map((m, i) => (
               <View key={i} style={styles.bulletRow}>
                 <MaterialCommunityIcons name="silverware-fork-knife" size={15} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.bulletText}>{m.name}{m.type ? ` (${m.type})` : ''}</Text>
+                <Text style={styles.bulletText}>{formatMenuItem(m)}</Text>
               </View>
             ))}
           </Section>
@@ -320,7 +514,7 @@ export default function CharityCampaignDetailScreen() {
           <Section title="Vật phẩm cần hỗ trợ">
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
-                <View key={i} style={styles.tag}><Text style={styles.tagText}>{s}</Text></View>
+                <View key={i} style={styles.tag}><Text style={styles.tagText}>{formatSupplyItem(s)}</Text></View>
               ))}
             </View>
           </Section>
@@ -450,9 +644,102 @@ export default function CharityCampaignDetailScreen() {
         campaign={c}
         onDismiss={() => setChangeDialog(false)}
       />
+      <ProviderProposalDialog
+        visible={proposalVisible}
+        pending={submitProviderProposalMut.isPending}
+        onDismiss={() => setProposalVisible(false)}
+        onSubmit={async (input) => {
+          try {
+            await submitProviderProposalMut.mutateAsync(input);
+            setProposalVisible(false);
+            Popup.show({ type: 'success', text1: 'Đã gửi đề xuất NCC mới' });
+          } catch (err) {
+            Popup.show({ type: 'error', text1: 'Gửi đề xuất thất bại', text2: getErrorMessage(err) });
+          }
+        }}
+      />
       <ShiftDialog visible={shiftDialog} campaignId={c.id} onDismiss={() => setShiftDialog(false)} />
       <MenuItemDialog visible={menuDialog} campaignId={c.id} onDismiss={() => setMenuDialog(false)} />
     </SafeAreaView>
+  );
+}
+
+function ProviderProposalDialog({
+  visible,
+  pending,
+  onDismiss,
+  onSubmit,
+}: {
+  visible: boolean;
+  pending: boolean;
+  onDismiss: () => void;
+  onSubmit: (input: {
+    businessName: string;
+    contactName?: string;
+    contactPhone?: string;
+    contactEmail?: string;
+    address?: string;
+    note?: string;
+    durationMonths?: number;
+  }) => Promise<void>;
+}) {
+  const [businessName, setBusinessName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [address, setAddress] = useState('');
+  const [durationMonths, setDurationMonths] = useState('1');
+  const [note, setNote] = useState('');
+
+  const submit = async () => {
+    const name = businessName.trim();
+    if (name.length < 3) {
+      Popup.show({ type: 'warning', text1: 'Tên NCC quá ngắn' });
+      return;
+    }
+    const months = parseInt(durationMonths, 10);
+    await onSubmit({
+      businessName: name,
+      ...(contactName.trim() ? { contactName: contactName.trim() } : {}),
+      ...(contactPhone.trim() ? { contactPhone: contactPhone.trim() } : {}),
+      ...(contactEmail.trim() ? { contactEmail: contactEmail.trim() } : {}),
+      ...(address.trim() ? { address: address.trim() } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+      ...(Number.isFinite(months) && months > 0 ? { durationMonths: months } : {}),
+    });
+    setBusinessName('');
+    setContactName('');
+    setContactPhone('');
+    setContactEmail('');
+    setAddress('');
+    setDurationMonths('1');
+    setNote('');
+  };
+
+  return (
+    <Portal>
+      <Dialog visible={visible} onDismiss={() => !pending && onDismiss()} style={styles.dialogLarge}>
+        <Dialog.Title style={styles.dialogTitle}>Đề xuất NCC mới</Dialog.Title>
+        <Dialog.ScrollArea style={styles.changeScrollArea}>
+          <ScrollView contentContainerStyle={styles.changeContent}>
+            <Text style={styles.formHint}>Gửi thông tin NCC để admin duyệt và tạo hồ sơ provider khi phù hợp.</Text>
+            <TextInput mode="outlined" dense label="Tên NCC *" value={businessName} onChangeText={setBusinessName} style={styles.changeInput} />
+            <TextInput mode="outlined" dense label="Người liên hệ" value={contactName} onChangeText={setContactName} style={styles.changeInput} />
+            <TextInput mode="outlined" dense label="Số điện thoại" value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" style={styles.changeInput} />
+            <TextInput mode="outlined" dense label="Email" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" style={styles.changeInput} />
+            <TextInput mode="outlined" dense label="Địa chỉ" value={address} onChangeText={setAddress} style={styles.changeInput} />
+            <TextInput mode="outlined" dense label="Thời hạn hợp tác (tháng)" value={durationMonths} onChangeText={setDurationMonths} keyboardType="numeric" style={styles.changeInput} />
+            <TextInput mode="outlined" dense multiline numberOfLines={2} label="Ghi chú" value={note} onChangeText={setNote} style={styles.changeInput} />
+          </ScrollView>
+        </Dialog.ScrollArea>
+        <Dialog.Actions>
+          <Button onPress={onDismiss} textColor={COLORS.onSurfaceVariant} disabled={pending}>Huỷ</Button>
+          <Button mode="contained" buttonColor={COLORS.primary} onPress={submit} loading={pending} disabled={pending}>
+            Gửi đề xuất
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
   );
 }
 
@@ -676,17 +963,64 @@ const styles = StyleSheet.create({
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
+  heroCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 16,
+  },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
   title: { flex: 1, fontSize: 20, fontWeight: '700', color: COLORS.onSurface, lineHeight: 27 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, marginTop: 2 },
   badgeText: { fontSize: 12, fontWeight: '700' },
   description: { fontSize: 14, color: COLORS.onSurfaceVariant, lineHeight: 21, marginBottom: 14 },
+  heroInfo: { gap: 10 },
   card: {
     backgroundColor: COLORS.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.outline, gap: 10,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   infoText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  metricDeck: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  metricTile: {
+    flex: 1,
+    minHeight: 96,
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 10,
+    justifyContent: 'center',
+  },
+  metricValue: { marginTop: 4, fontSize: 19, fontWeight: '900', color: COLORS.onSurface },
+  metricLabel: { marginTop: 1, fontSize: 11, fontWeight: '800', color: COLORS.onSurface },
+  metricHelper: { marginTop: 2, fontSize: 10, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  lifecycle: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 10,
+  },
+  lifecycleStep: { flex: 1, alignItems: 'center', gap: 5 },
+  lifecycleIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  lifecycleIconActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  lifecycleText: { fontSize: 10, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  lifecycleTextActive: { color: COLORS.primary },
   section: { marginTop: 20 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface, marginBottom: 10 },
   slotLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
@@ -696,6 +1030,8 @@ const styles = StyleSheet.create({
   assignName: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
+  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  assignmentStatus: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   shiftRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.outline },
@@ -703,6 +1039,8 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   addBtn: { alignSelf: 'flex-start', marginTop: 8 },
   outlineAction: { alignSelf: 'flex-start', borderColor: COLORS.outline, marginTop: 10 },
+  providerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.outline },
+  providerName: { fontSize: 14, fontWeight: '700', color: COLORS.onSurface },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.primary, width: 52 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },

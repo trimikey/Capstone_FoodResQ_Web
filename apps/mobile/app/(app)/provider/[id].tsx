@@ -14,6 +14,7 @@ import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
 import { listingStatusDisplay } from '@/components/ProviderListingCard';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import {
   categoryLabel,
   quantityLabel,
@@ -86,7 +87,10 @@ export default function ProviderListingDetailScreen() {
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.content}>
-            <ImageCarousel imageUrls={listing.imageUrls} />
+            <ImageCarousel
+              imageUrls={listing.imageUrls}
+              fallbackSource={foodFallbackSourceForCategory(listing.category)}
+            />
 
             <View style={styles.badgeRow}>
               <View style={[styles.badge, { backgroundColor: sd.bg }]}>

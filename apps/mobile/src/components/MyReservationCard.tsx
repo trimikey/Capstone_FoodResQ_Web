@@ -1,7 +1,7 @@
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AppImage } from './ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from './ui/AppImage';
 import { reservationStatusDisplay, useCountdown } from './ProviderReservationCard';
 import type { MyReservation } from '../hooks/useReservations';
 
@@ -29,7 +29,11 @@ export function MyReservationCard({ reservation, onPress }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.85 : 1 }]}
     >
-      <AppImage source={{ uri: reservation.listing.imageUrls?.[0] }} style={styles.image} />
+      <AppImage
+        source={{ uri: reservation.listing.imageUrls?.[0] }}
+        fallbackSource={foodFallbackSourceForCategory(reservation.listing.category)}
+        style={styles.image}
+      />
       <View style={styles.body}>
         <View style={styles.topRow}>
           <View style={[styles.badge, { backgroundColor: sd.bg }]}>

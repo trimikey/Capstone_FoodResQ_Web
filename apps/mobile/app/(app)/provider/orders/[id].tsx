@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { AppImage } from '@/components/ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderReservationDetail, useProviderReservations } from '@/hooks/useProviderReservations';
 import {
@@ -95,7 +95,11 @@ export default function ProviderOrderDetailScreen() {
             {/* Món + đơn */}
             <Text style={styles.sectionLabel}>Đơn đặt</Text>
             <View style={styles.itemRow}>
-              <AppImage source={{ uri: order.listing.imageUrls?.[0] }} style={styles.itemImage} />
+              <AppImage
+                source={{ uri: order.listing.imageUrls?.[0] }}
+                fallbackSource={foodFallbackSourceForCategory(order.listing.category)}
+                style={styles.itemImage}
+              />
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={styles.itemTitle} numberOfLines={2}>{order.listing.title}</Text>
                 <Text style={styles.meta}>

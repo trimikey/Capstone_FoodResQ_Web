@@ -3,6 +3,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -137,6 +138,24 @@ export class ApplyCampaignDto {
   @ApiProperty({ enum: AssignmentRole })
   @IsEnum(AssignmentRole)
   role!: AssignmentRole;
+}
+
+export class ReviewCampaignAssignmentDto {
+  @ApiPropertyOptional({ enum: ['approved', 'rejected'], description: 'Mobile charity action: duyệt hoặc từ chối đăng ký TNV' })
+  @IsOptional()
+  @IsIn(['approved', 'rejected'])
+  action?: 'approved' | 'rejected';
+
+  @ApiPropertyOptional({ enum: ['approve', 'reject'], description: 'Alias tương thích với admin/web' })
+  @IsOptional()
+  @IsIn(['approve', 'reject'])
+  decision?: 'approve' | 'reject';
+
+  @ApiPropertyOptional({ description: 'Ghi chú hoặc lý do từ chối' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 export class AddExperienceDto {

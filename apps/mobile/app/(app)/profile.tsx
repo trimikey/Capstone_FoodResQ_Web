@@ -16,6 +16,7 @@ import { roleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { CharityOrgBadge, charityVerificationMeta } from '@/components/ui/CharityOrgBadge';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS } from '@/theme/design';
 
@@ -71,8 +72,24 @@ export default function ProfileTab() {
   const trustScore = profile?.trustScore ?? user?.trustScore;
   const sd = statusDisplay(status);
   const isReceiver = role === 'receiver';
+  const isCharityOrg = isReceiver && !!profile?.receiver?.isCharityOrg;
+  const organizationName = profile?.receiver?.organizationName?.trim();
+  const receiverVerificationStatus = profile?.receiver?.verificationStatus ?? null;
+  const charityMeta = charityVerificationMeta(receiverVerificationStatus, status);
+  const displayName = isCharityOrg ? organizationName || name : name;
+  const displayRoleLabel = isCharityOrg ? 'Tổ chức từ thiện' : roleLabel(role);
   const faceBusy = enrolling || enrollFace.isPending;
   const faceEnrolled = confirmedFaceEnrollment || faceEnrollment.data?.enrolled === true;
+  const contactRows = [
+    email ? { icon: 'email-outline', label: 'Email', value: email } : null,
+    profile?.phone ? { icon: 'phone-outline', label: 'Số điện thoại', value: profile.phone } : null,
+    !isCharityOrg && profile?.provider?.address
+      ? { icon: 'store-marker-outline', label: 'Địa chỉ cửa hàng', value: profile.provider.address }
+      : null,
+    !isCharityOrg && profile?.receiver?.address
+      ? { icon: 'map-marker-radius-outline', label: 'Điểm giao mặc định', value: profile.receiver.address }
+      : null,
+  ].filter(Boolean) as { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; value: string }[];
 
   const handleEnrollFace = async (source: 'camera' | 'library') => {
     try {
@@ -142,13 +159,18 @@ export default function ProfileTab() {
           ) : (
             <Avatar.Text
               size={84}
-              label={(name || email || '?').charAt(0).toUpperCase()}
+              label={(displayName || email || '?').charAt(0).toUpperCase()}
               style={{ backgroundColor: COLORS.primary }}
             />
           )}
           <Text variant="titleLarge" style={styles.name}>
-            {name}
+            {displayName}
           </Text>
+          {isCharityOrg && organizationName && organizationName !== name ? (
+            <Text variant="bodySmall" style={styles.orgOwner} numberOfLines={1}>
+              Quản lý bởi {name}
+            </Text>
+          ) : null}
           {email ? (
             <Text variant="bodyMedium" style={styles.email}>
               {email}
@@ -159,13 +181,19 @@ export default function ProfileTab() {
           <View style={styles.badgeRow}>
             <View style={[styles.badge, { backgroundColor: COLORS.primaryContainer }]}>
               <Text style={[styles.badgeText, { color: COLORS.primary }]}>
-                {roleLabel(role)}
+                {displayRoleLabel}
               </Text>
             </View>
             <View style={[styles.badge, { backgroundColor: sd.bg }]}>
               <Text style={[styles.badgeText, { color: sd.fg }]}>{sd.label}</Text>
             </View>
           </View>
+          <CharityOrgBadge
+            isCharityOrg={isCharityOrg}
+            organizationName={organizationName}
+            verificationStatus={receiverVerificationStatus}
+            accountStatus={status}
+          />
         </View>
 
         {isLoading && !profile ? (
@@ -174,6 +202,29 @@ export default function ProfileTab() {
           <ScreenState kind="error" title="Không tải được hồ sơ" actionLabel="Thử lại" onAction={() => refetch()} />
         ) : (
           <>
+            {isCharityOrg ? (
+              <View style={styles.charityPanel}>
+                <View style={styles.charityPanelTop}>
+                  <View style={[styles.charityIcon, { backgroundColor: charityMeta.bg }]}>
+                    <MaterialCommunityIcons name={charityMeta.icon} size={24} color={charityMeta.fg} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.charityTitle}>Hồ sơ tổ chức</Text>
+                    <Text style={styles.charitySubtitle}>
+                      {organizationName
+                        ? 'Thông tin dùng cho chiến dịch bếp ăn cộng đồng.'
+                        : 'Cần cập nhật tên tổ chức để hồ sơ rõ ràng hơn.'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.charityMetrics}>
+                  <ImpactMetric icon="pot-steam-outline" label="Chiến dịch" value={formatCount(profile?.stats?.completedCount)} />
+                  <ImpactMetric icon="scale-balance" label="Kg đã cứu" value={formatDecimal(profile?.stats?.kgSaved, '0.0')} />
+                  <ImpactMetric icon="handshake-outline" label="NCC hỗ trợ" value={formatCount(profile?.stats?.providersHelped)} />
+                </View>
+              </View>
+            ) : null}
+
             {/* Điểm uy tín */}
             {typeof trustScore === 'number' ? (
               <View style={styles.card}>
@@ -231,20 +282,57 @@ export default function ProfileTab() {
               </View>
             ) : null}
 
-            {/* Số điện thoại + địa chỉ theo vai trò */}
-            {profile?.phone || profile?.provider?.address || profile?.receiver?.address ? (
-              <View style={styles.card}>
-                {profile?.phone ? <Row label="Số điện thoại" value={profile.phone} /> : null}
-                {profile?.provider?.address ? (
-                  <Row label="Địa chỉ cửa hàng" value={profile.provider.address} />
-                ) : null}
-                {profile?.receiver?.address ? (
-                  <Row label="Điểm giao mặc định" value={profile.receiver.address} />
-                ) : null}
+            {/* Thông tin liên hệ */}
+            {contactRows.length > 0 ? (
+              <View style={styles.contactCard}>
+                <View style={styles.sectionHead}>
+                  <MaterialCommunityIcons name="card-account-phone-outline" size={21} color={COLORS.primary} />
+                  <Text style={styles.cardTitle}>Thông tin liên hệ</Text>
+                </View>
+                <View style={styles.contactList}>
+                  {contactRows.map((item) => (
+                    <ContactRow key={item.label} icon={item.icon} label={item.label} value={item.value} />
+                  ))}
+                </View>
               </View>
             ) : null}
 
-            {isReceiver ? (
+            {isCharityOrg ? (
+              <View style={styles.card}>
+                <View style={styles.sectionHead}>
+                  <MaterialCommunityIcons name="map-marker-radius-outline" size={21} color={COLORS.primary} />
+                  <Text style={styles.cardTitle}>Địa điểm hoạt động</Text>
+                </View>
+                <Text style={styles.emptyText}>
+                  {profile?.receiver?.address
+                    ? profile.receiver.address
+                    : 'Chưa có điểm giao mặc định. Cập nhật địa chỉ để NCC và TNV phối hợp chính xác hơn.'}
+                </Text>
+              </View>
+            ) : null}
+
+            {isCharityOrg ? (
+              <View style={styles.card}>
+                <View style={styles.sectionHead}>
+                  <MaterialCommunityIcons name="clipboard-text-outline" size={21} color={COLORS.primary} />
+                  <Text style={styles.cardTitle}>Quản lý chiến dịch</Text>
+                </View>
+                <Text style={styles.emptyText}>
+                  Mở bộ công cụ bếp ăn để tạo chiến dịch, theo dõi TNV, xác nhận quyên góp và cập nhật tiến độ.
+                </Text>
+                <Button
+                  mode="contained"
+                  icon="pot-steam-outline"
+                  buttonColor={COLORS.primary}
+                  style={styles.shortcutBtn}
+                  onPress={() => router.push('/(app)/charity/campaigns')}
+                >
+                  Mở bếp ăn của tôi
+                </Button>
+              </View>
+            ) : null}
+
+            {isReceiver && !isCharityOrg ? (
               <View style={styles.card}>
                 <View style={styles.faceHead}>
                   <View style={styles.faceIcon}>
@@ -326,7 +414,7 @@ export default function ProfileTab() {
         )}
 
         {/* Hành động */}
-        {isReceiver ? (
+        {isReceiver && !isCharityOrg ? (
           <Button
             mode="outlined"
             icon="flag-outline"
@@ -380,11 +468,43 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ImpactMetric({ icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <View style={styles.impactItem}>
+      <MaterialCommunityIcons name={icon} size={18} color={COLORS.primary} />
+      <Text style={styles.impactValue}>{value}</Text>
+      <Text style={styles.impactLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ContactRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.contactRow}>
+      <View style={styles.contactIcon}>
+        <MaterialCommunityIcons name={icon} size={18} color={COLORS.primary} />
+      </View>
+      <View style={styles.contactText}>
+        <Text style={styles.contactLabel}>{label}</Text>
+        <Text style={styles.contactValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -395,11 +515,43 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: 4 },
   avatarImg: { width: 84, height: 84, borderRadius: 42 },
   name: { fontWeight: '700', marginTop: 10, color: COLORS.onSurface },
+  orgOwner: { color: COLORS.onSurfaceVariant, maxWidth: '100%' },
   email: { color: COLORS.onSurfaceVariant },
-  badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 10 },
   badge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
   badgeText: { fontSize: 12, fontWeight: '600' },
   errorBox: { alignItems: 'center', marginTop: 24 },
+  charityPanel: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  charityPanelTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  charityIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  charityTitle: { fontSize: 17, fontWeight: '800', color: COLORS.onSurface },
+  charitySubtitle: { marginTop: 2, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  charityMetrics: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  impactItem: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 14,
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: 10,
+    justifyContent: 'center',
+  },
+  impactValue: { marginTop: 4, fontSize: 18, fontWeight: '900', color: COLORS.onSurface },
+  impactLabel: { marginTop: 2, fontSize: 11, fontWeight: '700', color: COLORS.onSurfaceVariant },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
@@ -408,7 +560,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.outline,
   },
+  contactCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
   cardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  contactList: { gap: 10 },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+  },
+  contactIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactText: { flex: 1, minWidth: 0 },
+  contactLabel: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  contactValue: { marginTop: 3, fontSize: 14, lineHeight: 20, fontWeight: '700', color: COLORS.onSurface },
+  emptyText: { fontSize: 13, lineHeight: 19, color: COLORS.onSurfaceVariant },
+  shortcutBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 2 },
   trustRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   trustLabel: { flex: 1, fontSize: 15, color: COLORS.onSurface },
   trustValue: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
@@ -419,10 +605,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
     paddingVertical: 4,
   },
-  rowLabel: { color: COLORS.onSurfaceVariant },
-  rowValue: { color: COLORS.onSurface, fontWeight: '600' },
+  rowLabel: { flexShrink: 0, maxWidth: '46%', color: COLORS.onSurfaceVariant },
+  rowValue: { flex: 1, minWidth: 0, color: COLORS.onSurface, fontWeight: '600', textAlign: 'right' },
   faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   faceIcon: {
     width: 42,

@@ -19,12 +19,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { useListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservations';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import {
   categoryLabel,
   quantityLabel,
   formatPickupWindow,
 } from '@/utils/listingFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { mobileColors as COLORS } from '@/theme/design';
 
 interface Props {
@@ -105,9 +107,12 @@ export default function ListingDetailScreen({ id }: Props) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        <ImageCarousel imageUrls={listing.imageUrls} />
+        <ImageCarousel
+          imageUrls={listing.imageUrls}
+          fallbackSource={foodFallbackSourceForCategory(listing.category)}
+        />
 
-        <View style={styles.body}>
+        <SurfaceCard style={styles.summaryCard}>
           <View style={styles.chipRow}>
             <Chip compact style={styles.catChip} textStyle={styles.catChipText}>
               {categoryLabel(listing.category)}
@@ -127,24 +132,31 @@ export default function ListingDetailScreen({ id }: Props) {
             </Text>
           ) : null}
 
-          <InfoRow icon="store-outline" text={listing.provider?.businessName ?? 'Cửa hàng'} />
+          <View style={styles.metricRow}>
+            <MetricPill icon="basket-outline" label={`Còn ${quantityLabel(listing.quantityRemaining, unit)}`} tone="primary" />
+            <MetricPill icon="account-multiple-outline" label={`Tối đa ${listing.maxPerReservation}/${unit}`} />
+          </View>
+        </SurfaceCard>
+
+        <SurfaceCard style={styles.infoCard}>
+          <SectionHeader
+            icon="storefront-outline"
+            title={listing.provider?.businessName ?? 'Cửa hàng'}
+            subtitle="Thông tin lấy hàng"
+          />
           <InfoRow
             icon="clock-outline"
             text={formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
             highlight
           />
           <InfoRow icon="map-marker-outline" text={listing.pickupAddress} />
-          <InfoRow
-            icon="account-multiple-outline"
-            text={`Tối đa ${listing.maxPerReservation} ${unit}/lượt đặt`}
-          />
           {listing.storageConditions ? (
             <InfoRow icon="fridge-outline" text={listing.storageConditions} />
           ) : null}
           {listing.allergenNotes ? (
             <InfoRow icon="alert-circle-outline" text={`Dị ứng: ${listing.allergenNotes}`} />
           ) : null}
-        </View>
+        </SurfaceCard>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
@@ -254,7 +266,8 @@ function InfoRow({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.background },
-  body: { paddingHorizontal: 20, paddingTop: 16, gap: 10 },
+  summaryCard: { marginHorizontal: 20, marginTop: 16, padding: 16, gap: 10 },
+  infoCard: { marginHorizontal: 20, marginTop: 12, padding: 16, gap: 12 },
   chipRow: { flexDirection: 'row', gap: 8 },
   catChip: { backgroundColor: '#ecfdf5' },
   catChipText: { color: COLORS.primary, fontSize: 12 },
@@ -262,7 +275,8 @@ const styles = StyleSheet.create({
   qtyChipText: { color: '#c2410c', fontSize: 12 },
   title: { fontWeight: '700', color: COLORS.onSurface },
   description: { color: COLORS.onSurfaceVariant, lineHeight: 21 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
+  metricRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   infoText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   footer: {
     paddingHorizontal: 20,
