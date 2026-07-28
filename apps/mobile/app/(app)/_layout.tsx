@@ -4,9 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyProfile } from '@/hooks/useProfile';
 import { useNotificationSocket } from '@/hooks/useNotifications';
-
-const PRIMARY = '#10b981';
-const INACTIVE = '#9ca3af';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /**
  * Layout nhóm route đã đăng nhập + AUTH GUARD. Tab bar đổi theo vai trò:
@@ -33,7 +31,7 @@ export default function AppTabsLayout() {
   if (!isInitialized) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={PRIMARY} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -46,8 +44,8 @@ export default function AppTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PRIMARY,
-        tabBarInactiveTintColor: INACTIVE,
+        tabBarActiveTintColor: COLORS.navActive,
+        tabBarInactiveTintColor: COLORS.navInactive,
         tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 6 },
       }}
     >
@@ -184,6 +182,7 @@ export default function AppTabsLayout() {
       {/* Màn chi tiết — route push, ẩn khỏi tab bar */}
       <Tabs.Screen name="listing/[id]" options={{ href: null }} />
       <Tabs.Screen name="order/[id]" options={{ href: null }} />
+      <Tabs.Screen name="reports" options={{ href: null }} />
       <Tabs.Screen name="profile/edit" options={{ href: null }} />
       <Tabs.Screen name="provider/create" options={{ href: null }} />
       <Tabs.Screen name="provider/[id]" options={{ href: null }} />
@@ -194,6 +193,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
+      <Tabs.Screen name="volunteer/bulk" options={{ href: null }} />
       {/* Công thức nấu ăn — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="recipes/index" options={{ href: null }} />
       <Tabs.Screen name="recipes/[id]" options={{ href: null }} />

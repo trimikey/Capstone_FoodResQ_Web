@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { View, StyleSheet, useWindowDimensions, FlatList } from 'react-native';
 import { Icon } from 'react-native-paper';
 import { AppImage } from './ui/AppImage';
-
-const COLORS = { primary: '#10b981', outlineVariant: '#e5e7eb', onSurfaceVariant: '#6b7280' };
+import { mobileColors as COLORS } from '@/theme/design';
 
 interface Props {
   imageUrls: string[];

@@ -314,10 +314,17 @@ NEXTAUTH_URL=http://localhost:3000
 | Max free reservations/day/user | 3 | `MAX_RESERVATIONS_PER_DAY` |
 | Search radius | 5 km | `SEARCH_RADIUS_KM` |
 | QR code validity | 30 min | `QR_VALIDITY_MINUTES` |
-| Trust score ban threshold | ≤ 30 | `TRUST_SCORE_RULES.ban_threshold` |
-| Trust score restriction threshold | ≤ 60 | `TRUST_SCORE_RULES.restrict_threshold` |
-| Shipper offer expiry | 2 min | hardcoded in DeliveriesService |
+| Trust score ban threshold | ≤ 30 | `TRUST_BAN_THRESHOLD` |
+| Trust score restriction threshold | ≤ 60 | `TRUST_RESTRICT_THRESHOLD` |
+| Shipper offer expiry | 2 min | `SHIPPER_OFFER_EXPIRY_MINUTES` |
+| Shipper assignment timeout (no one accepts → close order, notify receiver) | 4 min 30 s | hardcoded `ASSIGNMENT_TIMEOUT_MS` |
+| Stalled delivery auto-fail (no status update after accept) | 6 h | hardcoded `DELIVERY_STALL_HOURS` |
+| Bulk run minimum quantity | 10 portions | hardcoded `BULK_MIN_QTY` |
+| Bulk run request approval expiry | 24 h | hardcoded in BulkRunsService |
 | Trust score starting value | 100 | hardcoded |
+| Reservation window | only within listing `pickup_start_time → pickup_end_time` | enforced in ReservationsService.create |
+| Late cancellation | cancel < 30 min before `pickup_end_time` → −10 trust | hardcoded |
+| Face eKYC | mandatory at registration for individual receivers & volunteers (selfie in the register request — no face, no account); social-login accounts are gated at first dashboard visit and blocked from reserving / going available until enrolled | enforced in AuthService + FE FaceEnrollmentGate |
 
 ---
 
@@ -326,26 +333,52 @@ NEXTAUTH_URL=http://localhost:3000
 ### Reservation flow
 ```
 Receiver searches nearby listings (PostGIS ST_DWithin)
-  → clicks Reserve
+  → clicks Reserve (requires enrolled face for individuals; within pickup window only)
   → BE: acquire Redis lock on listingId (10s)
   → BE: check daily limit (reservations_today < MAX_RESERVATIONS_PER_DAY)
   → BE: decrement quantity_remaining in transaction
   → BE: create reservation (status=confirmed, qr_token, qr_expires_at=+30min)
   → release lock
-  → FE: show QR code
+  → FE: show QR code (no auto-redirect — user reviews then navigates)
   → Provider scans QR → reservation status=picked_up
-  → Receiver uploads pickup_proof → status=completed
+  → Provider confirms identity (face compare) OR receiver uploads pickup_proof → completed
   → Trust score +2, dedication points awarded
+Cancel: allowed while confirmed; late cancel (<30 min before pickup_end_time) → −10 trust
+  (FE shows a penalty-warning popup with the projected score & ban/restrict outcome);
+  cancelling a delivery order also closes the delivery + recalls offers + frees the shipper
+  (not allowed once the shipper picked the food up).
+No-show cron (pickup orders only — delivery orders are governed by the delivery lifecycle):
+  confirmed past qr_expires_at → no_show, stock restored, −20 trust.
 ```
 
 ### Shipper offer flow
 ```
-Reservation created with delivery=true
-  → BE: create deliveries row (status=pending_assignment)
-  → find 5 nearest available shippers (ST_DWithin, volunteer_profiles.is_available=true)
-  → insert 5 shipper_task_offers (expires_at=+2min)
+Reservation created with delivery=true (receiver must have address + location in profile)
+  → BE: create deliveries row (status=pending_assignment) + copy pickup/delivery coords
+  → find 5 nearest available VERIFIED shippers (ST_DWithin 5km), excluding those who
+    already rejected this delivery → upsert 5 shipper_task_offers (expires_at=+2min)
+  → socket `delivery:offer` pops a global accept popup on the shipper app
   → first shipper to accept → UPDATE deliveries.shipper_id, status=assigned
-  → remaining offers → status=expired (cron or Redis TTL)
+    (blocked if the shipper already has an active delivery or bulk run)
+  → sweep cron (30s): expire stale offers + re-broadcast to next-nearest shippers
+  → no acceptance within 4m30s → delivery failed, reservation cancelled (no penalty),
+    stock restored, receiver notified to re-order
+  → delivery lifecycle: assigned → heading_to_provider → qc_completed (QC photo)
+    → in_transit (live GPS tracking) → delivered
+  → delivered REQUIRES scanning the receiver's QR token (proof of correct handoff);
+    then reservation=completed, receiver +2 trust, shipper +5 dedication points
+  → stalled runs (no update 6h) auto-fail via cron
+```
+
+### Bulk run flow (giao sỉ nhiều điểm)
+```
+Verified shipper requests ≥10 portions from one listing (bulk_runs, status=requested)
+  → provider approves (stock decremented under the listing Redis lock) or rejects
+  → shipper picks up (optional QC photo) → status=picked_up
+  → provider AND/OR shipper pin ad-hoc distribution stops (bulk_run_stops, geography)
+  → shipper logs served portions per stop (atomic conditional increment — can't exceed total)
+  → all portions served → auto-complete; manual complete returns leftover to listing stock
+  → rewards: +5 dedication +2 per served stop; cron closes stale requests (24h) / runs (6h)
 ```
 
 ### Trust score penalty

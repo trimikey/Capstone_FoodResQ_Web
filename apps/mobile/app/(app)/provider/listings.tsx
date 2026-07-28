@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, FAB, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
-import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
+import { useProviderEsg, useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
 import { ProviderListingCard } from '@/components/ProviderListingCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
@@ -31,6 +32,7 @@ const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[
 export default function ProviderListingsScreen() {
   const { user, initialize } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProviderListings();
+  const { data: esg } = useProviderEsg();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [checking, setChecking] = useState(false);
 
@@ -57,7 +59,7 @@ export default function ProviderListingsScreen() {
       }
     };
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <AppScreen>
         <ScreenHeader title="Tin của tôi" />
         <View style={styles.pendingWrap}>
           <View style={styles.pendingIcon}>
@@ -83,7 +85,7 @@ export default function ProviderListingsScreen() {
             Kiểm tra lại
           </Button>
         </View>
-      </SafeAreaView>
+      </AppScreen>
     );
   }
 
@@ -94,7 +96,7 @@ export default function ProviderListingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <AppScreen>
       <ScreenHeader title="Tin của tôi" />
 
       {/* Bộ lọc trạng thái */}
@@ -120,6 +122,7 @@ export default function ProviderListingsScreen() {
 
       <FlashList
         data={items}
+        numColumns={2}
         keyExtractor={(item: ProviderListing) => item.id}
         renderItem={({ item }: { item: ProviderListing }) => (
           <ProviderListingCard
@@ -128,6 +131,7 @@ export default function ProviderListingsScreen() {
           />
         )}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={esg ? <EsgCard esg={esg} /> : null}
         ListEmptyComponent={renderEmpty}
         refreshing={isRefetching}
         onRefresh={() => refetch()}
@@ -136,11 +140,46 @@ export default function ProviderListingsScreen() {
       <FAB
         icon="plus"
         label="Đăng tin"
-        color="#fff"
+        color={COLORS.onPrimary}
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}
       />
-    </SafeAreaView>
+    </AppScreen>
+  );
+}
+
+function EsgCard({
+  esg,
+}: {
+  esg: {
+    kgRescued: number;
+    co2SavedKg: number;
+    mealsServed: number;
+    peopleHelped: number;
+  };
+}) {
+  return (
+    <SurfaceCard style={styles.esgCard}>
+      <View style={styles.esgHead}>
+        <MaterialCommunityIcons name="leaf-circle-outline" size={20} color={COLORS.primary} />
+        <Text style={styles.esgTitle}>Tác động ESG</Text>
+      </View>
+      <View style={styles.esgGrid}>
+        <EsgItem label="Kg đã cứu" value={`${esg.kgRescued} kg`} />
+        <EsgItem label="CO2 giảm" value={`${esg.co2SavedKg} kg`} />
+        <EsgItem label="Suất trao" value={String(esg.mealsServed)} />
+        <EsgItem label="Người giúp" value={String(esg.peopleHelped)} />
+      </View>
+    </SurfaceCard>
+  );
+}
+
+function EsgItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.esgItem}>
+      <Text style={styles.esgValue}>{value}</Text>
+      <Text style={styles.esgLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -151,6 +190,25 @@ const styles = StyleSheet.create({
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
+  esgCard: {
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  esgHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  esgTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  esgGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  esgItem: {
+    width: '48%',
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  esgValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
+  esgLabel: { marginTop: 2, fontSize: 12, fontWeight: '600', color: COLORS.onSurfaceVariant },
   fab: { position: 'absolute', right: 20, bottom: 24, backgroundColor: COLORS.primary },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   pendingIcon: {

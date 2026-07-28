@@ -95,6 +95,7 @@ export const MapPicker = forwardRef<MapPickerHandle, Props>(function MapPicker(
     try {
       setLocating(true);
       const { coords } = await getCurrentCoords();
+      if (!coords) return;
       webRef.current?.injectJavaScript(
         `window.recenterFromGps(${coords.lat}, ${coords.lng}); true;`
       );

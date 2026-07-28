@@ -10,6 +10,8 @@ import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservat
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
 import { haversineKm } from '@/lib/utils';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
+import ReportIssueModal from '@/components/reservations/ReportIssueModal';
+import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -64,6 +66,9 @@ export default function ReservationDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_RESERVATION === 'true';
+  const isDemoId = id.startsWith('demo-') || id.startsWith('mock-');
+  const isMock = demoEnabled && isDemoId;
 
   const { data: fetchedData, isLoading, isError } = useReservationDetails(id);
   const submitProofMutation = useSubmitPickupProof();
@@ -77,18 +82,19 @@ export default function ReservationDetailsPage() {
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
-  const [chatHistory, setChatHistory] = useState([
-    { sender: 'shipper', text: 'Chào bạn, mình đã nhận đơn cứu trợ của bạn rồi nhé!' },
-    { sender: 'shipper', text: 'Đang chuẩn bị lấy bánh từ Tiệm bánh Harmony.' },
-  ]);
+  const [chatHistory, setChatHistory] = useState(
+    isMock
+      ? [
+          { sender: 'shipper', text: 'Chào bạn, mình đã nhận đơn cứu trợ của bạn rồi nhé!' },
+          { sender: 'shipper', text: 'Đang chuẩn bị lấy bánh từ Tiệm bánh Harmony.' },
+        ]
+      : []
+  );
 
   // Countdown: 4 phút 30 giây khi đang tìm shipper
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownExpired, setCountdownExpired] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Handle fallback or fetched data determination
-  const isMock = id.startsWith('demo-') || id.startsWith('mock-') || isError || !fetchedData;
 
   // Theo dõi đơn giao real-time (toạ độ pickup/delivery + vị trí shipper trực tiếp)
   const isDeliveryOrder = !isMock && !!fetchedData?.delivery;
@@ -212,7 +218,7 @@ export default function ReservationDetailsPage() {
       } else {
         setDeliveryMethod('pickup');
       }
-    } else {
+    } else if (isMock) {
       // Default mock based on ID format
       if (id.includes('pickup') || id.includes('An-Nhien') || id.includes('An_Nhien') || id.includes('rq-') || id.includes('RQ-')) {
         setDeliveryMethod('pickup');
@@ -220,7 +226,7 @@ export default function ReservationDetailsPage() {
         setDeliveryMethod('delivery');
       }
     }
-  }, [fetchedData, id]);
+  }, [fetchedData, id, isMock]);
 
   // Trạng thái thật của đơn (chỉ có khi không phải mock). Driver cho bước hiển thị + thông báo chờ quét.
   const liveStatus = fetchedData?.status as string | undefined;
@@ -239,46 +245,95 @@ export default function ReservationDetailsPage() {
     );
   }
 
-  // --- MOCK DATA ---
-  const mockListing = {
-    title: deliveryMethod === 'delivery' ? 'Gói Bánh Mì & Bơ' : 'Gói Bánh Mì Dinh Dưỡng',
-    providerName: deliveryMethod === 'delivery' ? 'Tiệm bánh Harmony' : 'Tiệm Bánh An Nhiên',
-    providerAddress: deliveryMethod === 'delivery' ? '456 Đường Láng, Đống Đa, Hà Nội' : '123 Đường Lê Lợi, Quận 1, TP. HCM',
-    providerPhone: '0912345678',
-    orderId: deliveryMethod === 'delivery' ? '#RESQ-8821' : '#RQ-882',
-    imageUrl: deliveryMethod === 'delivery' ? '/banh-mi-ngot-thap-cam.png' : '/banh-mi-lua-mach-tuoi.png',
-  };
+  if (isError && !isMock) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[70vh] bg-surface gap-md px-4 text-center">
+        <div className="w-14 h-14 rounded-full bg-red-50 text-red-600 flex items-center justify-center">
+          <span className="material-symbols-outlined text-[30px]">error</span>
+        </div>
+        <div>
+          <h1 className="font-bold text-lg text-neutral-900">Không tải được đơn</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Vui lòng thử lại sau hoặc quay lại danh sách đơn.</p>
+        </div>
+        <Link
+          href="/reservations"
+          className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-semibold transition-colors"
+        >
+          Quay lại danh sách đơn
+        </Link>
+      </div>
+    );
+  }
 
-  const reservation = fetchedData || {
-    id,
-    quantity: 1,
-    status: currentStep === 2 ? 'completed' : (deliveryMethod === 'delivery' ? 'picked_up' : 'confirmed'),
-    qrToken: 'mock-qr-token-12345',
-    qrExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    createdAt: new Date().toISOString(),
-    listing: {
-      title: mockListing.title,
-      pickupAddress: mockListing.providerAddress,
-      quantityUnit: 'phần',
-      imageUrls: [mockListing.imageUrl],
-      provider: {
-        businessName: mockListing.providerName,
-        contactPhone: mockListing.providerPhone,
-        address: mockListing.providerAddress,
-        avgRating: 4.8,
+  if (!fetchedData && !isMock) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[70vh] bg-surface gap-md px-4 text-center">
+        <div className="w-14 h-14 rounded-full bg-neutral-100 text-neutral-500 flex items-center justify-center">
+          <span className="material-symbols-outlined text-[30px]">search_off</span>
+        </div>
+        <div>
+          <h1 className="font-bold text-lg text-neutral-900">Không tìm thấy đơn</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Đơn nhận này không tồn tại hoặc bạn không có quyền xem.</p>
+        </div>
+        <Link
+          href="/reservations"
+          className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-semibold transition-colors"
+        >
+          Quay lại danh sách đơn
+        </Link>
+      </div>
+    );
+  }
+
+  // --- MOCK DATA ---
+  const mockListing = isMock
+    ? {
+        title: deliveryMethod === 'delivery' ? 'Gói Bánh Mì & Bơ' : 'Gói Bánh Mì Dinh Dưỡng',
+        providerName: deliveryMethod === 'delivery' ? 'Tiệm bánh Harmony' : 'Tiệm Bánh An Nhiên',
+        providerAddress: deliveryMethod === 'delivery' ? '456 Đường Láng, Đống Đa, Hà Nội' : '123 Đường Lê Lợi, Quận 1, TP. HCM',
+        providerPhone: '0912345678',
+        orderId: deliveryMethod === 'delivery' ? '#RESQ-8821' : '#RQ-882',
+        imageUrl: deliveryMethod === 'delivery' ? '/banh-mi-ngot-thap-cam.png' : '/banh-mi-lua-mach-tuoi.png',
       }
-    },
-    delivery: deliveryMethod === 'delivery' ? {
-      status: currentStep === 2 ? 'delivered' : 'picked_up',
-      shipper: {
-        user: {
-          fullName: 'Minh Tâm',
-          phone: '0987654321',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop',
+    : null;
+
+  let reservation = fetchedData;
+  if (!reservation) {
+    if (!mockListing) {
+      return null;
+    }
+
+    reservation = {
+      id,
+      quantity: 1,
+      status: currentStep === 2 ? 'completed' : (deliveryMethod === 'delivery' ? 'picked_up' : 'confirmed'),
+      qrToken: 'mock-qr-token-12345',
+      qrExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      listing: {
+        title: mockListing.title,
+        pickupAddress: mockListing.providerAddress,
+        quantityUnit: 'phần',
+        imageUrls: [mockListing.imageUrl],
+        provider: {
+          businessName: mockListing.providerName,
+          contactPhone: mockListing.providerPhone,
+          address: mockListing.providerAddress,
+          avgRating: 4.8,
         }
-      }
-    } : null
-  };
+      },
+      delivery: deliveryMethod === 'delivery' ? {
+        status: currentStep === 2 ? 'delivered' : 'picked_up',
+        shipper: {
+          user: {
+            fullName: 'Minh Tâm',
+            phone: '0987654321',
+            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop',
+          }
+        }
+      } : null
+    };
+  }
 
   // Actions
   const handleCallShipper = (name: string, phone: string) => {
@@ -878,7 +933,7 @@ export default function ReservationDetailsPage() {
                 <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-2 text-emerald-800">
                     <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
-                    <h4 className="font-bold text-sm">Chi tiết túi thực phẩm {mockListing.orderId}</h4>
+                    <h4 className="font-bold text-sm">Chi tiết túi thực phẩm {reservation.listing.orderId || reservation.id}</h4>
                   </div>
                   
                   {/* Detailed items list */}
@@ -961,9 +1016,20 @@ export default function ReservationDetailsPage() {
 
       </div>
 
-      {/* Floating Emergency Help Action Button */}
-      <div className="fixed bottom-6 right-6 z-40">
-        <button 
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+        {/* Báo cáo vấn đề (chỉ đơn thật, có ID thật) */}
+        {!isMock && (
+          <button
+            onClick={() => setReportOpen(true)}
+            title="Báo cáo vấn đề về đơn này"
+            className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-4 py-2.5 rounded-full shadow-lg font-bold text-xs flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[18px]">flag</span>
+            <span>Báo cáo</span>
+          </button>
+        )}
+        <button
           onClick={() => {
             toast.info('Đang kết nối đến trung tâm trợ giúp khẩn cấp FoodResQ...');
             window.location.href = 'tel:19001000';
@@ -974,6 +1040,16 @@ export default function ReservationDetailsPage() {
           <span>Hỗ trợ khẩn cấp</span>
         </button>
       </div>
+
+      {/* Modal báo cáo vấn đề */}
+      {reportOpen && !isMock && (
+        <ReportIssueModal
+          targetKind={ReportTargetType.RESERVATION}
+          targetId={id}
+          listingTitle={reservation.listing.title}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
 
       {/* ========================================================================= */}
       {/* MOCK CHAT DRAWER OVERLAY SIMULATION                                        */}

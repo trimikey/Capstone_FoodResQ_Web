@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import type { ListingItem } from '@/components/listings/ListingCard';
 
 interface Props {
@@ -140,7 +142,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
               <p style={{ fontWeight: 700, margin: 0 }}>{l.title}</p>
               <p style={{ margin: '2px 0', color: '#555', fontSize: 12 }}>{l.provider.businessName}</p>
               <p style={{ margin: '0 0 8px', color: '#236c2a', fontSize: 12, fontWeight: 600 }}>
-                Còn {l.quantityRemaining} {l.quantityUnit} • {formatDistance(l.distanceM)}
+                Còn {l.quantityRemaining} {UNIT_LABEL[l.quantityUnit as QuantityUnit] ?? l.quantityUnit} • {formatDistance(l.distanceM)}
               </p>
               <button
                 onClick={() => router.push(`/listings/${l.id}`)}

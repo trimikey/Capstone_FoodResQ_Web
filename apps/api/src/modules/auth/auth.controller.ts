@@ -1,9 +1,24 @@
-import { Body, Controller, Headers, Ip, Post, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  FileTypeValidator,
+  Headers,
+  Ip,
+  MaxFileSizeValidator,
+  ParseFilePipe,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -17,9 +32,27 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a new account' })
-  register(@Body() dto: RegisterDto, @Ip() ip: string) {
-    return this.authService.register(dto);
+  @UseInterceptors(FileInterceptor('selfie'))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiOperation({
+    summary:
+      'Register a new account. Receiver (cá nhân) & volunteer BẮT BUỘC gửi kèm ảnh selfie (multipart) — không có/không nhận diện được khuôn mặt thì đăng ký thất bại.',
+  })
+  register(
+    @Body() dto: RegisterDto,
+    @Ip() ip: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: false, // provider/charity đăng ký JSON không kèm ảnh
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    selfie?: Express.Multer.File,
+  ) {
+    return this.authService.register(dto, selfie);
   }
 
   @Post('login')
@@ -32,6 +65,20 @@ export class AuthController {
     return this.authService.login(dto, ua, ip);
   }
 
+  @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Gửi email đặt lại mật khẩu nếu tài khoản tồn tại' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng token nhận qua email' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
   @Post('google')
   @ApiOperation({ summary: 'Login/Register bằng Google ID token' })
   google(
@@ -40,6 +87,18 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.authService.loginWithGoogle(dto.idToken, ua, ip);
+  }
+
+  @Post('check-email')
+  @ApiOperation({ summary: 'Kiểm tra email đã được đăng ký chưa' })
+  checkEmail(@Body('email') email: string) {
+    return this.authService.checkEmailExists(email);
+  }
+
+  @Post('check-phone')
+  @ApiOperation({ summary: 'Kiểm tra số điện thoại đã được đăng ký chưa' })
+  checkPhone(@Body('phone') phone: string) {
+    return this.authService.checkPhoneExists(phone);
   }
 
   @Post('firebase')

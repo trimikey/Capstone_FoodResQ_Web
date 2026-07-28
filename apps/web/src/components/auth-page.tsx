@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,9 +20,10 @@ const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), 
   ),
 });
 import { api } from "@/lib/api";
+import { mediaUrl } from "@/lib/utils";
 import { reverseGeocode } from "@/lib/geocode";
 import { useAuthStore } from "@/stores/auth.store";
-import FaceEnrollmentPanel from "@/components/shared/FaceEnrollmentPanel";
+import CameraCapture from "@/components/shared/CameraCapture";
 import { signInWithGoogle, isFirebaseConfigured } from "@/lib/firebase";
 import { useUploadVerificationImage } from "@/hooks/useUploadImage";
 
@@ -48,7 +49,6 @@ const registerSchema = z.object({
   
   // Provider fields
   storeName: z.string().optional(),
-  foodCategory: z.string().optional(),
   providerAddress: z.string().optional(),
   // Provider verification (P3): thêm loại hình + MST + toạ độ + ảnh GPKD
   providerBusinessType: z
@@ -56,7 +56,8 @@ const registerSchema = z.object({
     .optional(),
   taxCode: z.string().optional(),
   providerDescription: z.string().max(1000).optional(),
-  evidenceUrls: z.array(z.string().url()).optional(),
+  // URL upload trả về là đường dẫn tương đối (/uploads/...) → không dùng .url()
+  evidenceUrls: z.array(z.string().min(1)).optional(),
 
   // Volunteer fields
   volunteerRole: z.string().optional(),
@@ -157,12 +158,23 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
-  const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
-  const [enrollRole, setEnrollRole] = useState<'receiver' | 'volunteer'>('receiver');
+  // Form đã hợp lệ, chờ chụp khuôn mặt để gửi đăng ký (receiver/volunteer) —
+  // tài khoản CHỈ được tạo khi BE xác thực được khuôn mặt trong cùng request.
+  const [pendingFaceData, setPendingFaceData] = useState<RegisterFormValues | null>(null);
   // Toạ độ GPS bắt được khi người dùng bấm "Dùng vị trí hiện tại" lúc đăng ký.
   // null = chưa định vị (BE sẽ chỉ lưu địa chỉ dạng text, không lưu location).
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
+  // Check email trùng real-time (debounce 500ms)
+  const [emailExists, setEmailExists] = useState<{ checking: boolean; exists: boolean }>({
+    checking: false,
+    exists: false,
+  });
+  // Check phone trùng real-time (debounce 500ms)
+  const [phoneExists, setPhoneExists] = useState<{ checking: boolean; exists: boolean }>({
+    checking: false,
+    exists: false,
+  });
   const router = useRouter();
 
   // 1. Login form setup
@@ -199,7 +211,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       confirmPassword: "",
       role: "receiver",
       storeName: "",
-      foodCategory: "Đồ tươi sống",
       providerAddress: "",
       providerBusinessType: undefined,
       taxCode: "",
@@ -214,11 +225,84 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   });
 
   const selectedRole = watchRegister("role");
+  const watchedEmail = watchRegister("email");
+  const watchedPhone = watchRegister("phone");
+
+  // Debounce check email trùng real-time (500ms sau khi ngừng gõ)
+  useEffect(() => {
+    if (!watchedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(watchedEmail)) {
+      setEmailExists({ checking: false, exists: false });
+      return;
+    }
+    setEmailExists((prev) => ({ ...prev, checking: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.post("/auth/check-email", { email: watchedEmail });
+        // Support both { data: { exists: true } } and { exists: true }
+        const exists = res.data?.data?.exists ?? res.data?.exists ?? false;
+        setEmailExists({ checking: false, exists });
+      } catch {
+        // Nếu API fail, reset state
+        setEmailExists({ checking: false, exists: false });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [watchedEmail]);
+
+  // Debounce check phone trùng real-time (500ms sau khi ngừng gõ)
+  useEffect(() => {
+    if (!watchedPhone || !/^0[35789][0-9]{8}$/.test(watchedPhone)) {
+      setPhoneExists({ checking: false, exists: false });
+      return;
+    }
+    setPhoneExists((prev) => ({ ...prev, checking: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.post("/auth/check-phone", { phone: watchedPhone });
+        const exists = res.data?.data?.exists ?? res.data?.exists ?? false;
+        setPhoneExists({ checking: false, exists });
+      } catch {
+        setPhoneExists({ checking: false, exists: false });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [watchedPhone]);
 
   const handleNextStep = async () => {
     // Validate Step 1 fields before proceeding
     const isValid = await trigger(["fullName", "email", "phone", "password", "confirmPassword", "role"]);
-    if (isValid) {
+    if (!isValid) return;
+
+    // Check trùng email/phone trước khi cho qua bước tiếp theo
+    const email = watchRegister("email");
+    const phone = watchRegister("phone");
+    let hasDuplicate = false;
+
+    try {
+      // Check email trùng
+      if (email) {
+        const emailRes = await api.post("/auth/check-email", { email });
+        if (emailRes.data?.data?.exists ?? emailRes.data?.exists) {
+          setEmailExists({ checking: false, exists: true });
+          toast.error("Email này đã được đăng ký. Vui lòng dùng email khác.");
+          hasDuplicate = true;
+        }
+      }
+
+      // Check phone trùng
+      if (phone && !hasDuplicate) {
+        const phoneRes = await api.post("/auth/check-phone", { phone });
+        if (phoneRes.data?.data?.exists ?? phoneRes.data?.exists) {
+          setPhoneExists({ checking: false, exists: true });
+          toast.error("Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.");
+          hasDuplicate = true;
+        }
+      }
+    } catch {
+      // Nếu API lỗi thì cho qua (BE sẽ validate lại khi submit)
+    }
+
+    if (!hasDuplicate) {
       setRegisterStep(2);
     }
   };
@@ -372,9 +456,15 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   };
 
   const onRegisterSubmit = async (data: RegisterFormValues) => {
-    setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    // Cá nhân người nhận & tình nguyện viên: eKYC BẮT BUỘC — chụp khuôn mặt TRƯỚC,
+    // gửi kèm request đăng ký; BE không nhận diện được mặt thì KHÔNG tạo tài khoản.
+    if (data.role === 'receiver' || data.role === 'volunteer') {
+      setPendingFaceData(data);
+      return;
+    }
+    setIsSubmitting(true);
     try {
       const res = await api.post<{
         data: {
@@ -383,21 +473,15 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           user: Parameters<typeof setUser>[0];
         };
       }>('/auth/register', {
+        // Nhánh này chỉ còn provider & charity (receiver/volunteer đã rẽ sang luồng selfie ở trên)
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
         role: data.role === 'charity' ? 'receiver' : data.role,
         isCharityOrg: data.role === 'charity' ? true : undefined,
-        businessName: (data.role === 'provider' || data.role === 'charity') ? data.storeName || undefined : undefined,
-        address:
-          (data.role === 'provider' || data.role === 'charity')
-            ? data.providerAddress || undefined
-            : data.role === 'receiver'
-              ? data.receiverAddress || undefined
-              : undefined,
-        vehicleType: data.role === 'volunteer' ? data.vehicle || undefined : undefined,
-        volunteerRole: data.role === 'volunteer' ? data.volunteerRole || undefined : undefined,
+        businessName: data.storeName || undefined,
+        address: data.providerAddress || undefined,
         // Provider verification (P3)
         ...(data.role === 'provider' && {
           businessType: data.providerBusinessType,
@@ -407,44 +491,84 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
           ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
         }),
       });
-      if (data.role === 'receiver' || data.role === 'volunteer') {
-        // Auto-login bằng token từ register → BẮT BUỘC chụp khuôn mặt (eKYC) ngay.
-        // CHỈ cá nhân người nhận & tình nguyện viên phải đăng ký khuôn mặt.
-        // Tổ chức (charity) và nhà cung cấp KHÔNG cần quét mặt.
-        // KHÔNG báo "Đăng ký thành công" ở đây — chỉ coi là hoàn tất khi đã xác minh
-        // được khuôn mặt (BE từ chối ảnh không có mặt). Báo thành công ở bước onDone.
-        toast.info('Đã tạo tài khoản. Vui lòng đăng ký khuôn mặt để hoàn tất.');
-        setTokens(res.data.data.accessToken, res.data.data.refreshToken);
-        setUser(res.data.data.user);
-        queryClient.clear();
-        setEnrollRole(data.role === 'volunteer' ? 'volunteer' : 'receiver');
-        setShowFaceEnrollment(true);
-      } else {
-        // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
-        const waitingMsg =
-          data.role === "provider"
-            ? "Đăng ký tài khoản NCC thành công! Hồ sơ đang chờ admin duyệt (tối đa 24h). Bạn có thể đăng nhập, các chức năng đăng tin sẽ mở sau khi duyệt."
-            : "Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.";
-        toast.success(
-          data.role === "provider"
-            ? "Đã gửi hồ sơ đăng ký!"
-            : "Đăng ký thành công!",
-        );
-        setSuccessMessage(waitingMsg);
-        setTimeout(() => {
-          setActiveTab("login");
-          setRegisterStep(1);
-          resetLoginForm();
-          resetRegisterForm();
-          setUploadedFile(null);
-          setSuccessMessage(null);
-        }, 2200);
-      }
+      void res; // tokens không dùng ở nhánh này — provider/charity đăng nhập lại sau
+      // provider + charity (tổ chức): đăng ký xong vào đăng nhập, không quét mặt
+      const waitingMsg =
+        data.role === "provider"
+          ? "Đăng ký tài khoản NCC thành công! Hồ sơ đang chờ admin duyệt (tối đa 24h). Bạn có thể đăng nhập, các chức năng đăng tin sẽ mở sau khi duyệt."
+          : "Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.";
+      toast.success(
+        data.role === "provider"
+          ? "Đã gửi hồ sơ đăng ký!"
+          : "Đăng ký thành công!",
+      );
+      setSuccessMessage(waitingMsg);
+      setTimeout(() => {
+        setActiveTab("login");
+        setRegisterStep(1);
+        resetLoginForm();
+        resetRegisterForm();
+        setUploadedFile(null);
+        setSuccessMessage(null);
+      }, 2200);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message ?? "Đăng ký thất bại. Email hoặc số điện thoại có thể đã được sử dụng.";
       setErrorMessage(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /** Gửi đăng ký receiver/volunteer kèm selfie (multipart) — BE xác thực mặt rồi mới tạo tài khoản. */
+  const submitWithSelfie = async (photo: File) => {
+    if (!pendingFaceData) return;
+    const data = pendingFaceData;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const form = new FormData();
+      form.append('email', data.email);
+      form.append('password', data.password);
+      form.append('fullName', data.fullName);
+      if (data.phone) form.append('phone', data.phone);
+      form.append('role', data.role); // 'receiver' | 'volunteer'
+      if (data.role === 'receiver' && data.receiverAddress) form.append('address', data.receiverAddress);
+      if (data.role === 'volunteer') {
+        if (data.vehicle) form.append('vehicleType', data.vehicle);
+        if (data.volunteerRole) form.append('volunteerRole', data.volunteerRole);
+      }
+      if (geoCoords) {
+        form.append('lng', String(geoCoords.lng));
+        form.append('lat', String(geoCoords.lat));
+      }
+      form.append('selfie', photo);
+
+      const res = await api.post<{
+        data: { accessToken: string; refreshToken: string; user: Parameters<typeof setUser>[0] };
+      }>('/auth/register', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+      setPendingFaceData(null);
+      toast.success('Đăng ký thành công!');
+      setTokens(res.data.data.accessToken, res.data.data.refreshToken);
+      setUser(res.data.data.user);
+
+      // Redirect volunteer theo specialization: chef/waiter → campaigns, shipper → deliveries
+      const volRole = data.volunteerRole;
+      const redirect =
+        data.role === 'volunteer' && (volRole === 'chef' || volRole === 'waiter')
+          ? '/campaigns'
+          : data.role === 'volunteer'
+            ? '/deliveries'
+            : '/listings';
+      router.push(redirect);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Đăng ký thất bại. Vui lòng thử lại.';
+      // Giữ modal mở để chụp lại (trường hợp không nhận diện được khuôn mặt)
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -632,7 +756,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <label className="font-semibold text-base text-neutral-500" htmlFor="login-password">
                         Mật khẩu
                       </label>
-                      <a className="font-medium text-sm text-emerald-800 font-bold hover:underline" href="#">
+                      <a className="font-medium text-sm text-emerald-800 font-bold hover:underline" href="/forgot-password">
                         Quên mật khẩu?
                       </a>
                     </div>
@@ -762,15 +886,34 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-email"
                             type="email"
                             placeholder="example@email.com"
-                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
-                              registerErrors.email ? "border-error" : "border-neutral-200/30"
+                            className={`w-full pl-12 pr-10 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.email || emailExists.exists
+                                ? "border-error"
+                                : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("email")}
                           />
+                          {/* Check icon hoặc loading spinner */}
+                          {watchedEmail && !registerErrors.email && (
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                              {emailExists.checking ? (
+                                <span className="animate-spin material-symbols-outlined text-neutral-400 text-lg">progress_activity</span>
+                              ) : emailExists.exists ? (
+                                <span className="material-symbols-outlined text-rose-500 text-lg">error</span>
+                              ) : (
+                                <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                         {registerErrors.email && (
                           <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.email.message}</p>
+                        )}
+                        {emailExists.exists && !registerErrors.email && (
+                          <p className="text-rose-600 text-sm ml-1 mt-2">
+                            Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.
+                          </p>
                         )}
                       </div>
 
@@ -787,15 +930,33 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             id="reg-phone"
                             type="text"
                             placeholder="0912345678"
-                            className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
-                              registerErrors.phone ? "border-error" : "border-neutral-200/30"
+                            className={`w-full pl-12 pr-10 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                              registerErrors.phone || phoneExists.exists
+                                ? "border-error"
+                                : "border-neutral-200/30"
                             }`}
                             disabled={isSubmitting}
                             {...registerSignup("phone")}
                           />
+                          {watchedPhone && !registerErrors.phone && (
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                              {phoneExists.checking ? (
+                                <span className="animate-spin material-symbols-outlined text-neutral-400 text-lg">progress_activity</span>
+                              ) : phoneExists.exists ? (
+                                <span className="material-symbols-outlined text-rose-500 text-lg">error</span>
+                              ) : (
+                                <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                         {registerErrors.phone && (
                           <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.phone.message}</p>
+                        )}
+                        {phoneExists.exists && !registerErrors.phone && (
+                          <p className="text-rose-600 text-sm ml-1 mt-2">
+                            Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.
+                          </p>
                         )}
                       </div>
 
@@ -935,10 +1096,20 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                       <button
                         type="button"
                         onClick={handleNextStep}
-                        className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
+                        disabled={emailExists.exists || emailExists.checking || phoneExists.exists || phoneExists.checking}
+                        className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Tiếp tục
-                        <span className="material-symbols-outlined">arrow_forward</span>
+                        {emailExists.checking ? (
+                          <>
+                            <span className="animate-spin border-2 border-white border-t-transparent rounded-full w-5 h-5 mr-2"></span>
+                            Đang kiểm tra email...
+                          </>
+                        ) : (
+                          <>
+                            Tiếp tục
+                            <span className="material-symbols-outlined">arrow_forward</span>
+                          </>
+                        )}
                       </button>
                     </>
                   ) : (
@@ -966,26 +1137,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             )}
                           </div>
 
-                          {/* Food Category */}
-                          {selectedRole === "provider" && (
-                            <div className="space-y-1.5">
-                              <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="food-category">
-                                Loại thực phẩm chính
-                              </label>
-                              <select
-                                id="food-category"
-                                className="w-full px-4 py-3 bg-white border-2 border-neutral-200/30 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none appearance-none"
-                                disabled={isSubmitting}
-                                {...registerSignup("foodCategory")}
-                              >
-                                <option value="Đồ tươi sống">Đồ tươi sống</option>
-                                <option value="Bánh mì & Bánh ngọt">Bánh mì & Bánh ngọt</option>
-                                <option value="Đồ ăn đã chế biến">Đồ ăn đã chế biến</option>
-                                <option value="Rau củ quả">Rau củ quả</option>
-                              </select>
-                            </div>
-                          )}
-
                           {/* Provider: loại hình kinh doanh (P3) */}
                           {selectedRole === "provider" && (
                             <div className="space-y-1.5">
@@ -1010,9 +1161,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               {registerErrors.providerBusinessType && (
                                 <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.providerBusinessType.message}</p>
                               )}
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Quyết định bạn có cần cung cấp MST hay không.
-                              </p>
                             </div>
                           )}
 
@@ -1036,9 +1184,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               {registerErrors.taxCode && (
                                 <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.taxCode.message}</p>
                               )}
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Admin dùng MST để tra cứu doanh nghiệp. Hộ cá nhân chọn loại hình &quot;Khác&quot; ở trên thì không cần nhập.
-                              </p>
                             </div>
                           )}
 
@@ -1069,15 +1214,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <label className="font-semibold text-base text-neutral-500 ml-1">
                                 Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)
                               </label>
-                              <p className="text-xs text-neutral-500 ml-1">
-                                Ảnh đầu tiên nên là giấy phép ĐKKD/GPKD để admin xác minh nhanh. Có thể thêm ảnh mặt tiền, kệ hàng, biển hiệu...
-                              </p>
 
                               {/* Danh sách URL đã upload */}
                               <div className="grid grid-cols-3 gap-2">
                                 {evidenceUrls.map((u: string, idx: number) => (
                                   <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
-                                    <img src={u} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                                    {/* Ảnh lưu ở API (/uploads/...) — phải ghép origin :3001, để trần sẽ 404 vì trỏ vào :3000 */}
+                                    <img src={mediaUrl(u)} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -1391,8 +1534,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
             </div>
           </div>
 
-          {/* Social Logins */}
-          <div className="grid grid-cols-2 gap-4 items-center">
+          {/* Social Logins — chỉ Google */}
+          <div className="grid grid-cols-1 gap-4 items-center">
             {GOOGLE_ENABLED ? (
               <button
                 type="button"
@@ -1413,14 +1556,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 <span className="font-semibold text-base">Google</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => toast.info('Đăng nhập Facebook sắp ra mắt.')}
-              className="squishy-button flex items-center justify-center gap-2 py-3 border-2 border-neutral-200/30 rounded-xl bg-white hover:bg-neutral-100 transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5"><path fill="#1976D2" d="M42,37c0,2.762-2.238,5-5,5H11c-2.761,0-5-2.238-5-5V11c0-2.762,2.239-5,5-5h26c2.762,0,5,2.238,5,5V37z"/><path fill="#FFF" d="M34.368,25H31v13h-5V25h-3v-4h3v-2.41c0.002-4.078,2.417-5.59,5.096-5.59h3.904v4h-2.604c-1.078,0-1.396,0.675-1.396,1.405V21h4.097L34.368,25z"/></svg>
-              <span className="font-semibold text-base">Facebook</span>
-            </button>
           </div>
 
           {/* Footer Terms */}
@@ -1453,9 +1588,10 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         </div>
       </footer>
 
-      {/* Bước cuối đăng ký (BẮT BUỘC với người nhận & tình nguyện viên): chụp khuôn mặt gốc để xác minh danh tính */}
-      {showFaceEnrollment && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      {/* eKYC BẮT BUỘC (người nhận cá nhân & tình nguyện viên): chụp khuôn mặt TRƯỚC —
+          tài khoản chỉ được tạo khi BE xác thực được khuôn mặt trong cùng request đăng ký. */}
+      {pendingFaceData && (
+        <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-3xl w-full sm:max-w-3xl shadow-12 flex flex-col gap-6 p-6 sm:p-10 max-h-[90vh] overflow-y-auto">
             <div className="flex flex-col items-center text-center">
@@ -1466,23 +1602,36 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 Bước bắt buộc: Đăng ký khuôn mặt
               </h2>
               <p className="font-bold text-[15px] text-emerald-800 mt-2">
-                Tài khoản đã tạo — hãy chụp/đưa ảnh khuôn mặt để hoàn tất
+                Chụp khuôn mặt để hoàn tất đăng ký — chưa có tài khoản nào được tạo
               </p>
               <p className="text-[13px] text-neutral-500 mt-1 max-w-md">
-                {enrollRole === 'volunteer'
+                {pendingFaceData.role === 'volunteer'
                   ? 'Tình nguyện viên cần xác minh khuôn mặt để được giao nhiệm vụ.'
-                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'} Đây là bước bắt buộc, chỉ làm một lần.
+                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'}{' '}
+                Không có khuôn mặt hợp lệ thì đăng ký sẽ thất bại.
               </p>
             </div>
-            {/* Không truyền onSkip → KHÔNG có nút bỏ qua (bắt buộc hoàn tất) */}
-            <FaceEnrollmentPanel
-              onDone={() => {
-                setShowFaceEnrollment(false);
-                // Chỉ tới đây (khuôn mặt đã được BE xác minh) mới coi là đăng ký thành công
-                toast.success('Đăng ký thành công!');
-                router.push(enrollRole === 'volunteer' ? '/deliveries' : '/listings');
-              }}
-            />
+            <div className="bg-white rounded-[24px] shadow-sm border border-neutral-100 p-6 sm:p-8 flex flex-col gap-6">
+              <CameraCapture
+                mode="face"
+                hint="Chụp selfie rõ nét, đủ ánh sáng — đây sẽ là khuôn mặt gốc để đối chiếu khi nhận hàng"
+                confirmLabel="Chụp & hoàn tất đăng ký"
+                busy={isSubmitting}
+                onConfirm={(photo) => void submitWithSelfie(photo)}
+              />
+              <div className="pt-1 flex justify-center">
+                <button
+                  onClick={() => {
+                    setPendingFaceData(null);
+                    toast.info('Đã huỷ đăng ký — tài khoản chưa được tạo.');
+                  }}
+                  disabled={isSubmitting}
+                  className="text-neutral-500 font-semibold text-[13px] hover:text-neutral-800 transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  Huỷ đăng ký <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

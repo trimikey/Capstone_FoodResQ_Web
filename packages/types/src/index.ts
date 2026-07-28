@@ -1,5 +1,7 @@
 export * from './enums';
 
+import type { BulkRunStatus } from './enums';
+
 // ── API response wrappers ──────────────────────────────────────────────────────
 
 /**
@@ -79,3 +81,53 @@ export const WS_EVENTS = {
 } as const;
 
 export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
+
+// ── Bulk run contracts ───────────────────────────────────────────────────────
+
+export interface BulkRunStop {
+  id: string;
+  label: string;
+  address: string | null;
+  plannedQty: number | null;
+  servedQty: number;
+  photoUrl: string | null;
+  note: string | null;
+  createdBy: 'provider' | 'shipper' | (string & {});
+  orderIndex: number;
+  servedAt: string | null;
+  coords: GeoPoint | null;
+}
+
+export interface BulkRun {
+  id: string;
+  listingId: string;
+  quantity: number;
+  quantityDistributed: number;
+  status: BulkRunStatus;
+  note: string | null;
+  rejectReason: string | null;
+  qcPhotoUrl: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+  pickedUpAt: string | null;
+  completedAt: string | null;
+  pickupCoords: GeoPoint | null;
+  listing: {
+    title: string;
+    pickupAddress: string;
+    imageUrls?: string[] | null;
+  };
+  provider?: {
+    businessName: string;
+    contactPhone: string | null;
+  };
+  shipper?: {
+    rank: string;
+    dedicationPoints: number;
+    user: {
+      fullName: string;
+      phone: string | null;
+    };
+  };
+  stops: BulkRunStop[];
+}

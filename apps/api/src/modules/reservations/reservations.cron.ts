@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ReservationsService } from './reservations.service';
+import { logCronError } from '@/common/utils/cron-error';
 
 /** Tác vụ định kỳ cho vòng đời reservation (no_show / reset daily). */
 @Injectable()
@@ -16,7 +17,7 @@ export class ReservationsCron {
       const n = await this.reservations.expireNoShows();
       if (n > 0) this.logger.log(`Marked ${n} reservation(s) as no_show`);
     } catch (e) {
-      this.logger.error('expireNoShows failed', e as Error);
+      logCronError(this.logger, 'expireNoShows', e);
     }
   }
 
@@ -27,7 +28,7 @@ export class ReservationsCron {
       await this.reservations.resetDailyReservationCounters();
       this.logger.log('Daily reservation counters reset');
     } catch (e) {
-      this.logger.error('resetDailyReservationCounters failed', e as Error);
+      logCronError(this.logger, 'resetDailyReservationCounters', e);
     }
   }
 }

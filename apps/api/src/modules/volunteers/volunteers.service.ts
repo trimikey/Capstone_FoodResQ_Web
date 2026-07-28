@@ -61,6 +61,14 @@ export class VolunteersService {
       throw new BadRequestException('Vị trí (lng, lat) là bắt buộc khi bật sẵn sàng');
     }
 
+    // eKYC bắt buộc trước khi nhận nhiệm vụ: tài khoản social login (Google)
+    // chưa có khuôn mặt gốc thì không được bật sẵn sàng nhận đơn.
+    if (dto.isAvailable && !volunteer.faceDescriptor) {
+      throw new BadRequestException(
+        'FACE_NOT_ENROLLED: Bạn cần đăng ký khuôn mặt trước khi bật nhận đơn (dùng để xác minh khi giao nhận).',
+      );
+    }
+
     if (dto.lng != null && dto.lat != null) {
       await this.prisma.$executeRaw(Prisma.sql`
         UPDATE volunteer_profiles

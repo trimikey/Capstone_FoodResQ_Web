@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Text,
@@ -8,7 +8,8 @@ import {
   Dialog,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
 import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
 import { listingStatusDisplay } from '@/components/ProviderListingCard';
@@ -21,10 +22,12 @@ import {
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ProviderListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const { data: listing, isLoading, isError, refetch } = useListingDetail(id);
   const publish = usePublishListing();
   const cancel = useCancelListing();
@@ -61,13 +64,16 @@ export default function ProviderListingDetailScreen() {
   const sd = listingStatusDisplay(listing?.status);
   const canPublish = listing?.status === 'draft';
   const canCancel = listing?.status === 'draft' || listing?.status === 'active';
+  const canEdit = listing?.status === 'draft' || listing?.status === 'active' || listing?.status === 'fully_reserved';
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-        </Pressable>
+        <BackButton />
         <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết tin</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -109,6 +115,17 @@ export default function ProviderListingDetailScreen() {
           </ScrollView>
 
           <View style={[styles.footer]}>
+            {canEdit ? (
+              <Button
+                mode="contained-tonal"
+                icon="pencil-outline"
+                onPress={() => router.push(`/(app)/provider/create?editId=${id}`)}
+                disabled={busy}
+                style={styles.actionBtn}
+              >
+                Sửa
+              </Button>
+            ) : null}
             {canPublish ? (
               <Button mode="contained" icon="send" onPress={handlePublish} loading={busy} disabled={busy}
                 buttonColor={COLORS.primary} style={styles.actionBtn}>

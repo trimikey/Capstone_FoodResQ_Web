@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
 import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
+import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 // Bottom nav (mobile) theo vai trò
 function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
@@ -34,10 +35,9 @@ function navItemsFor(role: UserRole, isCharityOrg?: boolean): { href: string; ic
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },
     ];
   }
-  // Tổ chức từ thiện → có thêm Chiến dịch
+  // Tổ chức từ thiện
   if (isCharityOrg) {
     return [
-      { href: '/listings', icon: 'restaurant', label: 'Tìm' },
       { href: '/campaigns', icon: 'soup_kitchen', label: 'Chiến dịch' },
       { href: '/reservations', icon: 'bookmark', label: 'Đơn nhận' },
       { href: '/profile', icon: 'person', label: 'Hồ sơ' },
@@ -54,12 +54,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  // Đợi zustand persist rehydrate xong sau HMR/dev-reload trước khi quyết định redirect.
+  // Nếu check auth ngay từ render đầu, user vẫn null (initial state) → false redirect /login
+  // trong khi persist đang load lại từ localStorage. Đặc biệt vấn đề này lộ rõ với Next.js 16
+  // + Turbopack: mỗi lần save file → fast refresh → store reset → rehydrate trễ 1 tick.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!isAuthenticated()) {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, router]);
 
   // Đăng ký nhận push FCM khi đã đăng nhập (no-op nếu chưa cấu hình Firebase)
   useEffect(() => {
@@ -69,7 +78,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const { data: me } = useMe(!!user);
 
-  if (!user) return null;
+  // Trước khi persist rehydrate xong: render skeleton trống, KHÔNG redirect.
+  if (!hydrated || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#fcf9f2]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   const navItems = navItemsFor(user.role as UserRole, !!me?.receiver?.isCharityOrg);
 
@@ -83,53 +99,71 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Popup nhận đơn giao toàn cục cho shipper (hiện ở mọi trang) */}
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
 
-      {/* Desktop Top Header replaced with PublicHeader */}
-      {!pathname.startsWith('/admin') && (
+      {/* Cổng eKYC: tài khoản social login chưa có khuôn mặt → bắt enroll ngay,
+          chặn mọi trang cho đến khi xong (BE cũng chặn đặt chỗ/nhận đơn) */}
+      <FaceEnrollmentGate />
+
+      {/* Desktop Top Header replaced with PublicHeader - EXCLUDE provider routes (they have their own layout) */}
+      {!pathname.startsWith('/admin') && !pathname.startsWith('/provider') && (
         <div className="hidden md:block">
           <PublicHeader />
         </div>
       )}
 
-      {/* Mobile Top Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between h-16">
-        <h1 className="font-headline-md text-headline-md text-primary font-bold">FoodResQ</h1>
-        <div className="flex items-center gap-md">
-          <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center">
-            <span className="font-label-sm text-label-sm text-on-primary-container font-semibold">
-              {user.fullName.charAt(0).toUpperCase()}
-            </span>
+      {/* Mobile Top Header - only for non-provider routes */}
+      {!pathname.startsWith('/provider') && (
+        <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between h-16">
+          <h1 className="font-headline-md text-headline-md text-primary font-bold">FoodResQ</h1>
+          <div className="flex items-center gap-md">
+            <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center">
+              <span className="font-label-sm text-label-sm text-on-primary-container font-semibold">
+                {user.fullName.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <button onClick={handleLogout} className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
+              <span className="material-symbols-outlined text-[20px]">logout</span>
+            </button>
           </div>
-          <button onClick={handleLogout} className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* Main Content Area */}
-      <main className={`flex-1 flex flex-col ${pathname.startsWith('/admin') ? 'md:pt-0' : 'pt-16 md:pt-[104px]'} pb-16 md:pb-0 min-h-screen`}>
-        {children}
-      </main>
+      {/* Main Content Area - Skip wrapper for provider routes (they have their own layout) */}
+      {pathname.startsWith('/provider') ? (
+        <>{children}</>
+      ) : (
+        <main
+          className={`flex-1 flex flex-col ${
+            pathname.startsWith('/admin')
+              ? 'md:pt-0'
+              : 'pt-16 md:pt-[104px]'
+          } pb-16 md:pb-0 min-h-screen`}
+        >
+          {children}
+        </main>
+      )}
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant/20 flex shadow-lg">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex-1 flex flex-col items-center py-2 gap-xs transition-colors ${
-              pathname === item.href ? 'text-primary' : 'text-on-surface-variant'
-            }`}
-          >
-            <span
-              className="material-symbols-outlined text-[22px]"
-              style={pathname === item.href ? { fontVariationSettings: "'FILL' 1" } : {}}
+      {/* Mobile bottom nav - hidden for provider routes */}
+      {!pathname.startsWith('/provider') && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant/20 flex shadow-lg">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex-1 flex flex-col items-center py-2 gap-xs transition-colors ${
+                pathname === item.href ? 'text-primary' : 'text-on-surface-variant'
+              }`}
             >
-              {item.icon}
-            </span>
-            <span className="font-label-sm text-[10px]">{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+              <span
+                className="material-symbols-outlined text-[22px]"
+                style={pathname === item.href ? { fontVariationSettings: "'FILL' 1" } : {}}
+              >
+                {item.icon}
+              </span>
+              <span className="font-label-sm text-[10px]">{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

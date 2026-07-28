@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import type { $Enums } from '@prisma/client';
 import { CreateReportDto } from './dto/create-report.dto';
 
 @Injectable()
@@ -7,17 +8,62 @@ export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
   async create(reporterId: string, dto: CreateReportDto) {
+    // Validate quyền sở hữu trước khi ghi nhận — chống spam & report đối phó
+    await this.validateOwnership(reporterId, dto.targetType, dto.targetId);
+
     const report = await this.prisma.report.create({
       data: {
         reporterId,
-        targetType: dto.targetType,
+        targetType: dto.targetType as $Enums.ReportTargetType,
         targetId: dto.targetId,
-        reason: dto.reason,
+        reason: dto.reason as $Enums.ReportReason,
         description: dto.description ?? null,
       },
       select: { id: true, status: true, createdAt: true },
     });
     return { ...report, message: 'Đã gửi báo cáo. Đội ngũ quản trị sẽ xem xét.' };
+  }
+
+  /**
+   * Đảm bảo người báo cáo có liên quan thực sự đến đối tượng bị báo cáo.
+   * - RESERVATION: chỉ receiver sở hữu mới được báo
+   * - LISTING: bất kỳ ai cũng báo được (vd thấy listing sai)
+   * - DELIVERY: bất kỳ ai cũng báo được (vd shipper vi phạm)
+   * - USER: bất kỳ ai cũng báo được
+   * - CAMPAIGN: bất kỳ ai cũng báo được
+   */
+  private async validateOwnership(
+    reporterId: string,
+    targetType: string,
+    targetId: string,
+  ): Promise<void> {
+    if (targetType === 'reservation') {
+      const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId: reporterId } });
+      if (!receiver) {
+        throw new ForbiddenException('Chỉ người nhận mới có thể báo cáo đơn đặt chỗ.');
+      }
+      const reservation = await this.prisma.reservation.findFirst({
+        where: { id: targetId, receiverId: receiver.id },
+        select: { id: true },
+      });
+      if (!reservation) {
+        throw new ForbiddenException('Bạn không có quyền báo cáo đơn đặt chỗ này.');
+      }
+    }
+    // Mọi target type khác: chỉ cần kiểm tra tồn tại để tránh báo cáo ma
+    let exists: { id: string } | null = null;
+    if (targetType === 'listing') {
+      exists = await this.prisma.foodListing.findUnique({ where: { id: targetId }, select: { id: true } });
+    } else if (targetType === 'delivery') {
+      exists = await this.prisma.delivery.findUnique({ where: { id: targetId }, select: { id: true } });
+    } else if (targetType === 'user') {
+      exists = await this.prisma.user.findUnique({ where: { id: targetId }, select: { id: true } });
+    } else if (targetType === 'campaign') {
+      exists = await this.prisma.kitchenCampaign.findUnique({ where: { id: targetId }, select: { id: true } });
+    }
+    if (!exists) {
+      throw new NotFoundException('Đối tượng báo cáo không tồn tại hoặc đã bị xoá.');
+    }
   }
 
   async findMine(reporterId: string) {

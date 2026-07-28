@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 import { useListing } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { createReservationSchema, type CreateReservationInput } from '@/schemas/reservation.schema';
 
 interface Props {
@@ -34,7 +36,11 @@ export default function ReservationModal({ listingId, onClose }: Props) {
     try {
       const res = await createReservation.mutateAsync(data);
       setResult({ qrToken: res.qrToken, qrExpiresAt: res.qrExpiresAt, reservationId: res.reservationId });
-      toast.success('Đặt chỗ thành công!');
+      toast.success(
+        data.requestDelivery
+          ? 'Đã tạo đơn giao hàng! Hệ thống đang tìm tình nguyện viên gần điểm lấy.'
+          : 'Đặt chỗ tự đến lấy thành công! Đơn này sẽ không gửi lời mời cho shipper.'
+      );
     } catch (err: unknown) {
       const msg =
         err instanceof Error
@@ -96,7 +102,7 @@ export default function ReservationModal({ listingId, onClose }: Props) {
                     {listing.provider.businessName}
                   </p>
                   <p className="font-label-sm text-label-sm text-primary mt-xs">
-                    Còn {listing.quantityRemaining} {listing.quantityUnit} • Tối đa {listing.maxPerReservation} mỗi lần
+                    Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit} • Tối đa {listing.maxPerReservation} mỗi lần
                   </p>
                 </div>
 

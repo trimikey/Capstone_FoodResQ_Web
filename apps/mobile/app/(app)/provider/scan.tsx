@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, TextInput, ActivityIndicator, Divider } from 'react-native-paper';
+import { Text, Button, TextInput, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Redirect } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
 import { useScanQr, useConfirmPickup, type ScanResult } from '@/hooks/useProviderScan';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { notifyError, notifySuccess, selectionFeedback } from '@/services/haptics';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 export default function ScanQrScreen() {
+  const { user } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const scan = useScanQr();
   const confirm = useConfirmPickup();
@@ -21,6 +26,10 @@ export default function ScanQrScreen() {
   const [scanning, setScanning] = useState(false); // khoá khi đang gọi API
   const [manualToken, setManualToken] = useState('');
   const [torch, setTorch] = useState(false); // đèn flash
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   const handleScan = async (token: string) => {
     if (scanning || !token) return;
@@ -66,7 +75,10 @@ export default function ScanQrScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header />
         <ScrollView contentContainerStyle={styles.matchContent}>
-          <Text variant="titleMedium" style={styles.matchTitle}>Đối chiếu người nhận</Text>
+          <View style={styles.matchHero}>
+            <Text style={styles.matchKicker}>Đối chiếu QR</Text>
+            <Text variant="titleMedium" style={styles.matchTitle}>Xác nhận đúng người nhận</Text>
+          </View>
           {photo ? (
             <AppImage source={{ uri: photo }} style={styles.facePhoto} />
           ) : (
@@ -76,16 +88,13 @@ export default function ScanQrScreen() {
           )}
           <Text variant="headlineSmall" style={styles.receiverName}>{r.fullName}</Text>
           {r.phone ? <Text style={styles.meta}>{r.phone}</Text> : null}
-          <View style={[styles.enrollBadge, { backgroundColor: r.enrolled ? '#dcfce7' : '#fef3c7' }]}>
-            <Text style={{ color: r.enrolled ? '#15803d' : '#b45309', fontWeight: '700', fontSize: 12 }}>
-              {r.enrolled ? 'Đã đăng ký khuôn mặt' : 'Chưa đăng ký khuôn mặt'}
-            </Text>
-          </View>
+          <StatusBadge label={r.enrolled ? 'Đã đăng ký khuôn mặt' : 'Chưa đăng ký khuôn mặt'} tone={r.enrolled ? 'success' : 'warning'} />
 
-          <Divider style={{ marginVertical: 16, width: '100%' }} />
-          <Row label="Món" value={result.listing.title} />
-          <Row label="Số lượng" value={`${result.quantity} ${result.listing.quantityUnit}`} />
-          {r.idCardNumber ? <Row label="CCCD" value={r.idCardNumber} /> : null}
+          <SurfaceCard style={styles.matchInfo}>
+            <Row label="Món" value={result.listing.title} />
+            <Row label="Số lượng" value={`${result.quantity} ${result.listing.quantityUnit}`} />
+            {r.idCardNumber ? <Row label="CCCD" value={r.idCardNumber} /> : null}
+          </SurfaceCard>
 
           <Button mode="contained" icon="check-bold" onPress={handleConfirm} loading={scanning} disabled={scanning}
             buttonColor={COLORS.primary} style={styles.confirmBtn} labelStyle={{ fontSize: 16, fontWeight: 'bold' }}>
@@ -102,6 +111,10 @@ export default function ScanQrScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header />
       <ScrollView contentContainerStyle={styles.scanContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.scanHero}>
+          <Text style={styles.scanKicker}>Pickup verification</Text>
+          <Text style={styles.scanTitle}>Quét QR của receiver để giao món</Text>
+        </View>
         <View style={styles.cameraBox}>
           {!permission ? (
             <ActivityIndicator color={COLORS.primary} />
@@ -135,29 +148,29 @@ export default function ScanQrScreen() {
                 <MaterialCommunityIcons
                   name={torch ? 'flash' : 'flash-off'}
                   size={24}
-                  color="#fff"
+                  color={COLORS.onPrimary}
                 />
               </Pressable>
             </>
           )}
           {scanning ? (
             <View style={styles.scanningOverlay}>
-              <ActivityIndicator color="#fff" />
-              <Text style={{ color: '#fff', marginTop: 8 }}>Đang xử lý…</Text>
+              <ActivityIndicator color={COLORS.onPrimary} />
+              <Text style={styles.scanningText}>Đang xử lý...</Text>
             </View>
           ) : null}
         </View>
         <Text style={styles.hint}>Hướng camera vào mã QR trên đơn của người nhận</Text>
 
-        <Divider style={{ marginVertical: 20 }} />
-
-        <Text style={styles.label}>Hoặc nhập mã thủ công</Text>
-        <TextInput mode="outlined" placeholder="Dán mã QR (token)" value={manualToken} onChangeText={setManualToken}
-          autoCapitalize="none" outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
-        <Button mode="contained-tonal" icon="magnify" onPress={() => handleScan(manualToken)}
-          disabled={scanning || !manualToken.trim()} style={{ marginTop: 8 }}>
-          Tra cứu mã
-        </Button>
+        <SurfaceCard style={styles.manualCard}>
+          <Text style={styles.label}>Hoặc nhập mã thủ công</Text>
+          <TextInput mode="outlined" placeholder="Dán mã QR (token)" value={manualToken} onChangeText={setManualToken}
+            autoCapitalize="none" outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
+          <Button mode="contained-tonal" icon="magnify" onPress={() => handleScan(manualToken)}
+            disabled={scanning || !manualToken.trim()} style={{ marginTop: 8 }}>
+            Tra cứu mã
+          </Button>
+        </SurfaceCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -180,27 +193,38 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: { height: 56, paddingHorizontal: 20, justifyContent: 'center' },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  scanContent: { padding: 20 },
+  scanContent: { padding: spacing.xl, gap: spacing.md },
+  scanHero: {
+    borderRadius: 28,
+    padding: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  scanKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  scanTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
   cameraBox: {
-    width: '100%', aspectRatio: 1, borderRadius: 20, overflow: 'hidden',
+    width: '100%', aspectRatio: 1, borderRadius: 28, overflow: 'hidden',
     backgroundColor: '#000', alignItems: 'center', justifyContent: 'center',
   },
   permWrap: { alignItems: 'center', gap: 12, padding: 20 },
   permText: { color: COLORS.onSurfaceVariant, textAlign: 'center' },
   scanningOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
   torchBtn: { position: 'absolute', top: 12, right: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  scanningText: { color: COLORS.onPrimary, marginTop: 8, fontWeight: '800' },
   hint: { textAlign: 'center', color: COLORS.onSurfaceVariant, marginTop: 12 },
   label: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant, marginBottom: 8 },
   input: { backgroundColor: COLORS.surface },
-  matchContent: { padding: 20, alignItems: 'center' },
-  matchTitle: { fontWeight: '700', color: COLORS.onSurface, marginBottom: 16 },
+  manualCard: { padding: spacing.lg },
+  matchContent: { padding: spacing.xl, alignItems: 'center', gap: spacing.md },
+  matchHero: { alignSelf: 'stretch', borderRadius: 28, padding: spacing.lg, backgroundColor: COLORS.primaryStrong },
+  matchKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  matchTitle: { fontWeight: '900', color: COLORS.onPrimary },
   facePhoto: { width: 160, height: 160, borderRadius: 80, backgroundColor: COLORS.outline },
   faceEmpty: { alignItems: 'center', justifyContent: 'center' },
   receiverName: { fontWeight: '800', color: COLORS.onSurface, marginTop: 14 },
   meta: { color: COLORS.onSurfaceVariant, marginTop: 2 },
-  enrollBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, marginTop: 10 },
+  matchInfo: { alignSelf: 'stretch', padding: spacing.lg },
   row: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingVertical: 6 },
   rowLabel: { color: COLORS.onSurfaceVariant },
   rowValue: { color: COLORS.onSurface, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
-  confirmBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 4, alignSelf: 'stretch' },
+  confirmBtn: { marginTop: spacing.sm, borderRadius: radius.md, paddingVertical: 4, alignSelf: 'stretch' },
 });

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 "use client";
 
 import Link from "next/link";
@@ -106,4 +107,12 @@ export default function VolunteerLayout({ children }: { children: React.ReactNod
       </nav>
     </div>
   );
+=======
+export default function VolunteerLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return children;
+>>>>>>> origin/master
 }

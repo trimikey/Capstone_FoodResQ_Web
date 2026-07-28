@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   labelActive: {
-    color: '#ffffff',
+    color: COLORS.onPrimary,
   },
   count: {
     color: COLORS.onSurfaceVariant,
@@ -66,6 +66,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   countActive: {
-    color: '#ffffff',
+    color: COLORS.onPrimary,
   },
 });

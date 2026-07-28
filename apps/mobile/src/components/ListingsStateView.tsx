@@ -1,19 +1,16 @@
 import { View, StyleSheet } from 'react-native';
 import { Text, Button, Icon } from 'react-native-paper';
-
-const COLORS = {
-  primary: '#10b981',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   variant: 'empty' | 'error';
   onRetry?: () => void;
+  onClear?: () => void;
+  hasFilters?: boolean;
 }
 
 /** View trạng thái rỗng / lỗi cho danh sách listing. */
-export function ListingsStateView({ variant, onRetry }: Props) {
+export function ListingsStateView({ variant, onRetry, onClear, hasFilters }: Props) {
   const isError = variant === 'error';
   return (
     <View style={styles.container}>
@@ -30,6 +27,16 @@ export function ListingsStateView({ variant, onRetry }: Props) {
           ? 'Kiểm tra kết nối mạng rồi thử lại.'
           : 'Thử đổi từ khoá, bộ lọc hoặc mở rộng bán kính tìm kiếm.'}
       </Text>
+      {!isError && hasFilters && onClear && (
+        <Button
+          mode="contained-tonal"
+          onPress={onClear}
+          style={styles.btn}
+          textColor={COLORS.primary}
+        >
+          Xoá tìm kiếm và bộ lọc
+        </Button>
+      )}
       {isError && onRetry && (
         <Button
           mode="contained"
@@ -45,8 +52,8 @@ export function ListingsStateView({ variant, onRetry }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: 8 },
+  container: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64, gap: spacing.sm },
   title: { fontWeight: '700', color: COLORS.onSurface, textAlign: 'center', marginTop: 8 },
   subtitle: { color: COLORS.onSurfaceVariant, textAlign: 'center', paddingHorizontal: 32 },
-  btn: { marginTop: 12, borderRadius: 12 },
+  btn: { marginTop: 12, borderRadius: radius.md },
 });

@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import type { Marker as LeafletMarker } from 'leaflet';
+import { useEffect, useId, useRef, useState } from 'react';
+import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -12,48 +11,72 @@ interface Props {
   onPick: (lng: number, lat: number) => void;
 }
 
-const pin = L.divIcon({
-  className: 'foodresq-pin',
-  html: `<div style="width:34px;height:34px;border-radius:9999px;background:#236c2a;display:flex;align-items:center;justify-content:center;color:#fff;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);font-family:'Material Symbols Outlined';font-size:18px;cursor:grab;">location_on</div>`,
-  iconSize: [34, 34],
-  iconAnchor: [17, 17],
+// Pin dùng inline SVG — không phụ thuộc Material Symbols font có sẵn hay không.
+// Emerald-700 (#047857) đồng bộ với brand FoodResQ.
+const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>`;
+const pinHtml = `<div class="frq-pin"><span class="frq-pin__pulse"></span><span class="frq-pin__core">${pinSvg}</span></div>`;
+const pinIcon = L.divIcon({
+  className: 'frq-pin-wrapper',
+  html: pinHtml,
+  iconSize: [40, 40],
+  iconAnchor: [20, 32],
 });
 
-function ClickHandler({ onPick }: { onPick: (lng: number, lat: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onPick(e.latlng.lng, e.latlng.lat);
-    },
-  });
-  return null;
-}
-
-// Đồng bộ tâm bản đồ khi toạ độ đổi từ bên ngoài (vd: bấm nút định vị GPS)
-function Recenter({ lng, lat }: { lng: number; lat: number }) {
+/** Quản lý marker và click handler bên trong MapContainer. */
+function MapContent({ lng, lat, onPick }: Props) {
   const map = useMap();
+  const markerRef = useRef<L.Marker | null>(null);
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
+
+  // Tạo marker khi map sẵn sàng, dùng lat/lng initial props
   useEffect(() => {
-    map.setView([lat, lng], map.getZoom());
-  }, [map, lat, lng]);
+    const marker = L.marker([lat, lng], { icon: pinIcon, draggable: true })
+      .addTo(map)
+      .on('dragend', (e) => {
+        const p = e.target.getLatLng();
+        onPickRef.current(p.lng, p.lat);
+      });
+
+    markerRef.current = marker;
+
+    return () => {
+      marker.remove();
+      markerRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  // Cập nhật marker khi lng/lat props thay đổi
+  useEffect(() => {
+    if (!markerRef.current) return;
+    markerRef.current.setLatLng([lat, lng]);
+  }, [lat, lng]);
+
+  // Click handler để chọn vị trí mới
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => {
+      const newLat = e.latlng.lat;
+      const newLng = e.latlng.lng;
+      if (markerRef.current) {
+        markerRef.current.setLatLng([newLat, newLng]);
+      }
+      map.flyTo([newLat, newLng], map.getZoom(), { duration: 0.3 });
+      onPickRef.current(newLng, newLat);
+    };
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+    };
+  }, [map]);
+
   return null;
 }
 
 /** Bản đồ cho phép bấm hoặc kéo ghim để chọn toạ độ chính xác. */
 export default function LocationPicker({ lng, lat, onPick }: Props) {
-  const markerRef = useRef<LeafletMarker | null>(null);
+  const mapId = useId();
   const [isMounted, setIsMounted] = useState(false);
-
-  const dragHandlers = useMemo(
-    () => ({
-      dragend() {
-        const m = markerRef.current;
-        if (m) {
-          const p = m.getLatLng();
-          onPick(p.lng, p.lat);
-        }
-      },
-    }),
-    [onPick],
-  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -64,20 +87,18 @@ export default function LocationPicker({ lng, lat, onPick }: Props) {
   }
 
   return (
-    <MapContainer key={`${lat.toFixed(6)}-${lng.toFixed(6)}`} center={[lat, lng]} zoom={16} scrollWheelZoom className="w-full h-full">
+    <MapContainer
+      key={mapId}
+      center={[lat, lng]}
+      zoom={16}
+      scrollWheelZoom
+      className="w-full h-full relative z-0"
+    >
       <TileLayer
-        attribution='&copy; OpenStreetMap'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       />
-      <Marker
-        position={[lat, lng]}
-        icon={pin}
-        draggable
-        eventHandlers={dragHandlers}
-        ref={markerRef}
-      />
-      <ClickHandler onPick={onPick} />
-      <Recenter lng={lng} lat={lat} />
+      <MapContent lng={lng} lat={lat} onPick={onPick} />
     </MapContainer>
   );
 }

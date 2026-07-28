@@ -37,28 +37,42 @@ export default function CameraCapture({ mode, hint, confirmLabel = 'Xác nhận'
     streamRef.current = null;
   }, []);
 
-  const startCamera = useCallback(async () => {
-    stopCamera();
-    setCameraError(false);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch {
-      setCameraError(true);
-    }
-  }, [facingMode, stopCamera]);
-
+  // Bật camera khi vào stage 'camera'. Hoãn 1 nhịp (setTimeout 0) để lần mount "nháp"
+  // của React Strict Mode bị huỷ TRƯỚC khi kịp gọi getUserMedia — nếu không, 2 yêu cầu
+  // camera chồng nhau: luồng 1 giữ thiết bị, luồng 2 dính "device busy" → hiện lỗi
+  // "Không truy cập được camera" dù camera vừa nháy lên.
   useEffect(() => {
-    if (stage === 'camera') void startCamera();
-    return () => stopCamera();
-  }, [stage, startCamera, stopCamera]);
+    if (stage !== 'camera') return;
+    let cancelled = false;
+    const start = async () => {
+      setCameraError(false);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: false,
+        });
+        if (cancelled) {
+          // Effect đã bị huỷ trong lúc chờ quyền — nhả camera ngay, không giữ thiết bị
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          // play() bị ngắt (chuyển trang nhanh) không phải lỗi camera → bỏ qua
+          await videoRef.current.play().catch(() => {});
+        }
+      } catch {
+        if (!cancelled) setCameraError(true);
+      }
+    };
+    const timer = setTimeout(() => void start(), 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      stopCamera();
+    };
+  }, [stage, facingMode, stopCamera]);
 
   useEffect(() => {
     return () => {

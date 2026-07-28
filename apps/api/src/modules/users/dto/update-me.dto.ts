@@ -1,4 +1,17 @@
-import { IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMeDto {
@@ -25,24 +38,29 @@ export class UpdateMeDto {
   })
   avatarUrl?: string;
 
-  @ApiPropertyOptional({ example: 'Đường T8, Vinhomes Grand Park, TP.HCM' })
+
+  // ── Địa chỉ + vị trí (provider: vị trí cửa hàng · receiver: điểm giao) ────
+
+  @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Q1, TP.HCM' })
   @IsOptional()
   @IsString()
-  @MinLength(5, { message: 'Địa chỉ phải có ít nhất 5 ký tự.' })
-  @MaxLength(500, { message: 'Địa chỉ không được vượt quá 500 ký tự.' })
+  @MaxLength(500)
   address?: string;
 
-  @ApiPropertyOptional({ example: 106.8293 })
+  @ApiPropertyOptional({ example: 106.6297 })
   @IsOptional()
-  @IsNumber({}, { message: 'Kinh độ phải là một số hợp lệ.' })
-  @Min(-180, { message: 'Kinh độ phải nằm trong khoảng -180 đến 180.' })
-  @Max(180, { message: 'Kinh độ phải nằm trong khoảng -180 đến 180.' })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
   lng?: number;
 
-  @ApiPropertyOptional({ example: 10.8412 })
+  @ApiPropertyOptional({ example: 10.8231 })
   @IsOptional()
-  @IsNumber({}, { message: 'Vĩ độ phải là một số hợp lệ.' })
-  @Min(-90, { message: 'Vĩ độ phải nằm trong khoảng -90 đến 90.' })
-  @Max(90, { message: 'Vĩ độ phải nằm trong khoảng -90 đến 90.' })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+
   lat?: number;
 }

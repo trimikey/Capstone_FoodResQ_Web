@@ -36,8 +36,18 @@ export function useEnrollFace() {
       });
       return res.data.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.enrolled) {
+        queryClient.setQueryData<FaceEnrollmentStatus>(['faceEnrollment'], (current) => ({
+          enrolled: true,
+          faceImageUrl: current?.faceImageUrl ?? null,
+          idCardImageUrl: current?.idCardImageUrl ?? null,
+        }));
+      }
       queryClient.invalidateQueries({ queryKey: ['faceEnrollment'] });
+      queryClient.invalidateQueries({ queryKey: ['profile', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['volunteer', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
     },
   });
 }

@@ -1,0 +1,1058 @@
+'use client';
+
+import React, { useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { toast } from 'sonner';
+import { reverseGeocode } from '@/lib/geocode';
+import {
+  useUploadCampaignImage,
+  type CreateCampaignInput,
+} from '@/hooks/useCampaigns';
+import { errMsg, mediaUrl } from '@/lib/utils';
+
+const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">
+      Đang tải bản đồ…
+    </div>
+  ),
+});
+
+interface CreateCampaignModalProps {
+  onClose: () => void;
+  onSubmit: (input: CreateCampaignInput) => Promise<unknown>;
+  pending: boolean;
+}
+
+export default function CreateCampaignModal({
+  onClose,
+  onSubmit,
+  pending,
+}: CreateCampaignModalProps) {
+  const [f, setF] = useState({
+    title: '',
+    description: '',
+    kitchenAddress: '',
+    scheduledDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    startTime: '08:00',
+    endTime: '12:00',
+    chefSlotsNeeded: 2,
+    waiterSlotsNeeded: 3,
+    shipperSlotsNeeded: 2,
+    expectedServings: 100,
+    lng: 106.6297,
+    lat: 10.8231,
+  });
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  async function onMapPick(lng: number, lat: number) {
+    setF((prev) => ({ ...prev, lng, lat }));
+    setGeocoding(true);
+    setGeocodeError(false);
+    const address = await reverseGeocode(lat, lng);
+    setGeocoding(false);
+    if (address) {
+      setF((prev) => ({ ...prev, kitchenAddress: address }));
+    } else {
+      setGeocodeError(true);
+      setF((prev) => ({ ...prev, kitchenAddress: `${lat.toFixed(6)}, ${lng.toFixed(6)}` }));
+      toast.warning('Không lấy được địa chỉ từ bản đồ — bạn có thể tự nhập tay phía trên.');
+    }
+  }
+
+  const upload = useUploadCampaignImage();
+
+  const [menu, setMenu] = useState<{ name: string; type: string; plannedServings?: number }[]>([]);
+  const [schedule, setSchedule] = useState<{ time: string; label: string }[]>([]);
+  const [supplies, setSupplies] = useState<{ name: string; quantity?: number; unit?: string }[]>([]);
+  const [shifts, setShifts] = useState<
+    { label: string; role?: 'chef' | 'waiter' | 'shipper'; startTime: string; endTime: string; slotsNeeded: number }[]
+  >([]);
+
+  // Field-level errors (key = field path, value = Vietnamese message)
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const setErr = (k: string, v: string | undefined) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (v) next[k] = v;
+      else delete next[k];
+      return next;
+    });
+
+  // ─── Validation rules (tiếng Việt) ────────────────────────────────────────
+  function validateAll(): boolean {
+    const next: Record<string, string> = {};
+    // Title
+    if (!f.title.trim()) next.title = 'Vui lòng nhập tiêu đề';
+    else if (f.title.trim().length < 5) next.title = 'Tiêu đề tối thiểu 5 ký tự';
+    else if (f.title.trim().length > 255) next.title = 'Tiêu đề tối đa 255 ký tự';
+    // Description (optional nhưng giới hạn)
+    if (f.description && f.description.length > 5000) next.description = 'Mô tả tối đa 5000 ký tự';
+    // Address
+    if (!f.kitchenAddress.trim()) next.kitchenAddress = 'Vui lòng nhập địa chỉ bếp';
+    else if (f.kitchenAddress.trim().length < 5) next.kitchenAddress = 'Địa chỉ tối thiểu 5 ký tự';
+    // Date
+    if (!f.scheduledDate) next.scheduledDate = 'Chọn ngày tổ chức';
+    else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const picked = new Date(f.scheduledDate);
+      if (picked < today) next.scheduledDate = 'Ngày tổ chức phải từ hôm nay trở đi';
+    }
+    // Time
+    if (!f.startTime) next.startTime = 'Chọn giờ bắt đầu';
+    if (!f.endTime) next.endTime = 'Chọn giờ kết thúc';
+    if (f.startTime && f.endTime && f.endTime <= f.startTime) {
+      next.endTime = 'Giờ kết thúc phải sau giờ bắt đầu';
+    }
+    // Expected servings
+    if (!f.expectedServings || f.expectedServings < 1) {
+      next.expectedServings = 'Số suất ăn dự kiến tối thiểu 1';
+    } else if (f.expectedServings > 100000) {
+      next.expectedServings = 'Số suất ăn dự kiến tối đa 100.000';
+    }
+    // Slots — DTO cho phép 0..50
+    (['chefSlotsNeeded', 'waiterSlotsNeeded', 'shipperSlotsNeeded'] as const).forEach((k) => {
+      const v = f[k];
+      if (v < 0) next[k] = 'Không được âm';
+      else if (v > 50) next[k] = 'Tối đa 50 người';
+    });
+    // Menu
+    menu.forEach((m, i) => {
+      if (m.name.trim() && m.name.trim().length > 100)
+        next[`menu.${i}.name`] = 'Tên món tối đa 100 ký tự';
+      if (m.plannedServings !== undefined && m.plannedServings < 0)
+        next[`menu.${i}.plannedServings`] = 'Không được âm';
+      if (m.plannedServings !== undefined && m.plannedServings > 10000)
+        next[`menu.${i}.plannedServings`] = 'Tối đa 10.000 suất';
+    });
+    // Schedule
+    schedule.forEach((s, i) => {
+      if (s.label.trim() && !s.time) next[`schedule.${i}.time`] = 'Chọn giờ';
+      if (s.label.trim().length > 160) next[`schedule.${i}.label`] = 'Tối đa 160 ký tự';
+    });
+    // Supplies
+    supplies.forEach((s, i) => {
+      if (s.name.trim().length > 80) next[`supplies.${i}.name`] = 'Tối đa 80 ký tự';
+      if (s.quantity !== undefined && s.quantity < 0)
+        next[`supplies.${i}.quantity`] = 'Không được âm';
+      if (s.unit && s.unit.length > 20) next[`supplies.${i}.unit`] = 'Tối đa 20 ký tự';
+    });
+    // Shifts
+    shifts.forEach((s, i) => {
+      if (s.label.trim()) {
+        if (s.label.trim().length < 2) next[`shifts.${i}.label`] = 'Tối thiểu 2 ký tự';
+        if (s.label.trim().length > 100) next[`shifts.${i}.label`] = 'Tối đa 100 ký tự';
+        if (!s.startTime) next[`shifts.${i}.startTime`] = 'Chọn giờ bắt đầu';
+        if (!s.endTime) next[`shifts.${i}.endTime`] = 'Chọn giờ kết thúc';
+        if (s.startTime && s.endTime && s.endTime <= s.startTime)
+          next[`shifts.${i}.endTime`] = 'Giờ kết thúc phải sau giờ bắt đầu';
+        if (s.slotsNeeded < 0) next[`shifts.${i}.slotsNeeded`] = 'Không được âm';
+        if (s.slotsNeeded > 100) next[`shifts.${i}.slotsNeeded`] = 'Tối đa 100 người';
+      }
+    });
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function inputCls(key: string, base: string) {
+    return `${base} ${errors[key] ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`;
+  }
+
+  function FieldError({ k }: { k: string }) {
+    if (!errors[k]) return null;
+    return (
+      <p className="text-[11px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
+        <span className="material-symbols-outlined text-[13px]">error</span>
+        {errors[k]}
+      </p>
+    );
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validateAll()) {
+      const firstKey = Object.keys(errors)[0];
+      toast.error(errors[firstKey] ?? 'Vui lòng kiểm tra lại các trường');
+      // Scroll to first error
+      requestAnimationFrame(() => {
+        const el = document.querySelector('[data-field-error]');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      return;
+    }
+    try {
+      await onSubmit({
+        ...f,
+        imageUrls: imageUrl ? [imageUrl] : undefined,
+        menuItems: menu.filter((m) => m.name.trim()).map((m) => ({
+          name: m.name.trim(),
+          type: m.type.trim(),
+          plannedServings: m.plannedServings,
+        })),
+        scheduleItems: schedule.filter((s) => s.label.trim()).map((s) => ({
+          time: s.time.trim(),
+          label: s.label.trim(),
+        })),
+        supplyItems: supplies
+          .filter((s) => s.name.trim())
+          .map((s) => ({
+            name: s.name.trim(),
+            quantity: s.quantity,
+            unit: s.unit?.trim() || undefined,
+          })),
+        shifts: shifts
+          .filter((s) => s.label.trim())
+          .map((s) => ({
+            label: s.label.trim(),
+            role: s.role,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            slotsNeeded: s.slotsNeeded,
+          })),
+      });
+      toast.success('Đã gửi yêu cầu. Chiến dịch sẽ hiển thị sau khi quản trị viên duyệt.');
+      onClose();
+    } catch (e: unknown) {
+      const err = e as {
+        response?: { data?: { error?: { message?: string | string[]; details?: unknown } } };
+      };
+      // class-validator thường trả về message là MẢNG chuỗi (1 entry / field lỗi).
+      // Ghép lại để user thấy toàn bộ field bị reject trong 1 toast.
+      const raw = err?.response?.data?.error?.message;
+      const details = err?.response?.data?.error?.details;
+      const msg = Array.isArray(raw) ? raw.join(' · ') : raw ?? 'Tạo thất bại';
+      // Log chi tiết ra console để dev debug nhanh (BE trả message + field path)
+      console.error('[CreateCampaign] POST /campaigns failed:', { msg, details, raw });
+      toast.error(msg);
+    }
+  }
+
+  function bumpSlot(key: 'chefSlotsNeeded' | 'waiterSlotsNeeded' | 'shipperSlotsNeeded', delta: number) {
+    setF((prev) => ({
+      ...prev,
+      [key]: Math.max(0, Math.min(99, prev[key] + delta)),
+    }));
+  }
+
+  const previewTitle = f.title.trim() || 'Tên chiến dịch của bạn';
+
+  // Click nút "Thêm/Đổi ảnh" trên cover → cuộn xuống khu vực upload trong form
+  function focusCoverUploader() {
+    // Kích hoạt input file (vì block upload có sẵn trong form)
+    document.getElementById('cm-img-input')?.click();
+    // Cuộn body modal tới block Ảnh bìa để user thấy ngay kết quả preview
+    requestAnimationFrame(() => {
+      const el = document.getElementById('cm-image-block');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  return (
+    <div className="cm-modal" role="dialog" aria-modal="true" aria-labelledby="cm-modal-title">
+      <form onSubmit={submit} className="cm-modal-card">
+        {/* ─── Cover hero (sticky header — không hiển thị ảnh user upload,
+              chỉ là brand backdrop + nút Đổi ảnh / Đóng. Ảnh thật xem ở form-block bên dưới) ─── */}
+        <div className="cm-modal-cover-sticky">
+        <div className="cm-modal-cover">
+          <button
+            type="button"
+            onClick={focusCoverUploader}
+            className="cm-modal-cover-edit"
+            aria-label={imageUrl ? 'Đổi ảnh bìa' : 'Thêm ảnh bìa'}
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {upload.isPending ? 'hourglass_top' : imageUrl ? 'edit' : 'add_a_photo'}
+            </span>
+            {imageUrl ? 'Đổi ảnh' : 'Thêm ảnh'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="cm-modal-close"
+            aria-label="Đóng"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+
+          <div className="cm-modal-cover-overlay">
+            <p className="cm-modal-cover-eyebrow">Yêu cầu mới · chờ admin duyệt</p>
+            <h2 id="cm-modal-title" className="cm-modal-cover-title">
+              {previewTitle}
+            </h2>
+            <p className="cm-modal-cover-sub">
+              {new Date(f.scheduledDate).toLocaleDateString('vi-VN', {
+                weekday: 'long',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              })}{' '}
+              · {f.startTime}–{f.endTime}
+              {f.kitchenAddress && ` · ${f.kitchenAddress}`}
+            </p>
+          </div>
+        </div>
+        </div>
+
+        {/* ─── Body: 2 columns ─── */}
+        <div className="cm-modal-body">
+          <div className="cm-modal-grid">
+            {/* ──────── Cột trái: thông tin + ảnh + thực đơn ──────── */}
+            <div>
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">info</span>Thông tin cơ bản
+                </span>
+                <input
+                  value={f.title}
+                  onChange={(e) => {
+                    setF({ ...f, title: e.target.value });
+                    if (errors.title) setErr('title', undefined);
+                  }}
+                  onBlur={() => {
+                    if (!f.title.trim()) setErr('title', 'Vui lòng nhập tiêu đề');
+                    else if (f.title.trim().length < 5) setErr('title', 'Tiêu đề tối thiểu 5 ký tự');
+                    else setErr('title', undefined);
+                  }}
+                  placeholder="Tiêu đề chiến dịch *"
+                  className={inputCls('title', 'cm-input')}
+                  aria-invalid={!!errors.title}
+                  data-field-error={errors.title ? 'title' : undefined}
+                  maxLength={255}
+                />
+                <FieldError k="title" />
+                <textarea
+                  value={f.description}
+                  onChange={(e) => {
+                    setF({ ...f, description: e.target.value });
+                    if (errors.description) setErr('description', undefined);
+                  }}
+                  placeholder="Mô tả ngắn — bạn sẽ phục vụ ai, ở đâu, vì sao quan trọng?"
+                  rows={3}
+                  maxLength={5000}
+                  className={inputCls('description', 'cm-input')}
+                  aria-invalid={!!errors.description}
+                />
+                <FieldError k="description" />
+              </div>
+
+              <div id="cm-image-block" className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">image</span>Ảnh bìa chiến dịch
+                </span>
+                <ImageUploader value={imageUrl} onChange={setImageUrl} uploading={upload.isPending} />
+              </div>
+
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">restaurant_menu</span>Thực đơn trong ngày
+                </span>
+                <div className="cm-repeat">
+                  {menu.map((m, i) => (
+                    <div key={i} className="cm-repeat-row cm-repeat-row--menu">
+                      <input
+                        value={m.name}
+                        onChange={(e) =>
+                          setMenu(
+                            menu.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                          )
+                        }
+                        placeholder="Tên món (vd: Cơm thịt kho)"
+                        className="cm-input"
+                      />
+                      <input
+                        value={m.type}
+                        onChange={(e) =>
+                          setMenu(
+                            menu.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)),
+                          )
+                        }
+                        placeholder="Loại (Món chính)"
+                        className="cm-input"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={m.plannedServings ?? ''}
+                        onChange={(e) =>
+                          setMenu(
+                            menu.map((x, j) =>
+                              j === i
+                                ? {
+                                    ...x,
+                                    plannedServings: e.target.value === '' ? undefined : Number(e.target.value),
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                        placeholder="Suất dự kiến"
+                        className="cm-input"
+                        title="Số suất dự kiến cho món này"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMenu(menu.filter((_, j) => j !== i))}
+                        className="cm-repeat-remove"
+                        aria-label="Xoá món"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setMenu([...menu, { name: '', type: '' }])}
+                    className="cm-repeat-add"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm món
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ──────── Cột phải ──────── */}
+            <div>
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">place</span>Địa điểm
+                </span>
+                <input
+                  value={f.kitchenAddress}
+                  onChange={(e) => {
+                    setGeocodeError(false);
+                    setF({ ...f, kitchenAddress: e.target.value });
+                    if (errors.kitchenAddress) setErr('kitchenAddress', undefined);
+                  }}
+                  onBlur={() => {
+                    if (!f.kitchenAddress.trim()) setErr('kitchenAddress', 'Vui lòng nhập địa chỉ bếp');
+                    else if (f.kitchenAddress.trim().length < 5)
+                      setErr('kitchenAddress', 'Địa chỉ tối thiểu 5 ký tự');
+                    else setErr('kitchenAddress', undefined);
+                  }}
+                  placeholder="Địa chỉ bếp *"
+                  className={inputCls('kitchenAddress', 'cm-input')}
+                  aria-invalid={!!errors.kitchenAddress}
+                  data-field-error={errors.kitchenAddress ? 'kitchenAddress' : undefined}
+                  maxLength={500}
+                />
+                <FieldError k="kitchenAddress" />
+                <div className="cm-modal-map">
+                  <LocationPicker lng={f.lng} lat={f.lat} onPick={onMapPick} />
+                </div>
+                <p
+                  className={`cm-modal-meta ${
+                    geocodeError ? '!text-[#B45309]' : ''
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">
+                    {geocoding ? 'progress_activity' : geocodeError ? 'warning' : 'my_location'}
+                  </span>
+                  {geocoding
+                    ? 'Đang lấy địa chỉ từ bản đồ…'
+                    : geocodeError
+                      ? 'Không lấy được địa chỉ — bạn có thể tự nhập tay phía trên.'
+                      : `Toạ độ: ${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}`}
+                </p>
+              </div>
+
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">event</span>Thời gian & nhân lực
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="date"
+                    value={f.scheduledDate}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      setF({ ...f, scheduledDate: e.target.value });
+                      if (errors.scheduledDate) setErr('scheduledDate', undefined);
+                    }}
+                    className={inputCls('scheduledDate', 'cm-input')}
+                    aria-invalid={!!errors.scheduledDate}
+                    data-field-error={errors.scheduledDate ? 'scheduledDate' : undefined}
+                  />
+                  <input
+                    type="time"
+                    value={f.startTime}
+                    onChange={(e) => {
+                      setF({ ...f, startTime: e.target.value });
+                      if (errors.startTime) setErr('startTime', undefined);
+                    }}
+                    className={inputCls('startTime', 'cm-input')}
+                    aria-invalid={!!errors.startTime}
+                  />
+                  <input
+                    type="time"
+                    value={f.endTime}
+                    onChange={(e) => {
+                      setF({ ...f, endTime: e.target.value });
+                      if (errors.endTime) setErr('endTime', undefined);
+                    }}
+                    className={inputCls('endTime', 'cm-input')}
+                    aria-invalid={!!errors.endTime}
+                    data-field-error={errors.endTime ? 'endTime' : undefined}
+                  />
+                </div>
+                <FieldError k="scheduledDate" />
+                <FieldError k="startTime" />
+                <FieldError k="endTime" />
+                <input
+                  type="number"
+                  min={1}
+                  max={100000}
+                  value={f.expectedServings}
+                  onChange={(e) => {
+                    setF({ ...f, expectedServings: Number(e.target.value) });
+                    if (errors.expectedServings) setErr('expectedServings', undefined);
+                  }}
+                  onBlur={() => {
+                    if (!f.expectedServings || f.expectedServings < 1)
+                      setErr('expectedServings', 'Số suất ăn dự kiến tối thiểu 1');
+                    else if (f.expectedServings > 100000)
+                      setErr('expectedServings', 'Số suất ăn tối đa 100.000');
+                    else setErr('expectedServings', undefined);
+                  }}
+                  placeholder="Số suất ăn dự kiến *"
+                  className={inputCls('expectedServings', 'cm-input')}
+                  aria-invalid={!!errors.expectedServings}
+                />
+                <FieldError k="expectedServings" />
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <SlotStepper
+                    tone="chef"
+                    label="Đầu bếp"
+                    icon="skillet"
+                    value={f.chefSlotsNeeded}
+                    onChange={(v) => {
+                      bumpSlot('chefSlotsNeeded', v - f.chefSlotsNeeded);
+                      setErr('chefSlotsNeeded', undefined);
+                    }}
+                    error={errors.chefSlotsNeeded}
+                  />
+                  <SlotStepper
+                    tone="waiter"
+                    label="Phục vụ"
+                    icon="room_service"
+                    value={f.waiterSlotsNeeded}
+                    onChange={(v) => {
+                      bumpSlot('waiterSlotsNeeded', v - f.waiterSlotsNeeded);
+                      setErr('waiterSlotsNeeded', undefined);
+                    }}
+                    error={errors.waiterSlotsNeeded}
+                  />
+                  <SlotStepper
+                    tone="shipper"
+                    label="Giao hàng"
+                    icon="local_shipping"
+                    value={f.shipperSlotsNeeded}
+                    onChange={(v) => {
+                      bumpSlot('shipperSlotsNeeded', v - f.shipperSlotsNeeded);
+                      setErr('shipperSlotsNeeded', undefined);
+                    }}
+                    error={errors.shipperSlotsNeeded}
+                  />
+                </div>
+              </div>
+
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">schedule</span>Ca trực cho tình nguyện viên
+                </span>
+                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                  Tạo sẵn các ca để tình nguyện viên đăng ký ngay khi chiến dịch được duyệt.
+                </p>
+                <div className="cm-repeat">
+                  {shifts.map((s, i) => (
+                    <div key={i} className="space-y-1">
+                      <div
+                        className={`cm-repeat-row cm-repeat-row--shift ${
+                          errors[`shifts.${i}.label`] ||
+                          errors[`shifts.${i}.startTime`] ||
+                          errors[`shifts.${i}.endTime`] ||
+                          errors[`shifts.${i}.slotsNeeded`]
+                            ? '!ring-1 !ring-rose-300'
+                            : ''
+                        }`}
+                      >
+                        <input
+                          value={s.label}
+                          onChange={(e) =>
+                            setShifts(shifts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
+                          }
+                          onBlur={() => {
+                            if (s.label.trim() && s.label.trim().length < 2)
+                              setErr(`shifts.${i}.label`, 'Tối thiểu 2 ký tự');
+                            else setErr(`shifts.${i}.label`, undefined);
+                          }}
+                          placeholder="Tên ca (vd: Ca sáng — Sơ chế & nấu)"
+                          className="cm-input cm-shift-label"
+                          maxLength={100}
+                        />
+                        <div className="cm-shift-role">
+                          <select
+                            value={s.role ?? ''}
+                            onChange={(e) =>
+                              setShifts(
+                                shifts.map((x, j) =>
+                                  j === i
+                                    ? {
+                                        ...x,
+                                        role: e.target.value === '' ? undefined : (e.target.value as 'chef' | 'waiter' | 'shipper'),
+                                      }
+                                    : x,
+                                ),
+                              )
+                            }
+                            aria-label="Vai trò ca"
+                          >
+                            <option value="">Mọi vai trò</option>
+                            <option value="chef">Đầu bếp</option>
+                            <option value="waiter">Phục vụ</option>
+                            <option value="shipper">Giao hàng</option>
+                          </select>
+                        </div>
+                        <div className="cm-shift-slots">
+                          <MiniStepper
+                            value={s.slotsNeeded}
+                            onChange={(v) => {
+                              setShifts(shifts.map((x, j) => (j === i ? { ...x, slotsNeeded: v } : x)));
+                              setErr(`shifts.${i}.slotsNeeded`, undefined);
+                            }}
+                            title="Số người cần cho ca"
+                          />
+                        </div>
+                        <div className="cm-shift-times">
+                          <input
+                            type="time"
+                            value={s.startTime}
+                            onChange={(e) => {
+                              setShifts(shifts.map((x, j) => (j === i ? { ...x, startTime: e.target.value } : x)));
+                              setErr(`shifts.${i}.startTime`, undefined);
+                            }}
+                            className={`cm-input ${errors[`shifts.${i}.startTime`] ? '!border-rose-500' : ''}`}
+                            aria-label="Giờ bắt đầu"
+                          />
+                          <span className="cm-shift-sep">→</span>
+                          <input
+                            type="time"
+                            value={s.endTime}
+                            onChange={(e) => {
+                              setShifts(shifts.map((x, j) => (j === i ? { ...x, endTime: e.target.value } : x)));
+                              setErr(`shifts.${i}.endTime`, undefined);
+                            }}
+                            className={`cm-input ${errors[`shifts.${i}.endTime`] ? '!border-rose-500' : ''}`}
+                            aria-label="Giờ kết thúc"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShifts(shifts.filter((_, j) => j !== i))}
+                          className="cm-repeat-remove"
+                          aria-label="Xoá ca"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">close</span>
+                        </button>
+                      </div>
+                      {(errors[`shifts.${i}.label`] || errors[`shifts.${i}.startTime`] || errors[`shifts.${i}.endTime`] || errors[`shifts.${i}.slotsNeeded`]) && (
+                        <p className="text-[11px] text-rose-600 font-semibold pl-1">
+                          {errors[`shifts.${i}.label`] ??
+                            errors[`shifts.${i}.startTime`] ??
+                            errors[`shifts.${i}.endTime`] ??
+                            errors[`shifts.${i}.slotsNeeded`]}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShifts([
+                        ...shifts,
+                        { label: '', role: undefined, startTime: '08:00', endTime: '12:00', slotsNeeded: 2 },
+                      ])
+                    }
+                    className="cm-repeat-add"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm ca trực
+                  </button>
+                </div>
+              </div>
+
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">schedule</span>Lịch trình hoạt động
+                </span>
+                <div className="cm-repeat">
+                  {schedule.map((s, i) => (
+                    <div key={i} className="cm-repeat-row cm-repeat-row--schedule">
+                      <input
+                        type="time"
+                        value={s.time}
+                        onChange={(e) =>
+                          setSchedule(
+                            schedule.map((x, j) => (j === i ? { ...x, time: e.target.value } : x)),
+                          )
+                        }
+                        className="cm-input"
+                      />
+                      <input
+                        value={s.label}
+                        onChange={(e) =>
+                          setSchedule(
+                            schedule.map((x, j) =>
+                              j === i ? { ...x, label: e.target.value } : x,
+                            ),
+                          )
+                        }
+                        placeholder="Mô tả công việc (vd: Chuẩn bị nguyên liệu)"
+                        className="cm-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSchedule(schedule.filter((_, j) => j !== i))}
+                        className="cm-repeat-remove"
+                        aria-label="Xoá mốc"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSchedule([...schedule, { time: '', label: '' }])}
+                    className="cm-repeat-add"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm mốc
+                  </button>
+                </div>
+              </div>
+
+              <div className="cm-form-block">
+                <span className="cm-form-block-label">
+                  <span className="material-symbols-outlined">inventory_2</span>Vật phẩm cần thiết
+                </span>
+                <div className="cm-repeat">
+                  {supplies.map((s, i) => (
+                    <div key={i} className="cm-repeat-row cm-repeat-row--supplies">
+                      <input
+                        value={s.name}
+                        onChange={(e) =>
+                          setSupplies(
+                            supplies.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                          )
+                        }
+                        placeholder="vd: Gạo sạch, Thùng giữ nhiệt…"
+                        className="cm-input"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={s.quantity ?? ''}
+                        onChange={(e) =>
+                          setSupplies(
+                            supplies.map((x, j) =>
+                              j === i
+                                ? {
+                                    ...x,
+                                    quantity: e.target.value === '' ? undefined : Number(e.target.value),
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                        placeholder="SL"
+                        className="cm-input"
+                        title="Số lượng cần thiết"
+                      />
+                      <input
+                        value={s.unit ?? ''}
+                        onChange={(e) =>
+                          setSupplies(
+                            supplies.map((x, j) =>
+                              j === i ? { ...x, unit: e.target.value } : x,
+                            ),
+                          )
+                        }
+                        placeholder="kg"
+                        className="cm-input"
+                        title="Đơn vị (vd: kg, thùng, hộp)"
+                        maxLength={20}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSupplies(supplies.filter((_, j) => j !== i))}
+                        className="cm-repeat-remove"
+                        aria-label="Xoá vật phẩm"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSupplies([...supplies, { name: '' }])}
+                    className="cm-repeat-add"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm vật phẩm
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Footer ─── */}
+        <div className="cm-modal-footer">
+          <button type="button" onClick={onClose} className="cm-btn-cancel">
+            Huỷ
+          </button>
+          <button type="submit" disabled={pending} className="cm-btn-submit">
+            {pending ? (
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">
+                  progress_activity
+                </span>
+                Đang gửi...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">send</span>
+                Gửi yêu cầu
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Image uploader: Upload (file) | URL (paste link)
+// ─────────────────────────────────────────────────────────────────────────────
+function ImageUploader({
+  value,
+  onChange,
+  uploading,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  uploading: boolean;
+}) {
+  const upload = useUploadCampaignImage();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<'upload' | 'url'>('upload');
+  const [url, setUrl] = useState('');
+
+  async function onPick(file: File) {
+    try {
+      const res = await upload.mutateAsync(file);
+      onChange(res.url);
+    } catch (e) {
+      toast.error(errMsg(e, 'Tải ảnh thất bại'));
+    }
+  }
+
+  function applyUrl() {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      toast.error('Nhập URL ảnh trước');
+      return;
+    }
+    try {
+      const u = new URL(trimmed);
+      if (!/^https?:$/.test(u.protocol)) throw new Error();
+      onChange(trimmed);
+      setUrl('');
+      setMode('upload');
+    } catch {
+      toast.error('URL không hợp lệ — phải bắt đầu bằng http(s)://');
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <input
+        id="cm-img-input"
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onPick(file);
+          e.target.value = '';
+        }}
+      />
+
+      {value ? (
+        <div className="cm-upload-preview">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={mediaUrl(value)} alt="Ảnh bìa" />
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="cm-upload-preview-remove"
+            aria-label="Xoá ảnh"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="cm-upload-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-pressed={mode === 'upload'}
+              onClick={() => setMode('upload')}
+              className="cm-upload-tab"
+            >
+              <span className="material-symbols-outlined text-[14px]">upload</span>
+              Tải ảnh lên
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-pressed={mode === 'url'}
+              onClick={() => setMode('url')}
+              className="cm-upload-tab"
+            >
+              <span className="material-symbols-outlined text-[14px]">link</span>
+              Dán URL
+            </button>
+          </div>
+
+          {mode === 'upload' ? (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={upload.isPending}
+              className={`cm-upload-drop w-full ${upload.isPending ? 'cm-upload-drop--loading' : ''}`}
+            >
+              <span className="material-symbols-outlined">
+                {upload.isPending ? 'hourglass_top' : 'add_photo_alternate'}
+              </span>
+              <p className="text-xs font-bold mt-1.5">
+                {uploading || upload.isPending
+                  ? 'Đang tải ảnh...'
+                  : 'Bấm để chọn ảnh (JPG/PNG/WebP)'}
+              </p>
+              <p className="text-[10px] mt-0.5">Tối đa 10MB · ảnh ngang tỉ lệ 16:9 cho đẹp</p>
+            </button>
+          ) : (
+            <div className="cm-upload-url-row">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyUrl();
+                  }
+                }}
+                placeholder="https://example.com/anh-bia.jpg"
+                className="cm-input"
+              />
+              <button
+                type="button"
+                onClick={applyUrl}
+                disabled={!url.trim()}
+                className="cm-upload-url-apply"
+              >
+                Áp dụng
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SlotStepper({
+  tone,
+  label,
+  icon,
+  value,
+  onChange,
+  error,
+}: {
+  tone: 'chef' | 'waiter' | 'shipper';
+  label: string;
+  icon: string;
+  value: number;
+  onChange: (v: number) => void;
+  error?: string;
+}) {
+  return (
+    <div className={`cm-slot ${error ? '!ring-1 !ring-rose-300 rounded-2xl' : ''}`}>
+      <span className={`cm-slot-label cm-slot-label--${tone}`}>
+        <span className="material-symbols-outlined text-[14px]">{icon}</span>
+        {label}
+      </span>
+      <div className="cm-slot-row">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          disabled={value <= 0}
+          className="cm-slot-btn"
+          aria-label={`Giảm ${label}`}
+        >
+          <span className="material-symbols-outlined text-[16px]">remove</span>
+        </button>
+        <span className="cm-slot-value">{value}</span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(99, value + 1))}
+          className="cm-slot-btn"
+          aria-label={`Tăng ${label}`}
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+        </button>
+      </div>
+      {error && (
+        <p className="text-[10px] text-rose-600 font-semibold mt-0.5 text-center">{error}</p>
+      )}
+    </div>
+  );
+}
+
+/** Mini stepper compact cho shift row (label + role + slots + times). */
+function MiniStepper({
+  value,
+  onChange,
+  title,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  title?: string;
+}) {
+  return (
+    <div className="cm-mini-stepper" title={title}>
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(0, value - 1))}
+        disabled={value <= 0}
+        aria-label="Giảm"
+      >
+        <span className="material-symbols-outlined text-[14px]">remove</span>
+      </button>
+      <span className="cm-mini-stepper-value">{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(99, value + 1))}
+        aria-label="Tăng"
+      >
+        <span className="material-symbols-outlined text-[14px]">add</span>
+      </button>
+    </div>
+  );
+}

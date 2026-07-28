@@ -1,22 +1,16 @@
-import { View, StyleSheet } from 'react-native';
-import { Card, Text, Chip, Icon } from 'react-native-paper';
+import { Pressable, View, StyleSheet } from 'react-native';
+import { Text, Icon } from 'react-native-paper';
 import type { Listing } from '../hooks/useListings';
 import { AppImage } from './ui/AppImage';
 import { FadeInUp } from './ui/Motion';
+import { StatusBadge } from './ui/StatusBadge';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 import {
   categoryLabel,
   quantityLabel,
   formatDistance,
   formatPickupWindow,
 } from '../utils/listingFormat';
-
-const COLORS = {
-  primary: '#10b981',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outlineVariant: '#e5e7eb',
-};
 
 interface Props {
   listing: Listing;
@@ -28,81 +22,140 @@ interface Props {
 export function ListingCard({ listing, onPress, index = 0 }: Props) {
   const distance = formatDistance(listing.distanceM);
   const imageUri = listing.imageUrls?.[0];
+  const canRenderImage = imageUri != null && /^(https?:|file:|data:)/.test(imageUri);
 
   return (
     <FadeInUp delay={Math.min(index, 8) * 40} style={styles.wrap}>
-      <Card style={styles.card} onPress={onPress} mode="elevated">
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        accessibilityRole="button"
+      >
         <View style={styles.imageWrap}>
-          {imageUri ? (
+          {canRenderImage ? (
             <AppImage source={{ uri: imageUri }} style={styles.image} />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
               <Icon source="image-off-outline" size={32} color={COLORS.onSurfaceVariant} />
             </View>
           )}
-          <Chip compact style={styles.qtyChip} textStyle={styles.qtyChipText}>
-            {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
-          </Chip>
+          <View style={styles.imageShade} />
+          <View style={styles.imageTopRow}>
+            {distance ? (
+              <View style={styles.distance}>
+                <Icon source="map-marker-outline" size={14} color={COLORS.onPrimary} />
+                <Text style={styles.distanceText}>{distance}</Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.quantityBadge}>
+            <Text style={styles.quantityValue}>
+              {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
+            </Text>
+            <Text style={styles.quantityLabel}>còn lại</Text>
+          </View>
         </View>
 
-        <Card.Content style={styles.content}>
-          <Text variant="titleMedium" numberOfLines={1} style={styles.title}>
+        <View style={styles.content}>
+          <View style={styles.categoryLine}>
+            <StatusBadge label={categoryLabel(listing.category)} tone="success" size="small" />
+          </View>
+          <Text variant="titleMedium" numberOfLines={2} style={styles.title}>
             {listing.title}
           </Text>
 
-          <View style={styles.metaRow}>
-            <Chip compact style={styles.catChip} textStyle={styles.catChipText}>
-              {categoryLabel(listing.category)}
-            </Chip>
-            {distance && (
-              <View style={styles.iconText}>
-                <Icon source="map-marker-outline" size={14} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.metaText}>{distance}</Text>
-              </View>
-            )}
-          </View>
+          <View style={styles.metaGrid}>
+            <View style={styles.metaItem}>
+              <Icon source="store-outline" size={14} color={COLORS.onSurfaceVariant} />
+              <Text style={styles.metaText} numberOfLines={1}>
+                {listing.provider?.businessName ?? 'Cửa hàng'}
+              </Text>
+            </View>
 
-          <View style={styles.iconText}>
-            <Icon source="store-outline" size={14} color={COLORS.onSurfaceVariant} />
-            <Text style={styles.metaText} numberOfLines={1}>
-              {listing.provider?.businessName ?? 'Cửa hàng'}
-            </Text>
+            <View style={styles.metaItem}>
+              <Icon source="clock-outline" size={14} color={COLORS.primary} />
+              <Text style={[styles.metaText, styles.pickupText]} numberOfLines={1}>
+                {formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
+              </Text>
+            </View>
           </View>
-
-          <View style={styles.iconText}>
-            <Icon source="clock-outline" size={14} color={COLORS.primary} />
-            <Text style={[styles.metaText, { color: COLORS.primary }]} numberOfLines={1}>
-              {formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
-            </Text>
-          </View>
-        </Card.Content>
-      </Card>
+        </View>
+      </Pressable>
     </FadeInUp>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 12 },
-  card: { backgroundColor: COLORS.surface, borderRadius: 16, overflow: 'hidden' },
-  imageWrap: { position: 'relative' },
-  image: { width: '100%', height: 160 },
+  wrap: {
+    flex: 1,
+    marginHorizontal: 3,
+    marginBottom: spacing.sm,
+  },
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
+  },
+  cardPressed: {
+    transform: [{ scale: 0.992 }],
+    opacity: 0.94,
+  },
+  imageWrap: {
+    height: 108,
+    backgroundColor: COLORS.outlineVariant,
+  },
+  image: { width: '100%', height: '100%' },
   imagePlaceholder: {
     backgroundColor: COLORS.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qtyChip: {
+  imageShade: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(16,185,129,0.92)',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.16)',
   },
-  qtyChipText: { color: '#fff', fontSize: 12, fontWeight: '700', lineHeight: 16 },
-  content: { paddingTop: 12, gap: 6 },
-  title: { fontWeight: '700', color: COLORS.onSurface },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  catChip: { backgroundColor: '#ecfdf5' },
-  catChipText: { color: COLORS.primary, fontSize: 11, lineHeight: 14 },
-  iconText: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 13, color: COLORS.onSurfaceVariant, flexShrink: 1 },
+  imageTopRow: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  distance: {
+    minHeight: 23,
+    borderRadius: radius.pill,
+    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(18,28,42,0.72)',
+  },
+  distanceText: { color: COLORS.onPrimary, fontSize: 11, fontWeight: '800' },
+  quantityBadge: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    minWidth: 58,
+    borderRadius: radius.md,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    backgroundColor: COLORS.surface,
+    alignItems: 'flex-end',
+  },
+  quantityValue: { color: COLORS.onWarningContainer, fontSize: 11, fontWeight: '900' },
+  quantityLabel: { marginTop: 0, color: COLORS.onSurfaceVariant, fontSize: 9, fontWeight: '700' },
+  content: { paddingHorizontal: spacing.sm, paddingVertical: 9, gap: 5 },
+  categoryLine: { alignSelf: 'flex-start', maxWidth: '100%' },
+  title: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface, lineHeight: 17 },
+  metaGrid: { gap: 3 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 10, color: COLORS.onSurfaceVariant, flexShrink: 1 },
+  pickupText: { color: COLORS.primary, fontWeight: '700' },
 });

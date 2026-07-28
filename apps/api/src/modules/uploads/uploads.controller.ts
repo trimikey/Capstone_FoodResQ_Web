@@ -11,6 +11,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { StorageService } from '@/common/storage/storage.service';
@@ -60,6 +61,38 @@ export class UploadsController {
       throw new BadRequestException(`kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`);
     }
     const url = await this.storage.saveImage(file, folder);
+    return { url };
+  }
+
+  /**
+   * Ảnh minh chứng khi ĐĂNG KÝ nhà cung cấp (GPKD/mặt tiền/biển hiệu) —
+   * người dùng CHƯA có tài khoản nên không thể yêu cầu JWT. Chỉ nhận ảnh,
+   * lưu vào verifications/, giới hạn tốc độ để chống spam.
+   */
+  @Post('register-evidence')
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload ảnh minh chứng lúc đăng ký NCC (không cần đăng nhập).' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  async uploadRegisterEvidence(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: MAX_IMAGE_BYTES }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    const url = await this.storage.saveImage(file, 'verifications');
     return { url };
   }
 }

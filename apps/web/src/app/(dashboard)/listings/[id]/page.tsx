@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -57,6 +59,7 @@ export default function ListingDetailPage({ params }: Props) {
     qrToken: string;
     qrExpiresAt: string;
   } | null>(null);
+  const [renderNowMs] = useState(() => Date.now());
 
   if (isLoading) {
     return (
@@ -113,7 +116,11 @@ export default function ListingDetailPage({ params }: Props) {
         qrExpiresAt: res.qrExpiresAt,
       });
       // Không auto-chuyển trang — để người dùng xem QR và tự bấm "Xem đơn đặt"
-      toast.success('Đặt chỗ thành công! Mã QR nhận hàng của bạn đã sẵn sàng.');
+      toast.success(
+        deliveryMethod === 'delivery'
+          ? 'Đã tạo đơn giao hàng! Hệ thống đang tìm tình nguyện viên gần điểm lấy.'
+          : 'Đặt chỗ tự đến lấy thành công! Đơn này sẽ không gửi lời mời cho shipper.'
+      );
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -131,7 +138,7 @@ export default function ListingDetailPage({ params }: Props) {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
-  const nowMs = Date.now();
+  const nowMs = renderNowMs;
   const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
   const windowClosed = nowMs > new Date(listing.pickupEndTime).getTime();
 
@@ -153,10 +160,10 @@ export default function ListingDetailPage({ params }: Props) {
             <img
               src={
                 (listing.imageUrls[0] && ![
-                  '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                  '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
                   '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                 ].includes(listing.imageUrls[0]))
-                  ? listing.imageUrls[0]
+                  ? mediaUrl(listing.imageUrls[0])
                   : fallbackImage(listing.category)
               }
               alt={listing.title}
@@ -164,7 +171,7 @@ export default function ListingDetailPage({ params }: Props) {
             />
             <div className="absolute top-4 left-4 flex gap-2">
               <span className="bg-black/50 backdrop-blur-md text-white font-label-lg text-xs px-3 py-1.5 rounded-full">
-                Còn {listing.quantityRemaining} {listing.quantityUnit}
+                Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
               </span>
               <span className="bg-primary/95 text-white font-label-lg text-xs px-3 py-1.5 rounded-full shadow-sm">
                 Cứu trợ 0đ
@@ -417,7 +424,9 @@ export default function ListingDetailPage({ params }: Props) {
                     )}
                   </button>
                   <p className="text-center text-[10px] text-on-surface-variant/70 italic">
-                    * Bạn sẽ nhận được mã QR để nhận hàng tại cửa hàng.
+                    {deliveryMethod === 'delivery'
+                      ? '* Bạn vẫn có mã QR để đối chiếu khi nhận hàng; shipper sẽ nhận lời mời nếu đang ở gần điểm lấy.'
+                      : '* Đơn tự đến lấy sẽ không hiện ở màn Đơn cần giao của shipper.'}
                   </p>
                 </div>
               </div>
@@ -458,7 +467,7 @@ export default function ListingDetailPage({ params }: Props) {
                     <p className="text-[11px] text-on-surface-variant/80">{item.provider.businessName}</p>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-on-surface-variant/70 mt-2">
-                    <span>Còn {item.quantityRemaining} {item.quantityUnit}</span>
+                    <span>Còn {item.quantityRemaining} {UNIT_LABEL[item.quantityUnit as QuantityUnit] ?? item.quantityUnit}</span>
                     <span>• {formatDistance(item.distanceM)}</span>
                   </div>
                 </div>

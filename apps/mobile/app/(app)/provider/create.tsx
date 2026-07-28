@@ -11,7 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -19,7 +19,14 @@ import {
   createListingSchema,
   type CreateListingFormInput,
 } from '@/utils/validators';
-import { useCreateListing, type CreateListingInput } from '@/hooks/useProviderListings';
+import { useAuth } from '@/hooks/useAuth';
+import { useListingDetail } from '@/hooks/useListings';
+import {
+  useCreateListing,
+  useUpdateListing,
+  type CreateListingInput,
+  type UpdateListingInput,
+} from '@/hooks/useProviderListings';
 import { getCurrentCoords, type Coords } from '@/services/geolocation';
 import {
   pickAndUploadListingImages,
@@ -63,11 +70,22 @@ export default function CreateListingScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compactLayout = width < 390;
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const { user } = useAuth();
   const createListing = useCreateListing();
+  const updateListing = useUpdateListing();
+  const { data: editingListing } = useListingDetail(editId ?? '');
   const [coords, setCoords] = useState<Coords | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const isEdit = !!editId;
+  const editingIsPublished = !!editingListing && editingListing.status !== 'draft';
+  const titleText = isEdit
+    ? editingIsPublished
+      ? 'Sửa thông tin phụ'
+      : 'Sửa tin nháp'
+    : 'Đăng tin mới';
 
   // mặc định: bắt đầu = +1h, kết thúc = +3h, hạn dùng = +5h
   const now = new Date();
@@ -76,6 +94,7 @@ export default function CreateListingScreen() {
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<CreateListingFormInput>({
     resolver: zodResolver(createListingSchema),
@@ -99,6 +118,31 @@ export default function CreateListingScreen() {
   useEffect(() => {
     getCurrentCoords().then(({ coords }) => setCoords(coords));
   }, []);
+
+  useEffect(() => {
+    if (!editingListing) return;
+    reset({
+      title: editingListing.title ?? '',
+      category: editingListing.category ?? '',
+      quantityTotal: Number(editingListing.quantityTotal ?? editingListing.quantityRemaining) || 1,
+      quantityUnit: editingListing.quantityUnit ?? 'portion',
+      maxPerReservation: editingListing.maxPerReservation ?? 1,
+      pickupStartTime: new Date(editingListing.pickupStartTime),
+      pickupEndTime: new Date(editingListing.pickupEndTime),
+      expiryTime: new Date(editingListing.expiryTime ?? editingListing.pickupEndTime),
+      pickupAddress: editingListing.pickupAddress ?? '',
+      description: editingListing.description ?? '',
+      weightPerUnitKg: editingListing.weightPerUnitKg ?? undefined,
+      storageConditions: editingListing.storageConditions ?? '',
+      allergenNotes: editingListing.allergenNotes ?? '',
+    });
+    setCoords({ lat: editingListing.lat, lng: editingListing.lng });
+    setImageUrls(editingListing.imageUrls ?? []);
+  }, [editingListing, reset]);
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   const category = watch('category');
   const quantityUnit = watch('quantityUnit');
@@ -130,7 +174,7 @@ export default function CreateListingScreen() {
       Popup.show({ type: 'warning', text1: 'Chưa lấy được vị trí', text2: 'Vui lòng thử lại sau giây lát.' });
       return;
     }
-    const payload: CreateListingInput = {
+    const fullPayload: CreateListingInput = {
       title: form.title,
       category: form.category,
       quantityTotal: form.quantityTotal,
@@ -148,13 +192,29 @@ export default function CreateListingScreen() {
       ...(form.allergenNotes ? { allergenNotes: form.allergenNotes } : {}),
       ...(imageUrls.length ? { imageUrls } : {}),
     };
+    const updatePayload: UpdateListingInput = editingIsPublished
+      ? {
+          ...(form.description ? { description: form.description } : {}),
+          ...(form.storageConditions ? { storageConditions: form.storageConditions } : {}),
+          ...(form.allergenNotes ? { allergenNotes: form.allergenNotes } : {}),
+          ...(imageUrls.length ? { imageUrls } : {}),
+        }
+      : fullPayload;
     try {
       setSubmitting(true);
-      await createListing.mutateAsync(payload);
-      Popup.show({ type: 'success', text1: 'Đã tạo tin (nháp)', text2: 'Bấm "Đăng tin" trong chi tiết để công khai.' });
+      if (isEdit && editId) {
+        await updateListing.mutateAsync({ id: editId, input: updatePayload });
+        Popup.show({
+          type: 'success',
+          text1: editingIsPublished ? 'Đã cập nhật thông tin phụ' : 'Đã lưu tin nháp',
+        });
+      } else {
+        await createListing.mutateAsync(fullPayload);
+        Popup.show({ type: 'success', text1: 'Đã tạo tin (nháp)', text2: 'Bấm "Đăng tin" trong chi tiết để công khai.' });
+      }
       router.replace('/(app)/provider/listings');
     } catch (err) {
-      Popup.show({ type: 'error', text1: 'Tạo tin thất bại', text2: getErrorMessage(err) });
+      Popup.show({ type: 'error', text1: isEdit ? 'Lưu tin thất bại' : 'Tạo tin thất bại', text2: getErrorMessage(err) });
     } finally {
       setSubmitting(false);
     }
@@ -173,8 +233,10 @@ export default function CreateListingScreen() {
           <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text variant="titleMedium" style={styles.headerTitle}>Đăng tin mới</Text>
-          <Text style={styles.headerSub} numberOfLines={1}>Tạo nháp trước, đăng sau khi kiểm tra</Text>
+          <Text variant="titleMedium" style={styles.headerTitle}>{titleText}</Text>
+          <Text style={styles.headerSub} numberOfLines={1}>
+            {editingIsPublished ? 'Chỉ sửa mô tả, ảnh, bảo quản, dị ứng' : 'Tạo nháp trước, đăng sau khi kiểm tra'}
+          </Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
@@ -229,6 +291,15 @@ export default function CreateListingScreen() {
             </View>
           </Section>
 
+          {editingIsPublished ? (
+            <View style={styles.lockNotice}>
+              <MaterialCommunityIcons name="lock-outline" size={18} color="#0369a1" />
+              <Text style={styles.lockNoticeText}>
+                Tin đã đăng chỉ sửa mô tả, ảnh, bảo quản, dị ứng. Muốn đổi giờ, địa điểm hoặc số lượng hãy huỷ rồi tạo lại.
+              </Text>
+            </View>
+          ) : null}
+
           <Section icon="food-apple-outline" title="Thông tin thực phẩm">
             <Field label="Tiêu đề *" error={errors.title?.message}>
               <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
@@ -243,6 +314,7 @@ export default function CreateListingScreen() {
                   style={styles.input}
                   dense
                   error={!!errors.title}
+                  disabled={editingIsPublished}
                 />
               )} />
             </Field>
@@ -256,7 +328,8 @@ export default function CreateListingScreen() {
                       key={k}
                       selected={selected}
                       showSelectedCheck
-                      onPress={() => setValue('category', k, { shouldValidate: true })}
+                      onPress={() => !editingIsPublished && setValue('category', k, { shouldValidate: true })}
+                      disabled={editingIsPublished}
                       selectedColor={selected ? COLORS.primary : COLORS.onSurface}
                       style={[styles.chip, selected && styles.chipSelected]}
                       textStyle={[styles.chipText, selected && styles.chipTextSelected]}
@@ -290,6 +363,7 @@ export default function CreateListingScreen() {
                       style={styles.input}
                       dense
                       error={!!errors.quantityTotal}
+                      disabled={editingIsPublished}
                     />
                   )} />
                 </Field>
@@ -304,7 +378,8 @@ export default function CreateListingScreen() {
                           key={u}
                           selected={selected}
                           compact={false}
-                          onPress={() => setValue('quantityUnit', u, { shouldValidate: true })}
+                          onPress={() => !editingIsPublished && setValue('quantityUnit', u, { shouldValidate: true })}
+                          disabled={editingIsPublished}
                           selectedColor={selected ? COLORS.primary : COLORS.onSurface}
                           style={[styles.chip, selected && styles.chipSelected]}
                           textStyle={[styles.chipText, selected && styles.chipTextSelected]}
@@ -335,6 +410,7 @@ export default function CreateListingScreen() {
                   style={styles.input}
                   dense
                   error={!!errors.maxPerReservation}
+                  disabled={editingIsPublished}
                 />
               )} />
             </Field>
@@ -352,6 +428,7 @@ export default function CreateListingScreen() {
                   activeOutlineColor={COLORS.primary}
                   style={styles.input}
                   dense
+                  disabled={editingIsPublished}
                 />
               )} />
             </Field>
@@ -367,6 +444,7 @@ export default function CreateListingScreen() {
                 label="Bắt đầu"
                 value={pickupStart}
                 onPress={() => openDateTimePicker(pickupStart, (d) => setValue('pickupStartTime', d, { shouldValidate: true }))}
+                disabled={editingIsPublished}
               />
             </Field>
             <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
@@ -374,6 +452,7 @@ export default function CreateListingScreen() {
                 label="Kết thúc"
                 value={pickupEnd}
                 onPress={() => openDateTimePicker(pickupEnd, (d) => setValue('pickupEndTime', d, { shouldValidate: true }))}
+                disabled={editingIsPublished}
               />
             </Field>
             <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
@@ -381,6 +460,7 @@ export default function CreateListingScreen() {
                 label="Hạn dùng"
                 value={expiry}
                 onPress={() => openDateTimePicker(expiry, (d) => setValue('expiryTime', d, { shouldValidate: true }))}
+                disabled={editingIsPublished}
               />
             </Field>
           </Section>
@@ -399,6 +479,7 @@ export default function CreateListingScreen() {
                     : null
                 }
                 onChange={({ address, lat, lng }) => {
+                  if (editingIsPublished) return;
                   setValue('pickupAddress', address, { shouldValidate: true });
                   setCoords({ lat, lng });
                 }}
@@ -467,10 +548,10 @@ export default function CreateListingScreen() {
             accessibilityLabel="Tạo tin thực phẩm"
             accessibilityState={{ disabled: submitting || uploading, busy: submitting }}
           >
-            Tạo tin
+            {isEdit ? 'Lưu thay đổi' : 'Tạo tin'}
           </Button>
           <Text style={styles.footerHint} numberOfLines={2}>
-            Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.
+            {isEdit ? 'Lưu xong sẽ quay lại danh sách tin.' : 'Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.'}
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -526,14 +607,26 @@ function Field({
   );
 }
 
-function DateButton({ label, value, onPress }: { label: string; value: Date; onPress: () => void }) {
+function DateButton({
+  label,
+  value,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  value: Date;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
-      style={styles.dateBtn}
+      disabled={disabled}
+      style={[styles.dateBtn, disabled && styles.controlDisabled]}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={`Chọn ${label.toLowerCase()}: ${fmtDateTime(value)}`}
+      accessibilityState={{ disabled }}
     >
       <View style={styles.dateIcon}>
         <MaterialCommunityIcons name="calendar-clock" size={19} color={COLORS.primary} />
@@ -579,6 +672,16 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.onSurface },
   sectionHelper: { marginTop: 2, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  lockNotice: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: '#e0f2fe',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  lockNoticeText: { flex: 1, fontSize: 13, lineHeight: 18, color: '#075985', fontWeight: '600' },
   field: { gap: 7 },
   label: { fontSize: 14, fontWeight: '700', color: COLORS.onSurface },
   helperText: { fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },

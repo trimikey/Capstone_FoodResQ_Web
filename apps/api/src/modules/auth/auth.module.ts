@@ -6,10 +6,14 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { FirebaseAdminService } from './firebase-admin.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { FaceMatchModule } from '@/common/face-match/face-match.module';
+import { StorageModule } from '@/common/storage/storage.module';
 
 @Module({
   imports: [
     PassportModule,
+    FaceMatchModule,
+    StorageModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

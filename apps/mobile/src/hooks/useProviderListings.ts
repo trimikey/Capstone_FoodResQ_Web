@@ -25,6 +25,8 @@ export interface CreateListingInput {
   imageUrls?: string[];
 }
 
+export type UpdateListingInput = Partial<CreateListingInput>;
+
 /** Response phân trang của GET /listings/provider/my. */
 interface Paginated<T> {
   items: T[];
@@ -65,6 +67,25 @@ export function useCreateListing() {
   });
 }
 
+/** Sửa tin provider. Draft sửa đủ field; active/fully_reserved do UI giới hạn field phụ. PATCH /listings/:id */
+export function useUpdateListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: UpdateListingInput }) => {
+      const res = await apiClient.patch<ApiResponse<ProviderListing>>(
+        endpoints.listings.update(id),
+        input
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['provider-listings'] });
+      queryClient.invalidateQueries({ queryKey: ['listing', id] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+}
+
 /** Công khai tin: draft → active. PATCH /listings/:id/publish */
 export function usePublishListing() {
   const queryClient = useQueryClient();
@@ -96,6 +117,29 @@ export function useCancelListing() {
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['provider-listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing', id] });
+    },
+  });
+}
+
+export interface ProviderEsg {
+  businessName: string;
+  kgRescued: number;
+  co2SavedKg: number;
+  mealsServed: number;
+  peopleHelped: number;
+  totalListings: number;
+  activeListings: number;
+}
+
+/** Tác động ESG của provider đang đăng nhập. Không bắt buộc để render màn chính. */
+export function useProviderEsg() {
+  return useQuery({
+    queryKey: ['provider-esg'],
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ProviderEsg>>(endpoints.esg.providerMe);
+      return res.data.data;
     },
   });
 }

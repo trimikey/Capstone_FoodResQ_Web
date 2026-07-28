@@ -1,5 +1,12 @@
 [
   {
+    "date": "2026-07-18",
+    "macrostructure": "Table-Led",
+    "theme": "Studio",
+    "enrichment": "none",
+    "brief": "FoodResQ provider portal — redesigned /provider, /provider/orders, /provider/scan with side-rail nav + header card + data table; preserved all hooks/data"
+  },
+  {
     "date": "2026-06-16",
     "macrostructure": "Stat-Led",
     "theme": "Studio",

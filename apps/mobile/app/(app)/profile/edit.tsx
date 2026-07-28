@@ -25,6 +25,7 @@ import {
   ImagePickCancelledError,
 } from '@/services/avatarUpload';
 import { AppImage } from '@/components/ui/AppImage';
+import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
 import type { UpdateProfileInput } from '@/api/client';
 import { mobileColors as COLORS } from '@/theme/design';
 
@@ -39,6 +40,12 @@ export default function EditProfileScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const [uploading, setUploading] = useState(false);
+  const [addressValue, setAddressValue] = useState<AddressValue | null>(null);
+
+  const canEditAddress = profile?.role === 'provider' || profile?.role === 'receiver';
+  const currentAddress = profile?.provider?.address ?? profile?.receiver?.address ?? '';
+  const currentLat = profile?.provider?.lat ?? profile?.receiver?.lat ?? null;
+  const currentLng = profile?.provider?.lng ?? profile?.receiver?.lng ?? null;
 
   const {
     control,
@@ -52,11 +59,20 @@ export default function EditProfileScreen() {
       fullName: profile?.fullName ?? '',
       phone: profile?.phone ?? '',
       avatarUrl: profile?.avatarUrl ?? '',
+      address: currentAddress,
     },
   });
 
   const avatarUrl = watch('avatarUrl');
   const fullName = watch('fullName');
+
+  const effectiveAddress: AddressValue | null =
+    addressValue ??
+    (currentAddress && currentLat != null && currentLng != null
+      ? { address: currentAddress, lat: currentLat, lng: currentLng }
+      : currentAddress
+        ? { address: currentAddress, lat: 10.8231, lng: 106.6297 }
+        : null);
 
   // Chọn ảnh từ thư viện → upload Firebase Storage → gán URL vào form.
   const handleChangeAvatar = async () => {
@@ -88,6 +104,19 @@ export default function EditProfileScreen() {
     }
     if (form.avatarUrl !== (profile?.avatarUrl ?? '')) {
       payload.avatarUrl = form.avatarUrl;
+    }
+    if (canEditAddress && addressValue && addressValue.address.trim() !== currentAddress) {
+      payload.address = addressValue.address.trim();
+      payload.lat = addressValue.lat;
+      payload.lng = addressValue.lng;
+    } else if (
+      canEditAddress &&
+      addressValue &&
+      (addressValue.lat !== currentLat || addressValue.lng !== currentLng)
+    ) {
+      payload.address = addressValue.address.trim();
+      payload.lat = addressValue.lat;
+      payload.lng = addressValue.lng;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -207,6 +236,24 @@ export default function EditProfileScreen() {
             />
             <FieldError message={errors.phone?.message} />
           </Field>
+
+          {canEditAddress ? (
+            <Field label={profile?.role === 'provider' ? 'Địa chỉ cửa hàng' : 'Điểm giao mặc định'}>
+              <AddressPicker
+                initialCoords={
+                  currentLat != null && currentLng != null
+                    ? { lat: currentLat, lng: currentLng }
+                    : null
+                }
+                value={effectiveAddress}
+                onChange={(next) => {
+                  setAddressValue(next);
+                  setValue('address', next.address, { shouldValidate: true });
+                }}
+                error={errors.address?.message}
+              />
+            </Field>
+          ) : null}
 
           <Button
             mode="contained"

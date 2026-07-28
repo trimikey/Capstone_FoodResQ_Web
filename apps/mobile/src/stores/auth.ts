@@ -19,6 +19,8 @@ export interface User {
   avatarUrl: string | null;
   status: string | null;
   trustScore: number | null;
+  receiver?: ApiUser['receiver'];
+  provider?: ApiUser['provider'];
 }
 
 /**
@@ -35,6 +37,8 @@ function normalizeUser(raw: ApiUser): User {
     avatarUrl: raw.avatarUrl ?? null,
     status: raw.status ?? null,
     trustScore: raw.trustScore ?? null,
+    receiver: raw.receiver ?? null,
+    provider: raw.provider ?? null,
   };
 }
 

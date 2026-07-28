@@ -48,6 +48,15 @@ export class NotificationsService {
     return { count };
   }
 
+  async saveDeviceToken(userId: string, token: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken: token },
+      select: { id: true },
+    });
+    return { ok: true };
+  }
+
   async markRead(id: string, userId: string) {
     await this.prisma.notification.updateMany({
       where: { id, userId },

@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsString,
   IsEnum,
   IsNumber,
@@ -101,4 +102,9 @@ export class CreateListingDto {
   @IsArray()
   @IsString({ each: true })
   imageUrls?: string[];
+
+  @ApiPropertyOptional({ example: false, description: 'Túi bất ngờ (kiểu Too Good To Go)' })
+  @IsOptional()
+  @IsBoolean()
+  isSurpriseBag?: boolean;
 }

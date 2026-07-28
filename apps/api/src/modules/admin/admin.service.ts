@@ -109,12 +109,20 @@ export class AdminService {
       ORDER BY kg DESC
     `);
 
+    // generate_series để LUÔN đủ 6 tháng liên tục — tháng không có đơn trả kg=0,
+    // nếu chỉ GROUP BY tháng có dữ liệu thì biểu đồ "6 tháng" co lại còn 2-3 điểm.
     const trendRows = await this.prisma.$queryRaw<{ ym: string; kg: number | null }[]>(Prisma.sql`
-      SELECT to_char(date_trunc('month', r.created_at), 'YYYY-MM') AS ym,
+      SELECT to_char(m.month, 'YYYY-MM') AS ym,
         COALESCE(SUM(r.quantity * COALESCE(fl.weight_per_unit_kg, 0)) FILTER (WHERE r.status = 'completed'), 0) AS kg
-      FROM reservations r JOIN food_listings fl ON fl.id = r.listing_id
-      WHERE r.created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'
-      GROUP BY 1 ORDER BY 1
+      FROM generate_series(
+        date_trunc('month', CURRENT_DATE) - INTERVAL '5 months',
+        date_trunc('month', CURRENT_DATE),
+        INTERVAL '1 month'
+      ) AS m(month)
+      LEFT JOIN reservations r ON date_trunc('month', r.created_at) = m.month
+      LEFT JOIN food_listings fl ON fl.id = r.listing_id
+      GROUP BY m.month
+      ORDER BY m.month
     `);
 
     const statusRows = await this.prisma.$queryRaw<{ status: string; c: bigint }[]>(Prisma.sql`
@@ -1049,18 +1057,21 @@ export class AdminService {
         avatarUrl: true,
         createdAt: true,
         volunteerProfile: {
-          select: { specializations: { select: { specialization: true, isVerified: true } } },
+          select: { id: true, specializations: { select: { specialization: true, isVerified: true } } },
         },
         receiverProfile: { select: { isCharityOrg: true } },
+        providerProfile: { select: { id: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
     // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render + cờ tổ chức
-    return users.map(({ volunteerProfile, receiverProfile, ...u }) => ({
+    // Đồng thời gắn profileId để admin có thể xét duyệt hồ sơ từ màn Quản lý Tài khoản
+    return users.map(({ volunteerProfile, receiverProfile, providerProfile, ...u }) => ({
       ...u,
       specializations: volunteerProfile?.specializations ?? [],
       isCharityOrg: receiverProfile?.isCharityOrg ?? false,
+      profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
     }));
   }
 

@@ -15,12 +15,13 @@ import {
 } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage } from '@/services/faceCapture';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 import {
   ASSIGNMENT_STEPS,
   ASSIGNMENT_STEP_ORDER,
@@ -125,6 +126,10 @@ export default function VolunteerCampaignsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader title="Chiến dịch bếp ăn" />
+      <View style={styles.hero}>
+        <Text style={styles.heroKicker}>Volunteer kitchen</Text>
+        <Text style={styles.heroTitle}>Chọn ca bếp ăn và theo dõi việc của bạn</Text>
+      </View>
       <View style={styles.segmentWrap}>
         <SegmentedButtons
           value={segment}
@@ -133,7 +138,7 @@ export default function VolunteerCampaignsScreen() {
             { value: 'open', label: 'Đang mở', icon: 'charity' },
             { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
           ]}
-          theme={{ colors: { secondaryContainer: COLORS.primaryContainer, onSecondaryContainer: COLORS.primary } }}
+          theme={{ colors: { secondaryContainer: COLORS.purpleContainer, onSecondaryContainer: COLORS.purple } }}
         />
       </View>
 
@@ -186,6 +191,7 @@ function TaskCard({
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
+  const hasKitchenOps = task.role === 'chef' || task.role === 'waiter';
 
   return (
     <View style={styles.taskCard}>
@@ -193,9 +199,7 @@ function TaskCard({
         <Text style={styles.taskTitle} numberOfLines={2} onPress={onOpen}>
           {task.campaign.title}
         </Text>
-        <View style={[styles.badge, { backgroundColor: sm.bg }]}>
-          <Text style={[styles.badgeText, { color: sm.color }]}>{sm.label}</Text>
-        </View>
+        <StatusBadge label={sm.label} tone={task.status === 'completed' ? 'success' : 'info'} />
       </View>
 
       <View style={styles.metaRow}>
@@ -226,10 +230,10 @@ function TaskCard({
                 <MaterialCommunityIcons
                   name={done ? 'check-circle' : 'circle-outline'}
                   size={18}
-                  color={done ? COLORS.primary : COLORS.muted}
+                  color={done ? COLORS.teal : COLORS.onMuted}
                 />
                 {i < ASSIGNMENT_STEPS.length - 1 ? (
-                  <View style={[styles.connector, { backgroundColor: done ? COLORS.primary : COLORS.muted }]} />
+                  <View style={[styles.connector, done && styles.connectorDone]} />
                 ) : null}
               </View>
               <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
@@ -254,8 +258,21 @@ function TaskCard({
           {advanceTaskLabel(task.status)}
         </Button>
       ) : (
-        <Text style={styles.doneNote}>Bạn đã hoàn thành công việc này. Cảm ơn bạn! 💚</Text>
+        <Text style={styles.doneNote}>Bạn đã hoàn thành công việc này. Cảm ơn bạn!</Text>
       )}
+
+      {hasKitchenOps ? (
+        <Button
+          mode="outlined"
+          icon={task.role === 'chef' ? 'clipboard-pulse-outline' : 'silverware-fork-knife'}
+          textColor={COLORS.purple}
+          onPress={onOpen}
+          style={styles.kitchenBtn}
+          contentStyle={{ height: 42 }}
+        >
+          {task.role === 'chef' ? 'Ghi nhật ký ATTP' : 'Ghi phân phát'}
+        </Button>
+      ) : null}
     </View>
   );
 }
@@ -268,11 +285,21 @@ function assignmentStepRequiresPhotoIcon(status: string): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  segmentWrap: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  hero: {
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+    borderRadius: 32,
+    padding: spacing.xl,
+    backgroundColor: COLORS.heroCampaign,
+    ...elevation.card,
+  },
+  heroKicker: { color: COLORS.purpleContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 5, color: COLORS.onPrimary, fontSize: 24, lineHeight: 30, fontWeight: '900' },
+  segmentWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
   center: { alignItems: 'center', justifyContent: 'center', paddingTop: 64, paddingHorizontal: 32 },
   emptyIcon: {
-    width: 96, height: 96, borderRadius: 48, backgroundColor: '#ecfdf5',
+    width: 96, height: 96, borderRadius: 48, backgroundColor: COLORS.purpleContainer,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface, marginTop: 12, marginBottom: 8, textAlign: 'center' },
@@ -280,22 +307,27 @@ const styles = StyleSheet.create({
   retryBtn: { marginTop: 16, borderRadius: 12 },
   // Task card
   taskCard: {
-    backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    borderRadius: 28,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
-  taskHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
-  taskTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.onSurface, lineHeight: 21 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: '700' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  metaText: { flex: 1, fontSize: 13, color: COLORS.onSurfaceVariant },
-  timeline: { marginTop: 10, marginBottom: 4 },
-  stepRow: { flexDirection: 'row', gap: 10 },
+  taskHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, marginBottom: spacing.md },
+  taskTitle: { flex: 1, fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 5 },
+  metaText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant },
+  timeline: { marginTop: spacing.md, marginBottom: spacing.sm, borderRadius: radius.xl, padding: spacing.md, backgroundColor: COLORS.indigoContainer },
+  stepRow: { flexDirection: 'row', gap: spacing.sm },
   stepIconCol: { alignItems: 'center', width: 18 },
-  connector: { width: 2, flex: 1, minHeight: 12, marginVertical: 2 },
-  stepLabel: { fontSize: 13, color: COLORS.onSurface, paddingBottom: 10 },
-  stepLabelActive: { fontWeight: '700', color: COLORS.primary },
+  connector: { width: 2, flex: 1, minHeight: 12, marginVertical: 2, backgroundColor: COLORS.outlineVariant },
+  connectorDone: { backgroundColor: COLORS.teal },
+  stepLabel: { fontSize: 13, fontWeight: '600', color: COLORS.onSurface, paddingBottom: 10 },
+  stepLabelActive: { fontWeight: '900', color: COLORS.indigo },
   stepLabelTodo: { color: COLORS.onSurfaceVariant },
-  taskBtn: { borderRadius: 12, marginTop: 6 },
-  doneNote: { fontSize: 13, color: COLORS.primary, textAlign: 'center', marginTop: 8, fontWeight: '600' },
+  taskBtn: { borderRadius: radius.lg, marginTop: 6 },
+  kitchenBtn: { borderRadius: radius.lg, marginTop: 8, borderColor: COLORS.purple },
+  doneNote: { fontSize: 13, color: COLORS.teal, textAlign: 'center', marginTop: 8, fontWeight: '600' },
 });

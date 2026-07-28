@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import '../campaign-tokens.css';
+
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import PublicHeader from '@/components/home/PublicHeader';
@@ -16,9 +18,10 @@ import {
 } from '@/hooks/useCampaigns';
 import { useVolunteerMe } from '@/hooks/useDeliveries';
 import { useAuthStore } from '@/stores/auth.store';
+import { useMe } from '@/hooks/useProfile';
 import { mediaUrl, errMsg } from '@/lib/utils';
-import { StatTile } from '@/components/shared/StatTile';
 import { AssignmentRole, UserRole } from '@foodresq/types';
+import ProviderCampaignDetail from '../ProviderCampaignDetail';
 
 const CAMPAIGN_FALLBACK = '/vn-pho.jpg';
 
@@ -34,6 +37,68 @@ const PROOF_KIND: Record<string, string> = {
   distribution: 'Trao suất ăn',
 };
 
+const STATUS_META: Record<string, { label: string; chip: string }> = {
+  draft: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
+  open: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
+  in_progress: { label: 'Đang diễn ra', chip: 'cm-chip cm-chip--mint' },
+  completed: { label: 'Hoàn tất', chip: 'cm-chip cm-chip--mint' },
+  cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--rose' },
+};
+
+const ROLE_CARDS: Array<{
+  key: AssignmentRole;
+  title: string;
+  sub: string;
+  icon: string;
+  iconCls: string;
+}> = [
+  {
+    key: AssignmentRole.CHEF,
+    title: 'Đầu bếp',
+    sub: 'Chuẩn bị nguyên liệu, nấu và đảm bảo ATTP',
+    icon: 'skillet',
+    iconCls: 'cm-role-icon--chef',
+  },
+  {
+    key: AssignmentRole.WAITER,
+    title: 'Phục vụ',
+    sub: 'Hỗ trợ phân phát suất ăn, sắp xếp khu vực',
+    icon: 'room_service',
+    iconCls: 'cm-role-icon--waiter',
+  },
+  {
+    key: AssignmentRole.SHIPPER,
+    title: 'Giao hàng',
+    sub: 'Vận chuyển suất ăn đến người nhận cuối',
+    icon: 'local_shipping',
+    iconCls: 'cm-role-icon--shipper',
+  },
+];
+
+const SKILL_OPTIONS: Array<{ id: string; label: string; icon: string }> = [
+  { id: 'food_hygiene', label: 'Chứng nhận ATTP', icon: 'health_and_safety' },
+  { id: 'first_aid', label: 'Sơ cứu cơ bản', icon: 'medical_services' },
+  { id: 'comm', label: 'Giao tiếp tốt', icon: 'forum' },
+  { id: 'team', label: 'Làm việc nhóm', icon: 'groups' },
+  { id: 'cooking_basic', label: 'Biết nấu cơ bản', icon: 'soup_kitchen' },
+  { id: 'driving_license', label: 'Bằng lái xe', icon: 'directions_car' },
+  { id: 'vietnamese', label: 'Tiếng Việt', icon: 'translate' },
+  { id: 'english', label: 'Tiếng Anh', icon: 'language' },
+];
+
+const AVAILABILITY_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: 'full_day', label: 'Cả ngày' },
+  { id: 'morning', label: 'Buổi sáng' },
+  { id: 'afternoon', label: 'Buổi chiều' },
+  { id: 'evening', label: 'Buổi tối' },
+];
+
+type Tab = 'schedule' | 'items' | 'logistics';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'schedule', label: 'Lịch trình' },
+  { key: 'items', label: 'Thực đơn' },
+  { key: 'logistics', label: 'Nhân sự & Log' },
+];
 
 export default function CampaignPublicDetailPage() {
   const params = useParams();
@@ -41,14 +106,27 @@ export default function CampaignPublicDetailPage() {
   const router = useRouter();
 
   const { data: c, isLoading, isError } = usePublicCampaignDetail(id);
+  const { data: me } = useMe();
   const user = useAuthStore((s) => s.user);
+  const isProvider = me?.role === UserRole.PROVIDER;
   const isVolunteer = user?.role === UserRole.VOLUNTEER;
   const { data: vol } = useVolunteerMe(isVolunteer);
   const apply = useApplyCampaign();
   const [picking, setPicking] = useState(false);
+  const [tab, setTab] = useState<Tab>('schedule');
 
-  const myRoles = (vol?.specializations ?? []).map((s) => s.specialization);
+  // Form đăng ký tình nguyện viên (mở rộng theo mockup)
+  const [formRole, setFormRole] = useState<AssignmentRole | null>(null);
+  const [formSkills, setFormSkills] = useState<string[]>([]);
+  const [formMotivation, setFormMotivation] = useState('');
+  const [formAvailability, setFormAvailability] = useState('full_day');
+  const [formPhone, setFormPhone] = useState('');
+  const [formConsent, setFormConsent] = useState(false);
+
+  const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
   const isCompleted = c?.status === 'completed';
+  const st = c ? (STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' }) : null;
+
   // Đã qua ngày diễn ra (hết ngày tổ chức) → không còn nhận đăng ký
   const isPast = c ? new Date(c.scheduledDate).setHours(23, 59, 59, 999) < Date.now() : false;
   const canRegister = !isCompleted && !isPast;
@@ -60,20 +138,68 @@ export default function CampaignPublicDetailPage() {
         filled: c[`${role}SlotsFilled` as const],
       }))
     : [];
-  // Vai trò TNV có thể đăng ký: đúng chuyên môn + còn slot
-  const eligibleRoles = slots.filter((s) => s.needed > 0 && s.filled < s.needed && myRoles.includes(s.role)).map((s) => s.role);
+
+  const slotInfo = useMemo(() => {
+    if (!c) return null;
+    return {
+      chef: { filled: c.chefSlotsFilled, needed: c.chefSlotsNeeded },
+      waiter: { filled: c.waiterSlotsFilled, needed: c.waiterSlotsNeeded },
+      shipper: { filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
+    };
+  }, [c]);
+
+  const completedSlots = (c?.chefSlotsFilled ?? 0) + (c?.waiterSlotsFilled ?? 0) + (c?.shipperSlotsFilled ?? 0);
+  const totalSlots = c ? c.chefSlotsNeeded + c.waiterSlotsNeeded + c.shipperSlotsNeeded : 0;
+  const slotPct = totalSlots > 0 ? Math.round((completedSlots / totalSlots) * 100) : 0;
+
+  const dateFormatted = c
+    ? new Date(c.scheduledDate).toLocaleDateString('vi-VN', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : '';
+
+  const longDateFormatted = c
+    ? new Date(c.scheduledDate).toLocaleDateString('vi-VN', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : '';
 
   async function join(role: AssignmentRole) {
     try {
       await apply.mutateAsync({ id, role });
-      toast.success(`Đã gửi đăng ký vai trò ${ROLE_META[role]?.label ?? role}. Chờ quản trị viên duyệt.`);
+      toast.success(
+        `Đã gửi đăng ký vai trò ${ROLE_META[role]?.label ?? role}. Lời nhắn & kỹ năng đã ghi nhận.`,
+      );
       setPicking(false);
+      setFormRole(null);
+      setFormSkills([]);
+      setFormMotivation('');
+      setFormConsent(false);
     } catch (e) {
       toast.error(errMsg(e, 'Đăng ký thất bại'));
     }
   }
 
-  function onRegisterClick() {
+  async function submitRegistration(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formRole) {
+      toast.error('Chọn vai trò bạn muốn tham gia');
+      return;
+    }
+    if (!formConsent) {
+      toast.error('Bạn cần xác nhận cam kết trước khi gửi');
+      return;
+    }
+    if (formMotivation.trim().length > 0 && formMotivation.trim().length < 10) {
+      toast.error('Lời nhắn nên dài ít nhất 10 ký tự');
+      return;
+    }
     if (!user) {
       toast.info('Bạn cần có tài khoản tình nguyện viên để tham gia.');
       router.push('/register');
@@ -87,15 +213,17 @@ export default function CampaignPublicDetailPage() {
       toast.error('Bạn chưa đăng ký chuyên môn nào — cập nhật hồ sơ tình nguyện viên để tham gia.');
       return;
     }
-    if (eligibleRoles.length === 0) {
-      toast.error('Không còn vai trò phù hợp chuyên môn của bạn để đăng ký.');
+    if (!myRoles.includes(formRole)) {
+      toast.error('Bạn chưa có chuyên môn phù hợp với vai trò này.');
       return;
     }
-    if (eligibleRoles.length === 1) {
-      void join(eligibleRoles[0]);
-      return;
-    }
-    setPicking((p) => !p);
+    await join(formRole);
+  }
+
+  function toggleFormSkill(id: string) {
+    setFormSkills((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    );
   }
 
   function share() {
@@ -106,260 +234,833 @@ export default function CampaignPublicDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f7f1]">
+    <div className="cm-page cm-scope min-h-screen">
+      {/* NCC thấy view riêng (bảng nguyên liệu + donate) — không cần PublicHeader */}
+      {c && isProvider ? (
+        <ProviderCampaignDetail c={c} />
+      ) : (
+      <>
       <PublicHeader />
 
-      <div className="max-w-6xl mx-auto px-6 md:px-10 py-8">
-        {isLoading && <div className="h-72 rounded-3xl bg-neutral-200 animate-pulse" />}
+      <div className="cm-detail-page">
+        {isLoading && (
+          <div className="space-y-4">
+            <div className="h-80 skeleton rounded-3xl" />
+            <div className="h-24 skeleton rounded-2xl" />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="h-96 skeleton rounded-2xl" />
+              <div className="col-span-2 h-96 skeleton rounded-2xl" />
+            </div>
+          </div>
+        )}
 
         {isError && (
-          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-neutral-200">
+          <div className="text-center py-20 cm-card mt-8">
             <span className="material-symbols-outlined text-neutral-300 text-[56px]">event_busy</span>
             <p className="font-bold text-neutral-700 mt-3">Không tìm thấy chiến dịch</p>
-            <p className="text-sm text-neutral-400 mt-1">Chiến dịch có thể đã đóng hoặc chưa được duyệt.</p>
-            <button onClick={() => router.push('/')} className="mt-5 px-5 py-2.5 bg-emerald-700 text-white rounded-xl text-sm font-bold">Về trang chủ</button>
+            <p className="text-sm text-neutral-400 mt-1">
+              Chiến dịch có thể đã đóng hoặc chưa được duyệt.
+            </p>
+            <button
+              onClick={() => router.push('/')}
+              className="mt-5 px-5 py-2.5 cm-btn-ember text-sm"
+            >
+              Về trang chủ
+            </button>
           </div>
         )}
 
         {c && (
           <>
-            {/* Hero */}
-            <div className="relative rounded-3xl overflow-hidden h-64 md:h-72">
+            {/* ─── Hero (chỉ chứa ảnh bìa, full nguyên bức ảnh) ─── */}
+            <div className="cm-detail-hero">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : CAMPAIGN_FALLBACK} alt={c.title} className="absolute inset-0 w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/45 to-transparent" />
-              <div className="relative h-full flex flex-col justify-center p-8 md:p-10 text-white max-w-2xl">
-                <span className={`inline-flex w-fit items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold mb-3 ${
-                  isCompleted ? 'bg-amber-400/95 text-amber-950' : 'bg-emerald-500/90'
-                }`}>
-                  <span className="material-symbols-outlined text-[14px]">{isCompleted ? 'verified' : 'campaign'}</span>
-                  {isCompleted ? 'Đã hoàn thành' : c.status === 'in_progress' ? 'Đang diễn ra' : 'Đang tuyển tình nguyện viên'}
+              <img
+                src={c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : CAMPAIGN_FALLBACK}
+                alt={c.title}
+              />
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="cm-detail-hero-back"
+                aria-label="Quay lại"
+              >
+                <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+              </button>
+              {st && (
+                <div className="cm-detail-hero-actions">
+                  <span className={`${st.chip} backdrop-blur-md`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {c.status === 'open'
+                        ? 'campaign'
+                        : c.status === 'in_progress'
+                          ? 'play_circle'
+                          : c.status === 'completed'
+                            ? 'verified'
+                            : c.status === 'cancelled'
+                              ? 'cancel'
+                              : 'pending'}
+                    </span>
+                    {st.label}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* ─── Card info (title + meta) — đặt dưới ảnh để ảnh luôn full visibility ─── */}
+            <div className="cm-detail-hero-info">
+              <p className="cm-detail-hero-eyebrow">
+                {c.organizationName ? c.organizationName : 'Chiến dịch cộng đồng'}
+              </p>
+              <h1 className="cm-detail-hero-title">{c.title}</h1>
+              <div className="cm-detail-hero-meta">
+                <span>
+                  <span className="material-symbols-outlined text-[16px]">event</span>
+                  {longDateFormatted}
                 </span>
-                <h1 className="font-extrabold text-3xl md:text-4xl leading-tight">{c.title}</h1>
-                {c.description && <p className="text-sm text-white/85 mt-3 line-clamp-2 max-w-xl">{c.description}</p>}
+                <span>
+                  <span className="material-symbols-outlined text-[16px]">schedule</span>
+                  {c.startTime} – {c.endTime}
+                </span>
+                <span>
+                  <span className="material-symbols-outlined text-[16px]">place</span>
+                  {c.kitchenAddress}
+                </span>
               </div>
             </div>
 
-            {/* Băng số liệu tác động — chỉ khi đã hoàn thành */}
-            {isCompleted && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
-                <StatTile align="center" icon="restaurant" value={c.actualServings ?? c.distributionSummary.servingsServed} label="suất ăn đã trao" />
-                <StatTile align="center" icon="diversity_3" value={c.distributionSummary.peopleServed} label="người được phục vụ" />
-                <StatTile align="center" icon="volunteer_activism" value={c.participants.length} label="tình nguyện viên" />
-                <StatTile
-              align="center"
-                  icon="sentiment_very_satisfied"
-                  value={c.avgSatisfaction != null ? `${c.avgSatisfaction.toFixed(1)}/5` : '—'}
-                  label={`hài lòng (${c.feedbackCount} phản hồi)`}
-                />
+            {/* ─── Info bar (4 cells) ─── */}
+            <div className="cm-info-bar">
+              <div className="cm-info-cell">
+                <span className="cm-info-cell-label">
+                  <span className="material-symbols-outlined text-[14px]">groups</span>
+                  Tình nguyện viên
+                </span>
+                <span className="cm-info-cell-value">
+                  {completedSlots}/{totalSlots} người
+                </span>
+                <span className="cm-info-cell-sub">Đã đăng ký / tổng nhu cầu</span>
               </div>
-            )}
+              <div className="cm-info-cell">
+                <span className="cm-info-cell-label">
+                  <span className="material-symbols-outlined text-[14px]">restaurant</span>
+                  Suất ăn dự kiến
+                </span>
+                <span className="cm-info-cell-value">
+                  {c.expectedServings?.toLocaleString('vi-VN') ?? '—'} suất
+                </span>
+                <span className="cm-info-cell-sub">Mục tiêu phục vụ</span>
+              </div>
+              <div className="cm-info-cell">
+                <span className="cm-info-cell-label">
+                  <span className="material-symbols-outlined text-[14px]">schedule</span>
+                  Thời lượng
+                </span>
+                <span className="cm-info-cell-value">{c.startTime}–{c.endTime}</span>
+                <span className="cm-info-cell-sub">{longDateFormatted}</span>
+              </div>
+              <div className="cm-info-cell">
+                <span className="cm-info-cell-label">
+                  <span className="material-symbols-outlined text-[14px]">percent</span>
+                  Tỉ lệ lấp đầy
+                </span>
+                <span className="cm-info-cell-value">{slotPct}%</span>
+                <span className="cm-info-cell-sub">Sẽ tăng khi có đăng ký</span>
+              </div>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-              {/* Cột trái */}
-              <div className="lg:col-span-2 space-y-5">
-                <Card title="Câu chuyện chiến dịch" icon="auto_stories">
-                  {c.description
-                    ? c.description.split('\n').filter(Boolean).map((p, i) => <p key={i} className="text-sm text-neutral-600 leading-relaxed mb-3 last:mb-0">{p}</p>)
-                    : <p className="text-sm text-neutral-400">Chưa có mô tả cho chiến dịch này.</p>}
-                </Card>
-
-                {/* Thư viện ảnh hành trình — khi hoàn thành & có ảnh minh chứng */}
-                {isCompleted && c.proofGallery.length > 0 && (
-                  <Card title="Hành trình chiến dịch qua ảnh" icon="photo_library">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {c.proofGallery.map((p, i) => <ProofPhoto key={i} p={p} />)}
+            {/* ─── 2-col: side (sticky) + main ─── */}
+            <div className="cm-detail-grid">
+              {/* ─── Side panel (sticky) ─── */}
+              <aside className="cm-side-panel">
+                <div className="cm-side-card">
+                  <h2 className="cm-side-card-title">
+                    <span className="material-symbols-outlined">volunteer_activism</span>
+                    Tại sao bạn nên tham gia
+                  </h2>
+                  <div className="cm-benefit">
+                    <div className="cm-benefit-icon">
+                      <span className="material-symbols-outlined text-[18px]">workspace_premium</span>
                     </div>
-                  </Card>
-                )}
+                    <div className="cm-benefit-body">
+                      <p className="cm-benefit-title">+5 điểm cống hiến</p>
+                      <p className="cm-benefit-sub">Hoàn thành tốt — thăng hạng tình nguyện viên</p>
+                    </div>
+                  </div>
+                  <div className="cm-benefit">
+                    <div className="cm-benefit-icon cm-benefit-icon--honey">
+                      <span className="material-symbols-outlined text-[18px]">soup_kitchen</span>
+                    </div>
+                    <div className="cm-benefit-body">
+                      <p className="cm-benefit-title">Một bữa ấm cho cộng đồng</p>
+                      <p className="cm-benefit-sub">Đóng góp trực tiếp cho người cần hỗ trợ</p>
+                    </div>
+                  </div>
+                  <div className="cm-benefit">
+                    <div className="cm-benefit-icon cm-benefit-icon--sky">
+                      <span className="material-symbols-outlined text-[18px]">handshake</span>
+                    </div>
+                    <div className="cm-benefit-body">
+                      <p className="cm-benefit-title">Kết nối tình nguyện viên</p>
+                      <p className="cm-benefit-sub">Gặp gỡ những người cùng chí hướng quanh bạn</p>
+                    </div>
+                  </div>
+                  <div className="cm-benefit">
+                    <div className="cm-benefit-icon cm-benefit-icon--rose">
+                      <span className="material-symbols-outlined text-[18px]">verified</span>
+                    </div>
+                    <div className="cm-benefit-body">
+                      <p className="cm-benefit-title">Xác nhận hoàn thành</p>
+                      <p className="cm-benefit-sub">Điểm danh + ảnh bằng chứng để được ghi nhận</p>
+                    </div>
+                  </div>
+                </div>
 
-                {c.menuItems.length > 0 && (
-                  <Card title="Thực đơn trong ngày" icon="restaurant_menu">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {c.menuItems.map((m, i) => (
-                        <div key={i} className="rounded-2xl bg-neutral-50 border border-neutral-150 p-4 text-center">
-                          <span className="material-symbols-outlined text-emerald-600 text-[26px]">restaurant</span>
-                          <p className="font-bold text-sm text-neutral-800 mt-1">{m.name}</p>
-                          {m.type && <p className="text-[11px] text-neutral-400">{m.type}</p>}
+                <div className="cm-side-card">
+                  <h2 className="cm-side-card-title">
+                    <span className="material-symbols-outlined">checklist</span>
+                    Yêu cầu tham gia
+                  </h2>
+                  <ul className="cm-req-list">
+                    <li>
+                      <span className="material-symbols-outlined">check_circle</span>
+                      Tài khoản đã xác minh danh tính (KYC)
+                    </li>
+                    <li>
+                      <span className="material-symbols-outlined">check_circle</span>
+                      Có mặt đúng giờ tại địa điểm bếp
+                    </li>
+                    <li>
+                      <span className="material-symbols-outlined">check_circle</span>
+                      Cam kết hoàn thành đến cuối ca làm việc
+                    </li>
+                    <li>
+                      <span className="material-symbols-outlined">check_circle</span>
+                      Mang theo giấy tờ tuỳ thân khi điểm danh
+                    </li>
+                  </ul>
+                </div>
+
+                {c.participants.length > 0 && (
+                  <div className="cm-side-card">
+                    <h2 className="cm-side-card-title">
+                      <span className="material-symbols-outlined">group</span>
+                      Đã có {c.participants.length} người đăng ký
+                    </h2>
+                    <div className="cm-avatars">
+                      {c.participants.slice(0, 6).map((p) => (
+                        <div key={p.id} className="cm-avatar" title={p.fullName}>
+                          {p.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={mediaUrl(p.avatarUrl)} alt={p.fullName} />
+                          ) : (
+                            p.fullName.charAt(0).toUpperCase()
+                          )}
                         </div>
                       ))}
-                    </div>
-                  </Card>
-                )}
-
-                {/* Nhu cầu nhân lực — ẩn khi đã hoàn thành */}
-                {!isCompleted && (
-                  <Card title="Nhu cầu nhân lực" icon="groups">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                      {slots.filter((s) => s.needed > 0).map((s) => {
-                        const pct = Math.min(100, Math.round((s.filled / s.needed) * 100));
-                        return (
-                          <div key={s.role}>
-                            <div className="flex items-center justify-between text-xs font-bold text-neutral-700 mb-1.5">
-                              <span>{ROLE_META[s.role].label}</span>
-                              <span className="text-neutral-400">{s.filled}/{s.needed}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
-                              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
-                )}
-
-                {/* Các đợt phân phát + phản hồi người nhận — khi hoàn thành */}
-                {isCompleted && c.distributions.length > 0 && (
-                  <Card title="Các đợt trao suất ăn" icon="takeout_dining">
-                    <div className="space-y-3">
-                      {c.distributions.map((d) => <DistributionRow key={d.id} d={d} />)}
-                    </div>
-                  </Card>
-                )}
-
-                {c.scheduleItems.length > 0 && (
-                  <Card title="Lịch trình hoạt động" icon="schedule">
-                    <div className="space-y-2">
-                      {c.scheduleItems.map((t, i) => (
-                        <div key={i} className="flex gap-4 items-center rounded-xl px-4 py-3 bg-neutral-50">
-                          <span className="text-xs font-bold text-neutral-500 w-24 shrink-0">{t.time}</span>
-                          <span className="text-sm text-neutral-700">{t.label}</span>
+                      {c.participants.length > 6 && (
+                        <div className="cm-avatar cm-avatar--more">
+                          +{c.participants.length - 6}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </Card>
+                    <p className="text-[11px] text-neutral-500 mt-3">
+                      Bạn sẽ tham gia cùng những tình nguyện viên trên.
+                    </p>
+                  </div>
                 )}
 
-                {/* Tình nguyện viên đã tham gia — tên thật */}
-                <Card title="Những người đã chung tay" icon="diversity_3">
-                  {c.participants.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {c.participants.map((p) => <ParticipantChip key={p.id} p={p} />)}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-neutral-400">Chưa có tình nguyện viên nào — hãy là người đầu tiên!</p>
-                  )}
-                </Card>
+                <button
+                  onClick={share}
+                  className="w-full py-3 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-2xl font-bold text-sm transition-colors inline-flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[18px]">share</span> Chia sẻ chiến dịch
+                </button>
+              </aside>
 
-                {/* Cảm nhận của tình nguyện viên */}
+              {/* ─── Main column ─── */}
+              <main className="cm-main-form">
+                {/* ─── Mô tả / Giới thiệu ─── */}
+                {c.description && (
+                  <section className="cm-form-card">
+                    <h2 className="cm-side-card-title !mb-3">
+                      <span className="material-symbols-outlined">description</span>
+                      Giới thiệu
+                    </h2>
+                    <p className="text-[14px] text-neutral-700 leading-relaxed whitespace-pre-line">
+                      {c.description}
+                    </p>
+                  </section>
+                )}
+
+                {/* ─── Form đăng ký (mở rộng theo mockup) ─── */}
+                {canRegister && (
+                  <form onSubmit={submitRegistration} className="cm-form-card">
+                    <h2 className="cm-form-card-title">Đăng ký tham gia</h2>
+                    <p className="cm-form-card-sub">
+                      Chọn vai trò phù hợp — quản trị viên sẽ duyệt trong vòng 24 giờ.
+                    </p>
+
+                    {!user && (
+                      <div className="cm-consent !bg-amber-50 !border-amber-200 mb-5">
+                        <span className="material-symbols-outlined text-[20px] text-amber-700 mt-0.5">
+                          info
+                        </span>
+                        <div className="cm-consent-body">
+                          Bạn cần <b>đăng ký tài khoản tình nguyện viên</b> để tham gia.{' '}
+                          <button
+                            type="button"
+                            onClick={() => router.push('/register')}
+                            className="text-emerald-700 font-bold underline"
+                          >
+                            Đăng ký ngay
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {user && !isVolunteer && (
+                      <div className="cm-consent !bg-amber-50 !border-amber-200 mb-5">
+                        <span className="material-symbols-outlined text-[20px] text-amber-700 mt-0.5">
+                          info
+                        </span>
+                        <div className="cm-consent-body">
+                          Chỉ tài khoản <b>tình nguyện viên</b> mới có thể đăng ký.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Role picker */}
+                    <div className="mb-5">
+                      <label className="cm-field-label">
+                        Vai trò <span className="required">*</span>
+                      </label>
+                      <div className="cm-role-grid">
+                        {ROLE_CARDS.map((r) => {
+                          const info = slotInfo?.[r.key as keyof typeof slotInfo];
+                          const full = info ? info.filled >= info.needed : false;
+                          const verified = myRoles.includes(r.key);
+                          return (
+                            <button
+                              key={r.key}
+                              type="button"
+                              aria-pressed={formRole === r.key}
+                              onClick={() => setFormRole(r.key)}
+                              disabled={full}
+                              className="cm-role-card"
+                            >
+                              <span className="cm-role-check">
+                                <span className="material-symbols-outlined">check</span>
+                              </span>
+                              <div className={`cm-role-icon ${r.iconCls}`}>
+                                <span className="material-symbols-outlined text-[22px]">
+                                  {r.icon}
+                                </span>
+                              </div>
+                              <p className="cm-role-title">{r.title}</p>
+                              <p className="cm-role-sub">{r.sub}</p>
+                              {info && (
+                                <p
+                                  className={`cm-role-slot ${
+                                    full ? 'cm-role-slot-full' : ''
+                                  }`}
+                                >
+                                  {full ? 'Đã đủ người' : `${info.filled}/${info.needed} đã đăng ký`}
+                                  {verified && !full ? ' · Bạn đủ điều kiện' : ''}
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="cm-field-hint">
+                        Bạn chỉ có thể đăng ký 1 vai trò cho mỗi chiến dịch.
+                      </p>
+                    </div>
+
+                    {/* Skills chips */}
+                    <div className="mb-5">
+                      <label className="cm-field-label">Kỹ năng / chứng chỉ</label>
+                      <div className="cm-chip-row">
+                        {SKILL_OPTIONS.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            aria-pressed={formSkills.includes(s.id)}
+                            onClick={() => toggleFormSkill(s.id)}
+                            className="cm-chip-toggle inline-flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">
+                              {s.icon}
+                            </span>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="cm-field-hint">
+                        Chọn những kỹ năng bạn có — giúp BTC sắp xếp ca phù hợp hơn.
+                      </p>
+                    </div>
+
+                    {/* Availability */}
+                    <div className="mb-5">
+                      <label className="cm-field-label">Khung giờ có thể tham gia</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {AVAILABILITY_OPTIONS.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            aria-pressed={formAvailability === a.id}
+                            onClick={() => setFormAvailability(a.id)}
+                            className={`cm-input !text-center !py-2.5 ${
+                              formAvailability === a.id
+                                ? '!border-emerald-500 !bg-emerald-50 !text-emerald-800 font-bold'
+                                : ''
+                            }`}
+                          >
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="mb-5">
+                      <label className="cm-field-label">Số điện thoại liên hệ</label>
+                      <input
+                        type="tel"
+                        value={formPhone}
+                        onChange={(e) => setFormPhone(e.target.value)}
+                        placeholder="VD: 0901 234 567"
+                        className="cm-input"
+                      />
+                      <p className="cm-field-hint">
+                        Để BTC xác nhận nhanh khi cần (không bắt buộc).
+                      </p>
+                    </div>
+
+                    {/* Motivation */}
+                    <div className="mb-5">
+                      <label className="cm-field-label">Lời nhắn cho ban tổ chức</label>
+                      <textarea
+                        value={formMotivation}
+                        onChange={(e) => setFormMotivation(e.target.value)}
+                        placeholder="Chia sẻ lý do bạn muốn tham gia hoặc kinh nghiệm liên quan…"
+                        rows={4}
+                        maxLength={500}
+                        className="cm-input"
+                      />
+                      <p className="cm-field-hint">
+                        {formMotivation.length}/500 ký tự · không bắt buộc
+                      </p>
+                    </div>
+
+                    {/* Consent */}
+                    <label className="cm-consent mb-5">
+                      <input
+                        type="checkbox"
+                        checked={formConsent}
+                        onChange={(e) => setFormConsent(e.target.checked)}
+                      />
+                      <div className="cm-consent-body">
+                        Tôi cam kết <b>có mặt đúng giờ</b>, tuân thủ nội quy bếp và{' '}
+                        <b>hoàn thành đến cuối ca</b>. Tôi hiểu việc vắng mặt không lý do sẽ ảnh hưởng đến điểm uy tín.
+                      </div>
+                    </label>
+
+                    {/* Submit */}
+                    <button
+                      type="submit"
+                      disabled={apply.isPending || !user || !isVolunteer}
+                      className="cm-btn-submit-big"
+                    >
+                      {apply.isPending ? (
+                        <>
+                          <span className="material-symbols-outlined text-[18px] animate-spin">
+                            progress_activity
+                          </span>
+                          Đang gửi đăng ký...
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[20px]">send</span>
+                          Gửi đăng ký tham gia
+                        </>
+                      )}
+                    </button>
+
+                    <p className="text-[11px] text-center text-neutral-400 mt-3">
+                      Sau khi gửi, BTC sẽ duyệt trong vòng 24 giờ. Bạn sẽ nhận thông báo khi được duyệt.
+                    </p>
+                  </form>
+                )}
+
+                {/* ─── Trạng thái đặc biệt (completed / past) ─── */}
                 {isCompleted && (
-                  <Card title="Cảm nhận của tình nguyện viên" icon="format_quote">
+                  <div className="cm-card p-6 text-center">
+                    <span className="material-symbols-outlined text-amber-500 text-[44px]">
+                      workspace_premium
+                    </span>
+                    <p className="font-extrabold text-neutral-900 mt-2">Chiến dịch đã hoàn thành</p>
+                    <p className="text-sm text-neutral-500 mt-1">
+                      Cảm ơn tất cả tình nguyện viên & nhà hảo tâm đã chung tay!
+                    </p>
+                  </div>
+                )}
+
+                {!isCompleted && isPast && (
+                  <div className="cm-card p-6 text-center">
+                    <span className="material-symbols-outlined text-neutral-400 text-[44px]">event_busy</span>
+                    <p className="font-extrabold text-neutral-900 mt-2">Đã qua ngày diễn ra</p>
+                    <p className="text-sm text-neutral-500 mt-1">
+                      Chiến dịch này không còn nhận đăng ký tình nguyện.
+                    </p>
+                  </div>
+                )}
+
+                {/* ─── Stats line (only when completed) ─── */}
+                {isCompleted && (
+                  <section className="cm-form-card">
+                    <h2 className="cm-side-card-title !mb-4">
+                      <span className="material-symbols-outlined">analytics</span>
+                      Tổng kết chiến dịch
+                    </h2>
+                    <div className="flex flex-wrap gap-4">
+                      <div className="cm-stat">
+                        <span className="material-symbols-outlined text-emerald-500 text-[16px]">restaurant</span>
+                        <span className="cm-stat-value">{c.actualServings ?? c.distributionSummary.servingsServed}</span>
+                        <span>suất đã nấu</span>
+                      </div>
+                      <div className="cm-stat">
+                        <span className="material-symbols-outlined text-sky-500 text-[16px]">diversity_3</span>
+                        <span className="cm-stat-value">{c.distributionSummary.peopleServed}</span>
+                        <span>người được phục vụ</span>
+                      </div>
+                      <div className="cm-stat">
+                        <span className="material-symbols-outlined text-amber-500 text-[16px]">workspace_premium</span>
+                        <span className="cm-stat-value">{c.participants.length}</span>
+                        <span>TNV tham gia</span>
+                      </div>
+                      {c.avgSatisfaction != null && (
+                        <div className="cm-stat">
+                          <span className="material-symbols-outlined text-amber-500 text-[16px]">star</span>
+                          <span className="cm-stat-value">{c.avgSatisfaction.toFixed(1)}</span>
+                          <span>/ 5 ({c.feedbackCount} đánh giá)</span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {/* ─── Tabs (Lịch trình / Thực đơn / Nhân sự) ─── */}
+                <section className="cm-form-card !p-0 overflow-hidden">
+                  <div className="px-5 pt-5">
+                    <div className="cm-tabs">
+                      {TABS.map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          aria-selected={tab === t.key}
+                          onClick={() => setTab(t.key)}
+                          className="cm-tab"
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    {tab === 'schedule' && (
+                      <ScheduleTab c={c} isCompleted={isCompleted} />
+                    )}
+                    {tab === 'items' && <ItemsTab c={c} isCompleted={isCompleted} />}
+                    {tab === 'logistics' && (
+                      <LogisticsTab c={c} isCompleted={isCompleted} slots={slots} />
+                    )}
+
+                    {isCompleted && c.proofGallery.length > 0 && (
+                      <div className="cm-card p-5">
+                        <h3 className="font-extrabold text-neutral-900 mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-emerald-600 text-[20px]">
+                            photo_library
+                          </span>
+                          Hành trình qua ảnh
+                        </h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {c.proofGallery.map((p, i) => (
+                            <ProofPhoto key={i} p={p} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {isCompleted && c.distributions.length > 0 && (
+                      <div className="cm-card p-5">
+                        <h3 className="font-extrabold text-neutral-900 mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-emerald-600 text-[20px]">
+                            takeout_dining
+                          </span>
+                          Các đợt trao suất ăn
+                        </h3>
+                        <div className="space-y-3">
+                          {c.distributions.map((d) => (
+                            <DistributionRow key={d.id} d={d} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* ─── Cảm nhận của tình nguyện viên (khi completed) ─── */}
+                {isCompleted && (
+                  <section className="cm-form-card">
+                    <h2 className="cm-side-card-title !mb-4">
+                      <span className="material-symbols-outlined text-amber-500">
+                        format_quote
+                      </span>
+                      Cảm nhận của tình nguyện viên
+                    </h2>
                     {c.experiences.length > 0 ? (
                       <div className="space-y-4">
-                        {c.experiences.map((e) => <ExperienceCard key={e.id} e={e} />)}
+                        {c.experiences.map((e) => (
+                          <ExperienceCard key={e.id} e={e} />
+                        ))}
                       </div>
                     ) : (
                       <p className="text-sm text-neutral-400">Chưa có cảm nhận nào được chia sẻ.</p>
                     )}
                     {isVolunteer && <ExperienceForm campaignId={id} />}
-                  </Card>
+                  </section>
                 )}
-
-                {c.supplyItems.length > 0 && (
-                  <Card title="Vật phẩm cần thiết" icon="inventory_2">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {c.supplyItems.map((s, i) => (
-                        <div key={i} className="rounded-2xl border border-neutral-150 p-4 text-center bg-neutral-50">
-                          <span className="material-symbols-outlined text-emerald-600 text-[24px]">inventory_2</span>
-                          <p className="text-xs font-semibold text-neutral-700 mt-1">{s}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                {/* Nguyên liệu được quyên góp */}
-                {c.donations.length > 0 && (
-                  <Card title="Nguyên liệu được quyên góp" icon="local_shipping">
-                    <div className="space-y-2">
-                      {c.donations.map((d) => (
-                        <div key={d.id} className="flex items-center gap-2 text-sm rounded-xl bg-neutral-50 px-4 py-2.5">
-                          <span className="material-symbols-outlined text-[16px] text-emerald-600">volunteer_activism</span>
-                          <span className="font-semibold text-neutral-700">{d.quantity ? `${d.quantity} ` : ''}{d.itemName}</span>
-                          <span className="text-neutral-400 text-xs">· {d.provider.businessName}</span>
-                          <span className={`ml-auto text-[11px] font-bold ${d.status === 'received' ? 'text-emerald-600' : 'text-honey-600'}`}>
-                            {d.status === 'received' ? 'Đã nhận' : 'Đã hứa góp'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-              </div>
-
-              {/* Cột phải (sticky) */}
-              <div className="space-y-5 lg:sticky lg:top-6 self-start">
-                {/* Thông tin chi tiết */}
-                <div className="bg-white border border-neutral-150 rounded-3xl p-6 space-y-4">
-                  <h3 className="font-bold text-lg text-neutral-900">Thông tin chi tiết</h3>
-                  <InfoRow icon="calendar_month" label="Ngày tổ chức" value={new Date(c.scheduledDate).toLocaleDateString('vi-VN')} />
-                  <InfoRow icon="schedule" label="Thời gian" value={`${c.startTime} - ${c.endTime}`} />
-                  <InfoRow icon="place" label="Địa điểm" value={c.kitchenAddress} />
-                  {c.organizationName && <InfoRow icon="volunteer_activism" label="Tổ chức" value={c.organizationName} />}
-                  {c.expectedServings != null && <InfoRow icon="restaurant" label="Dự kiến" value={`${c.expectedServings} suất`} />}
-                </div>
-
-                {/* CTA đăng ký — chỉ khi còn tuyển & chưa qua ngày diễn ra */}
-                {canRegister && (
-                  <>
-                    <button
-                      onClick={onRegisterClick}
-                      disabled={apply.isPending}
-                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm transition-colors disabled:opacity-50"
-                    >
-                      {apply.isPending ? 'Đang xử lý...' : 'Đăng ký tình nguyện'}
-                    </button>
-                    <p className="text-[11px] text-neutral-400 text-center -mt-2">Đăng ký sẽ được quản trị viên duyệt trước khi nhận.</p>
-
-                    {picking && eligibleRoles.length > 1 && (
-                      <div className="bg-white border border-neutral-150 rounded-2xl p-3 space-y-2">
-                        <p className="text-xs font-bold text-neutral-500 px-1">Chọn vai trò tham gia:</p>
-                        {eligibleRoles.map((role) => (
-                          <button key={role} onClick={() => join(role)} disabled={apply.isPending}
-                            className="w-full py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">
-                            <span className="material-symbols-outlined text-[16px]">{ROLE_META[role].icon}</span> {ROLE_META[role].label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {isCompleted && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 text-center">
-                    <span className="material-symbols-outlined text-amber-500 text-[40px]">workspace_premium</span>
-                    <p className="font-bold text-neutral-900 mt-1">Chiến dịch đã hoàn thành</p>
-                    <p className="text-xs text-neutral-500 mt-1">Cảm ơn tất cả tình nguyện viên & nhà hảo tâm đã chung tay!</p>
-                  </div>
-                )}
-
-                {!isCompleted && isPast && (
-                  <div className="bg-neutral-50 border border-neutral-200 rounded-3xl p-6 text-center">
-                    <span className="material-symbols-outlined text-neutral-400 text-[40px]">event_busy</span>
-                    <p className="font-bold text-neutral-900 mt-1">Đã qua ngày diễn ra</p>
-                    <p className="text-xs text-neutral-500 mt-1">Chiến dịch này không còn nhận đăng ký tình nguyện.</p>
-                  </div>
-                )}
-
-                <button onClick={share} className="w-full py-3 border border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-2xl font-bold text-sm transition-colors inline-flex items-center justify-center gap-1.5">
-                  <span className="material-symbols-outlined text-[18px]">share</span> Chia sẻ chiến dịch
-                </button>
-              </div>
+              </main>
             </div>
           </>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function ScheduleTab({
+  c,
+  isCompleted,
+}: {
+  c: import('@/hooks/useCampaigns').PublicCampaignDetail;
+  isCompleted: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      {c.scheduleItems.length > 0 && (
+        <div className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-600 text-[20px]">schedule</span>
+            Lịch trình hoạt động
+          </h3>
+          <div className="space-y-2">
+            {c.scheduleItems.map((t, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="shrink-0 min-w-[70px] text-xs font-bold text-neutral-500 bg-neutral-100 rounded-lg px-2 py-1 text-center">
+                  {t.time}
+                </div>
+                <p className="text-sm text-neutral-700 leading-relaxed">{t.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {c.supplyItems.length > 0 && (
+        <div className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-honey-500 text-[20px]">inventory_2</span>
+            Vật phẩm cần chuẩn bị
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {c.supplyItems.map((s, i) => {
+              const label =
+                typeof s === 'string'
+                  ? s
+                  : [s.name, s.quantity ? `${s.quantity}${s.unit ? ` ${s.unit}` : ''}` : null]
+                      .filter(Boolean)
+                      .join(' — ');
+              return (
+                <span key={i} className="cm-chip cm-chip--ink text-sm">
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {c.scheduleItems.length === 0 && c.supplyItems.length === 0 && (
+        <div className="cm-card p-6 text-center">
+          <span className="material-symbols-outlined text-4xl text-neutral-300">schedule</span>
+          <p className="text-sm text-neutral-500 mt-2">Chưa có lịch trình chi tiết.</p>
+        </div>
+      )}
+
+      {/* Tình nguyện viên đã tham gia */}
+      {c.participants.length > 0 && (
+        <div className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-600 text-[20px]">diversity_3</span>
+            Những người đã chung tay ({c.participants.length})
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {c.participants.map((p) => (
+              <ParticipantChip key={p.id} p={p} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemsTab({
+  c,
+  isCompleted,
+}: {
+  c: import('@/hooks/useCampaigns').PublicCampaignDetail;
+  isCompleted: boolean;
+}) {
+  if (c.menuItems.length === 0) {
+    return (
+      <div className="cm-card p-6 text-center">
+        <span className="material-symbols-outlined text-4xl text-neutral-300">restaurant_menu</span>
+        <p className="text-sm text-neutral-500 mt-2">Chưa có thực đơn công khai.</p>
+      </div>
+    );
+  }
+
+  const grouped = c.menuItems.reduce<Record<string, typeof c.menuItems>>((acc, item) => {
+    const key = item.type || 'Khác';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(grouped).map(([type, items]) => (
+        <div key={type} className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-3 flex items-center gap-2">
+            <span className="cm-chip cm-chip--honey">{type}</span>
+            <span className="text-xs text-neutral-400">{items.length} món</span>
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {items.map((m, i) => (
+              <div key={i} className="rounded-2xl bg-neutral-50 border border-neutral-150 p-4 text-center">
+                <span className="material-symbols-outlined text-emerald-600 text-[26px]">restaurant</span>
+                <p className="font-bold text-sm text-neutral-800 mt-1">{m.name}</p>
+                {m.type && <p className="text-[11px] text-neutral-400">{m.type}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LogisticsTab({
+  c,
+  isCompleted,
+  slots,
+}: {
+  c: import('@/hooks/useCampaigns').PublicCampaignDetail;
+  isCompleted: boolean;
+  slots: { role: AssignmentRole; needed: number; filled: number }[];
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Nhu cầu nhân lực — ẩn khi đã hoàn thành */}
+      {!isCompleted && (
+        <div className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-600 text-[20px]">groups</span>
+            Nhu cầu nhân lực
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {slots
+              .filter((s) => s.needed > 0)
+              .map((s) => {
+                const pct = Math.min(100, Math.round((s.filled / s.needed) * 100));
+                const role = ROLE_META[s.role];
+                return (
+                  <div key={s.role}>
+                    <div className="flex items-center justify-between text-xs font-bold text-neutral-700 mb-1.5">
+                      <span>{role?.label ?? s.role}</span>
+                      <span className="text-neutral-400">
+                        {s.filled}/{s.needed}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Nguyên liệu được quyên góp */}
+      {c.donations.length > 0 && (
+        <div className="cm-card p-5">
+          <h3 className="font-extrabold text-neutral-900 mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-honey-500 text-[20px]">volunteer_activism</span>
+            Nguyên liệu quyên góp ({c.donations.length})
+          </h3>
+          <div className="space-y-2">
+            {c.donations.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center gap-2 text-sm rounded-xl bg-neutral-50 px-4 py-2.5"
+              >
+                <span className="material-symbols-outlined text-[16px] text-emerald-600">
+                  volunteer_activism
+                </span>
+                <span className="font-semibold text-neutral-700">
+                  {d.quantity ? `${d.quantity} ` : ''}
+                  {d.itemName}
+                </span>
+                <span className="text-neutral-400 text-xs">· {d.provider.businessName}</span>
+                <span
+                  className={`ml-auto cm-chip text-[10px] ${
+                    d.status === 'received' ? 'cm-chip--mint' : 'cm-chip--honey'
+                  }`}
+                >
+                  {d.status === 'received' ? 'Đã nhận' : 'Đã hứa góp'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ProofPhoto({ p }: { p: CampaignProofPhoto }) {
   return (
     <div className="relative rounded-2xl overflow-hidden aspect-square bg-neutral-100 group">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={mediaUrl(p.url)} alt={PROOF_KIND[p.kind] ?? p.kind} className="w-full h-full object-cover" />
+      <img
+        src={mediaUrl(p.url)}
+        alt={PROOF_KIND[p.kind] ?? p.kind}
+        className="w-full h-full object-cover"
+      />
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-1.5">
         <p className="text-[10px] font-bold text-white">{PROOF_KIND[p.kind] ?? p.kind}</p>
         <p className="text-[9px] text-white/70 truncate">{p.by}</p>
@@ -374,7 +1075,11 @@ function ParticipantChip({ p }: { p: CampaignParticipant }) {
     <span className="inline-flex items-center gap-2 bg-neutral-50 border border-neutral-150 rounded-full pl-1.5 pr-3 py-1">
       {p.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={mediaUrl(p.avatarUrl)} alt={p.fullName} className="w-7 h-7 rounded-full object-cover" />
+        <img
+          src={mediaUrl(p.avatarUrl)}
+          alt={p.fullName}
+          className="w-7 h-7 rounded-full object-cover"
+        />
       ) : (
         <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[11px] font-bold">
           {p.fullName.charAt(0).toUpperCase()}
@@ -382,7 +1087,8 @@ function ParticipantChip({ p }: { p: CampaignParticipant }) {
       )}
       <span className="text-xs font-semibold text-neutral-700">{p.fullName}</span>
       <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600">
-        <span className="material-symbols-outlined text-[12px]">{rm.icon}</span>{rm.label}
+        <span className="material-symbols-outlined text-[12px]">{rm.icon}</span>
+        {rm.label}
       </span>
     </span>
   );
@@ -394,15 +1100,20 @@ function DistributionRow({ d }: { d: CampaignDistribution }) {
       <div className="flex gap-3 p-3">
         {d.photoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(d.photoUrl)} alt={d.roundLabel ?? 'Đợt phân phát'} className="w-20 h-20 rounded-xl object-cover shrink-0" />
+          <img
+            src={mediaUrl(d.photoUrl)}
+            alt={d.roundLabel ?? 'Đợt phân phát'}
+            className="w-20 h-20 rounded-xl object-cover shrink-0"
+          />
         )}
         <div className="min-w-0 flex-1">
           <p className="font-bold text-sm text-neutral-800">{d.roundLabel || 'Đợt phân phát'}</p>
           <p className="text-xs text-neutral-500 mt-0.5">
-            {d.servingsServed} suất · {d.peopleServed} người{d.leftoverServings > 0 ? ` · còn dư ${d.leftoverServings}` : ''}
+            {d.servingsServed} suất · {d.peopleServed} người
+            {d.leftoverServings > 0 ? ` · còn dư ${d.leftoverServings}` : ''}
           </p>
           <p className="text-[11px] text-neutral-400 mt-0.5">Phụ trách: {d.servedBy}</p>
-          {d.note && <p className="text-xs text-neutral-600 mt-1 italic">“{d.note}”</p>}
+          {d.note && <p className="text-xs text-neutral-600 mt-1 italic">"{d.note}"</p>}
         </div>
       </div>
       {d.feedback.length > 0 && (
@@ -411,7 +1122,13 @@ function DistributionRow({ d }: { d: CampaignDistribution }) {
             <div key={i} className="flex items-start gap-2 text-xs">
               <span className="flex items-center gap-0.5 text-amber-500 shrink-0">
                 {Array.from({ length: 5 }).map((_, k) => (
-                  <span key={k} className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: k < f.satisfaction ? "'FILL' 1" : "'FILL' 0" }}>star</span>
+                  <span
+                    key={k}
+                    className="material-symbols-outlined text-[13px]"
+                    style={{ fontVariationSettings: k < f.satisfaction ? "'FILL' 1" : "'FILL' 0" }}
+                  >
+                    star
+                  </span>
                 ))}
               </span>
               {f.comment && <span className="text-neutral-600">{f.comment}</span>}
@@ -429,7 +1146,11 @@ function ExperienceCard({ e }: { e: CampaignExperience }) {
       <div className="flex items-center gap-2.5">
         {e.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(e.avatarUrl)} alt={e.fullName} className="w-9 h-9 rounded-full object-cover" />
+          <img
+            src={mediaUrl(e.avatarUrl)}
+            alt={e.fullName}
+            className="w-9 h-9 rounded-full object-cover"
+          />
         ) : (
           <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold">
             {e.fullName.charAt(0).toUpperCase()}
@@ -440,7 +1161,13 @@ function ExperienceCard({ e }: { e: CampaignExperience }) {
           {e.rating != null && (
             <span className="flex items-center gap-0.5 text-amber-500">
               {Array.from({ length: 5 }).map((_, k) => (
-                <span key={k} className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: k < e.rating! ? "'FILL' 1" : "'FILL' 0" }}>star</span>
+                <span
+                  key={k}
+                  className="material-symbols-outlined text-[13px]"
+                  style={{ fontVariationSettings: k < e.rating! ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  star
+                </span>
               ))}
             </span>
           )}
@@ -451,7 +1178,12 @@ function ExperienceCard({ e }: { e: CampaignExperience }) {
         <div className="grid grid-cols-3 gap-2 mt-3">
           {e.imageUrls.map((u, i) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={mediaUrl(u)} alt="Ảnh cảm nhận" className="w-full aspect-square rounded-xl object-cover" />
+            <img
+              key={i}
+              src={mediaUrl(u)}
+              alt="Ảnh cảm nhận"
+              className="w-full aspect-square rounded-xl object-cover"
+            />
           ))}
         </div>
       )}
@@ -477,11 +1209,22 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
   }
 
   async function submit() {
-    if (content.trim().length < 5) { toast.error('Cảm nhận tối thiểu 5 ký tự'); return; }
+    if (content.trim().length < 5) {
+      toast.error('Cảm nhận tối thiểu 5 ký tự');
+      return;
+    }
     try {
-      await add.mutateAsync({ id: campaignId, content: content.trim(), rating, imageUrls: images });
+      await add.mutateAsync({
+        id: campaignId,
+        content: content.trim(),
+        rating,
+        imageUrls: images,
+      });
       toast.success('Đã chia sẻ cảm nhận của bạn. Cảm ơn bạn!');
-      setContent(''); setImages([]); setRating(5); setOpen(false);
+      setContent('');
+      setImages([]);
+      setRating(5);
+      setOpen(false);
     } catch (e) {
       toast.error(errMsg(e, 'Gửi cảm nhận thất bại'));
     }
@@ -489,8 +1232,10 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)}
-        className="mt-4 w-full py-2.5 border border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors">
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-4 w-full py-2.5 border border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
+      >
         <span className="material-symbols-outlined text-[18px]">edit</span> Chia sẻ cảm nhận của bạn
       </button>
     );
@@ -503,12 +1248,23 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
         <span className="text-xs font-bold text-neutral-500 mr-1">Đánh giá:</span>
         {Array.from({ length: 5 }).map((_, k) => (
           <button key={k} type="button" onClick={() => setRating(k + 1)}>
-            <span className="material-symbols-outlined text-[22px] text-amber-500" style={{ fontVariationSettings: k < rating ? "'FILL' 1" : "'FILL' 0" }}>star</span>
+            <span
+              className="material-symbols-outlined text-[22px] text-amber-500"
+              style={{ fontVariationSettings: k < rating ? "'FILL' 1" : "'FILL' 0" }}
+            >
+              star
+            </span>
           </button>
         ))}
       </div>
-      <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} maxLength={2000}
-        placeholder="Trải nghiệm của bạn khi tham gia chiến dịch này..." className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm" />
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        rows={3}
+        maxLength={2000}
+        placeholder="Trải nghiệm của bạn khi tham gia chiến dịch này..."
+        className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
+      />
 
       {images.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
@@ -516,8 +1272,10 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
             <div key={i} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={mediaUrl(u)} alt="Ảnh" className="w-full aspect-square rounded-lg object-cover" />
-              <button onClick={() => setImages(images.filter((_, j) => j !== i))}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center">
+              <button
+                onClick={() => setImages(images.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center"
+              >
                 <span className="material-symbols-outlined text-[13px]">close</span>
               </button>
             </div>
@@ -527,28 +1285,32 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
 
       <div className="flex gap-2">
         <label className="flex-1 cursor-pointer py-2 border border-dashed border-neutral-300 rounded-xl text-xs font-bold text-neutral-500 hover:border-emerald-400 hover:text-emerald-600 transition-colors flex items-center justify-center gap-1.5">
-          <span className="material-symbols-outlined text-[16px]">{upload.isPending ? 'hourglass_top' : 'add_photo_alternate'}</span>
+          <span className="material-symbols-outlined text-[16px]">
+            {upload.isPending ? 'hourglass_top' : 'add_photo_alternate'}
+          </span>
           {upload.isPending ? 'Đang tải...' : 'Thêm ảnh'}
-          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPick(f); e.target.value = ''; }} />
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onPick(f);
+              e.target.value = '';
+            }}
+          />
         </label>
-        <button onClick={submit} disabled={add.isPending}
-          className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+        <button
+          onClick={submit}
+          disabled={add.isPending}
+          className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+        >
           {add.isPending ? 'Đang gửi...' : 'Gửi'}
         </button>
-        <button onClick={() => setOpen(false)} className="px-3 py-2 text-neutral-400 text-sm">Huỷ</button>
+        <button onClick={() => setOpen(false)} className="px-3 py-2 text-neutral-400 text-sm">
+          Huỷ
+        </button>
       </div>
-    </div>
-  );
-}
-
-function Card({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border border-neutral-150 rounded-3xl p-6">
-      <h2 className="font-bold text-lg text-neutral-900 flex items-center gap-2 mb-4">
-        <span className="material-symbols-outlined text-emerald-600 text-[20px]">{icon}</span> {title}
-      </h2>
-      {children}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Patch,
   Post,
   UseGuards,
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Public } from '@/common/decorators/public.decorator';
 import { UserRole } from '@foodresq/types';
 import { User } from '@prisma/client';
 
@@ -34,6 +36,20 @@ export class UsersController {
   @ApiOperation({ summary: 'Lấy hồ sơ + thống kê của người dùng đang đăng nhập' })
   getMe(@CurrentUser() user: User) {
     return this.usersService.getMe(user.id);
+  }
+
+  @Get('providers')
+  @Public()
+  @ApiOperation({ summary: 'Danh sách NCC đang có tin active (cho charity)' })
+  getProviders() {
+    return this.usersService.getProviders();
+  }
+
+  @Get('providers/:providerProfileId/listings')
+  @Public()
+  @ApiOperation({ summary: 'Chi tiết tin đăng của một NCC — biết đang có gì để request' })
+  getProviderListings(@Param('providerProfileId') id: string) {
+    return this.usersService.getProviderListings(id);
   }
 
   @Get('me/trust-history')

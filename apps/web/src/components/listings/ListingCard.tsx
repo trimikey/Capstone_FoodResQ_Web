@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 
 export interface ListingItem {
   id: string;
@@ -66,8 +68,9 @@ export default function ListingCard({ listing }: Props) {
     '/food_bread.png', 
     '/food_lunchbox.png'
   ];
-  const imageUrl = (listing.imageUrls.length > 0 && !oldMocks.includes(listing.imageUrls[0])) 
-    ? listing.imageUrls[0] 
+  // mediaUrl: ảnh upload (/uploads/...) phải ghép origin API :3001, ảnh public giữ nguyên
+  const imageUrl = (listing.imageUrls.length > 0 && !oldMocks.includes(listing.imageUrls[0]))
+    ? mediaUrl(listing.imageUrls[0])
     : fallbackImage;
 
   return (
@@ -116,7 +119,7 @@ export default function ListingCard({ listing }: Props) {
             </h3>
             {/* Portions left badge (Green as shown in mockup) */}
             <span className="shrink-0 bg-[#efe8d8] text-[#236c2a] px-2.5 py-1 rounded-full font-body-md text-[11px] font-bold">
-              Còn {listing.quantityRemaining} phần
+              Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
             </span>
           </div>
           <p className="font-body-md text-[13px] text-neutral-500">{listing.provider.businessName}</p>

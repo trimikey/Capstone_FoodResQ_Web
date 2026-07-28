@@ -1,14 +1,21 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { IconButton } from 'react-native-paper';
+import { IconButton, Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
-import { useMyCampaigns, type Campaign } from '@/hooks/useCampaigns';
+import {
+  useCompletedCampaigns,
+  useMyCampaigns,
+  type Campaign,
+  type CompletedCampaign,
+} from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { AppImage } from '@/components/ui/AppImage';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /**
  * Bếp ăn của tôi (Charity-org) — danh sách chiến dịch do tổ chức tự tạo
@@ -17,6 +24,7 @@ import { mobileColors as COLORS } from '@/theme/design';
 export default function CharityCampaignsScreen() {
   const { user } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useMyCampaigns();
+  const { data: completedCampaigns = [] } = useCompletedCampaigns();
 
   // Chỉ receiver (charity-org) dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'receiver') {
@@ -60,7 +68,7 @@ export default function CharityCampaignsScreen() {
             icon="plus"
             mode="contained"
             containerColor={COLORS.primary}
-            iconColor="#fff"
+            iconColor={COLORS.onPrimary}
             size={20}
             onPress={() => router.push('/(app)/charity/campaigns/create')}
           />
@@ -74,6 +82,8 @@ export default function CharityCampaignsScreen() {
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
+        ListHeaderComponent={<CampaignHero total={items.length} completed={completedCampaigns.length} />}
+        ListFooterComponent={<CompletedStories items={completedCampaigns} />}
         refreshing={isRefetching}
         onRefresh={() => refetch()}
       />
@@ -81,7 +91,110 @@ export default function CharityCampaignsScreen() {
   );
 }
 
+function CampaignHero({ total, completed }: { total: number; completed: number }) {
+  return (
+    <View style={styles.hero}>
+      <Text style={styles.heroKicker}>Charity kitchen</Text>
+      <Text style={styles.heroTitle}>Quản lý chiến dịch bếp ăn</Text>
+      <View style={styles.heroStats}>
+        <View style={styles.heroStat}>
+          <Text style={styles.heroStatValue}>{total}</Text>
+          <Text style={styles.heroStatLabel}>đang quản lý</Text>
+        </View>
+        <View style={styles.heroDivider} />
+        <View style={styles.heroStat}>
+          <Text style={styles.heroStatValue}>{completed}</Text>
+          <Text style={styles.heroStatLabel}>thành công</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function CompletedStories({ items }: { items: CompletedCampaign[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <View style={styles.completedSection}>
+      <Text style={styles.sectionTitle}>Câu chuyện thành công</Text>
+      {items.map((item) => (
+        <SurfaceCard key={item.id} style={styles.completedCard}>
+          {item.imageUrls?.[0] ? (
+            <AppImage source={{ uri: item.imageUrls[0] }} style={styles.completedImage} />
+          ) : (
+            <View style={styles.completedFallback}>
+              <Text style={styles.completedFallbackIcon}>✓</Text>
+            </View>
+          )}
+          <View style={styles.completedBody}>
+            <Text style={styles.completedTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.completedMeta} numberOfLines={1}>
+              {new Date(item.scheduledDate).toLocaleDateString('vi-VN')}
+              {item.organizationName ? ` · ${item.organizationName}` : ''}
+            </Text>
+            <View style={styles.completedStats}>
+              <Text style={styles.completedStat}>{item.actualServings ?? 0} suất</Text>
+              <Text style={styles.completedStat}>{item.peopleServed} người</Text>
+              <Text style={styles.completedStat}>{item.volunteers} TNV</Text>
+            </View>
+          </View>
+        </SurfaceCard>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  hero: {
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
+  heroStats: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    backgroundColor: COLORS.surface,
+  },
+  heroStat: { flex: 1 },
+  heroStatValue: { color: COLORS.onSurface, fontSize: 20, fontWeight: '900' },
+  heroStatLabel: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
+  heroDivider: { width: 1, backgroundColor: COLORS.outlineVariant, marginHorizontal: spacing.md },
+  completedSection: { marginTop: 12, paddingTop: 10 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.onSurface, marginBottom: 12 },
+  completedCard: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  completedImage: { width: 92, height: 92, borderRadius: 12 },
+  completedFallback: {
+    width: 92,
+    height: 92,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedFallbackIcon: { fontSize: 32, color: COLORS.primary, fontWeight: '800' },
+  completedBody: { flex: 1, minHeight: 92, justifyContent: 'space-between' },
+  completedTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface, lineHeight: 20 },
+  completedMeta: { fontSize: 12, color: COLORS.onSurfaceVariant },
+  completedStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  completedStat: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
 });

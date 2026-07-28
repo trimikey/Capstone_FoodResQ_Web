@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, Portal, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { useMyProfile } from '@/hooks/useProfile';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /** Một chỉ số nhỏ (servings/prep/cook). */
@@ -35,9 +36,7 @@ export default function RecipeDetailScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={8}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-      </Pressable>
+      <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Công thức</Text>
       <View style={{ width: 24 }} />
     </View>

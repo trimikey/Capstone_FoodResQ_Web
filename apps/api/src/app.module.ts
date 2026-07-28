@@ -19,6 +19,7 @@ import { EsgModule } from './modules/esg/esg.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { RecipesModule } from './modules/recipes/recipes.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { BulkRunsModule } from './modules/bulk-runs/bulk-runs.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     CampaignsModule,
     RecipesModule,
     UploadsModule,
+    BulkRunsModule,
   ],
 })
 export class AppModule {}

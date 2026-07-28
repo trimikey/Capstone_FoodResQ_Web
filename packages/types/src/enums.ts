@@ -154,6 +154,15 @@ export enum DeliveryStatus {
   FAILED = 'failed',
 }
 
+export enum BulkRunStatus {
+  REQUESTED = 'requested',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  PICKED_UP = 'picked_up',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
 export enum CampaignStatus {
   DRAFT = 'draft',
   OPEN = 'open',
@@ -216,6 +225,7 @@ export enum OfferStatus {
 export enum ReportTargetType {
   USER = 'user',
   LISTING = 'listing',
+  RESERVATION = 'reservation',
   DELIVERY = 'delivery',
   CAMPAIGN = 'campaign',
 }
@@ -260,4 +270,12 @@ export enum SafetyCheckResult {
   PASS = 'pass',
   WARNING = 'warning',
   FAIL = 'fail',
+}
+
+/** Trạng thái yêu cầu hợp tác từ charity gửi đến provider. */
+export enum CampaignRequestStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired',
 }

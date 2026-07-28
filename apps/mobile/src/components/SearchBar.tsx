@@ -1,12 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { Searchbar, IconButton } from 'react-native-paper';
-
-const COLORS = {
-  primary: '#10b981',
-  surface: '#ffffff',
-  surfaceVariant: '#f3f4f6',
-  outline: '#e5e7eb',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   value: string;
@@ -34,7 +28,7 @@ export function SearchBar({ value, onChangeText, onPressFilter, filterActive }: 
         size={22}
         onPress={onPressFilter}
         containerColor={filterActive ? COLORS.primary : COLORS.surfaceVariant}
-        iconColor={filterActive ? '#fff' : '#374151'}
+        iconColor={filterActive ? COLORS.onPrimary : COLORS.onSurface}
         style={styles.filterBtn}
       />
     </View>
@@ -42,12 +36,15 @@ export function SearchBar({ value, onChangeText, onPressFilter, filterActive }: 
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   search: {
     flex: 1,
-    backgroundColor: COLORS.surfaceVariant,
-    borderRadius: 14,
+    height: 50,
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
   },
   input: { fontSize: 15, minHeight: 0 },
-  filterBtn: { margin: 0, borderRadius: 14 },
+  filterBtn: { margin: 0, borderRadius: radius.lg },
 });
