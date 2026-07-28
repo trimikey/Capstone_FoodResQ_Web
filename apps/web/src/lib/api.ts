@@ -18,6 +18,19 @@ api.interceptors.request.use((config) => {
 let isRefreshing = false;
 let queue: Array<(token: string) => void> = [];
 
+function clearLocalSession() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('foodresq-auth');
+}
+
+function redirectToLogin() {
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -47,6 +60,8 @@ api.interceptors.response.use(
 
     // Chưa có refresh token → không gọi refresh (tránh gửi token rỗng), trả lỗi luôn
     if (!refreshToken) {
+      clearLocalSession();
+      redirectToLogin();
       return Promise.reject(error as Error);
     }
 
@@ -69,9 +84,8 @@ api.interceptors.response.use(
       original.headers.Authorization = `Bearer ${newAccess}`;
       return api(original);
     } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/login';
+      clearLocalSession();
+      redirectToLogin();
       return Promise.reject(error as Error);
     } finally {
       isRefreshing = false;

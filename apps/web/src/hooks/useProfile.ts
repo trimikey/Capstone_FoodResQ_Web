@@ -138,7 +138,7 @@ export interface TrustHistory {
   recommendation: string | null;
 }
 
-export function useTrustHistory() {
+export function useTrustHistory(enabled = true) {
   return useQuery({
     queryKey: ['users', 'me', 'trust-history'],
     queryFn: async () => {
@@ -146,5 +146,6 @@ export function useTrustHistory() {
       return data.data;
     },
     staleTime: 30_000,
+    enabled,
   });
 }

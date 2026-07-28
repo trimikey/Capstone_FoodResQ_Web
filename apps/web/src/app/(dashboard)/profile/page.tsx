@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
-import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
+import { useMe, useUpdateMe, useTrustHistory, type Me } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useUploadImage } from '@/hooks/useUploadImage';
 import { reverseGeocode } from '@/lib/geocode';
@@ -68,15 +68,40 @@ const TRUST_REASON_LABEL: Record<string, string> = {
   campaign_completed: 'Tham gia chiến dịch từ thiện',
 };
 
+function getHttpStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number } } | null)?.response?.status;
+}
+
 export default function ProfilePage() {
-  const { logout, setUser } = useAuthStore();
+  const { logout, setUser, user: authUser } = useAuthStore();
   const router = useRouter();
-  const { data: me, isLoading, isError } = useMe();
+  const { data: apiMe, isLoading, isError, error } = useMe();
   const updateMe = useUpdateMe();
   const uploadAvatar = useUploadImage();
+  const meErrorStatus = getHttpStatus(error);
+  const fallbackMe = useMemo<Me | null>(() => {
+    if (apiMe || !isError || meErrorStatus === 401 || !authUser) return null;
+    return {
+      id: authUser.id,
+      email: authUser.email,
+      phone: null,
+      fullName: authUser.fullName,
+      avatarUrl: authUser.avatarUrl,
+      role: authUser.role,
+      status: authUser.status,
+      trustScore: authUser.trustScore,
+      createdAt: new Date().toISOString(),
+      stats: { kind: authUser.role },
+      volunteer: null,
+      receiver: null,
+      provider: null,
+    };
+  }, [apiMe, authUser, isError, meErrorStatus]);
+  const me = apiMe ?? fallbackMe;
+  const isUsingFallbackProfile = !!fallbackMe && !apiMe;
 
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
-  const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
+  const { data: faceEnrollment } = useFaceEnrollment(isFaceRole && !isUsingFallbackProfile);
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -133,7 +158,7 @@ export default function ProfilePage() {
     setEditForm((prev) => ({ ...prev, address: address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}` }));
   };
 
-  const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
+  const { data: trustHistory, isLoading: trustLoading } = useTrustHistory(!isUsingFallbackProfile);
   const editAvatarPreview = imgUrl(editForm.avatarUrl);
 
   const openAvatarFilePicker = () => {
@@ -205,7 +230,7 @@ export default function ProfilePage() {
     toast.success('Đã đăng xuất tài khoản.');
   };
 
-  if (isLoading) {
+  if (isLoading && !me) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center py-20">
         <div className="flex flex-col items-center gap-4">
@@ -221,7 +246,7 @@ export default function ProfilePage() {
     );
   }
 
-  if (isError || !me) {
+  if (!me) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center py-20 gap-4">
         <div className="w-20 h-20 rounded-full bg-rose-50 flex items-center justify-center">
@@ -396,7 +421,13 @@ export default function ProfilePage() {
             {/* Actions */}
             <div className="shrink-0 flex flex-col gap-2">
               <button
-                onClick={() => setIsEditModalOpen(true)}
+                onClick={() => {
+                  if (isUsingFallbackProfile) {
+                    toast.error('Chưa kết nối được máy chủ nên chưa thể chỉnh sửa hồ sơ.');
+                    return;
+                  }
+                  setIsEditModalOpen(true);
+                }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-emerald-900 hover:bg-emerald-50 rounded-2xl font-bold text-sm shadow-lg shadow-black/10 transition-all hover:scale-[1.03] active:scale-95"
               >
                 <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -416,6 +447,11 @@ export default function ProfilePage() {
 
       {/* ── MAIN CONTENT ────────────────────────────────────── */}
       <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12 -mt-6 md:-mt-10 pb-12 md:pb-16">
+        {isUsingFallbackProfile && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+            Đang hiển thị hồ sơ cơ bản từ phiên đăng nhập. Dữ liệu thống kê, eKYC và chỉnh sửa sẽ hoạt động lại khi kết nối được API.
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* LEFT: Trust + contact */}
           <div className="lg:col-span-4 space-y-6">
