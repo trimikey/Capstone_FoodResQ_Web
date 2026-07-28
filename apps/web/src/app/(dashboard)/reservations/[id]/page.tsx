@@ -81,6 +81,7 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState(
     isMock
