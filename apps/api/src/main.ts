@@ -8,6 +8,11 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
+const allowedOrigins = (process.env['ALLOWED_ORIGINS'] ?? 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
 
@@ -17,7 +22,7 @@ async function bootstrap() {
   // Ảnh upload (dev: local disk; prod: chuyển sang S3/R2 — CLAUDE.md §6)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.enableCors({
-    origin: process.env['ALLOWED_ORIGINS']?.split(',') ?? ['http://localhost:3000'],
+    origin: allowedOrigins,
     credentials: true,
   });
 

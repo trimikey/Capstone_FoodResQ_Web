@@ -8,12 +8,17 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 
+const allowedOrigins = (process.env['ALLOWED_ORIGINS'] ?? 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 /**
  * Gateway thông báo real-time. Client kết nối kèm JWT trong handshake.auth.token,
  * được join phòng `user:{userId}` để nhận sự kiện `notification:new`.
  */
 @WebSocketGateway({
-  cors: { origin: process.env['ALLOWED_ORIGINS']?.split(',') ?? ['http://localhost:3000'], credentials: true },
+  cors: { origin: allowedOrigins, credentials: true },
 })
 export class NotificationsGateway implements OnGatewayConnection {
   private readonly logger = new Logger(NotificationsGateway.name);

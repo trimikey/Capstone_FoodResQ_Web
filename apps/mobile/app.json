@@ -59,7 +59,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidWindowsNativeBuildFix"
     ],
     "experiments": {
       "typedRoutes": true
