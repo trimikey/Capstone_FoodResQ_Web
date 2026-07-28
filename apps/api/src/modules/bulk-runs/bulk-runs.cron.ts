@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { BulkRunsService } from './bulk-runs.service';
+import { logCronError } from '@/common/utils/cron-error';
 
 /** Dọn dẹp chuyến giao sỉ bị bỏ quên (yêu cầu quá 24h không duyệt / chuyến kẹt 6h). */
 @Injectable()
@@ -15,7 +16,7 @@ export class BulkRunsCron {
       const n = await this.bulkRuns.expireStalled();
       if (n > 0) this.logger.log(`Closed ${n} stalled bulk run(s)`);
     } catch (e) {
-      this.logger.error('expireStalled (bulk runs) failed', e as Error);
+      logCronError(this.logger, 'expireStalled (bulk runs)', e);
     }
   }
 }

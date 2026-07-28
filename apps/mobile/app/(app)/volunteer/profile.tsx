@@ -23,7 +23,7 @@ import { getCurrentCoords } from '@/services/geolocation';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess, notifyWarning, selectionFeedback } from '@/services/haptics';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 function vehicleLabel(t?: string | null): string {
   switch (t) {
@@ -114,13 +114,22 @@ export default function VolunteerProfileScreen() {
     try {
       if (next) {
         const { coords, isFallback } = await getCurrentCoords();
+        if (!coords) {
+          void notifyWarning();
+          Toast.show({
+            type: 'warning',
+            text1: 'Chưa lấy được vị trí hiện tại',
+            text2: 'Hãy bật quyền định vị và thử lại để nhận đơn gần vị trí thật của bạn.',
+          });
+          return;
+        }
         await setAvailability.mutateAsync({ isAvailable: true, lng: coords.lng, lat: coords.lat });
         void (isFallback ? notifyWarning() : notifySuccess());
         Toast.show({
           type: isFallback ? 'warning' : 'success',
           text1: 'Đã bật sẵn sàng nhận đơn',
           text2: isFallback
-            ? 'Không lấy được vị trí thật, đang dùng vị trí mặc định. Hãy bật định vị để nhận đơn gần bạn.'
+            ? 'Vị trí hiện tại chưa ổn định. Hãy kiểm tra GPS nếu lời mời chưa chính xác.'
             : 'Bạn sẽ nhận được lời mời giao hàng gần vị trí hiện tại.',
         });
       } else {
@@ -164,28 +173,33 @@ export default function VolunteerProfileScreen() {
             <Avatar.Text
               size={84}
               label={name.charAt(0).toUpperCase()}
-              style={{ backgroundColor: COLORS.primary }}
+              style={{ backgroundColor: COLORS.teal }}
             />
           )}
-          <Text variant="titleLarge" style={styles.name}>
-            {name}
-          </Text>
-          {vol ? (
-            <View style={styles.badgeRow}>
-              <View style={[styles.badge, { backgroundColor: COLORS.primaryContainer }]}>
-                <Text style={[styles.badgeText, { color: COLORS.primary }]}>
-                  Hạng {volunteerRankLabel(vol.rank)}
-                </Text>
-              </View>
-              {avgRatingLabel ? (
-                <View style={[styles.badge, { backgroundColor: COLORS.secondaryContainer }]}>
-                  <Text style={[styles.badgeText, { color: COLORS.warning }]}>
-                    ★ {avgRatingLabel}
+          <View style={styles.headerInfo}>
+            <Text variant="titleLarge" style={styles.name}>
+              {name}
+            </Text>
+            <Text style={styles.headerSub}>
+              {vol?.isAvailable ? 'Đang online nhận đơn' : 'Đang nghỉ, chưa nhận đơn mới'}
+            </Text>
+            {vol ? (
+              <View style={styles.badgeRow}>
+                <View style={[styles.badge, { backgroundColor: COLORS.tealContainer }]}>
+                  <Text style={[styles.badgeText, { color: COLORS.teal }]}>
+                    Hạng {volunteerRankLabel(vol.rank)}
                   </Text>
                 </View>
-              ) : null}
-            </View>
-          ) : null}
+                {avgRatingLabel ? (
+                  <View style={[styles.badge, { backgroundColor: COLORS.warningContainer }]}>
+                    <Text style={[styles.badgeText, { color: COLORS.onWarningContainer }]}>
+                      ★ {avgRatingLabel}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {isLoading && !vol ? (
@@ -194,13 +208,30 @@ export default function VolunteerProfileScreen() {
           <ScreenState kind="error" title="Không tải được hồ sơ" actionLabel="Thử lại" onAction={() => refetch()} />
         ) : vol ? (
           <>
+            <View style={styles.quickStats}>
+              <View style={styles.quickStat}>
+                <Text style={styles.quickStatValue}>{vol.dedicationPoints}</Text>
+                <Text style={styles.quickStatLabel}>điểm</Text>
+              </View>
+              <View style={styles.quickDivider} />
+              <View style={styles.quickStat}>
+                <Text style={styles.quickStatValue}>{avgRatingLabel ?? '-'}</Text>
+                <Text style={styles.quickStatLabel}>rating</Text>
+              </View>
+              <View style={styles.quickDivider} />
+              <View style={styles.quickStat}>
+                <Text style={styles.quickStatValue}>{vol.isShipper ? 'OK' : 'Chờ'}</Text>
+                <Text style={styles.quickStatLabel}>shipper</Text>
+              </View>
+            </View>
+
             {/* Công tắc sẵn sàng nhận đơn */}
             <View style={styles.card}>
               <View style={styles.availRow}>
                 <MaterialCommunityIcons
                   name={vol.isAvailable ? 'motorbike' : 'sleep'}
                   size={24}
-                  color={vol.isAvailable ? COLORS.primary : COLORS.onSurfaceVariant}
+                  color={vol.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.availTitle}>Sẵn sàng nhận đơn</Text>
@@ -216,7 +247,7 @@ export default function VolunteerProfileScreen() {
                   <Switch
                     value={vol.isAvailable}
                     onValueChange={handleToggle}
-                    color={COLORS.primary}
+                    color={COLORS.blue}
                   />
                 )}
               </View>
@@ -238,7 +269,7 @@ export default function VolunteerProfileScreen() {
                   <MaterialCommunityIcons
                     name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
                     size={22}
-                    color={COLORS.primary}
+                    color={COLORS.purple}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -288,7 +319,7 @@ export default function VolunteerProfileScreen() {
             {/* Điểm cống hiến */}
             <View style={styles.card}>
               <View style={styles.pointRow}>
-                <MaterialCommunityIcons name="medal-outline" size={22} color={COLORS.primary} />
+                <MaterialCommunityIcons name="medal-outline" size={22} color={COLORS.amber} />
                 <Text style={styles.pointLabel}>Điểm cống hiến</Text>
                 <Text style={styles.pointValue}>{vol.dedicationPoints}</Text>
               </View>
@@ -305,7 +336,7 @@ export default function VolunteerProfileScreen() {
                       key={s.specialization}
                       icon={s.isVerified ? 'check-decagram' : 'clock-outline'}
                       style={styles.chip}
-                      selectedColor={s.isVerified ? COLORS.primary : COLORS.warning}
+                      selectedColor={s.isVerified ? COLORS.teal : COLORS.warning}
                     >
                       {specializationLabel(s.specialization)}
                       {s.isVerified ? '' : ' (chờ duyệt)'}
@@ -391,7 +422,7 @@ function FaceEnrollmentPrompt({
       <Dialog visible={visible} onDismiss={busy ? undefined : onDismiss} style={styles.faceDialog}>
         <Dialog.Content style={styles.faceDialogContent}>
           <View style={styles.faceDialogIcon}>
-            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.primary} />
+            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.purple} />
           </View>
           <Text style={styles.faceDialogTitle}>Cần cập nhật khuôn mặt</Text>
           <Text style={styles.faceDialogText}>
@@ -415,7 +446,7 @@ function FaceEnrollmentPrompt({
           <Button
             icon="image-outline"
             onPress={() => onEnroll('library')}
-            textColor={COLORS.primary}
+            textColor={COLORS.purple}
             disabled={busy}
           >
             Chọn ảnh
@@ -428,22 +459,49 @@ function FaceEnrollmentPrompt({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 },
-  header: { alignItems: 'center', gap: 4 },
-  name: { fontWeight: '700', marginTop: 10, color: COLORS.onSurface },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.section },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 32,
+    backgroundColor: COLORS.heroBlue,
+    ...elevation.card,
+  },
+  headerInfo: { flex: 1 },
+  name: { fontWeight: '900', color: COLORS.onPrimary },
+  headerSub: { marginTop: 3, color: COLORS.blueContainer, fontSize: 13, fontWeight: '700' },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   badge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: '600' },
+  badgeText: { fontSize: 12, fontWeight: '900' },
+  quickStats: {
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: COLORS.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
+  },
+  quickStat: { flex: 1 },
+  quickStatValue: { color: COLORS.onSurface, fontSize: 20, fontWeight: '900' },
+  quickStatLabel: { marginTop: 2, color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '800' },
+  quickDivider: { width: 1, height: 34, backgroundColor: COLORS.outlineVariant, marginHorizontal: spacing.md },
   errorBox: { alignItems: 'center', marginTop: 24 },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
+  cardTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface },
   availRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   availTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
   availSub: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
@@ -452,7 +510,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.tealContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -468,7 +526,7 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.purpleContainer,
     marginBottom: 12,
   },
   faceDialogTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface, textAlign: 'center' },
@@ -491,19 +549,13 @@ const styles = StyleSheet.create({
   warnText: { flex: 1, fontSize: 12, color: COLORS.warning, lineHeight: 17 },
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pointLabel: { flex: 1, fontSize: 15, color: COLORS.onSurface },
-  pointValue: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
+  pointValue: { fontSize: 20, fontWeight: '800', color: COLORS.amber },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { backgroundColor: COLORS.surfaceContainerLow },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-    paddingVertical: 4,
-  },
-  rowLabel: { flexShrink: 0, maxWidth: '46%', color: COLORS.onSurfaceVariant },
-  rowValue: { flex: 1, minWidth: 0, color: COLORS.onSurface, fontWeight: '600', textAlign: 'right' },
-  actionBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 4 },
-  recipesBtn: { marginTop: 12, borderRadius: 12, borderColor: COLORS.primary },
-  logout: { marginTop: 12, borderRadius: 12, borderColor: COLORS.error },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  rowLabel: { color: COLORS.onSurfaceVariant },
+  rowValue: { color: COLORS.onSurface, fontWeight: '600' },
+  actionBtn: { marginTop: spacing.xl, borderRadius: radius.lg, paddingVertical: 4 },
+  recipesBtn: { marginTop: spacing.md, borderRadius: radius.lg, borderColor: COLORS.purple },
+  logout: { marginTop: spacing.md, borderRadius: radius.lg, borderColor: COLORS.error },
 });

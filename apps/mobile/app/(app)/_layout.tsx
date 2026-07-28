@@ -4,9 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyProfile } from '@/hooks/useProfile';
 import { useNotificationSocket } from '@/hooks/useNotifications';
-
-const PRIMARY = '#10b981';
-const INACTIVE = '#9ca3af';
+import { mobileColors as COLORS } from '@/theme/design';
 
 /**
  * Layout nhóm route đã đăng nhập + AUTH GUARD. Tab bar đổi theo vai trò:
@@ -33,7 +31,7 @@ export default function AppTabsLayout() {
   if (!isInitialized) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={PRIMARY} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -46,8 +44,8 @@ export default function AppTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PRIMARY,
-        tabBarInactiveTintColor: INACTIVE,
+        tabBarActiveTintColor: COLORS.navActive,
+        tabBarInactiveTintColor: COLORS.navInactive,
         tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 6 },
       }}
     >

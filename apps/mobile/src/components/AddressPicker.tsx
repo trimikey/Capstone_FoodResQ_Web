@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { TextInput, List, ActivityIndicator, Button, Text } from 'react-native-paper';
 import { MapPicker, type MapPickerHandle } from './MapPicker';
 import { searchAddress, reverseGeocode, type AddressSuggestion } from '../services/geocoding';
-import { DEFAULT_COORDS } from '../services/geolocation';
+import { DEFAULT_MAP_COORDS } from '../services/geolocation';
 
 export interface AddressValue {
   address: string;
@@ -52,7 +52,7 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
   const skipSearchRef = useRef(false);
 
   /** Toạ độ hiện hành dùng khi người dùng gõ tay (không đổi điểm trên map). */
-  const currentCoords = value ?? initialCoords ?? DEFAULT_COORDS;
+  const currentCoords = value ?? initialCoords ?? DEFAULT_MAP_COORDS;
 
   useEffect(() => {
     return () => {

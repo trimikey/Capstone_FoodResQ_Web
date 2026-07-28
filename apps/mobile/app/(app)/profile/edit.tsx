@@ -25,7 +25,8 @@ import {
   ImagePickCancelledError,
 } from '@/services/avatarUpload';
 import { AppImage } from '@/components/ui/AppImage';
-import { SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
 import type { UpdateProfileInput } from '@/api/client';
 import { mobileColors as COLORS } from '@/theme/design';
@@ -169,7 +170,6 @@ export default function EditProfileScreen() {
         <ScrollView contentContainerStyle={styles.content}>
           <SurfaceCard style={styles.avatarCard}>
             <SectionHeader
-              icon="account-edit-outline"
               title="Hồ sơ hiển thị"
               subtitle="Ảnh đại diện, tên và thông tin liên hệ dùng trong các luồng nhận - cho thực phẩm."
             />
@@ -197,7 +197,6 @@ export default function EditProfileScreen() {
 
           <SurfaceCard style={styles.formCard}>
             <SectionHeader
-              icon="card-account-phone-outline"
               title="Thông tin liên hệ"
               subtitle="Cập nhật tên, số điện thoại và địa chỉ dùng cho các luồng nhận - cho thực phẩm."
             />

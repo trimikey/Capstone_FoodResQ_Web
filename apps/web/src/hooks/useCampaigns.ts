@@ -18,6 +18,8 @@ export interface Campaign {
   shipperSlotsFilled: number;
   status: string;
   actualServings?: number | null;
+  distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
+  peopleServed?: number;
   charityReceiver?: { organizationName: string | null; user: { fullName: string } };
   assignments?: {
     id: string;
@@ -49,9 +51,18 @@ export interface CreateCampaignInput {
   shipperSlotsNeeded?: number;
   expectedServings?: number;
   imageUrls?: string[];
-  menuItems?: { name: string; type: string }[];
+  menuItems?: { name: string; type: string; plannedServings?: number }[];
   scheduleItems?: { time: string; label: string }[];
-  supplyItems?: string[];
+  /** Vật phẩm cần thiết — object đầy đủ {name, quantity?, unit?}. */
+  supplyItems?: { name: string; quantity?: number; unit?: string }[];
+  /** Ca trực cho tình nguyện viên — insert vào bảng campaign_shifts lúc tạo. */
+  shifts?: {
+    label: string;
+    role?: 'chef' | 'waiter' | 'shipper';
+    startTime: string;
+    endTime: string;
+    slotsNeeded: number;
+  }[];
 }
 
 export interface CampaignChangeRequest {
@@ -175,9 +186,10 @@ export interface PublicCampaignDetail extends PublicCampaign {
   shipperSlotsFilled: number;
   expectedServings: number | null;
   actualServings: number | null;
-  menuItems: { name: string; type: string }[];
+  menuItems: { name: string; type: string; plannedServings?: number }[];
   scheduleItems: { time: string; label: string }[];
-  supplyItems: string[];
+  /** Vật phẩm: campaign cũ lưu string, campaign mới lưu object {name, quantity, unit}. */
+  supplyItems: string[] | { name: string; quantity?: number | null; unit?: string | null }[];
   participants: CampaignParticipant[];
   donations: { id: string; itemName: string; quantity: string | null; status: string; provider: { businessName: string } }[];
   proofGallery: CampaignProofPhoto[];
@@ -186,6 +198,15 @@ export interface PublicCampaignDetail extends PublicCampaign {
   avgSatisfaction: number | null;
   feedbackCount: number;
   experiences: CampaignExperience[];
+  shifts: Array<{
+    id: string;
+    label: string;
+    role: 'chef' | 'waiter' | 'shipper' | null;
+    startTime: string;
+    endTime: string;
+    slotsNeeded: number;
+    slotsFilled: number;
+  }>;
 }
 
 // Công khai — chi tiết một chiến dịch (cho trang /campaigns/[id], không cần đăng nhập)
@@ -396,5 +417,234 @@ export function useAdvanceTask() {
       return data.data as { id: string; status: string; pointsAwarded?: number };
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// ─── Provider: nhận & duyệt request từ charity ─────────────────────────────────
+
+export interface ProviderRequestItem {
+  id: string;
+  campaignId: string;
+  receiverId: string;
+  providerId: string;
+  message: string | null;
+  status: 'pending' | 'accepted' | 'rejected' | 'expired';
+  durationMonths: number | null;
+  reviewedAt: string | null;
+  reviewedNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  receiver: {
+    id: string;
+    organizationName: string | null;
+    user: { fullName: string; email: string };
+  };
+  campaign: { id: string; title: string; scheduledDate: string | null } | null;
+}
+
+/** Provider: xem danh sách request nhận được */
+export function useProviderRequests() {
+  return useQuery({
+    queryKey: ['campaigns', 'provider-requests'],
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/provider-requests');
+      return data.data as ProviderRequestItem[];
+    },
+    staleTime: 15_000,
+  });
+}
+
+/** Provider: duyệt (accept) hoặc từ chối (reject) request */
+export function useReviewProviderRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      requestId: string;
+      action: 'accept' | 'reject';
+      note?: string;
+    }) => {
+      const { data } = await api.patch(
+        `/campaigns/provider-requests/${p.requestId}/review`,
+        { action: p.action, note: p.note },
+      );
+      return data.data as ProviderRequestItem;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'provider-requests'] });
+    },
+  });
+}
+
+/** Charity: xem danh sách request đã gửi đến provider */
+export interface SentRequestItem {
+  id: string;
+  campaignId: string;
+  receiverId: string;
+  providerId: string;
+  message: string | null;
+  status: 'pending' | 'accepted' | 'rejected' | 'expired';
+  durationMonths: number | null;
+  reviewedAt: string | null;
+  reviewedNote: string | null;
+  createdAt: string;
+  provider: {
+    id: string;
+    businessName: string | null;
+    user: { fullName: string; email: string };
+  };
+  campaign: { id: string; title: string; scheduledDate: string | null } | null;
+}
+
+export function useSentRequests() {
+  return useQuery({
+    queryKey: ['campaigns', 'my-sent-requests'],
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/my-sent-requests');
+      return data.data as SentRequestItem[];
+    },
+    staleTime: 15_000,
+  });
+}
+
+// ─── Manage endpoints (cho trang /campaigns/[id]/manage/*) ──────────────────
+
+/** Tổ chức: duyệt / từ chối 1 đăng ký TNV (status=pending → assigned/rejected). */
+export function useReviewAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      campaignId: string;
+      assignmentId: string;
+      action: 'approved' | 'rejected';
+      note?: string;
+    }) => {
+      const { data } = await api.patch(
+        `/campaigns/${p.campaignId}/assignments/${p.assignmentId}/review`,
+        { action: p.action, note: p.note },
+      );
+      return data.data;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+export interface CreateDistributionInput {
+  servingsServed: number;
+  peopleServed: number;
+  leftoverServings?: number;
+  roundLabel?: string;
+  note?: string;
+}
+
+/** Tổ chức: ghi nhận 1 đợt phát suất ăn. */
+export function useCreateDistribution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; input: CreateDistributionInput }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/distributions`, p.input);
+      return data.data;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+export interface ShiftInput {
+  label: string;
+  role?: 'chef' | 'waiter' | 'shipper';
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+}
+export interface ShiftUpdateInput {
+  label?: string;
+  role?: 'chef' | 'waiter' | 'shipper' | null;
+  startTime?: string;
+  endTime?: string;
+  slotsNeeded?: number;
+}
+export interface CampaignShift {
+  id: string;
+  label: string;
+  role: 'chef' | 'waiter' | 'shipper' | null;
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+  slotsFilled: number;
+}
+
+/** Tổ chức: thêm ca trực. */
+export function useAddShift() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; input: ShiftInput }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/shifts`, p.input);
+      return data.data as CampaignShift;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+/** Tổ chức: sửa ca trực. */
+export function useUpdateShift() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; shiftId: string; input: ShiftUpdateInput }) => {
+      const { data } = await api.put(
+        `/campaigns/${p.campaignId}/shifts/${p.shiftId}`,
+        p.input,
+      );
+      return data.data as CampaignShift;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+/** Tổ chức: xoá ca trực. */
+export function useDeleteShift() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; shiftId: string }) => {
+      const { data } = await api.delete(`/campaigns/${p.campaignId}/shifts/${p.shiftId}`);
+      return data.data as { id: string; deleted: true };
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+/** Tổ chức: thêm món vào thực đơn. */
+export function useAppendMenuItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; input: { name: string; type: string; plannedServings?: number } }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/menu-items`, p.input);
+      return data.data as { menuItems: Array<{ name: string; type: string; plannedServings?: number | null }> };
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
+  });
+}
+
+/** Tổ chức: thêm vật phẩm cần chuẩn bị. */
+export function useAppendSupplyItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; input: { name: string; quantity?: number; unit?: string } }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/supply-items`, p.input);
+      return data.data as { supplyItems: Array<{ name: string; quantity?: number | null; unit?: string | null }> };
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+    },
   });
 }

@@ -13,13 +13,17 @@ import { QueryListingDto } from './dto/query-listing.dto';
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
 
-/** Field được phép sửa khi tin đã đăng (active/fully_reserved) — tránh đổi địa điểm/giờ/số lượng khi người nhận đã đặt. */
+/** Field được phép sửa khi tin đã đăng (active/fully_reserved) — tránh đổi địa điểm/số lượng khi người nhận đã đặt. */
 const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
   'description',
   'imageUrls',
   'storageConditions',
   'allergenNotes',
   'isSurpriseBag',
+  'pickupStartTime',
+  'pickupEndTime',
+  'expiryTime',
+  'quantityTotal',
 ]);
 
 export interface NearbyRow {
@@ -276,6 +280,31 @@ export class ListingsService {
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  async getProviderStats(userId: string) {
+    const providerId = await this.resolveProviderId(userId);
+    const [totalListings, activeListings, totalReservations, completedReservations] =
+      await this.prisma.$transaction([
+        this.prisma.foodListing.count({ where: { providerId, deletedAt: null } }),
+        this.prisma.foodListing.count({ where: { providerId, deletedAt: null, status: 'active' } }),
+        this.prisma.reservation.count({
+          where: { listing: { providerId } },
+        }),
+        this.prisma.reservation.count({
+          where: { listing: { providerId }, status: 'completed' },
+        }),
+      ]);
+
+    return {
+      totalListings,
+      activeListings,
+      totalReservations,
+      completedReservations,
+      completionRate: totalReservations > 0
+        ? Math.round((completedReservations / totalReservations) * 100)
+        : 0,
+    };
+  }
+
   /**
    * Sửa tin:
    *  - draft → sửa mọi field (kể cả toạ độ — qua raw SQL).
@@ -327,10 +356,34 @@ export class ListingsService {
       }
     }
 
+    // Validate gia hạn khi active (chỉ cho phép kéo dài, không rút ngắn)
+    if (!isDraft) {
+      if (dto.pickupStartTime && new Date(dto.pickupStartTime) < listing.pickupStartTime) {
+        throw new BadRequestException('Không thể rút ngắn giờ bắt đầu nhận hàng.');
+      }
+      if (dto.pickupEndTime && new Date(dto.pickupEndTime) <= listing.pickupEndTime) {
+        throw new BadRequestException(
+          'Giờ kết thúc nhận mới phải sau giờ hiện tại (chỉ cho phép gia hạn).',
+        );
+      }
+      if (dto.pickupEndTime && new Date(dto.pickupEndTime) < new Date()) {
+        throw new BadRequestException('Giờ kết thúc nhận phải ở trong tương lai.');
+      }
+      if (dto.expiryTime && new Date(dto.expiryTime) < listing.expiryTime) {
+        throw new BadRequestException('Không thể rút ngắn hạn sử dụng.');
+      }
+    }
+
     // Không cho quantityTotal < quantityRemaining (có người đã đặt)
-    if (isDraft && dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityRemaining)) {
+    if (dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityRemaining)) {
       throw new BadRequestException(
         `Tổng số lượng mới (${dto.quantityTotal}) không được nhỏ hơn số đã có người đặt (${listing.quantityRemaining}).`,
+      );
+    }
+    // Khi active → chỉ cho phép tăng quantityTotal
+    if (!isDraft && dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityTotal)) {
+      throw new BadRequestException(
+        'Khi tin đã đăng chỉ có thể TĂNG số lượng phần ăn, không thể giảm.',
       );
     }
 
@@ -386,8 +439,70 @@ export class ListingsService {
           WHERE id = ${listingId}::uuid
         `);
       }
+      // Nếu đang fully_reserved mà tăng thêm số lượng → kích hoạt lại
+      if (
+        !isDraft &&
+        listing.status === 'fully_reserved' &&
+        dto.quantityTotal !== undefined &&
+        dto.quantityTotal > Number(listing.quantityTotal)
+      ) {
+        await tx.foodListing.update({
+          where: { id: listingId },
+          data: { status: 'active' },
+        });
+      }
     });
 
     return this.findOne(listingId);
+  }
+
+  async duplicate(listingId: string, userId: string) {
+    const providerId = await this.resolveProviderId(userId);
+    const original = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
+    if (!original) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+    if (original.providerId !== providerId) throw new ForbiddenException();
+
+    const [{ lng, lat }] = await this.prisma.$queryRaw<{ lng: number; lat: number }[]>(
+      Prisma.sql`SELECT ST_X(pickup_location::geometry) AS lng, ST_Y(pickup_location::geometry) AS lat FROM food_listings WHERE id = ${listingId}::uuid`,
+    );
+
+    const result = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      INSERT INTO food_listings (
+        provider_id, title, description, category,
+        quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
+        pickup_start_time, pickup_end_time, expiry_time,
+        pickup_address, pickup_location,
+        storage_conditions, allergen_notes, max_per_reservation, image_urls,
+        is_surprise_bag, status, created_at, updated_at
+      ) VALUES (
+        ${providerId}::uuid,
+        ${original.title},
+        ${original.description},
+        ${original.category}::food_category,
+        ${original.quantityTotal},
+        ${original.quantityTotal},
+        ${original.quantityUnit}::quantity_unit,
+        ${original.weightPerUnitKg},
+        ${original.pickupStartTime}::timestamptz,
+        ${original.pickupEndTime}::timestamptz,
+        ${original.expiryTime}::timestamptz,
+        ${original.pickupAddress},
+        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+        ${original.storageConditions},
+        ${original.allergenNotes},
+        ${original.maxPerReservation},
+        ${JSON.stringify(original.imageUrls ?? [])}::jsonb,
+        ${original.isSurpriseBag},
+        'draft'::listing_status,
+        NOW(),
+        NOW()
+      )
+      RETURNING id
+    `);
+
+    const newId = result[0]?.id;
+    if (!newId) throw new BadRequestException('Nhân bản tin thất bại.');
+
+    return this.findOne(newId);
   }
 }

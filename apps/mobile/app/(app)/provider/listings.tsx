@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, FAB, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
@@ -10,7 +9,9 @@ import { useProviderEsg, useProviderListings, type ProviderListing } from '@/hoo
 import { ProviderListingCard } from '@/components/ProviderListingCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
@@ -58,7 +59,7 @@ export default function ProviderListingsScreen() {
       }
     };
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <AppScreen>
         <ScreenHeader title="Tin của tôi" />
         <View style={styles.pendingWrap}>
           <View style={styles.pendingIcon}>
@@ -84,7 +85,7 @@ export default function ProviderListingsScreen() {
             Kiểm tra lại
           </Button>
         </View>
-      </SafeAreaView>
+      </AppScreen>
     );
   }
 
@@ -95,7 +96,7 @@ export default function ProviderListingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <AppScreen>
       <ScreenHeader title="Tin của tôi" />
 
       {/* Bộ lọc trạng thái */}
@@ -121,6 +122,7 @@ export default function ProviderListingsScreen() {
 
       <FlashList
         data={items}
+        numColumns={2}
         keyExtractor={(item: ProviderListing) => item.id}
         renderItem={({ item }: { item: ProviderListing }) => (
           <ProviderListingCard
@@ -138,11 +140,11 @@ export default function ProviderListingsScreen() {
       <FAB
         icon="plus"
         label="Đăng tin"
-        color="#fff"
+        color={COLORS.onPrimary}
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}
       />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -157,7 +159,7 @@ function EsgCard({
   };
 }) {
   return (
-    <View style={styles.esgCard}>
+    <SurfaceCard style={styles.esgCard}>
       <View style={styles.esgHead}>
         <MaterialCommunityIcons name="leaf-circle-outline" size={20} color={COLORS.primary} />
         <Text style={styles.esgTitle}>Tác động ESG</Text>
@@ -168,7 +170,7 @@ function EsgCard({
         <EsgItem label="Suất trao" value={String(esg.mealsServed)} />
         <EsgItem label="Người giúp" value={String(esg.peopleHelped)} />
       </View>
-    </View>
+    </SurfaceCard>
   );
 }
 

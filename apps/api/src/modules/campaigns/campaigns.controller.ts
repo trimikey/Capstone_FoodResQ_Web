@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -14,7 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, ReviewCampaignAssignmentDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -210,19 +212,6 @@ export class CampaignsController {
     return this.campaignsService.confirmDonation(id, user.id);
   }
 
-  @Patch(':campaignId/assignments/:assignmentId/review')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Charity: duyệt/từ chối TNV đăng ký vào chiến dịch của mình' })
-  reviewAssignment(
-    @Param('campaignId', ParseUUIDPipe) campaignId: string,
-    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
-    @CurrentUser() user: User,
-    @Body() dto: ReviewCampaignAssignmentDto,
-  ) {
-    return this.campaignsService.reviewAssignment(campaignId, assignmentId, user.id, dto);
-  }
-
   @Post('assignments/:id/advance')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)
@@ -236,5 +225,140 @@ export class CampaignsController {
   ) {
     const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
     return this.campaignsService.advanceTask(id, user.id, proofUrl);
+  }
+
+  @Post('requests')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: gửi yêu cầu hợp tác đến provider' })
+  sendProviderRequest(@CurrentUser() user: User, @Body() dto: SendProviderRequestDto) {
+    return this.campaignsService.sendProviderRequest(user.id, dto);
+  }
+
+  @Get('provider-requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: xem danh sách request nhận được từ charity' })
+  listMyProviderRequests(@CurrentUser() user: User) {
+    return this.campaignsService.listMyProviderRequests(user.id);
+  }
+
+  @Get('my-sent-requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: xem danh sách request đã gửi đến provider' })
+  listMySentRequests(@CurrentUser() user: User) {
+    return this.campaignsService.listMySentRequests(user.id);
+  }
+
+  @Patch('provider-requests/:requestId/review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: chấp nhận hoặc từ chối request từ charity' })
+  reviewProviderRequest(
+    @CurrentUser() user: User,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() body: { action: 'accept' | 'reject'; note?: string },
+  ) {
+    return this.campaignsService.reviewProviderRequest(user.id, requestId, body.action, body.note);
+  }
+
+  @Post('provider-proposals')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({
+    summary:
+      'Charity: đề xuất thêm/gia hạn NCC mới khi hệ thống chưa có provider nào — admin duyệt sau.',
+  })
+  submitProviderProposal(@CurrentUser() user: User, @Body() dto: SubmitProviderProposalDto) {
+    return this.campaignsService.submitProviderProposal(user.id, dto);
+  }
+
+  // ─── Manage endpoints (trang /campaigns/[id]/manage/*) ─────────────────────
+
+  @Patch(':id/assignments/:assignmentId/review')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: duyệt / từ chối 1 đăng ký TNV (chỉ khi status=pending)' })
+  reviewAssignment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ReviewAssignmentDto,
+  ) {
+    return this.campaignsService.reviewAssignment(id, assignmentId, user.id, dto);
+  }
+
+  @Post(':id/distributions')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: ghi nhận 1 đợt phát suất ăn (in_progress/completed)' })
+  createDistribution(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: CreateDistributionDto,
+  ) {
+    return this.campaignsService.createDistribution(id, user.id, dto);
+  }
+
+  @Post(':id/shifts')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: thêm ca trực cho chiến dịch' })
+  addShift(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: CreateShiftDto,
+  ) {
+    return this.campaignsService.addShift(id, user.id, dto);
+  }
+
+  @Put(':id/shifts/:shiftId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: sửa ca trực' })
+  updateShift(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('shiftId', ParseUUIDPipe) shiftId: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateShiftDto,
+  ) {
+    return this.campaignsService.updateShift(id, shiftId, user.id, dto);
+  }
+
+  @Delete(':id/shifts/:shiftId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: xoá ca trực (chỉ khi chưa có TNV đăng ký)' })
+  deleteShift(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('shiftId', ParseUUIDPipe) shiftId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.deleteShift(id, shiftId, user.id);
+  }
+
+  @Post(':id/menu-items')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: thêm món vào thực đơn chiến dịch' })
+  appendMenuItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: AppendMenuItemDto,
+  ) {
+    return this.campaignsService.appendMenuItem(id, user.id, dto);
+  }
+
+  @Post(':id/supply-items')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: thêm vật phẩm vào danh sách cần chuẩn bị' })
+  appendSupplyItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: AppendSupplyItemDto,
+  ) {
+    return this.campaignsService.appendSupplyItem(id, user.id, dto);
   }
 }

@@ -2,20 +2,12 @@ import { View, StyleSheet, Pressable, Linking } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useDeliveryTracking, type DeliveryStatus } from '@/hooks/useDeliveries';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 interface Props {
   reservationId: string;
 }
-
-const COLORS = {
-  primary: '#10b981',
-  danger: '#ef4444',
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-  muted: '#d1d5db',
-};
 
 /** Các bước hiển thị theo thứ tự (pending_assignment gộp vào "chờ tài xế" trước bước 1). */
 const STEPS: { key: DeliveryStatus; label: string }[] = [
@@ -39,7 +31,7 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
   if (isLoading) {
     return (
       <View style={styles.card}>
-        <ActivityIndicator color={COLORS.primary} />
+        <ActivityIndicator color={COLORS.blue} />
       </View>
     );
   }
@@ -58,17 +50,26 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.primary} />
-        <Text style={styles.title}>Theo dõi giao hàng</Text>
-        {distanceLabel ? (
-          <Text style={styles.distance}>{distanceLabel}</Text>
-        ) : null}
+        <View style={styles.truckIcon}>
+          <MaterialCommunityIcons name="truck-delivery-outline" size={22} color={COLORS.blue} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Theo dõi giao hàng</Text>
+          <Text style={styles.muted}>Cập nhật trạng thái theo hành trình shipper</Text>
+        </View>
+        {distanceLabel ? <StatusBadge label={distanceLabel} tone="info" /> : null}
       </View>
 
       {failed ? (
-        <Text style={styles.failed}>Giao hàng thất bại. Vui lòng liên hệ hỗ trợ.</Text>
+        <View style={styles.noticeDanger}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={18} color={COLORS.danger} />
+          <Text style={styles.failed}>Giao hàng thất bại. Vui lòng liên hệ hỗ trợ.</Text>
+        </View>
       ) : data.status === 'pending_assignment' ? (
-        <Text style={styles.muted}>Đang tìm tài xế cho đơn của bạn…</Text>
+        <View style={styles.noticeInfo}>
+          <ActivityIndicator size={16} color={COLORS.blue} />
+          <Text style={styles.noticeText}>Đang tìm tài xế cho đơn của bạn...</Text>
+        </View>
       ) : (
         <View style={styles.timeline}>
           {STEPS.map((step, i) => {
@@ -81,11 +82,9 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
                   <MaterialCommunityIcons
                     name={done ? 'check-circle' : 'circle-outline'}
                     size={20}
-                    color={done ? COLORS.primary : COLORS.muted}
+                    color={done ? COLORS.teal : COLORS.muted}
                   />
-                  {i < STEPS.length - 1 ? (
-                    <View style={[styles.connector, { backgroundColor: done ? COLORS.primary : COLORS.muted }]} />
-                  ) : null}
+                  {i < STEPS.length - 1 ? <View style={[styles.connector, done && styles.connectorDone]} /> : null}
                 </View>
                 <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
                   {step.label}
@@ -111,7 +110,7 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
               hitSlop={8}
               style={styles.callBtn}
             >
-              <MaterialCommunityIcons name="phone" size={20} color={COLORS.primary} />
+              <MaterialCommunityIcons name="phone" size={20} color={COLORS.blue} />
             </Pressable>
           ) : null}
         </View>
@@ -122,27 +121,52 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 16,
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.xl,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  title: { flex: 1, fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
-  distance: { fontSize: 13, fontWeight: '600', color: COLORS.primary },
+  truckIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.blueContainer,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  title: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant },
-  failed: { fontSize: 14, color: COLORS.danger, fontWeight: '600' },
+  noticeDanger: {
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: COLORS.errorContainer,
+  },
+  noticeInfo: {
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: COLORS.infoContainer,
+  },
+  noticeText: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.onInfoContainer },
+  failed: { flex: 1, fontSize: 14, color: COLORS.danger, fontWeight: '700' },
   timeline: { marginTop: 4 },
-  stepRow: { flexDirection: 'row', gap: 10 },
-  stepIconCol: { alignItems: 'center', width: 20 },
-  connector: { width: 2, flex: 1, minHeight: 18, marginVertical: 2 },
-  stepLabel: { fontSize: 14, color: COLORS.onSurface, paddingBottom: 14 },
-  stepLabelActive: { fontWeight: '700', color: COLORS.primary },
+  stepRow: { flexDirection: 'row', gap: spacing.md },
+  stepIconCol: { alignItems: 'center', width: 24 },
+  connector: { width: 2, flex: 1, minHeight: 18, marginVertical: 2, backgroundColor: COLORS.outlineVariant },
+  connectorDone: { backgroundColor: COLORS.teal },
+  stepLabel: { fontSize: 14, color: COLORS.onSurface, paddingBottom: 14, fontWeight: '600' },
+  stepLabelActive: { fontWeight: '900', color: COLORS.teal },
   stepLabelTodo: { color: COLORS.onSurfaceVariant },
-  shipperRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.outline },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.outline, alignItems: 'center', justifyContent: 'center' },
-  shipperName: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
-  callBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ecfdf5' },
+  shipperRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: COLORS.outline },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  shipperName: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  callBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.blueContainer },
 });

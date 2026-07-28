@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
+import { QRCodeSVG } from 'qrcode.react';
 import { useListings } from '@/hooks/useListings';
 import {
   BULK_MIN_QTY,
@@ -18,7 +19,8 @@ import {
   type BulkRun,
   type BulkStop,
 } from '@/hooks/useBulkRuns';
-import { errMsg, mediaUrl } from '@/lib/utils';
+import { errMsg, mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { reverseGeocode } from '@/lib/geocode';
 import { Spinner } from '@/components/shared/Spinner';
 
@@ -139,7 +141,7 @@ function AddStopForm({ busy, onAdd, onClose }: {
   );
 }
 
-/** Một điểm phát trong danh sách: log số phần đã phát tại điểm. */
+/** Một điểm phát trong danh sách: hiện QR code + log số phần đã phát. */
 function StopRow({ stop, index, remaining, canServe, busy, onServe }: {
   stop: BulkStop;
   index: number;
@@ -149,8 +151,10 @@ function StopRow({ stop, index, remaining, canServe, busy, onServe }: {
   onServe: (servedQty: number, note?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [qty, setQty] = useState('');
   const served = stop.servedQty > 0;
+  const hasQr = !!stop.reservation?.qrToken;
 
   return (
     <div className={`rounded-xl border p-3 ${served ? 'border-emerald-200 bg-emerald-50/50' : 'border-neutral-200 bg-white'}`}>
@@ -165,6 +169,19 @@ function StopRow({ stop, index, remaining, canServe, busy, onServe }: {
             {stop.plannedQty ? ` · dự kiến ${stop.plannedQty} phần` : ''}
           </p>
         </div>
+
+        {/* Nút hiện QR */}
+        {hasQr && !served && (
+          <button
+            onClick={() => setShowQr((v) => !v)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 text-[11px] font-bold hover:bg-emerald-100 transition-colors shrink-0"
+            title="Hiện mã QR để quét tại điểm phát"
+          >
+            <span className="material-symbols-outlined text-[14px]">qr_code</span>
+            Mã QR
+          </button>
+        )}
+
         {served ? (
           <span className="text-xs font-extrabold text-emerald-700 shrink-0">✓ {stop.servedQty} phần</span>
         ) : canServe ? (
@@ -173,6 +190,34 @@ function StopRow({ stop, index, remaining, canServe, busy, onServe }: {
           </button>
         ) : null}
       </div>
+
+      {/* QR Code panel */}
+      {showQr && hasQr && stop.reservation && (
+        <div className="mt-3 bg-white rounded-xl border border-emerald-200 p-3 flex items-center gap-3">
+          <div className="w-20 h-20 bg-white border-2 border-neutral-800 rounded-lg p-1.5 flex items-center justify-center shrink-0">
+            <QRCodeSVG value={stop.reservation.qrToken} size={64} level="M" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-neutral-800 truncate">{stop.label}</p>
+            <p className="text-[10px] text-neutral-500 font-mono break-all">{stop.reservation.qrToken.slice(0, 40)}…</p>
+            <p className="text-[10px] text-neutral-400 mt-0.5">
+              Hết hạn: {new Date(stop.reservation.qrExpiresAt).toLocaleString('vi-VN')}
+            </p>
+            <button
+              onClick={() => {
+                void navigator.clipboard?.writeText(stop.reservation!.qrToken);
+                toast.success('Đã sao chép mã QR');
+              }}
+              className="mt-1 text-[10px] text-emerald-700 font-semibold hover:underline flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[12px]">content_copy</span>
+              Sao chép mã
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Serve form */}
       {open && canServe && (
         <div className="mt-2.5 flex gap-2">
           <input
@@ -422,7 +467,7 @@ export default function BulkRunsPage() {
                     >
                       <p className="text-sm font-bold text-neutral-800 truncate">{l.title}</p>
                       <p className="text-[11px] text-neutral-500 truncate">{l.pickupAddress}</p>
-                      <p className="text-[11px] font-bold text-emerald-700 mt-0.5">Còn {l.quantityRemaining} {l.quantityUnit}</p>
+                      <p className="text-[11px] font-bold text-emerald-700 mt-0.5">Còn {l.quantityRemaining} {UNIT_LABEL[l.quantityUnit as QuantityUnit] ?? l.quantityUnit}</p>
                     </button>
                   ))}
                 </div>

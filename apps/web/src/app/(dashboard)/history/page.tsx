@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { useMyReservations, useRateReservation } from '@/hooks/useReservation';
 import { useCreateReport } from '@/hooks/useReports';
 import { useMe } from '@/hooks/useProfile';
+import { UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import { ReportReason, ReportTargetType } from '@foodresq/types';
 
 // Shape trả về từ GET /reservations/my (đã mở rộng ở BE)
@@ -53,7 +55,7 @@ function formatWeight(r: ResHistory): string {
   if (r.listing.weightPerUnitKg) {
     return `${(r.quantity * r.listing.weightPerUnitKg).toFixed(1)}kg`;
   }
-  return `${r.quantity} ${r.listing.quantityUnit}`;
+  return `${r.quantity} ${UNIT_LABEL[r.listing.quantityUnit as QuantityUnit] ?? r.listing.quantityUnit}`;
 }
 
 export default function HistoryPage() {

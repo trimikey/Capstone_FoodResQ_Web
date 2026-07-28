@@ -297,3 +297,33 @@ body {
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 
+/* FoodResQ map pin — animated emerald pin with pulse on click/drag */
+.frq-pin-wrapper { background: transparent !important; border: none !important; }
+.frq-pin { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: grab; }
+.frq-pin:active { cursor: grabbing; }
+.frq-pin__core {
+  position: relative; z-index: 2;
+  width: 36px; height: 36px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  border: 3px solid #fff;
+  box-shadow: 0 4px 10px rgba(4, 78, 59, 0.35), 0 1px 3px rgba(0,0,0,0.15);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.2s ease;
+}
+.frq-pin__core svg { transform: rotate(45deg); }
+.frq-pin:hover .frq-pin__core { transform: rotate(-45deg) scale(1.08); }
+.frq-pin__pulse {
+  position: absolute; inset: 0; z-index: 1;
+  border-radius: 50%;
+  background: rgba(5, 150, 105, 0.35);
+  animation: frq-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+@keyframes frq-ping {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  80%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+

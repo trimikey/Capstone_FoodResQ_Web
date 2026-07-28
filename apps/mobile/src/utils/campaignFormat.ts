@@ -3,7 +3,6 @@ type ItemLike = {
   type?: unknown;
   unit?: unknown;
   quantity?: unknown;
-  plannedServings?: unknown;
 };
 
 function textOf(value: unknown): string {
@@ -20,8 +19,7 @@ export function formatMenuItem(item: unknown): string {
 
   const data = item as ItemLike;
   const name = textOf(data.name) || 'Món';
-  const planned = textOf(data.plannedServings);
-  const quantity = [textOf(data.quantity) || planned, textOf(data.unit)].filter(Boolean).join(' ');
+  const quantity = [textOf(data.quantity), textOf(data.unit)].filter(Boolean).join(' ');
   const type = textOf(data.type);
 
   return [name, quantity ? `- ${quantity}` : '', type ? `(${type})` : ''].filter(Boolean).join(' ');
@@ -30,21 +28,4 @@ export function formatMenuItem(item: unknown): string {
 export function formatSupplyItem(item: unknown): string {
   if (typeof item === 'string') return item;
   return formatMenuItem(item);
-}
-
-export function normalizeSupplyItem(item: unknown): { name: string; quantity?: number | null; unit?: string | null } | null {
-  if (typeof item === 'string') {
-    const name = item.trim();
-    return name ? { name } : null;
-  }
-  if (!item || typeof item !== 'object') return null;
-  const data = item as ItemLike;
-  const name = textOf(data.name);
-  if (!name) return null;
-  const numericQuantity = typeof data.quantity === 'number' ? data.quantity : Number(textOf(data.quantity));
-  return {
-    name,
-    quantity: Number.isFinite(numericQuantity) ? numericQuantity : null,
-    unit: textOf(data.unit) || null,
-  };
 }

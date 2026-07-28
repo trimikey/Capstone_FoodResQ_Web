@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, Portal, Dialog, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import {
   useCampaignDetail,
   useStartCampaign,
@@ -40,6 +40,7 @@ import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { BackButton } from '@/components/ui/BackButton';
 import { mobileColors as COLORS } from '@/theme/design';
 
 const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -169,9 +170,7 @@ export default function CharityCampaignDetailScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={8}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-      </Pressable>
+      <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Quản lý chiến dịch</Text>
       <View style={{ width: 24 }} />
     </View>

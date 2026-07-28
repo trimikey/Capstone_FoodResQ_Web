@@ -1,9 +1,9 @@
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
+import { AppImage } from '@/components/ui/AppImage';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderReservationDetail, useProviderReservations } from '@/hooks/useProviderReservations';
 import {
@@ -11,7 +11,11 @@ import {
   useCountdown,
 } from '@/components/ProviderReservationCard';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { mobileColors as COLORS } from '@/theme/design';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StickyActionBar } from '@/components/ui/StickyActionBar';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { BackButton } from '@/components/ui/BackButton';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 function fmtDateTime(iso?: string): string {
   if (!iso) return '-';
@@ -41,9 +45,7 @@ export default function ProviderOrderDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.onSurface} />
-        </Pressable>
+        <BackButton />
         <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết đơn</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -65,18 +67,21 @@ export default function ProviderOrderDetailScreen() {
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.content}>
-            <View style={styles.badgeRow}>
-              <View style={[styles.badge, { backgroundColor: sd.bg }]}>
-                <Text style={[styles.badgeText, { color: sd.fg }]}>{sd.label}</Text>
+            <View style={styles.heroCard}>
+              <View style={styles.heroIcon}>
+                <MaterialCommunityIcons name="qrcode-scan" size={24} color={COLORS.primary} />
               </View>
-              {countdown ? (
-                <Text style={styles.countdown}>QR còn {countdown}</Text>
-              ) : null}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.heroKicker}>Provider order</Text>
+                <Text style={styles.heroTitle} numberOfLines={2}>{order.listing.title}</Text>
+                {countdown ? <Text style={styles.countdown}>QR còn {countdown}</Text> : null}
+              </View>
+              <StatusBadge label={sd.label} tone={order.status === 'completed' ? 'success' : order.status === 'confirmed' ? 'info' : 'neutral'} />
             </View>
 
             {/* Người nhận */}
             <Text style={styles.sectionLabel}>Người nhận</Text>
-            <View style={styles.receiverRow}>
+            <SurfaceCard style={styles.receiverRow}>
               {order.receiver.user.avatarUrl ? (
                 <AppImage source={{ uri: order.receiver.user.avatarUrl }} style={styles.avatar} />
               ) : (
@@ -90,30 +95,28 @@ export default function ProviderOrderDetailScreen() {
                   <Text style={styles.meta}>{order.receiver.user.phone}</Text>
                 ) : null}
               </View>
-            </View>
+            </SurfaceCard>
 
             {/* Món + đơn */}
             <Text style={styles.sectionLabel}>Đơn đặt</Text>
-            <View style={styles.itemRow}>
-              <AppImage
-                source={{ uri: order.listing.imageUrls?.[0] }}
-                fallbackSource={foodFallbackSourceForCategory(order.listing.category)}
-                style={styles.itemImage}
-              />
+            <SurfaceCard style={styles.itemRow}>
+              <AppImage source={{ uri: order.listing.imageUrls?.[0] }} style={styles.itemImage} />
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={styles.itemTitle} numberOfLines={2}>{order.listing.title}</Text>
                 <Text style={styles.meta}>
                   Số lượng: {order.quantity} {order.listing.quantityUnit}
                 </Text>
               </View>
-            </View>
+            </SurfaceCard>
 
-            <Row icon="map-marker-outline" text={order.listing.pickupAddress} />
-            <Row icon="clock-outline" text={`Đặt lúc ${fmtDateTime(order.createdAt)}`} />
+            <SurfaceCard style={styles.detailCard}>
+              <Row icon="map-marker-outline" text={order.listing.pickupAddress} />
+              <Row icon="clock-outline" text={`Đặt lúc ${fmtDateTime(order.createdAt)}`} />
+            </SurfaceCard>
           </ScrollView>
 
           {order.status === 'confirmed' ? (
-            <View style={styles.footer}>
+            <StickyActionBar>
               <Button
                 mode="contained"
                 icon="qrcode-scan"
@@ -124,7 +127,7 @@ export default function ProviderOrderDetailScreen() {
               >
                 Quét QR để giao
               </Button>
-            </View>
+            </StickyActionBar>
           ) : null}
         </>
       )}
@@ -154,24 +157,37 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  content: { padding: 20, paddingBottom: 24 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: '700' },
-  countdown: { fontSize: 14, fontWeight: '700', color: '#1d4ed8' },
+  content: { padding: spacing.xl, paddingBottom: spacing.xl },
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    borderRadius: 28,
+    padding: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+  },
+  heroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 3, color: COLORS.onPrimary, fontSize: 20, lineHeight: 26, fontWeight: '900' },
+  countdown: { marginTop: 5, fontSize: 13, fontWeight: '800', color: COLORS.secondaryContainer },
   sectionLabel: { fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant, marginTop: 22, marginBottom: 8, textTransform: 'uppercase' },
-  receiverRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  receiverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.outline },
   avatarEmpty: { alignItems: 'center', justifyContent: 'center' },
   receiverName: { fontSize: 16, fontWeight: '700', color: COLORS.onSurface },
   meta: { fontSize: 14, color: COLORS.onSurfaceVariant },
-  itemRow: { flexDirection: 'row', gap: 12 },
-  itemImage: { width: 72, height: 72, borderRadius: 12, backgroundColor: COLORS.outline },
-  itemTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  itemRow: { flexDirection: 'row', gap: spacing.md, padding: spacing.md },
+  itemImage: { width: 76, height: 76, borderRadius: radius.lg, backgroundColor: COLORS.outline },
+  itemTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface },
+  detailCard: { marginTop: spacing.md, padding: spacing.lg, gap: spacing.md },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   rowText: { flex: 1, fontSize: 15, color: COLORS.onSurface },
-  footer: {
-    padding: 16, borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,
-  },
   actionBtn: { borderRadius: 12, paddingVertical: 4 },
 });

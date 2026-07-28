@@ -2,7 +2,7 @@ import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 export function OfflineBanner() {
   const { isOffline } = useNetworkStatus();
@@ -29,13 +29,13 @@ const styles = StyleSheet.create({
     zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
+    gap: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#facc15',
-    backgroundColor: '#fffbeb',
-    paddingHorizontal: 12,
+    borderColor: COLORS.warning,
+    backgroundColor: COLORS.warningContainer,
+    paddingHorizontal: spacing.md,
     paddingVertical: 9,
   },
-  text: { flex: 1, color: '#854d0e', fontSize: 12, fontWeight: '700' },
+  text: { flex: 1, color: COLORS.onWarningContainer, fontSize: 12, fontWeight: '700' },
 });

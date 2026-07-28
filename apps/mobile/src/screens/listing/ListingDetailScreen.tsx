@@ -11,7 +11,6 @@ import {
   Switch,
   IconButton,
 } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Popup } from '@/components/ui/AppPopup';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,22 +18,23 @@ import { useAuth } from '@/hooks/useAuth';
 import { useListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservations';
 import { ImageCarousel } from '@/components/ImageCarousel';
-import { foodFallbackSourceForCategory } from '@/components/ui/AppImage';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import {
   categoryLabel,
   quantityLabel,
   formatPickupWindow,
 } from '@/utils/listingFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
-import { mobileColors as COLORS } from '@/theme/design';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StickyActionBar } from '@/components/ui/StickyActionBar';
+import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   id: string;
 }
 
 export default function ListingDetailScreen({ id }: Props) {
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { data: listing, isLoading, isError, refetch } = useListingDetail(id);
   const createMut = useCreateReservation();
@@ -67,6 +67,9 @@ export default function ListingDetailScreen({ id }: Props) {
   const soldOut = listing.quantityRemaining <= 0 || listing.status !== 'active';
   const providerBlocked = user?.role === 'provider';
   const unit = listing.quantityUnit;
+  const listingStatus = soldOut
+    ? { label: listing.status === 'active' ? 'Đã hết phần' : 'Không còn nhận đặt', tone: 'warning' as const }
+    : { label: 'Có thể đặt nhận', tone: 'success' as const };
 
   const openDialog = () => {
     setQuantity(1);
@@ -107,12 +110,9 @@ export default function ListingDetailScreen({ id }: Props) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        <ImageCarousel
-          imageUrls={listing.imageUrls}
-          fallbackSource={foodFallbackSourceForCategory(listing.category)}
-        />
+        <ImageCarousel imageUrls={listing.imageUrls} />
 
-        <SurfaceCard style={styles.summaryCard}>
+        <View style={styles.body}>
           <View style={styles.chipRow}>
             <Chip compact style={styles.catChip} textStyle={styles.catChipText}>
               {categoryLabel(listing.category)}
@@ -120,6 +120,7 @@ export default function ListingDetailScreen({ id }: Props) {
             <Chip compact style={styles.qtyChip} textStyle={styles.qtyChipText}>
               Còn {quantityLabel(listing.quantityRemaining, unit)}
             </Chip>
+            <StatusBadge label={listingStatus.label} tone={listingStatus.tone} />
           </View>
 
           <Text variant="headlineSmall" style={styles.title}>
@@ -132,34 +133,41 @@ export default function ListingDetailScreen({ id }: Props) {
             </Text>
           ) : null}
 
-          <View style={styles.metricRow}>
-            <MetricPill icon="basket-outline" label={`Còn ${quantityLabel(listing.quantityRemaining, unit)}`} tone="primary" />
-            <MetricPill icon="account-multiple-outline" label={`Tối đa ${listing.maxPerReservation}/${unit}`} />
-          </View>
-        </SurfaceCard>
+          <SurfaceCard style={styles.infoCard}>
+            <SectionHeader
+              title="Thông tin nhận món"
+              subtitle="Kiểm tra thời gian, địa chỉ và giới hạn trước khi đặt."
+            />
+            <InfoRow icon="store-outline" label="Nhà cung cấp" text={listing.provider?.businessName ?? 'Cửa hàng'} />
+            <InfoRow
+              icon="clock-outline"
+              label="Khung giờ nhận"
+              text={formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
+              highlight
+            />
+            <InfoRow icon="map-marker-outline" label="Điểm lấy" text={listing.pickupAddress} />
+            <InfoRow
+              icon="account-multiple-outline"
+              label="Giới hạn"
+              text={`Tối đa ${listing.maxPerReservation} ${unit}/lượt đặt`}
+            />
+          </SurfaceCard>
 
-        <SurfaceCard style={styles.infoCard}>
-          <SectionHeader
-            icon="storefront-outline"
-            title={listing.provider?.businessName ?? 'Cửa hàng'}
-            subtitle="Thông tin lấy hàng"
-          />
-          <InfoRow
-            icon="clock-outline"
-            text={formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
-            highlight
-          />
-          <InfoRow icon="map-marker-outline" text={listing.pickupAddress} />
-          {listing.storageConditions ? (
-            <InfoRow icon="fridge-outline" text={listing.storageConditions} />
+          {(listing.storageConditions || listing.allergenNotes) ? (
+            <SurfaceCard style={styles.infoCard}>
+              <SectionHeader title="Lưu ý an toàn" />
+              {listing.storageConditions ? (
+                <InfoRow icon="fridge-outline" label="Bảo quản" text={listing.storageConditions} />
+              ) : null}
+              {listing.allergenNotes ? (
+                <InfoRow icon="alert-circle-outline" label="Dị ứng" text={listing.allergenNotes} warning />
+              ) : null}
+            </SurfaceCard>
           ) : null}
-          {listing.allergenNotes ? (
-            <InfoRow icon="alert-circle-outline" text={`Dị ứng: ${listing.allergenNotes}`} />
-          ) : null}
-        </SurfaceCard>
+        </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+      <StickyActionBar>
         <Button
           mode="contained"
           buttonColor={COLORS.primary}
@@ -168,9 +176,9 @@ export default function ListingDetailScreen({ id }: Props) {
           disabled={soldOut && !providerBlocked}
           onPress={providerBlocked ? () => router.replace('/(app)/provider/listings') : openDialog}
         >
-          {providerBlocked ? 'Về Tin của tôi' : soldOut ? 'Đã hết phần' : 'Đặt chỗ'}
+          {providerBlocked ? 'Về Tin của tôi' : soldOut ? 'Đã hết phần' : 'Đặt nhận món'}
         </Button>
-      </View>
+      </StickyActionBar>
 
       <Portal>
         <Dialog visible={dialogVisible} onDismiss={() => setDialogVisible(false)} style={styles.dialog}>
@@ -242,23 +250,25 @@ export default function ListingDetailScreen({ id }: Props) {
   );
 }
 
-function InfoRow({
-  icon,
-  text,
-  highlight,
-}: {
+function InfoRow({ icon, label, text, highlight, warning }: {
   icon: string;
+  label: string;
   text: string;
   highlight?: boolean;
+  warning?: boolean;
 }) {
+  const iconColor = warning ? COLORS.warning : highlight ? COLORS.primary : COLORS.onSurfaceVariant;
   return (
     <View style={styles.infoRow}>
-      <Icon source={icon} size={20} color={highlight ? COLORS.primary : COLORS.onSurfaceVariant} />
-      <Text
-        style={[styles.infoText, highlight && { color: COLORS.primary, fontWeight: '600' }]}
-      >
-        {text}
-      </Text>
+      <View style={[styles.infoIcon, { backgroundColor: highlight ? COLORS.primaryContainer : COLORS.surfaceContainerLow }]}>
+        <Icon source={icon} size={18} color={iconColor} />
+      </View>
+      <View style={styles.infoCopy}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={[styles.infoText, highlight && styles.infoTextHighlight, warning && styles.infoTextWarning]}>
+          {text}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -266,28 +276,39 @@ function InfoRow({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.background },
-  summaryCard: { marginHorizontal: 20, marginTop: 16, padding: 16, gap: 10 },
-  infoCard: { marginHorizontal: 20, marginTop: 12, padding: 16, gap: 12 },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  catChip: { backgroundColor: '#ecfdf5' },
+  body: { paddingHorizontal: spacing.xl, paddingTop: spacing.lg, gap: spacing.md },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  catChip: { backgroundColor: COLORS.primaryContainer },
   catChipText: { color: COLORS.primary, fontSize: 12 },
-  qtyChip: { backgroundColor: '#fff7ed' },
-  qtyChipText: { color: '#c2410c', fontSize: 12 },
+  qtyChip: { backgroundColor: COLORS.warningContainer },
+  qtyChipText: { color: COLORS.onWarningContainer, fontSize: 12 },
   title: { fontWeight: '700', color: COLORS.onSurface },
   description: { color: COLORS.onSurfaceVariant, lineHeight: 21 },
-  metricRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  infoText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
-  footer: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.outlineVariant,
+  infoCard: {
+    padding: spacing.lg,
+    gap: spacing.md,
   },
-  cta: { borderRadius: 14 },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  infoIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoCopy: { flex: 1 },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+  },
+  infoText: { marginTop: 2, fontSize: 14, lineHeight: 19, fontWeight: '600', color: COLORS.onSurface },
+  infoTextHighlight: { color: COLORS.primary, fontWeight: '800' },
+  infoTextWarning: { color: COLORS.warning, fontWeight: '700' },
+  cta: { borderRadius: radius.md },
   ctaContent: { paddingVertical: 6 },
-  dialog: { borderRadius: 20, backgroundColor: COLORS.surface },
+  dialog: { borderRadius: radius.xl, backgroundColor: COLORS.surface },
   dialogTitle: { fontWeight: '700', color: COLORS.onSurface },
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepperLabel: { fontSize: 15, fontWeight: '600', color: COLORS.onSurface },

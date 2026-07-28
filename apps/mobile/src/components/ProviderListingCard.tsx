@@ -1,37 +1,34 @@
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { AppImage, foodFallbackSourceForCategory } from './ui/AppImage';
+import { AppImage } from './ui/AppImage';
+import { StatusBadge, type StatusTone } from './ui/StatusBadge';
+import { SurfaceCard } from './ui/SurfaceCard';
 import { categoryLabel, quantityLabel } from '../utils/listingFormat';
 import type { ProviderListing } from '../hooks/useProviderListings';
-
-const COLORS = {
-  surface: '#ffffff',
-  onSurface: '#121c2a',
-  onSurfaceVariant: '#6b7280',
-  outline: '#e5e7eb',
-};
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /** Nhãn + màu cho trạng thái tin (ListingStatus). */
 export function listingStatusDisplay(status?: string): {
   label: string;
+  tone: StatusTone;
   bg: string;
   fg: string;
 } {
   switch (status) {
     case 'draft':
-      return { label: 'Nháp', bg: '#f3f4f6', fg: '#6b7280' };
+      return { label: 'Nháp', tone: 'neutral', bg: COLORS.neutralContainer, fg: COLORS.onNeutralContainer };
     case 'active':
-      return { label: 'Đang phát', bg: '#dcfce7', fg: '#15803d' };
+      return { label: 'Đang phát', tone: 'success', bg: COLORS.successContainer, fg: COLORS.onSuccessContainer };
     case 'fully_reserved':
-      return { label: 'Hết suất', bg: '#fef3c7', fg: '#b45309' };
+      return { label: 'Hết suất', tone: 'warning', bg: COLORS.warningContainer, fg: COLORS.onWarningContainer };
     case 'completed':
-      return { label: 'Hoàn tất', bg: '#dbeafe', fg: '#1d4ed8' };
+      return { label: 'Hoàn tất', tone: 'info', bg: COLORS.infoContainer, fg: COLORS.onInfoContainer };
     case 'expired':
-      return { label: 'Hết hạn', bg: '#e5e7eb', fg: '#4b5563' };
+      return { label: 'Hết hạn', tone: 'neutral', bg: COLORS.neutralContainer, fg: COLORS.onMuted };
     case 'cancelled':
-      return { label: 'Đã huỷ', bg: '#fee2e2', fg: '#b91c1c' };
+      return { label: 'Đã huỷ', tone: 'danger', bg: COLORS.errorContainer, fg: COLORS.onErrorContainer };
     default:
-      return { label: status ?? '—', bg: '#f3f4f6', fg: '#6b7280' };
+      return { label: status ?? '—', tone: 'neutral', bg: COLORS.neutralContainer, fg: COLORS.onNeutralContainer };
   }
 }
 
@@ -43,49 +40,53 @@ interface Props {
 export function ProviderListingCard({ listing, onPress }: Props) {
   const sd = listingStatusDisplay(listing.status);
   return (
-    <Pressable
+    <SurfaceCard
       onPress={onPress}
-      style={({ pressed }) => [styles.card, { opacity: pressed ? 0.85 : 1 }]}
+      style={styles.card}
     >
-      <AppImage
-        source={{ uri: listing.imageUrls?.[0] }}
-        fallbackSource={foodFallbackSourceForCategory(listing.category)}
-        style={styles.image}
-      />
+      <View style={styles.imageWrap}>
+        <AppImage source={{ uri: listing.imageUrls?.[0] }} style={styles.image} />
+        <View style={styles.statusFloat}>
+          <StatusBadge label={sd.label} tone={sd.tone} />
+        </View>
+      </View>
       <View style={styles.body}>
-        <View style={styles.topRow}>
-          <View style={[styles.badge, { backgroundColor: sd.bg }]}>
-            <Text style={[styles.badgeText, { color: sd.fg }]}>{sd.label}</Text>
-          </View>
+        <Text variant="titleMedium" style={styles.title} numberOfLines={2}>
+          {listing.title}
+        </Text>
+        <View style={styles.metaRow}>
+          <Text style={styles.meta}>{categoryLabel(listing.category)}</Text>
           <Text style={styles.qty}>
             {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
           </Text>
         </View>
-        <Text variant="titleMedium" style={styles.title} numberOfLines={2}>
-          {listing.title}
-        </Text>
-        <Text style={styles.meta}>{categoryLabel(listing.category)}</Text>
       </View>
-    </Pressable>
+    </SurfaceCard>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    overflow: 'hidden',
-    marginBottom: 12,
+    flex: 1,
+    marginHorizontal: 4,
+    marginBottom: spacing.md,
   },
-  image: { width: 96, height: 96, backgroundColor: COLORS.outline },
-  body: { flex: 1, padding: 12, gap: 4 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  qty: { fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant },
-  title: { fontWeight: '700', color: COLORS.onSurface },
-  meta: { fontSize: 13, color: COLORS.onSurfaceVariant },
+  imageWrap: { height: 116, backgroundColor: COLORS.outlineVariant },
+  image: { width: '100%', height: '100%' },
+  statusFloat: { position: 'absolute', left: spacing.md, top: spacing.md },
+  body: { padding: spacing.md, gap: spacing.sm },
+  title: { fontSize: 14, lineHeight: 19, fontWeight: '900', color: COLORS.onSurface },
+  metaRow: { alignItems: 'flex-start', gap: spacing.sm },
+  qty: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    overflow: 'hidden',
+    backgroundColor: COLORS.warningContainer,
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.onWarningContainer,
+  },
+  meta: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
 });

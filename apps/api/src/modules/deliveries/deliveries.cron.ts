@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DeliveriesService } from './deliveries.service';
+import { logCronError } from '@/common/utils/cron-error';
 
 /** Tác vụ định kỳ cho vòng đời đơn giao (auto-fail đơn shipper bỏ ngang). */
 @Injectable()
@@ -16,7 +17,7 @@ export class DeliveriesCron {
       const n = await this.deliveries.expireStalledDeliveries();
       if (n > 0) this.logger.log(`Auto-failed ${n} stalled delivery(ies)`);
     } catch (e) {
-      this.logger.error('expireStalledDeliveries failed', e as Error);
+      logCronError(this.logger, 'expireStalledDeliveries', e);
     }
   }
 
@@ -29,7 +30,7 @@ export class DeliveriesCron {
       const n = await this.deliveries.sweepOffersAndRebroadcast();
       if (n > 0) this.logger.log(`Re-broadcasted ${n} unassigned delivery(ies)`);
     } catch (e) {
-      this.logger.error('sweepOffersAndRebroadcast failed', e as Error);
+      logCronError(this.logger, 'sweepOffersAndRebroadcast', e);
     }
   }
 }

@@ -34,13 +34,14 @@ const DEFAULTS: Record<StateKind, { title: string; message: string; icon: keyof 
 
 export function ScreenState({ kind, title, message, icon, actionLabel, onAction }: Props) {
   const meta = DEFAULTS[kind];
-  const tint = kind === 'error' ? COLORS.error : COLORS.primary;
+  const tint = kind === 'error' ? COLORS.error : kind === 'loading' ? COLORS.blue : COLORS.indigo;
+  const bg = kind === 'error' ? COLORS.errorContainer : kind === 'loading' ? COLORS.blueContainer : COLORS.indigoContainer;
 
   return (
     <View style={styles.wrap}>
-      <View style={[styles.iconWrap, { backgroundColor: kind === 'error' ? '#ffdad6' : COLORS.primaryContainer }]}>
+      <View style={[styles.iconWrap, { backgroundColor: bg }]}>
         {kind === 'loading' ? (
-          <ActivityIndicator color={COLORS.primary} />
+          <ActivityIndicator color={COLORS.blue} />
         ) : (
           <MaterialCommunityIcons name={icon ?? meta.icon} size={34} color={tint} />
         )}

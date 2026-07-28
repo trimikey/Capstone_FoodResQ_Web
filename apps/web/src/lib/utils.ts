@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { QuantityUnit } from '@foodresq/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -48,6 +49,15 @@ export function formatRelativeTime(date: string | Date) {
   if (Math.abs(diff) < 86400) return rtf.format(Math.round(diff / 3600), 'hour');
   return rtf.format(Math.round(diff / 86400), 'day');
 }
+
+/** Trả về nhãn tiếng Việt cho đơn vị số lượng. */
+export const UNIT_LABEL: Record<QuantityUnit, string> = {
+  [QuantityUnit.PORTION]: 'Phần',
+  [QuantityUnit.KG]: 'Kg',
+  [QuantityUnit.ITEM]: 'Cái',
+  [QuantityUnit.BOX]: 'Hộp',
+  [QuantityUnit.LITER]: 'Lít',
+};
 
 /** Trích thông điệp lỗi từ response API (axios) — fallback nếu không có. */
 export function errMsg(e: unknown, fallback: string): string {

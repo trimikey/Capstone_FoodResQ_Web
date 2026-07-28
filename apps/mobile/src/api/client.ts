@@ -137,25 +137,6 @@ export interface ApiUser {
   status?: string;
   avatarUrl?: string | null;
   trustScore?: number;
-}
-
-/**
- * Hồ sơ đầy đủ trả về từ GET /users/me — kèm thống kê và thông tin theo vai trò.
- * Các nhánh volunteer/receiver là null nếu user không thuộc vai trò đó.
- */
-export interface ApiUserProfile extends ApiUser {
-  createdAt?: string;
-  stats?: {
-    kgSaved: number;
-    completedCount: number;
-    cancelledCount: number;
-    providersHelped: number;
-  };
-  volunteer?: {
-    specializations: { specialization: string; isVerified: boolean }[];
-    rank: string;
-    dedicationPoints: number;
-  } | null;
   receiver?: {
     isCharityOrg: boolean;
     organizationName: string | null;
@@ -176,6 +157,25 @@ export interface ApiUserProfile extends ApiUser {
     verificationStatus?: string;
     lng?: number | null;
     lat?: number | null;
+  } | null;
+}
+
+/**
+ * Hồ sơ đầy đủ trả về từ GET /users/me — kèm thống kê và thông tin theo vai trò.
+ * Các nhánh volunteer/receiver là null nếu user không thuộc vai trò đó.
+ */
+export interface ApiUserProfile extends ApiUser {
+  createdAt?: string;
+  stats?: {
+    kgSaved: number;
+    completedCount: number;
+    cancelledCount: number;
+    providersHelped: number;
+  };
+  volunteer?: {
+    specializations: { specialization: string; isVerified: boolean }[];
+    rank: string;
+    dedicationPoints: number;
   } | null;
 }
 

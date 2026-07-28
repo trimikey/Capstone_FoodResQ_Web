@@ -225,6 +225,7 @@ export enum OfferStatus {
 export enum ReportTargetType {
   USER = 'user',
   LISTING = 'listing',
+  RESERVATION = 'reservation',
   DELIVERY = 'delivery',
   CAMPAIGN = 'campaign',
 }
@@ -269,4 +270,12 @@ export enum SafetyCheckResult {
   PASS = 'pass',
   WARNING = 'warning',
   FAIL = 'fail',
+}
+
+/** Trạng thái yêu cầu hợp tác từ charity gửi đến provider. */
+export enum CampaignRequestStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired',
 }

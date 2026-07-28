@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, ActivityIndicator, IconButton, Button, Chip, Icon } from 'react-native-paper';
+import { Text, ActivityIndicator, IconButton, Button, Icon } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useListings, LISTING_PAGE_SIZE, type FoodCategory, type Listing } from '@/hooks/useListings';
 import { useMyProfile } from '@/hooks/useProfile';
+import { useListings, type FoodCategory, type Listing } from '@/hooks/useListings';
 import {
   getCurrentCoords,
   getLocationLabel,
-  isNearCoords,
   type Coords,
 } from '@/services/geolocation';
 import { ListingCard } from '@/components/ListingCard';
@@ -21,58 +20,63 @@ import { SearchBar } from '@/components/SearchBar';
 import { CategoryFilterSheet } from '@/components/CategoryFilterSheet';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
-import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
 import { categoryLabel } from '@/utils/listingFormat';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
-const HCM_CENTER: Coords = { lat: 10.8231, lng: 106.6297 };
+const HOME_LISTING_PAGE_SIZE = 18;
 
-function isFiniteCoord(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+function toCoords(lat?: number | null, lng?: number | null): Coords | null {
+  if (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng)
+  ) {
+    return { lat, lng };
+  }
+  return null;
 }
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { width } = useWindowDimensions();
+  const { user, updateUser } = useAuth();
+  const { data: profile, refetch: refetchProfile } = useMyProfile(user?.role === 'receiver');
   const sheetRef = useRef<BottomSheet>(null);
   const listRef = useRef<ElementRef<typeof FlashList<Listing>>>(null);
+  const receiver = profile?.receiver ?? user?.receiver;
+  const receiverCoords = useMemo(
+    () => toCoords(receiver?.lat, receiver?.lng),
+    [receiver?.lat, receiver?.lng],
+  );
+  const receiverAddress = user?.role === 'receiver' ? receiver?.address?.trim() : '';
 
-  const { data: profile } = useMyProfile();
-  const profileCoords = useMemo<Coords | null>(() => {
-    const lat = profile?.receiver?.lat ?? profile?.provider?.lat;
-    const lng = profile?.receiver?.lng ?? profile?.provider?.lng;
-    return isFiniteCoord(lat) && isFiniteCoord(lng) ? { lat, lng } : null;
-  }, [profile?.provider?.lat, profile?.provider?.lng, profile?.receiver?.lat, profile?.receiver?.lng]);
-
-  const [gpsCoords, setGpsCoords] = useState<Coords | null>(null);
+  // Chỉ fetch theo điểm giao receiver hoặc GPS thật, không dùng toạ độ test/fallback.
+  const [coords, setCoords] = useState<Coords | null>(receiverCoords);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
-  const [locating, setLocating] = useState(true);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [category, setCategory] = useState<FoodCategory | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [page, setPage] = useState(1);
+  const effectiveCoords = receiverCoords ?? coords;
+  const gridColumns = width >= 390 ? 3 : 2;
 
-  // Lấy vị trí 1 lần khi mount
+  // Lấy vị trí 1 lần khi mount cho các role không có điểm mặc định.
   useEffect(() => {
+    if (receiverCoords) return;
     let active = true;
     getCurrentCoords().then(({ coords, isFallback }) => {
       if (!active) return;
-      setGpsCoords(isFallback ? null : coords);
+      setCoords(coords);
       setIsFallbackLocation(isFallback);
-      setLocating(false);
       setPage(1);
-    }).catch(() => {
-      if (!active) return;
-      setGpsCoords(null);
-      setIsFallbackLocation(true);
-      setLocating(false);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [receiverCoords]);
 
   // Debounce search ~400ms
   useEffect(() => {
@@ -83,45 +87,55 @@ export default function HomeScreen() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const effectiveCoords = gpsCoords ?? profileCoords;
-
   const { data, isLoading, isFetching, isError, refetch, isRefetching, isPlaceholderData } = useListings({
     coords: effectiveCoords,
     search: debouncedSearch,
     category,
     page,
-    limit: viewMode === 'map' ? 100 : LISTING_PAGE_SIZE,
+    limit: HOME_LISTING_PAGE_SIZE,
   });
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const hasNextPage = data?.hasNextPage ?? false;
   const hasFilters = searchInput.trim().length > 0 || category != null;
-  const locationLabel = effectiveCoords
-    ? getLocationLabel(effectiveCoords, gpsCoords ? isFallbackLocation : false)
-    : locating
-      ? 'Đang định vị...'
-      : 'Tất cả khu vực';
-  const locationHint = effectiveCoords
-    ? isNearCoords(effectiveCoords, HCM_CENTER, 0.08)
-      ? 'Đang tìm quanh TP.HCM'
-      : gpsCoords
-        ? 'Đang tìm quanh vị trí GPS của bạn'
-        : 'Đang tìm quanh địa chỉ hồ sơ'
-    : 'Chưa có GPS, đang hiển thị dữ liệu như web';
-  const mapCenter = effectiveCoords ?? items.find((item) => isFiniteCoord(item.lat) && isFiniteCoord(item.lng)) ?? HCM_CENTER;
-  const showSkeleton = isLoading && items.length === 0;
-  const resultCountLabel = isFetching && !isRefetching ? 'Đang cập nhật' : `${items.length} tin`;
+  const locationLabel = receiverAddress || (effectiveCoords ? getLocationLabel(effectiveCoords, isFallbackLocation) : 'Đang lấy vị trí hiện tại');
+  const showSkeleton = (isLoading || (!effectiveCoords && !isFallbackLocation)) && items.length === 0;
 
   const refreshLocation = async () => {
-    try {
-      setLocating(true);
-      const result = await getCurrentCoords();
-      setGpsCoords(result.isFallback ? null : result.coords);
-      setIsFallbackLocation(result.isFallback);
-      setPage(1);
-    } finally {
-      setLocating(false);
+    if (user?.role === 'receiver') {
+      const refreshed = await refetchProfile();
+      const nextProfile = refreshed.data;
+      const nextReceiver = nextProfile?.receiver ?? receiver;
+      const nextCoords = toCoords(nextReceiver?.lat, nextReceiver?.lng);
+
+      if (nextProfile) {
+        updateUser({
+          name: nextProfile.fullName ?? nextProfile.name ?? user.name,
+          phone: nextProfile.phone ?? null,
+          avatarUrl: nextProfile.avatarUrl ?? null,
+          receiver: nextProfile.receiver ?? null,
+          provider: nextProfile.provider ?? null,
+        });
+      }
+
+      if (nextCoords) {
+        setIsFallbackLocation(false);
+        setPage(1);
+        await refetch();
+        return;
+      }
     }
+
+    const result = await getCurrentCoords();
+    if (!result.coords) {
+      setIsFallbackLocation(true);
+      setCoords(null);
+      setPage(1);
+      return;
+    }
+    setCoords(result.coords);
+    setIsFallbackLocation(result.isFallback);
+    setPage(1);
   };
 
   const clearFilters = () => {
@@ -178,7 +192,7 @@ export default function HomeScreen() {
           </Pressable>
           <View style={styles.pageStatus}>
             <Text style={styles.pageText}>Trang {page}</Text>
-            <Text style={styles.pageHint}>6 tin / trang</Text>
+            <Text style={styles.pageHint}>{HOME_LISTING_PAGE_SIZE} tin / trang</Text>
           </View>
           <Pressable
             accessibilityRole="button"
@@ -194,9 +208,9 @@ export default function HomeScreen() {
           >
             <Text style={[styles.pageBtnLabel, styles.nextBtnLabel]}>Sau</Text>
             {isPlaceholderData && isFetching && hasNextPage ? (
-              <ActivityIndicator size={18} color="#fff" />
+              <ActivityIndicator size={18} color={COLORS.onPrimary} />
             ) : (
-              <Icon source="chevron-right" size={22} color="#fff" />
+              <Icon source="chevron-right" size={22} color={COLORS.onPrimary} />
             )}
           </Pressable>
         </View>
@@ -206,59 +220,66 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <SurfaceCard style={styles.heroCard}>
-        <View style={styles.header}>
-          <SectionHeader
-            icon="silverware-fork-knife"
-            title={`Xin chào${user?.name ? `, ${user.name}` : ''}`}
-            subtitle={category ? `Đang lọc: ${categoryLabel(category)}` : 'Thực phẩm sẵn sàng nhận quanh bạn'}
-          />
-          <IconButton
-            icon={viewMode === 'list' ? 'map-outline' : 'format-list-bulleted'}
-            mode="contained-tonal"
-            iconColor={COLORS.primary}
+      <View style={styles.headerBand}>
+        <View style={styles.headerTop}>
+          <Pressable
+            accessibilityRole="button"
             onPress={() => setViewMode((v) => (v === 'list' ? 'map' : 'list'))}
-            accessibilityLabel={viewMode === 'list' ? 'Xem bản đồ' : 'Xem danh sách'}
-            style={styles.viewToggle}
-          />
-        </View>
-
-        <View style={styles.locationWrap}>
-          <Chip
-            compact
-            icon="crosshairs-gps"
-            style={styles.locationChip}
-            textStyle={styles.locationChipText}
+            style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}
           >
-            {locationLabel}
-          </Chip>
+            <Icon source={viewMode === 'list' ? 'map-outline' : 'format-list-bulleted'} size={24} color={COLORS.primary} />
+            <Text style={styles.menuLabel}>{viewMode === 'list' ? 'Map' : 'List'}</Text>
+          </Pressable>
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>FoodResQ gần bạn</Text>
+            <Text style={styles.greeting} numberOfLines={1}>
+              {user?.name ? `Chào ${user.name}` : 'Tìm món gần bạn'}
+            </Text>
+          </View>
           <IconButton
             icon="refresh"
             size={18}
-            mode="contained-tonal"
+            mode="contained"
+            containerColor={COLORS.surface}
+            iconColor={COLORS.primary}
             onPress={refreshLocation}
-            loading={locating}
-            disabled={locating}
             style={styles.refreshBtn}
             accessibilityLabel="Làm mới vị trí"
           />
         </View>
-        <View style={styles.metricRow}>
-          <MetricPill icon="basket-outline" label={resultCountLabel} tone="primary" />
-          <MetricPill icon={viewMode === 'map' ? 'map-marker-multiple-outline' : 'format-list-bulleted'} label={viewMode === 'map' ? 'Bản đồ' : `Trang ${page}`} />
-          {hasFilters ? <MetricPill icon="filter-check-outline" label="Đang lọc" tone="warning" /> : null}
-        </View>
-        <Text style={styles.locationHint}>{locationHint}</Text>
 
-        <View style={styles.searchWrap}>
-          <SearchBar
-            value={searchInput}
-            onChangeText={setSearchInput}
-            onPressFilter={() => sheetRef.current?.expand()}
-            filterActive={category != null}
-          />
+        <SearchBar
+          value={searchInput}
+          onChangeText={setSearchInput}
+          onPressFilter={() => sheetRef.current?.expand()}
+          filterActive={category != null}
+        />
+
+        <View style={styles.quickMetaRow}>
+          <View style={styles.locationChip}>
+            <Icon source="crosshairs-gps" size={15} color={COLORS.primary} />
+            <Text style={styles.locationValue} numberOfLines={1}>{locationLabel}</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => sheetRef.current?.expand()}
+            style={({ pressed }) => [
+              styles.filterChip,
+              category != null && styles.filterChipActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Icon
+              source={category ? 'filter' : 'filter-outline'}
+              size={15}
+              color={category ? COLORS.onPrimary : COLORS.primary}
+            />
+            <Text style={[styles.filterChipText, category != null && styles.filterChipTextActive]} numberOfLines={1}>
+              {category ? categoryLabel(category) : 'Tất cả'}
+            </Text>
+          </Pressable>
         </View>
-      </SurfaceCard>
+      </View>
 
       {viewMode === 'list' && !showSkeleton && !isError && (
         <View style={styles.resultBar}>
@@ -292,29 +313,23 @@ export default function HomeScreen() {
             <ActivityIndicator color={COLORS.primary} />
           </View>
         ) : isError ? (
-          <ListingsStateView variant={isError ? 'error' : 'empty'} onRetry={() => refetch()} />
+          <ListingsStateView variant="error" onRetry={() => refetch()} />
+        ) : !effectiveCoords ? (
+          <ListingsStateView variant="empty" />
         ) : (
-          <View style={styles.mapPane}>
-            <ListingsMapView
-              listings={items}
-              center={mapCenter}
-              onSelect={(id) => router.push(`/listing/${id}`)}
-            />
-            {items.length === 0 ? (
-              <View style={styles.mapEmptyPanel}>
-                <Text style={styles.mapEmptyTitle}>Chưa có pin thực phẩm</Text>
-                <Text style={styles.mapEmptyText}>
-                  Bản đồ vẫn hiển thị khu vực hiện tại. Thử xoá bộ lọc hoặc tải lại dữ liệu.
-                </Text>
-              </View>
-            ) : null}
-          </View>
+          <ListingsMapView
+            listings={items}
+            center={effectiveCoords}
+            onSelect={(id) => router.push(`/listing/${id}`)}
+          />
         )
       ) : (
         <View style={styles.listPane}>
           <FlashList
             ref={listRef}
             data={items}
+            key={`listing-grid-${gridColumns}`}
+            numColumns={gridColumns}
             keyExtractor={(item) => item.id}
             renderItem={({ item, index }: { item: Listing; index: number }) => (
               <ListingCard
@@ -346,26 +361,79 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  heroCard: { marginHorizontal: 12, marginTop: 6, padding: 12 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  viewToggle: { margin: 0, borderRadius: 12 },
-  locationWrap: {
-    paddingTop: 10,
+  headerBand: {
+    backgroundColor: COLORS.primaryStrong,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headerCopy: { flex: 1 },
+  menuButton: {
+    width: 54,
+    height: 48,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  menuLabel: {
+    marginTop: -2,
+    color: COLORS.primary,
+    fontSize: 9,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  pressed: { opacity: 0.78 },
+  eyebrow: {
+    color: COLORS.secondaryContainer,
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  greeting: {
+    marginTop: 2,
+    color: COLORS.onPrimary,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '900',
+  },
+  refreshBtn: { margin: 0, borderRadius: radius.md },
+  quickMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
-  locationChip: { flex: 1, backgroundColor: COLORS.primaryContainer },
-  locationChipText: { color: COLORS.primary, fontWeight: '700', lineHeight: 16 },
-  refreshBtn: { margin: 0, borderRadius: 12, backgroundColor: COLORS.surfaceContainerLow },
-  locationHint: { paddingTop: 7, color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '600' },
-  metricRow: { paddingTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  searchWrap: { paddingTop: 10 },
+  locationChip: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.surface,
+  },
+  locationValue: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  filterChip: {
+    maxWidth: 116,
+    minHeight: 34,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.surface,
+  },
+  filterChipActive: { backgroundColor: COLORS.primary },
+  filterChipText: { color: COLORS.primary, fontSize: 12, fontWeight: '900' },
+  filterChipTextActive: { color: COLORS.onPrimary },
   resultBar: {
-    marginHorizontal: 16,
-    marginBottom: 6,
-    marginTop: 8,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -375,34 +443,20 @@ const styles = StyleSheet.create({
   resultTitle: { color: COLORS.onSurfaceVariant, fontWeight: '700', fontSize: 13 },
   clearFilterContent: { paddingHorizontal: 0 },
   listPane: { flex: 1 },
-  mapPane: { flex: 1, marginTop: 8 },
-  mapEmptyPanel: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 20,
-    borderRadius: 16,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    padding: 14,
-  },
-  mapEmptyTitle: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface },
-  mapEmptyText: { marginTop: 3, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
-  listContent: { paddingHorizontal: 16, paddingBottom: 112 },
+  listContent: { paddingHorizontal: spacing.sm, paddingBottom: spacing.md },
   paginationWrap: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: COLORS.background,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
   },
-  pageStatus: { alignItems: 'center', gap: 2, minWidth: 74 },
-  pageText: { color: COLORS.onSurface, fontWeight: '800', fontSize: 15 },
-  pageHint: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '600' },
+  pageStatus: { alignItems: 'center', gap: 1, minWidth: 74 },
+  pageText: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
+  pageHint: { color: COLORS.onSurfaceVariant, fontSize: 10, fontWeight: '600' },
   pagination: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -410,8 +464,8 @@ const styles = StyleSheet.create({
   },
   pageBtn: {
     flex: 1,
-    minHeight: 40,
-    borderRadius: 14,
+    minHeight: 36,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -421,7 +475,7 @@ const styles = StyleSheet.create({
   nextBtn: { backgroundColor: COLORS.primary },
   pageBtnDisabled: { opacity: 0.55 },
   pageBtnPressed: { opacity: 0.78 },
-  pageBtnLabel: { fontSize: 15, fontWeight: '800' },
+  pageBtnLabel: { fontSize: 13, fontWeight: '800' },
   prevBtnLabel: { color: COLORS.primary },
-  nextBtnLabel: { color: '#fff' },
+  nextBtnLabel: { color: COLORS.onPrimary },
 });

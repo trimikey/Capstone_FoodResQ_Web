@@ -17,7 +17,7 @@ import {
   ProgressDots,
   authStyles,
 } from './auth/AuthLayout';
-import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const volunteerInfoSchema = z
   .object({
@@ -55,6 +55,8 @@ interface SpecializationOption {
   title: string;
   description: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  accent: string;
+  container: string;
 }
 
 const SPECIALIZATIONS: SpecializationOption[] = [
@@ -63,18 +65,24 @@ const SPECIALIZATIONS: SpecializationOption[] = [
     title: 'Shipper',
     description: 'Nhận và giao thực phẩm tới điểm nhận.',
     icon: 'truck-delivery-outline',
+    accent: COLORS.blue,
+    container: COLORS.blueContainer,
   },
   {
     id: 'chef',
     title: 'Bếp',
     description: 'Chuẩn bị suất ăn và kiểm tra chất lượng.',
     icon: 'chef-hat',
+    accent: COLORS.orange,
+    container: COLORS.orangeContainer,
   },
   {
     id: 'waiter',
     title: 'Phục vụ',
     description: 'Hỗ trợ phân phát tại chiến dịch.',
     icon: 'silverware-fork-knife',
+    accent: COLORS.purple,
+    container: COLORS.purpleContainer,
   },
 ];
 
@@ -177,6 +185,16 @@ export function SignUpVolunteerScreen({
         description="Chọn một hoặc nhiều chuyên môn. Nếu chọn shipper, app cần thêm thông tin phương tiện."
       />
 
+      <View style={styles.shipperHero}>
+        <View style={styles.shipperHeroIcon}>
+          <MaterialCommunityIcons name="truck-fast-outline" size={24} color={COLORS.onPrimary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.shipperHeroKicker}>Shipper ready</Text>
+          <Text style={styles.shipperHeroTitle}>Thông tin này giúp hệ thống phát đúng đơn gần bạn.</Text>
+        </View>
+      </View>
+
       <FadeInUp delay={80}>
         <AuthCard>
           <AuthField label="Số giấy tờ tùy thân" error={errors.idCard?.message}>
@@ -216,7 +234,7 @@ export function SignUpVolunteerScreen({
                     disabled={isLoading}
                     style={({ pressed }) => [
                       styles.specCard,
-                      isSelected && styles.specCardSelected,
+                      isSelected && [styles.specCardSelected, { borderColor: spec.accent, backgroundColor: spec.container }],
                       pressed && authStyles.pressed,
                     ]}
                     accessibilityRole="checkbox"
@@ -226,10 +244,10 @@ export function SignUpVolunteerScreen({
                     <Checkbox
                       status={isSelected ? 'checked' : 'unchecked'}
                       disabled={isLoading}
-                      color={COLORS.primary}
+                      color={spec.accent}
                     />
                     <View style={styles.specCopy}>
-                      <Text style={[styles.specTitle, isSelected && styles.specTitleSelected]}>
+                      <Text style={[styles.specTitle, isSelected && { color: spec.accent }]}>
                         {spec.title}
                       </Text>
                       <Text style={styles.specDescription}>{spec.description}</Text>
@@ -237,7 +255,7 @@ export function SignUpVolunteerScreen({
                     <MaterialCommunityIcons
                       name={spec.icon}
                       size={23}
-                      color={isSelected ? COLORS.primary : COLORS.onSurfaceVariant}
+                      color={isSelected ? spec.accent : COLORS.onSurfaceVariant}
                     />
                   </Pressable>
                 );
@@ -316,19 +334,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   specCard: {
-    minHeight: 72,
+    minHeight: 82,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    backgroundColor: COLORS.surfaceContainerLow,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
     paddingRight: spacing.md,
+    ...elevation.card,
   },
   specCardSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primaryContainer,
+    borderColor: COLORS.blue,
+    backgroundColor: COLORS.blueContainer,
   },
   specCopy: {
     flex: 1,
@@ -340,7 +359,7 @@ const styles = StyleSheet.create({
     color: COLORS.onSurface,
   },
   specTitleSelected: {
-    color: COLORS.primary,
+    color: COLORS.blue,
   },
   specDescription: {
     marginTop: 3,
@@ -349,18 +368,37 @@ const styles = StyleSheet.create({
     color: COLORS.onSurfaceVariant,
   },
   shipperBox: {
-    borderRadius: radius.md,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-    backgroundColor: COLORS.surfaceContainerLow,
-    padding: spacing.md,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.blueContainer,
+    backgroundColor: COLORS.blueContainer,
+    padding: spacing.lg,
     gap: spacing.md,
   },
   shipperTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '900',
     color: COLORS.onSurface,
   },
+  shipperHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 28,
+    backgroundColor: COLORS.heroDriver,
+    ...elevation.card,
+  },
+  shipperHeroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.blue,
+  },
+  shipperHeroKicker: { color: COLORS.blueContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  shipperHeroTitle: { marginTop: 3, color: COLORS.onPrimary, fontSize: 16, lineHeight: 21, fontWeight: '900' },
   footerActions: {
     flexDirection: 'row',
     gap: spacing.sm,

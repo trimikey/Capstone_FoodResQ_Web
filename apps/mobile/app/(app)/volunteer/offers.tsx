@@ -20,21 +20,17 @@ import {
 } from '@/hooks/useDeliveries';
 import { useListings, type Listing } from '@/hooks/useListings';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
-import { useSetAvailability, useVolunteerMe } from '@/hooks/useVolunteer';
+import { useUpdateLocation, useVolunteerMe } from '@/hooks/useVolunteer';
 import { ListingsMapView, type DeliveryMapRoute } from '@/components/ListingsMapView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess } from '@/services/haptics';
-import {
-  LEGACY_TEST_COORDS,
-  LEGACY_TEST_LOCATION_LABEL,
-  getLocationLabel,
-  isLegacyTestLocation,
-} from '@/services/geolocation';
+import { getCurrentCoords, getLocationLabel, isLegacyTestLocation } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
-import { mobileColors as COLORS } from '@/theme/design';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 function formatKm(km: unknown): string | null {
   if (km == null) return null;
@@ -87,12 +83,6 @@ function offerDetails(offer: TaskOffer) {
   };
 }
 
-function isFaceNotEnrolledError(e: any): boolean {
-  const code = e?.response?.data?.error?.code;
-  const message = e?.response?.data?.error?.message ?? e?.message ?? '';
-  return code === 'FACE_NOT_ENROLLED' || String(message).includes('FACE_NOT_ENROLLED');
-}
-
 /**
  * Đơn cần giao (tab volunteer) - danh sách lời mời giao hàng đang chờ.
  * Mỗi lời mời: điểm lấy/giao + bản đồ tuyến + đếm ngược; Chấp nhận / Từ chối.
@@ -110,10 +100,10 @@ export default function VolunteerOffersScreen() {
   useDeliveryOfferSocket(); // nhận lời mời realtime, không chờ poll 15s
   const accept = useAcceptOffer();
   const reject = useRejectOffer();
-  const setAvailability = useSetAvailability();
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
+  const updateLocation = useUpdateLocation();
   const [now, setNow] = useState(() => Date.now());
   const [actingId, setActingId] = useState<string | null>(null);
   const [resolvedAddress, setResolvedAddress] = useState<{ key: string; value: string } | null>(null);
@@ -147,11 +137,12 @@ export default function VolunteerOffersScreen() {
     [activeOffer?.id, offers]
   );
   const rawCurrentLocation = volunteer?.currentLocation ?? null;
+  const hasLegacyTestLocation =
+    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng)
+      ? isLegacyTestLocation({ lat: rawCurrentLocation.lat, lng: rawCurrentLocation.lng })
+      : false;
   const currentLocation =
-    rawCurrentLocation &&
-    isFiniteCoord(rawCurrentLocation.lat) &&
-    isFiniteCoord(rawCurrentLocation.lng) &&
-    !isLegacyTestLocation(rawCurrentLocation)
+    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng) && !hasLegacyTestLocation
       ? rawCurrentLocation
       : null;
   const currentLat = currentLocation?.lat;
@@ -200,15 +191,10 @@ export default function VolunteerOffersScreen() {
   const currentLocationLabel = currentLocation
     ? getLocationLabel({ lat: currentLocation.lat, lng: currentLocation.lng })
     : '';
-  const locationAddress =
-    currentLocationLabel === LEGACY_TEST_LOCATION_LABEL
-      ? `${LEGACY_TEST_LOCATION_LABEL}, TP. Thủ Đức`
-      : resolvedAddress?.key === currentLocationKey
-        ? resolvedAddress.value
-        : '';
+  const locationAddress = resolvedAddress?.key === currentLocationKey ? resolvedAddress.value : '';
 
   useEffect(() => {
-    if (!currentLocation || currentLocationLabel === LEGACY_TEST_LOCATION_LABEL) return;
+    if (!currentLocation) return;
 
     const controller = new AbortController();
     reverseGeocode(currentLocation.lat, currentLocation.lng, controller.signal)
@@ -218,6 +204,18 @@ export default function VolunteerOffersScreen() {
 
     return () => controller.abort();
   }, [currentLocation, currentLocationKey, currentLocationLabel]);
+
+  useEffect(() => {
+    if (!volunteer?.isAvailable || !hasLegacyTestLocation || updateLocation.isPending) return;
+    let active = true;
+    getCurrentCoords().then(({ coords }) => {
+      if (!active || !coords || isLegacyTestLocation(coords)) return;
+      void updateLocation.mutateAsync({ lng: coords.lng, lat: coords.lat });
+    });
+    return () => {
+      active = false;
+    };
+  }, [hasLegacyTestLocation, updateLocation, volunteer?.isAvailable]);
 
   useEffect(() => {
     if (!activeOffer || activeOffer.id === lastPromptedIdRef.current || actingId) return;
@@ -231,34 +229,6 @@ export default function VolunteerOffersScreen() {
     ),
     []
   );
-
-  const handleUseVinhomesLocation = async () => {
-    try {
-      await setAvailability.mutateAsync({
-        isAvailable: true,
-        lng: LEGACY_TEST_COORDS.lng,
-        lat: LEGACY_TEST_COORDS.lat,
-      });
-      await Promise.all([refetchVolunteer(), refetch()]);
-      void notifySuccess();
-      Toast.show({
-        type: 'success',
-        text1: 'Đã dùng vị trí test',
-        text2: 'Shipper đang ở Vinhomes Grand Park và sẵn sàng nhận đơn.',
-      });
-    } catch (e: any) {
-      void notifyError();
-      if (isFaceNotEnrolledError(e)) {
-        setFacePromptVisible(true);
-        return;
-      }
-      Popup.show({
-        type: 'error',
-        text1: 'Không cập nhật được vị trí test',
-        text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
-      });
-    }
-  };
 
   const handleEnrollFace = async (mode: 'camera' | 'library') => {
     try {
@@ -344,13 +314,16 @@ export default function VolunteerOffersScreen() {
       <View style={styles.priorityCard}>
         <View style={styles.priorityTop}>
           <View style={styles.priorityIcon}>
-            <MaterialCommunityIcons name="navigation-variant-outline" size={22} color={COLORS.primary} />
+            <MaterialCommunityIcons name="navigation-variant-outline" size={22} color={COLORS.blue} />
           </View>
           <View style={styles.priorityTitleWrap}>
             <Text style={styles.sectionKicker}>Đơn ưu tiên</Text>
             <Text style={styles.priorityTitle} numberOfLines={2}>
               {details.title}
             </Text>
+            <View style={styles.priorityStatusRow}>
+              <StatusBadge label={expired ? 'Đã hết hạn' : 'Chờ nhận đơn'} tone={expired ? 'danger' : 'info'} />
+            </View>
           </View>
           {details.distanceLabel ? (
             <View style={styles.distBadgeStrong}>
@@ -369,7 +342,7 @@ export default function VolunteerOffersScreen() {
           <View style={styles.routeDivider} />
           <RouteLine
             icon="map-marker-radius-outline"
-            iconColor={COLORS.primary}
+            iconColor={COLORS.blue}
             label="Giao đến"
             value={details.dropoffAddress}
           />
@@ -377,8 +350,8 @@ export default function VolunteerOffersScreen() {
 
         <View style={styles.priorityMetaRow}>
           <MetaPill icon="timer-sand" text={countdown(offer.expiresAt, now)} danger={expired} />
-          {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} /> : null}
-          {details.offeredTime ? <MetaPill icon="clock-outline" text={details.offeredTime} /> : null}
+          {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} tone="purple" /> : null}
+          {details.offeredTime ? <MetaPill icon="clock-outline" text={details.offeredTime} tone="blue" /> : null}
         </View>
 
         <View style={styles.priorityActions}>
@@ -437,13 +410,15 @@ export default function VolunteerOffersScreen() {
             <Text style={styles.queueTitle} numberOfLines={1}>
               {details.title}
             </Text>
-            <Text style={styles.queueSub} numberOfLines={1}>
-              {deferred ? 'Đã để sau' : 'Đang chờ phản hồi'}
-            </Text>
+            <StatusBadge
+              label={expired ? 'Đã hết hạn' : deferred ? 'Đã để sau' : 'Chờ phản hồi'}
+              tone={expired ? 'danger' : deferred ? 'neutral' : 'info'}
+              style={styles.queueStatus}
+            />
           </View>
           {details.distanceLabel ? (
             <View style={styles.distBadge}>
-              <MaterialCommunityIcons name="map-marker-distance" size={13} color={COLORS.primary} />
+              <MaterialCommunityIcons name="map-marker-distance" size={13} color={COLORS.blue} />
               <Text style={styles.distText}>{details.distanceLabel}</Text>
             </View>
           ) : null}
@@ -482,8 +457,8 @@ export default function VolunteerOffersScreen() {
               onPress={() => handleAccept(item)}
               disabled={busy || expired}
               loading={busy && accept.isPending}
-              buttonColor={COLORS.primaryContainer}
-              textColor={COLORS.primary}
+              buttonColor={COLORS.blueContainer}
+              textColor={COLORS.blue}
               compact
               style={styles.queueAcceptBtn}
               labelStyle={styles.queueActionLabel}
@@ -542,13 +517,16 @@ export default function VolunteerOffersScreen() {
         <BottomSheetView style={styles.sheetContent}>
           <View style={styles.sheetHead}>
             <View style={styles.sheetIcon}>
-              <MaterialCommunityIcons name="truck-fast-outline" size={24} color={COLORS.primary} />
+              <MaterialCommunityIcons name="truck-fast-outline" size={24} color={COLORS.blue} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.sheetLabel}>Đơn mới cần giao</Text>
               <Text style={styles.sheetTitle} numberOfLines={2}>
                 {details.title}
               </Text>
+              <View style={styles.priorityStatusRow}>
+                <StatusBadge label={expired ? 'Đã hết hạn' : 'Cần phản hồi'} tone={expired ? 'danger' : 'info'} />
+              </View>
             </View>
           </View>
 
@@ -562,7 +540,7 @@ export default function VolunteerOffersScreen() {
             <View style={styles.routeDivider} />
             <RouteLine
               icon="map-marker-radius-outline"
-              iconColor={COLORS.primary}
+              iconColor={COLORS.blue}
               label="Điểm giao"
               value={details.dropoffAddress}
             />
@@ -570,8 +548,8 @@ export default function VolunteerOffersScreen() {
 
           <View style={styles.priorityMetaRow}>
             <MetaPill icon="timer-sand" text={countdown(activeOffer.expiresAt, now)} danger={expired} />
-            {details.distanceLabel ? <MetaPill icon="map-marker-distance" text={details.distanceLabel} /> : null}
-            {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} /> : null}
+            {details.distanceLabel ? <MetaPill icon="map-marker-distance" text={details.distanceLabel} tone="blue" /> : null}
+            {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} tone="purple" /> : null}
           </View>
 
           <View style={styles.sheetActions}>
@@ -628,7 +606,7 @@ export default function VolunteerOffersScreen() {
             <MaterialCommunityIcons
               name={volunteer?.isAvailable ? 'access-point' : 'access-point-off'}
               size={14}
-              color={volunteer?.isAvailable ? COLORS.primary : COLORS.onSurfaceVariant}
+              color={volunteer?.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
             />
             <Text
               style={[
@@ -641,9 +619,38 @@ export default function VolunteerOffersScreen() {
           </View>
         }
       />
+      <View style={styles.dispatchHero}>
+        <View style={styles.dispatchTop}>
+          <View style={styles.dispatchIcon}>
+            <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
+          </View>
+          <View style={styles.dispatchCopy}>
+            <Text style={styles.dispatchKicker}>Shipper dispatch</Text>
+            <Text style={styles.dispatchTitle}>
+              {activeOffer ? 'Có đơn cần phản hồi ngay' : volunteer?.isAvailable ? 'Đang quét đơn gần bạn' : 'Bật nhận đơn để bắt đầu'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.dispatchStats}>
+          <View style={styles.dispatchStat}>
+            <Text style={styles.dispatchStatValue}>{offers.length}</Text>
+            <Text style={styles.dispatchStatLabel}>lời mời</Text>
+          </View>
+          <View style={styles.dispatchDivider} />
+          <View style={styles.dispatchStat}>
+            <Text style={styles.dispatchStatValue}>{queueOffers.length}</Text>
+            <Text style={styles.dispatchStatLabel}>hàng chờ</Text>
+          </View>
+          <View style={styles.dispatchDivider} />
+          <View style={styles.dispatchStat}>
+            <Text style={styles.dispatchStatValue}>{mapListings.length}</Text>
+            <Text style={styles.dispatchStatLabel}>điểm gần</Text>
+          </View>
+        </View>
+      </View>
       <View style={styles.locationBar}>
         <View style={styles.locationIcon}>
-          <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.primary} />
+          <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.blue} />
         </View>
         <View style={styles.locationContent}>
           <Text style={styles.locationLabel}>Vị trí hiện tại</Text>
@@ -654,24 +661,10 @@ export default function VolunteerOffersScreen() {
             {locationHint}
           </Text>
         </View>
-        {__DEV__ ? (
-          <Button
-            mode="outlined"
-            compact
-            onPress={handleUseVinhomesLocation}
-            loading={setAvailability.isPending}
-            disabled={setAvailability.isPending}
-            textColor={COLORS.primary}
-            style={styles.locationButton}
-            labelStyle={styles.locationButtonLabel}
-          >
-            VGP
-          </Button>
-        ) : null}
       </View>
       <View style={styles.bulkEntry}>
         <View style={styles.bulkEntryIcon}>
-          <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.primary} />
+          <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.amber} />
         </View>
         <View style={styles.bulkEntryText}>
           <Text style={styles.bulkEntryTitle}>Giao sỉ nhiều điểm</Text>
@@ -683,8 +676,8 @@ export default function VolunteerOffersScreen() {
           mode="contained-tonal"
           compact
           onPress={() => router.push('/(app)/volunteer/bulk')}
-          buttonColor={COLORS.primaryContainer}
-          textColor={COLORS.primary}
+          buttonColor={COLORS.amberContainer}
+          textColor={COLORS.onAmberContainer}
           labelStyle={styles.bulkEntryActionLabel}
         >
           Mở
@@ -693,7 +686,7 @@ export default function VolunteerOffersScreen() {
       {needsFaceEnrollment ? (
         <View style={styles.faceBanner}>
           <View style={styles.faceBannerIcon}>
-            <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.warning} />
+            <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.purple} />
           </View>
           <View style={styles.faceBannerText}>
             <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
@@ -705,8 +698,8 @@ export default function VolunteerOffersScreen() {
             mode="contained-tonal"
             compact
             onPress={() => setFacePromptVisible(true)}
-            buttonColor={COLORS.secondaryContainer}
-            textColor={COLORS.warning}
+            buttonColor={COLORS.purpleContainer}
+            textColor={COLORS.purple}
             labelStyle={styles.faceBannerActionLabel}
             style={styles.faceBannerAction}
           >
@@ -757,7 +750,7 @@ function FaceEnrollmentPrompt({
       <Dialog visible={visible} onDismiss={busy ? undefined : onDismiss} style={styles.faceDialog}>
         <Dialog.Content style={styles.faceDialogContent}>
           <View style={styles.faceDialogIcon}>
-            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.primary} />
+            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.purple} />
           </View>
           <Text style={styles.faceDialogTitle}>Cần cập nhật khuôn mặt</Text>
           <Text style={styles.faceDialogText}>
@@ -776,12 +769,12 @@ function FaceEnrollmentPrompt({
             disabled={busy}
             style={styles.faceDialogPrimary}
           >
-            {busy ? <ActivityIndicator color="#ffffff" size={16} /> : 'Cập nhật ngay'}
+            {busy ? <ActivityIndicator color={COLORS.onPrimary} size={16} /> : 'Cập nhật ngay'}
           </Button>
           <Button
             icon="image-outline"
             onPress={() => onEnroll('library')}
-            textColor={COLORS.primary}
+            textColor={COLORS.purple}
             disabled={busy}
           >
             Chọn ảnh
@@ -830,7 +823,11 @@ const MapWatchCard = memo(function MapWatchCard({
           </Text>
         </View>
         <View style={styles.watchBadge}>
-          <MaterialCommunityIcons name={hasRoute ? 'map-marker-path' : 'radar'} size={16} color={COLORS.primary} />
+          <MaterialCommunityIcons
+            name={hasRoute ? 'map-marker-path' : 'radar'}
+            size={16}
+            color={hasRoute ? COLORS.blue : COLORS.teal}
+          />
           <Text style={styles.watchBadgeText}>{hasRoute ? 'Đơn' : '5 km'}</Text>
         </View>
       </View>
@@ -849,7 +846,7 @@ const MapWatchCard = memo(function MapWatchCard({
             <View style={styles.providerStrip}>
               {nearest.map((item) => (
                 <View key={item.id} style={styles.providerChip}>
-                  <MaterialCommunityIcons name="storefront-outline" size={13} color={COLORS.primary} />
+                  <MaterialCommunityIcons name="storefront-outline" size={13} color={COLORS.orange} />
                   <Text style={styles.providerChipText} numberOfLines={1}>
                     {item.provider?.businessName || item.title}
                   </Text>
@@ -861,7 +858,11 @@ const MapWatchCard = memo(function MapWatchCard({
       ) : (
         <View style={[styles.radarPanel, compact && styles.radarPanelCompact]}>
           <View style={styles.radarCircle}>
-            <MaterialCommunityIcons name={isLoading ? 'map-search-outline' : 'map-marker-question-outline'} size={32} color={COLORS.primary} />
+            <MaterialCommunityIcons
+              name={isLoading ? 'map-search-outline' : 'map-marker-question-outline'}
+              size={32}
+              color={COLORS.blue}
+            />
           </View>
           <Text style={styles.radarTitle}>
             {isLoading ? 'Đang đọc khu vực quanh bạn' : 'Chưa có điểm quanh vị trí này'}
@@ -915,7 +916,7 @@ function EligibilityEmptyState() {
     <View style={styles.emptyWrap}>
       <View style={styles.reasonCard}>
         <View style={styles.emptyIcon}>
-          <MaterialCommunityIcons name="map-marker-alert-outline" size={34} color={COLORS.primary} />
+          <MaterialCommunityIcons name="map-marker-alert-outline" size={34} color={COLORS.blue} />
         </View>
         <Text style={styles.emptyTitle}>Chưa sẵn sàng nhận đơn</Text>
         <Text style={styles.emptyText}>
@@ -923,7 +924,7 @@ function EligibilityEmptyState() {
         </Text>
         <View style={styles.checkList}>
           <CheckRow text="Bật sẵn sàng nhận đơn trong Hồ sơ." />
-          <CheckRow text="Cho phép định vị hoặc dùng vị trí test ở môi trường dev." />
+          <CheckRow text="Cho phép định vị chính xác trên thiết bị thật." />
           <CheckRow text="Đơn sẽ xuất hiện khi hệ thống có lời mời phù hợp." />
         </View>
       </View>
@@ -934,7 +935,7 @@ function EligibilityEmptyState() {
 function CheckRow({ text }: { text: string }) {
   return (
     <View style={styles.checkRow}>
-      <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.primary} />
+      <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.teal} />
       <Text style={styles.checkText}>{text}</Text>
     </View>
   );
@@ -987,15 +988,24 @@ function MetaPill({
   icon,
   text,
   danger,
+  tone = 'teal',
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   text: string;
   danger?: boolean;
+  tone?: 'teal' | 'blue' | 'purple' | 'orange';
 }) {
+  const toneColors = {
+    teal: { bg: COLORS.tealContainer, fg: COLORS.teal },
+    blue: { bg: COLORS.blueContainer, fg: COLORS.blue },
+    purple: { bg: COLORS.purpleContainer, fg: COLORS.purple },
+    orange: { bg: COLORS.orangeContainer, fg: COLORS.orange },
+  }[tone];
+
   return (
-    <View style={[styles.metaPill, danger && styles.metaPillDanger]}>
-      <MaterialCommunityIcons name={icon} size={14} color={danger ? COLORS.danger : COLORS.primary} />
-      <Text style={[styles.metaPillText, danger && styles.metaPillTextDanger]} numberOfLines={1}>
+    <View style={[styles.metaPill, { backgroundColor: toneColors.bg }, danger && styles.metaPillDanger]}>
+      <MaterialCommunityIcons name={icon} size={14} color={danger ? COLORS.danger : toneColors.fg} />
+      <Text style={[styles.metaPillText, { color: toneColors.fg }, danger && styles.metaPillTextDanger]} numberOfLines={1}>
         {text}
       </Text>
     </View>
@@ -1004,8 +1014,42 @@ function MetaPill({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 104 },
-  listHeader: { gap: 14, paddingBottom: 10 },
+  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 104 },
+  listHeader: { gap: spacing.md, paddingBottom: spacing.sm },
+  dispatchHero: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 30,
+    backgroundColor: COLORS.heroDriver,
+    gap: spacing.md,
+    ...elevation.card,
+  },
+  dispatchTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  dispatchIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.blue,
+  },
+  dispatchCopy: { flex: 1 },
+  dispatchKicker: { color: COLORS.blueContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  dispatchTitle: { marginTop: 3, color: COLORS.onPrimary, fontSize: 21, lineHeight: 26, fontWeight: '900' },
+  dispatchStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.xl,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.11)',
+  },
+  dispatchStat: { flex: 1 },
+  dispatchStatValue: { color: COLORS.onPrimary, fontSize: 18, fontWeight: '900' },
+  dispatchStatLabel: { marginTop: 1, color: COLORS.indigoContainer, fontSize: 11, fontWeight: '800' },
+  dispatchDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: spacing.sm },
   headerStatus: {
     minHeight: 32,
     borderRadius: 999,
@@ -1015,23 +1059,23 @@ const styles = StyleSheet.create({
     gap: 5,
     borderWidth: 1,
   },
-  headerStatusOn: { backgroundColor: COLORS.primaryContainer, borderColor: COLORS.primaryContainer },
+  headerStatusOn: { backgroundColor: COLORS.tealContainer, borderColor: COLORS.tealContainer },
   headerStatusOff: { backgroundColor: COLORS.surfaceVariant, borderColor: COLORS.outline },
   headerStatusText: { fontSize: 12, fontWeight: '800' },
-  headerStatusTextOn: { color: COLORS.primary },
+  headerStatusTextOn: { color: COLORS.teal },
   headerStatusTextOff: { color: COLORS.onSurfaceVariant },
   locationBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 8,
-    padding: 12,
-    borderRadius: 16,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.xl,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
   locationIcon: {
     width: 36,
@@ -1039,7 +1083,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
   },
   locationContent: { flex: 1 },
   locationLabel: {
@@ -1063,7 +1107,7 @@ const styles = StyleSheet.create({
   locationButton: {
     minWidth: 54,
     borderRadius: 12,
-    borderColor: COLORS.primary,
+    borderColor: COLORS.blue,
   },
   locationButtonLabel: {
     marginHorizontal: 8,
@@ -1071,13 +1115,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   bulkEntry: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 18,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: COLORS.outline,
-    backgroundColor: COLORS.surface,
+    borderColor: COLORS.amberContainer,
+    backgroundColor: COLORS.amberContainer,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -1088,7 +1132,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.orangeContainer,
   },
   bulkEntryText: { flex: 1 },
   bulkEntryTitle: { fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
@@ -1098,13 +1142,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: COLORS.secondaryContainer,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: COLORS.purpleContainer,
     borderWidth: 1,
-    borderColor: '#f6b99f',
+    borderColor: COLORS.purpleContainer,
   },
   faceBannerIcon: {
     width: 36,
@@ -1127,7 +1171,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.purpleContainer,
     marginBottom: 14,
   },
   faceDialogTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface, textAlign: 'center' },
@@ -1140,35 +1184,32 @@ const styles = StyleSheet.create({
   },
   faceDialogPrimary: { borderRadius: 12 },
   priorityCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: COLORS.primaryContainer,
-    gap: 14,
-    shadowColor: '#174b31',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 2,
+    borderColor: COLORS.blue,
+    gap: spacing.md,
+    ...elevation.card,
   },
   priorityTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   priorityIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
   },
   priorityTitleWrap: { flex: 1 },
+  priorityStatusRow: { marginTop: 7 },
   sectionKicker: {
     fontSize: 11,
     fontWeight: '800',
-    color: COLORS.primary,
+    color: COLORS.blue,
     textTransform: 'uppercase',
   },
-  priorityTitle: { marginTop: 2, fontSize: 18, lineHeight: 23, fontWeight: '800', color: COLORS.onSurface },
+  priorityTitle: { marginTop: 2, fontSize: 20, lineHeight: 25, fontWeight: '900', color: COLORS.onSurface },
   distBadgeStrong: {
     paddingHorizontal: 9,
     paddingVertical: 5,
@@ -1177,8 +1218,8 @@ const styles = StyleSheet.create({
   },
   distTextStrong: { fontSize: 12, fontWeight: '800', color: COLORS.secondary },
   routeBox: {
-    padding: 12,
-    borderRadius: 16,
+    padding: spacing.md,
+    borderRadius: radius.xl,
     backgroundColor: COLORS.surfaceContainerLow,
     gap: 10,
   },
@@ -1206,14 +1247,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.tealContainer,
   },
-  metaPillDanger: { backgroundColor: '#ffdad6' },
-  metaPillText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  metaPillDanger: { backgroundColor: COLORS.errorContainer },
+  metaPillText: { fontSize: 12, fontWeight: '800' },
   metaPillTextDanger: { color: COLORS.danger },
   priorityActions: { flexDirection: 'row', gap: 10 },
-  prioritySecondaryBtn: { flex: 0.9, borderRadius: 14, borderColor: COLORS.outline },
-  priorityPrimaryBtn: { flex: 1.1, borderRadius: 14 },
+  prioritySecondaryBtn: { flex: 0.9, borderRadius: radius.lg, borderColor: COLORS.outline },
+  priorityPrimaryBtn: { flex: 1.1, borderRadius: radius.lg },
   actionLabel: { fontWeight: '800' },
   queueHeader: {
     flexDirection: 'row',
@@ -1229,32 +1270,33 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.muted,
+    backgroundColor: COLORS.purpleContainer,
   },
-  queueCountText: { fontSize: 13, fontWeight: '800', color: COLORS.primary },
+  queueCountText: { fontSize: 13, fontWeight: '800', color: COLORS.purple },
   queueCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
+    borderRadius: radius.xl,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     gap: 10,
+    ...elevation.card,
   },
   queueCardMuted: { opacity: 0.68 },
   queueHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   queueTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
-  queueSub: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  queueStatus: { marginTop: 6 },
   distBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
   },
-  distText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  distText: { fontSize: 12, fontWeight: '700', color: COLORS.blue },
   compactRoute: { gap: 5 },
   compactLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   compactLineText: { flex: 1, fontSize: 13, color: COLORS.onSurfaceVariant },
@@ -1271,11 +1313,13 @@ const styles = StyleSheet.create({
   },
   watchCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 14,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     gap: 12,
+    overflow: 'hidden',
+    ...elevation.card,
   },
   watchCardCompact: {
     padding: 12,
@@ -1296,12 +1340,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.tealContainer,
   },
-  watchBadgeText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  watchBadgeText: { fontSize: 12, fontWeight: '800', color: COLORS.teal },
   mapFrame: {
     height: 320,
-    borderRadius: 16,
+    borderRadius: 22,
     overflow: 'hidden',
     backgroundColor: COLORS.surfaceContainerLow,
   },
@@ -1345,7 +1389,7 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
     marginBottom: 12,
   },
   radarTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface, textAlign: 'center' },
@@ -1358,10 +1402,11 @@ const styles = StyleSheet.create({
   },
   reasonCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 28,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
   },
   emptyIcon: {
     width: 66,
@@ -1369,7 +1414,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.blueContainer,
     marginBottom: 14,
   },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface },
@@ -1393,12 +1438,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.purpleContainer,
   },
   sheetLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: COLORS.primary,
+    color: COLORS.purple,
     textTransform: 'uppercase',
   },
   sheetTitle: { marginTop: 2, fontSize: 18, lineHeight: 23, fontWeight: '800', color: COLORS.onSurface },

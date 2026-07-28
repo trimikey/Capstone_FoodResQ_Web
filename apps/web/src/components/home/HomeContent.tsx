@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { useListings } from '@/hooks/useListings';
 import { usePublicCampaigns } from '@/hooks/useCampaigns';
-import { mediaUrl } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 
 // Deterministic number formatter (Vietnamese style using dots as thousand separator) to prevent SSR/CSR hydration mismatch.
 function formatNumber(num: number): string {
@@ -424,7 +425,7 @@ export default function HomeContent() {
                     </span>
                     <span className="flex items-center gap-1 shrink-0">
                       <span className="material-symbols-outlined text-[16px] text-neutral-400">inventory_2</span>
-                      Còn {item.quantityRemaining} {item.quantityUnit}
+                      Còn {item.quantityRemaining} {UNIT_LABEL[item.quantityUnit as QuantityUnit] ?? item.quantityUnit}
                     </span>
                   </div>
                   <button

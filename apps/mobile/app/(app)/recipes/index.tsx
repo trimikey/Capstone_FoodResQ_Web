@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, TextInput, FAB, Chip } from 'react-native-paper';
+import { Text, TextInput, FAB, Chip, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
@@ -14,8 +14,8 @@ import {
 import { useMyProfile } from '@/hooks/useProfile';
 import { AppImage } from '@/components/ui/AppImage';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { MetricPill, SectionHeader, SurfaceCard } from '@/components/ui/SurfaceCard';
-import { mobileColors as COLORS } from '@/theme/design';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 type Tab = 'all' | 'mine';
 
@@ -32,12 +32,12 @@ function RecipeCard({ item, onPress }: { item: RecipeListItem; onPress: () => vo
           <MaterialCommunityIcons name="silverware-fork-knife" size={28} color={COLORS.onSurfaceVariant} />
         </View>
       )}
+      <View style={styles.recipeBadge}>
+        <StatusBadge label={dm.label} tone="info" />
+      </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={2}>{item.name}</Text>
         <View style={styles.metaRow}>
-          <View style={[styles.badge, { backgroundColor: dm.bg }]}>
-            <Text style={[styles.badgeText, { color: dm.color }]}>{dm.label}</Text>
-          </View>
           {item.servings > 0 ? (
             <Text style={styles.metaText}>{item.servings} suất</Text>
           ) : null}
@@ -106,13 +106,14 @@ export default function RecipesScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <SurfaceCard style={styles.toolbarCard}>
-        <SectionHeader
-          icon="chef-hat"
-          title="Thư viện món ăn"
-          subtitle="Tìm công thức để tận dụng thực phẩm còn tốt và chia sẻ cho bếp ăn."
-          right={<MetricPill icon="book-open-page-variant-outline" label={`${items.length} món`} tone="primary" />}
-        />
+      <View style={styles.hero}>
+        <View style={styles.heroHead}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroKicker}>Kitchen playbook</Text>
+            <Text style={styles.heroTitle}>Công thức cho bếp ăn cộng đồng</Text>
+          </View>
+          <IconButton icon="chef-hat" mode="contained" containerColor={COLORS.surface} iconColor={COLORS.primary} />
+        </View>
         <TextInput
           mode="outlined"
           placeholder="Tìm công thức..."
@@ -140,10 +141,11 @@ export default function RecipesScreen() {
             </Chip>
           ))}
         </View>
-      </SurfaceCard>
+      </View>
 
       <FlashList
         data={items}
+        numColumns={2}
         keyExtractor={(item: RecipeListItem) => item.id}
         renderItem={({ item }: { item: RecipeListItem }) => (
           <RecipeCard item={item} onPress={() => router.push(`/(app)/recipes/${item.id}`)} />
@@ -158,7 +160,7 @@ export default function RecipesScreen() {
         <FAB
           icon="plus"
           label="Tạo công thức"
-          color="#fff"
+          color={COLORS.onPrimary}
           style={styles.fab}
           onPress={() => router.push('/(app)/recipes/create')}
         />
@@ -174,26 +176,51 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'space-between',
   },
   headerTitle: { fontWeight: '700', color: COLORS.onSurface },
-  toolbarCard: { marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 },
+  hero: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 28,
+    padding: spacing.lg,
+    backgroundColor: COLORS.primaryStrong,
+    gap: spacing.md,
+  },
+  heroHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  heroKicker: { color: COLORS.secondaryContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  heroTitle: { marginTop: 4, color: COLORS.onPrimary, fontSize: 22, lineHeight: 28, fontWeight: '900' },
   search: { backgroundColor: COLORS.surface },
   tabs: { flexDirection: 'row', gap: 8 },
   tabChip: { backgroundColor: COLORS.surface, borderColor: COLORS.outline },
   tabChipActive: { backgroundColor: COLORS.primary },
-  tabTextActive: { color: '#fff', fontWeight: '700' },
+  tabTextActive: { color: COLORS.onPrimary, fontWeight: '800' },
   list: { paddingHorizontal: 16, paddingBottom: 96 },
   card: {
-    flexDirection: 'row', gap: 12, backgroundColor: COLORS.surface, borderRadius: 16,
-    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: COLORS.outline,
+    flex: 1,
+    marginHorizontal: 4,
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.xl,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    overflow: 'hidden',
+    ...elevation.card,
   },
-  thumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: '#f3f4f6' },
+  thumb: { width: '100%', height: 116, backgroundColor: COLORS.neutralContainer },
   thumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  cardBody: { flex: 1, justifyContent: 'center', gap: 6 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.onSurface, lineHeight: 21 },
+  recipeBadge: { position: 'absolute', left: spacing.md, top: spacing.md },
+  cardBody: { padding: spacing.md, gap: spacing.sm },
+  cardTitle: { fontSize: 14, fontWeight: '900', color: COLORS.onSurface, lineHeight: 19 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  metaText: { fontSize: 12, color: COLORS.onSurfaceVariant },
-  author: { fontSize: 12, color: COLORS.onSurfaceVariant },
+  metaText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  author: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '600' },
   emptyWrap: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 32 },
   emptyIcon: {
     width: 88, height: 88, borderRadius: 44, backgroundColor: '#ecfdf5',
