@@ -33,8 +33,18 @@ export interface CampaignDonation {
 }
 
 /** Mục thực đơn / lịch trình của chiến dịch (lưu JSON ở backend). */
-export interface MenuItem { name: string; type?: string }
+export interface MenuItem { name: string; type?: string; plannedServings?: number }
 export interface ScheduleItem { time: string; label: string }
+export interface SupplyItem { name: string; quantity?: number | null; unit?: string | null }
+export interface CampaignShiftSummary {
+  id: string;
+  label: string;
+  role: AssignmentRole | null;
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+  slotsFilled: number;
+}
 
 /** Chiến dịch bếp ăn — khớp shape GET /campaigns và GET /campaigns/:id. */
 export interface Campaign {
@@ -54,12 +64,15 @@ export interface Campaign {
   status: CampaignStatus;
   expectedServings?: number | null;
   actualServings?: number | null;
+  distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
+  peopleServed?: number;
   imageUrls?: string[];
   charityReceiver?: { organizationName: string | null; user?: { fullName: string } };
   // Chỉ có ở chi tiết (GET /campaigns/:id)
   menuItems?: MenuItem[];
   scheduleItems?: ScheduleItem[];
-  supplyItems?: string[];
+  supplyItems?: (string | SupplyItem)[];
+  shifts?: CampaignShiftSummary[];
   assignments?: CampaignAssignment[];
   donations?: CampaignDonation[];
 }
@@ -89,7 +102,14 @@ export interface CreateCampaignInput {
   imageUrls?: string[];
   menuItems?: MenuItem[];
   scheduleItems?: ScheduleItem[];
-  supplyItems?: string[];
+  supplyItems?: SupplyItem[];
+  shifts?: {
+    label: string;
+    role?: AssignmentRole;
+    startTime: string;
+    endTime: string;
+    slotsNeeded: number;
+  }[];
 }
 
 export interface CampaignChangeRequest {
@@ -138,6 +158,140 @@ export interface CompletedCampaign {
   organizationName: string | null;
 }
 
+export interface PublicCampaign {
+  id: string;
+  title: string;
+  description: string | null;
+  scheduledDate: string;
+  startTime: string;
+  endTime: string;
+  kitchenAddress: string;
+  imageUrls: string[];
+  status: CampaignStatus;
+  organizationName: string | null;
+}
+
+export interface CampaignParticipant {
+  id: string;
+  role: AssignmentRole;
+  status: string;
+  fullName: string;
+  avatarUrl: string | null;
+  rank: string;
+}
+
+export interface CampaignProofPhoto {
+  url: string;
+  kind: 'ingredient' | 'cooked' | 'distribution' | (string & {});
+  by: string;
+}
+
+export interface CampaignDistribution {
+  id: string;
+  roundLabel: string | null;
+  servingsServed: number;
+  peopleServed: number;
+  leftoverServings: number;
+  photoUrl: string | null;
+  note: string | null;
+  distributedAt: string;
+  servedBy: string;
+  feedback: { satisfaction: number; comment: string | null; createdAt: string }[];
+}
+
+export interface CampaignExperience {
+  id: string;
+  content: string;
+  imageUrls: string[];
+  rating: number | null;
+  createdAt: string;
+  fullName: string;
+  avatarUrl: string | null;
+  rank: string;
+}
+
+export interface PublicCampaignDetail extends PublicCampaign {
+  chefSlotsNeeded: number;
+  waiterSlotsNeeded: number;
+  shipperSlotsNeeded: number;
+  chefSlotsFilled: number;
+  waiterSlotsFilled: number;
+  shipperSlotsFilled: number;
+  expectedServings: number | null;
+  actualServings: number | null;
+  menuItems: MenuItem[];
+  scheduleItems: ScheduleItem[];
+  supplyItems: (string | SupplyItem)[];
+  participants: CampaignParticipant[];
+  donations: CampaignDonation[];
+  proofGallery: CampaignProofPhoto[];
+  distributions: CampaignDistribution[];
+  distributionSummary: { servingsServed: number; peopleServed: number; leftoverServings: number };
+  avgSatisfaction: number | null;
+  feedbackCount: number;
+  experiences: CampaignExperience[];
+  shifts: CampaignShiftSummary[];
+}
+
+export interface ReviewAssignmentInput {
+  campaignId: string;
+  assignmentId: string;
+  action: 'approved' | 'rejected';
+  note?: string;
+}
+
+export interface ProviderSummary {
+  id: string;
+  fullName: string;
+  avatarUrl: string | null;
+  phone: string | null;
+  providerProfile: {
+    id: string;
+    businessName: string;
+    businessType: string;
+    verificationStatus: string;
+    address: string;
+  } | null;
+  activeListingsCount?: number;
+}
+
+export interface ProviderActiveListing {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string;
+  quantityRemaining: number;
+  quantityUnit: string;
+  pickupStartTime: string;
+  pickupEndTime: string;
+  pickupAddress: string;
+  status: string;
+  weightPerUnitKg: number | null;
+}
+
+export interface CampaignProviderRequest {
+  id: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'expired' | (string & {});
+  message: string | null;
+  durationMonths: number | null;
+  reviewedAt: string | null;
+  reviewedNote: string | null;
+  createdAt: string;
+  campaign?: { id: string; title: string; scheduledDate?: string | null } | null;
+  provider?: { businessName: string; user?: { fullName: string } } | null;
+  receiver?: { organizationName: string | null; user: { fullName: string } };
+}
+
+export interface SubmitProviderProposalInput {
+  businessName: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  address?: string;
+  note?: string;
+  durationMonths?: number;
+}
+
 /**
  * Danh sách chiến dịch đang mở/đang diễn ra (open + in_progress). GET /campaigns
  * Mọi role đăng nhập đều xem được; provider dùng để chọn chiến dịch quyên góp.
@@ -165,12 +319,37 @@ export function useCampaignDetail(id?: string) {
   });
 }
 
+/** Public detail giàu dữ liệu cho provider/volunteer, khớp web /campaigns/[id]. */
+export function usePublicCampaignDetail(id?: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'public', id],
+    enabled: !!id,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<PublicCampaignDetail>>(endpoints.campaigns.publicDetail(id!));
+      return res.data.data;
+    },
+  });
+}
+
+export function usePublicCampaigns(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'public'],
+    enabled,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<PublicCampaign[]>>(endpoints.campaigns.public);
+      return res.data.data;
+    },
+  });
+}
+
 /** Provider quyên góp nguyên liệu cho chiến dịch. POST /campaigns/:id/donations */
 export function usePledgeDonation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ campaignId, itemName, quantity, note }: PledgeDonationInput) => {
-      const res = await apiClient.post<ApiResponse<CampaignDonation>>(
+      const res = await apiClient.post<ApiResponse<Campaign>>(
         endpoints.campaigns.donate(campaignId),
         { itemName, ...(quantity ? { quantity } : {}), ...(note ? { note } : {}) }
       );
@@ -179,6 +358,40 @@ export function usePledgeDonation() {
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+    },
+  });
+}
+
+export function useAddExperience() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, content, rating, imageUrls }: { id: string; content: string; rating?: number; imageUrls?: string[] }) => {
+      const res = await apiClient.post<ApiResponse<CampaignExperience>>(endpoints.campaigns.addExperience(id), {
+        content,
+        ...(rating != null ? { rating } : {}),
+        ...(imageUrls?.length ? { imageUrls } : {}),
+      });
+      return res.data.data;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', id] });
+    },
+  });
+}
+
+/** TNV upload ảnh cảm nhận chiến dịch completed. POST /campaigns/experiences/upload-image */
+export function useUploadExperienceImage() {
+  return useMutation({
+    mutationFn: async (photo: CapturedImage) => {
+      const form = new FormData();
+      form.append('image', photo as unknown as Blob);
+      const res = await apiClient.post<ApiResponse<{ url: string }>>(
+        endpoints.campaigns.uploadExperienceImage,
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
     },
   });
 }
@@ -304,6 +517,25 @@ export function useConfirmDonation() {
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+    },
+  });
+}
+
+export function useReviewAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, assignmentId, action, note }: ReviewAssignmentInput) => {
+      const res = await apiClient.patch<ApiResponse<CampaignAssignment>>(
+        endpoints.campaigns.reviewAssignment(campaignId, assignmentId),
+        { action, ...(note ? { note } : {}) }
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
     },
   });
 }
@@ -427,6 +659,97 @@ export function useAdvanceTask() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+    },
+  });
+}
+
+export function useSendProviderRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { campaignId: string; providerId: string; message?: string; durationMonths?: number }) => {
+      const res = await apiClient.post<ApiResponse<CampaignProviderRequest>>(endpoints.campaigns.sendProviderRequest, input);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'provider-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
+    },
+  });
+}
+
+export function useProviderRequests(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'provider-requests'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CampaignProviderRequest[]>>(endpoints.campaigns.providerRequests);
+      return res.data.data;
+    },
+  });
+}
+
+export function useMySentProviderRequests(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-sent-requests'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CampaignProviderRequest[]>>(endpoints.campaigns.mySentRequests);
+      return res.data.data;
+    },
+  });
+}
+
+export function useReviewProviderRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ requestId, action, note }: { requestId: string; action: 'accept' | 'reject'; note?: string }) => {
+      const res = await apiClient.patch<ApiResponse<CampaignProviderRequest>>(
+        endpoints.campaigns.reviewProviderRequest(requestId),
+        { action, ...(note ? { note } : {}) }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['campaigns', 'provider-requests'] }),
+  });
+}
+
+export function useSubmitProviderProposal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SubmitProviderProposalInput) => {
+      const res = await apiClient.post<ApiResponse<unknown>>(endpoints.campaigns.providerProposals, input);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'provider-proposals'] });
+    },
+  });
+}
+
+export function useProviders(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['users', 'providers'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ProviderSummary[]>>(endpoints.users.providers);
+      return res.data.data;
+    },
+  });
+}
+
+export function useProviderActiveListings(providerProfileId?: string | null) {
+  return useQuery({
+    queryKey: ['users', 'providers', providerProfileId, 'listings'],
+    enabled: !!providerProfileId,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ProviderActiveListing[]>>(
+        endpoints.users.providerListings(providerProfileId!)
+      );
+      return res.data.data;
     },
   });
 }

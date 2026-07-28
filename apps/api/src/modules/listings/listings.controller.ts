@@ -81,21 +81,6 @@ export class ListingsController {
     return this.listingsService.update(id, user.id, dto);
   }
 
-  @Get('provider/my')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.PROVIDER)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Provider: Get my listings' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'limit', required: false })
-  myListings(
-    @CurrentUser() user: User,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-  ) {
-    return this.listingsService.findByProvider(user.id, page, limit);
-  }
-
   @Get('provider/stats')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.PROVIDER)

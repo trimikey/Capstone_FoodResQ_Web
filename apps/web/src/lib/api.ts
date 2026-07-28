@@ -1,47 +1,81 @@
-import axios from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { useAuthStore } from '@/stores/auth.store';
+
+const apiBaseURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1',
+  baseURL: apiBaseURL,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 });
 
-// Attach access token from localStorage
+type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+type QueuedRequest = {
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+};
+
+function getStoredTokens() {
+  if (typeof window === 'undefined') {
+    return { accessToken: null, refreshToken: null };
+  }
+
+  const state = useAuthStore.getState();
+  const accessToken = localStorage.getItem('access_token') ?? state.accessToken;
+  const refreshToken = localStorage.getItem('refresh_token') ?? state.refreshToken;
+  return { accessToken, refreshToken };
+}
+
+function expireSession() {
+  if (typeof window === 'undefined') return;
+
+  useAuthStore.getState().logout();
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+}
+
+// Attach access token from localStorage/Zustand persist
 api.interceptors.request.use((config) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const { accessToken } = getStoredTokens();
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
   return config;
 });
 
 // Auto-refresh on 401
 let isRefreshing = false;
-let queue: Array<(token: string) => void> = [];
+let queue: QueuedRequest[] = [];
 
 api.interceptors.response.use(
   (res) => res,
-  async (error) => {
-    const original = error.config;
+  async (error: AxiosError) => {
+    const original = error.config as RetryableRequestConfig | undefined;
 
-    if (error.response?.status !== 401 || original._retry) {
+    if (!original || error.response?.status !== 401 || original._retry) {
       return Promise.reject(error as Error);
     }
 
     original._retry = true;
 
     if (isRefreshing) {
-      return new Promise((resolve) => {
-        queue.push((token) => {
-          original.headers.Authorization = `Bearer ${token}`;
-          resolve(api(original));
+      return new Promise((resolve, reject) => {
+        queue.push({
+          resolve: (token) => {
+            original.headers.Authorization = `Bearer ${token}`;
+            resolve(api(original));
+          },
+          reject: (queueError) => {
+            reject(queueError);
+          },
         });
       });
     }
 
-    const refreshToken =
-      typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null;
+    const { refreshToken } = getStoredTokens();
 
-    // Chưa có refresh token → không gọi refresh (tránh gửi token rỗng), trả lỗi luôn
+    // Chưa có refresh token -> session hết hạn, xoá cả Zustand persist để tránh user cũ tiếp tục gọi API
     if (!refreshToken) {
+      expireSession();
       return Promise.reject(error as Error);
     }
 
@@ -49,25 +83,24 @@ api.interceptors.response.use(
 
     try {
       const { data } = await axios.post<{ data: { accessToken: string; refreshToken: string } }>(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
+        `${apiBaseURL}/auth/refresh`,
         { refreshToken },
       );
 
       const newAccess = data.data.accessToken;
       const newRefresh = data.data.refreshToken;
-      localStorage.setItem('access_token', newAccess);
-      localStorage.setItem('refresh_token', newRefresh);
+      useAuthStore.getState().setTokens(newAccess, newRefresh);
 
-      queue.forEach((cb) => cb(newAccess));
+      queue.forEach(({ resolve: resolveQueued }) => resolveQueued(newAccess));
       queue = [];
 
       original.headers.Authorization = `Bearer ${newAccess}`;
       return api(original);
-    } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/login';
-      return Promise.reject(error as Error);
+    } catch (refreshError) {
+      queue.forEach(({ reject: rejectQueued }) => rejectQueued(refreshError));
+      queue = [];
+      expireSession();
+      return Promise.reject(refreshError as Error);
     } finally {
       isRefreshing = false;
     }
