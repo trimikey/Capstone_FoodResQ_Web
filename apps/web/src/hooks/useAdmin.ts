@@ -21,7 +21,7 @@ export interface VerificationItem {
   phone: string | null;
   detail: string;
   createdAt: string;
-  // Provider-only extensions (tuỳ chọn — BE có thể trả về nếu có)
+  // Verification extensions (provider GPKD, volunteer/shipper vehicle evidence)
   businessName?: string;
   businessType?: string;
   taxCode?: string | null;

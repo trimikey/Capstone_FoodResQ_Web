@@ -60,8 +60,10 @@ const registerSchema = z.object({
   evidenceUrls: z.array(z.string().min(1)).optional(),
 
   // Volunteer fields
-  volunteerRole: z.string().optional(),
+  volunteerRole: z.enum(["shipper", "chef", "waiter"]).optional(),
+  idCardNumber: z.string().optional(),
   vehicle: z.string().optional(),
+  vehiclePlate: z.string().optional(),
   supportArea: z.string().optional(),
 
   // Receiver fields
@@ -123,6 +125,36 @@ const registerSchema = z.object({
       });
     }
   } else if (data.role === "volunteer") {
+    if (!data.volunteerRole) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vui lòng chọn chuyên môn tình nguyện.",
+        path: ["volunteerRole"],
+      });
+    }
+    if (!data.idCardNumber || !/^[0-9]{12}$/.test(data.idCardNumber.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Số CCCD phải gồm đúng 12 chữ số.",
+        path: ["idCardNumber"],
+      });
+    }
+    if (data.volunteerRole === "shipper") {
+      if (!data.vehicle || data.vehicle.trim().length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Vui lòng nhập loại phương tiện.",
+          path: ["vehicle"],
+        });
+      }
+      if (!data.vehiclePlate || !/^[0-9]{2}[A-ZĐ]{1,2}[0-9]?[ -]?[0-9]{4,5}$/i.test(data.vehiclePlate.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Biển số xe không hợp lệ.",
+          path: ["vehiclePlate"],
+        });
+      }
+    }
     if (!data.supportArea || data.supportArea.trim().length < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -155,12 +187,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  const [vehiclePlateImage, setVehiclePlateImage] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
   // Form đã hợp lệ, chờ chụp khuôn mặt để gửi đăng ký (receiver/volunteer) —
   // tài khoản CHỈ được tạo khi BE xác thực được khuôn mặt trong cùng request.
   const [pendingFaceData, setPendingFaceData] = useState<RegisterFormValues | null>(null);
+  const [pendingIdCardPhoto, setPendingIdCardPhoto] = useState<File | null>(null);
   // Toạ độ GPS bắt được khi người dùng bấm "Dùng vị trí hiện tại" lúc đăng ký.
   // null = chưa định vị (BE sẽ chỉ lưu địa chỉ dạng text, không lưu location).
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -217,7 +251,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       providerDescription: "",
       evidenceUrls: [],
       volunteerRole: "shipper",
+      idCardNumber: "",
       vehicle: "Xe máy",
+      vehiclePlate: "",
       supportArea: "",
       receiverAddress: "",
       notes: "",
@@ -225,6 +261,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   });
 
   const selectedRole = watchRegister("role");
+  const selectedVolunteerRole = watchRegister("volunteerRole");
   const watchedEmail = watchRegister("email");
   const watchedPhone = watchRegister("phone");
 
@@ -458,9 +495,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const onRegisterSubmit = async (data: RegisterFormValues) => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    if (data.role === 'volunteer' && data.volunteerRole === 'shipper' && !vehiclePlateImage) {
+      setErrorMessage('Shipper cần tải lên ảnh biển số xe để admin đối chiếu.');
+      return;
+    }
     // Cá nhân người nhận & tình nguyện viên: eKYC BẮT BUỘC — chụp khuôn mặt TRƯỚC,
     // gửi kèm request đăng ký; BE không nhận diện được mặt thì KHÔNG tạo tài khoản.
     if (data.role === 'receiver' || data.role === 'volunteer') {
+      setPendingIdCardPhoto(null);
       setPendingFaceData(data);
       return;
     }
@@ -509,6 +551,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         resetLoginForm();
         resetRegisterForm();
         setUploadedFile(null);
+        setVehiclePlateImage(null);
         setSuccessMessage(null);
       }, 2200);
     } catch (err: unknown) {
@@ -536,8 +579,12 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       form.append('role', data.role); // 'receiver' | 'volunteer'
       if (data.role === 'receiver' && data.receiverAddress) form.append('address', data.receiverAddress);
       if (data.role === 'volunteer') {
+        if (data.idCardNumber) form.append('idCardNumber', data.idCardNumber.trim());
         if (data.vehicle) form.append('vehicleType', data.vehicle);
+        if (data.vehiclePlate) form.append('vehiclePlate', data.vehiclePlate.trim().toUpperCase());
         if (data.volunteerRole) form.append('volunteerRole', data.volunteerRole);
+        if (pendingIdCardPhoto) form.append('idCard', pendingIdCardPhoto);
+        if (vehiclePlateImage) form.append('vehiclePlateImage', vehiclePlateImage);
       }
       if (geoCoords) {
         form.append('lng', String(geoCoords.lng));
@@ -550,6 +597,8 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
       }>('/auth/register', form, { headers: { 'Content-Type': 'multipart/form-data' } });
 
       setPendingFaceData(null);
+      setPendingIdCardPhoto(null);
+      setVehiclePlateImage(null);
       toast.success('Đăng ký thành công!');
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
@@ -1382,10 +1431,107 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               <option value="chef">Đầu bếp (Chef)</option>
                               <option value="waiter">Phục vụ (Waiter)</option>
                             </select>
+                            {registerErrors.volunteerRole && (
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.volunteerRole.message}</p>
+                            )}
                           </div>
 
-                          {/* Vehicle */}
-                      
+                          <div className="space-y-1.5">
+                            <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="id-card-number">
+                              Số CCCD
+                            </label>
+                            <div className="relative">
+                              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant">
+                                badge
+                              </span>
+                              <input
+                                id="id-card-number"
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="12 chữ số trên căn cước công dân"
+                                className={`w-full pl-12 pr-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                  registerErrors.idCardNumber ? "border-error" : "border-neutral-200/30"
+                                }`}
+                                disabled={isSubmitting}
+                                {...registerSignup("idCardNumber")}
+                              />
+                            </div>
+                            {registerErrors.idCardNumber && (
+                              <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.idCardNumber.message}</p>
+                            )}
+                          </div>
+
+                          {selectedVolunteerRole === "shipper" && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1.5">
+                                <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="vehicle-type">
+                                  Loại phương tiện
+                                </label>
+                                <input
+                                  id="vehicle-type"
+                                  type="text"
+                                  placeholder="Xe máy, xe đạp, ô tô..."
+                                  className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                    registerErrors.vehicle ? "border-error" : "border-neutral-200/30"
+                                  }`}
+                                  disabled={isSubmitting}
+                                  {...registerSignup("vehicle")}
+                                />
+                                {registerErrors.vehicle && (
+                                  <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.vehicle.message}</p>
+                                )}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="vehicle-plate">
+                                  Biển số xe
+                                </label>
+                                <input
+                                  id="vehicle-plate"
+                                  type="text"
+                                  placeholder="VD: 59A1 12345"
+                                  className={`w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant ${
+                                    registerErrors.vehiclePlate ? "border-error" : "border-neutral-200/30"
+                                  }`}
+                                  disabled={isSubmitting}
+                                  {...registerSignup("vehiclePlate")}
+                                />
+                                {registerErrors.vehiclePlate && (
+                                  <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.vehiclePlate.message}</p>
+                                )}
+                              </div>
+                              <div className="space-y-1.5 md:col-span-2">
+                                <label className="font-semibold text-base text-neutral-500 ml-1" htmlFor="vehicle-plate-image">
+                                  Ảnh biển số xe
+                                </label>
+                                <input
+                                  id="vehicle-plate-image"
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  disabled={isSubmitting}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0] ?? null;
+                                    setVehiclePlateImage(file);
+                                  }}
+                                />
+                                <label
+                                  htmlFor="vehicle-plate-image"
+                                  className={`border-2 border-dashed rounded-xl p-4 flex items-center gap-3 bg-white hover:bg-neutral-100 transition-all cursor-pointer ${
+                                    vehiclePlateImage ? 'border-emerald-500' : 'border-neutral-200/50'
+                                  }`}
+                                >
+                                  <span className="material-symbols-outlined text-outline-variant">photo_camera</span>
+                                  <span className="flex-1 text-sm font-semibold text-neutral-600">
+                                    {vehiclePlateImage ? vehiclePlateImage.name : 'Tải ảnh biển số rõ nét để admin đối chiếu'}
+                                  </span>
+                                  {vehiclePlateImage && (
+                                    <span className="material-symbols-outlined text-emerald-700">check_circle</span>
+                                  )}
+                                </label>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Support Area */}
                           <div className="space-y-1.5">
@@ -1598,33 +1744,50 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               <div className="w-16 h-16 bg-[#96F28A] rounded-full flex items-center justify-center mb-6 shadow-sm">
                 <span className="material-symbols-outlined text-green-900 font-bold text-3xl">verified_user</span>
               </div>
-              <h2 className="font-bold text-[28px] text-neutral-800">
-                Bước bắt buộc: Đăng ký khuôn mặt
-              </h2>
-              <p className="font-bold text-[15px] text-emerald-800 mt-2">
-                Chụp khuôn mặt để hoàn tất đăng ký — chưa có tài khoản nào được tạo
-              </p>
-              <p className="text-[13px] text-neutral-500 mt-1 max-w-md">
-                {pendingFaceData.role === 'volunteer'
-                  ? 'Tình nguyện viên cần xác minh khuôn mặt để được giao nhiệm vụ.'
-                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'}{' '}
-                Không có khuôn mặt hợp lệ thì đăng ký sẽ thất bại.
-              </p>
-            </div>
-            <div className="bg-white rounded-[24px] shadow-sm border border-neutral-100 p-6 sm:p-8 flex flex-col gap-6">
-              <CameraCapture
-                mode="face"
-                hint="Chụp selfie rõ nét, đủ ánh sáng — đây sẽ là khuôn mặt gốc để đối chiếu khi nhận hàng"
-                confirmLabel="Chụp & hoàn tất đăng ký"
-                busy={isSubmitting}
-                onConfirm={(photo) => void submitWithSelfie(photo)}
-              />
-              <div className="pt-1 flex justify-center">
-                <button
-                  onClick={() => {
-                    setPendingFaceData(null);
-                    toast.info('Đã huỷ đăng ký — tài khoản chưa được tạo.');
-                  }}
+	              <h2 className="font-bold text-[28px] text-neutral-800">
+	                Bước bắt buộc: Xác minh eKYC
+	              </h2>
+	              <p className="font-bold text-[15px] text-emerald-800 mt-2">
+	                {pendingFaceData.role === 'volunteer' && !pendingIdCardPhoto
+	                  ? 'Chụp CCCD trước, sau đó chụp selfie để so khớp'
+	                  : 'Chụp khuôn mặt để hoàn tất đăng ký — chưa có tài khoản nào được tạo'}
+	              </p>
+	              <p className="text-[13px] text-neutral-500 mt-1 max-w-md">
+	                {pendingFaceData.role === 'volunteer'
+	                  ? 'Tình nguyện viên cần ảnh CCCD và selfie khớp nhau để admin duyệt hồ sơ.'
+	                  : 'Người nhận cần khuôn mặt gốc để đối chiếu khi nhận hàng.'}{' '}
+	                Không có khuôn mặt hợp lệ thì đăng ký sẽ thất bại.
+	              </p>
+	            </div>
+	            <div className="bg-white rounded-[24px] shadow-sm border border-neutral-100 p-6 sm:p-8 flex flex-col gap-6">
+	              {pendingFaceData.role === 'volunteer' && !pendingIdCardPhoto ? (
+	                <CameraCapture
+	                  mode="id_card"
+	                  hint="Chụp mặt trước CCCD rõ nét, thấy ảnh chân dung và số CCCD để backend so khớp với selfie"
+	                  confirmLabel="Dùng ảnh CCCD này"
+	                  busy={isSubmitting}
+	                  onConfirm={(photo) => setPendingIdCardPhoto(photo)}
+	                />
+	              ) : (
+	                <CameraCapture
+	                  mode="face"
+	                  hint={
+	                    pendingFaceData.role === 'volunteer'
+	                      ? 'Chụp selfie rõ nét, đủ ánh sáng — backend sẽ so khớp với ảnh trên CCCD'
+	                      : 'Chụp selfie rõ nét, đủ ánh sáng — đây sẽ là khuôn mặt gốc để đối chiếu khi nhận hàng'
+	                  }
+	                  confirmLabel="Chụp & hoàn tất đăng ký"
+	                  busy={isSubmitting}
+	                  onConfirm={(photo) => void submitWithSelfie(photo)}
+	                />
+	              )}
+	              <div className="pt-1 flex justify-center">
+	                <button
+	                  onClick={() => {
+	                    setPendingFaceData(null);
+	                    setPendingIdCardPhoto(null);
+	                    toast.info('Đã huỷ đăng ký — tài khoản chưa được tạo.');
+	                  }}
                   disabled={isSubmitting}
                   className="text-neutral-500 font-semibold text-[13px] hover:text-neutral-800 transition-colors flex items-center gap-1 disabled:opacity-50"
                 >

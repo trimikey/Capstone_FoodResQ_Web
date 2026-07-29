@@ -38,9 +38,13 @@ export default function SignUpVolunteerScreen({
         password: basicInfo.password,
         name: basicInfo.name,
         role: 'volunteer',
+        idCardNumber: volunteerData.idCard,
         vehicleType: volunteerData.vehicleType,
+        vehiclePlate: volunteerData.plateNumber,
         volunteerRole: volunteerData.specializations[0],
-        // TODO(Profile API): backend register hiện chỉ nhận một specialization và chưa nhận idCard/plateNumber.
+        selfie: volunteerData.selfie,
+        idCardPhoto: volunteerData.idCardPhoto,
+        vehiclePlateImage: volunteerData.vehiclePlatePhoto,
       } as any);
       await initialize();
       resetOnboarding();

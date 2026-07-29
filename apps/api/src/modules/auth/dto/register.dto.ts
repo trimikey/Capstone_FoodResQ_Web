@@ -66,6 +66,23 @@ export class RegisterDto {
   @MaxLength(50)
   vehicleType?: string;
 
+  @ApiPropertyOptional({ example: '59A1 12345', description: 'Shipper: biển số xe' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  @Matches(/^[0-9]{2}[A-ZĐ]{1,2}[0-9]?[ -]?[0-9]{4,5}$/i, {
+    message: 'Biển số xe không hợp lệ',
+  })
+  vehiclePlate?: string;
+
+  @ApiPropertyOptional({ example: '079203001234', description: 'Volunteer: số CCCD 12 chữ số' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]{12}$/, {
+    message: 'Số CCCD phải gồm đúng 12 chữ số',
+  })
+  idCardNumber?: string;
+
   @ApiPropertyOptional({ example: 'shipper', description: 'Volunteer: role (shipper, chef, waiter)' })
   @IsOptional()
   @IsEnum(['shipper', 'chef', 'waiter'])

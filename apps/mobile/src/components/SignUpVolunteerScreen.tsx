@@ -6,6 +6,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useErrorHandler, getErrorMessage } from '../hooks/useErrorHandler';
+import { captureImage, pickImageFromLibrary, type CapturedImage } from '../services/faceCapture';
 import ErrorToast from './ErrorToast';
 import { FadeInUp } from './ui/Motion';
 import {
@@ -21,7 +22,7 @@ import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/desi
 
 const volunteerInfoSchema = z
   .object({
-    idCard: z.string().min(5, 'Cần nhập số giấy tờ tùy thân'),
+    idCard: z.string().regex(/^[0-9]{12}$/, 'Số CCCD phải gồm đúng 12 chữ số'),
     specializations: z.array(z.enum(['shipper', 'chef', 'waiter']))
       .min(1, 'Chọn ít nhất một chuyên môn'),
     vehicleType: z.string().optional(),
@@ -42,11 +43,22 @@ const volunteerInfoSchema = z
           path: ['plateNumber'],
           message: 'Cần nhập biển số cho shipper',
         });
+      } else if (!/^[0-9]{2}[A-ZĐ]{1,2}[0-9]?[ -]?[0-9]{4,5}$/i.test(data.plateNumber.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['plateNumber'],
+          message: 'Biển số xe không hợp lệ',
+        });
       }
     }
   });
 
-export type VolunteerInfoInput = z.infer<typeof volunteerInfoSchema>;
+type VolunteerFormInput = z.infer<typeof volunteerInfoSchema>;
+export type VolunteerInfoInput = VolunteerFormInput & {
+  selfie: CapturedImage;
+  idCardPhoto: CapturedImage;
+  vehiclePlatePhoto?: CapturedImage;
+};
 
 type Specialization = 'shipper' | 'chef' | 'waiter';
 
@@ -98,6 +110,9 @@ export function SignUpVolunteerScreen({
   isLoading = false,
 }: SignUpVolunteerScreenProps) {
   const [selectedSpecs, setSelectedSpecs] = useState<Specialization[]>([]);
+  const [selfie, setSelfie] = useState<CapturedImage | null>(null);
+  const [idCardPhoto, setIdCardPhoto] = useState<CapturedImage | null>(null);
+  const [vehiclePlatePhoto, setVehiclePlatePhoto] = useState<CapturedImage | null>(null);
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
   const {
@@ -105,7 +120,7 @@ export function SignUpVolunteerScreen({
     handleSubmit,
     setValue,
     formState: { errors },
-  } = useForm<VolunteerInfoInput>({
+  } = useForm<VolunteerFormInput>({
     resolver: zodResolver(volunteerInfoSchema),
     defaultValues: {
       idCard: '',
@@ -127,12 +142,57 @@ export function SignUpVolunteerScreen({
     });
   };
 
-  const onSubmit = async (data: VolunteerInfoInput) => {
+  const handlePickSelfie = async (fromCamera: boolean) => {
     try {
       clearError();
+      const image = fromCamera ? await captureImage('face', 'proof') : await pickImageFromLibrary('proof');
+      if (image) setSelfie(image);
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
+    }
+  };
+
+  const handlePickIdCard = async (fromCamera: boolean) => {
+    try {
+      clearError();
+      const image = fromCamera ? await captureImage('id_card', 'proof') : await pickImageFromLibrary('proof');
+      if (image) setIdCardPhoto(image);
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
+    }
+  };
+
+  const handlePickVehiclePlate = async (fromCamera: boolean) => {
+    try {
+      clearError();
+      const image = fromCamera ? await captureImage('id_card', 'proof') : await pickImageFromLibrary('proof');
+      if (image) setVehiclePlatePhoto(image);
+    } catch (error) {
+      showError(getErrorMessage(error), 3000);
+    }
+  };
+
+  const onSubmit = async (data: VolunteerFormInput) => {
+    try {
+      clearError();
+      if (!selfie) {
+        showError('Cần chụp selfie rõ khuôn mặt để xác minh hồ sơ.', 2500);
+        return;
+      }
+      if (!idCardPhoto) {
+        showError('Cần chụp ảnh CCCD để so khớp eKYC.', 2500);
+        return;
+      }
+      if (selectedSpecs.includes('shipper') && !vehiclePlatePhoto) {
+        showError('Shipper cần chụp ảnh biển số xe để admin đối chiếu.', 2500);
+        return;
+      }
       await onSuccess?.({
         ...data,
         specializations: selectedSpecs,
+        selfie,
+        idCardPhoto,
+        ...(vehiclePlatePhoto ? { vehiclePlatePhoto } : {}),
       });
     } catch (error) {
       showError(getErrorMessage(error), 3000);
@@ -204,7 +264,7 @@ export function SignUpVolunteerScreen({
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   mode="outlined"
-                  label="CCCD/CMND"
+                  label="CCCD 12 chữ số"
                   placeholder="VD: 012345678901"
                   value={value}
                   onChangeText={onChange}
@@ -218,6 +278,62 @@ export function SignUpVolunteerScreen({
                 />
               )}
             />
+          </AuthField>
+
+          <AuthField label="Ảnh căn cước công dân" error={!idCardPhoto ? 'Cần ảnh CCCD khi gửi đăng ký' : undefined}>
+            <View style={styles.selfieBox}>
+              <View style={styles.selfieText}>
+                <MaterialCommunityIcons
+                  name={idCardPhoto ? 'check-decagram' : 'card-account-details-outline'}
+                  size={24}
+                  color={idCardPhoto ? COLORS.teal : COLORS.onSurfaceVariant}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selfieTitle}>
+                    {idCardPhoto ? 'Đã có ảnh CCCD' : 'Chụp mặt trước CCCD'}
+                  </Text>
+                  <Text style={styles.selfieSub} numberOfLines={2}>
+                    {idCardPhoto ? idCardPhoto.name : 'Ảnh cần rõ chân dung và số CCCD để backend so khớp với selfie.'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.selfieActions}>
+                <Button mode="contained-tonal" icon="camera" onPress={() => handlePickIdCard(true)} disabled={isLoading}>
+                  Chụp
+                </Button>
+                <Button mode="outlined" icon="image" onPress={() => handlePickIdCard(false)} disabled={isLoading}>
+                  Thư viện
+                </Button>
+              </View>
+            </View>
+          </AuthField>
+
+          <AuthField label="Xác minh khuôn mặt" error={!selfie ? 'Cần selfie khi gửi đăng ký' : undefined}>
+            <View style={styles.selfieBox}>
+              <View style={styles.selfieText}>
+                <MaterialCommunityIcons
+                  name={selfie ? 'check-decagram' : 'face-man-profile'}
+                  size={24}
+                  color={selfie ? COLORS.teal : COLORS.onSurfaceVariant}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selfieTitle}>
+                    {selfie ? 'Đã có ảnh selfie' : 'Chụp ảnh khuôn mặt'}
+                  </Text>
+                  <Text style={styles.selfieSub} numberOfLines={2}>
+                    {selfie ? selfie.name : 'Ảnh này được gửi kèm hồ sơ để backend nhận diện khuôn mặt trước khi tạo tài khoản.'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.selfieActions}>
+                <Button mode="contained-tonal" icon="camera" onPress={() => handlePickSelfie(true)} disabled={isLoading}>
+                  Chụp
+                </Button>
+                <Button mode="outlined" icon="image" onPress={() => handlePickSelfie(false)} disabled={isLoading}>
+                  Thư viện
+                </Button>
+              </View>
+            </View>
           </AuthField>
 
           <AuthField
@@ -309,6 +425,34 @@ export function SignUpVolunteerScreen({
                   )}
                 />
               </AuthField>
+
+              <AuthField label="Ảnh biển số xe" error={!vehiclePlatePhoto ? 'Cần ảnh biển số xe' : undefined}>
+                <View style={styles.selfieBox}>
+                  <View style={styles.selfieText}>
+                    <MaterialCommunityIcons
+                      name={vehiclePlatePhoto ? 'check-decagram' : 'image-plus'}
+                      size={24}
+                      color={vehiclePlatePhoto ? COLORS.teal : COLORS.onSurfaceVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selfieTitle}>
+                        {vehiclePlatePhoto ? 'Đã có ảnh biển số' : 'Chụp ảnh biển số'}
+                      </Text>
+                      <Text style={styles.selfieSub} numberOfLines={2}>
+                        {vehiclePlatePhoto ? vehiclePlatePhoto.name : 'Ảnh cần rõ biển số để admin đối chiếu với số bạn nhập.'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.selfieActions}>
+                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickVehiclePlate(true)} disabled={isLoading}>
+                      Chụp
+                    </Button>
+                    <Button mode="outlined" icon="image" onPress={() => handlePickVehiclePlate(false)} disabled={isLoading}>
+                      Thư viện
+                    </Button>
+                  </View>
+                </View>
+              </AuthField>
             </View>
           ) : null}
         </AuthCard>
@@ -379,6 +523,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: COLORS.onSurface,
+  },
+  selfieBox: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceContainerLow,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  selfieText: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  selfieTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.onSurface,
+  },
+  selfieSub: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
+  selfieActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   shipperHero: {
     flexDirection: 'row',

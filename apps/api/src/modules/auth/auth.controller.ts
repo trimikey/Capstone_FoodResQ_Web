@@ -1,17 +1,15 @@
 import {
+  BadRequestException,
   Body,
   Controller,
-  FileTypeValidator,
   Headers,
   Ip,
-  MaxFileSizeValidator,
-  ParseFilePipe,
   Post,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -32,27 +30,41 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  @UseInterceptors(FileInterceptor('selfie'))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'selfie', maxCount: 1 },
+      { name: 'idCard', maxCount: 1 },
+      { name: 'vehiclePlateImage', maxCount: 1 },
+    ]),
+  )
   @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOperation({
     summary:
-      'Register a new account. Receiver (cá nhân) & volunteer BẮT BUỘC gửi kèm ảnh selfie (multipart) — không có/không nhận diện được khuôn mặt thì đăng ký thất bại.',
+      'Register a new account. Receiver (cá nhân) & volunteer BẮT BUỘC gửi kèm ảnh selfie; volunteer gửi thêm ảnh CCCD để so khớp eKYC.',
   })
   register(
     @Body() dto: RegisterDto,
     @Ip() ip: string,
-    @UploadedFile(
-      new ParseFilePipe({
-        fileIsRequired: false, // provider/charity đăng ký JSON không kèm ảnh
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
-        ],
-      }),
-    )
-    selfie?: Express.Multer.File,
+    @UploadedFiles()
+    files?: {
+      selfie?: Express.Multer.File[];
+      idCard?: Express.Multer.File[];
+      vehiclePlateImage?: Express.Multer.File[];
+    },
   ) {
-    return this.authService.register(dto, selfie);
+    const selfie = files?.selfie?.[0];
+    const idCard = files?.idCard?.[0];
+    const vehiclePlateImage = files?.vehiclePlateImage?.[0];
+    for (const file of [selfie, idCard, vehiclePlateImage]) {
+      if (!file) continue;
+      if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) {
+        throw new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP.');
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
+      }
+    }
+    return this.authService.register(dto, selfie, idCard, vehiclePlateImage);
   }
 
   @Post('login')
