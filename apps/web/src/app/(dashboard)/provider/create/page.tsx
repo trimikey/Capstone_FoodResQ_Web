@@ -78,6 +78,21 @@ export default function ProviderCreateListingPage() {
     setForm((f) => ({ ...f, [key]: val }));
   }
 
+  function getTodayDateStr() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function getCurrentTimeStr() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
   async function handlePickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -348,7 +363,7 @@ export default function ProviderCreateListingPage() {
 
           {/* STEP 2: Số lượng & Thời gian */}
           {step === 2 && (
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
+          <section className="isolate bg-white rounded-2xl p-6 shadow-sm overflow-visible">
             <header className="mb-5">
               <h2 className="text-base font-medium text-neutral-800 flex items-center gap-2">
                 <span className="w-7 h-7 rounded-full bg-[#efe8d8] text-[#236c2a] text-xs flex items-center justify-center font-medium">
@@ -403,6 +418,12 @@ export default function ProviderCreateListingPage() {
                 timeValue={form.pickupStartTime}
                 onDateChange={(v) => set('pickupStartDate', v)}
                 onTimeChange={(v) => set('pickupStartTime', v)}
+                minDate={new Date()}
+                minTime={
+                  form.pickupStartDate === getTodayDateStr()
+                    ? getCurrentTimeStr()
+                    : undefined
+                }
               />
               <DateTimeField
                 label="Hạn lấy"
@@ -410,6 +431,12 @@ export default function ProviderCreateListingPage() {
                 timeValue={form.pickupEndTime}
                 onDateChange={(v) => set('pickupEndDate', v)}
                 onTimeChange={(v) => set('pickupEndTime', v)}
+                minDate={form.pickupStartDate ? new Date(form.pickupStartDate + 'T00:00:00') : new Date()}
+                minTime={
+                  form.pickupEndDate === form.pickupStartDate
+                    ? form.pickupStartTime
+                    : undefined
+                }
               />
               <DateTimeField
                 label="Hạn sử dụng"
@@ -417,6 +444,12 @@ export default function ProviderCreateListingPage() {
                 timeValue={form.expiryTime}
                 onDateChange={(v) => set('expiryDate', v)}
                 onTimeChange={(v) => set('expiryTime', v)}
+                minDate={form.pickupEndDate ? new Date(form.pickupEndDate + 'T00:00:00') : new Date()}
+                minTime={
+                  form.expiryDate === form.pickupEndDate
+                    ? form.pickupEndTime
+                    : undefined
+                }
               />
             </div>
 

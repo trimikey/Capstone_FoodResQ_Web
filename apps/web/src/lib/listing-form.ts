@@ -38,9 +38,10 @@ export function toLocalInput(iso: string): { date: string; time: string } {
     return { date: now[0], time: now[1] };
   }
   const pad = (n: number) => String(n).padStart(2, '0');
+  // Use UTC getters to get the correct local date/time components
   return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+    time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`,
   };
 }
 
@@ -55,7 +56,11 @@ export function toIso(local: string): string {
 
 export function combineToIso(date: string, time: string): string {
   if (!date || !time) return new Date().toISOString();
-  return new Date(`${date}T${time}`).toISOString();
+  // Parse as local time, then convert to UTC ISO string
+  const localDateTime = new Date(`${date}T${time}`);
+  // Get the local offset and apply it to get UTC time
+  const utcDateTime = new Date(localDateTime.getTime() - localDateTime.getTimezoneOffset() * 60_000);
+  return utcDateTime.toISOString();
 }
 
 export function buildForm(
