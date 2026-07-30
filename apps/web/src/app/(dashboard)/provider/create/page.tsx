@@ -540,11 +540,7 @@ export default function ProviderCreateListingPage() {
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-<<<<<<< HEAD
-                    src={mediaUrl(form.imageUrl)}
-=======
                     src={toProxyUrl(form.imageUrl)}
->>>>>>> origin/master
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />

@@ -725,17 +725,10 @@ export default function ReservationDetailsPage() {
                 <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Chi tiết thực phẩm</h4>
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
-<<<<<<< HEAD
-                    <img 
-                      src={reservation.listing.imageUrls?.[0] ? mediaUrl(reservation.listing.imageUrls[0]) : "/banh-mi-ngot-thap-cam.png"} 
-                      alt="Food" 
-                      className="w-full h-full object-cover" 
-=======
                     <img
                       src={reservation.listing.imageUrls?.[0] ? mediaUrl(reservation.listing.imageUrls[0]) : "/banh-mi-ngot-thap-cam.png"}
                       alt="Food"
                       className="w-full h-full object-cover"
->>>>>>> origin/master
                     />
                   </div>
                   <div className="flex-1 min-w-0">

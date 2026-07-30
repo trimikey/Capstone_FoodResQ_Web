@@ -5,11 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-<<<<<<< HEAD
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
-=======
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
->>>>>>> origin/master
 import { QuantityUnit } from '@foodresq/types';
 import type { ListingItem } from '@/components/listings/ListingCard';
 

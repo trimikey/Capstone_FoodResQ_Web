@@ -5,12 +5,8 @@ import Link from 'next/link';
 import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
-<<<<<<< HEAD
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
-=======
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
->>>>>>> origin/master
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';

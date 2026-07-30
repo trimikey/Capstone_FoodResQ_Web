@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -15,23 +15,19 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
-<<<<<<< HEAD
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
-=======
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
->>>>>>> origin/master
 import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
 import ProviderRequestsSection from '@/components/campaigns/ProviderRequestsSection';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
-  active: { label: 'Đang mở', cls: 'bg-emerald-100 text-emerald-800' },
-  fully_reserved: { label: 'Hết suất', cls: 'bg-amber-100 text-amber-800' },
-  completed: { label: 'Hoàn tất', cls: 'bg-blue-100 text-blue-800' },
-  expired: { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-500' },
-  cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
+  draft: { label: 'NhÃ¡p', cls: 'bg-neutral-100 text-neutral-600' },
+  active: { label: 'Äang má»Ÿ', cls: 'bg-emerald-100 text-emerald-800' },
+  fully_reserved: { label: 'Háº¿t suáº¥t', cls: 'bg-amber-100 text-amber-800' },
+  completed: { label: 'HoÃ n táº¥t', cls: 'bg-blue-100 text-blue-800' },
+  expired: { label: 'Háº¿t háº¡n', cls: 'bg-neutral-100 text-neutral-500' },
+  cancelled: { label: 'ÄÃ£ huá»·', cls: 'bg-rose-100 text-rose-700' },
 };
 
 type StatusFilter = 'all' | 'open' | 'draft' | 'closed';
@@ -48,7 +44,7 @@ export default function ProviderDashboardPage() {
 
   const providerProfile = me?.provider ?? null;
   const providerVerified = providerProfile?.verificationStatus === 'approved';
-  const providerAddress = providerProfile?.address?.trim() || 'Chưa cập nhật địa chỉ';
+  const providerAddress = providerProfile?.address?.trim() || 'ChÆ°a cáº­p nháº­t Ä‘á»‹a chá»‰';
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open');
   const [extendTarget, setExtendTarget] = useState<{ listing: ProviderListing; mode: 'extend_time' | 'add_quantity' | 'both' } | null>(null);
@@ -70,66 +66,31 @@ export default function ProviderDashboardPage() {
   }
 
   async function handlePublish(id: string) {
-    try { await publishListing.mutateAsync(id); toast.success('Đã đăng tin'); }
-    catch { toast.error('Đăng tin thất bại'); }
+    try { await publishListing.mutateAsync(id); toast.success('ÄÃ£ Ä‘Äƒng tin'); }
+    catch { toast.error('ÄÄƒng tin tháº¥t báº¡i'); }
   }
 
   async function handleCancel(id: string) {
-    try { await cancelListing.mutateAsync({ id }); toast.info('Đã huỷ tin'); }
-    catch { toast.error('Huỷ thất bại'); }
+    try { await cancelListing.mutateAsync({ id }); toast.info('ÄÃ£ huá»· tin'); }
+    catch { toast.error('Huá»· tháº¥t báº¡i'); }
   }
 
   async function handleDuplicate(id: string) {
-    try { await duplicateListing.mutateAsync(id); toast.success('Đã tạo bản nháp mới'); }
-    catch { toast.error('Nhân bản thất bại'); }
+    try { await duplicateListing.mutateAsync(id); toast.success('ÄÃ£ táº¡o báº£n nhÃ¡p má»›i'); }
+    catch { toast.error('NhÃ¢n báº£n tháº¥t báº¡i'); }
   }
 
   return (
-<<<<<<< HEAD
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Store Info Header Card */}
-      <section className="bg-white rounded-2xl p-6 flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm">
-        <div className="flex items-center gap-5 w-full lg:w-auto">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-2xl bg-[#efe8d8] flex items-center justify-center overflow-hidden">
-              {me?.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={mediaUrl(me.avatarUrl)} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined text-[36px] text-[#236c2a]">storefront</span>
-              )}
-            </div>
-            {providerVerified && (
-              <div className="absolute -bottom-1 -right-1 bg-[#236c2a] text-white rounded-full p-1">
-                <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h2 className="font-semibold text-lg text-neutral-800">{providerProfile?.businessName ?? 'Cửa hàng của tôi'}</h2>
-              {providerVerified ? (
-                <span className="bg-[#efe8d8] text-[#236c2a] px-2 py-0.5 rounded-full text-xs font-medium border border-[#236c2a]/20">Đã duyệt</span>
-              ) : (
-                <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-xs font-medium">{providerProfile?.verificationStatus ?? 'Chưa duyệt'}</span>
-              )}
-            </div>
-            <p className="text-neutral-500 text-sm flex items-center gap-1 font-normal">
-              <span className="material-symbols-outlined text-[14px]">location_on</span>
-              {providerAddress}
-            </p>
-            <div className="flex gap-4 mt-2 flex-wrap">
-=======
     <div className="flex-1 min-w-0 bg-mesh-brand">
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
-        {/* Page header — dùng component dùng chung để đồng bộ với create/scan/orders */}
+        {/* Page header â€” dÃ¹ng component dÃ¹ng chung Ä‘á»ƒ Ä‘á»“ng bá»™ vá»›i create/scan/orders */}
         <ProviderHeaderCard
-          eyebrow="Quản lý cửa hàng"
-          title={providerProfile?.businessName ?? 'Cửa hàng của tôi'}
+          eyebrow="Quáº£n lÃ½ cá»­a hÃ ng"
+          title={providerProfile?.businessName ?? 'Cá»­a hÃ ng cá»§a tÃ´i'}
           description={
             providerVerified
-              ? `Trạng thái: đã xác minh · ${providerAddress}`
-              : 'Tài khoản đang chờ xác minh — vui lòng hoàn tất hồ sơ để đăng bài.'
+              ? `Tráº¡ng thÃ¡i: Ä‘Ã£ xÃ¡c minh Â· ${providerAddress}`
+              : 'TÃ i khoáº£n Ä‘ang chá» xÃ¡c minh â€” vui lÃ²ng hoÃ n táº¥t há»“ sÆ¡ Ä‘á»ƒ Ä‘Äƒng bÃ i.'
           }
           meta={
             <div className="flex items-center gap-3 flex-wrap text-xs">
@@ -141,18 +102,17 @@ export default function ProviderDashboardPage() {
                 <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {providerVerified ? 'verified' : 'pending'}
                 </span>
-                {providerVerified ? 'Đã duyệt' : providerProfile?.verificationStatus ?? 'Chưa duyệt'}
+                {providerVerified ? 'ÄÃ£ duyá»‡t' : providerProfile?.verificationStatus ?? 'ChÆ°a duyá»‡t'}
               </span>
->>>>>>> origin/master
               {stats?.completionRate != null && (
                 <span className="inline-flex items-center gap-1 text-neutral-500 font-normal">
                   <span className="material-symbols-outlined text-[14px] text-emerald-700">star</span>
-                  {stats.completionRate}% hoàn thành
+                  {stats.completionRate}% hoÃ n thÃ nh
                 </span>
               )}
               <span className="inline-flex items-center gap-1 text-neutral-500 font-normal">
                 <span className="material-symbols-outlined text-[14px] text-emerald-700">history</span>
-                Tham gia từ {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }) : 'nay'}
+                Tham gia tá»« {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }) : 'nay'}
               </span>
             </div>
           }
@@ -167,14 +127,14 @@ export default function ProviderDashboardPage() {
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">add</span>
-                Tạo bài đăng
+                Táº¡o bÃ i Ä‘Äƒng
               </Link>
               <Link
                 href="/profile"
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors"
               >
                 <span className="material-symbols-outlined text-[16px]">edit</span>
-                Sửa cửa hàng
+                Sá»­a cá»­a hÃ ng
               </Link>
             </>
           }
@@ -182,10 +142,10 @@ export default function ProviderDashboardPage() {
 
         {/* Metric Grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <MetricCard icon="eco" label="Thực phẩm đã cứu" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
-          <MetricCard icon="cloud_done" label="CO₂ giảm thiểu" value={`${esg?.co2SavedKg ?? 0}`} unit="tấn" tone="sky" />
-          <MetricCard icon="restaurant" label="Suất ăn chia sẻ" value={`${esg?.mealsServed ?? 0}`} unit="suất" tone="amber" />
-          <MetricCard icon="volunteer_activism" label="Người được giúp" value={`${esg?.peopleHelped ?? 0}`} unit="người" tone="emerald" />
+          <MetricCard icon="eco" label="Thá»±c pháº©m Ä‘Ã£ cá»©u" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
+          <MetricCard icon="cloud_done" label="COâ‚‚ giáº£m thiá»ƒu" value={`${esg?.co2SavedKg ?? 0}`} unit="táº¥n" tone="sky" />
+          <MetricCard icon="restaurant" label="Suáº¥t Äƒn chia sáº»" value={`${esg?.mealsServed ?? 0}`} unit="suáº¥t" tone="amber" />
+          <MetricCard icon="volunteer_activism" label="NgÆ°á»i Ä‘Æ°á»£c giÃºp" value={`${esg?.peopleHelped ?? 0}`} unit="ngÆ°á»i" tone="emerald" />
         </section>
 
         {/* Main Dashboard Split Layout */}
@@ -197,7 +157,7 @@ export default function ProviderDashboardPage() {
               <div className="relative z-10">
                 <h4 className="text-[#236c2a] font-bold text-sm flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px]">verified</span>
-                  Chỉ số tin cậy
+                  Chá»‰ sá»‘ tin cáº­y
                 </h4>
                 <div className="flex items-center gap-2 mb-3 mt-3">
                   <div className="h-2.5 flex-1 max-w-[180px] bg-white/70 rounded-full overflow-hidden">
@@ -211,7 +171,7 @@ export default function ProviderDashboardPage() {
                   </span>
                 </div>
                 <p className="text-[#236c2a]/85 text-xs font-normal leading-relaxed">
-                  Thứ hạng của bạn cao hơn 85% cửa hàng cùng khu vực.
+                  Thá»© háº¡ng cá»§a báº¡n cao hÆ¡n 85% cá»­a hÃ ng cÃ¹ng khu vá»±c.
                 </p>
               </div>
               <span className="material-symbols-outlined absolute -bottom-3 -right-3 text-[88px] text-[#236c2a]/10 rotate-12">
@@ -224,13 +184,13 @@ export default function ProviderDashboardPage() {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-700 text-[18px]">timeline</span>
-                  Hoạt động gần đây
+                  Hoáº¡t Ä‘á»™ng gáº§n Ä‘Ã¢y
                 </h3>
                 <Link
                   href="/provider/orders"
                   className="text-xs font-bold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
                 >
-                  Tất cả
+                  Táº¥t cáº£
                   <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                 </Link>
               </div>
@@ -238,20 +198,20 @@ export default function ProviderDashboardPage() {
                 <ActivityItem
                   icon="local_mall"
                   iconColor="emerald"
-                  title="Đơn hàng #ORD-4592 đã được nhận"
-                  time="10 phút trước"
+                  title="ÄÆ¡n hÃ ng #ORD-4592 Ä‘Ã£ Ä‘Æ°á»£c nháº­n"
+                  time="10 phÃºt trÆ°á»›c"
                 />
                 <ActivityItem
                   icon="post_add"
                   iconColor="sky"
-                  title="Bạn đã tạo bài đăng mới"
-                  time="2 giờ trước"
+                  title="Báº¡n Ä‘Ã£ táº¡o bÃ i Ä‘Äƒng má»›i"
+                  time="2 giá» trÆ°á»›c"
                 />
                 <ActivityItem
                   icon="reviews"
                   iconColor="amber"
-                  title="Đánh giá 5 sao từ Hội Từ Thiện"
-                  time="Hôm qua"
+                  title="ÄÃ¡nh giÃ¡ 5 sao tá»« Há»™i Tá»« Thiá»‡n"
+                  time="HÃ´m qua"
                 />
               </div>
             </section>
@@ -263,10 +223,10 @@ export default function ProviderDashboardPage() {
               <header className="px-5 py-4 border-b border-neutral-100">
                 <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-700 text-[18px]">inventory_2</span>
-                  Bài đăng hiện tại
+                  BÃ i Ä‘Äƒng hiá»‡n táº¡i
                 </h3>
                 <p className="text-xs text-neutral-500 font-normal mt-0.5">
-                  {filteredListings.length} mặt hàng đang được chia sẻ
+                  {filteredListings.length} máº·t hÃ ng Ä‘ang Ä‘Æ°á»£c chia sáº»
                 </p>
               </header>
 
@@ -284,7 +244,7 @@ export default function ProviderDashboardPage() {
                             : 'bg-white text-neutral-600 border-neutral-200 hover:border-[#236c2a]/40 hover:text-[#236c2a]'
                         }`}
                       >
-                        { { open: 'Đang mở', draft: 'Nháp', all: 'Tất cả', closed: 'Đã đóng' }[filter] }
+                        { { open: 'Äang má»Ÿ', draft: 'NhÃ¡p', all: 'Táº¥t cáº£', closed: 'ÄÃ£ Ä‘Ã³ng' }[filter] }
                       </button>
                     );
                   })}
@@ -302,8 +262,8 @@ export default function ProviderDashboardPage() {
                     <div className="w-16 h-16 mx-auto rounded-full bg-neutral-50 flex items-center justify-center">
                       <span className="material-symbols-outlined text-neutral-300 text-[36px]">inventory_2</span>
                     </div>
-                    <p className="mt-3 font-bold text-sm text-neutral-600">Chưa có bài đăng nào</p>
-                    <p className="text-xs text-neutral-500 font-normal mt-1">Bấm nút bên dưới để tạo bài đăng đầu tiên.</p>
+                    <p className="mt-3 font-bold text-sm text-neutral-600">ChÆ°a cÃ³ bÃ i Ä‘Äƒng nÃ o</p>
+                    <p className="text-xs text-neutral-500 font-normal mt-1">Báº¥m nÃºt bÃªn dÆ°á»›i Ä‘á»ƒ táº¡o bÃ i Ä‘Äƒng Ä‘áº§u tiÃªn.</p>
                   </div>
                 )}
 
@@ -325,7 +285,7 @@ export default function ProviderDashboardPage() {
                   className="w-full py-3 border-2 border-dashed border-neutral-300 rounded-2xl text-neutral-500 hover:border-[#236c2a] hover:text-[#236c2a] transition-colors flex items-center justify-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-base">add_circle</span>
-                  Tạo bài đăng mới
+                  Táº¡o bÃ i Ä‘Äƒng má»›i
                 </button>
               </div>
             </section>
@@ -334,11 +294,11 @@ export default function ProviderDashboardPage() {
 
         <BulkRunRequests />
 
-        {/* Yêu cầu hợp tác từ charity */}
+        {/* YÃªu cáº§u há»£p tÃ¡c tá»« charity */}
         <section className="bg-white rounded-2xl border border-neutral-150 shadow-sm overflow-hidden">
           <header className="px-5 py-4 border-b border-neutral-100 flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-500 text-[20px]">storefront</span>
-            <h3 className="font-bold text-sm text-neutral-900">Yêu cầu hợp tác từ tổ chức</h3>
+            <h3 className="font-bold text-sm text-neutral-900">YÃªu cáº§u há»£p tÃ¡c tá»« tá»• chá»©c</h3>
           </header>
           <div className="p-5">
             <ProviderRequestsSection />
@@ -442,7 +402,7 @@ function PostingItem({
   const statusMeta = STATUS_META[listing.status] ?? { label: listing.status, cls: 'bg-neutral-100 text-neutral-600' };
   const remaining = Number(listing.quantityRemaining);
   const total = Number(listing.quantityTotal);
-  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] || 'suất';
+  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] || 'suáº¥t';
   const isExpiringSoon = new Date(listing.pickupEndTime).getTime() - Date.now() < 4 * 60 * 60 * 1000;
   const isExtendable = listing.status === 'active' || listing.status === 'fully_reserved';
   const isOutOfStock = listing.status === 'fully_reserved';
@@ -483,29 +443,29 @@ function PostingItem({
               <button
                 onClick={() => onExtend('extend_time')}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-full transition-colors border border-amber-200"
-                title="Kéo dài thời gian nhận hàng"
+                title="KÃ©o dÃ i thá»i gian nháº­n hÃ ng"
               >
                 <span className="material-symbols-outlined text-[12px]">schedule</span>
-                Gia hạn giờ
+                Gia háº¡n giá»
               </button>
             )}
             {isOutOfStock && (
               <button
                 onClick={() => onExtend('add_quantity')}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-full transition-colors border border-amber-200"
-                title="Bổ sung thêm phần ăn để mở bán lại"
+                title="Bá»• sung thÃªm pháº§n Äƒn Ä‘á»ƒ má»Ÿ bÃ¡n láº¡i"
               >
                 <span className="material-symbols-outlined text-[12px]">add_circle</span>
-                Thêm số lượng
+                ThÃªm sá»‘ lÆ°á»£ng
               </button>
             )}
             <button
               onClick={() => onExtend('both')}
               className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors border border-emerald-200"
-              title="Gia hạn giờ và thêm phần ăn cùng lúc"
+              title="Gia háº¡n giá» vÃ  thÃªm pháº§n Äƒn cÃ¹ng lÃºc"
             >
               <span className="material-symbols-outlined text-[12px]">bolt</span>
-              Gia hạn + Thêm SL
+              Gia háº¡n + ThÃªm SL
             </button>
           </div>
         )}
@@ -515,7 +475,7 @@ function PostingItem({
           <button
             onClick={onPublish}
             className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
-            title="Đăng"
+            title="ÄÄƒng"
           >
             <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
           </button>
@@ -523,7 +483,7 @@ function PostingItem({
           <button
             onClick={onDuplicate}
             className="p-2 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors"
-            title="Đăng lại"
+            title="ÄÄƒng láº¡i"
           >
             <span className="material-symbols-outlined text-[18px]">content_copy</span>
           </button>
@@ -531,7 +491,7 @@ function PostingItem({
           <button
             onClick={onCancel}
             className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-            title="Huỷ"
+            title="Huá»·"
           >
             <span className="material-symbols-outlined text-[18px]">delete</span>
           </button>

@@ -5,11 +5,7 @@ import { toast } from 'sonner';
 import { useMyReservations, useRateReservation } from '@/hooks/useReservation';
 import { useCreateReport } from '@/hooks/useReports';
 import { useMe } from '@/hooks/useProfile';
-<<<<<<< HEAD
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
-=======
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
->>>>>>> origin/master
 import { QuantityUnit } from '@foodresq/types';
 import { ReportReason, ReportTargetType } from '@foodresq/types';
 
