@@ -102,6 +102,40 @@ export function formatDate(iso: string): string {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+function parseDateOnly(input?: string | Date | null): Date | null {
+  if (!input) return null;
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) return null;
+    return new Date(Date.UTC(input.getFullYear(), input.getMonth(), input.getDate()));
+  }
+  const text = input.slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (match) {
+    return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  }
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+}
+
+export function daysUntilUtcDate(input?: string | Date | null, ref: Date = new Date()): number | null {
+  const target = parseDateOnly(input);
+  const today = parseDateOnly(ref);
+  if (!target || !today) return null;
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function isSameUtcDate(input?: string | Date | null, ref: Date = new Date()): boolean {
+  return daysUntilUtcDate(input, ref) === 0;
+}
+
+export function formatCampaignDateRange(c: { scheduledDate: string; endDate?: string | null }): string {
+  const start = formatDate(c.scheduledDate);
+  const end = c.endDate ? formatDate(c.endDate) : '';
+  if (!end || end === start) return start;
+  return `${start} đến ${end}`;
+}
+
 /** "08:00:00" → "08:00". */
 export function formatTime(t: string): string {
   if (!t) return '';

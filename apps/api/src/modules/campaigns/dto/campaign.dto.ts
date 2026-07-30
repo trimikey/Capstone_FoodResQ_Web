@@ -325,11 +325,17 @@ export class PledgeDonationDto {
   @MinLength(1, { message: 'Tên vật phẩm không được để trống' })
   @MaxLength(255, { message: 'Tên vật phẩm tối đa 255 ký tự' })
   itemName!: string;
-  @ApiPropertyOptional({ example: '20 kg' })
+  @ApiProperty({ example: 20, description: 'Số lượng provider cam kết theo đơn vị của vật phẩm mục tiêu' })
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Số lượng phải là số' })
+  @Min(0.01, { message: 'Số lượng phải lớn hơn 0' })
+  @Max(100000, { message: 'Số lượng tối đa 100.000' })
+  @Type(() => Number)
+  quantity!: number;
+  @ApiPropertyOptional({ example: 'kg', description: 'Đơn vị hiển thị; phải khớp đơn vị mục tiêu nếu gửi lên' })
   @IsOptional()
-  @IsString({ message: 'Số lượng phải là chuỗi' })
-  @MaxLength(100, { message: 'Số lượng tối đa 100 ký tự' })
-  quantity?: string;
+  @IsString({ message: 'Đơn vị phải là chuỗi' })
+  @MaxLength(20, { message: 'Đơn vị tối đa 20 ký tự' })
+  unit?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi' })

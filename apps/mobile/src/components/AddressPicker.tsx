@@ -18,6 +18,7 @@ interface Props {
   value: AddressValue | null;
   onChange: (v: AddressValue) => void;
   error?: string;
+  placeholder?: string;
 }
 
 const COLORS = {
@@ -37,8 +38,7 @@ const MIN_QUERY_LEN = 3;
  * (Nominatim). PHƯƠNG ÁN 2: bấm "Tinh chỉnh trên bản đồ" để kéo ghim — khi đó
  * địa chỉ được reverse geocode và GHI ĐÈ ô địa chỉ; toạ độ luôn khớp điểm trên map.
  */
-export function AddressPicker({ initialCoords, value, onChange, error }: Props) {
-  const [query, setQuery] = useState(value?.address ?? '');
+export function AddressPicker({ initialCoords, value, onChange, error, placeholder = 'Nhập địa chỉ rồi chọn từ gợi ý (VD: 12 Nguyễn Huệ, Q1)' }: Props) {
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [noResults, setNoResults] = useState(false);
@@ -83,7 +83,6 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     abortRef.current?.abort();
     skipSearchRef.current = false;
-    setQuery('');
     setSuggestions([]);
     setNoResults(false);
     setSearching(false);
@@ -91,7 +90,6 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
   };
 
   const onChangeQuery = (text: string) => {
-    setQuery(text);
     // Gõ tay vẫn cập nhật địa chỉ (giữ nguyên toạ độ hiện hành).
     onChange({ address: text, lat: currentCoords.lat, lng: currentCoords.lng });
 
@@ -112,7 +110,6 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
 
   const onSelectSuggestion = (s: AddressSuggestion) => {
     skipSearchRef.current = true;
-    setQuery(s.displayName);
     setSuggestions([]);
     setNoResults(false);
     abortRef.current?.abort();
@@ -126,7 +123,6 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
       .then((addr) => {
         const address = addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         skipSearchRef.current = true;
-        setQuery(address);
         setSuggestions([]);
         setNoResults(false);
         onChange({ address, lat, lng });
@@ -138,14 +134,14 @@ export function AddressPicker({ initialCoords, value, onChange, error }: Props) 
     <View>
       <TextInput
         mode="outlined"
-        placeholder="Nhập địa chỉ rồi chọn từ gợi ý (VD: 12 Nguyễn Huệ, Q1)"
-        value={query}
+        placeholder={placeholder}
+        value={value?.address ?? ''}
         onChangeText={onChangeQuery}
         left={<TextInput.Icon icon="magnify" />}
         right={
           searching ? (
             <TextInput.Icon icon={() => <ActivityIndicator size={18} color={COLORS.primary} />} />
-          ) : query.length > 0 ? (
+          ) : (value?.address ?? '').length > 0 ? (
             <TextInput.Icon icon="close-circle" onPress={handleClear} forceTextInputFocus={false} />
           ) : undefined
         }

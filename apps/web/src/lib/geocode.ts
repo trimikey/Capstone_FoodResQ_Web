@@ -19,3 +19,44 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
     return null;
   }
 }
+
+export interface AddressSuggestion {
+  displayName: string;
+  lat: number;
+  lng: number;
+}
+
+interface NominatimSearchItem {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
+export async function searchAddress(query: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 3) return [];
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    q,
+    countrycodes: 'vn',
+    addressdetails: '1',
+    limit: '6',
+    'accept-language': 'vi',
+  });
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { signal });
+    if (!res.ok) return [];
+    const data = (await res.json()) as NominatimSearchItem[];
+    return data
+      .map((item) => ({
+        displayName: item.display_name,
+        lat: Number(item.lat),
+        lng: Number(item.lon),
+      }))
+      .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+  } catch {
+    return [];
+  }
+}
