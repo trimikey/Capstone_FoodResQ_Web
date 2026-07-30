@@ -206,14 +206,7 @@ export default function ProviderCreateListingPage() {
       {/* Header */}
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <Link
-            href="/provider"
-            className="text-xs text-[#236c2a] font-medium hover:underline inline-flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Quay lại Trang quản trị
-          </Link>
-          <h1 className="mt-2 text-2xl font-medium text-neutral-800">Đăng tin thực phẩm mới</h1>
+          <h1 className="text-2xl font-medium text-neutral-800">Đăng tin thực phẩm mới</h1>
           <p className="text-sm text-neutral-500 font-normal">
             Chia sẻ thực phẩm dư thừa chất lượng cao — chỉ với 3 bước đơn giản.
           </p>

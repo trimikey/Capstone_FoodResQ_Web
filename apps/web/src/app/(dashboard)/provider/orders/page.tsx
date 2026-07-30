@@ -10,6 +10,7 @@ import { UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
+import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -179,37 +180,35 @@ export default function ProviderOrdersPage() {
   return (
     <div className="flex-1 min-w-0 bg-[#FAFBF9]">
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-[#236c2a] uppercase tracking-wider">Lịch sử</p>
-            <h1 className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1">Theo dõi đơn</h1>
-            <p className="text-sm text-neutral-500 mt-1 font-normal">
-              Tổng cộng <b className="text-neutral-800">{total}</b> đơn từ người nhận
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setRequestDrawerOpen(true)}
-              className="relative self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
-            >
-              <Bell className="h-4 w-4" />
-              Yêu cầu từ bếp ăn
-              {pendingRequests.length > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold bg-rose-500 text-white">
-                  {pendingRequests.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => refetch()}
-              className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
-            >
-              <span className="material-symbols-outlined text-[16px]">refresh</span>
-              Làm mới
-            </button>
-          </div>
-        </header>
+        {/* Header — đồng bộ với các trang provider khác */}
+        <ProviderHeaderCard
+          eyebrow="Lịch sử"
+          title="Theo dõi đơn"
+          description={`Tổng cộng ${total} đơn từ người nhận`}
+          cta={
+            <>
+              <button
+                onClick={() => setRequestDrawerOpen(true)}
+                className="relative self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
+              >
+                <Bell className="h-4 w-4" />
+                Yêu cầu từ bếp ăn
+                {pendingRequests.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold bg-rose-500 text-white">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => refetch()}
+                className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                Làm mới
+              </button>
+            </>
+          }
+        />
 
         {/* Drawer: yêu cầu hợp tác từ charity */}
         {requestDrawerOpen && (
@@ -277,7 +276,7 @@ export default function ProviderOrdersPage() {
                           )}
                           {r.message && (
                             <p className="text-xs text-neutral-500 italic mt-1 line-clamp-2">
-                              “{r.message}”
+                              "{r.message}"
                             </p>
                           )}
                         </button>
@@ -527,14 +526,14 @@ function StatCard({
   const t = tones[tone];
 
   return (
-    <div className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-neutral-100">
+    <div className="bg-white p-4 md:p-5 rounded-2xl border border-neutral-150 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} flex items-center justify-center`}>
           <span className="material-symbols-outlined text-[20px]">{icon}</span>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">{label}</p>
-      <p className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1 tabular-nums">{value}</p>
+      <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">{label}</p>
+      <p className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1 tabular-nums">{value}</p>
     </div>
   );
 }
