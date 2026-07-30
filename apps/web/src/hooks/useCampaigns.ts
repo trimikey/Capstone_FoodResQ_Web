@@ -36,6 +36,19 @@ export interface Campaign {
     status: string;
     provider: { businessName: string };
   }[];
+  supplyProgress?: SupplyProgressItem[];
+}
+
+export interface SupplyProgressItem {
+  name: string;
+  unit: string;
+  targetQuantity: number;
+  pledgedQuantity: number;
+  receivedQuantity: number;
+  remainingQuantity: number;
+  receivedRemainingQuantity: number;
+  progressPercent: number;
+  isTargetMet: boolean;
 }
 
 export interface CreateCampaignInput {
@@ -224,6 +237,7 @@ export interface PublicCampaignDetail extends PublicCampaign {
   scheduleItems: { time: string; label: string }[];
   /** Vật phẩm: campaign cũ lưu string, campaign mới lưu object {name, quantity, unit}. */
   supplyItems: string[] | { name: string; quantity?: number | null; unit?: string | null }[];
+  supplyProgress?: SupplyProgressItem[];
   participants: CampaignParticipant[];
   donations: { id: string; itemName: string; quantity: string | null; status: string; provider: { businessName: string } }[];
   proofGallery: CampaignProofPhoto[];
@@ -404,8 +418,8 @@ export function useCompleteCampaign() {
 export function usePledgeDonation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { campaignId: string; itemName: string; quantity?: string; note?: string }) =>
-      (await api.post(`/campaigns/${p.campaignId}/donations`, { itemName: p.itemName, quantity: p.quantity, note: p.note })).data.data,
+    mutationFn: async (p: { campaignId: string; itemName: string; quantity: number; unit?: string; note?: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/donations`, { itemName: p.itemName, quantity: p.quantity, unit: p.unit, note: p.note })).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }
