@@ -3,11 +3,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
-import { reverseGeocode } from '@/lib/geocode';
+import { reverseGeocode, searchAddress, type AddressSuggestion } from '@/lib/geocode';
 import {
   useUploadCampaignImage,
   type CreateCampaignInput,
 } from '@/hooks/useCampaigns';
+import { useMe } from '@/hooks/useProfile';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import CreateCampaignSuggestions from '@/components/campaigns/CreateCampaignSuggestions';
 import type {
@@ -25,6 +26,20 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
   ),
 });
 
+function tomorrowDateString() {
+  return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="text-[11px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
+      <span className="material-symbols-outlined text-[13px]">error</span>
+      {message}
+    </p>
+  );
+}
+
 interface CreateCampaignModalProps {
   onClose: () => void;
   onSubmit: (input: CreateCampaignInput) => Promise<unknown>;
@@ -36,11 +51,11 @@ export default function CreateCampaignModal({
   onSubmit,
   pending,
 }: CreateCampaignModalProps) {
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => ({
     title: '',
     description: '',
     kitchenAddress: '',
-    scheduledDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    scheduledDate: tomorrowDateString(),
     /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
     endDate: '' as string,
     startTime: '08:00',
@@ -51,12 +66,93 @@ export default function CreateCampaignModal({
     expectedServings: 100,
     lng: 106.6297,
     lat: 10.8231,
-  });
+  }));
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [addressMode, setAddressMode] = useState<'profile' | 'custom'>('custom');
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [addressSearching, setAddressSearching] = useState(false);
+  const [addressNoResults, setAddressNoResults] = useState(false);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const { data: me } = useMe();
+
+  const profileAddress = me?.receiver?.address?.trim() ?? '';
+  const profileLat = me?.receiver?.lat ?? null;
+  const profileLng = me?.receiver?.lng ?? null;
+  const hasProfileAddress = profileAddress.length >= 5;
+
+  function applyProfileAddress() {
+    if (!hasProfileAddress) {
+      toast.warning('Hồ sơ chưa có địa chỉ mặc định.');
+      return;
+    }
+    searchAbortRef.current?.abort();
+    setAddressMode('profile');
+    setAddressSuggestions([]);
+    setAddressNoResults(false);
+    setF((prev) => ({
+      ...prev,
+      kitchenAddress: profileAddress,
+      lat: profileLat ?? prev.lat,
+      lng: profileLng ?? prev.lng,
+    }));
+    setErr('kitchenAddress', undefined);
+  }
+
+  function switchToCustomAddress() {
+    setAddressMode('custom');
+    setAddressSuggestions([]);
+    setAddressNoResults(false);
+  }
+
+  function queueAddressSearch(text: string) {
+    searchAbortRef.current?.abort();
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+
+    const q = text.trim();
+    if (q.length < 3) {
+      setAddressSuggestions([]);
+      setAddressNoResults(false);
+      setAddressSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+    setAddressSearching(true);
+    setAddressNoResults(false);
+    searchTimerRef.current = window.setTimeout(() => {
+      void searchAddress(q, controller.signal)
+        .then((items) => {
+          if (controller.signal.aborted) return;
+          setAddressSuggestions(items);
+          setAddressNoResults(items.length === 0);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAddressSearching(false);
+        });
+    }, 550);
+  }
+
+  function selectAddressSuggestion(item: AddressSuggestion) {
+    searchAbortRef.current?.abort();
+    setAddressMode('custom');
+    setAddressSuggestions([]);
+    setAddressNoResults(false);
+    setGeocodeError(false);
+    setF((prev) => ({
+      ...prev,
+      kitchenAddress: item.displayName,
+      lat: item.lat,
+      lng: item.lng,
+    }));
+    setErr('kitchenAddress', undefined);
+  }
 
   async function onMapPick(lng: number, lat: number) {
+    setAddressMode('custom');
     setF((prev) => ({ ...prev, lng, lat }));
     setGeocoding(true);
     setGeocodeError(false);
@@ -70,6 +166,13 @@ export default function CreateCampaignModal({
       toast.warning('Không lấy được địa chỉ từ bản đồ — bạn có thể tự nhập tay phía trên.');
     }
   }
+
+  useEffect(() => {
+    return () => {
+      searchAbortRef.current?.abort();
+      if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    };
+  }, []);
 
   const upload = useUploadCampaignImage();
 
@@ -239,16 +342,6 @@ export default function CreateCampaignModal({
     return `${base} ${errors[key] ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`;
   }
 
-  function FieldError({ k }: { k: string }) {
-    if (!errors[k]) return null;
-    return (
-      <p className="text-[11px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
-        <span className="material-symbols-outlined text-[13px]">error</span>
-        {errors[k]}
-      </p>
-    );
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!validateAll()) {
@@ -401,7 +494,7 @@ export default function CreateCampaignModal({
                   data-field-error={errors.title ? 'title' : undefined}
                   maxLength={255}
                 />
-                <FieldError k="title" />
+                <FieldError message={errors.title} />
                 <textarea
                   value={f.description}
                   onChange={(e) => {
@@ -414,7 +507,7 @@ export default function CreateCampaignModal({
                   className={inputCls('description', 'cm-input')}
                   aria-invalid={!!errors.description}
                 />
-                <FieldError k="description" />
+                <FieldError message={errors.description} />
               </div>
 
               <div id="cm-image-block" className="cm-form-block">
@@ -503,11 +596,51 @@ export default function CreateCampaignModal({
                 <span className="cm-form-block-label">
                   <span className="material-symbols-outlined">place</span>Địa điểm
                 </span>
+                <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={applyProfileAddress}
+                    disabled={!hasProfileAddress}
+                    className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                      addressMode === 'profile'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                        : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
+                      <span className="material-symbols-outlined text-[17px]">home_pin</span>
+                      Dùng địa chỉ mặc định
+                    </span>
+                    <span className="mt-1 block text-xs text-neutral-500 line-clamp-2">
+                      {hasProfileAddress ? profileAddress : 'Chưa có địa chỉ trong hồ sơ'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={switchToCustomAddress}
+                    className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                      addressMode === 'custom'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                        : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
+                      <span className="material-symbols-outlined text-[17px]">travel_explore</span>
+                      Chọn địa chỉ khác
+                    </span>
+                    <span className="mt-1 block text-xs text-neutral-500">
+                      Nhập để search hoặc kéo ghim trên bản đồ.
+                    </span>
+                  </button>
+                </div>
                 <input
                   value={f.kitchenAddress}
                   onChange={(e) => {
+                    const nextAddress = e.target.value;
                     setGeocodeError(false);
-                    setF({ ...f, kitchenAddress: e.target.value });
+                    setAddressMode('custom');
+                    setF({ ...f, kitchenAddress: nextAddress });
+                    queueAddressSearch(nextAddress);
                     if (errors.kitchenAddress) setErr('kitchenAddress', undefined);
                   }}
                   onBlur={() => {
@@ -522,7 +655,31 @@ export default function CreateCampaignModal({
                   data-field-error={errors.kitchenAddress ? 'kitchenAddress' : undefined}
                   maxLength={500}
                 />
-                <FieldError k="kitchenAddress" />
+                {addressSearching ? (
+                  <p className="mt-1 text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">progress_activity</span>
+                    Đang tìm địa chỉ…
+                  </p>
+                ) : null}
+                {addressNoResults ? (
+                  <p className="mt-1 text-[11px] text-neutral-500">Không tìm thấy địa chỉ phù hợp.</p>
+                ) : null}
+                {addressSuggestions.length > 0 ? (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+                    {addressSuggestions.map((item, idx) => (
+                      <button
+                        key={`${item.lat},${item.lng},${idx}`}
+                        type="button"
+                        onClick={() => selectAddressSuggestion(item)}
+                        className="flex w-full items-start gap-2 border-b border-neutral-100 px-3 py-2 text-left text-xs text-neutral-700 last:border-b-0 hover:bg-emerald-50"
+                      >
+                        <span className="material-symbols-outlined mt-0.5 text-[16px] text-emerald-700">place</span>
+                        <span className="line-clamp-2">{item.displayName}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <FieldError message={errors.kitchenAddress} />
                 <div className="cm-modal-map">
                   <LocationPicker lng={f.lng} lat={f.lat} onPick={onMapPick} />
                 </div>
@@ -585,9 +742,9 @@ export default function CreateCampaignModal({
                     data-field-error={errors.endTime ? 'endTime' : undefined}
                   />
                 </div>
-                <FieldError k="scheduledDate" />
-                <FieldError k="startTime" />
-                <FieldError k="endTime" />
+                <FieldError message={errors.scheduledDate} />
+                <FieldError message={errors.startTime} />
+                <FieldError message={errors.endTime} />
                 {/* Ngày kết thúc (optional) — bỏ trống = 1 ngày duy nhất */}
                 <div className="mt-2 flex items-center gap-2">
                   <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide shrink-0">
@@ -625,7 +782,7 @@ export default function CreateCampaignModal({
                     ? `Chiến dịch kéo dài từ ${new Date(f.scheduledDate).toLocaleDateString('vi-VN')} đến ${new Date(f.endDate).toLocaleDateString('vi-VN')}.`
                     : 'Bỏ trống nếu chiến dịch chỉ diễn ra 1 ngày.'}
                 </p>
-                <FieldError k="endDate" />
+                <FieldError message={errors.endDate} />
                 <input
                   type="number"
                   min={1}
@@ -646,7 +803,7 @@ export default function CreateCampaignModal({
                   className={inputCls('expectedServings', 'cm-input')}
                   aria-invalid={!!errors.expectedServings}
                 />
-                <FieldError k="expectedServings" />
+                <FieldError message={errors.expectedServings} />
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <SlotStepper
                     tone="chef"

@@ -64,6 +64,7 @@ export interface Campaign {
   description: string | null;
   kitchenAddress: string;
   scheduledDate: string;
+  endDate?: string | null;
   startTime: string;
   endTime: string;
   chefSlotsNeeded: number;
@@ -106,6 +107,7 @@ export interface CreateCampaignInput {
   lat: number;
   lng: number;
   scheduledDate: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   chefSlotsNeeded?: number;
@@ -131,6 +133,7 @@ export interface CampaignChangeRequest {
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | (string & {});
   reason: string | null;
   scheduledDate: string | null;
+  endDate: string | null;
   startTime: string | null;
   endTime: string | null;
   kitchenAddress: string | null;
@@ -146,6 +149,7 @@ export interface CampaignChangeRequest {
 
 export interface SubmitCampaignChangeInput {
   scheduledDate?: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   kitchenAddress?: string;
@@ -162,6 +166,7 @@ export interface CompletedCampaign {
   title: string;
   description: string | null;
   scheduledDate: string;
+  endDate?: string | null;
   kitchenAddress: string;
   imageUrls: string[];
   actualServings: number | null;
@@ -176,6 +181,7 @@ export interface PublicCampaign {
   title: string;
   description: string | null;
   scheduledDate: string;
+  endDate?: string | null;
   startTime: string;
   endTime: string;
   kitchenAddress: string;
@@ -291,7 +297,17 @@ export interface CampaignProviderRequest {
   reviewedAt: string | null;
   reviewedNote: string | null;
   createdAt: string;
-  campaign?: { id: string; title: string; scheduledDate?: string | null } | null;
+  pickupTime?: string | null;
+  needsTransport?: boolean | null;
+  campaign?: {
+    id: string;
+    title: string;
+    scheduledDate?: string | null;
+    endDate?: string | null;
+    pickupStartTime?: string | null;
+    pickupEndTime?: string | null;
+    needsTransport?: boolean | null;
+  } | null;
   provider?: { businessName: string; user?: { fullName: string } } | null;
   receiver?: { organizationName: string | null; user: { fullName: string } };
 }
@@ -503,9 +519,21 @@ export function useCancelCampaign() {
 export function useCompleteCampaign() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, actualServings }: { id: string; actualServings: number }) => {
+    mutationFn: async ({
+      id,
+      actualServings,
+      earlyEndConfirmation,
+      earlyEndReason,
+    }: {
+      id: string;
+      actualServings: number;
+      earlyEndConfirmation?: 'EARLY_END';
+      earlyEndReason?: string;
+    }) => {
       const res = await apiClient.patch<ApiResponse<Campaign>>(endpoints.campaigns.complete(id), {
         actualServings,
+        ...(earlyEndConfirmation ? { earlyEndConfirmation } : {}),
+        ...(earlyEndReason ? { earlyEndReason } : {}),
       });
       return res.data.data;
     },
@@ -616,6 +644,7 @@ export interface CampaignTask {
     title: string;
     kitchenAddress: string;
     scheduledDate: string;
+    endDate?: string | null;
     startTime: string;
     endTime: string;
     status: CampaignStatus;
@@ -718,10 +747,27 @@ export function useMySentProviderRequests(enabled: boolean = true) {
 export function useReviewProviderRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ requestId, action, note }: { requestId: string; action: 'accept' | 'reject'; note?: string }) => {
+    mutationFn: async ({
+      requestId,
+      action,
+      note,
+      pickupTime,
+      needsTransport,
+    }: {
+      requestId: string;
+      action: 'accept' | 'reject';
+      note?: string;
+      pickupTime?: string;
+      needsTransport?: boolean;
+    }) => {
       const res = await apiClient.patch<ApiResponse<CampaignProviderRequest>>(
         endpoints.campaigns.reviewProviderRequest(requestId),
-        { action, ...(note ? { note } : {}) }
+        {
+          action,
+          ...(note ? { note } : {}),
+          ...(pickupTime ? { pickupTime } : {}),
+          ...(needsTransport != null ? { needsTransport } : {}),
+        }
       );
       return res.data.data;
     },
