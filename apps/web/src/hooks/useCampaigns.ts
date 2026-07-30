@@ -8,6 +8,7 @@ export interface Campaign {
   description: string | null;
   kitchenAddress: string;
   scheduledDate: string;
+  endDate?: string | null;
   startTime: string;
   endTime: string;
   chefSlotsNeeded: number;
@@ -57,6 +58,8 @@ export interface CreateCampaignInput {
   lng: number;
   lat: number;
   scheduledDate: string;
+  /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
+  endDate?: string;
   startTime: string;
   endTime: string;
   chefSlotsNeeded?: number;
@@ -84,6 +87,7 @@ export interface CampaignChangeRequest {
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   reason: string | null;
   scheduledDate: string | null;
+  endDate: string | null;
   startTime: string | null;
   endTime: string | null;
   kitchenAddress: string | null;
@@ -99,6 +103,7 @@ export interface CampaignChangeRequest {
 
 export interface SubmitCampaignChangeInput {
   scheduledDate?: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   kitchenAddress?: string;
@@ -119,6 +124,7 @@ export interface MyTask {
     title: string;
     kitchenAddress: string;
     scheduledDate: string;
+    endDate?: string | null;
     startTime: string;
     endTime: string;
     status: string;
@@ -162,6 +168,34 @@ export interface CampaignParticipant {
   fullName: string;
   avatarUrl: string | null;
   rank: string;
+}
+
+/** Thông tin TNV chi tiết cho trang quản lý của charity (từ /manage-detail). */
+export interface VolunteerDetail {
+  fullName: string;
+  avatarUrl: string | null;
+  phone: string | null;
+  trustScore: number;
+  userStatus: string;
+  rank: string;
+  dedicationPoints: number;
+  avgRating: number | null;
+  isAvailable: boolean;
+  vehicleType: string | null;
+  vehiclePlate: string | null;
+  specializations: string[];
+  pastCampaignsCount: number;
+}
+
+/** Participant từ manage-detail: có thêm trường volunteer chi tiết + checkInTime + notes. */
+export interface CampaignManageParticipant {
+  id: string;
+  role: 'chef' | 'waiter' | 'shipper';
+  status: string;
+  checkInTime: string | null;
+  notes: string | null;
+  createdAt: string;
+  volunteer: VolunteerDetail;
 }
 
 export interface CampaignProofPhoto { url: string; kind: 'ingredient' | 'cooked' | 'distribution' | string; by: string; }
@@ -227,7 +261,10 @@ export interface PublicCampaignDetail extends PublicCampaign {
 export function usePublicCampaignDetail(id: string) {
   return useQuery({
     queryKey: ['campaigns', 'public', id],
-    queryFn: async () => (await api.get(`/campaigns/public/${id}`)).data.data as PublicCampaignDetail,
+    queryFn: async () => {
+      const res = await api.get(`/campaigns/public/${id}`);
+      return res.data.data as PublicCampaignDetail;
+    },
     enabled: !!id,
     staleTime: 30_000,
   });
@@ -337,7 +374,7 @@ export function useApplyCampaign() {
   });
 }
 
-// Tổ chức: bắt đầu chiến dịch (open → in_progress)
+// Tổ chức: bắt đầu chiến dịch (open → in_progress) — CHỈ khi scheduledDate = hôm nay.
 export function useStartCampaign() {
   const qc = useQueryClient();
   return useMutation({
@@ -355,12 +392,24 @@ export function useCancelCampaign() {
   });
 }
 
-// Tổ chức: kết thúc chiến dịch + nhập số suất thực tế
+// Tổ chức: kết thúc chiến dịch + nhập số suất thực tế.
+// Nếu campaign chưa tới ngày kết thúc (endDate || scheduledDate) thì cần truyền
+// earlyEndConfirmation + earlyEndReason (đã được validate ở modal).
+export interface CompleteCampaignInput {
+  id: string;
+  actualServings: number;
+  earlyEndConfirmation?: 'EARLY_END';
+  earlyEndReason?: string;
+}
 export function useCompleteCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { id: string; actualServings: number }) =>
-      (await api.patch(`/campaigns/${p.id}/complete`, { actualServings: p.actualServings })).data.data,
+    mutationFn: async (p: CompleteCampaignInput) =>
+      (await api.patch(`/campaigns/${p.id}/complete`, {
+        actualServings: p.actualServings,
+        earlyEndConfirmation: p.earlyEndConfirmation,
+        earlyEndReason: p.earlyEndReason,
+      })).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }
@@ -448,6 +497,16 @@ export interface ProviderRequestItem {
   reviewedNote: string | null;
   createdAt: string;
   updatedAt: string;
+  /// Ngày TNV đến lấy thực phẩm (copy từ campaign lúc accept).
+  scheduledDate: string | null;
+  /// Giờ bắt đầu lấy hàng do provider chọn (HH:mm). Null = chưa accept hoặc pickup do charity sắp xếp.
+  pickupStartTime: string | null;
+  /// Giờ kết thúc lấy hàng (HH:mm).
+  pickupEndTime: string | null;
+  /// True nếu BE đã tạo delivery + đang tìm TNV giao hàng.
+  needsTransport: boolean;
+  /// Trạng thái của campaign_transports gắn với request này (nếu có).
+  transport: { id: string; status: 'pending' | 'assigned' | 'delivered' | 'failed'; deliveryId: string | null } | null;
   receiver: {
     id: string;
     organizationName: string | null;
@@ -476,12 +535,21 @@ export function useReviewProviderRequest() {
       requestId: string;
       action: 'accept' | 'reject';
       note?: string;
+      /** Giờ TNV đến lấy (HH:mm). Chỉ dùng khi action='accept'. */
+      pickupTime?: string;
+      /** Có cần hệ thống tìm TNV giao hàng không? Mặc định true. */
+      needsTransport?: boolean;
     }) => {
       const { data } = await api.patch(
         `/campaigns/provider-requests/${p.requestId}/review`,
-        { action: p.action, note: p.note },
+        {
+          action: p.action,
+          note: p.note,
+          pickupTime: p.pickupTime,
+          needsTransport: p.needsTransport,
+        },
       );
-      return data.data as ProviderRequestItem;
+      return data.data as ProviderRequestItem & { transportId?: string };
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'provider-requests'] });
@@ -539,9 +607,33 @@ export function useReviewAssignment() {
       return data.data;
     },
     onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      // Refetch ngay lập tức cả manage-detail và public-detail để RegistrationRow
+      // đọc được serverStatus mới (assigned/rejected) thay vì giữ optimistic local.
+      void qc.invalidateQueries({
+        queryKey: ['campaigns', 'manage-detail', p.campaignId],
+        refetchType: 'all',
+      });
+      void qc.invalidateQueries({
+        queryKey: ['campaigns', 'public', p.campaignId],
+        refetchType: 'all',
+      });
     },
   });
+}
+
+// Tổ chức: chi tiết chiến dịch cho trang quản lý (bao gồm cả pending assignments)
+export function useCampaignManageDetail(id: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'manage-detail', id],
+    queryFn: async () => (await api.get(`/campaigns/${id}/manage-detail`)).data.data as CampaignManageDetail,
+    enabled: !!id,
+    staleTime: 15_000,
+  });
+}
+
+export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'participants'> {
+  participants: CampaignManageParticipant[];
+  menuItemRefs?: Array<{ id: string; customName: string; plannedServings: number | null; recipeId: string | null; sortOrder: number }>;
 }
 
 export interface CreateDistributionInput {
@@ -562,6 +654,7 @@ export function useCreateDistribution() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }
@@ -600,6 +693,7 @@ export function useAddShift() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }
@@ -617,6 +711,7 @@ export function useUpdateShift() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }
@@ -631,6 +726,7 @@ export function useDeleteShift() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }
@@ -645,6 +741,7 @@ export function useAppendMenuItem() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }
@@ -659,6 +756,7 @@ export function useAppendSupplyItem() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
   });
 }

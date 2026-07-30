@@ -9,6 +9,9 @@ import {
   StatusTab,
 } from '../../_components/CampaignManageShared';
 import { STATUS_META, useManageContext } from '../../_components/ManageShell';
+import CampaignPlaybook, {
+  type CampaignPhaseKey,
+} from '@/components/campaigns/CampaignPlaybook';
 
 type StatusKey = 'running' | 'pending' | 'finished';
 
@@ -28,6 +31,18 @@ export default function ManageOverviewPage() {
   stats.pct = stats.target > 0 ? Math.min(100, Math.round((stats.served / stats.target) * 100)) : 0;
   stats.remaining = Math.max(0, stats.target - stats.served);
   const statusMeta = STATUS_META[c.status];
+
+  // Phase highlight theo status — gợi ý bước tiếp theo cho charity.
+  const playbookHighlight: CampaignPhaseKey | null =
+    c.status === 'completed'
+      ? 'report'
+      : c.status === 'in_progress'
+      ? 'distribute'
+      : c.status === 'open'
+      ? 'recruit'
+      : c.status === 'cancelled'
+      ? 'plan'
+      : 'plan';
 
   function decide(assignmentId: string, volunteerName: string, action: 'approved' | 'rejected') {
     setDecisions((prev) => ({ ...prev, [assignmentId]: action }));
@@ -80,6 +95,11 @@ export default function ManageOverviewPage() {
             <b>{stats.filledSlots}/{stats.totalSlots}</b> TNV tham gia
           </span>
         </div>
+      </section>
+
+      {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
+      <section className="cm-manage-card">
+        <CampaignPlaybook variant="inline" highlightKey={playbookHighlight} />
       </section>
 
       <section className="cm-manage-card">

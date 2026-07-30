@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -137,6 +138,15 @@ export class CreateCampaignDto {
   @ApiProperty({ example: '2026-06-20' })
   @IsDateString({}, { message: 'Ngày tổ chức phải đúng định dạng YYYY-MM-DD' })
   scheduledDate!: string;
+
+  @ApiPropertyOptional({
+    example: '2026-06-21',
+    description:
+      'Ngày kết thúc campaign (>= scheduledDate). Bỏ trống = 1 ngày duy nhất (mặc định = scheduledDate). Cron sẽ tự động chuyển sang trạng thái "Đã hoàn tất" sau endDate + endTime.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
+  endDate?: string;
 
   @ApiProperty({ example: '08:00' })
   @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 08:00)' })
@@ -290,6 +300,23 @@ export class CompleteCampaignDto {
   @Min(0, { message: 'Số suất không được âm' })
   @Type(() => Number)
   actualServings!: number;
+
+  /** Bắt buộc khi kết thúc sớm (chưa tới endDate / scheduledDate). Gửi 'EARLY_END' để xác nhận. */
+  @ApiPropertyOptional({
+    enum: ['EARLY_END'],
+    description: 'Xác nhận chủ động kết thúc sớm (chỉ khi campaign chưa tới ngày kết thúc).',
+  })
+  @IsOptional()
+  @IsIn(['EARLY_END'], { message: 'Giá trị xác nhận không hợp lệ.' })
+  earlyEndConfirmation?: 'EARLY_END';
+
+  /** Lý do kết thúc sớm (bắt buộc kèm earlyEndConfirmation). */
+  @ApiPropertyOptional({ example: 'Thiếu nguyên liệu đột xuất, không thể tiếp tục' })
+  @IsOptional()
+  @IsString({ message: 'Lý do phải là chuỗi' })
+  @MinLength(5, { message: 'Lý do tối thiểu 5 ký tự' })
+  @MaxLength(500, { message: 'Lý do tối đa 500 ký tự' })
+  earlyEndReason?: string;
 }
 
 export class PledgeDonationDto {
@@ -326,6 +353,12 @@ export class SendProviderRequestDto {
   @IsOptional()
   @IsUUID('4', { message: 'ID chiến dịch không hợp lệ' })
   campaignId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'ID thực phẩm không hợp lệ' })
+  listingIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -396,6 +429,14 @@ export class SubmitCampaignChangeDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày phải đúng định dạng YYYY-MM-DD' })
   scheduledDate?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-06-21',
+    description: 'Ngày kết thúc dự kiến (>= scheduledDate). Bỏ trống nếu chỉ tổ chức 1 ngày.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
+  endDate?: string;
 
   @ApiPropertyOptional({ example: '08:00' })
   @IsOptional()
@@ -614,4 +655,46 @@ export class AppendSupplyItemDto {
   @IsString()
   @MaxLength(20)
   unit?: string;
+}
+
+/**
+ * Provider duyệt yêu cầu hợp tác từ charity:
+ * - action='accept'  → chấp nhận, có thể chọn giờ TNV đến lấy (mặc định = campaign.startTime)
+ *                       và bật cờ "cần TNV giao hàng" (mặc định = true).
+ * - action='reject'  → từ chối, kèm note giải thích.
+ *
+ * Khi action='accept' và needsTransport=true → BE tự tạo delivery record +
+ * gọi DeliveriesService.broadcastToNearbyShippers để tìm shipper gần nhất.
+ */
+export class ReviewProviderRequestDto {
+  @ApiProperty({ enum: ['accept', 'reject'], example: 'accept' })
+  @IsString()
+  @IsIn(['accept', 'reject'], { message: 'action chỉ chấp nhận accept | reject' })
+  action!: 'accept' | 'reject';
+
+  @ApiPropertyOptional({ example: 'Rất tiếp, kho đang thiếu hàng.' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
+  note?: string;
+
+  /** Provider chọn giờ TNV đến lấy (HH:mm). Bỏ trống = lấy theo campaign.startTime. */
+  @ApiPropertyOptional({
+    example: '09:00',
+    description: 'Giờ TNV đến lấy hàng (HH:mm). Bỏ trống → mặc định theo campaign.',
+  })
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ lấy phải đúng định dạng HH:mm' })
+  pickupTime?: string;
+
+  /** Có cần TNV giao hàng từ provider → kitchen không? Mặc định = true. */
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'true = BE tự tìm TNV giao hàng; false = charity tự điều phối TNV của mình đến lấy.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'needsTransport phải là boolean' })
+  @Transform(({ value }) => (value === undefined ? true : value))
+  needsTransport?: boolean;
 }

@@ -647,6 +647,7 @@ export class AdminService {
 
     const data: Prisma.KitchenCampaignUpdateInput = {};
     if (cr.scheduledDate !== null) data.scheduledDate = cr.scheduledDate;
+    if (cr.endDate !== null) data.endDate = cr.endDate;
     if (cr.startTime !== null) data.startTime = cr.startTime;
     if (cr.endTime !== null) data.endTime = cr.endTime;
     if (cr.kitchenAddress !== null) data.kitchenAddress = cr.kitchenAddress;

@@ -48,7 +48,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     ?? (pathname.startsWith('/provider') ? 'Provider Portal' : 'FoodResQ');
 
   return (
-    <div className="min-h-screen bg-[#f0f7f3] font-body-md">
+    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
@@ -138,7 +138,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       </aside>
 
       {/* Main Content - nền xanh nhạt */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
+      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#FAFBF9]">
         {/* TopAppBar - Desktop - nền xanh nhạt, không border */}
         <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <div className="flex items-center gap-3">

@@ -12,10 +12,13 @@ export const ROLE_LABEL: Record<string, string> = {
 export function RegistrationRow({
   p,
   decision,
+  pending,
   onDecide,
 }: {
   p: CampaignParticipant;
   decision?: 'approved' | 'rejected';
+  /** Đang gửi mutation (disable nút để chặn click 2 lần). */
+  pending?: boolean;
   onDecide: (id: string, name: string, action: 'approved' | 'rejected') => void;
 }) {
   const roleKey = p.role as keyof typeof ROLE_LABEL;
@@ -26,6 +29,21 @@ export function RegistrationRow({
       : p.role === 'shipper'
         ? 'cm-reg-role-pill--shipper'
         : '';
+
+  // Status từ server là nguồn chính — chỉ hiển thị nút Duyệt/Từ chối khi BE còn cho phép (status=pending).
+  const serverStatus = p.status ?? null;
+  const isPendingReview = !serverStatus || serverStatus === 'pending';
+
+  // Map trạng thái server → nhãn tiếng Việt cho badge.
+  const serverBadge = (() => {
+    if (serverStatus === 'assigned') return { label: 'Đã duyệt', cls: 'cm-reg-status--approved' };
+    if (serverStatus === 'rejected') return { label: 'Đã từ chối', cls: 'cm-reg-status--rejected' };
+    if (serverStatus === 'checked_in') return { label: 'Đã điểm danh', cls: 'cm-reg-status--info' };
+    if (serverStatus === 'in_progress') return { label: 'Đang làm', cls: 'cm-reg-status--info' };
+    if (serverStatus === 'completed') return { label: 'Hoàn thành', cls: 'cm-reg-status--approved' };
+    if (serverStatus === 'absent') return { label: 'Vắng', cls: 'cm-reg-status--rejected' };
+    return null;
+  })();
 
   return (
     <div className="cm-reg-row">
@@ -42,7 +60,9 @@ export function RegistrationRow({
         <p className="cm-reg-meta">Hạng: {p.rank}</p>
       </div>
       <span className={`cm-reg-role-pill ${roleClass}`}>{roleLabel}</span>
-      {decision ? (
+      {!isPendingReview && serverBadge ? (
+        <span className={`cm-reg-status ${serverBadge.cls}`}>{serverBadge.label}</span>
+      ) : decision ? (
         <span className={`cm-reg-status cm-reg-status--${decision}`}>
           {decision === 'approved' ? 'Đã duyệt' : 'Đã từ chối'}
         </span>
@@ -51,7 +71,8 @@ export function RegistrationRow({
           <button
             type="button"
             onClick={() => onDecide(p.id, p.fullName, 'rejected')}
-            className="cm-reg-btn cm-reg-btn--reject"
+            disabled={pending}
+            className="cm-reg-btn cm-reg-btn--reject disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[14px]">close</span>
             Từ chối
@@ -59,7 +80,8 @@ export function RegistrationRow({
           <button
             type="button"
             onClick={() => onDecide(p.id, p.fullName, 'approved')}
-            className="cm-reg-btn cm-reg-btn--approve"
+            disabled={pending}
+            className="cm-reg-btn cm-reg-btn--approve disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[14px]">check</span>
             Duyệt
@@ -115,7 +137,7 @@ export function StatusTab({
       aria-pressed={active}
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-        active ? 'bg-emerald-700 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+        active ? 'bg-[#236c2a] text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
       }`}
     >
       <span className="material-symbols-outlined text-[14px]">{icon}</span>

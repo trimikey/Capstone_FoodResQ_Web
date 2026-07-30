@@ -332,7 +332,7 @@ export default function ChangeRequestModal({ c, onClose }: { c: Campaign; onClos
             <button
               type="submit"
               disabled={submit.isPending || hasPending}
-              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-colors"
+              className="w-full py-3 bg-[#236c2a] hover:bg-[#1a4f1f] text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-colors"
             >
               {hasPending
                 ? 'Đã có yêu cầu đang chờ duyệt'

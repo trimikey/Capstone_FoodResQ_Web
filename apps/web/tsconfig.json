@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@foodresq/types": ["../../packages/types/src"],
+      "@foodresq/types/*": ["../../packages/types/src/*"]
     }
   },
   "include": [

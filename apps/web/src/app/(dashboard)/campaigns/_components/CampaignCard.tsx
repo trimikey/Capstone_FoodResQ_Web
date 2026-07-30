@@ -242,7 +242,7 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
                   type="button"
                   onClick={doPledge}
                   disabled={pledge.isPending}
-                  className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
+                  className="flex-1 py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
                 >
                   {pledge.isPending ? 'Đang gửi...' : 'Gửi quyên góp'}
                 </button>
@@ -315,7 +315,7 @@ function Slot({
           type="button"
           onClick={() => onApply(role)}
           disabled={full || applying || overdue}
-          className="mt-2.5 w-full py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+          className="mt-2.5 w-full py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed bg-[#236c2a] hover:bg-[#1a4f1f] text-white transition-colors"
         >
           {overdue ? 'Hết hạn' : full ? 'Đã đủ' : 'Đăng ký'}
         </button>

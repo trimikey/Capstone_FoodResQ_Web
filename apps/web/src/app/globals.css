@@ -326,4 +326,17 @@ body {
   80%, 100% { transform: scale(1.6); opacity: 0; }
 }
 
+/* Time input - show AM/PM clearly on Windows browsers */
+input[type="time"] {
+  min-width: 100px;
+}
+input[type="time"]::-webkit-calendar-picker-indicator {
+  padding: 4px;
+  cursor: pointer;
+}
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  background-color: #f0f0f0;
+  border-radius: 4px;
+}
+
 

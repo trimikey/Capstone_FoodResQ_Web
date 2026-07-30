@@ -6,6 +6,9 @@ import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import PublicHeader from '@/components/home/PublicHeader';
+import CampaignPlaybook, {
+  type CampaignPhaseKey,
+} from '@/components/campaigns/CampaignPlaybook';
 import {
   usePublicCampaignDetail,
   useApplyCampaign,
@@ -105,7 +108,8 @@ export default function CampaignPublicDetailPage() {
   const id = String(params?.id ?? '');
   const router = useRouter();
 
-  const { data: c, isLoading, isError } = usePublicCampaignDetail(id);
+  const { data: c, isLoading, isError, error } = usePublicCampaignDetail(id);
+  const queryErrorMsg = error instanceof Error ? error.message : '';
   const { data: me } = useMe();
   const user = useAuthStore((s) => s.user);
   const isProvider = me?.role === UserRole.PROVIDER;
@@ -256,11 +260,23 @@ export default function CampaignPublicDetailPage() {
 
         {isError && (
           <div className="text-center py-20 cm-card mt-8">
-            <span className="material-symbols-outlined text-neutral-300 text-[56px]">event_busy</span>
-            <p className="font-bold text-neutral-700 mt-3">Không tìm thấy chiến dịch</p>
-            <p className="text-sm text-neutral-400 mt-1">
-              Chiến dịch có thể đã đóng hoặc chưa được duyệt.
-            </p>
+            {queryErrorMsg.includes('đang chờ duyệt') ? (
+              <>
+                <span className="material-symbols-outlined text-amber-400 text-[56px]">hourglass_empty</span>
+                <p className="font-bold text-neutral-700 mt-3">Chiến dịch đang chờ duyệt</p>
+                <p className="text-sm text-neutral-400 mt-1">
+                  Chiến dịch này hiện đang chờ quản trị viên duyệt và chưa công khai.
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-neutral-300 text-[56px]">event_busy</span>
+                <p className="font-bold text-neutral-700 mt-3">Không tìm thấy chiến dịch</p>
+                <p className="text-sm text-neutral-400 mt-1">
+                  Chiến dịch có thể đã đóng hoặc chưa được duyệt.
+                </p>
+              </>
+            )}
             <button
               onClick={() => router.push('/')}
               className="mt-5 px-5 py-2.5 cm-btn-ember text-sm"
@@ -854,8 +870,20 @@ function ScheduleTab({
   c: import('@/hooks/useCampaigns').PublicCampaignDetail;
   isCompleted: boolean;
 }) {
+  // Phase highlight theo status campaign để gợi ý đúng bước đang cần làm.
+  const highlightKey: CampaignPhaseKey | null = isCompleted
+    ? 'report'
+    : c.status === 'in_progress'
+    ? 'distribute'
+    : c.status === 'open'
+    ? 'recruit'
+    : 'plan';
+
   return (
     <div className="space-y-4">
+      {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
+      <CampaignPlaybook highlightKey={highlightKey} />
+
       {c.scheduleItems.length > 0 && (
         <div className="cm-card p-5">
           <h3 className="font-extrabold text-neutral-900 mb-4 flex items-center gap-2">
@@ -1303,7 +1331,7 @@ function ExperienceForm({ campaignId }: { campaignId: string }) {
         <button
           onClick={submit}
           disabled={add.isPending}
-          className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+          className="px-5 py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-bold disabled:opacity-50"
         >
           {add.isPending ? 'Đang gửi...' : 'Gửi'}
         </button>

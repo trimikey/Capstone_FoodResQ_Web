@@ -120,7 +120,7 @@ export default function MenuPage() {
                   aria-pressed={meal === t.key}
                   onClick={() => setMeal(t.key)}
                   className={`cm-mini-tab inline-flex items-center gap-1.5 ${
-                    meal === t.key ? '!bg-emerald-700 !text-white !border-emerald-700' : ''
+                    meal === t.key ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''
                   }`}
                 >
                   <span className="material-symbols-outlined text-[14px]">{t.icon}</span>
@@ -293,7 +293,7 @@ export default function MenuPage() {
                   type="button"
                   aria-pressed={active}
                   onClick={() => toggleTag(tag)}
-                  className={`cm-chip-toggle ${active ? '!bg-emerald-700 !text-white !border-emerald-700' : ''}`}
+                  className={`cm-chip-toggle ${active ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''}`}
                 >
                   {active && (
                     <span className="material-symbols-outlined text-[12px] mr-1">check</span>

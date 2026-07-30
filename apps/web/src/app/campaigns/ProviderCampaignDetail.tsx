@@ -58,8 +58,16 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
 
   return (
     <div className="cm-page cm-scope min-h-screen bg-[var(--cm-cream-50)]">
-      {/* ─── Banner gradient cam ─── */}
+      {/* ─── Banner gradient xanh (đồng bộ với trang public) ─── */}
       <section className="cm-provider-detail-hero">
+        <button
+          type="button"
+          onClick={() => router.push('/campaigns')}
+          className="cm-provider-detail-back"
+          aria-label="Quay lại"
+        >
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
         <div className="cm-provider-detail-hero-deco">
           <span className="material-symbols-outlined text-[140px]">inventory_2</span>
         </div>
