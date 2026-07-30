@@ -198,6 +198,7 @@ export default function CharityCampaignDetailScreen() {
   const slots = slotProgress(c);
   const donations = c.donations ?? [];
   const assignments = c.assignments ?? [];
+  const supplyProgress = c.supplyProgress ?? [];
   const pendingDonations = donations.filter((d) => d.status !== 'received').length;
   const receivedDonations = donations.length - pendingDonations;
   const pendingAssignments = assignments.filter((assignment) => assignment.status === 'pending').length;
@@ -509,7 +510,28 @@ export default function CharityCampaignDetailScreen() {
           </Section>
         ) : null}
 
-        {c.supplyItems && c.supplyItems.length > 0 ? (
+        {supplyProgress.length > 0 ? (
+          <Section title="Chỉ tiêu nguyên liệu">
+            {supplyProgress.map((item) => (
+              <View key={item.name} style={styles.supplyProgressRow}>
+                <View style={styles.supplyHeader}>
+                  <Text style={styles.supplyName}>{item.name}</Text>
+                  <Text style={[styles.supplyRemaining, item.isTargetMet && { color: COLORS.primary }]}>
+                    {item.isTargetMet ? 'Đã đủ cam kết' : `Còn ${formatQuantity(item.remainingQuantity)} ${item.unit}`}
+                  </Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${item.progressPercent}%` }]} />
+                </View>
+                <Text style={styles.muted}>
+                  Mục tiêu {formatQuantity(item.targetQuantity)} {item.unit} - đã cam kết{' '}
+                  {formatQuantity(item.pledgedQuantity)} - đã nhận {formatQuantity(item.receivedQuantity)}
+                  {item.receivedRemainingQuantity > 0 ? ` - còn chờ nhận ${formatQuantity(item.receivedRemainingQuantity)} ${item.unit}` : ''}
+                </Text>
+              </View>
+            ))}
+          </Section>
+        ) : c.supplyItems && c.supplyItems.length > 0 ? (
           <Section title="Vật phẩm cần hỗ trợ">
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
@@ -953,6 +975,10 @@ function ChangeRequestRow({
   );
 }
 
+function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
@@ -1044,6 +1070,19 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
+  supplyProgressRow: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  supplyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  supplyName: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
+  supplyRemaining: { fontSize: 12, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  progressTrack: { height: 8, borderRadius: 999, backgroundColor: COLORS.outline, overflow: 'hidden', marginBottom: 7 },
+  progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'center' },
   donationItem: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },

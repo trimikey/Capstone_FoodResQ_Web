@@ -46,11 +46,16 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
       toast.error('Nhập tên nguyên liệu');
       return;
     }
+    const numericQuantity = Number(qty.replace(',', '.'));
+    if (!Number.isFinite(numericQuantity) || numericQuantity <= 0) {
+      toast.error('Nhập số lượng nguyên liệu lớn hơn 0');
+      return;
+    }
     try {
       await pledge.mutateAsync({
         campaignId: c.id,
         itemName: item.trim(),
-        quantity: qty.trim() || undefined,
+        quantity: Math.round(numericQuantity * 1000) / 1000,
       });
       toast.success('Đã gửi quyên góp — chờ tổ chức xác nhận. Cảm ơn bạn!');
       setItem('');

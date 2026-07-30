@@ -36,6 +36,17 @@ export interface CampaignDonation {
 export interface MenuItem { name: string; type?: string; plannedServings?: number }
 export interface ScheduleItem { time: string; label: string }
 export interface SupplyItem { name: string; quantity?: number | null; unit?: string | null }
+export interface SupplyProgressItem {
+  name: string;
+  unit: string;
+  targetQuantity: number;
+  pledgedQuantity: number;
+  receivedQuantity: number;
+  remainingQuantity: number;
+  receivedRemainingQuantity: number;
+  progressPercent: number;
+  isTargetMet: boolean;
+}
 export interface CampaignShiftSummary {
   id: string;
   label: string;
@@ -72,6 +83,7 @@ export interface Campaign {
   menuItems?: MenuItem[];
   scheduleItems?: ScheduleItem[];
   supplyItems?: (string | SupplyItem)[];
+  supplyProgress?: SupplyProgressItem[];
   shifts?: CampaignShiftSummary[];
   assignments?: CampaignAssignment[];
   donations?: CampaignDonation[];
@@ -81,7 +93,8 @@ export interface Campaign {
 export interface PledgeDonationInput {
   campaignId: string;
   itemName: string;
-  quantity?: string;
+  quantity: number;
+  unit?: string;
   note?: string;
 }
 
@@ -222,6 +235,7 @@ export interface PublicCampaignDetail extends PublicCampaign {
   menuItems: MenuItem[];
   scheduleItems: ScheduleItem[];
   supplyItems: (string | SupplyItem)[];
+  supplyProgress?: SupplyProgressItem[];
   participants: CampaignParticipant[];
   donations: CampaignDonation[];
   proofGallery: CampaignProofPhoto[];
@@ -348,10 +362,10 @@ export function usePublicCampaigns(enabled: boolean = true) {
 export function usePledgeDonation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId, itemName, quantity, note }: PledgeDonationInput) => {
+    mutationFn: async ({ campaignId, itemName, quantity, unit, note }: PledgeDonationInput) => {
       const res = await apiClient.post<ApiResponse<Campaign>>(
         endpoints.campaigns.donate(campaignId),
-        { itemName, ...(quantity ? { quantity } : {}), ...(note ? { note } : {}) }
+        { itemName, quantity, ...(unit ? { unit } : {}), ...(note ? { note } : {}) }
       );
       return res.data.data;
     },
