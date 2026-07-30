@@ -2404,7 +2404,7 @@ function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser;
         <div className="flex items-center gap-3">
           {u.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={u.avatarUrl} alt={u.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
+            <img src={mediaUrl(u.avatarUrl)} alt={u.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
           ) : (
             <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold shrink-0">{u.fullName.charAt(0).toUpperCase()}</div>
           )}

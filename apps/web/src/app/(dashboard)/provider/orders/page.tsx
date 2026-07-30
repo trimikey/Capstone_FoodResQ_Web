@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
-import { UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 
@@ -395,7 +395,7 @@ function OrderCard({
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
   const code = item.id.slice(0, 8).toUpperCase();
-  const image = item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+  const image = item.listing.imageUrls[0] ? mediaUrl(item.listing.imageUrls[0]) : FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
   const qty = formatWeight(item);
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 
@@ -409,7 +409,7 @@ function OrderCard({
           <div className="w-12 h-12 rounded-full bg-[#efe8d8] flex items-center justify-center text-[#236c2a] font-bold text-base shrink-0 overflow-hidden">
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+              <img src={mediaUrl(avatarUrl)} alt="" className="w-full h-full object-cover" />
             ) : (
               receiverInitial(fullName)
             )}

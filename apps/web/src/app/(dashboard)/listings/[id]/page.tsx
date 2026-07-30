@@ -453,7 +453,7 @@ export default function ListingDetailPage({ params }: Props) {
                         '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
                         '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                       ].includes(item.imageUrls[0]))
-                        ? item.imageUrls[0]
+                        ? mediaUrl(item.imageUrls[0])
                         : fallbackImage(item.category)
                     }
                     alt={item.title}

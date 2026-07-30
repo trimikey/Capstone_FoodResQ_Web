@@ -344,7 +344,7 @@ export default function DeliveriesPage() {
               <div className="w-14 h-14 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={active.reservation.listing.imageUrls[0] || '/food_bread.png'}
+                  src={active.reservation.listing.imageUrls[0] ? mediaUrl(active.reservation.listing.imageUrls[0]) : '/food_bread.png'}
                   alt={active.reservation.listing.title}
                   className="w-full h-full object-cover"
                 />
@@ -573,7 +573,7 @@ export default function DeliveriesPage() {
                     <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={o.delivery.reservation.listing.imageUrls[0] || '/food_bread.png'}
+                        src={o.delivery.reservation.listing.imageUrls[0] ? mediaUrl(o.delivery.reservation.listing.imageUrls[0]) : '/food_bread.png'}
                         alt={o.delivery.reservation.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -707,7 +707,7 @@ function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] || '/food_bread.png'}
+          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] ? mediaUrl(h.reservation.listing.imageUrls[0]) : '/food_bread.png'}
           alt={h.reservation.listing.title}
           className="w-full h-full object-cover"
         />

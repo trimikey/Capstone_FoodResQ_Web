@@ -31,15 +31,25 @@ function ListingsPageContent() {
   const searchParams = useSearchParams();
   const queryParam = searchParams ? searchParams.get('q') || '' : '';
   const [search, setSearch] = useState(queryParam);
+  const [debouncedSearch, setDebouncedSearch] = useState(queryParam);
 
   useEffect(() => {
     setSearch(queryParam);
   }, [queryParam]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const [category, setCategory] = useState<FoodCategory | ''>('');
   const [distanceFilter, setDistanceFilter] = useState<number>(5); // Default 5km
   const [timeFilter, setTimeFilter] = useState<'all' | 'soon' | 'today'>('all');
   const [activePill, setActivePill] = useState<string | null>(null);
+  const [autoExpandedRadius, setAutoExpandedRadius] = useState(false);
   // Dropdown bộ lọc: bấm để mở, bấm ra ngoài/chọn để đóng (không dùng hover để khỏi tự đóng)
   const [openMenu, setOpenMenu] = useState<'distance' | 'category' | 'time' | null>(null);
 
@@ -74,14 +84,19 @@ function ListingsPageContent() {
     locate();
   }, [locate]);
 
-  const { data: apiListings, isLoading, isError, refetch } = useListings({
-    lat: userLoc.lat,
-    lng: userLoc.lng,
-    radiusKm: distanceFilter,
-    search: search.trim() || undefined,
-    category: (category as FoodCategory) || undefined,
-    limit: 100, // tải nhiều điểm để bản đồ hiển thị đủ khi zoom ra
-  });
+  const listingParams = useMemo(
+    () => ({
+      lat: userLoc.lat,
+      lng: userLoc.lng,
+      radiusKm: distanceFilter,
+      search: debouncedSearch || undefined,
+      category: (category as FoodCategory) || undefined,
+      limit: 100,
+    }),
+    [userLoc.lat, userLoc.lng, distanceFilter, debouncedSearch, category],
+  );
+
+  const { data: apiListings, isLoading, isError, refetch } = useListings(listingParams);
 
   // Luôn dùng dữ liệu thật từ API. search/category đã được lọc phía BE (PostGIS);
   // chỉ lọc thêm activePill (chip nhanh) phía client cho tức thời.
@@ -102,13 +117,37 @@ function ListingsPageContent() {
     return list;
   }, [apiListings, activePill, timeFilter]);
 
+  useEffect(() => {
+    if (
+      locStatus === 'gps' &&
+      !isLoading &&
+      !isError &&
+      !autoExpandedRadius &&
+      distanceFilter === 5 &&
+      !debouncedSearch &&
+      !category &&
+      !activePill &&
+      listings.length < 3
+    ) {
+      setAutoExpandedRadius(true);
+      setDistanceFilter(20);
+    }
+  }, [
+    locStatus,
+    isLoading,
+    isError,
+    autoExpandedRadius,
+    distanceFilter,
+    debouncedSearch,
+    category,
+    activePill,
+    listings.length,
+  ]);
+
   // If search or categories change, auto-select first pin of the filtered list
   useEffect(() => {
-    if (listings.length > 0) {
-      setSelectedPinId(listings[0].id);
-    } else {
-      setSelectedPinId(null);
-    }
+    const firstId = listings[0]?.id ?? null;
+    setSelectedPinId((current) => (current === firstId ? current : firstId));
   }, [listings]);
 
   const handlePillClick = (pillName: string) => {
@@ -166,6 +205,13 @@ function ListingsPageContent() {
                   : 'Trung tâm TP.HCM'}
           </div>
 
+          {autoExpandedRadius && locStatus === 'gps' && distanceFilter === 20 && (
+            <div className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+              <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+              <span>Quanh vị trí của bạn có ít món, hệ thống đã mở rộng bán kính lên 20km.</span>
+            </div>
+          )}
+
           {/* Quick Search */}
           <div className="relative">
             <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-neutral-400 text-[20px]">
@@ -209,7 +255,7 @@ function ListingsPageContent() {
                   {[2, 5, 10, 20, 50].map((d) => (
                     <button
                       key={d}
-                      onClick={() => { setDistanceFilter(d); setOpenMenu(null); }}
+                      onClick={() => { setDistanceFilter(d); setAutoExpandedRadius(true); setOpenMenu(null); }}
                       className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${distanceFilter === d ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
                     >
                       Trong vòng {d}km
@@ -329,6 +375,8 @@ function ListingsPageContent() {
                     setSearch('');
                     setCategory('');
                     setActivePill(null);
+                    setDistanceFilter(20);
+                    setAutoExpandedRadius(true);
                   }}
                   className="px-6 py-2.5 bg-[#efe8d8] hover:bg-[#e6dcc5] text-[#236c2a] transition-colors rounded-full text-sm font-medium"
                 >

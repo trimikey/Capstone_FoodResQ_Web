@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node ../../node_modules/next/dist/bin/next dev --port 3000",
+    "build": "node ../../node_modules/next/dist/bin/next build",
+    "start": "node ../../node_modules/next/dist/bin/next start",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit"
   },

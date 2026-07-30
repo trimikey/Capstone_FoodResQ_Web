@@ -5,6 +5,7 @@ import { useProviders, useProviderListings, type ProviderSummary, type ProviderL
 import { useSentRequests, type SentRequestItem } from '@/hooks/useCampaigns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/utils';
 
 interface ProposalForm {
   businessName: string;
@@ -283,7 +284,7 @@ function SupplierCard({
           <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {s.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" />
+              <img src={mediaUrl(s.avatarUrl)} alt="" className="w-full h-full object-cover" />
             ) : (
               <span className="material-symbols-outlined text-amber-600 text-xl">storefront</span>
             )}

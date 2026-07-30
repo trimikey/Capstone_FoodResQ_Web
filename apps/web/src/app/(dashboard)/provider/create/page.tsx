@@ -16,6 +16,7 @@ import {
   DEFAULT_UNITS,
   type ListingForm,
 } from '@/lib/listing-form';
+import { mediaUrl } from '@/lib/utils';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
@@ -498,7 +499,7 @@ export default function ProviderCreateListingPage() {
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={form.imageUrl}
+                    src={mediaUrl(form.imageUrl)}
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />
@@ -676,7 +677,7 @@ function PreviewCard({ form }: { form: ListingForm }) {
     <div className="border border-neutral-200 rounded-xl overflow-hidden">
       {form.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={form.imageUrl} alt="" className="w-full aspect-[16/10] object-cover" />
+        <img src={mediaUrl(form.imageUrl)} alt="" className="w-full aspect-[16/10] object-cover" />
       ) : (
         <div className="w-full aspect-[16/10] bg-neutral-100 flex items-center justify-center">
           <span className="material-symbols-outlined text-[40px] text-neutral-300">

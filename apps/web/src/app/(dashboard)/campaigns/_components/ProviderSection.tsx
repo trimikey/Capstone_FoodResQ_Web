@@ -6,7 +6,7 @@ import { useProviders } from '@/hooks/useProviders';
 import { type FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { errMsg } from '@/lib/utils';
+import { errMsg, mediaUrl } from '@/lib/utils';
 
 /**
  * Trang Nhà cung cấp (NCC) — hiển thị khi user có role = PROVIDER.
@@ -404,7 +404,7 @@ export default function ProviderSection() {
                 <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center overflow-hidden shrink-0">
                   {s.avatarUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    <img src={mediaUrl(s.avatarUrl)} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <span className="material-symbols-outlined text-amber-600 text-[20px]">
                       storefront

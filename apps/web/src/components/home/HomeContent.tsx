@@ -34,7 +34,7 @@ const CAT_IMG: Record<string, string> = {
 // Các loại thuộc nhóm "nguyên liệu thô" (cho tab lọc ở trang chủ)
 const RAW_CATEGORIES = ['vegetables', 'raw_protein', 'dry_goods', 'canned_packaged'];
 function showcaseImg(category: string, imageUrls: string[]): string {
-  return imageUrls?.[0] || CAT_IMG[category] || '/food_bread.png';
+  return imageUrls?.[0] ? mediaUrl(imageUrls[0]) : CAT_IMG[category] || '/food_bread.png';
 }
 function hoursLeft(end: string): string {
   const diff = new Date(end).getTime() - Date.now();

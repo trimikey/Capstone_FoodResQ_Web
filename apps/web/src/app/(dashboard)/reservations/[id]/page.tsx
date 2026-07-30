@@ -8,7 +8,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm } from '@/lib/utils';
+import { haversineKm, mediaUrl } from '@/lib/utils';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
 import { ReportTargetType } from '@foodresq/types';
@@ -677,7 +677,7 @@ export default function ReservationDetailsPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <img
-                            src={reservation.delivery?.shipper?.user?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"}
+                            src={reservation.delivery?.shipper?.user?.avatarUrl ? mediaUrl(reservation.delivery.shipper.user.avatarUrl) : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"}
                             alt="Avatar"
                             className="w-12 h-12 rounded-full object-cover border border-neutral-100"
                           />
@@ -726,7 +726,7 @@ export default function ReservationDetailsPage() {
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
                     <img 
-                      src={reservation.listing.imageUrls?.[0] || "/banh-mi-ngot-thap-cam.png"} 
+                      src={reservation.listing.imageUrls?.[0] ? mediaUrl(reservation.listing.imageUrls[0]) : "/banh-mi-ngot-thap-cam.png"} 
                       alt="Food" 
                       className="w-full h-full object-cover" 
                     />
@@ -1063,7 +1063,7 @@ export default function ReservationDetailsPage() {
             <div className="p-4 border-b border-neutral-200 bg-emerald-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img 
-                  src={reservation.delivery?.shipper?.user?.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"} 
+                  src={reservation.delivery?.shipper?.user?.avatarUrl ? mediaUrl(reservation.delivery.shipper.user.avatarUrl) : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop"} 
                   alt="Avatar" 
                   className="w-9 h-9 rounded-full object-cover border border-white/20" 
                 />

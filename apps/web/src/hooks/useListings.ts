@@ -51,10 +51,13 @@ async function fetchListingById(id: string): Promise<ListingDetail> {
 }
 
 export function useListings(params: QueryParams = {}) {
+  const { lat, lng, radiusKm, category, search, page, limit } = params;
+
   return useQuery({
-    queryKey: ['listings', 'nearby', params],
+    queryKey: ['listings', 'nearby', { lat, lng, radiusKm, category, search, page, limit }],
     queryFn: () => fetchListings(params),
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

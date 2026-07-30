@@ -31,7 +31,7 @@ function HistoryRow({
       <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0 mx-auto sm:mx-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] || '/food_bread.png'}
+          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] ? mediaUrl(h.reservation.listing.imageUrls[0]) : '/food_bread.png'}
           alt={h.reservation.listing.title}
           className="w-full h-full object-cover"
         />
