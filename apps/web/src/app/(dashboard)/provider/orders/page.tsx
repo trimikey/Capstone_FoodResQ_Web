@@ -7,6 +7,7 @@ import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem
 import { UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
+import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -168,23 +169,21 @@ export default function ProviderOrdersPage() {
   return (
     <div className="flex-1 min-w-0 bg-mesh-brand">
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-[#236c2a] uppercase tracking-wider">Lịch sử</p>
-            <h1 className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1">Theo dõi đơn</h1>
-            <p className="text-sm text-neutral-500 mt-1 font-normal">
-              Tổng cộng <b className="text-neutral-800">{total}</b> đơn từ người nhận
-            </p>
-          </div>
-          <button
-            onClick={() => refetch()}
-            className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
-          >
-            <span className="material-symbols-outlined text-[16px]">refresh</span>
-            Làm mới
-          </button>
-        </header>
+        {/* Header — đồng bộ với các trang provider khác */}
+        <ProviderHeaderCard
+          eyebrow="Lịch sử"
+          title="Theo dõi đơn"
+          description={`Tổng cộng ${total} đơn từ người nhận`}
+          cta={
+            <button
+              onClick={() => refetch()}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">refresh</span>
+              Làm mới
+            </button>
+          }
+        />
 
         {/* Stats */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -371,14 +370,14 @@ function StatCard({
   const t = tones[tone];
 
   return (
-    <div className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-neutral-100">
+    <div className="bg-white p-4 md:p-5 rounded-2xl border border-neutral-150 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} flex items-center justify-center`}>
           <span className="material-symbols-outlined text-[20px]">{icon}</span>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">{label}</p>
-      <p className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1 tabular-nums">{value}</p>
+      <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">{label}</p>
+      <p className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1 tabular-nums">{value}</p>
     </div>
   );
 }
