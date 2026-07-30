@@ -39,7 +39,7 @@ function Field({
   required?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2 pt-1">
       <label className="text-xs text-neutral-500 font-medium uppercase tracking-wide flex items-center gap-1">
         {label}
         {required && <span className="text-rose-500">*</span>}
@@ -485,18 +485,20 @@ export default function ProviderCreateListingPage() {
             <Field label="Địa chỉ lấy hàng" required>
               <input
                 value={form.pickupAddress}
-                onChange={(e) => set('pickupAddress', e.target.value)}
-                placeholder="VD: 12 Nguyễn Huệ, Q1, TP.HCM"
-                className={inputCls}
+                readOnly
+                placeholder="Địa chỉ cố định từ hồ sơ cửa hàng"
+                className={`${inputCls} bg-neutral-50 cursor-not-allowed`}
+                title="Địa chỉ được lấy từ hồ sơ cửa hàng của bạn"
               />
             </Field>
 
-            <Field label="Chọn vị trí trên bản đồ">
-              <div className="h-56 rounded-xl overflow-hidden border border-neutral-200">
+            <Field label="Vị trí lấy hàng trên bản đồ">
+              <div className="mt-2 h-56 rounded-xl overflow-hidden border border-neutral-200">
                 <LocationPicker
+                  key="location-static"
                   lng={form.lng}
                   lat={form.lat}
-                  address={form.pickupAddress}
+                  interactive={false}
                   onPick={(lng, lat) => {
                     set('lng', lng);
                     set('lat', lat);
