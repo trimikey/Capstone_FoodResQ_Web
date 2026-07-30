@@ -28,7 +28,7 @@ export function DateTimeField({
 
   return (
     <div className="space-y-1.5">
-      <label className="text-xs text-neutral-500 font-medium uppercase tracking-wide">
+      <label className="text-xs text-neutral-500 font-medium uppercase tracking-wide block">
         {label}
       </label>
       <div className="space-y-2">

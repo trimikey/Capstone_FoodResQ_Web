@@ -309,7 +309,7 @@ export default function CampaignsPage() {
             />
           )}
           {section === 'suppliers' && isCharity && (
-            <SuppliersSection />
+            <SuppliersSection campaigns={stats.active} />
           )}
           {section === 'providers' && isProvider && (
             <ProviderSection />
@@ -941,7 +941,7 @@ function MineTabbedSection({
             aria-pressed={tab === t.key}
             onClick={() => setTab(t.key)}
             className={`cm-filter-chip inline-flex items-center gap-1.5 ${
-              tab === t.key ? '!bg-emerald-700 !text-white !border-emerald-700' : ''
+              tab === t.key ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''
             }`}
           >
             <span className="material-symbols-outlined text-[14px]">{t.icon}</span>
@@ -1062,7 +1062,39 @@ function MineTabbedSection({
   );
 }
 
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+function taskEndDate(t: MyTask): Date | null {
+  const datePart = t.campaign.scheduledDate?.slice(0, 10);
+  if (!datePart) return null;
+  const timePart = (t.campaign.endTime ?? '23:59').slice(0, 5);
+  const d = new Date(`${datePart}T${timePart}:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isOverdue(t: MyTask, now: Date): boolean {
+  if (t.status === 'completed' || t.status === 'cancelled' || t.status === 'absent') return false;
+  const end = taskEndDate(t);
+  if (!end) return false;
+  return end.getTime() < now.getTime();
+}
+
 function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
+  const now = new Date();
+  const todayKey = now.toISOString().slice(0, 10);
+  const isToday = (t: MyTask) =>
+    Boolean(t.campaign.scheduledDate?.slice(0, 10) === todayKey);
+
+  const todayTasks = myTasks.filter(isToday);
+  const upcomingTasks = myTasks.filter((t) => !isToday(t));
+  const overdueTodayCount = todayTasks.filter((t) => isOverdue(t, now)).length;
+
   return (
     <section>
       <div className="cm-section-head">
@@ -1078,10 +1110,48 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
           description="Hãy vào Khám phá cộng đồng để đăng ký một chiến dịch."
         />
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
-          {myTasks.map((t) => (
-            <CampaignTaskCard key={t.id} t={t} />
-          ))}
+        <div className="space-y-4">
+          {overdueTodayCount > 0 && (
+            <aside role="alert" className="cm-urgent-banner">
+              <span className="material-symbols-outlined">priority_high</span>
+              <div>
+                <p className="font-bold text-rose-900 text-sm">
+                  Có {overdueTodayCount} công việc KHẨN đã quá hạn hôm nay
+                </p>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Bạn cần hoàn thành hoặc cập nhật trạng thái — bấm vào thẻ bên dưới để xử lý.
+                </p>
+              </div>
+            </aside>
+          )}
+
+          {todayTasks.length > 0 && (
+            <div>
+              <p className="cm-tasks-group-title">
+                <span className="material-symbols-outlined text-amber-600">wb_sunny</span>
+                Việc hôm nay ({todayTasks.length})
+              </p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {todayTasks.map((t) => (
+                  <CampaignTaskCard key={t.id} t={t} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {upcomingTasks.length > 0 && (
+            <div>
+              <p className="cm-tasks-group-title">
+                <span className="material-symbols-outlined text-emerald-600">event_upcoming</span>
+                Sắp tới ({upcomingTasks.length})
+              </p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {upcomingTasks.map((t) => (
+                  <CampaignTaskCard key={t.id} t={t} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

@@ -25,7 +25,7 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
 type Step = 1 | 2 | 3;
 
 const inputCls =
-  'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#236c2a]/20 text-sm transition-colors';
+    'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#236c2a]/20 focus:border-[#236c2a] text-sm transition-colors';
 
 function Field({
   label,
@@ -411,7 +411,7 @@ export default function ProviderCreateListingPage() {
               </Field>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               <DateTimeField
                 label="Bắt đầu lấy"
                 dateValue={form.pickupStartDate}
@@ -503,6 +503,7 @@ export default function ProviderCreateListingPage() {
                 <LocationPicker
                   lng={form.lng}
                   lat={form.lat}
+                  address={form.pickupAddress}
                   onPick={(lng, lat) => {
                     set('lng', lng);
                     set('lat', lat);

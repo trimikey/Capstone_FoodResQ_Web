@@ -473,11 +473,16 @@ model Reservation {
 
 model Delivery {
   id               String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  reservationId    String                                 @unique @map("reservation_id") @db.Uuid
+  /// Reservation gốc (cho luồng đặt suất ăn). NULL khi delivery phục vụ cho campaign (campaign_transports).
+  reservationId    String?                                @unique @map("reservation_id") @db.Uuid
+  /// Nếu delivery này tạo cho CampaignProviderRequest thì tham chiếu tới request đó.
+  providerRequestId String?                               @unique @map("provider_request_id") @db.Uuid
   shipperId        String?                                @map("shipper_id") @db.Uuid
   status           DeliveryStatus                         @default(pending_assignment)
   qcPhotoUrl       String?                                @map("qc_photo_url")
   qcPhotoAt        DateTime?                              @map("qc_photo_at") @db.Timestamptz
+  pickupProofUrl   String?                                @map("pickup_proof_url")
+  pickupProofAt    DateTime?                              @map("pickup_proof_at") @db.Timestamptz
   deliveryProofUrl String?                                @map("delivery_proof_url")
   deliveryProofAt  DateTime?                              @map("delivery_proof_at") @db.Timestamptz
   pickupLocation   Unsupported("geography(Point, 4326)")? @map("pickup_location")
@@ -490,9 +495,11 @@ model Delivery {
   createdAt        DateTime                               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
 
-  reservation Reservation        @relation(fields: [reservationId], references: [id])
-  shipper     VolunteerProfile?  @relation(fields: [shipperId], references: [id])
-  taskOffers  ShipperTaskOffer[]
+  reservation       Reservation?              @relation(fields: [reservationId], references: [id])
+  providerRequest   CampaignProviderRequest?  @relation("DeliveryForProviderRequest", fields: [providerRequestId], references: [id], onDelete: SetNull)
+  shipper           VolunteerProfile?         @relation(fields: [shipperId], references: [id])
+  taskOffers        ShipperTaskOffer[]
+  campaignTransport CampaignTransport?        @relation("DeliveryForTransport")
 
   @@index([shipperId])
   @@index([status])
@@ -573,6 +580,9 @@ model KitchenCampaign {
   kitchenAddress     String                                 @map("kitchen_address")
   kitchenLocation    Unsupported("geography(Point, 4326)")? @map("kitchen_location")
   scheduledDate      DateTime                               @map("scheduled_date") @db.Date
+  /// Ngày kết thúc (>= scheduledDate). NULL = 1 ngày duy nhất.
+  /// Cron tự chuyển `in_progress` → `completed` sau endDate + endTime.
+  endDate            DateTime?                              @map("end_date") @db.Date
   startTime          String                                 @map("start_time") @db.VarChar(8)
   endTime            String                                 @map("end_time") @db.VarChar(8)
   chefSlotsNeeded    Int                                    @default(0) @map("chef_slots_needed") @db.SmallInt
@@ -641,7 +651,17 @@ model CampaignProviderRequest {
   message     String?                   @db.VarChar(500)
   status      CampaignRequestStatus      @default(pending)
   /// Thời hạn hợp tác (số tháng), null = vĩnh viễn
-  durationMonths Int?
+  durationMonths Int?     @map("duration_months")
+  /// Danh sách ID thực phẩm được chọn (lưu dạng JSON array string)
+  listingIds  String?                   @map("listing_ids") @db.VarChar(1000)
+  /// Ngày TNV đến lấy thực phẩm từ provider — copy từ campaign lúc accept (có thể override).
+  scheduledDate   DateTime? @map("scheduled_date") @db.Date
+  /// Giờ bắt đầu lấy hàng do provider chọn (HH:mm). Default = campaign.startTime.
+  pickupStartTime String?   @map("pickup_start_time") @db.VarChar(8)
+  /// Giờ kết thúc lấy hàng (mặc định = campaign.endTime).
+  pickupEndTime   String?   @map("pickup_end_time") @db.VarChar(8)
+  /// Nếu true → sau accept, BE tạo delivery record + tìm shipper gần nhất.
+  needsTransport  Boolean   @default(false) @map("needs_transport")
   reviewedAt   DateTime?                @map("reviewed_at") @db.Timestamptz(6)
   reviewedNote String?                  @map("reviewed_note") @db.VarChar(255)
   createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -650,12 +670,34 @@ model CampaignProviderRequest {
   campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   receiver ReceiverProfile @relation(fields: [receiverId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])
+  transport CampaignTransport?
+  delivery  Delivery? @relation("DeliveryForProviderRequest")
 
   @@unique([campaignId, providerId])
   @@index([campaignId])
   @@index([providerId])
   @@index([status])
   @@map("campaign_provider_requests")
+}
+
+/// Liên kết 1-1 giữa provider-request và delivery (khi needsTransport=true).
+/// Cho phép sau này 1 request có thể gắn nhiều delivery (multi-item).
+model CampaignTransport {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  providerRequestId String   @unique @map("provider_request_id") @db.Uuid
+  deliveryId        String?  @unique @map("delivery_id") @db.Uuid
+  /// pending = vừa tạo, chưa có shipper nhận
+  /// assigned = đã có shipper accept offer
+  /// delivered = shipper đã giao xong tới kitchen
+  /// failed = hết offer / timeout
+  status            String   @default("pending") @db.VarChar(20)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  providerRequest CampaignProviderRequest @relation(fields: [providerRequestId], references: [id], onDelete: Cascade)
+  delivery        Delivery?              @relation("DeliveryForTransport", fields: [deliveryId], references: [id])
+
+  @@index([providerRequestId])
+  @@map("campaign_transports")
 }
 
 enum CampaignRequestStatus {
@@ -989,6 +1031,7 @@ model CampaignChangeRequest {
   status                                                     CampaignChangeStatus @default(pending)
   reason                                                     String?
   scheduledDate                                              DateTime?            @map("scheduled_date") @db.Date
+  endDate                                                    DateTime?            @map("end_date") @db.Date
   startTime                                                  String?              @map("start_time") @db.VarChar(8)
   endTime                                                    String?              @map("end_time") @db.VarChar(8)
   kitchenAddress                                             String?              @map("kitchen_address")

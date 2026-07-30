@@ -135,7 +135,7 @@ export default function ProviderScanPage() {
   }, [phase]);
 
   return (
-    <div className="flex-1 min-w-0 bg-mesh-brand">
+    <div className="flex-1 min-w-0 bg-[#FAFBF9]">
       <div className="max-w-xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
         <ProviderHeaderCard
           crumbs={[{ href: '/provider', label: 'Cửa hàng' }, { label: 'Quét QR' }]}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode, createContext, useContext, useMemo, useState } from 'react';
+import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   usePublicCampaignDetail,
@@ -27,6 +27,26 @@ export const STATUS_META: Record<string, { label: string; chip: string; icon: st
   completed: { label: 'Đã hoàn tất', chip: 'cm-chip cm-chip--mint', icon: 'verified' },
   cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--rose', icon: 'cancel' },
 };
+
+/** So sánh scheduledDate với hôm nay (UTC, lấy theo ngày). */
+export function isSameUtcDay(input: string | Date | null | undefined, ref = new Date()): boolean {
+  if (!input) return false;
+  const d = new Date(input);
+  return (
+    d.getUTCFullYear() === ref.getUTCFullYear() &&
+    d.getUTCMonth() === ref.getUTCMonth() &&
+    d.getUTCDate() === ref.getUTCDate()
+  );
+}
+
+/** Trả về số ngày từ hôm nay tới ngày kết thúc (âm = đã qua). */
+export function daysUntilUtc(input: string | Date | null | undefined, ref = new Date()): number {
+  if (!input) return 0;
+  const d = new Date(input);
+  const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const b = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate());
+  return Math.round((a - b) / 86_400_000);
+}
 
 type NavKey = 'progress' | 'registrations' | 'distribution' | 'menu' | 'schedule' | 'status';
 
@@ -102,6 +122,7 @@ type CampaignData = {
     | string[]
     | Array<{ name: string; quantity?: number | null; unit?: string | null }>;
   scheduledDate?: string;
+  endDate?: string | null;
   startTime?: string;
   endTime?: string;
 };
@@ -210,9 +231,18 @@ export function ManageShell({
       toast.error(errMsg(e, 'Không thể bắt đầu — kiểm tra trạng thái'));
     }
   }
-  async function onComplete(actual: number) {
+  async function onComplete(payload: {
+    actualServings: number;
+    earlyEndConfirmation?: 'EARLY_END';
+    earlyEndReason?: string;
+  }) {
     try {
-      await completeCampaign.mutateAsync({ id: c!.id, actualServings: actual });
+      await completeCampaign.mutateAsync({
+        id: c!.id,
+        actualServings: payload.actualServings,
+        earlyEndConfirmation: payload.earlyEndConfirmation,
+        earlyEndReason: payload.earlyEndReason,
+      });
       toast.success('Đã hoàn tất chiến dịch');
       setActionModal(null);
     } catch (e) {
@@ -246,23 +276,40 @@ export function ManageShell({
               <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
               {statusMeta.label}
             </span>
-            {c.status === 'open' && (
-              <button
-                type="button"
-                onClick={onStart}
-                disabled={startCampaign.isPending}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-[14px]">play_arrow</span>
-                Bắt đầu
-              </button>
-            )}
+            {c.status === 'open' && (() => {
+              const canStart = isSameUtcDay(c.scheduledDate);
+              const days = daysUntilUtc(c.scheduledDate);
+              const hint =
+                days > 0
+                  ? `Còn ${days} ngày nữa mới tới ngày diễn ra`
+                  : days < 0
+                    ? `Đã qua ngày dự kiến ${Math.abs(days)} ngày — không thể bắt đầu`
+                    : '';
+              return (
+                <button
+                  type="button"
+                  onClick={onStart}
+                  disabled={!canStart || startCampaign.isPending}
+                  title={hint || 'Bắt đầu chiến dịch'}
+                  className="px-3 py-1.5 rounded-xl bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-bold inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+                  {startCampaign.isPending
+                    ? 'Đang bắt đầu...'
+                    : canStart
+                      ? 'Bắt đầu'
+                      : days > 0
+                        ? `Bắt đầu sau ${days} ngày`
+                        : 'Quá ngày'}
+                </button>
+              );
+            })()}
             {c.status === 'in_progress' && (
               <button
                 type="button"
                 onClick={() => setActionModal({ kind: 'complete' })}
                 disabled={completeCampaign.isPending}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                className="px-3 py-1.5 rounded-xl bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-bold inline-flex items-center gap-1"
               >
                 <span className="material-symbols-outlined text-[14px]">verified</span>
                 Hoàn tất
@@ -357,7 +404,7 @@ export function ManageShell({
   );
 }
 
-// ─── Modal: Hoàn tất chiến dịch (validation inline) ──────────────────────────
+// ─── Modal: Hoàn tất chiến dịch (validation inline + early-end confirmation) ─
 function CompleteCampaignModal({
   c,
   onCancel,
@@ -366,7 +413,11 @@ function CompleteCampaignModal({
 }: {
   c: CampaignData;
   onCancel: () => void;
-  onConfirm: (actualServings: number) => void | Promise<void>;
+  onConfirm: (payload: {
+    actualServings: number;
+    earlyEndConfirmation?: 'EARLY_END';
+    earlyEndReason?: string;
+  }) => void | Promise<void>;
   pending: boolean;
 }) {
   const defaultServings =
@@ -374,7 +425,23 @@ function CompleteCampaignModal({
   const [value, setValue] = useState<string>(String(defaultServings));
   const [error, setError] = useState<string | undefined>(undefined);
 
-  function validate(): number | null {
+  // Phát hiện "kết thúc sớm": còn cách ngày kết thúc (endDate hoặc scheduledDate) ≥ 1 ngày.
+  const endDateRaw = c.endDate ?? c.scheduledDate ?? null;
+  const daysToEnd = daysUntilUtc(endDateRaw);
+  const isPremature = daysToEnd > 0;
+
+  const [ack, setAck] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | undefined>(undefined);
+
+  // Reset ack/reason khi user đóng/mở lại modal (đảm bảo checkbox luôn unchecked lúc đầu).
+  useEffect(() => {
+    setAck(false);
+    setReason('');
+    setReasonError(undefined);
+  }, []);
+
+  function validateServings(): number | null {
     const trimmed = value.trim();
     if (!trimmed) {
       setError('Vui lòng nhập số suất ăn thực tế');
@@ -402,10 +469,37 @@ function CompleteCampaignModal({
   }
 
   function onSubmit() {
-    const n = validate();
+    const n = validateServings();
     if (n === null) return;
-    void onConfirm(n);
+
+    if (isPremature) {
+      if (!ack) {
+        setReasonError('Vui lòng tick xác nhận trước khi kết thúc sớm.');
+        return;
+      }
+      const trimmedReason = reason.trim();
+      if (trimmedReason.length < 5) {
+        setReasonError('Lý do tối thiểu 5 ký tự');
+        return;
+      }
+      if (trimmedReason.length > 500) {
+        setReasonError('Lý do tối đa 500 ký tự');
+        return;
+      }
+      void onConfirm({
+        actualServings: n,
+        earlyEndConfirmation: 'EARLY_END',
+        earlyEndReason: trimmedReason,
+      });
+      return;
+    }
+
+    void onConfirm({ actualServings: n });
   }
+
+  const endLabel = endDateRaw
+    ? new Date(endDateRaw).toLocaleDateString('vi-VN')
+    : '—';
 
   return (
     <Modal
@@ -428,6 +522,57 @@ function CompleteCampaignModal({
           Hành động này <b>không thể hoàn tác</b>. Sau khi hoàn tất, chiến dịch sẽ chuyển sang trạng thái "Đã hoàn tất" và tổng kết suất ăn phục vụ.
         </div>
 
+        {isPremature && (
+          <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 space-y-2">
+            <p className="font-bold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">priority_high</span>
+              Bạn đang muốn kết thúc sớm
+            </p>
+            <p>
+              Ngày kết thúc dự kiến: <b>{endLabel}</b> — còn{' '}
+              <b>{daysToEnd} ngày</b> nữa. Bạn có chắc chắn muốn kết thúc ngay bây giờ không?
+            </p>
+            <label className="flex items-start gap-2 mt-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ack}
+                onChange={(e) => {
+                  setAck(e.target.checked);
+                  if (e.target.checked) setReasonError(undefined);
+                }}
+                className="mt-0.5 h-4 w-4 accent-rose-600"
+              />
+              <span className="text-rose-900">
+                Tôi chắc chắn muốn kết thúc chiến dịch sớm hơn dự kiến.
+              </span>
+            </label>
+            <div className="space-y-1 pt-1">
+              <label className="text-[11px] font-bold text-rose-900 uppercase tracking-wide">
+                Lý do kết thúc sớm <span className="text-rose-600">*</span>
+              </label>
+              <textarea
+                rows={2}
+                maxLength={500}
+                value={reason}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  if (reasonError) setReasonError(undefined);
+                }}
+                placeholder="VD: Thiếu nguyên liệu đột xuất, không thể tiếp tục phục vụ."
+                className={`input-base ${reasonError ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+              />
+              {reasonError ? (
+                <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">error</span>
+                  {reasonError}
+                </p>
+              ) : (
+                <p className="text-[10px] text-rose-700/70">{reason.length}/500 ký tự</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-neutral-600 uppercase tracking-wide">
             Số suất ăn thực tế đã phục vụ <span className="text-rose-500">*</span>
@@ -441,7 +586,7 @@ function CompleteCampaignModal({
               setValue(e.target.value);
               if (error) setError(undefined);
             }}
-            onBlur={() => validate()}
+            onBlur={() => validateServings()}
             placeholder="VD: 150"
             className={`input-base ${error ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
             aria-invalid={!!error}
@@ -470,8 +615,8 @@ function CompleteCampaignModal({
           <button
             type="button"
             onClick={onSubmit}
-            disabled={pending}
-            className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+            disabled={pending || (isPremature && (!ack || reason.trim().length < 5))}
+            className="flex-1 py-3 bg-[#236c2a] hover:bg-[#1a4f1f] text-white font-bold text-sm rounded-xl disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
           >
             {pending ? (
               <>
@@ -481,7 +626,7 @@ function CompleteCampaignModal({
             ) : (
               <>
                 <span className="material-symbols-outlined text-[16px]">verified</span>
-                Xác nhận hoàn tất
+                {isPremature ? 'Xác nhận kết thúc sớm' : 'Xác nhận hoàn tất'}
               </>
             )}
           </button>

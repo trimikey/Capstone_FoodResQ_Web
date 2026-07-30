@@ -8,8 +8,11 @@ import {
   useStartCampaign,
 } from '@/hooks/useCampaigns';
 import { RegistrationRow } from '../../../_components/CampaignManageShared';
-import { useManageContext } from '../../../_components/ManageShell';
+import { useManageContext, isSameUtcDay, daysUntilUtc } from '../../../_components/ManageShell';
 import { errMsg } from '@/lib/utils';
+import CampaignPlaybook, {
+  type CampaignPhaseKey,
+} from '@/components/campaigns/CampaignPlaybook';
 
 export default function RegistrationsPage() {
   const { campaign: c, openAction } = useManageContext();
@@ -19,6 +22,15 @@ export default function RegistrationsPage() {
   const startCampaign = useStartCampaign();
 
   async function onStart() {
+    if (!isSameUtcDay(c.scheduledDate)) {
+      const days = daysUntilUtc(c.scheduledDate);
+      toast.error(
+        days > 0
+          ? `Chiến dịch dự kiến diễn ra vào ngày ${new Date(c.scheduledDate!).toLocaleDateString('vi-VN')} — còn ${days} ngày nữa. Không thể bắt đầu sớm.`
+          : 'Chiến dịch đã qua ngày dự kiến — không thể bắt đầu. Hãy huỷ nếu không thể tổ chức.',
+      );
+      return;
+    }
     try {
       await startCampaign.mutateAsync(c.id);
       toast.success('Đã bắt đầu chiến dịch');
@@ -36,6 +48,16 @@ export default function RegistrationsPage() {
 
   const totalSlots = c.chefSlotsNeeded + c.waiterSlotsNeeded + c.shipperSlotsNeeded;
   const filledSlots = c.chefSlotsFilled + c.waiterSlotsFilled + c.shipperSlotsFilled;
+
+  // Phase highlight theo status campaign.
+  const playbookHighlight: CampaignPhaseKey | null =
+    c.status === 'completed'
+      ? 'report'
+      : c.status === 'in_progress'
+      ? 'distribute'
+      : c.status === 'open'
+      ? 'recruit'
+      : 'plan';
 
   const volunteers: CampaignParticipant[] = c.participants ?? [];
   const filteredVolunteers: CampaignParticipant[] =
@@ -102,6 +124,10 @@ export default function RegistrationsPage() {
   return (
     <div className="cm-manage-2col">
       <div className="cm-manage-2col-main space-y-4">
+        {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
+        <section className="cm-manage-card">
+          <CampaignPlaybook variant="inline" highlightKey={playbookHighlight} />
+        </section>
         <section className="cm-manage-card">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -127,11 +153,24 @@ export default function RegistrationsPage() {
               <button
                 type="button"
                 onClick={onStart}
-                disabled={c.status !== 'open' || startCampaign.isPending}
+                disabled={c.status !== 'open' || !isSameUtcDay(c.scheduledDate) || startCampaign.isPending}
+                title={
+                  c.status !== 'open'
+                    ? 'Chỉ bắt đầu khi chiến dịch đang ở trạng thái "Đang tuyển"'
+                    : !isSameUtcDay(c.scheduledDate)
+                      ? `Chỉ có thể bắt đầu vào đúng ngày diễn ra`
+                      : ''
+                }
                 className="cm-manage-cta-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                {startCampaign.isPending ? 'Đang bắt đầu...' : 'Bắt đầu đợt mới'}
+                {startCampaign.isPending
+                  ? 'Đang bắt đầu...'
+                  : isSameUtcDay(c.scheduledDate)
+                    ? 'Bắt đầu đợt mới'
+                    : daysUntilUtc(c.scheduledDate) > 0
+                      ? `Bắt đầu sau ${daysUntilUtc(c.scheduledDate)} ngày`
+                      : 'Quá ngày'}
               </button>
             </div>
           </div>
@@ -196,7 +235,7 @@ export default function RegistrationsPage() {
                   type="button"
                   aria-pressed={filter === t.key}
                   onClick={() => setFilter(t.key)}
-                  className={`cm-mini-tab ${filter === t.key ? '!bg-emerald-700 !text-white !border-emerald-700' : ''}`}
+                  className={`cm-mini-tab ${filter === t.key ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''}`}
                 >
                   {t.label}
                 </button>
@@ -216,6 +255,7 @@ export default function RegistrationsPage() {
                   key={p.id}
                   p={p}
                   decision={decisions[p.id]}
+                  pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
                 />
               ))}

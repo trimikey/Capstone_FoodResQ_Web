@@ -4,6 +4,9 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useManageContext } from '../../../_components/ManageShell';
 import CreateDistributionModal from '../../../_components/CreateDistributionModal';
+import CampaignPlaybook, {
+  type CampaignPhaseKey,
+} from '@/components/campaigns/CampaignPlaybook';
 
 type FilterKey = 'all' | 'today' | 'pending' | 'done';
 
@@ -18,6 +21,16 @@ export default function DistributionPage() {
   const { campaign: c } = useManageContext();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Phase highlight theo status.
+  const playbookHighlight: CampaignPhaseKey | null =
+    c.status === 'completed'
+      ? 'report'
+      : c.status === 'in_progress'
+      ? 'distribute'
+      : c.status === 'open'
+      ? 'recruit'
+      : 'plan';
 
   const stats = {
     total: c.actualServings ?? c.distributionSummary?.servingsServed ?? 0,
@@ -86,6 +99,10 @@ export default function DistributionPage() {
     <>
     <div className="cm-manage-2col">
       <div className="cm-manage-2col-main space-y-4">
+        {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
+        <section className="cm-manage-card">
+          <CampaignPlaybook variant="inline" highlightKey={playbookHighlight} />
+        </section>
         <section className="cm-manage-card">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -165,7 +182,7 @@ export default function DistributionPage() {
                   type="button"
                   aria-pressed={filter === f.key}
                   onClick={() => setFilter(f.key)}
-                  className={`cm-mini-tab ${filter === f.key ? '!bg-emerald-700 !text-white !border-emerald-700' : ''}`}
+                  className={`cm-mini-tab ${filter === f.key ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''}`}
                 >
                   {f.label}
                 </button>
