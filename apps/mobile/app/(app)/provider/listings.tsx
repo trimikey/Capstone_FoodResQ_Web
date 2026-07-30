@@ -159,7 +159,7 @@ function EsgCard({
   };
 }) {
   return (
-    <SurfaceCard style={styles.esgCard}>
+    <SurfaceCard tone="mint" style={styles.esgCard}>
       <View style={styles.esgHead}>
         <MaterialCommunityIcons name="leaf-circle-outline" size={20} color={COLORS.primary} />
         <Text style={styles.esgTitle}>Tác động ESG</Text>
@@ -193,10 +193,7 @@ const styles = StyleSheet.create({
   esgCard: {
     marginBottom: 12,
     padding: 14,
-    borderRadius: radius.lg,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderRadius: radius.xl,
   },
   esgHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   esgTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
@@ -205,7 +202,9 @@ const styles = StyleSheet.create({
     width: '48%',
     padding: 10,
     borderRadius: radius.md,
-    backgroundColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
   },
   esgValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
   esgLabel: { marginTop: 2, fontSize: 12, fontWeight: '600', color: COLORS.onSurfaceVariant },

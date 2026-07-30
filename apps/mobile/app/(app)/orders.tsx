@@ -53,7 +53,7 @@ export default function OrdersTab() {
       <ScreenHeader title="Đơn của tôi" />
 
       <View style={styles.summaryWrap}>
-        <SurfaceCard style={styles.summaryCard}>
+        <SurfaceCard tone="mint" style={styles.summaryCard}>
           <SectionHeader
             title="Theo dõi đơn đã đặt"
             subtitle="Mã QR, trạng thái lấy hàng và giao hàng nằm trong từng đơn."
@@ -104,7 +104,7 @@ export default function OrdersTab() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   summaryWrap: { paddingHorizontal: spacing.xl, paddingBottom: spacing.sm },
-  summaryCard: { padding: spacing.lg },
+  summaryCard: { padding: spacing.lg, borderColor: '#cfe5d4' },
   summaryCount: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },

@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -20,6 +21,10 @@ describe('AdminService', () => {
         AdminService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { getAll: jest.fn(), set: jest.fn() },
+        },
       ],
     }).compile();
     service = moduleRef.get(AdminService);
@@ -34,7 +39,9 @@ describe('AdminService', () => {
 
   it('ban user thường → revoke refresh token + ghi audit', async () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'u2', role: 'receiver' });
-    const res = await service.setUserStatus('u2', 'admin1', { status: 'banned' });
+    const res = await service.setUserStatus('u2', 'admin1', {
+      status: 'banned',
+    });
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalled();
     expect(res.message).toContain('cập nhật');

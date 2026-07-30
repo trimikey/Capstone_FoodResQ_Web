@@ -46,7 +46,27 @@ export default function AppTabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: COLORS.navActive,
         tabBarInactiveTintColor: COLORS.navInactive,
-        tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 6 },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 0,
+        },
+        tabBarItemStyle: {
+          paddingTop: 4,
+        },
+        tabBarStyle: {
+          height: 68,
+          paddingBottom: 10,
+          paddingTop: 8,
+          backgroundColor: COLORS.surface,
+          borderTopColor: COLORS.outlineVariant,
+          borderTopWidth: 1,
+          elevation: 12,
+          shadowColor: '#102018',
+          shadowOffset: { width: 0, height: -8 },
+          shadowOpacity: 0.08,
+          shadowRadius: 18,
+        },
       }}
     >
       {/* --- Receiver tabs --- */}

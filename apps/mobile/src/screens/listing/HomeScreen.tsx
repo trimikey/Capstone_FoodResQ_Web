@@ -20,6 +20,7 @@ import { SearchBar } from '@/components/SearchBar';
 import { CategoryFilterSheet } from '@/components/CategoryFilterSheet';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
+import { AppBackground } from '@/components/ui/AppBackground';
 import { categoryLabel } from '@/utils/listingFormat';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
@@ -220,7 +221,10 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <AppBackground>
       <View style={styles.headerBand}>
+        <View pointerEvents="none" style={styles.headerGlow} />
+        <View pointerEvents="none" style={styles.headerSlice} />
         <View style={styles.headerTop}>
           <Pressable
             accessibilityRole="button"
@@ -355,6 +359,7 @@ export default function HomeScreen() {
           sheetRef.current?.close();
         }}
       />
+      </AppBackground>
     </SafeAreaView>
   );
 }
@@ -366,18 +371,42 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryStrong,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlow: {
+    position: 'absolute',
+    top: -52,
+    right: -46,
+    width: 168,
+    height: 168,
+    borderRadius: 999,
+    backgroundColor: 'rgba(232,111,61,0.28)',
+  },
+  headerSlice: {
+    position: 'absolute',
+    left: -28,
+    bottom: -34,
+    width: 156,
+    height: 72,
+    borderRadius: 999,
+    backgroundColor: 'rgba(223,242,228,0.16)',
+    transform: [{ rotate: '12deg' }],
   },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerCopy: { flex: 1 },
   menuButton: {
     width: 54,
     height: 48,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.42)',
   },
   menuLabel: {
     marginTop: -2,
@@ -388,7 +417,7 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.78 },
   eyebrow: {
-    color: COLORS.secondaryContainer,
+    color: '#ffd8bf',
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -415,6 +444,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
   },
   locationValue: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '800' },
   filterChip: {
@@ -426,6 +457,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
   },
   filterChipActive: { backgroundColor: COLORS.primary },
   filterChipText: { color: COLORS.primary, fontSize: 12, fontWeight: '900' },
@@ -437,10 +470,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 32,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
   },
   resultTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  resultTitle: { color: COLORS.onSurfaceVariant, fontWeight: '700', fontSize: 13 },
+  resultTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   clearFilterContent: { paddingHorizontal: 0 },
   listPane: { flex: 1 },
   listContent: { paddingHorizontal: spacing.sm, paddingBottom: spacing.md },
@@ -450,7 +489,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     borderRadius: radius.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.cream,
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
   },
