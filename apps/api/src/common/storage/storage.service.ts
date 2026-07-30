@@ -33,6 +33,7 @@ export class StorageService {
     const filename = `${randomUUID()}.${ext}`;
     await fs.writeFile(join(dir, filename), file.buffer);
 
+    // Return relative URL — NestJS app.useStaticAssets serve trực tiếp /uploads/...
     return `/uploads/${safeSubdir}/${filename}`;
   }
 
