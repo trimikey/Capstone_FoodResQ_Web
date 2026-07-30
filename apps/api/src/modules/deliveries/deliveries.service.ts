@@ -316,6 +316,18 @@ export class DeliveriesService {
     }
     if (newStatus === 'delivered') {
       // Bàn giao đúng người: shipper phải quét mã QR trên màn hình của người nhận.
+      // Campaign delivery (provider→kitchen) chưa có luồng QR người nhận → bỏ qua bước này
+      // (sẽ được xử lý bằng pickup_proof ở bước riêng sau).
+      if (!delivery.reservation) {
+        updateData.deliveredAt = new Date();
+        if (proofUrl) {
+          updateData.deliveryProofUrl = proofUrl;
+          updateData.deliveryProofAt = new Date();
+        }
+        await this.prisma.delivery.update({ where: { id: deliveryId }, data: updateData });
+        return this.prisma.delivery.findUnique({ where: { id: deliveryId } });
+      }
+
       // Không kiểm tra qr_expires_at — QR của đơn giao là mã xác nhận bàn giao,
       // giao hàng thường lâu hơn 30 phút hiệu lực gốc.
       if (!qrToken) {
@@ -336,9 +348,11 @@ export class DeliveriesService {
       }
 
       // Mark reservation as completed + award dedication points (ảnh proof là tùy chọn)
+      // delivery.reservation đã được narrow non-null bởi block if ở trên.
+      const reservationId = delivery.reservationId as string;
       await this.prisma.$transaction([
         this.prisma.reservation.update({
-          where: { id: delivery.reservationId },
+          where: { id: reservationId },
           data: { status: 'completed' },
         }),
         this.prisma.volunteerProfile.update({
@@ -446,14 +460,19 @@ export class DeliveriesService {
       this.prisma.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } }),
       this.prisma.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } }),
       // Đóng luôn reservation — nếu để 'confirmed' thì đơn treo vĩnh viễn (không cron nào xử lý)
-      this.prisma.reservation.update({
-        where: { id: delivery.reservationId },
-        data: {
-          status: 'cancelled',
-          cancelledAt: new Date(),
-          cancellationReason: `Giao hàng thất bại: ${reason.trim()}`,
-        },
-      }),
+      // Campaign delivery (provider→kitchen) không có reservation → bỏ qua.
+      ...(delivery.reservationId
+        ? [
+            this.prisma.reservation.update({
+              where: { id: delivery.reservationId },
+              data: {
+                status: 'cancelled',
+                cancelledAt: new Date(),
+                cancellationReason: `Giao hàng thất bại: ${reason.trim()}`,
+              },
+            }),
+          ]
+        : []),
     ]);
     return { id: deliveryId, status: 'failed' };
   }
@@ -497,6 +516,11 @@ export class DeliveriesService {
             data: { isAvailable: true },
           }),
         );
+      }
+      // Campaign delivery (provider → kitchen) không có reservation.
+      if (!d.reservation) {
+        await this.prisma.$transaction(ops);
+        continue;
       }
       if (d.reservation.status === 'confirmed') {
         ops.push(
@@ -559,6 +583,9 @@ export class DeliveriesService {
     });
 
     for (const d of stale) {
+      // Campaign delivery (provider → kitchen) không có reservation → bỏ qua,
+      // xử lý riêng ở campaign_transports cron nếu cần.
+      if (!d.reservation) continue;
       await this.prisma.$transaction([
         this.prisma.delivery.update({
           where: { id: d.id },
@@ -769,6 +796,7 @@ export class DeliveriesService {
       },
     });
     if (!delivery) throw new NotFoundException('Đơn này chưa có thông tin giao hàng.');
+    if (!delivery.reservation) throw new BadRequestException('Đơn này không gắn với đặt suất ăn.');
     if (delivery.reservation.receiverId !== receiver.id) throw new ForbiddenException();
 
     let coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;

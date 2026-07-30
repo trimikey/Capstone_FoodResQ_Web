@@ -18,6 +18,15 @@ import {
 } from '@/lib/listing-form';
 import { mediaUrl } from '@/lib/utils';
 
+// Convert /uploads/... to proxy URL for display
+function toProxyUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith('/uploads/')) {
+    return `/api/uploads${url.slice(8)}`;
+  }
+  return url;
+}
+
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse rounded-xl" />,
@@ -26,7 +35,7 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
 type Step = 1 | 2 | 3;
 
 const inputCls =
-  'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#236c2a]/20 text-sm transition-colors';
+    'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#236c2a]/20 focus:border-[#236c2a] text-sm transition-colors';
 
 function Field({
   label,
@@ -40,7 +49,7 @@ function Field({
   required?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2 pt-1">
       <label className="text-xs text-neutral-500 font-medium uppercase tracking-wide flex items-center gap-1">
         {label}
         {required && <span className="text-rose-500">*</span>}
@@ -79,16 +88,34 @@ export default function ProviderCreateListingPage() {
     setForm((f) => ({ ...f, [key]: val }));
   }
 
+  function getTodayDateStr() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function getCurrentTimeStr() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
   async function handlePickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     try {
       const url = await uploadImage.mutateAsync({ file, kind: 'listing' });
+      console.log('Upload success, URL:', url);
       set('imageUrl', url);
       toast.success('Đã tải ảnh lên.');
-    } catch {
-      toast.error('Tải ảnh thất bại.');
+    } catch (err: unknown) {
+      console.error('Upload failed:', err);
+      const msg = err instanceof Error ? err.message : 'Tải ảnh thất bại.';
+      toast.error(msg);
     }
   }
 
@@ -192,14 +219,7 @@ export default function ProviderCreateListingPage() {
       {/* Header */}
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <Link
-            href="/provider"
-            className="text-xs text-[#236c2a] font-medium hover:underline inline-flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Quay lại Trang quản trị
-          </Link>
-          <h1 className="mt-2 text-2xl font-medium text-neutral-800">Đăng tin thực phẩm mới</h1>
+          <h1 className="text-2xl font-medium text-neutral-800">Đăng tin thực phẩm mới</h1>
           <p className="text-sm text-neutral-500 font-normal">
             Chia sẻ thực phẩm dư thừa chất lượng cao — chỉ với 3 bước đơn giản.
           </p>
@@ -349,7 +369,7 @@ export default function ProviderCreateListingPage() {
 
           {/* STEP 2: Số lượng & Thời gian */}
           {step === 2 && (
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
+          <section className="isolate bg-white rounded-2xl p-6 shadow-sm overflow-visible">
             <header className="mb-5">
               <h2 className="text-base font-medium text-neutral-800 flex items-center gap-2">
                 <span className="w-7 h-7 rounded-full bg-[#efe8d8] text-[#236c2a] text-xs flex items-center justify-center font-medium">
@@ -397,13 +417,19 @@ export default function ProviderCreateListingPage() {
               </Field>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               <DateTimeField
                 label="Bắt đầu lấy"
                 dateValue={form.pickupStartDate}
                 timeValue={form.pickupStartTime}
                 onDateChange={(v) => set('pickupStartDate', v)}
                 onTimeChange={(v) => set('pickupStartTime', v)}
+                minDate={new Date()}
+                minTime={
+                  form.pickupStartDate === getTodayDateStr()
+                    ? getCurrentTimeStr()
+                    : undefined
+                }
               />
               <DateTimeField
                 label="Hạn lấy"
@@ -411,6 +437,12 @@ export default function ProviderCreateListingPage() {
                 timeValue={form.pickupEndTime}
                 onDateChange={(v) => set('pickupEndDate', v)}
                 onTimeChange={(v) => set('pickupEndTime', v)}
+                minDate={form.pickupStartDate ? new Date(form.pickupStartDate + 'T00:00:00') : new Date()}
+                minTime={
+                  form.pickupEndDate === form.pickupStartDate
+                    ? form.pickupStartTime
+                    : undefined
+                }
               />
               <DateTimeField
                 label="Hạn sử dụng"
@@ -418,6 +450,12 @@ export default function ProviderCreateListingPage() {
                 timeValue={form.expiryTime}
                 onDateChange={(v) => set('expiryDate', v)}
                 onTimeChange={(v) => set('expiryTime', v)}
+                minDate={form.pickupEndDate ? new Date(form.pickupEndDate + 'T00:00:00') : new Date()}
+                minTime={
+                  form.expiryDate === form.pickupEndDate
+                    ? form.pickupEndTime
+                    : undefined
+                }
               />
             </div>
 
@@ -460,17 +498,20 @@ export default function ProviderCreateListingPage() {
             <Field label="Địa chỉ lấy hàng" required>
               <input
                 value={form.pickupAddress}
-                onChange={(e) => set('pickupAddress', e.target.value)}
-                placeholder="VD: 12 Nguyễn Huệ, Q1, TP.HCM"
-                className={inputCls}
+                readOnly
+                placeholder="Địa chỉ cố định từ hồ sơ cửa hàng"
+                className={`${inputCls} bg-neutral-50 cursor-not-allowed`}
+                title="Địa chỉ được lấy từ hồ sơ cửa hàng của bạn"
               />
             </Field>
 
-            <Field label="Chọn vị trí trên bản đồ">
-              <div className="h-56 rounded-xl overflow-hidden border border-neutral-200">
+            <Field label="Vị trí lấy hàng trên bản đồ">
+              <div className="mt-2 h-56 rounded-xl overflow-hidden border border-neutral-200">
                 <LocationPicker
+                  key="location-static"
                   lng={form.lng}
                   lat={form.lat}
+                  interactive={false}
                   onPick={(lng, lat) => {
                     set('lng', lng);
                     set('lat', lat);
@@ -499,7 +540,11 @@ export default function ProviderCreateListingPage() {
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
+<<<<<<< HEAD
                     src={mediaUrl(form.imageUrl)}
+=======
+                    src={toProxyUrl(form.imageUrl)}
+>>>>>>> origin/master
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />
@@ -565,9 +610,20 @@ export default function ProviderCreateListingPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    console.log('Form state:', JSON.stringify(form, null, 2));
+                    console.log('Validations:', validations);
                     if (step === 1 && validations.step1) setStep(2);
                     else if (step === 2 && validations.step2) setStep(3);
-                    else toast.error('Vui lòng điền đầy đủ các trường bắt buộc.');
+                    else {
+                      const missing: string[] = [];
+                      if (!form.pickupStartDate) missing.push('Ngày bắt đầu lấy');
+                      if (!form.pickupStartTime) missing.push('Giờ bắt đầu lấy');
+                      if (!form.pickupEndDate) missing.push('Ngày hạn lấy');
+                      if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
+                      if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
+                      if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
+                      toast.error(`Thiếu: ${missing.join(', ')}`);
+                    }
                   }}
                   className="px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium inline-flex items-center gap-1 transition-colors"
                 >

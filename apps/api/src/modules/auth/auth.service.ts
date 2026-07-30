@@ -18,6 +18,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { StorageService } from '@/common/storage/storage.service';
+import { OcrService } from '@/common/ocr/ocr.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -39,6 +40,11 @@ const BUSINESS_TYPE_REQUIRES_TAXCODE = new Set([
   'hotel',
 ]);
 
+function normalizeVehiclePlate(value?: string): string | null {
+  const plate = value?.trim().toUpperCase().replace(/\s+/g, ' ');
+  return plate || null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -48,10 +54,16 @@ export class AuthService {
     private firebaseAdmin: FirebaseAdminService,
     private faceMatch: FaceMatchService,
     private storage: StorageService,
+    private ocr: OcrService,
     @Inject('REDIS_CLIENT') private redis: Redis,
   ) {}
 
-  async register(dto: RegisterDto, selfie?: Express.Multer.File) {
+  async register(
+    dto: RegisterDto,
+    selfie?: Express.Multer.File,
+    idCard?: Express.Multer.File,
+    vehiclePlateImage?: Express.Multer.File,
+  ) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
 
@@ -67,6 +79,8 @@ export class AuthService {
       (dto.role === 'receiver' && !dto.isCharityOrg) || dto.role === 'volunteer';
     let faceDescriptor: number[] | null = null;
     let faceImageUrl: string | null = null;
+    let idCardImageUrl: string | null = null;
+    let vehiclePlateImageUrl: string | null = null;
     if (needsFace) {
       if (!selfie) {
         throw new BadRequestException(
@@ -79,7 +93,6 @@ export class AuthService {
           'Không nhận diện được khuôn mặt trong ảnh — đăng ký thất bại. Vui lòng chụp lại nơi đủ sáng, thấy rõ khuôn mặt.',
         );
       }
-      faceImageUrl = await this.storage.saveImage(selfie, 'faces');
     }
 
     // Chuẩn hoá chuỗi để giảm khoảng trắng trước khi validate/insert.
@@ -97,6 +110,55 @@ export class AuthService {
       }
       // evidenceUrls: optional nhưng nếu gửi thì phải có ít nhất 1 ảnh GPKD/ĐKKD ở index 0
       // (soft-check phía client, BE không ép vì có thể NCC cá nhân gửi ảnh CCCD sau).
+    }
+
+    if (dto.role === 'volunteer') {
+      if (!dto.idCardNumber?.trim()) {
+        throw new BadRequestException('Tình nguyện viên cần nhập số CCCD để admin đối soát hồ sơ.');
+      }
+      if (!idCard) {
+        throw new BadRequestException('Tình nguyện viên cần gửi ảnh CCCD để xác minh eKYC.');
+      }
+      await this.ocr.assertIdCardMatches(idCard, dto.idCardNumber);
+      const idCardDescriptor = await this.faceMatch.getFaceDescriptor(idCard);
+      if (!idCardDescriptor) {
+        throw new BadRequestException(
+          'Không nhận diện được khuôn mặt trên ảnh CCCD. Vui lòng chụp lại căn cước rõ nét, đủ sáng.',
+        );
+      }
+      if (!faceDescriptor) {
+        throw new BadRequestException('Cần ảnh selfie hợp lệ để so khớp với CCCD.');
+      }
+      const match = this.faceMatch.compare(faceDescriptor, idCardDescriptor);
+      if (!match.matched) {
+        throw new BadRequestException('Ảnh selfie không khớp với ảnh trên CCCD. Vui lòng dùng CCCD của chính bạn.');
+      }
+      [faceImageUrl, idCardImageUrl] = await Promise.all([
+        this.storage.saveImage(selfie!, 'faces'),
+        this.storage.saveImage(idCard, 'id-cards'),
+      ]);
+      if (!dto.volunteerRole) {
+        throw new BadRequestException('Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.');
+      }
+      if (dto.volunteerRole === 'shipper') {
+        if (!dto.vehicleType?.trim()) {
+          throw new BadRequestException('Shipper cần nhập loại phương tiện.');
+        }
+        if (!dto.vehiclePlate?.trim()) {
+          throw new BadRequestException('Shipper cần nhập biển số xe.');
+        }
+        if (!vehiclePlateImage) {
+          throw new BadRequestException('Shipper cần gửi ảnh biển số xe để admin đối chiếu.');
+        }
+        await this.ocr.assertVehiclePlateMatches(vehiclePlateImage, dto.vehiclePlate);
+      }
+      if (vehiclePlateImage) {
+        vehiclePlateImageUrl = await this.storage.saveImage(vehiclePlateImage, 'verifications');
+      }
+    }
+
+    if (needsFace && !faceImageUrl) {
+      faceImageUrl = await this.storage.saveImage(selfie!, 'faces');
     }
 
     // Tạo user + profile theo role trong 1 transaction — các flow sau
@@ -135,17 +197,39 @@ export class AuthService {
           `);
         }
       } else if (dto.role === 'volunteer') {
+        const specialization = dto.volunteerRole;
+        if (!specialization) {
+          throw new BadRequestException('Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.');
+        }
+
         const vp = await tx.volunteerProfile.create({
           data: {
             userId: created.id,
-            vehicleType: dto.vehicleType ?? null,
+            idCardNumber: dto.idCardNumber,
+            idCardImageUrl,
+            vehicleType: dto.vehicleType?.trim() ?? null,
+            vehiclePlate: normalizeVehiclePlate(dto.vehiclePlate),
             // eKYC đã xác thực ở trên (bắt buộc với tình nguyện viên)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
         });
-        if (dto.volunteerRole) {
-          await tx.volunteerSpecializationEntry.create({
-            data: { volunteerId: vp.id, specialization: dto.volunteerRole },
+        await tx.volunteerSpecializationEntry.create({
+          data: { volunteerId: vp.id, specialization },
+        });
+        if (vehiclePlateImageUrl) {
+          await tx.verificationRequest.create({
+            data: {
+              userId: created.id,
+              requestType: 'volunteer_chef_cert',
+              status: 'pending',
+              documents: {
+                idCardNumber: dto.idCardNumber,
+                vehicleType: dto.vehicleType?.trim() ?? null,
+                vehiclePlate: normalizeVehiclePlate(dto.vehiclePlate),
+                vehiclePlateImageUrl,
+                evidenceUrls: [vehiclePlateImageUrl],
+              } as never,
+            },
           });
         }
       } else if (dto.role === 'provider') {

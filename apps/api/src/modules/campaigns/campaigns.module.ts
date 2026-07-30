@@ -6,9 +6,10 @@ import { KitchenOpsController } from './kitchen-ops.controller';
 import { KitchenOpsService } from './kitchen-ops.service';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { StorageModule } from '@/common/storage/storage.module';
+import { DeliveriesModule } from '@/modules/deliveries/deliveries.module';
 
 @Module({
-  imports: [NotificationsModule, StorageModule],
+  imports: [NotificationsModule, StorageModule, DeliveriesModule],
   controllers: [CampaignsController, KitchenOpsController],
   providers: [CampaignsService, CampaignsCron, KitchenOpsService],
 })

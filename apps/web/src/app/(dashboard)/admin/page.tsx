@@ -1730,8 +1730,8 @@ function VerifyTab() {
                               {v.detail}
                             </p>
 
-                            {/* Provider: minh chứng */}
-                            {v.type === 'provider' && (v.evidenceUrls?.length || v.address || v.lng != null) ? (
+                            {/* Minh chứng duyệt hồ sơ */}
+                            {(v.evidenceUrls?.length || v.address || v.lng != null) ? (
                               <div className="mt-3 space-y-2">
                                 {v.address && <p className="text-xs text-neutral-600">📍 {v.address}</p>}
                                 {v.lng != null && v.lat != null && (
@@ -1750,7 +1750,9 @@ function VerifyTab() {
                                 )}
                                 {v.evidenceUrls && v.evidenceUrls.length > 0 && (
                                   <div className="flex gap-2 items-start">
-                                    <span className="text-xs text-neutral-500 mt-1">Ảnh GPKD:</span>
+                                    <span className="text-xs text-neutral-500 mt-1">
+                                      {v.type === 'provider' ? 'Ảnh GPKD:' : 'Ảnh biển số:'}
+                                    </span>
                                     <div className="flex gap-2 flex-wrap">
                                       {v.evidenceUrls.map((u: string, i: number) => (
                                         <a
@@ -1760,11 +1762,11 @@ function VerifyTab() {
                                           target="_blank"
                                           rel="noreferrer"
                                           className="relative w-16 h-16 rounded-lg overflow-hidden border border-neutral-200 hover:opacity-90"
-                                          title={i === 0 ? 'GPKD / ĐKKD' : `Ảnh ${i + 1}`}
+                                          title={v.type === 'provider' && i === 0 ? 'GPKD / ĐKKD' : `Ảnh ${i + 1}`}
                                         >
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={mediaUrl(u)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
-                                          {i === 0 && (
+                                          {v.type === 'provider' && i === 0 && (
                                             <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-emerald-700 text-white text-center py-0.5">
                                               GPKD
                                             </span>
@@ -1927,8 +1929,8 @@ function VerifyTab() {
                 </section>
               )}
 
-              {/* Bằng chứng — ảnh GPKD / mặt tiền */}
-              {detail.type === 'provider' && (
+              {/* Bằng chứng — ảnh GPKD / mặt tiền / biển số */}
+              {(detail.type === 'provider' || (detail.evidenceUrls && detail.evidenceUrls.length > 0)) && (
                 <section>
                   <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">
                     Bằng chứng ({detail.evidenceUrls?.length ?? 0} ảnh)
@@ -1952,9 +1954,14 @@ function VerifyTab() {
                           <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">
                             #{i + 1}
                           </span>
-                          {i === 0 && (
+                          {detail.type === 'provider' && i === 0 && (
                             <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">
                               GPKD / ĐKKD
+                            </span>
+                          )}
+                          {detail.type === 'volunteer' && (
+                            <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-blue-700 text-white text-center py-1 font-bold">
+                              Biển số
                             </span>
                           )}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">

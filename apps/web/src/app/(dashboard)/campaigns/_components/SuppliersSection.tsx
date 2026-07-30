@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useProviders, useProviderListings, type ProviderSummary, type ProviderListing } from '@/hooks/useProviders';
-import { useSentRequests, type SentRequestItem } from '@/hooks/useCampaigns';
+import { useSentRequests, type SentRequestItem, type Campaign } from '@/hooks/useCampaigns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/utils';
@@ -26,6 +26,11 @@ const EMPTY_FORM: ProposalForm = {
   note: '',
   durationMonths: 1,
 };
+
+interface Props {
+  /** Danh sách chiến dịch của charity (để chọn gán thực phẩm) */
+  campaigns?: Campaign[];
+}
 
 const REQUEST_STATUS_CLS: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -61,7 +66,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Khác',
 };
 
-export default function SuppliersSection() {
+export default function SuppliersSection({ campaigns = [] }: Props) {
   const { data: suppliers, isLoading } = useProviders();
   const { data: sentRequests } = useSentRequests();
   const [requestingId, setRequestingId] = useState<string | null>(null);
@@ -69,11 +74,16 @@ export default function SuppliersSection() {
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<ProposalForm>(EMPTY_FORM);
   const [messageByProvider, setMessageByProvider] = useState<Record<string, string>>({});
+  const [selectedCampaignByProvider, setSelectedCampaignByProvider] = useState<Record<string, string>>({});
+  const [selectedListingsByProvider, setSelectedListingsByProvider] = useState<Record<string, string[]>>({});
   /** Provider nào đang expand */
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   /** Chỉ hiện providers đang có tin active */
   const activeSuppliers = suppliers?.filter((s) => (s.activeListingsCount ?? 0) > 0) ?? [];
+
+  /** Chiến dịch đang hoạt động để gán */
+  const openCampaigns = campaigns.filter((c) => c.status === 'open' || c.status === 'in_progress');
 
   /** Map providerId → SentRequestItem (lấy cái mới nhất theo thời gian) */
   const requestByProvider = (sentRequests ?? []).reduce<
@@ -87,14 +97,26 @@ export default function SuppliersSection() {
   }, {});
 
   async function handleSendRequest(providerId: string, businessName: string) {
+    const campaignId = selectedCampaignByProvider[providerId];
+    const listingIds = selectedListingsByProvider[providerId] ?? [];
+    
+    if (!campaignId) {
+      toast.error('Vui lòng chọn chiến dịch để gán thực phẩm.');
+      return;
+    }
+    
     setRequestingId(providerId);
     try {
       await api.post('/campaigns/requests', {
         providerId,
+        campaignId,
+        listingIds: listingIds.length > 0 ? listingIds : undefined,
         message: messageByProvider[providerId] ?? '',
       });
       toast.success(`Đã gửi yêu cầu đến ${businessName}`);
       setMessageByProvider((prev) => ({ ...prev, [providerId]: '' }));
+      setSelectedCampaignByProvider((prev) => ({ ...prev, [providerId]: '' }));
+      setSelectedListingsByProvider((prev) => ({ ...prev, [providerId]: [] }));
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
@@ -240,6 +262,14 @@ export default function SuppliersSection() {
             onSendRequest={() =>
               handleSendRequest(profileId, s.providerProfile?.businessName ?? s.fullName)
             }
+            selectedCampaign={selectedCampaignByProvider[profileId] ?? ''}
+            onCampaignChange={(v) => {
+              setSelectedCampaignByProvider((prev) => ({ ...prev, [profileId]: v }));
+              setSelectedListingsByProvider((prev) => ({ ...prev, [profileId]: [] }));
+            }}
+            selectedListings={selectedListingsByProvider[profileId] ?? []}
+            onListingsChange={(ids) => setSelectedListingsByProvider((prev) => ({ ...prev, [profileId]: ids }))}
+            openCampaigns={openCampaigns}
           />
         );
       })}
@@ -260,6 +290,11 @@ function SupplierCard({
   onMessageChange,
   requestingId,
   onSendRequest,
+  selectedCampaign,
+  onCampaignChange,
+  selectedListings,
+  onListingsChange,
+  openCampaigns,
 }: {
   supplier: ProviderSummary;
   profileId: string;
@@ -270,10 +305,23 @@ function SupplierCard({
   onMessageChange: (v: string) => void;
   requestingId: string | null;
   onSendRequest: () => void;
+  selectedCampaign: string;
+  onCampaignChange: (v: string) => void;
+  selectedListings: string[];
+  onListingsChange: (ids: string[]) => void;
+  openCampaigns: { id: string; title: string }[];
 }) {
   const { data: listings, isLoading: loadingListings } = useProviderListings(
     isExpanded ? profileId : null,
   );
+
+  const handleListingToggle = (listingId: string) => {
+    if (selectedListings.includes(listingId)) {
+      onListingsChange(selectedListings.filter((id) => id !== listingId));
+    } else {
+      onListingsChange([...selectedListings, listingId]);
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -354,25 +402,44 @@ function SupplierCard({
             {req.reviewedNote && <> Lý do: {req.reviewedNote}</>}
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => onMessageChange(e.target.value)}
-              placeholder="Lời nhắn (tuỳ chọn, vd: cần 20 phần cơm/lần…)"
-              className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
-            />
-            <button
-              type="button"
-              onClick={onSendRequest}
-              disabled={requestingId === profileId}
-              className="flex-shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[16px]">
-                {requestingId === profileId ? 'hourglass_top' : 'send'}
-              </span>
-              Yêu cầu
-            </button>
+          <div className="space-y-2">
+            {/* Chọn chiến dịch */}
+            {openCampaigns.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-gray-600 whitespace-nowrap">Chiến dịch:</span>
+                <select
+                  value={selectedCampaign}
+                  onChange={(e) => onCampaignChange(e.target.value)}
+                  className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
+                >
+                  <option value="">-- Chọn chiến dịch --</option>
+                  {openCampaigns.map((c) => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={message}
+                onChange={(e) => onMessageChange(e.target.value)}
+                placeholder="Lời nhắn (tuỳ chọn, vd: cần 20 phần cơm/lần…)"
+                className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300"
+              />
+              <button
+                type="button"
+                onClick={onSendRequest}
+                disabled={requestingId === profileId || !selectedCampaign}
+                className="flex-shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {requestingId === profileId ? 'hourglass_top' : 'send'}
+                </span>
+                Yêu cầu
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -380,6 +447,17 @@ function SupplierCard({
       {/* ─── Expanded: chi tiết món ăn ─── */}
       {isExpanded && (
         <div className="border-t border-gray-100 bg-gray-50">
+          {selectedCampaign && (
+            <div className="px-3 py-2 bg-amber-50 border-b border-amber-100">
+              <p className="text-xs text-amber-700">
+                <span className="material-symbols-outlined text-xs align-text-bottom mr-1">info</span>
+                Bấm vào thực phẩm để chọn/gỡ — sẽ được gán vào chiến dịch đã chọn.
+                {selectedListings.length > 0 && (
+                  <span className="ml-1 font-semibold">({selectedListings.length} món đã chọn)</span>
+                )}
+              </p>
+            </div>
+          )}
           {loadingListings ? (
             <div className="p-4 space-y-2">
               {[1, 2, 3].map((i) => (
@@ -389,7 +467,12 @@ function SupplierCard({
           ) : listings && listings.length > 0 ? (
             <div className="p-3 space-y-2 max-h-72 overflow-y-auto">
               {listings.map((item) => (
-                <ListingRow key={item.id} item={item} />
+                <ListingRow 
+                  key={item.id} 
+                  item={item} 
+                  isSelected={selectedListings.includes(item.id)}
+                  onToggle={() => handleListingToggle(item.id)}
+                />
               ))}
             </div>
           ) : (
@@ -406,7 +489,15 @@ function SupplierCard({
 // ─────────────────────────────────────────────────────────────────────────────
 // ListingRow — một dòng món ăn trong expanded panel
 // ─────────────────────────────────────────────────────────────────────────────
-function ListingRow({ item }: { item: ProviderListing }) {
+function ListingRow({ 
+  item, 
+  isSelected, 
+  onToggle 
+}: { 
+  item: ProviderListing; 
+  isSelected?: boolean;
+  onToggle?: () => void;
+}) {
   const now = new Date();
   const start = new Date(item.pickupStartTime);
   const end = new Date(item.pickupEndTime);
@@ -423,7 +514,21 @@ function ListingRow({ item }: { item: ProviderListing }) {
   const catLabel = CATEGORY_LABELS[item.category] ?? item.category;
 
   return (
-    <div className="bg-white rounded-lg p-3 border border-gray-100 flex items-start gap-3">
+    <div 
+      className={`bg-white rounded-lg p-3 border flex items-start gap-3 cursor-pointer transition-all ${
+        isSelected ? 'border-amber-400 bg-amber-50' : 'border-gray-100 hover:border-amber-200'
+      }`}
+      onClick={onToggle}
+    >
+      {/* Checkbox */}
+      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-1 transition-colors ${
+        isSelected ? 'bg-amber-500 border-amber-500' : 'border-gray-300'
+      }`}>
+        {isSelected && (
+          <span className="material-symbols-outlined text-white text-sm">check</span>
+        )}
+      </div>
+
       {/* Icon loại */}
       <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
         <span className="material-symbols-outlined text-amber-500 text-[18px]">{catIcon}</span>

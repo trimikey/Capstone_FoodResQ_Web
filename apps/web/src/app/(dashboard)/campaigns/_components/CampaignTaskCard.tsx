@@ -18,6 +18,68 @@ const TASK_STATUS_META: Record<string, { label: string; chip: string }> = {
   cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--ink' },
 };
 
+/** Trả về Date (UTC) mô tả thời điểm bắt đầu ca, fallback nếu không parse được. */
+function taskStartDate(t: MyTask): Date | null {
+  const datePart = t.campaign.scheduledDate?.slice(0, 10);
+  if (!datePart) return null;
+  const timePart = (t.campaign.startTime ?? '00:00').slice(0, 5);
+  const d = new Date(`${datePart}T${timePart}:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Trả về Date (UTC) mô tả thời điểm kết thúc ca, fallback về startDate + 4h nếu không có. */
+function taskEndDate(t: MyTask): Date | null {
+  const datePart = t.campaign.scheduledDate?.slice(0, 10);
+  if (!datePart) return null;
+  const timePart = (t.campaign.endTime ?? '23:59').slice(0, 5);
+  const d = new Date(`${datePart}T${timePart}:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+/** Tính trạng thái deadline cho 1 task. */
+function urgencyOf(t: MyTask, now: Date): {
+  kind: 'today' | 'urgent' | 'overdue' | 'normal';
+  diffMin: number;
+  isCompleted: boolean;
+} {
+  const isCompleted = t.status === 'completed' || t.status === 'cancelled' || t.status === 'absent';
+  const start = taskStartDate(t);
+  const end = taskEndDate(t);
+
+  if (!start || isCompleted) {
+    return { kind: 'normal', diffMin: Number.POSITIVE_INFINITY, isCompleted };
+  }
+
+  const diffStartMin = (start.getTime() - now.getTime()) / 60_000;
+  const diffEndMin = end ? (end.getTime() - now.getTime()) / 60_000 : Number.POSITIVE_INFINITY;
+
+  if (diffEndMin < 0) {
+    // Đã qua giờ kết thúc → quá hạn
+    return { kind: 'overdue', diffMin: diffStartMin, isCompleted };
+  }
+  if (diffStartMin <= 0 && diffEndMin > 0) {
+    // Đang trong ca
+    return { kind: 'urgent', diffMin: diffStartMin, isCompleted };
+  }
+  if (diffStartMin > 0 && diffStartMin <= 60 && isSameUtcDay(start, now)) {
+    // Trong ngày hôm nay, sắp đến giờ
+    return { kind: 'urgent', diffMin: diffStartMin, isCompleted };
+  }
+  if (isSameUtcDay(start, now)) {
+    // Hôm nay nhưng còn xa
+    return { kind: 'today', diffMin: diffStartMin, isCompleted };
+  }
+  return { kind: 'normal', diffMin: diffStartMin, isCompleted };
+}
+
 // Quy trình 4 bước cho mỗi task
 const TASK_NEXT: Record<
   string,
@@ -50,6 +112,14 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
   const next = TASK_NEXT[t.status]?.(t.role) ?? null;
   const campaignRunning = t.campaign.status === 'in_progress';
 
+  const urgency = urgencyOf(t, new Date());
+  const cardClass =
+    urgency.kind === 'overdue'
+      ? 'cm-card cm-card--overdue p-4'
+      : urgency.kind === 'urgent'
+        ? 'cm-card cm-card--urgent p-4'
+        : 'cm-card p-4';
+
   async function go(photo?: File) {
     try {
       const res = await advance.mutateAsync({ assignmentId: t.id, photo });
@@ -70,14 +140,35 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
   }
 
   return (
-    <div className="cm-card p-4">
+    <div className={cardClass}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        {rm && (
-          <span className={`badge ${rm.badge}`}>
-            <span className="material-symbols-outlined text-[14px]">{rm.icon}</span>
-            {rm.label}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {rm && (
+            <span className={`badge ${rm.badge}`}>
+              <span className="material-symbols-outlined text-[14px]">{rm.icon}</span>
+              {rm.label}
+            </span>
+          )}
+          {/* Urgency pill */}
+          {urgency.kind === 'overdue' && !urgency.isCompleted && (
+            <span className="cm-urgent-pill cm-urgent-pill--rose">
+              <span className="material-symbols-outlined text-[14px]">priority_high</span>
+              Quá hạn
+            </span>
+          )}
+          {urgency.kind === 'urgent' && !urgency.isCompleted && (
+            <span className="cm-urgent-pill cm-urgent-pill--amber">
+              <span className="material-symbols-outlined text-[14px]">schedule</span>
+              Sắp tới giờ
+            </span>
+          )}
+          {urgency.kind === 'today' && !urgency.isCompleted && (
+            <span className="cm-urgent-pill cm-urgent-pill--honey">
+              <span className="material-symbols-outlined text-[14px]">wb_sunny</span>
+              Hôm nay
+            </span>
+          )}
+        </div>
         <span className={st.chip}>{st.label}</span>
       </div>
 
@@ -142,7 +233,7 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
             type="button"
             onClick={onClickAction}
             disabled={advance.isPending}
-            className="mt-3 w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+            className="mt-3 w-full py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
           >
             {next.needsPhoto && (
               <span className="material-symbols-outlined text-[16px]">photo_camera</span>

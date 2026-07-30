@@ -450,7 +450,7 @@ export default function ListingDetailPage({ params }: Props) {
                   <img
                     src={
                       (item.imageUrls[0] && ![
-                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
                         '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                       ].includes(item.imageUrls[0]))
                         ? mediaUrl(item.imageUrls[0])

@@ -9,6 +9,7 @@ import apiClient, {
 } from '../api/client';
 import { LoginInput, RegisterInput } from '../utils/validators';
 import { signOutFirebase } from '../services/firebaseAuth';
+import type { CapturedImage } from '../services/faceCapture';
 
 export interface User {
   id: string;
@@ -199,23 +200,45 @@ export const useAuthStore = create<AuthState>((set) => ({
         businessName?: string;
         address?: string;
         vehicleType?: string;
+        vehiclePlate?: string;
+        idCardNumber?: string;
+        selfie?: CapturedImage;
+        idCardPhoto?: CapturedImage;
+        vehiclePlateImage?: CapturedImage;
         volunteerRole?: 'shipper' | 'chef' | 'waiter';
         isCharityOrg?: boolean;
       };
+      const registerPayload = {
+        email: input.email,
+        password: input.password,
+        fullName: input.name,
+        role: extra.role ?? 'receiver',
+        ...(extra.phone ? { phone: extra.phone } : {}),
+        ...(extra.businessName ? { businessName: extra.businessName } : {}),
+        ...(extra.address ? { address: extra.address } : {}),
+        ...(extra.idCardNumber ? { idCardNumber: extra.idCardNumber.trim() } : {}),
+        ...(extra.vehicleType ? { vehicleType: extra.vehicleType } : {}),
+        ...(extra.vehiclePlate ? { vehiclePlate: extra.vehiclePlate.trim().toUpperCase() } : {}),
+        ...(extra.volunteerRole ? { volunteerRole: extra.volunteerRole } : {}),
+        ...(extra.isCharityOrg != null ? { isCharityOrg: extra.isCharityOrg } : {}),
+      };
+      let body: FormData | typeof registerPayload = registerPayload;
+      if (extra.selfie) {
+        const form = new FormData();
+        Object.entries(registerPayload).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) form.append(key, String(value));
+        });
+        form.append('selfie', extra.selfie as unknown as Blob);
+        if (extra.idCardPhoto) form.append('idCard', extra.idCardPhoto as unknown as Blob);
+        if (extra.vehiclePlateImage) {
+          form.append('vehiclePlateImage', extra.vehiclePlateImage as unknown as Blob);
+        }
+        body = form;
+      }
       const response = await apiClient.post<ApiResponse<LoginResponse>>(
         endpoints.auth.register,
-        {
-          email: input.email,
-          password: input.password,
-          fullName: input.name,
-          role: extra.role ?? 'receiver',
-          ...(extra.phone ? { phone: extra.phone } : {}),
-          ...(extra.businessName ? { businessName: extra.businessName } : {}),
-          ...(extra.address ? { address: extra.address } : {}),
-          ...(extra.vehicleType ? { vehicleType: extra.vehicleType } : {}),
-          ...(extra.volunteerRole ? { volunteerRole: extra.volunteerRole } : {}),
-          ...(extra.isCharityOrg != null ? { isCharityOrg: extra.isCharityOrg } : {}),
-        }
+        body,
+        extra.selfie ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined
       );
 
       if (response.data.success) {

@@ -150,7 +150,7 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
             type="button"
             onClick={doStart}
             disabled={start.isPending}
-            className="mt-3 w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
+            className="mt-3 w-full py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
           >
             {start.isPending ? 'Đang bắt đầu...' : 'Bắt đầu chiến dịch'}
           </button>
@@ -222,7 +222,7 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
                     type="button"
                     onClick={() => doConfirm(d.id)}
                     disabled={confirmDon.isPending}
-                    className="ml-auto px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-full text-[10px] font-bold disabled:opacity-50 transition-colors shrink-0"
+                    className="ml-auto px-2.5 py-1 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-full text-[10px] font-bold disabled:opacity-50 transition-colors shrink-0"
                   >
                     Đã nhận
                   </button>

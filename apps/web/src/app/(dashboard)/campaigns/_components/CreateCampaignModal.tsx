@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { reverseGeocode } from '@/lib/geocode';
@@ -9,6 +9,12 @@ import {
   type CreateCampaignInput,
 } from '@/hooks/useCampaigns';
 import { errMsg, mediaUrl } from '@/lib/utils';
+import CreateCampaignSuggestions from '@/components/campaigns/CreateCampaignSuggestions';
+import type {
+  ShiftTemplate,
+  ScheduleTemplate,
+  SupplyTemplate,
+} from '@/components/campaigns/create-campaign-templates';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
@@ -35,6 +41,8 @@ export default function CreateCampaignModal({
     description: '',
     kitchenAddress: '',
     scheduledDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
+    endDate: '' as string,
     startTime: '08:00',
     endTime: '12:00',
     chefSlotsNeeded: 2,
@@ -72,6 +80,65 @@ export default function CreateCampaignModal({
     { label: string; role?: 'chef' | 'waiter' | 'shipper'; startTime: string; endTime: string; slotsNeeded: number }[]
   >([]);
 
+  // Lắng nghe dropdown gợi ý — chèn mẫu vào state tương ứng.
+  useEffect(() => {
+    function onInsert(e: Event) {
+      const ce = e as CustomEvent<{ kind: string; payload: unknown }>;
+      const { kind, payload } = ce.detail;
+      if (kind === 'shift') {
+        const t = payload as ShiftTemplate;
+        setShifts((prev) => {
+          // Tránh trùng label+startTime
+          if (
+            prev.some(
+              (p) =>
+                p.label.trim() === t.label.trim() &&
+                p.startTime === t.startTime &&
+                p.endTime === t.endTime,
+            )
+          ) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              label: t.label,
+              role: t.role,
+              startTime: t.startTime,
+              endTime: t.endTime,
+              slotsNeeded: t.slotsNeeded,
+            },
+          ];
+        });
+      } else if (kind === 'schedule') {
+        const t = payload as ScheduleTemplate;
+        setSchedule((prev) => {
+          if (prev.some((p) => p.label.trim() === t.label.trim() && p.time === t.time)) {
+            return prev;
+          }
+          return [...prev, { time: t.time, label: t.label }];
+        });
+      } else if (kind === 'supply') {
+        const t = payload as SupplyTemplate;
+        setSupplies((prev) => {
+          if (prev.some((p) => p.name.trim() === t.name.trim())) return prev;
+          return [
+            ...prev,
+            { name: t.name, quantity: t.quantity, unit: t.unit },
+          ];
+        });
+      }
+    }
+    window.addEventListener('cm:insert-template', onInsert as EventListener);
+    return () =>
+      window.removeEventListener('cm:insert-template', onInsert as EventListener);
+  }, []);
+
+  // Bắn event để dropdown reset sau khi form đóng thành công.
+  function emitFormReset() {
+    window.dispatchEvent(new Event('cm:form-reset'));
+  }
+
   // Field-level errors (key = field path, value = Vietnamese message)
   const [errors, setErrors] = useState<Record<string, string>>({});
   const setErr = (k: string, v: string | undefined) =>
@@ -101,6 +168,16 @@ export default function CreateCampaignModal({
       today.setHours(0, 0, 0, 0);
       const picked = new Date(f.scheduledDate);
       if (picked < today) next.scheduledDate = 'Ngày tổ chức phải từ hôm nay trở đi';
+    }
+    // EndDate (optional) — phải >= scheduledDate và >= hôm nay
+    if (f.endDate) {
+      const end = new Date(f.endDate);
+      const start = new Date(f.scheduledDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (end < today) next.endDate = 'Ngày kết thúc không được trong quá khứ';
+      else if (f.scheduledDate && end < start)
+        next.endDate = 'Ngày kết thúc phải từ ngày bắt đầu trở đi';
     }
     // Time
     if (!f.startTime) next.startTime = 'Chọn giờ bắt đầu';
@@ -187,12 +264,16 @@ export default function CreateCampaignModal({
     try {
       await onSubmit({
         ...f,
+        // Chỉ gửi endDate khi user đã chọn (bỏ trống = mặc định 1 ngày ở BE)
+        endDate: f.endDate ? f.endDate : undefined,
         imageUrls: imageUrl ? [imageUrl] : undefined,
-        menuItems: menu.filter((m) => m.name.trim()).map((m) => ({
-          name: m.name.trim(),
-          type: m.type.trim(),
-          plannedServings: m.plannedServings,
-        })),
+        menuItems: menu
+          .filter((m) => m.name.trim() && m.type)
+          .map((m) => ({
+            name: m.name.trim(),
+            type: m.type.trim(),
+            plannedServings: m.plannedServings,
+          })),
         scheduleItems: schedule.filter((s) => s.label.trim()).map((s) => ({
           time: s.time.trim(),
           label: s.label.trim(),
@@ -215,6 +296,7 @@ export default function CreateCampaignModal({
           })),
       });
       toast.success('Đã gửi yêu cầu. Chiến dịch sẽ hiển thị sau khi quản trị viên duyệt.');
+      emitFormReset();
       onClose();
     } catch (e: unknown) {
       const err = e as {
@@ -240,62 +322,57 @@ export default function CreateCampaignModal({
 
   const previewTitle = f.title.trim() || 'Tên chiến dịch của bạn';
 
-  // Click nút "Thêm/Đổi ảnh" trên cover → cuộn xuống khu vực upload trong form
-  function focusCoverUploader() {
-    // Kích hoạt input file (vì block upload có sẵn trong form)
-    document.getElementById('cm-img-input')?.click();
-    // Cuộn body modal tới block Ảnh bìa để user thấy ngay kết quả preview
-    requestAnimationFrame(() => {
-      const el = document.getElementById('cm-image-block');
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
-
   return (
-    <div className="cm-modal" role="dialog" aria-modal="true" aria-labelledby="cm-modal-title">
-      <form onSubmit={submit} className="cm-modal-card">
-        {/* ─── Cover hero (sticky header — không hiển thị ảnh user upload,
-              chỉ là brand backdrop + nút Đổi ảnh / Đóng. Ảnh thật xem ở form-block bên dưới) ─── */}
-        <div className="cm-modal-cover-sticky">
-        <div className="cm-modal-cover">
-          <button
-            type="button"
-            onClick={focusCoverUploader}
-            className="cm-modal-cover-edit"
-            aria-label={imageUrl ? 'Đổi ảnh bìa' : 'Thêm ảnh bìa'}
+    <div className="cm-create-page">
+      {/* ─── Header gọn: tiêu đề + nút đóng (không che form) ─── */}
+      <header className="cm-create-header">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#6EE7B7]">
+            Workspace quản lý · Yêu cầu mới · chờ admin duyệt
+          </p>
+          <h1
+            id="cm-modal-title"
+            className="cm-create-header-title"
           >
-            <span className="material-symbols-outlined text-[16px]">
-              {upload.isPending ? 'hourglass_top' : imageUrl ? 'edit' : 'add_a_photo'}
-            </span>
-            {imageUrl ? 'Đổi ảnh' : 'Thêm ảnh'}
-          </button>
+            Tạo chiến dịch mới
+          </h1>
+          <p className="cm-create-header-sub">
+            Điền đầy đủ thông tin bên dưới — yêu cầu sẽ được quản trị viên duyệt trước khi hiển thị công khai.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="cm-create-header-close"
+          aria-label="Đóng"
+        >
+          <span className="material-symbols-outlined">arrow_back</span>
+          Quay lại
+        </button>
+      </header>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="cm-modal-close"
-            aria-label="Đóng"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-
-          <div className="cm-modal-cover-overlay">
-            <p className="cm-modal-cover-eyebrow">Yêu cầu mới · chờ admin duyệt</p>
-            <h2 id="cm-modal-title" className="cm-modal-cover-title">
+      <form onSubmit={submit} className="cm-create-card">
+        {/* Cover giờ là banner info ngắn trên cùng form (không che, không che body) */}
+        <div className="cm-create-banner">
+          <div className="cm-create-banner-icon">
+            <span className="material-symbols-outlined">campaign</span>
+          </div>
+          <div className="min-w-0">
+            <p className="cm-create-banner-title">
               {previewTitle}
-            </h2>
-            <p className="cm-modal-cover-sub">
-              {new Date(f.scheduledDate).toLocaleDateString('vi-VN', {
-                weekday: 'long',
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-              })}{' '}
-              · {f.startTime}–{f.endTime}
+            </p>
+            <p className="cm-create-banner-sub">
+              {f.scheduledDate
+                ? `${new Date(f.scheduledDate).toLocaleDateString('vi-VN', {
+                    weekday: 'long',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                  })}${f.endDate ? ` → ${new Date(f.endDate).toLocaleDateString('vi-VN')}` : ''} · ${f.startTime}–${f.endTime}`
+                : `Chưa chọn ngày · ${f.startTime}–${f.endTime}`}
               {f.kitchenAddress && ` · ${f.kitchenAddress}`}
             </p>
           </div>
-        </div>
         </div>
 
         {/* ─── Body: 2 columns ─── */}
@@ -364,16 +441,21 @@ export default function CreateCampaignModal({
                         placeholder="Tên món (vd: Cơm thịt kho)"
                         className="cm-input"
                       />
-                      <input
+                      <select
                         value={m.type}
                         onChange={(e) =>
                           setMenu(
                             menu.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)),
                           )
                         }
-                        placeholder="Loại (Món chính)"
                         className="cm-input"
-                      />
+                        aria-label="Bữa ăn"
+                      >
+                        <option value="">— Bữa —</option>
+                        <option value="breakfast">Bữa sáng</option>
+                        <option value="lunch">Bữa trưa</option>
+                        <option value="dinner">Bữa tối</option>
+                      </select>
                       <input
                         type="number"
                         min={0}
@@ -406,7 +488,7 @@ export default function CreateCampaignModal({
                   ))}
                   <button
                     type="button"
-                    onClick={() => setMenu([...menu, { name: '', type: '' }])}
+                    onClick={() => setMenu([...menu, { name: '', type: 'lunch' }])}
                     className="cm-repeat-add"
                   >
                     <span className="material-symbols-outlined text-[15px]">add</span> Thêm món
@@ -472,6 +554,10 @@ export default function CreateCampaignModal({
                     onChange={(e) => {
                       setF({ ...f, scheduledDate: e.target.value });
                       if (errors.scheduledDate) setErr('scheduledDate', undefined);
+                      // Nếu endDate trước scheduledDate mới → clear endDate
+                      if (f.endDate && f.endDate < e.target.value) {
+                        setF((prev) => ({ ...prev, scheduledDate: e.target.value, endDate: '' }));
+                      }
                     }}
                     className={inputCls('scheduledDate', 'cm-input')}
                     aria-invalid={!!errors.scheduledDate}
@@ -502,6 +588,44 @@ export default function CreateCampaignModal({
                 <FieldError k="scheduledDate" />
                 <FieldError k="startTime" />
                 <FieldError k="endTime" />
+                {/* Ngày kết thúc (optional) — bỏ trống = 1 ngày duy nhất */}
+                <div className="mt-2 flex items-center gap-2">
+                  <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide shrink-0">
+                    Ngày kết thúc
+                  </label>
+                  <input
+                    type="date"
+                    value={f.endDate}
+                    min={f.scheduledDate || new Date().toISOString().slice(0, 10)}
+                    placeholder="Bỏ trống nếu 1 ngày"
+                    onChange={(e) => {
+                      setF({ ...f, endDate: e.target.value });
+                      if (errors.endDate) setErr('endDate', undefined);
+                    }}
+                    className={`cm-input flex-1 ${errors.endDate ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+                    aria-invalid={!!errors.endDate}
+                    data-field-error={errors.endDate ? 'endDate' : undefined}
+                  />
+                  {f.endDate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setF({ ...f, endDate: '' });
+                        setErr('endDate', undefined);
+                      }}
+                      className="text-[11px] text-neutral-500 hover:text-rose-600 underline shrink-0"
+                      title="Bỏ chọn ngày kết thúc"
+                    >
+                      Xoá
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-neutral-400 mt-0.5">
+                  {f.endDate
+                    ? `Chiến dịch kéo dài từ ${new Date(f.scheduledDate).toLocaleDateString('vi-VN')} đến ${new Date(f.endDate).toLocaleDateString('vi-VN')}.`
+                    : 'Bỏ trống nếu chiến dịch chỉ diễn ra 1 ngày.'}
+                </p>
+                <FieldError k="endDate" />
                 <input
                   type="number"
                   min={1}
@@ -561,12 +685,17 @@ export default function CreateCampaignModal({
               </div>
 
               <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">schedule</span>Ca trực cho tình nguyện viên
-                </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="cm-form-block-label !mb-0">
+                    <span className="material-symbols-outlined">schedule</span>Ca trực cho tình nguyện viên
+                  </span>
+                </div>
                 <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
                   Tạo sẵn các ca để tình nguyện viên đăng ký ngay khi chiến dịch được duyệt.
                 </p>
+                <div className="mb-3">
+                  <CreateCampaignSuggestions tone="emerald" />
+                </div>
                 <div className="cm-repeat">
                   {shifts.map((s, i) => (
                     <div key={i} className="space-y-1">
@@ -685,9 +814,14 @@ export default function CreateCampaignModal({
               </div>
 
               <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">schedule</span>Lịch trình hoạt động
-                </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="cm-form-block-label !mb-0">
+                    <span className="material-symbols-outlined">schedule</span>Lịch trình hoạt động
+                  </span>
+                </div>
+                <div className="mb-3">
+                  <CreateCampaignSuggestions tone="sky" />
+                </div>
                 <div className="cm-repeat">
                   {schedule.map((s, i) => (
                     <div key={i} className="cm-repeat-row cm-repeat-row--schedule">
@@ -734,9 +868,14 @@ export default function CreateCampaignModal({
               </div>
 
               <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">inventory_2</span>Vật phẩm cần thiết
-                </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="cm-form-block-label !mb-0">
+                    <span className="material-symbols-outlined">inventory_2</span>Vật phẩm cần thiết
+                  </span>
+                </div>
+                <div className="mb-3">
+                  <CreateCampaignSuggestions tone="amber" />
+                </div>
                 <div className="cm-repeat">
                   {supplies.map((s, i) => (
                     <div key={i} className="cm-repeat-row cm-repeat-row--supplies">

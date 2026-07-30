@@ -16,7 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -131,13 +131,24 @@ export class CampaignsController {
   @Patch(':id/complete')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Charity: kết thúc chiến dịch + nhập số suất thực tế' })
+  @ApiOperation({
+    summary:
+      'Charity: kết thúc chiến dịch + nhập số suất thực tế. Nếu chưa tới ngày kết thúc cần gửi earlyEndConfirmation + earlyEndReason.',
+  })
   complete(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
     @Body() dto: CompleteCampaignDto,
   ) {
-    return this.campaignsService.completeCampaign(id, user.id, dto.actualServings);
+    return this.campaignsService.completeCampaign(
+      id,
+      user.id,
+      dto.actualServings,
+      {
+        earlyEndConfirmation: dto.earlyEndConfirmation,
+        earlyEndReason: dto.earlyEndReason,
+      },
+    );
   }
 
   @Post(':id/change-requests')
@@ -258,9 +269,15 @@ export class CampaignsController {
   reviewProviderRequest(
     @CurrentUser() user: User,
     @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() body: { action: 'accept' | 'reject'; note?: string },
+    @Body() body: ReviewProviderRequestDto,
   ) {
-    return this.campaignsService.reviewProviderRequest(user.id, requestId, body.action, body.note);
+    return this.campaignsService.reviewProviderRequest(
+      user.id,
+      requestId,
+      body.action,
+      body.note,
+      { pickupTime: body.pickupTime, needsTransport: body.needsTransport },
+    );
   }
 
   @Post('provider-proposals')
@@ -275,6 +292,12 @@ export class CampaignsController {
   }
 
   // ─── Manage endpoints (trang /campaigns/[id]/manage/*) ─────────────────────
+
+  @Get(':id/manage-detail')
+  @ApiOperation({ summary: 'Charity: chi tiết chiến dịch cho trang quản lý (bao gồm pending assignments)' })
+  getManageDetail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getManageDetail(id);
+  }
 
   @Patch(':id/assignments/:assignmentId/review')
   @UseGuards(RolesGuard)

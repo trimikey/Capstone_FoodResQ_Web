@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { mediaUrl } from '@/lib/utils';
 import type { TaskOffer } from '@/hooks/useDeliveries';
 import { mediaUrl } from '@/lib/utils';
 

@@ -14,6 +14,7 @@ import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
 import { listingStatusDisplay } from '@/components/ProviderListingCard';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import {
   categoryLabel,
   quantityLabel,

@@ -8,12 +8,14 @@ import { FirebaseAdminService } from './firebase-admin.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { FaceMatchModule } from '@/common/face-match/face-match.module';
 import { StorageModule } from '@/common/storage/storage.module';
+import { OcrModule } from '@/common/ocr/ocr.module';
 
 @Module({
   imports: [
     PassportModule,
     FaceMatchModule,
     StorageModule,
+    OcrModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

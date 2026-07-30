@@ -110,7 +110,7 @@ export class VolunteersService {
         reservation: { select: { receiver: { select: { userId: true } } } },
       },
     });
-    const receiverUserId = active?.reservation.receiver.userId;
+    const receiverUserId = active?.reservation?.receiver.userId;
     if (receiverUserId) {
       this.gateway.emitToUser(receiverUserId, 'delivery:location', {
         reservationId: active.reservationId,

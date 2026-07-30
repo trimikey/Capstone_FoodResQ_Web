@@ -191,7 +191,7 @@ export default function CreateDistributionModal({ campaignId, onClose, onCreated
           <button
             type="submit"
             disabled={create.isPending}
-            className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+            className="flex-1 py-3 bg-[#236c2a] hover:bg-[#1a4f1f] text-white font-bold text-sm rounded-xl disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
           >
             {create.isPending ? (
               <>

@@ -647,6 +647,7 @@ export class AdminService {
 
     const data: Prisma.KitchenCampaignUpdateInput = {};
     if (cr.scheduledDate !== null) data.scheduledDate = cr.scheduledDate;
+    if (cr.endDate !== null) data.endDate = cr.endDate;
     if (cr.startTime !== null) data.startTime = cr.startTime;
     if (cr.endTime !== null) data.endTime = cr.endTime;
     if (cr.kitchenAddress !== null) data.kitchenAddress = cr.kitchenAddress;
@@ -854,18 +855,6 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Lấy documents (evidenceUrls) từ verification_requests mới nhất theo user
-    const userIds = providers.map((p) => p.user.id);
-    const verificationDocs = userIds.length
-      ? await this.prisma.verificationRequest.findMany({
-          where: { userId: { in: userIds }, requestType: 'provider_registration' },
-          orderBy: { submittedAt: 'desc' },
-          distinct: ['userId'],
-          select: { userId: true, documents: true },
-        })
-      : [];
-    const docsByUser = new Map(verificationDocs.map((d) => [d.userId, d.documents]));
-
     // Lấy toạ độ provider (geography → ST_X/ST_Y)
     const providerIds = providers.map((p) => p.id);
     const coordRows = providerIds.length
@@ -885,6 +874,7 @@ export class AdminService {
       where: { verificationStatus: 'pending' },
       select: {
         id: true,
+        idCardNumber: true,
         vehicleType: true,
         vehiclePlate: true,
         createdAt: true,
@@ -894,8 +884,25 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Lấy documents từ verification_requests mới nhất theo user.
+    // Provider dùng ảnh GPKD; volunteer/shipper dùng ảnh biển số hoặc giấy tờ bổ sung.
+    const userIds = [...providers.map((p) => p.user.id), ...volunteers.map((v) => v.user.id)];
+    const verificationDocs = userIds.length
+      ? await this.prisma.verificationRequest.findMany({
+          where: {
+            userId: { in: userIds },
+            requestType: { in: ['provider_registration', 'volunteer_chef_cert'] },
+          },
+          orderBy: { submittedAt: 'desc' },
+          distinct: ['userId'],
+          select: { userId: true, documents: true },
+        })
+      : [];
+    const docsByUser = new Map(verificationDocs.map((d) => [d.userId, d.documents]));
+
     type EvidenceDocs = {
       evidenceUrls?: string[];
+      vehiclePlateImageUrl?: string | null;
       description?: string;
       lng?: number | null;
       lat?: number | null;
@@ -927,16 +934,25 @@ export class AdminService {
           createdAt: p.createdAt,
         };
       }),
-      ...volunteers.map((v) => ({
-        type: 'volunteer' as ProfileType,
-        profileId: v.id,
-        userId: v.user.id,
-        fullName: v.user.fullName,
-        email: v.user.email,
-        phone: v.user.phone,
-        detail: `TNV · ${v.vehicleType ?? 'chưa rõ xe'} ${v.vehiclePlate ?? ''} · ${v.specializations.map((s) => s.specialization).join(', ') || 'chưa có chuyên môn'}`,
-        createdAt: v.createdAt,
-      })),
+      ...volunteers.map((v) => {
+        const docs = (docsByUser.get(v.user.id) as EvidenceDocs | undefined) ?? {};
+        const evidenceUrls = Array.isArray(docs.evidenceUrls)
+          ? docs.evidenceUrls
+          : docs.vehiclePlateImageUrl
+            ? [docs.vehiclePlateImageUrl]
+            : [];
+        return {
+          type: 'volunteer' as ProfileType,
+          profileId: v.id,
+          userId: v.user.id,
+          fullName: v.user.fullName,
+          email: v.user.email,
+          phone: v.user.phone,
+          detail: `TNV · CCCD ${v.idCardNumber ?? 'chưa cập nhật'} · ${v.vehicleType ?? 'chưa rõ xe'} ${v.vehiclePlate ?? ''} · ${v.specializations.map((s) => s.specialization).join(', ') || 'chưa có chuyên môn'}`,
+          evidenceUrls,
+          createdAt: v.createdAt,
+        };
+      }),
     ].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
   }
 

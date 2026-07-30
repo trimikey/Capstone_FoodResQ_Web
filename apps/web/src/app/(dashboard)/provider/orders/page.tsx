@@ -2,11 +2,19 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
+<<<<<<< HEAD
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+=======
+import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
+import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
+>>>>>>> origin/master
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
+import { ReviewRequestModal } from './_components/ReviewRequestModal';
+import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -133,6 +141,14 @@ export default function ProviderOrdersPage() {
   const [cancelling, setCancelling] = useState<ProviderOrderItem | null>(null);
   const providerCancel = useProviderCancelReservation();
 
+  // ─── Charity cooperation requests ─────────────────────────────────────
+  const requestsQuery = useProviderRequests();
+  const requests = (requestsQuery.data ?? []) as ProviderRequestItem[];
+  const pendingRequests = useMemo(() => requests.filter((r) => r.status === 'pending'), [requests]);
+  const acceptedRequests = useMemo(() => requests.filter((r) => r.status === 'accepted'), [requests]);
+  const [requestDrawerOpen, setRequestDrawerOpen] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<ProviderRequestItem | null>(null);
+
   const totalPages = data?.totalPages || 1;
   const total = data?.total || 0;
 
@@ -166,25 +182,168 @@ export default function ProviderOrdersPage() {
   const isLoadingList = isLoading && items.length === 0;
 
   return (
-    <div className="flex-1 min-w-0 bg-mesh-brand">
+    <div className="flex-1 min-w-0 bg-[#FAFBF9]">
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-[#236c2a] uppercase tracking-wider">Lịch sử</p>
-            <h1 className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1">Theo dõi đơn</h1>
-            <p className="text-sm text-neutral-500 mt-1 font-normal">
-              Tổng cộng <b className="text-neutral-800">{total}</b> đơn từ người nhận
-            </p>
-          </div>
-          <button
-            onClick={() => refetch()}
-            className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
+        {/* Header — đồng bộ với các trang provider khác */}
+        <ProviderHeaderCard
+          eyebrow="Lịch sử"
+          title="Theo dõi đơn"
+          description={`Tổng cộng ${total} đơn từ người nhận`}
+          cta={
+            <>
+              <button
+                onClick={() => setRequestDrawerOpen(true)}
+                className="relative self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
+              >
+                <Bell className="h-4 w-4" />
+                Yêu cầu từ bếp ăn
+                {pendingRequests.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold bg-rose-500 text-white">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => refetch()}
+                className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-white rounded-full border border-neutral-200 hover:bg-neutral-50 text-sm font-medium text-neutral-700 transition-colors shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                Làm mới
+              </button>
+            </>
+          }
+        />
+
+        {/* Drawer: yêu cầu hợp tác từ charity */}
+        {requestDrawerOpen && (
+          <div
+            className="fixed inset-0 z-[105] flex justify-end bg-black/40 backdrop-blur-sm"
+            onClick={() => setRequestDrawerOpen(false)}
           >
-            <span className="material-symbols-outlined text-[16px]">refresh</span>
-            Làm mới
-          </button>
-        </header>
+            <aside
+              className="h-full w-full max-w-md bg-white shadow-2xl flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+                <div>
+                  <h2 className="font-bold text-neutral-800">Yêu cầu hợp tác</h2>
+                  <p className="text-xs text-neutral-500">
+                    Tổ chức từ thiện mời bạn cung cấp thực phẩm cho chiến dịch bếp ăn.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setRequestDrawerOpen(false)}
+                  className="h-9 w-9 rounded-lg hover:bg-neutral-100 grid place-items-center"
+                  aria-label="Đóng"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </header>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {requestsQuery.isLoading && (
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="h-24 rounded-xl bg-neutral-50 animate-pulse" />
+                    ))}
+                  </div>
+                )}
+
+                {!requestsQuery.isLoading && requests.length === 0 && (
+                  <div className="py-12 text-center text-sm text-neutral-500">
+                    Chưa có yêu cầu nào.
+                  </div>
+                )}
+
+                {pendingRequests.length > 0 && (
+                  <section>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-rose-600 mb-2">
+                      Chờ duyệt ({pendingRequests.length})
+                    </p>
+                    <div className="space-y-2">
+                      {pendingRequests.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => setReviewTarget(r)}
+                          className="w-full text-left rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-50 px-4 py-3 transition-colors"
+                        >
+                          <p className="font-semibold text-sm text-neutral-800">
+                            {r.campaign?.title ?? 'Chiến dịch'}
+                          </p>
+                          <p className="text-xs text-neutral-600 mt-0.5">
+                            Tổ chức: {r.receiver.organizationName || r.receiver.user.fullName}
+                          </p>
+                          {r.campaign?.scheduledDate && (
+                            <p className="text-xs text-neutral-500 mt-0.5">
+                              Ngày: {r.campaign.scheduledDate.slice(0, 10)}
+                            </p>
+                          )}
+                          {r.message && (
+                            <p className="text-xs text-neutral-500 italic mt-1 line-clamp-2">
+                              "{r.message}"
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {acceptedRequests.length > 0 && (
+                  <section className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 mb-2">
+                      Đã đồng ý ({acceptedRequests.length})
+                    </p>
+                    <div className="space-y-2">
+                      {acceptedRequests.map((r) => (
+                        <div
+                          key={r.id}
+                          className="rounded-xl border border-emerald-200 bg-emerald-50/40 px-4 py-3"
+                        >
+                          <p className="font-semibold text-sm text-neutral-800">
+                            {r.campaign?.title ?? 'Chiến dịch'}
+                          </p>
+                          <p className="text-xs text-neutral-600 mt-0.5">
+                            Tổ chức: {r.receiver.organizationName || r.receiver.user.fullName}
+                          </p>
+                          {r.pickupStartTime && (
+                            <p className="text-xs text-neutral-700 mt-1">
+                              ⏰ TNV đến lấy lúc{' '}
+                              <strong>{r.pickupStartTime}</strong>
+                              {r.pickupEndTime ? `–${r.pickupEndTime}` : ''}
+                            </p>
+                          )}
+                          {r.needsTransport && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold">
+                              <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                              Đang tìm TNV giao
+                            </span>
+                          )}
+                          {r.transport?.status && (
+                            <p className="text-xs text-neutral-500 mt-1">
+                              Vận chuyển: {r.transport.status}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {reviewTarget && (
+          <ReviewRequestModal
+            req={reviewTarget}
+            onClose={() => setReviewTarget(null)}
+            onSuccess={() => {
+              void requestsQuery.refetch();
+              toast.success('Đã cập nhật trạng thái.');
+            }}
+          />
+        )}
 
         {/* Stats */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -371,14 +530,14 @@ function StatCard({
   const t = tones[tone];
 
   return (
-    <div className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-neutral-100">
+    <div className="bg-white p-4 md:p-5 rounded-2xl border border-neutral-150 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} flex items-center justify-center`}>
           <span className="material-symbols-outlined text-[20px]">{icon}</span>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">{label}</p>
-      <p className="text-2xl md:text-3xl font-bold text-neutral-800 mt-1 tabular-nums">{value}</p>
+      <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">{label}</p>
+      <p className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1 tabular-nums">{value}</p>
     </div>
   );
 }
