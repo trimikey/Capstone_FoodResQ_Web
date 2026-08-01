@@ -276,6 +276,7 @@ export default function ProviderDashboardPage() {
                       onCancel={() => handleCancel(listing.id)}
                       onDuplicate={() => handleDuplicate(listing.id)}
                       onExtend={(mode) => setExtendTarget({ listing, mode })}
+                      onOpen={() => router.push(`/listings/${listing.id}`)}
                     />
                   ))}
 
@@ -392,12 +393,14 @@ function PostingItem({
   onCancel,
   onDuplicate,
   onExtend,
+  onOpen,
 }: {
   listing: ProviderListing;
   onPublish: () => void;
   onCancel: () => void;
   onDuplicate: () => void;
   onExtend: (mode: 'extend_time' | 'add_quantity' | 'both') => void;
+  onOpen: () => void;
 }) {
   const statusMeta = STATUS_META[listing.status] ?? { label: listing.status, cls: 'bg-neutral-100 text-neutral-600' };
   const remaining = Number(listing.quantityRemaining);
@@ -408,7 +411,18 @@ function PostingItem({
   const isOutOfStock = listing.status === 'fully_reserved';
 
   return (
-    <div className="flex items-start gap-3 p-3 rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:bg-neutral-50 transition-all">
+    <div
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="flex items-start gap-3 p-3 rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:bg-neutral-50 transition-all cursor-pointer"
+    >
       <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 flex items-center justify-center overflow-hidden">
         {listing.imageUrls[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -438,7 +452,11 @@ function PostingItem({
           </div>
         </div>
         {isExtendable && (
-          <div className="flex gap-1.5 mt-2 flex-wrap">
+          <div
+            className="flex gap-1.5 mt-2 flex-wrap"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {isExpiringSoon && (
               <button
                 onClick={() => onExtend('extend_time')}
@@ -470,7 +488,11 @@ function PostingItem({
           </div>
         )}
       </div>
-      <div className="flex gap-1 shrink-0">
+      <div
+        className="flex gap-1 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         {listing.status === 'draft' ? (
           <button
             onClick={onPublish}
