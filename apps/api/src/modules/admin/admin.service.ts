@@ -418,8 +418,8 @@ export class AdminService {
     const filled = campaign[slot.filled as keyof typeof campaign] as number;
     if (filled >= needed) throw new BadRequestException(`Đã đủ tình nguyện viên vai trò ${ROLE_VN[role]}.`);
 
-    const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
-      where: { campaignId_volunteerId_role: { campaignId, volunteerId, role: role as never } },
+    const existing = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: { campaignId, volunteerId, role: role as never, shiftId: null },
     });
     if (existing) throw new ConflictException('Tình nguyện viên đã được gán vai trò này.');
 

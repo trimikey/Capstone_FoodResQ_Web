@@ -1,8 +1,9 @@
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { useCallback, useEffect } from 'react';
+import { AppState, View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
 import { useMyProfile } from '@/hooks/useProfile';
@@ -25,6 +26,19 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const ASSIGNMENT_ROLES: AssignmentRole[] = ['chef', 'waiter', 'shipper'];
+
+function shiftApplyLabel(role?: AssignmentRole): string {
+  switch (role) {
+    case 'chef':
+      return 'Đăng ký ca bếp';
+    case 'waiter':
+      return 'Đăng ký ca phục vụ';
+    case 'shipper':
+      return 'Đăng ký ca vận chuyển';
+    default:
+      return 'Đăng ký ca';
+  }
+}
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -62,6 +76,32 @@ export default function VolunteerCampaignDetailScreen() {
   const { data: kitchenMenu = [] } = useMenuItems(id);
   const applyMut = useApplyCampaign();
   const applyShiftMut = useApplyShift();
+
+  const refetchCampaignState = useCallback(() => {
+    void Promise.all([refetch(), refetchShifts(), refetchTasks()]);
+  }, [refetch, refetchShifts, refetchTasks]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchCampaignState();
+    }, [refetchCampaignState])
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refetchCampaignState();
+    });
+    return () => sub.remove();
+  }, [refetchCampaignState]);
+
+  const myCampaignTasks = (myTasks ?? []).filter((t) => t.campaign.id === id);
+  const hasPendingApplication = myCampaignTasks.some((t) => t.status === 'pending');
+
+  useEffect(() => {
+    if (!hasPendingApplication) return;
+    const timer = setInterval(refetchCampaignState, 4_000);
+    return () => clearInterval(timer);
+  }, [hasPendingApplication, refetchCampaignState]);
 
   const handleBack = () => {
     if (returnTo === '/notifications' || returnTo === '/(app)/notifications') {
@@ -111,17 +151,18 @@ export default function VolunteerCampaignDetailScreen() {
   const sm = statusMeta(c.status);
   const slots = slotProgress(c);
   const open = canApplyCampaign(c.status);
-  // Chuyên môn TNV đang đăng nhập (chef/waiter/shipper).
-  const mySpecs = new Set((profile?.volunteer?.specializations ?? []).map((s) => s.specialization));
+  const hasShiftSchedule = shifts.length > 0;
+  // Chỉ chuyên môn đã xác minh mới được dùng để đăng ký ca.
   const verifiedSpecs = new Set(
     (profile?.volunteer?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
   );
-  // Vai trò TNV đã đăng ký ở chính chiến dịch này.
-  const appliedRoles = new Set((myTasks ?? []).filter((t) => t.campaign.id === c.id).map((t) => t.role));
+  // Role-level apply chỉ là assignment tổng không gắn ca. Shift-level apply phải xét theo shiftId.
+  const appliedRoles = new Set(myCampaignTasks.filter((t) => !t.shiftId).map((t) => t.role));
+  const shiftApplications = new Map(myCampaignTasks.filter((t) => t.shiftId).map((t) => [t.shiftId, t]));
 
   const pickShiftRole = (shift: CampaignShift): AssignmentRole | undefined => {
     if (shift.role) return shift.role;
-    return ASSIGNMENT_ROLES.find((role) => mySpecs.has(role) && !appliedRoles.has(role));
+    return ASSIGNMENT_ROLES.find((role) => verifiedSpecs.has(role));
   };
 
   const handleApply = async (role: AssignmentRole) => {
@@ -142,7 +183,7 @@ export default function VolunteerCampaignDetailScreen() {
     try {
       await applyShiftMut.mutateAsync({ campaignId: c.id, shiftId: shift.id, role: roleToSend });
       await Promise.all([refetch(), refetchShifts(), refetchTasks()]);
-      Popup.show({ type: 'success', text1: 'Đã đăng ký ca', text2: shift.label });
+      Popup.show({ type: 'success', text1: shiftApplyLabel(roleToSend), text2: shift.label });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Đăng ký ca thất bại', text2: getErrorMessage(err) });
     }
@@ -174,23 +215,24 @@ export default function VolunteerCampaignDetailScreen() {
 
         {/* Đăng ký vai trò */}
         {slots.length > 0 ? (
-          <Section title="Đăng ký vai trò tình nguyện">
+          <Section title={hasShiftSchedule ? 'Nhu cầu tình nguyện' : 'Đăng ký vai trò tình nguyện'}>
             {!open ? (
               <Text style={styles.muted}>Chiến dịch hiện không nhận đăng ký.</Text>
             ) : null}
+            {hasShiftSchedule && open ? (
+              <Text style={styles.hint}>Chiến dịch này đăng ký theo ca. Chọn ca làm việc phù hợp ở bên dưới.</Text>
+            ) : null}
             {slots.map((s) => {
               const full = s.filled >= s.needed;
-              const hasSpec = mySpecs.has(s.role);
+              const hasSpec = verifiedSpecs.has(s.role);
               const applied = appliedRoles.has(s.role);
-              const disabled = !open || full || !hasSpec || applied || applyMut.isPending;
+              const disabled = !open || full || !hasSpec || applied || hasShiftSchedule || applyMut.isPending;
               // Lý do không đăng ký được (ưu tiên rõ ràng cho TNV).
-              const reason = applied
-                ? 'Đã đăng ký'
-                : !hasSpec
-                  ? 'Chưa có chuyên môn này'
-                  : full
-                    ? 'Đã đủ người'
-                    : null;
+              let reason: string | null = null;
+              if (hasShiftSchedule) reason = 'Chọn ca bên dưới';
+              else if (applied) reason = 'Đã đăng ký';
+              else if (!hasSpec) reason = 'Chưa có chuyên môn này';
+              else if (full) reason = 'Đã đủ người';
               return (
                 <View key={s.role} style={styles.roleRow}>
                   <View style={{ flex: 1 }}>
@@ -199,7 +241,7 @@ export default function VolunteerCampaignDetailScreen() {
                       {s.filled}/{s.needed} {full ? '- Đủ' : 'đã đăng ký'}
                     </Text>
                   </View>
-                  {applied ? (
+                  {applied && !hasShiftSchedule ? (
                     <View style={styles.appliedPill}>
                       <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.teal} />
                       <Text style={styles.appliedPillText}>Đã đăng ký</Text>
@@ -223,7 +265,7 @@ export default function VolunteerCampaignDetailScreen() {
                 </View>
               );
             })}
-            {open && slots.some((s) => mySpecs.has(s.role)) ? null : open ? (
+            {open && slots.some((s) => verifiedSpecs.has(s.role)) ? null : open ? (
               <Text style={styles.hint}>
                 Bạn chưa có chuyên môn phù hợp với chiến dịch này. Cập nhật chuyên môn ở mục Hồ sơ.
               </Text>
@@ -241,10 +283,18 @@ export default function VolunteerCampaignDetailScreen() {
             {shifts.map((s) => {
               const full = s.slotsFilled >= s.slotsNeeded;
               const roleToSend = pickShiftRole(s);
-              const alreadyApplied = s.role ? appliedRoles.has(s.role) : !roleToSend && mySpecs.size > 0;
-              const eligible = !!roleToSend && (!s.role || mySpecs.has(s.role));
+              const shiftApplication = shiftApplications.get(s.id);
+              const alreadyApplied = !!shiftApplication;
+              const eligible = !!roleToSend && (!s.role || verifiedSpecs.has(s.role));
               const disabled = !open || full || !eligible || applyShiftMut.isPending;
-              const reason = full ? 'Đã đủ' : alreadyApplied ? 'Đã đăng ký' : !eligible ? 'Không hợp chuyên môn' : null;
+              const rejected = shiftApplication?.status === 'rejected';
+              const activeApplication = alreadyApplied && !rejected;
+              const appliedLabel = shiftApplication?.status === 'pending'
+                ? 'Chờ duyệt'
+                : rejected
+                  ? 'Đã từ chối'
+                  : 'Đã duyệt';
+              const reason = full ? 'Đã đủ' : activeApplication ? appliedLabel : !eligible ? 'Không hợp chuyên môn' : null;
               return (
                 <View key={s.id} style={styles.shiftRow}>
                   <View style={styles.shiftInfo}>
@@ -255,10 +305,19 @@ export default function VolunteerCampaignDetailScreen() {
                     </Text>
                   </View>
                   <View style={styles.shiftAction}>
-                    {alreadyApplied ? (
+                    {activeApplication ? (
                       <View style={[styles.appliedPill, styles.shiftPill]}>
-                        <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.teal} />
-                        <Text style={styles.appliedPillText}>Đã đăng ký</Text>
+                        <MaterialCommunityIcons
+                          name={shiftApplication?.status === 'pending' ? 'clock-outline' : 'check-circle'}
+                          size={16}
+                          color={COLORS.teal}
+                        />
+                        <Text style={styles.appliedPillText}>{appliedLabel}</Text>
+                      </View>
+                    ) : rejected ? (
+                      <View style={[styles.rejectedPill, styles.shiftPill]}>
+                        <MaterialCommunityIcons name="close-circle-outline" size={16} color={COLORS.error} />
+                        <Text style={styles.rejectedPillText}>Đã từ chối</Text>
                       </View>
                     ) : reason ? (
                       <View style={[styles.disabledPill, styles.shiftPill]}>
@@ -275,7 +334,7 @@ export default function VolunteerCampaignDetailScreen() {
                         style={styles.shiftButton}
                         contentStyle={styles.shiftButtonContent}
                       >
-                        Đăng ký
+                        {shiftApplyLabel(roleToSend)}
                       </Button>
                     )}
                   </View>
@@ -381,6 +440,8 @@ const styles = StyleSheet.create({
   roleCount: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.tealContainer, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   appliedPillText: { fontSize: 13, fontWeight: '600', color: COLORS.teal },
+  rejectedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fee2e2', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  rejectedPillText: { fontSize: 13, fontWeight: '700', color: COLORS.error },
   disabledPill: { backgroundColor: COLORS.surfaceContainerLow, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
   disabledPillText: { fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant },
   hint: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },

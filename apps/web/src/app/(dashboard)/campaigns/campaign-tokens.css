@@ -2312,23 +2312,24 @@
 
   .cm-reg-row {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 90px auto auto;
-    align-items: center;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: start;
     gap: 12px;
-    padding: 12px 14px;
+    padding: 14px;
     border-bottom: 1px solid rgba(16, 24, 16, 0.05);
   }
   .cm-reg-row:last-child { border-bottom: none; }
   @media (max-width: 640px) {
     .cm-reg-row {
-      grid-template-columns: 36px minmax(0, 1fr) auto;
-      grid-template-rows: auto auto;
-      row-gap: 6px;
+      grid-template-columns: 40px minmax(0, 1fr);
+      row-gap: 10px;
     }
+    .cm-reg-actions { grid-column: 1 / -1; justify-content: stretch; }
+    .cm-reg-actions .cm-reg-btn { flex: 1; justify-content: center; }
   }
   .cm-reg-thumb {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     background: linear-gradient(135deg, #2a662e, #4e9853);
     color: white;
@@ -2338,6 +2339,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    margin-top: 2px;
   }
   .cm-reg-thumb img {
     width: 100%;
@@ -2353,6 +2355,59 @@
   .cm-reg-meta {
     font-size: 11px;
     color: rgba(16, 24, 16, 0.5);
+  }
+  .cm-reg-main {
+    min-width: 0;
+  }
+  .cm-reg-headline {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+  .cm-reg-badges {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .cm-reg-review-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.4fr) minmax(110px, 0.8fr) minmax(100px, 0.7fr) repeat(2, minmax(92px, 0.7fr));
+    gap: 8px;
+    margin-top: 9px;
+  }
+  .cm-reg-review-grid > span {
+    min-width: 0;
+    border: 1px solid rgba(16, 24, 16, 0.06);
+    border-radius: 10px;
+    background: #fbf9f8;
+    padding: 7px 9px;
+    color: rgba(16, 24, 16, 0.72);
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  .cm-reg-review-grid b {
+    display: block;
+    color: rgba(16, 24, 16, 0.48);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  @media (max-width: 960px) {
+    .cm-reg-review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .cm-reg-headline {
+      flex-direction: column;
+      gap: 8px;
+    }
+    .cm-reg-badges { justify-content: flex-start; }
+    .cm-reg-review-grid { grid-template-columns: 1fr; }
   }
   .cm-reg-role-pill {
     padding: 4px 10px;
@@ -2371,6 +2426,9 @@
     display: flex;
     gap: 6px;
     justify-content: flex-end;
+    align-items: center;
+    align-self: center;
+    flex-wrap: wrap;
   }
   .cm-reg-btn {
     padding: 6px 12px;
