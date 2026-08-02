@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router, Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useCampaigns,
@@ -43,12 +43,21 @@ type Segment = 'open' | 'tasks';
  *   → completed (kèm ảnh minh chứng ở bước làm việc/hoàn thành).
  */
 export default function VolunteerCampaignsScreen() {
+  const params = useLocalSearchParams<{ segment?: Segment }>();
   const { user } = useAuth();
-  const [segment, setSegment] = useState<Segment>('open');
+  const initialSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
+  const [segment, setSegment] = useState<Segment>(initialSegment);
 
   const openQuery = useCampaigns();
   const tasksQuery = useMyTasks(user?.role === 'volunteer');
   const advanceMut = useAdvanceTask();
+
+  useFocusEffect(
+    useCallback(() => {
+      const nextSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
+      setSegment(nextSegment);
+    }, [params.segment])
+  );
 
   // Chỉ volunteer dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'volunteer') {
@@ -83,6 +92,17 @@ export default function VolunteerCampaignsScreen() {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Cập nhật thất bại', text2: getErrorMessage(err) });
     }
+  };
+
+  const openCampaignDetail = (campaignId: string, returnSegment: Segment) => {
+    router.push({
+      pathname: '/volunteer/campaigns/[id]',
+      params: {
+        id: campaignId,
+        returnTo: '/volunteer/campaigns',
+        returnSegment,
+      },
+    });
   };
 
   const renderOpenEmpty = () => {
@@ -147,7 +167,7 @@ export default function VolunteerCampaignsScreen() {
           data={openQuery.data ?? []}
           keyExtractor={(item: Campaign) => item.id}
           renderItem={({ item }: { item: Campaign }) => (
-            <CampaignCard campaign={item} onPress={() => router.push(`/(app)/volunteer/campaigns/${item.id}`)} />
+            <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
           )}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderOpenEmpty}
@@ -163,7 +183,7 @@ export default function VolunteerCampaignsScreen() {
               task={item}
               advancing={advanceMut.isPending}
               onAdvance={() => handleAdvance(item)}
-              onOpen={() => router.push(`/(app)/volunteer/campaigns/${item.campaign.id}`)}
+              onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
             />
           )}
           contentContainerStyle={styles.list}
