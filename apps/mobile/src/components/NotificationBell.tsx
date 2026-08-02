@@ -195,7 +195,7 @@ export function NotificationBell() {
               <Text style={styles.emptyText}>Chưa có thông báo</Text>
             </View>
           ) : (
-            <ScrollView style={styles.list}>
+            <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
               {items.map((n) => {
                 const meta = notificationMeta(n);
                 const tone = TONE_STYLES[meta.tone];
@@ -223,7 +223,7 @@ export function NotificationBell() {
                         <Text style={styles.itemType}>{meta.label} · {timeAgo(n.createdAt)}</Text>
                       </View>
                     </View>
-                    <Text style={styles.itemBody}>{n.body}</Text>
+                    <Text style={styles.itemBody} numberOfLines={4}>{n.body}</Text>
                     <View style={styles.itemFooter}>
                       <View style={styles.attentionLine}>
                         <View style={[styles.unreadDot, { backgroundColor: n.isRead ? COLORS.outlineVariant : tone.bg }]} />
@@ -236,6 +236,7 @@ export function NotificationBell() {
                           icon="arrow-right"
                           contentStyle={styles.detailBtnContent}
                           labelStyle={styles.detailBtnLabel}
+                          style={styles.detailBtn}
                           buttonColor={n.isRead ? undefined : COLORS.rose}
                           textColor={n.isRead ? COLORS.rose : COLORS.onPrimary}
                           onPress={() => onViewDetail(n)}
@@ -274,10 +275,10 @@ const styles = StyleSheet.create({
   badgeText: { color: COLORS.onPrimary, fontSize: 10, fontWeight: '900' },
   sheet: {
     backgroundColor: COLORS.surface,
-    marginHorizontal: spacing.lg,
-    borderRadius: 28,
+    marginHorizontal: spacing.md,
+    borderRadius: 24,
     paddingVertical: spacing.lg,
-    maxHeight: '76%',
+    maxHeight: '82%',
     ...elevation.card,
   },
   sheetHeader: {
@@ -291,6 +292,7 @@ const styles = StyleSheet.create({
   sheetTitle: { fontWeight: '900', color: COLORS.onSurface },
   sheetSubtitle: { marginTop: 2, color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
   list: { paddingHorizontal: spacing.md },
+  listContent: { paddingBottom: spacing.sm },
   item: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
@@ -326,14 +328,13 @@ const styles = StyleSheet.create({
   itemBody: { color: COLORS.onSurfaceVariant, fontSize: 13, lineHeight: 18, marginTop: spacing.sm },
   itemFooter: {
     marginTop: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
     gap: spacing.sm,
   },
   attentionLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemTime: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '700' },
-  detailBtnContent: { height: 32, flexDirection: 'row-reverse' },
+  detailBtn: { alignSelf: 'stretch', borderRadius: radius.pill },
+  detailBtnContent: { height: 38, flexDirection: 'row-reverse' },
   detailBtnLabel: { fontSize: 12, fontWeight: '900', marginHorizontal: 8 },
   empty: { alignItems: 'center', paddingVertical: 32, gap: 8 },
   emptyText: { color: COLORS.onSurfaceVariant },
