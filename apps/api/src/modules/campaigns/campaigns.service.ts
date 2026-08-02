@@ -869,7 +869,8 @@ export class CampaignsService {
    * Bao gồm TẤT CẢ assignment (kể cả pending) để có thể duyệt TNV.
    * Khác với getPublicDetail: trả về pending assignments + bỏ proofGallery/experiences.
    */
-  async getManageDetail(id: string) {
+  async getManageDetail(id: string, userId: string) {
+    await this.assertOwner(id, userId);
     const campaign = await this.prisma.kitchenCampaign.findUnique({
       where: { id },
       include: {
@@ -897,6 +898,7 @@ export class CampaignsService {
             id: true,
             role: true,
             status: true,
+            shiftId: true,
             checkInTime: true,
             ingredientProofUrl: true,
             cookedProofUrl: true,
@@ -963,9 +965,13 @@ export class CampaignsService {
       id: a.id,
       role: a.role,
       status: a.status,
+      shiftId: a.shiftId,
       checkInTime: a.checkInTime,
       notes: a.notes,
       createdAt: a.createdAt,
+      fullName: a.volunteer.user.fullName,
+      avatarUrl: a.volunteer.user.avatarUrl,
+      rank: a.volunteer.rank,
       // Thông tin TNV chi tiết cho charity duyệt
       volunteer: {
         fullName: a.volunteer.user.fullName,
@@ -1915,7 +1921,7 @@ export class CampaignsService {
         return updated;
       }
 
-      // action === 'approved' → check slot
+      // action === 'approved' -> check role slot and, when campaign has shifts, assign a concrete shift.
       const c = await tx.kitchenCampaign.findUnique({ where: { id: campaignId } });
       if (!c) throw new NotFoundException('Không tìm thấy chiến dịch.');
       const slot = SLOT_FIELD[a.role];
@@ -1927,14 +1933,39 @@ export class CampaignsService {
         );
       }
 
+      const hasShifts = await tx.campaignShift.count({ where: { campaignId } });
+      let selectedShiftId: string | null = null;
+      if (hasShifts > 0) {
+        if (!dto.shiftId) {
+          throw new BadRequestException('Chiến dịch này có lịch ca, vui lòng chọn ca trước khi duyệt tình nguyện viên.');
+        }
+        const shift = await tx.campaignShift.findUnique({ where: { id: dto.shiftId } });
+        if (!shift || shift.campaignId !== campaignId) {
+          throw new BadRequestException('Ca trực không thuộc chiến dịch này.');
+        }
+        if (shift.role && shift.role !== a.role) {
+          throw new BadRequestException(`Ca "${shift.label}" không phù hợp với vai trò ${ROLE_VN[a.role]}.`);
+        }
+        if (shift.slotsFilled >= shift.slotsNeeded) {
+          throw new BadRequestException(`Ca "${shift.label}" đã đủ người (${shift.slotsFilled}/${shift.slotsNeeded}).`);
+        }
+        selectedShiftId = shift.id;
+      }
+
       const updated = await tx.campaignVolunteerAssignment.update({
         where: { id: assignmentId },
-        data: { status: 'assigned', notes: dto.note ?? null },
+        data: { status: 'assigned', notes: dto.note ?? null, shiftId: selectedShiftId },
       });
       await tx.kitchenCampaign.update({
         where: { id: campaignId },
         data: { [slot.filled]: { increment: 1 } },
       });
+      if (selectedShiftId) {
+        await tx.campaignShift.update({
+          where: { id: selectedShiftId },
+          data: { slotsFilled: { increment: 1 } },
+        });
+      }
 
       // Báo cho TNV
       const vol = await tx.volunteerProfile.findUnique({
@@ -2034,6 +2065,9 @@ export class CampaignsService {
     const finalEnd = dto.endTime ?? shift.endTime;
     if (finalEnd <= finalStart) {
       throw new BadRequestException('Giờ kết thúc ca phải sau giờ bắt đầu.');
+    }
+    if (dto.slotsNeeded !== undefined && dto.slotsNeeded < shift.slotsFilled) {
+      throw new BadRequestException(`Số người cần không thể nhỏ hơn số đã phân ca (${shift.slotsFilled}).`);
     }
     return this.prisma.campaignShift.update({
       where: { id: shiftId },

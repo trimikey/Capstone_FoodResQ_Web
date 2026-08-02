@@ -258,6 +258,7 @@ export interface ReviewAssignmentInput {
   assignmentId: string;
   action: 'approved' | 'rejected';
   note?: string;
+  shiftId?: string;
 }
 
 export interface ProviderSummary {
@@ -567,10 +568,10 @@ export function useConfirmDonation() {
 export function useReviewAssignment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId, assignmentId, action, note }: ReviewAssignmentInput) => {
+    mutationFn: async ({ campaignId, assignmentId, action, note, shiftId }: ReviewAssignmentInput) => {
       const res = await apiClient.patch<ApiResponse<CampaignAssignment>>(
         endpoints.campaigns.reviewAssignment(campaignId, assignmentId),
-        { action, ...(note ? { note } : {}) }
+        { action, ...(note ? { note } : {}), ...(shiftId ? { shiftId } : {}) }
       );
       return res.data.data;
     },

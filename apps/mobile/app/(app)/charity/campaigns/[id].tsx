@@ -53,6 +53,7 @@ const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: str
   cancelled: { label: 'Đã huỷ', color: '#6b7280', bg: '#f3f4f6' },
 };
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+type CampaignAssignmentItem = NonNullable<Campaign['assignments']>[number];
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -173,6 +174,8 @@ export default function CharityCampaignDetailScreen() {
   const [changeDialog, setChangeDialog] = useState(false);
   const [cancelVisible, setCancelVisible] = useState(false);
   const [proposalVisible, setProposalVisible] = useState(false);
+  const [reviewShiftTarget, setReviewShiftTarget] = useState<CampaignAssignmentItem | null>(null);
+  const [selectedReviewShiftId, setSelectedReviewShiftId] = useState('');
 
   const Header = (
     <View style={styles.header}>
@@ -222,6 +225,9 @@ export default function CharityCampaignDetailScreen() {
       : startDayOffset < 0
         ? 'Đã quá ngày tổ chức'
         : 'Bắt đầu chiến dịch';
+  const eligibleReviewShifts = reviewShiftTarget
+    ? shifts.filter((shift) => (!shift.role || shift.role === reviewShiftTarget.role) && shift.slotsFilled < shift.slotsNeeded)
+    : [];
 
   const handleStart = async () => {
     if (!canStartToday) {
@@ -305,9 +311,11 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
-  const handleReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected') => {
+  const submitReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected', shiftId?: string) => {
     try {
-      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action });
+      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action, shiftId });
+      setReviewShiftTarget(null);
+      setSelectedReviewShiftId('');
       Popup.show({
         type: 'success',
         text1: action === 'approved' ? 'Đã duyệt tình nguyện viên' : 'Đã từ chối đăng ký',
@@ -315,6 +323,28 @@ export default function CharityCampaignDetailScreen() {
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Cập nhật đăng ký thất bại', text2: getErrorMessage(err) });
     }
+  };
+
+  const handleReviewAssignment = async (assignment: CampaignAssignmentItem, action: 'approved' | 'rejected') => {
+    if (action === 'rejected') {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    if (shifts.length === 0) {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    const firstAvailable = shifts.find((shift) => (!shift.role || shift.role === assignment.role) && shift.slotsFilled < shift.slotsNeeded);
+    if (!firstAvailable) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa có ca phù hợp',
+        text2: 'Hãy tăng slot hoặc thêm ca trước khi duyệt tình nguyện viên này.',
+      });
+      return;
+    }
+    setReviewShiftTarget(assignment);
+    setSelectedReviewShiftId(firstAvailable.id);
   };
 
   const handleSendProviderRequest = async (provider: ProviderSummary) => {
@@ -460,7 +490,7 @@ export default function CharityCampaignDetailScreen() {
                       compact
                       textColor={COLORS.error}
                       disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'rejected')}
+                      onPress={() => handleReviewAssignment(a, 'rejected')}
                     >
                       Từ chối
                     </Button>
@@ -469,7 +499,7 @@ export default function CharityCampaignDetailScreen() {
                       compact
                       textColor={COLORS.primary}
                       disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'approved')}
+                      onPress={() => handleReviewAssignment(a, 'approved')}
                     >
                       Duyệt
                     </Button>
@@ -731,6 +761,76 @@ export default function CharityCampaignDetailScreen() {
             </Button>
             <Button mode="contained" buttonColor={COLORS.error} onPress={handleCancelCampaign} loading={cancelMut.isPending} disabled={cancelMut.isPending}>
               Huỷ chiến dịch
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={!!reviewShiftTarget}
+          onDismiss={() => {
+            if (!reviewAssignmentMut.isPending) {
+              setReviewShiftTarget(null);
+              setSelectedReviewShiftId('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Chọn ca trước khi duyệt</Dialog.Title>
+          <Dialog.ScrollArea style={styles.changeScrollArea}>
+            <ScrollView contentContainerStyle={styles.changeContent}>
+              {reviewShiftTarget ? (
+                <Text style={styles.formHint}>
+                  {reviewShiftTarget.volunteer.user.fullName} - {ASSIGNMENT_ROLE_LABEL[reviewShiftTarget.role] ?? reviewShiftTarget.role}
+                </Text>
+              ) : null}
+              {eligibleReviewShifts.map((shift) => {
+                const active = selectedReviewShiftId === shift.id;
+                return (
+                  <Pressable
+                    key={shift.id}
+                    onPress={() => setSelectedReviewShiftId(shift.id)}
+                    style={[styles.reviewShiftOption, active && styles.reviewShiftOptionActive]}
+                    disabled={reviewAssignmentMut.isPending}
+                  >
+                    <MaterialCommunityIcons
+                      name={active ? 'radiobox-marked' : 'radiobox-blank'}
+                      size={20}
+                      color={active ? COLORS.primary : COLORS.onSurfaceVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shiftLabel}>{shift.label}</Text>
+                      <Text style={styles.muted}>
+                        {shift.startTime}-{shift.endTime} - {shift.role ? ASSIGNMENT_ROLE_LABEL[shift.role] ?? shift.role : 'Ca chung'} - {shift.slotsFilled}/{shift.slotsNeeded}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReviewShiftTarget(null);
+                setSelectedReviewShiftId('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={reviewAssignmentMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              loading={reviewAssignmentMut.isPending}
+              disabled={!reviewShiftTarget || !selectedReviewShiftId || reviewAssignmentMut.isPending}
+              onPress={() => {
+                if (reviewShiftTarget) {
+                  void submitReviewAssignment(reviewShiftTarget.id, 'approved', selectedReviewShiftId);
+                }
+              }}
+            >
+              Duyệt & phân ca
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1147,6 +1247,21 @@ const styles = StyleSheet.create({
   rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
   reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reviewShiftOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: COLORS.surface,
+  },
+  reviewShiftOptionActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+  },
   assignmentStatus: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },

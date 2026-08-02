@@ -514,6 +514,11 @@ export class ReviewAssignmentDto {
   @IsString({ message: 'Ghi chú phải là chuỗi' })
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
   note?: string;
+
+  @ApiPropertyOptional({ example: '8f4f9f23-4d0b-43e7-8d64-9a0f3d399427', description: 'Bắt buộc khi duyệt campaign có ca trực' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ca trực không hợp lệ' })
+  shiftId?: string;
 }
 
 // ─── Manage: Tạo đợt phát suất ăn ────────────────────────────────────────────
