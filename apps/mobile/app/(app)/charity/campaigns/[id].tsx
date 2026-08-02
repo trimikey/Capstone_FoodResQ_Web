@@ -34,6 +34,9 @@ import {
   slotProgress,
   canStartCampaign,
   canCompleteCampaign,
+  daysUntilUtcDate,
+  formatCampaignDateRange,
+  isSameUtcDate,
   ASSIGNMENT_ROLE_LABEL,
 } from '@/utils/campaign';
 import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
@@ -41,6 +44,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS } from '@/theme/design';
 
 const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -49,6 +53,8 @@ const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: str
   rejected: { label: 'Bị từ chối', color: '#dc2626', bg: '#fef2f2' },
   cancelled: { label: 'Đã huỷ', color: '#6b7280', bg: '#f3f4f6' },
 };
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+type CampaignAssignmentItem = NonNullable<Campaign['assignments']>[number];
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -162,17 +168,21 @@ export default function CharityCampaignDetailScreen() {
   const removeMenuMut = useRemoveMenuItem();
   const [completeVisible, setCompleteVisible] = useState(false);
   const [servings, setServings] = useState('');
+  const [earlyEndAccepted, setEarlyEndAccepted] = useState(false);
+  const [earlyEndReason, setEarlyEndReason] = useState('');
   const [shiftDialog, setShiftDialog] = useState(false);
   const [menuDialog, setMenuDialog] = useState(false);
   const [changeDialog, setChangeDialog] = useState(false);
   const [cancelVisible, setCancelVisible] = useState(false);
   const [proposalVisible, setProposalVisible] = useState(false);
+  const [reviewShiftTarget, setReviewShiftTarget] = useState<CampaignAssignmentItem | null>(null);
+  const [selectedReviewShiftId, setSelectedReviewShiftId] = useState('');
 
   const Header = (
     <View style={styles.header}>
       <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Quản lý chiến dịch</Text>
-      <View style={{ width: 24 }} />
+      <NotificationBell />
     </View>
   );
 
@@ -198,14 +208,39 @@ export default function CharityCampaignDetailScreen() {
   const slots = slotProgress(c);
   const donations = c.donations ?? [];
   const assignments = c.assignments ?? [];
+  const supplyProgress = c.supplyProgress ?? [];
   const pendingDonations = donations.filter((d) => d.status !== 'received').length;
   const receivedDonations = donations.length - pendingDonations;
   const pendingAssignments = assignments.filter((assignment) => assignment.status === 'pending').length;
   const totalSlots = slots.reduce((sum, slot) => sum + slot.needed, 0);
   const filledSlots = slots.reduce((sum, slot) => sum + slot.filled, 0);
   const actualServed = c.actualServings ?? c.distributionSummary?.servingsServed ?? null;
+  const startDayOffset = daysUntilUtcDate(c.scheduledDate);
+  const canStartToday = isSameUtcDate(c.scheduledDate);
+  const endDayOffset = daysUntilUtcDate(c.endDate ?? c.scheduledDate);
+  const isEarlyComplete = (endDayOffset ?? 0) > 0;
+  const startButtonLabel = startDayOffset == null
+    ? 'Bắt đầu chiến dịch'
+    : startDayOffset > 0
+      ? `Bắt đầu sau ${startDayOffset} ngày`
+      : startDayOffset < 0
+        ? 'Đã quá ngày tổ chức'
+        : 'Bắt đầu chiến dịch';
+  const eligibleReviewShifts = reviewShiftTarget
+    ? shifts.filter((shift) => (!shift.role || shift.role === reviewShiftTarget.role) && shift.slotsFilled < shift.slotsNeeded)
+    : [];
 
   const handleStart = async () => {
+    if (!canStartToday) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa thể bắt đầu',
+        text2: startDayOffset && startDayOffset > 0
+          ? `Chiến dịch chỉ bắt đầu vào ngày ${formatDate(c.scheduledDate)}.`
+          : 'Ngày tổ chức không khớp hôm nay, vui lòng gửi yêu cầu thay đổi lịch nếu cần.',
+      });
+      return;
+    }
     try {
       await startMut.mutateAsync(c.id);
       Popup.show({ type: 'success', text1: 'Đã bắt đầu chiến dịch' });
@@ -230,10 +265,29 @@ export default function CharityCampaignDetailScreen() {
       Popup.show({ type: 'warning', text1: 'Số suất không hợp lệ' });
       return;
     }
+    if (isEarlyComplete) {
+      if (!earlyEndAccepted) {
+        Popup.show({ type: 'warning', text1: 'Cần xác nhận kết thúc sớm' });
+        return;
+      }
+      if (earlyEndReason.trim().length < 5) {
+        Popup.show({ type: 'warning', text1: 'Lý do quá ngắn', text2: 'Vui lòng nhập lý do kết thúc sớm rõ hơn.' });
+        return;
+      }
+    }
     try {
-      await completeMut.mutateAsync({ id: c.id, actualServings: n });
+      await completeMut.mutateAsync({
+        id: c.id,
+        actualServings: n,
+        ...(isEarlyComplete ? {
+          earlyEndConfirmation: 'EARLY_END' as const,
+          earlyEndReason: earlyEndReason.trim(),
+        } : {}),
+      });
       setCompleteVisible(false);
       setServings('');
+      setEarlyEndAccepted(false);
+      setEarlyEndReason('');
       Popup.show({ type: 'success', text1: 'Đã kết thúc chiến dịch', text2: `Đã phục vụ ${n} suất.` });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Không kết thúc được', text2: getErrorMessage(err) });
@@ -258,9 +312,11 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
-  const handleReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected') => {
+  const submitReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected', shiftId?: string) => {
     try {
-      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action });
+      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action, shiftId });
+      setReviewShiftTarget(null);
+      setSelectedReviewShiftId('');
       Popup.show({
         type: 'success',
         text1: action === 'approved' ? 'Đã duyệt tình nguyện viên' : 'Đã từ chối đăng ký',
@@ -268,6 +324,28 @@ export default function CharityCampaignDetailScreen() {
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Cập nhật đăng ký thất bại', text2: getErrorMessage(err) });
     }
+  };
+
+  const handleReviewAssignment = async (assignment: CampaignAssignmentItem, action: 'approved' | 'rejected') => {
+    if (action === 'rejected') {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    if (shifts.length === 0) {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    const firstAvailable = shifts.find((shift) => (!shift.role || shift.role === assignment.role) && shift.slotsFilled < shift.slotsNeeded);
+    if (!firstAvailable) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa có ca phù hợp',
+        text2: 'Hãy tăng slot hoặc thêm ca trước khi duyệt tình nguyện viên này.',
+      });
+      return;
+    }
+    setReviewShiftTarget(assignment);
+    setSelectedReviewShiftId(firstAvailable.id);
   };
 
   const handleSendProviderRequest = async (provider: ProviderSummary) => {
@@ -303,7 +381,7 @@ export default function CharityCampaignDetailScreen() {
           <View style={styles.heroInfo}>
             <InfoRow icon="account-group-outline">{charityName(c)}</InfoRow>
             <InfoRow icon="calendar-clock">
-              {formatDate(c.scheduledDate)} - {formatTime(c.startTime)} đến {formatTime(c.endTime)}
+              {formatCampaignDateRange(c)} - {formatTime(c.startTime)} đến {formatTime(c.endTime)}
             </InfoRow>
             <InfoRow icon="map-marker-outline">{c.kitchenAddress}</InfoRow>
           </View>
@@ -413,7 +491,7 @@ export default function CharityCampaignDetailScreen() {
                       compact
                       textColor={COLORS.error}
                       disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'rejected')}
+                      onPress={() => handleReviewAssignment(a, 'rejected')}
                     >
                       Từ chối
                     </Button>
@@ -422,7 +500,7 @@ export default function CharityCampaignDetailScreen() {
                       compact
                       textColor={COLORS.primary}
                       disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'approved')}
+                      onPress={() => handleReviewAssignment(a, 'approved')}
                     >
                       Duyệt
                     </Button>
@@ -509,7 +587,28 @@ export default function CharityCampaignDetailScreen() {
           </Section>
         ) : null}
 
-        {c.supplyItems && c.supplyItems.length > 0 ? (
+        {supplyProgress.length > 0 ? (
+          <Section title="Chỉ tiêu nguyên liệu">
+            {supplyProgress.map((item) => (
+              <View key={item.name} style={styles.supplyProgressRow}>
+                <View style={styles.supplyHeader}>
+                  <Text style={styles.supplyName}>{item.name}</Text>
+                  <Text style={[styles.supplyRemaining, item.isTargetMet && { color: COLORS.primary }]}>
+                    {item.isTargetMet ? 'Đã đủ cam kết' : `Còn ${formatQuantity(item.remainingQuantity)} ${item.unit}`}
+                  </Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${item.progressPercent}%` }]} />
+                </View>
+                <Text style={styles.muted}>
+                  Mục tiêu {formatQuantity(item.targetQuantity)} {item.unit} - đã cam kết{' '}
+                  {formatQuantity(item.pledgedQuantity)} - đã nhận {formatQuantity(item.receivedQuantity)}
+                  {item.receivedRemainingQuantity > 0 ? ` - còn chờ nhận ${formatQuantity(item.receivedRemainingQuantity)} ${item.unit}` : ''}
+                </Text>
+              </View>
+            ))}
+          </Section>
+        ) : c.supplyItems && c.supplyItems.length > 0 ? (
           <Section title="Vật phẩm cần hỗ trợ">
             <View style={styles.tagRow}>
               {c.supplyItems.map((s, i) => (
@@ -575,10 +674,10 @@ export default function CharityCampaignDetailScreen() {
             </Button>
             <Button
               mode="contained" icon="play-circle-outline" buttonColor={COLORS.primary}
-              loading={startMut.isPending} disabled={startMut.isPending || cancelMut.isPending}
+              loading={startMut.isPending} disabled={startMut.isPending || cancelMut.isPending || !canStartToday}
               onPress={handleStart} contentStyle={{ height: 48 }} style={[styles.footerBtn, { flex: 1 }]}
             >
-              Bắt đầu chiến dịch
+              {startButtonLabel}
             </Button>
           </View>
         ) : canCompleteCampaign(c.status) ? (
@@ -604,6 +703,36 @@ export default function CharityCampaignDetailScreen() {
           <Dialog.Title style={styles.dialogTitle}>Kết thúc chiến dịch</Dialog.Title>
           <Dialog.Content>
             <Text style={styles.muted}>Nhập số suất ăn đã phục vụ thực tế.</Text>
+            {isEarlyComplete ? (
+              <View style={styles.earlyEndBox}>
+                <Text style={styles.earlyEndTitle}>Kết thúc trước ngày dự kiến</Text>
+                <Text style={styles.muted}>
+                  Chiến dịch còn lịch đến {formatDate(c.endDate ?? c.scheduledDate)}. Vui lòng xác nhận và ghi rõ lý do để tránh đóng nhầm.
+                </Text>
+                <Pressable
+                  style={styles.ackRow}
+                  onPress={() => setEarlyEndAccepted((prev) => !prev)}
+                  disabled={completeMut.isPending}
+                >
+                  <View style={[styles.checkbox, earlyEndAccepted && styles.checkboxChecked]}>
+                    {earlyEndAccepted ? <MaterialCommunityIcons name="check" size={15} color="#fff" /> : null}
+                  </View>
+                  <Text style={styles.ackText}>Tôi xác nhận muốn kết thúc chiến dịch sớm.</Text>
+                </Pressable>
+                <TextInput
+                  mode="outlined"
+                  multiline
+                  numberOfLines={2}
+                  label="Lý do kết thúc sớm"
+                  value={earlyEndReason}
+                  onChangeText={setEarlyEndReason}
+                  outlineColor={COLORS.outline}
+                  activeOutlineColor={COLORS.primary}
+                  style={{ backgroundColor: COLORS.surface, marginTop: 10 }}
+                  disabled={completeMut.isPending}
+                />
+              </View>
+            ) : null}
             <TextInput
               mode="outlined" keyboardType="numeric" label="Số suất thực tế"
               value={servings} onChangeText={setServings}
@@ -633,6 +762,76 @@ export default function CharityCampaignDetailScreen() {
             </Button>
             <Button mode="contained" buttonColor={COLORS.error} onPress={handleCancelCampaign} loading={cancelMut.isPending} disabled={cancelMut.isPending}>
               Huỷ chiến dịch
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={!!reviewShiftTarget}
+          onDismiss={() => {
+            if (!reviewAssignmentMut.isPending) {
+              setReviewShiftTarget(null);
+              setSelectedReviewShiftId('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Chọn ca trước khi duyệt</Dialog.Title>
+          <Dialog.ScrollArea style={styles.changeScrollArea}>
+            <ScrollView contentContainerStyle={styles.changeContent}>
+              {reviewShiftTarget ? (
+                <Text style={styles.formHint}>
+                  {reviewShiftTarget.volunteer.user.fullName} - {ASSIGNMENT_ROLE_LABEL[reviewShiftTarget.role] ?? reviewShiftTarget.role}
+                </Text>
+              ) : null}
+              {eligibleReviewShifts.map((shift) => {
+                const active = selectedReviewShiftId === shift.id;
+                return (
+                  <Pressable
+                    key={shift.id}
+                    onPress={() => setSelectedReviewShiftId(shift.id)}
+                    style={[styles.reviewShiftOption, active && styles.reviewShiftOptionActive]}
+                    disabled={reviewAssignmentMut.isPending}
+                  >
+                    <MaterialCommunityIcons
+                      name={active ? 'radiobox-marked' : 'radiobox-blank'}
+                      size={20}
+                      color={active ? COLORS.primary : COLORS.onSurfaceVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shiftLabel}>{shift.label}</Text>
+                      <Text style={styles.muted}>
+                        {shift.startTime}-{shift.endTime} - {shift.role ? ASSIGNMENT_ROLE_LABEL[shift.role] ?? shift.role : 'Ca chung'} - {shift.slotsFilled}/{shift.slotsNeeded}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReviewShiftTarget(null);
+                setSelectedReviewShiftId('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={reviewAssignmentMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              loading={reviewAssignmentMut.isPending}
+              disabled={!reviewShiftTarget || !selectedReviewShiftId || reviewAssignmentMut.isPending}
+              onPress={() => {
+                if (reviewShiftTarget) {
+                  void submitReviewAssignment(reviewShiftTarget.id, 'approved', selectedReviewShiftId);
+                }
+              }}
+            >
+              Duyệt & phân ca
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -758,6 +957,7 @@ function CampaignChangeDialog({
   const hasPending = requests.some((r) => r.status === 'pending');
 
   const [scheduledDate, setScheduledDate] = useState(campaign.scheduledDate.slice(0, 10));
+  const [endDate, setEndDate] = useState(campaign.endDate?.slice(0, 10) ?? '');
   const [startTime, setStartTime] = useState(campaign.startTime.slice(0, 5));
   const [endTime, setEndTime] = useState(campaign.endTime.slice(0, 5));
   const [kitchenAddress, setKitchenAddress] = useState(campaign.kitchenAddress);
@@ -768,6 +968,7 @@ function CampaignChangeDialog({
 
   const original = {
     scheduledDate: campaign.scheduledDate.slice(0, 10),
+    endDate: campaign.endDate?.slice(0, 10) ?? '',
     startTime: campaign.startTime.slice(0, 5),
     endTime: campaign.endTime.slice(0, 5),
     kitchenAddress: campaign.kitchenAddress,
@@ -779,6 +980,7 @@ function CampaignChangeDialog({
   const diffInput = (): SubmitCampaignChangeInput => {
     const input: SubmitCampaignChangeInput = {};
     if (scheduledDate !== original.scheduledDate) input.scheduledDate = scheduledDate;
+    if (endDate.trim() && endDate.trim() !== original.endDate) input.endDate = endDate.trim();
     if (startTime !== original.startTime) input.startTime = startTime;
     if (endTime !== original.endTime) input.endTime = endTime;
     if (kitchenAddress.trim() !== original.kitchenAddress) input.kitchenAddress = kitchenAddress.trim();
@@ -800,6 +1002,14 @@ function CampaignChangeDialog({
     }
     if (endTime <= startTime) {
       Popup.show({ type: 'warning', text1: 'Giờ không hợp lệ', text2: 'Giờ kết thúc phải sau giờ bắt đầu.' });
+      return;
+    }
+    if (!DATE_ONLY_RE.test(scheduledDate) || (endDate.trim() && !DATE_ONLY_RE.test(endDate.trim()))) {
+      Popup.show({ type: 'warning', text1: 'Ngày không hợp lệ', text2: 'Vui lòng nhập theo định dạng YYYY-MM-DD.' });
+      return;
+    }
+    if (endDate.trim() && endDate.trim() < scheduledDate) {
+      Popup.show({ type: 'warning', text1: 'Ngày kết thúc không hợp lệ', text2: 'Ngày kết thúc phải bằng hoặc sau ngày tổ chức.' });
       return;
     }
     if (kitchenAddress.trim().length < 5) {
@@ -845,6 +1055,9 @@ function CampaignChangeDialog({
                 <Text style={styles.formHint}>Nhập trường cần đổi, hệ thống chỉ gửi phần khác với thông tin hiện tại.</Text>
                 <View style={styles.changeGrid}>
                   <TextInput mode="outlined" dense label="Ngày" value={scheduledDate} onChangeText={setScheduledDate} style={styles.changeInput} />
+                  <TextInput mode="outlined" dense label="Ngày kết thúc" value={endDate} onChangeText={setEndDate} style={styles.changeInput} />
+                </View>
+                <View style={styles.changeGrid}>
                   <TextInput mode="outlined" dense label="Bắt đầu" value={startTime} onChangeText={setStartTime} style={styles.changeInput} />
                   <TextInput mode="outlined" dense label="Kết thúc" value={endTime} onChangeText={setEndTime} style={styles.changeInput} />
                 </View>
@@ -916,6 +1129,7 @@ function ChangeRequestRow({
   const meta = CHANGE_STATUS_META[request.status] ?? { label: request.status, color: '#6b7280', bg: '#f3f4f6' };
   const parts = [
     request.scheduledDate ? `Ngày: ${formatDate(request.scheduledDate)}` : '',
+    request.endDate ? `Ngày kết thúc: ${formatDate(request.endDate)}` : '',
     request.startTime || request.endTime ? `Giờ: ${formatTime(request.startTime ?? '')}-${formatTime(request.endTime ?? '')}` : '',
     request.kitchenAddress ? `Địa chỉ: ${request.kitchenAddress}` : '',
     request.chefSlotsNeeded != null ? `Đầu bếp: ${request.chefSlotsNeeded}` : '',
@@ -953,13 +1167,17 @@ function ChangeRequestRow({
   );
 }
 
+function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
+  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
   heroCard: {
@@ -1030,6 +1248,21 @@ const styles = StyleSheet.create({
   rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
   reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reviewShiftOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: COLORS.surface,
+  },
+  reviewShiftOptionActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+  },
   assignmentStatus: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
@@ -1044,6 +1277,19 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.outline, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 13, color: COLORS.onSurface },
+  supplyProgressRow: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  supplyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  supplyName: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
+  supplyRemaining: { fontSize: 12, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  progressTrack: { height: 8, borderRadius: 999, backgroundColor: COLORS.outline, overflow: 'hidden', marginBottom: 7 },
+  progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'center' },
   donationItem: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
@@ -1059,6 +1305,28 @@ const styles = StyleSheet.create({
   dialog: { borderRadius: 20 },
   dialogLarge: { borderRadius: 20, maxHeight: '88%' },
   dialogTitle: { fontSize: 18, fontWeight: '700', color: COLORS.onSurface },
+  earlyEndBox: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 12,
+  },
+  earlyEndTitle: { fontSize: 13, fontWeight: '800', color: '#92400e', marginBottom: 4 },
+  ackRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  ackText: { flex: 1, fontSize: 13, color: COLORS.onSurface, lineHeight: 18 },
   changeScrollArea: { paddingHorizontal: 0 },
   changeContent: { paddingHorizontal: 24, paddingBottom: 8 },
   changeNotice: {

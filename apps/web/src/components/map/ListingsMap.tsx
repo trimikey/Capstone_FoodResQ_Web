@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { UNIT_LABEL } from '@/lib/utils';
+import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import type { ListingItem } from '@/components/listings/ListingCard';
 
@@ -134,7 +134,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
               {l.imageUrls?.[0] && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={l.imageUrls[0]}
+                  src={mediaUrl(l.imageUrls[0])}
                   alt={l.title}
                   style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8, marginBottom: 6 }}
                 />

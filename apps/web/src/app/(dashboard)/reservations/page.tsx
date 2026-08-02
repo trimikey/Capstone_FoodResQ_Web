@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
 import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import { useMe } from '@/hooks/useProfile';
-import { UNIT_LABEL } from '@/lib/utils';
+import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
 
@@ -196,7 +196,7 @@ export default function ReservationsPage() {
                 <div className="p-5 flex gap-4">
                   <div className="w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.listing.imageUrls?.[0] || fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
+                    <img src={r.listing.imageUrls?.[0] ? mediaUrl(r.listing.imageUrls[0]) : fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">

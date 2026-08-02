@@ -20,6 +20,11 @@ import {
 
 const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 const SAFETY_RESULT_VN: Record<string, string> = { pass: 'Đạt', warning: 'Cảnh báo', fail: 'Không đạt' };
+const SLOT_FIELD = {
+  chef: { needed: 'chefSlotsNeeded', filled: 'chefSlotsFilled' },
+  waiter: { needed: 'waiterSlotsNeeded', filled: 'waiterSlotsFilled' },
+  shipper: { needed: 'shipperSlotsNeeded', filled: 'shipperSlotsFilled' },
+} as const;
 
 /**
  * Các thao tác vận hành bếp mở rộng quanh một chiến dịch:
@@ -132,7 +137,15 @@ export class KitchenOpsService {
 
     const campaign = await this.prisma.kitchenCampaign.findUnique({
       where: { id: campaignId },
-      select: { status: true },
+      select: {
+        status: true,
+        chefSlotsNeeded: true,
+        waiterSlotsNeeded: true,
+        shipperSlotsNeeded: true,
+        chefSlotsFilled: true,
+        waiterSlotsFilled: true,
+        shipperSlotsFilled: true,
+      },
     });
     if (!campaign || !['open', 'in_progress'].includes(campaign.status)) {
       throw new BadRequestException('Chiến dịch này không còn nhận đăng ký.');
@@ -148,6 +161,10 @@ export class KitchenOpsService {
     if (shift.slotsFilled >= shift.slotsNeeded) {
       throw new BadRequestException(`Ca "${shift.label}" đã đủ người.`);
     }
+    const slot = SLOT_FIELD[role];
+    if (campaign[slot.filled] >= campaign[slot.needed]) {
+      throw new BadRequestException(`Đã đủ ${roleVN} cho chiến dịch này.`);
+    }
 
     const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
       where: { campaignId_volunteerId_role: { campaignId, volunteerId: volunteer.id, role } },
@@ -161,6 +178,10 @@ export class KitchenOpsService {
       this.prisma.campaignShift.update({
         where: { id: shiftId },
         data: { slotsFilled: { increment: 1 } },
+      }),
+      this.prisma.kitchenCampaign.update({
+        where: { id: campaignId },
+        data: { [slot.filled]: { increment: 1 } },
       }),
     ]);
 

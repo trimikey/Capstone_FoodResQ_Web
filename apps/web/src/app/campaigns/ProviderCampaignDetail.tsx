@@ -487,15 +487,17 @@ function DonateModal({
   const [note, setNote] = useState('');
 
   async function submit() {
-    if (!quantity.trim()) {
-      toast.error('Nhập số lượng nguyên liệu bạn muốn cung cấp.');
+    const numericQuantity = Number(quantity.replace(',', '.'));
+    if (!Number.isFinite(numericQuantity) || numericQuantity <= 0) {
+      toast.error('Nhập số lượng nguyên liệu lớn hơn 0.');
       return;
     }
     try {
       await donate.mutateAsync({
         campaignId,
         itemName: item.name,
-        quantity: quantity.trim(),
+        quantity: Math.round(numericQuantity * 1000) / 1000,
+        unit: item.unit,
         note: note.trim() || undefined,
       });
       toast.success(`Đã gửi đăng ký "${item.name}" — ban tổ chức sẽ xác nhận.`);

@@ -27,7 +27,6 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
-import CharitySidebar, { type Section } from './_components/CharitySidebar';
 import { useAuthStore } from '@/stores/auth.store';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -99,6 +98,15 @@ function CampaignsPageInner() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string>('all');
+
+  // Sidebar giờ do (dashboard)/campaigns/layout.tsx render (pattern /provider).
+  // Khi user bấm "Tạo chiến dịch" trên sidebar → layout dispatch custom event,
+  // page lắng nghe và mở CreateCampaignModal tương ứng.
+  useEffect(() => {
+    const onOpenCreate = () => setShowForm(true);
+    window.addEventListener('campaigns:open-create', onOpenCreate);
+    return () => window.removeEventListener('campaigns:open-create', onOpenCreate);
+  }, []);
 
   // Đọc tab hiện tại từ query string ?tab=orders|history; mặc định overview.
   // Dùng lazy initializer + đồng bộ qua `tab` param → tránh re-render lặp khi switch tab browser.
@@ -231,21 +239,9 @@ function CampaignsPageInner() {
   return (
     <div className="cm-page cm-scope">
       <div className="cm-console">
-        {/* ─── Sidebar rail (luôn hiển thị) ─── */}
-        <CharitySidebar
-          section={section}
-          onSectionChange={handleSetSection}
-          isCharity={isCharity}
-          isVolunteer={isVolunteer}
-          isProvider={isProvider}
-          onCreate={() => setShowForm(true)}
-          railEntries={railEntries}
-          userFullName={me?.fullName}
-          avatarUrl={me?.avatarUrl}
-          onLogout={handleSidebarLogout}
-        />
-
-        {/* ─── Main content column ─── */}
+        {/* Sidebar được render bởi (dashboard)/campaigns/layout.tsx
+            (pattern giống /provider: fixed + lg:ml-56 main wrapper).
+            Page này chỉ render main content. */}
         <main className="cm-content min-w-0 space-y-6">
           {/* Top bar: search + role */}
           <div className="cm-topbar">

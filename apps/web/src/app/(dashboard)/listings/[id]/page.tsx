@@ -3,8 +3,11 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useListing, useListings } from '@/hooks/useListings';
+import { useListing, useListings, type ListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { useMe } from '@/hooks/useProfile';
+import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
+import { UserRole } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
@@ -46,11 +49,19 @@ export default function ListingDetailPage({ params }: Props) {
   const { id } = React.use(params);
 
   const { data: listing, isLoading, isError } = useListing(id);
+  const { data: me } = useMe();
   const createReservation = useCreateReservation();
+  const publishListing = usePublishListing();
+  const cancelListing = useCancelListing();
+  const duplicateListing = useDuplicateListing();
 
   // Gợi ý "có thể bạn quan tâm" — listing thật gần trung tâm, loại trừ chính nó
   const { data: nearby } = useListings({ lat: 10.8231, lng: 106.6297, radiusKm: 10 });
   const related = (nearby ?? []).filter((l) => l.id !== id).slice(0, 4);
+
+  const isProvider = me?.role === UserRole.PROVIDER;
+  // Provider đang xem bài đăng của chính mình → chế độ quản lý (read-only metadata, không đặt chỗ)
+  const isOwnerProvider = isProvider && me?.provider?.id === listing?.provider.id;
 
   const [quantity, setQuantity] = useState(1);
   const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup');
@@ -146,11 +157,21 @@ export default function ListingDetailPage({ params }: Props) {
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
       {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-sm text-on-surface-variant/70">
-        <Link href="/listings" className="hover:text-primary transition-colors">Trang chủ</Link>
-        <span className="material-symbols-outlined text-sm">chevron_right</span>
-        <span className="capitalize">{CATEGORIES[listing.category] || listing.category}</span>
-        <span className="material-symbols-outlined text-sm">chevron_right</span>
-        <span className="text-on-surface font-semibold truncate max-w-[200px]">{listing.title}</span>
+        {isOwnerProvider ? (
+          <>
+            <Link href="/provider" className="hover:text-primary transition-colors">Quản lý cửa hàng</Link>
+            <span className="material-symbols-outlined text-sm">chevron_right</span>
+            <span className="text-on-surface font-semibold truncate max-w-[200px]">{listing.title}</span>
+          </>
+        ) : (
+          <>
+            <Link href="/listings" className="hover:text-primary transition-colors">Trang chủ</Link>
+            <span className="material-symbols-outlined text-sm">chevron_right</span>
+            <span className="capitalize">{CATEGORIES[listing.category] || listing.category}</span>
+            <span className="material-symbols-outlined text-sm">chevron_right</span>
+            <span className="text-on-surface font-semibold truncate max-w-[200px]">{listing.title}</span>
+          </>
+        )}
       </nav>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -210,8 +231,28 @@ export default function ListingDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Right Column: Reservation Form / QR */}
+        {/* Right Column: Reservation Form / QR (or Provider panel) */}
         <div className="lg:col-span-5 flex flex-col gap-6">
+          {isOwnerProvider ? (
+            <ProviderManagementPanel
+              listing={listing}
+              onPublish={async () => {
+                try { await publishListing.mutateAsync(listing.id); toast.success('Đã đăng tin'); router.refresh(); }
+                catch { toast.error('Đăng tin thất bại'); }
+              }}
+              onCancel={async () => {
+                try { await cancelListing.mutateAsync({ id: listing.id }); toast.info('Đã huỷ tin'); router.push('/provider'); }
+                catch { toast.error('Huỷ thất bại'); }
+              }}
+              onDuplicate={async () => {
+                try { await duplicateListing.mutateAsync(listing.id); toast.success('Đã tạo bản nháp mới'); router.push('/provider'); }
+                catch { toast.error('Nhân bản thất bại'); }
+              }}
+              publishing={publishListing.isPending}
+              cancelling={cancelListing.isPending}
+              duplicating={duplicateListing.isPending}
+            />
+          ) : (
           <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
             {/* Title & Provider */}
             <div className="space-y-2">
@@ -432,11 +473,12 @@ export default function ListingDetailPage({ params }: Props) {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 
-      {/* "Có thể bạn cũng quan tâm" - dữ liệu thật */}
-      {related.length > 0 && (
+      {/* "Có thể bạn cũng quan tâm" - dữ liệu thật (chỉ cho non-provider) */}
+      {!isProvider && related.length > 0 && (
         <section className="space-y-4 pt-4 border-t border-outline-variant/10">
           <h3 className="font-headline-md text-lg text-on-surface font-bold">Có thể bạn cũng quan tâm</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
@@ -450,10 +492,10 @@ export default function ListingDetailPage({ params }: Props) {
                   <img
                     src={
                       (item.imageUrls[0] && ![
-                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
                         '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                       ].includes(item.imageUrls[0]))
-                        ? item.imageUrls[0]
+                        ? mediaUrl(item.imageUrls[0])
                         : fallbackImage(item.category)
                     }
                     alt={item.title}
@@ -476,6 +518,172 @@ export default function ListingDetailPage({ params }: Props) {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * Panel quản lý cho Provider khi xem bài đăng của chính mình.
+ * Hiển thị trạng thái + các thao tác: Sửa nhanh, Huỷ / Đăng lại, Nhân bản.
+ */
+function ProviderManagementPanel({
+  listing,
+  onPublish,
+  onCancel,
+  onDuplicate,
+  publishing,
+  cancelling,
+  duplicating,
+}: {
+  listing: ListingDetail;
+  onPublish: () => void;
+  onCancel: () => void;
+  onDuplicate: () => void;
+  publishing: boolean;
+  cancelling: boolean;
+  duplicating: boolean;
+}) {
+  const STATUS_META: Record<string, { label: string; cls: string }> = {
+    draft: { label: 'Bản nháp', cls: 'bg-neutral-100 text-neutral-700' },
+    active: { label: 'Đang mở', cls: 'bg-emerald-100 text-emerald-800' },
+    fully_reserved: { label: 'Đã hết suất', cls: 'bg-amber-100 text-amber-800' },
+    completed: { label: 'Đã hoàn tất', cls: 'bg-blue-100 text-blue-800' },
+    expired: { label: 'Đã hết hạn', cls: 'bg-neutral-200 text-neutral-700' },
+    cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
+  };
+  const statusMeta = STATUS_META[listing.status] ?? { label: listing.status, cls: 'bg-neutral-100 text-neutral-700' };
+  const remaining = listing.quantityRemaining;
+  const total = remaining; // ListingDetail chỉ trả về remaining; total chỉ có ở ProviderListing view
+  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit;
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+  const isExpiringSoon = new Date(listing.pickupEndTime).getTime() - Date.now() < 4 * 60 * 60 * 1000;
+  const isClosed = ['completed', 'expired', 'cancelled'].includes(listing.status);
+
+  return (
+    <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${statusMeta.cls}`}>
+            <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
+            {statusMeta.label}
+          </span>
+          <span className="text-[11px] text-on-surface-variant/70 italic">Bài đăng của bạn</span>
+        </div>
+        <h2 className="font-headline-md text-headline-md text-on-surface leading-tight font-bold">
+          {listing.title}
+        </h2>
+        <p className="font-body-md text-sm text-on-surface-variant/80">
+          Đây là góc nhìn chi tiết dành cho chủ cửa hàng — người nhận không thể đặt chỗ bài đăng này.
+        </p>
+      </div>
+
+      {/* Thống kê nhanh */}
+      <div className="grid grid-cols-2 gap-3 border-t border-outline-variant/10 pt-4">
+        <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/60 p-3">
+          <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Còn lại</p>
+          <p className="text-xl font-extrabold text-on-surface tabular-nums">
+            {remaining}
+            <span className="text-xs font-medium text-on-surface-variant/80 ml-1"> {unit} còn lại</span>
+          </p>
+        </div>
+        <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/60 p-3">
+          <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Trạng thái</p>
+          <p className="text-base font-bold text-on-surface mt-1">
+            {statusMeta.label}
+            {isExpiringSoon && listing.status === 'active' && (
+              <span className="text-amber-600 text-xs font-semibold ml-1">· sắp hết giờ</span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* Thông tin chi tiết */}
+      <div className="space-y-3 border-t border-outline-variant/10 pt-4 text-sm">
+        <div className="flex items-start gap-2">
+          <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">place</span>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Điểm nhận hàng</p>
+            <p className="text-on-surface">{listing.pickupAddress}</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">schedule</span>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Khung giờ nhận</p>
+            <p className="text-on-surface">
+              {fmtDate(listing.pickupStartTime)} · {fmtTime(listing.pickupStartTime)}–{fmtTime(listing.pickupEndTime)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">category</span>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Danh mục</p>
+            <p className="text-on-surface">{CATEGORIES[listing.category] ?? listing.category}</p>
+          </div>
+        </div>
+        {listing.storageConditions && (
+          <div className="flex items-start gap-2">
+            <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">thermostat</span>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Bảo quản</p>
+              <p className="text-on-surface">{listing.storageConditions}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="space-y-2 border-t border-outline-variant/10 pt-4">
+        {listing.status === 'draft' ? (
+          <button
+            onClick={onPublish}
+            disabled={publishing}
+            className="w-full py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+            {publishing ? 'Đang đăng...' : 'Đăng bài ngay'}
+          </button>
+        ) : !isClosed ? (
+          <>
+            <button
+              onClick={onCancel}
+              disabled={cancelling}
+              className="w-full py-2.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              {cancelling ? 'Đang huỷ...' : 'Huỷ bài đăng'}
+            </button>
+            <p className="text-[11px] text-on-surface-variant/70 text-center italic">
+              * Bài đăng đã có người đặt — huỷ sẽ hoàn lại suất cho người nhận.
+            </p>
+          </>
+        ) : (
+          <button
+            onClick={onDuplicate}
+            disabled={duplicating}
+            className="w-full py-2.5 bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[18px]">content_copy</span>
+            {duplicating ? 'Đang tạo...' : 'Đăng lại (nhân bản thành bản nháp mới)'}
+          </button>
+        )}
+
+        <Link
+          href="/provider"
+          className="w-full py-2.5 bg-surface-container text-on-surface rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 hover:bg-surface-container-high"
+        >
+          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          Quay lại bảng điều khiển
+        </Link>
+      </div>
     </div>
   );
 }

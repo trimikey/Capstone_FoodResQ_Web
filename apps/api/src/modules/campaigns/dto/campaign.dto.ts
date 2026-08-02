@@ -325,11 +325,17 @@ export class PledgeDonationDto {
   @MinLength(1, { message: 'Tên vật phẩm không được để trống' })
   @MaxLength(255, { message: 'Tên vật phẩm tối đa 255 ký tự' })
   itemName!: string;
-  @ApiPropertyOptional({ example: '20 kg' })
+  @ApiProperty({ example: 20, description: 'Số lượng provider cam kết theo đơn vị của vật phẩm mục tiêu' })
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Số lượng phải là số' })
+  @Min(0.01, { message: 'Số lượng phải lớn hơn 0' })
+  @Max(100000, { message: 'Số lượng tối đa 100.000' })
+  @Type(() => Number)
+  quantity!: number;
+  @ApiPropertyOptional({ example: 'kg', description: 'Đơn vị hiển thị; phải khớp đơn vị mục tiêu nếu gửi lên' })
   @IsOptional()
-  @IsString({ message: 'Số lượng phải là chuỗi' })
-  @MaxLength(100, { message: 'Số lượng tối đa 100 ký tự' })
-  quantity?: string;
+  @IsString({ message: 'Đơn vị phải là chuỗi' })
+  @MaxLength(20, { message: 'Đơn vị tối đa 20 ký tự' })
+  unit?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi' })
@@ -508,6 +514,11 @@ export class ReviewAssignmentDto {
   @IsString({ message: 'Ghi chú phải là chuỗi' })
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
   note?: string;
+
+  @ApiPropertyOptional({ example: '8f4f9f23-4d0b-43e7-8d64-9a0f3d399427', description: 'Bắt buộc khi duyệt campaign có ca trực' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ca trực không hợp lệ' })
+  shiftId?: string;
 }
 
 // ─── Manage: Tạo đợt phát suất ăn ────────────────────────────────────────────

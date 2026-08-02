@@ -43,6 +43,22 @@ function formatOfferPopup(offer: TaskOffer) {
   ].join('\n');
 }
 
+function notificationCampaignId(n: AppNotification): string | null {
+  return typeof n.data?.campaignId === 'string' && n.data.campaignId.length > 0
+    ? n.data.campaignId
+    : null;
+}
+
+function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignId: string) {
+  void qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+  void qc.invalidateQueries({ queryKey: ['campaigns'] });
+  void qc.invalidateQueries({ queryKey: ['campaign-tasks'] });
+  void qc.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+  void qc.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
+}
+
 /** Danh sách 50 thông báo gần nhất. GET /notifications/my */
 export function useNotifications() {
   return useQuery({
@@ -163,6 +179,8 @@ export function useNotificationSocket() {
         if (__DEV__) console.log('[notif-ws] notification:new', n.title);
         Toast.show({ type: 'info', text1: n.title, text2: n.body });
         void qc.invalidateQueries({ queryKey: ['notifications'] });
+        const campaignId = notificationCampaignId(n);
+        if (campaignId) refreshCampaignQueries(qc, campaignId);
       });
 
       socket.on('delivery:offer', async (event: DeliveryOfferEvent) => {

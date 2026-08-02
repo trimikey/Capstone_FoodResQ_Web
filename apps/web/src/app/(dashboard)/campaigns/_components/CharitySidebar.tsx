@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 
 export type Section =
@@ -26,6 +25,16 @@ interface CharitySidebarProps {
   onLogout?: () => void;
 }
 
+/**
+ * Desktop-only persistent sidebar cho /campaigns* — pattern giống /provider:
+ *   - `fixed` ở viewport (trái, full-height).
+ *   - Ẩn hoàn toàn trên mobile (<lg); layout (campaigns/layout.tsx) tự render
+ *     mobile drawer riêng.
+ *   - Main wrapper có `lg:ml-56` để né sidebar trên desktop.
+ *
+ * KHÔNG nhận props related đến mobile UI (mobileOpen, drawer, header bar)
+ * — layout xử lý phần đó để tránh duplicate + dễ test.
+ */
 export default function CharitySidebar({
   section,
   onSectionChange,
@@ -36,146 +45,63 @@ export default function CharitySidebar({
   avatarUrl,
   onLogout,
 }: CharitySidebarProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   return (
-    <>
-      {/* Mobile trigger (chỉ hiện trên mobile, desktop ẩn đi) */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 h-16 bg-white border-b border-neutral-200 px-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          className="p-2 rounded-lg hover:bg-neutral-100"
-          aria-label="Mở menu"
-        >
-          <span className="material-symbols-outlined text-[24px] text-emerald-800">menu</span>
-        </button>
+    <aside
+      className="hidden lg:flex fixed left-0 top-0 h-screen w-56 flex-col bg-white z-40 border-r border-neutral-200"
+      aria-label="Điều hướng chiến dịch"
+    >
+      {/* Logo Header */}
+      <Link href="/campaigns" className="flex items-center px-5 py-6">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-7 w-auto object-contain" />
-        <span className="font-bold text-sm text-[var(--cm-ink-900)]">Bếp ăn cộng đồng</span>
-      </header>
+        <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-10 w-auto object-contain" />
+      </Link>
 
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100]">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setMobileOpen(false)}
-            aria-hidden
-          />
-          <aside className="cm-sidebar cm-sidebar-drawer" aria-label="Điều hướng chiến dịch">
-            <div className="cm-sidebar-header">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-9 w-auto object-contain" />
-              <button
-                type="button"
-                onClick={() => setMobileOpen(false)}
-                className="ml-auto p-2 rounded-lg hover:bg-neutral-100"
-                aria-label="Đóng"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-            <p className="cm-sidebar-section-label">Bếp ăn cộng đồng</p>
-            <nav className="cm-sidebar-nav">
-              {railEntries.map((entry) => {
-                const isActive = section === entry.key;
-                return (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    aria-current={isActive}
-                    onClick={() => {
-                      onSectionChange(entry.key);
-                      setMobileOpen(false);
-                    }}
-                    className="cm-sidebar-link"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">{entry.icon}</span>
-                    <span className="flex-1 text-left">{entry.label}</span>
-                    {entry.badge != null && <span className="cm-sidebar-badge">{entry.badge}</span>}
-                  </button>
-                );
-              })}
-            </nav>
-            {isCharity && (
-              <div className="cm-sidebar-footer">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCreate();
-                    setMobileOpen(false);
-                  }}
-                  className="cm-sidebar-cta"
-                >
-                  <span className="material-symbols-outlined text-[20px]">add</span>
-                  <span>Tạo chiến dịch</span>
-                </button>
-              </div>
-            )}
-            {onLogout && (
-              <div className="cm-sidebar-footer">
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="cm-sidebar-link cm-sidebar-link-muted"
-                >
-                  <span className="material-symbols-outlined text-[20px]">logout</span>
-                  <span className="flex-1 text-left">Đăng xuất</span>
-                </button>
-              </div>
-            )}
-            {userFullName && (
-              <div className="cm-sidebar-user">
-                <div className="cm-sidebar-avatar">
-                  {avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span>{userFullName.charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm truncate">{userFullName}</p>
-                  <p className="text-[11px] text-neutral-500">Bếp ăn cộng đồng</p>
-                </div>
-              </div>
-            )}
-          </aside>
-        </div>
-      )}
+      {/* Section label */}
+      <p className="px-5 mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+        Bếp ăn cộng đồng
+      </p>
 
-      {/* Desktop persistent sidebar (giống provider) */}
-      <aside className="cm-sidebar" aria-label="Điều hướng chiến dịch">
-        <div className="cm-sidebar-header">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-10 w-auto object-contain" />
-        </div>
-        <p className="cm-sidebar-section-label">Bếp ăn cộng đồng</p>
-        <nav className="cm-sidebar-nav">
-          {railEntries.map((entry) => {
-            const isActive = section === entry.key;
-            return (
-              <button
-                key={entry.key}
-                type="button"
-                aria-current={isActive}
-                onClick={() => onSectionChange(entry.key)}
-                className="cm-sidebar-link"
+      {/* Navigation */}
+      <nav className="flex flex-col gap-1 px-3 flex-grow overflow-y-auto">
+        {railEntries.map((entry) => {
+          const isActive = section === entry.key;
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              aria-current={isActive}
+              onClick={() => onSectionChange(entry.key)}
+              className={`${
+                isActive
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'text-neutral-700 hover:bg-neutral-100'
+              } rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold text-left`}
+            >
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}
               >
-                <span className="material-symbols-outlined text-[20px]">{entry.icon}</span>
-                <span className="flex-1 text-left">{entry.label}</span>
-                {entry.badge != null && <span className="cm-sidebar-badge">{entry.badge}</span>}
-              </button>
-            );
-          })}
-        </nav>
+                {entry.icon}
+              </span>
+              <span className="flex-1">{entry.label}</span>
+              {entry.badge != null && (
+                <span className="text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                  {entry.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Bottom: Create CTA + Logout + User */}
+      <div className="border-t border-neutral-200">
         {isCharity && (
-          <div className="cm-sidebar-footer">
+          <div className="p-3">
             <button
               type="button"
               onClick={onCreate}
-              className="cm-sidebar-cta"
+              className="w-full inline-flex items-center justify-center gap-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white px-4 py-3 rounded-xl text-sm font-semibold transition-colors"
             >
               <span className="material-symbols-outlined text-[20px]">add</span>
               <span>Tạo chiến dịch</span>
@@ -183,20 +109,19 @@ export default function CharitySidebar({
           </div>
         )}
         {onLogout && (
-          <div className="cm-sidebar-footer">
+          <div className="px-3 pb-3">
             <button
-              type="button"
               onClick={onLogout}
-              className="cm-sidebar-link cm-sidebar-link-muted"
+              className="w-full text-left text-neutral-700 px-4 py-3 flex items-center gap-3 hover:bg-neutral-100 rounded-xl transition-colors text-sm font-semibold"
             >
               <span className="material-symbols-outlined text-[20px]">logout</span>
-              <span className="flex-1 text-left">Đăng xuất</span>
+              <span>Đăng xuất</span>
             </button>
           </div>
         )}
         {userFullName && (
-          <div className="cm-sidebar-user">
-            <div className="cm-sidebar-avatar">
+          <div className="flex items-center gap-3 px-5 py-4 border-t border-neutral-200">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4e9853] to-[#2a662e] flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -206,11 +131,11 @@ export default function CharitySidebar({
             </div>
             <div className="min-w-0">
               <p className="font-bold text-sm truncate">{userFullName}</p>
-              <p className="text-[11px] text-neutral-500">Bếp ăn cộng đồng</p>
+              <p className="text-[11px] text-neutral-500 truncate">Bếp ăn cộng đồng</p>
             </div>
           </div>
         )}
-      </aside>
-    </>
+      </div>
+    </aside>
   );
 }

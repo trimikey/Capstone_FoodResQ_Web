@@ -185,15 +185,24 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
         </span>
       </div>
 
-      {(t.role === 'chef' || t.role === 'waiter') && (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <Link
-          href={`/kitchen/${t.campaign.id}`}
-          className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-honey-700 hover:text-honey-900 transition-colors"
+          href={`/campaigns/${t.campaign.id}`}
+          className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-3 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
         >
-          <span className="material-symbols-outlined text-[15px]">soup_kitchen</span>
-          {t.role === 'chef' ? 'Thực đơn & nhật ký ATTP' : 'Ghi phân phát suất ăn'}
+          <span className="material-symbols-outlined text-[15px]">visibility</span>
+          Xem chi tiết chiến dịch
         </Link>
-      )}
+        {(t.role === 'chef' || t.role === 'waiter') && (
+          <Link
+            href={`/kitchen/${t.campaign.id}`}
+            className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100"
+          >
+            <span className="material-symbols-outlined text-[15px]">soup_kitchen</span>
+            {t.role === 'chef' ? 'Thực đơn & nhật ký ATTP' : 'Ghi phân phát'}
+          </Link>
+        )}
+      </div>
 
       {/* Thanh tiến trình 4 bước */}
       <div className="flex items-center gap-1 mt-3">
