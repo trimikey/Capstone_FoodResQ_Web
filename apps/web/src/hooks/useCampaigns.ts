@@ -165,6 +165,7 @@ export interface CampaignParticipant {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId?: string | null;
   fullName: string;
   avatarUrl: string | null;
   rank: string;
@@ -192,6 +193,10 @@ export interface CampaignManageParticipant {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId: string | null;
+  fullName: string;
+  avatarUrl: string | null;
+  rank: string;
   checkInTime: string | null;
   notes: string | null;
   createdAt: string;
@@ -599,10 +604,11 @@ export function useReviewAssignment() {
       assignmentId: string;
       action: 'approved' | 'rejected';
       note?: string;
+      shiftId?: string;
     }) => {
       const { data } = await api.patch(
         `/campaigns/${p.campaignId}/assignments/${p.assignmentId}/review`,
-        { action: p.action, note: p.note },
+        { action: p.action, note: p.note, shiftId: p.shiftId },
       );
       return data.data;
     },
