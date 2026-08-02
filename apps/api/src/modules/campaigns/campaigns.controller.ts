@@ -295,9 +295,11 @@ export class CampaignsController {
   // ─── Manage endpoints (trang /campaigns/[id]/manage/*) ─────────────────────
 
   @Get(':id/manage-detail')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Charity: chi tiết chiến dịch cho trang quản lý (bao gồm pending assignments)' })
-  getManageDetail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.campaignsService.getManageDetail(id);
+  getManageDetail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.getManageDetail(id, user.id);
   }
 
   @Patch(':id/assignments/:assignmentId/review')

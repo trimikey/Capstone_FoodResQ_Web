@@ -7,13 +7,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Ảnh upload nằm ở /uploads trên API server (cổng 3001) → ghép origin (bỏ đuôi /api/v1).
-// CHỈ prefix đường dẫn /uploads — ảnh tĩnh của web (/banh-mi.png trong public/) và
+// CHỈ prefix đường dẫn upload — ảnh tĩnh của web (/banh-mi.png trong public/) và
 // URL http(s) giữ nguyên, nếu prefix bừa sẽ 404 vì API không serve chúng.
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
   if (path.startsWith('http')) return path;
-  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
+  // Chuẩn hoá: nếu backend trả /api/uploads/... → đổi thành /uploads/... để ghép origin
+  const normalized = path.startsWith('/api/uploads/') ? `/uploads/${path.slice('/api/uploads/'.length)}` : path;
+  return normalized.startsWith('/uploads') ? `${API_ORIGIN}${normalized}` : normalized;
 }
 
 // Link điều hướng Google Maps tới một toạ độ
