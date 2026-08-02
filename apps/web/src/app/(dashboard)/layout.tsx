@@ -103,15 +103,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           chặn mọi trang cho đến khi xong (BE cũng chặn đặt chỗ/nhận đơn) */}
       <FaceEnrollmentGate />
 
-      {/* Desktop Top Header replaced with PublicHeader - EXCLUDE provider routes (they have their own layout) */}
-      {!pathname.startsWith('/admin') && !pathname.startsWith('/provider') && (
+      {/* Desktop Top Header - show for all dashboard routes */}
+      {!pathname.startsWith('/admin') && (
         <div className="hidden md:block">
           <PublicHeader />
         </div>
       )}
 
-      {/* Mobile Top Header - only for non-provider routes */}
-      {!pathname.startsWith('/provider') && (
+      {/* Mobile Top Header - show for all dashboard routes */}
+      {!pathname.startsWith('/admin') && (
         <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-container-margin py-md flex items-center justify-between h-16">
           <h1 className="font-headline-md text-headline-md text-primary font-bold">FoodResQ</h1>
           <div className="flex items-center gap-md">
@@ -127,23 +127,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Main Content Area - Skip wrapper for provider routes (they have their own layout) */}
-      {pathname.startsWith('/provider') ? (
-        <>{children}</>
-      ) : (
-        <main
-          className={`flex-1 flex flex-col ${
-            pathname.startsWith('/admin')
-              ? 'md:pt-0'
-              : 'pt-16 md:pt-[104px]'
-          } pb-16 md:pb-0 min-h-screen`}
-        >
-          {children}
-        </main>
-      )}
+      {/* Main Content Area */}
+      <main
+        className={`flex-1 flex flex-col ${
+          pathname.startsWith('/admin')
+            ? 'pt-0'
+            : 'pt-16 md:pt-[104px]'
+        } pb-16 md:pb-0 min-h-screen`}
+      >
+        {children}
+      </main>
 
-      {/* Mobile bottom nav - hidden for provider routes */}
-      {!pathname.startsWith('/provider') && (
+      {/* Mobile bottom nav - hidden for admin routes only */}
+      {!pathname.startsWith('/admin') && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant/20 flex shadow-lg">
           {navItems.map((item) => (
             <Link

@@ -19,6 +19,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto } from './dto/campaign.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Public } from '@/common/decorators/public.decorator';
@@ -74,12 +75,6 @@ export class CampaignsController {
     return this.campaignsService.getPublicDetail(id);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết chiến dịch' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.campaignsService.findOne(id);
-  }
-
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
@@ -101,7 +96,7 @@ export class CampaignsController {
   }
 
   @Post(':id/apply')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, ActiveAccountGuard)
   @Roles(UserRole.VOLUNTEER)
   @ApiOperation({ summary: 'Volunteer: đăng ký tham gia một vai trò' })
   apply(
@@ -204,7 +199,7 @@ export class CampaignsController {
   }
 
   @Post(':id/donations')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, ActiveAccountGuard)
   @Roles(UserRole.PROVIDER)
   @ApiOperation({ summary: 'Provider: quyên góp nguyên liệu cho chiến dịch' })
   pledge(
@@ -289,6 +284,12 @@ export class CampaignsController {
   })
   submitProviderProposal(@CurrentUser() user: User, @Body() dto: SubmitProviderProposalDto) {
     return this.campaignsService.submitProviderProposal(user.id, dto);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Chi tiết chiến dịch' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.findOne(id);
   }
 
   // ─── Manage endpoints (trang /campaigns/[id]/manage/*) ─────────────────────

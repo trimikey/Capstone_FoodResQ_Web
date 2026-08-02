@@ -323,7 +323,17 @@ export default function CreateCampaignModal({
   const previewTitle = f.title.trim() || 'Tên chiến dịch của bạn';
 
   return (
-    <div className="cm-create-page">
+    <div className="cm-create-overlay" role="dialog" aria-modal="true" aria-labelledby="cm-modal-title">
+      {/* Backdrop click để đóng */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="cm-create-overlay-backdrop"
+        aria-label="Đóng popup"
+        tabIndex={-1}
+      />
+
+      <div className="cm-create-page">
       {/* ─── Header gọn: tiêu đề + nút đóng (không che form) ─── */}
       <header className="cm-create-header">
         <div className="min-w-0">
@@ -968,6 +978,7 @@ export default function CreateCampaignModal({
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }
