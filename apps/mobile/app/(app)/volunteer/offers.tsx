@@ -10,7 +10,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, useFocusEffect } from 'expo-router';
+import { Redirect, router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
   useAcceptOffer,
@@ -97,6 +97,9 @@ export default function VolunteerOffersScreen() {
     isError: isVolunteerError,
     refetch: refetchVolunteer,
   } = useVolunteerMe();
+  const hasVerifiedShipper = volunteer?.specializations.some(
+    (s) => s.specialization === 'shipper' && s.isVerified
+  ) === true;
   useDeliveryOfferSocket(); // nhận lời mời realtime, không chờ poll 15s
   const accept = useAcceptOffer();
   const reject = useRejectOffer();
@@ -596,6 +599,10 @@ export default function VolunteerOffersScreen() {
       ? `${offers.length} lời mời đang chờ, ${queueOffers.length} đơn trong hàng chờ`
       : 'Nếu chưa có lời mời, hãy kiểm tra đơn gần vị trí này đã chọn giao hàng.';
   })();
+
+  if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
+    return <Redirect href="/(app)/volunteer/campaigns" />;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

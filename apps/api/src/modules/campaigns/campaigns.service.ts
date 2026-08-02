@@ -595,7 +595,7 @@ export class CampaignsService {
           where: { status: { in: ['assigned', 'checked_in', 'in_progress', 'completed', 'absent'] } },
           orderBy: { createdAt: 'asc' },
           select: {
-            id: true, role: true, status: true,
+            id: true, role: true, status: true, shiftId: true,
             ingredientProofUrl: true, cookedProofUrl: true, distributionProofUrl: true,
             volunteer: { select: { rank: true, user: { select: { fullName: true, avatarUrl: true } } } },
           },
@@ -1071,6 +1071,7 @@ export class CampaignsService {
             id: true,
             role: true,
             status: true,
+            shiftId: true,
             volunteer: { select: { user: { select: { fullName: true } } } },
           },
         },
@@ -1130,6 +1131,11 @@ export class CampaignsService {
       throw new BadRequestException('Chiến dịch này đã qua ngày diễn ra, không còn nhận đăng ký.');
     }
 
+    const shiftCount = await this.prisma.campaignShift.count({ where: { campaignId } });
+    if (shiftCount > 0) {
+      throw new BadRequestException('Chiến dịch này có ca làm việc, vui lòng đăng ký trực tiếp theo từng ca.');
+    }
+
     const slot = SLOT_FIELD[dto.role];
     const needed = campaign[slot.needed] as number;
     const filled = campaign[slot.filled] as number;
@@ -1137,8 +1143,8 @@ export class CampaignsService {
       throw new BadRequestException(`Đã đủ tình nguyện viên vai trò ${roleVN}.`);
     }
 
-    const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
-      where: { campaignId_volunteerId_role: { campaignId, volunteerId: volunteer.id, role: dto.role } },
+    const existing = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: { campaignId, volunteerId: volunteer.id, role: dto.role, shiftId: null },
     });
     if (existing) {
       // Cho đăng ký lại nếu lần trước bị từ chối/huỷ; còn pending/đã duyệt thì chặn.
@@ -1891,7 +1897,7 @@ export class CampaignsService {
   async reviewAssignment(campaignId: string, assignmentId: string, userId: string, dto: ReviewAssignmentDto) {
     await this.assertOwner(campaignId, userId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const a = await tx.campaignVolunteerAssignment.findUnique({ where: { id: assignmentId } });
       if (!a || a.campaignId !== campaignId) {
         throw new NotFoundException('Không tìm thấy đăng ký.');
@@ -1905,20 +1911,11 @@ export class CampaignsService {
           where: { id: assignmentId },
           data: { status: 'rejected', notes: dto.note ?? null },
         });
-        // Báo cho TNV biết
         const vol = await tx.volunteerProfile.findUnique({
           where: { id: a.volunteerId },
           select: { userId: true },
         });
-        if (vol) {
-          void this.notifications.notify(vol.userId, {
-            type: 'campaign',
-            title: 'Đăng ký bị từ chối',
-            body: `Rất tiếc, tổ chức không thể nhận bạn vào ca này.${dto.note ? ` Lý do: ${dto.note}` : ''}`,
-            data: { campaignId, assignmentId },
-          });
-        }
-        return updated;
+        return { updated, notifyUserId: vol?.userId ?? null };
       }
 
       // action === 'approved' -> check role slot and, when campaign has shifts, assign a concrete shift.
@@ -1936,10 +1933,11 @@ export class CampaignsService {
       const hasShifts = await tx.campaignShift.count({ where: { campaignId } });
       let selectedShiftId: string | null = null;
       if (hasShifts > 0) {
-        if (!dto.shiftId) {
+        selectedShiftId = dto.shiftId ?? a.shiftId;
+        if (!selectedShiftId) {
           throw new BadRequestException('Chiến dịch này có lịch ca, vui lòng chọn ca trước khi duyệt tình nguyện viên.');
         }
-        const shift = await tx.campaignShift.findUnique({ where: { id: dto.shiftId } });
+        const shift = await tx.campaignShift.findUnique({ where: { id: selectedShiftId } });
         if (!shift || shift.campaignId !== campaignId) {
           throw new BadRequestException('Ca trực không thuộc chiến dịch này.');
         }
@@ -1949,7 +1947,6 @@ export class CampaignsService {
         if (shift.slotsFilled >= shift.slotsNeeded) {
           throw new BadRequestException(`Ca "${shift.label}" đã đủ người (${shift.slotsFilled}/${shift.slotsNeeded}).`);
         }
-        selectedShiftId = shift.id;
       }
 
       const updated = await tx.campaignVolunteerAssignment.update({
@@ -1967,22 +1964,43 @@ export class CampaignsService {
         });
       }
 
-      // Báo cho TNV
       const vol = await tx.volunteerProfile.findUnique({
         where: { id: a.volunteerId },
         select: { userId: true },
       });
-      if (vol) {
-        void this.notifications.notify(vol.userId, {
+
+      return { updated, notifyUserId: vol?.userId ?? null };
+    });
+
+    if (result.notifyUserId) {
+      if (dto.action === 'rejected') {
+        await this.notifications.notify(result.notifyUserId, {
+          type: 'campaign',
+          title: 'Đăng ký bị từ chối',
+          body: `Rất tiếc, tổ chức không thể nhận bạn vào ca này.${dto.note ? ` Lý do: ${dto.note}` : ''}`,
+          data: {
+            campaignId,
+            assignmentId,
+            shiftId: result.updated.shiftId,
+            status: result.updated.status,
+          },
+        });
+      } else {
+        await this.notifications.notify(result.notifyUserId, {
           type: 'campaign',
           title: 'Đăng ký được duyệt',
-          body: `Bạn đã được nhận vào chiến dịch với vai trò ${ROLE_VN[a.role]}. Hẹn gặp bạn tại bếp!`,
-          data: { campaignId, assignmentId },
+          body: `Bạn đã được nhận vào chiến dịch với vai trò ${ROLE_VN[result.updated.role]}. Hẹn gặp bạn tại bếp!`,
+          data: {
+            campaignId,
+            assignmentId,
+            shiftId: result.updated.shiftId,
+            status: result.updated.status,
+          },
         });
       }
+    }
 
-      return updated;
-    });
+    return result.updated;
   }
 
   /**

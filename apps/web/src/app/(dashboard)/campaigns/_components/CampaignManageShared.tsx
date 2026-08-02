@@ -1,6 +1,6 @@
 'use client';
 
-import { CampaignParticipant, CampaignDistribution } from '@/hooks/useCampaigns';
+import { CampaignParticipant, CampaignDistribution, CampaignManageParticipant } from '@/hooks/useCampaigns';
 import { mediaUrl } from '@/lib/utils';
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -9,13 +9,31 @@ export const ROLE_LABEL: Record<string, string> = {
   shipper: 'Giao hàng',
 };
 
+export type RegistrationShiftSummary = {
+  id: string;
+  label: string;
+  role: 'chef' | 'waiter' | 'shipper' | null;
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+  slotsFilled: number;
+};
+
+type RegistrationParticipant = CampaignParticipant | CampaignManageParticipant;
+
+function hasVolunteerDetail(p: RegistrationParticipant): p is CampaignManageParticipant {
+  return 'volunteer' in p && !!p.volunteer;
+}
+
 export function RegistrationRow({
   p,
+  shifts,
   decision,
   pending,
   onDecide,
 }: {
-  p: CampaignParticipant;
+  p: RegistrationParticipant;
+  shifts?: RegistrationShiftSummary[];
   decision?: 'approved' | 'rejected';
   /** Đang gửi mutation (disable nút để chặn click 2 lần). */
   pending?: boolean;
@@ -30,12 +48,23 @@ export function RegistrationRow({
         ? 'cm-reg-role-pill--shipper'
         : '';
 
+  const shift = p.shiftId ? shifts?.find((s) => s.id === p.shiftId) : null;
+  const shiftText = shift
+    ? `${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
+    : 'Đăng ký vai trò tổng';
+  const detail = hasVolunteerDetail(p) ? p.volunteer : null;
+  const phoneText = detail?.phone || 'Chưa có SĐT';
+  const ratingText = detail?.avgRating == null ? 'Chưa có rating' : `${detail.avgRating.toFixed(1)}/5`;
+  const pastText = detail ? `${detail.pastCampaignsCount} chiến dịch` : null;
+  const pointsText = detail ? `${detail.dedicationPoints} điểm` : null;
+
   // Status từ server là nguồn chính — chỉ hiển thị nút Duyệt/Từ chối khi BE còn cho phép (status=pending).
   const serverStatus = p.status ?? null;
   const isPendingReview = !serverStatus || serverStatus === 'pending';
 
   // Map trạng thái server → nhãn tiếng Việt cho badge.
   const serverBadge = (() => {
+    if (!serverStatus || serverStatus === 'pending') return { label: 'Chờ duyệt', cls: 'cm-reg-status--pending' };
     if (serverStatus === 'assigned') return { label: 'Đã duyệt', cls: 'cm-reg-status--approved' };
     if (serverStatus === 'rejected') return { label: 'Đã từ chối', cls: 'cm-reg-status--rejected' };
     if (serverStatus === 'checked_in') return { label: 'Đã điểm danh', cls: 'cm-reg-status--info' };
@@ -55,19 +84,51 @@ export function RegistrationRow({
           p.fullName.charAt(0).toUpperCase()
         )}
       </span>
-      <div className="min-w-0">
-        <p className="cm-reg-name truncate">{p.fullName}</p>
-        <p className="cm-reg-meta">Hạng: {p.rank}</p>
+      <div className="cm-reg-main">
+        <div className="cm-reg-headline">
+          <div className="min-w-0">
+            <p className="cm-reg-name truncate">{p.fullName}</p>
+            <p className="cm-reg-meta">Hạng: {p.rank}</p>
+          </div>
+          <div className="cm-reg-badges">
+            <span className={`cm-reg-role-pill ${roleClass}`}>{roleLabel}</span>
+            {serverBadge ? <span className={`cm-reg-status ${serverBadge.cls}`}>{serverBadge.label}</span> : null}
+          </div>
+        </div>
+
+        <div className="cm-reg-review-grid">
+          <span>
+            <b>Ca đăng ký</b>
+            {shiftText}
+          </span>
+          <span>
+            <b>Liên hệ</b>
+            {phoneText}
+          </span>
+          <span>
+            <b>Uy tín</b>
+            {ratingText}
+          </span>
+          {pointsText ? (
+            <span>
+              <b>Đóng góp</b>
+              {pointsText}
+            </span>
+          ) : null}
+          {pastText ? (
+            <span>
+              <b>Kinh nghiệm</b>
+              {pastText}
+            </span>
+          ) : null}
+        </div>
       </div>
-      <span className={`cm-reg-role-pill ${roleClass}`}>{roleLabel}</span>
-      {!isPendingReview && serverBadge ? (
-        <span className={`cm-reg-status ${serverBadge.cls}`}>{serverBadge.label}</span>
-      ) : decision ? (
+      {!isPendingReview && serverBadge ? null : decision ? (
         <span className={`cm-reg-status cm-reg-status--${decision}`}>
           {decision === 'approved' ? 'Đã duyệt' : 'Đã từ chối'}
         </span>
       ) : (
-        <div className="cm-reg-actions">
+        <div className="cm-reg-actions" aria-label={`Xét duyệt ${p.fullName}`}>
           <button
             type="button"
             onClick={() => onDecide(p.id, p.fullName, 'rejected')}

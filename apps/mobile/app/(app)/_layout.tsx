@@ -10,7 +10,7 @@ import { mobileColors as COLORS } from '@/theme/design';
  * Layout nhóm route đã đăng nhập + AUTH GUARD. Tab bar đổi theo vai trò:
  * - receiver: Trang chủ · Đơn của tôi · Tài khoản
  * - provider: Tin của tôi · Đơn đặt · Quét QR · Bếp ăn · Tài khoản
- * - volunteer: Đơn cần giao · Đang giao · Hồ sơ
+ * - volunteer: tab hiển thị theo chuyên môn đã xác minh
  * Tab không thuộc vai trò bị ẩn (href: null); màn chi tiết là route push (ẩn tab).
  */
 export default function AppTabsLayout() {
@@ -21,10 +21,22 @@ export default function AppTabsLayout() {
   const isProvider = user?.role === 'provider';
   const isVolunteer = user?.role === 'volunteer';
   const isReceiver = user?.role === 'receiver';
-  // Cờ tổ chức từ thiện nằm trong hồ sơ (GET /users/me) — chỉ fetch khi là receiver.
+  // Cờ tổ chức từ thiện và chuyên môn TNV nằm trong hồ sơ (GET /users/me).
   // PHẢI gọi trước mọi early-return để giữ đúng thứ tự hooks (tránh "rendered fewer hooks" khi logout).
-  const { data: profile } = useMyProfile(isReceiver);
+  const { data: profile } = useMyProfile(isReceiver || isVolunteer);
   const isCharityOrg = isReceiver && !!profile?.receiver?.isCharityOrg;
+  const verifiedVolunteerSpecs = new Set(
+    (profile?.volunteer?.specializations ?? [])
+      .filter((s) => s.isVerified)
+      .map((s) => s.specialization)
+  );
+  const hasVerifiedChef = verifiedVolunteerSpecs.has('chef');
+  const hasVerifiedWaiter = verifiedVolunteerSpecs.has('waiter');
+  const hasVerifiedShipper = verifiedVolunteerSpecs.has('shipper');
+  const profilePending = isVolunteer && !profile?.volunteer;
+  const hasKitchenRole = hasVerifiedChef || hasVerifiedWaiter || hasVerifiedShipper;
+  const showShipperTabs = isVolunteer && hasVerifiedShipper;
+  const showCampaignTab = isVolunteer && (profilePending || hasKitchenRole);
   // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
   const hideReceiver = isProvider || isVolunteer;
 
@@ -129,7 +141,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/offers"
         options={{
-          href: isVolunteer ? undefined : null,
+          href: showShipperTabs ? undefined : null,
           title: 'Đơn cần giao',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="clipboard-arrow-down-outline" color={color} size={size} />
@@ -139,7 +151,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/active"
         options={{
-          href: isVolunteer ? undefined : null,
+          href: showShipperTabs ? undefined : null,
           title: 'Đang giao',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="truck-fast-outline" color={color} size={size} />
@@ -149,7 +161,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/campaigns"
         options={{
-          href: isVolunteer ? undefined : null,
+          href: showCampaignTab ? undefined : null,
           title: 'Chiến dịch',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="charity" color={color} size={size} />

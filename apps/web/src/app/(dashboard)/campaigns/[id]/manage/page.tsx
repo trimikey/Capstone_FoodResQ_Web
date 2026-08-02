@@ -2,23 +2,24 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import {
   RegistrationRow,
-  DistributionRow,
   RoleProgressBar,
   StatusTab,
 } from '../../_components/CampaignManageShared';
 import { STATUS_META, useManageContext } from '../../_components/ManageShell';
+import { useReviewAssignment } from '@/hooks/useCampaigns';
+import { errMsg } from '@/lib/utils';
 import CampaignPlaybook, {
   type CampaignPhaseKey,
 } from '@/components/campaigns/CampaignPlaybook';
-
-type StatusKey = 'running' | 'pending' | 'finished';
 
 export default function ManageOverviewPage() {
   const { campaign: c } = useManageContext();
   const [statusTab, setStatusTab] = useState<'running' | 'pending' | 'finished'>('running');
   const [decisions, setDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
+  const review = useReviewAssignment();
 
   const stats = {
     totalSlots: c.chefSlotsNeeded + c.waiterSlotsNeeded + c.shipperSlotsNeeded,
@@ -45,8 +46,31 @@ export default function ManageOverviewPage() {
       : 'plan';
 
   function decide(assignmentId: string, volunteerName: string, action: 'approved' | 'rejected') {
-    setDecisions((prev) => ({ ...prev, [assignmentId]: action }));
-    // Toast handled in shell
+    const target = c.participants?.find((p) => p.id === assignmentId);
+    if (!target) return;
+
+    if (action === 'approved' && c.shifts?.length && !target.shiftId) {
+      toast.error('Đăng ký này chưa gắn ca. Mở trang Đăng ký chờ duyệt để chọn ca trước khi duyệt.');
+      return;
+    }
+
+    void review.mutateAsync(
+      {
+        campaignId: c.id,
+        assignmentId,
+        action,
+        ...(action === 'approved' && target.shiftId ? { shiftId: target.shiftId } : {}),
+      },
+      {
+        onSuccess: () => {
+          setDecisions((prev) => ({ ...prev, [assignmentId]: action }));
+          toast.success(action === 'approved' ? `Đã duyệt ${volunteerName}` : `Đã từ chối ${volunteerName}`);
+        },
+        onError: (e) => {
+          toast.error(errMsg(e, action === 'approved' ? 'Duyệt thất bại' : 'Từ chối thất bại'));
+        },
+      },
+    );
   }
 
   return (
@@ -229,7 +253,9 @@ export default function ManageOverviewPage() {
                 <RegistrationRow
                   key={p.id}
                   p={p as Parameters<typeof RegistrationRow>[0]['p']}
+                  shifts={c.shifts}
                   decision={decisions[p.id]}
+                  pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
                 />
               ))}

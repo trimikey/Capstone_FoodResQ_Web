@@ -21,6 +21,8 @@ import {
   type DeliveryCoords,
   type DeliveryStatus,
 } from '@/hooks/useDeliveries';
+import { useVolunteerMe } from '@/hooks/useVolunteer';
+import { Redirect } from 'expo-router';
 import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ReportDialog } from '@/components/ReportDialog';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -127,6 +129,7 @@ export default function VolunteerActiveScreen() {
   const qrSheetRef = useRef<BottomSheetModal>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { data, isLoading, isError, refetch, isRefetching } = useActiveDelivery();
+  const { data: volunteer, isLoading: isVolunteerLoading } = useVolunteerMe();
   const updateStatus = useUpdateDeliveryStatus();
   const failDelivery = useFailDelivery();
   const cancelAssignment = useCancelAssignment();
@@ -142,6 +145,9 @@ export default function VolunteerActiveScreen() {
 
   const delivery = data ?? null;
   const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
+  const hasVerifiedShipper = volunteer?.specializations.some(
+    (s) => s.specialization === 'shipper' && s.isVerified
+  ) === true;
   useShipperLocationBroadcast(isActiveDeliveryStatus(delivery?.status));
 
   const renderBackdrop = useCallback(
@@ -330,6 +336,10 @@ export default function VolunteerActiveScreen() {
       });
     }
   };
+
+  if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
+    return <Redirect href="/(app)/volunteer/campaigns" />;
+  }
 
   if (isLoading && !delivery) {
     return (
