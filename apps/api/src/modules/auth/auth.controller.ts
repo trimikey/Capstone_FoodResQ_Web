@@ -55,12 +55,20 @@ export class AuthController {
     const selfie = files?.selfie?.[0];
     const idCard = files?.idCard?.[0];
     const vehiclePlateImage = files?.vehiclePlateImage?.[0];
-    for (const file of [selfie, idCard, vehiclePlateImage]) {
+    for (const file of [selfie, idCard]) {
       if (!file) continue;
-      if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) {
-        throw new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP.');
+      if (!/^image\/(jpeg|png)$/.test(file.mimetype)) {
+        throw new BadRequestException('Ảnh khuôn mặt và CCCD phải là JPEG hoặc PNG.');
       }
       if (file.size > 5 * 1024 * 1024) {
+        throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
+      }
+    }
+    if (vehiclePlateImage) {
+      if (!/^image\/(jpeg|png|webp)$/.test(vehiclePlateImage.mimetype)) {
+        throw new BadRequestException('Ảnh biển số phải là JPEG, PNG hoặc WEBP.');
+      }
+      if (vehiclePlateImage.size > 5 * 1024 * 1024) {
         throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
       }
     }
