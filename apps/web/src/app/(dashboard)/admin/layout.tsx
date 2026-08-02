@@ -8,14 +8,19 @@ import { UserRole } from '@foodresq/types';
 import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
-const PROVIDER_NAV = [
-  { href: '/provider', label: 'Cửa hàng', icon: 'storefront' },
-  { href: '/provider/orders', label: 'Đơn hàng', icon: 'receipt_long' },
-  { href: '/provider/scan', label: 'Quét QR', icon: 'qr_code_scanner' },
-  { href: '/campaigns', label: 'Bếp ăn cộng đồng', icon: 'soup_kitchen' },
+const ADMIN_NAV = [
+  { href: '/admin', label: 'Tổng quan thống kê', icon: 'dashboard' },
+  { href: '/admin/map', label: 'Bản đồ trực tiếp', icon: 'map' },
+  { href: '/admin/donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
+  { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
+  { href: '/admin/food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
+  { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
+  { href: '/admin/monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
+  { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+  { href: '/admin/settings', label: 'Cài đặt hệ thống', icon: 'settings' },
 ];
 
-export default function ProviderLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -42,25 +47,19 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     router.push('/login');
   };
 
+  const currentPageLabel = ADMIN_NAV.find((n) => pathname === n.href)?.label
+    ?? 'Quản trị viên';
+
   return (
-    <div className="min-h-screen bg-[#fcf9f2] font-body-md">
+    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4">
-        <div className="flex items-center gap-1">
-          <Link
-            href="/"
-            aria-label="Về trang chủ"
-            className="p-2 hover:bg-neutral-100 rounded-lg transition-colors"
-          >
-            <span className="material-symbols-outlined text-[#236c2a]">arrow_back</span>
-          </Link>
-          <button onClick={() => setMobileMenuOpen(true)} className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
-            <span className="material-symbols-outlined text-[#236c2a]">menu</span>
-          </button>
-        </div>
+        <button onClick={() => setMobileMenuOpen(true)} className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+          <span className="material-symbols-outlined text-[#236c2a]">menu</span>
+        </button>
         <div className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-8 w-auto object-contain" />
@@ -88,12 +87,12 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
               </button>
             </div>
             <nav className="flex flex-col gap-1 p-3 flex-grow">
-              {PROVIDER_NAV.map((item) => {
+              {ADMIN_NAV.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
-                    className={`${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-neutral-700 hover:bg-neutral-100'} rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold`}>
-                    <span className="material-symbols-outlined text-lg" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
+                    className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                    <span className="material-symbols-outlined text-lg">{item.icon}</span>
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -109,9 +108,9 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
-      {/* Desktop Sidebar - nền trắng */}
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-40">
-        {/* Logo Header - không border dưới */}
+        {/* Logo Header */}
         <div className="flex items-center px-5 py-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-12 w-auto object-contain" />
@@ -119,8 +118,8 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
         {/* Navigation */}
         <nav className="flex flex-col gap-1 p-3 flex-grow">
-          {PROVIDER_NAV.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/provider' && pathname.startsWith(item.href));
+          {ADMIN_NAV.map((item) => {
+            const isActive = pathname === item.href;
             return (
               <Link key={item.href} href={item.href}
                 className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
@@ -141,55 +140,32 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      {/* Main Content - nền xanh nhạt */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
-        {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
-        <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-neutral-700 hover:bg-white hover:text-[#236c2a] transition-colors"
-            aria-label="Về trang chủ"
-          >
-            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-            <span>Về trang chủ</span>
-          </Link>
-          <div className="flex items-center gap-3">
-            {/* Notifications */}
-            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
-              <span className="material-symbols-outlined text-neutral-700">notifications</span>
-            </button>
-
-          {/* Section Label */}
-          <p className="px-5 mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-            Nhà cung cấp
-          </p>
-
-          {/* Navigation */}
-          <nav className="flex flex-col gap-1 px-3 flex-grow">
-            {PROVIDER_NAV.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link key={item.href} href={item.href}
-                  className={`${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-neutral-700 hover:bg-neutral-100'} rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold`}>
-                  <span className="material-symbols-outlined text-[20px]" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Bottom Section */}
-          <div className="p-3">
-            <button onClick={handleLogout}
-              className="w-full text-left text-neutral-700 px-4 py-3 flex items-center gap-3 hover:bg-neutral-100 rounded-xl transition-colors text-sm font-semibold">
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-              <span>Đăng xuất</span>
-            </button>
-          </div>
-        </aside>
-
       {/* Main Content */}
-      <div className="lg:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
+      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#FAFBF9]">
+        {/* TopAppBar - Desktop */}
+        <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30 bg-[#FAFBF9]/95 backdrop-blur-sm border-b border-neutral-200/60">
+          <div className="flex items-center gap-3">
+            <h1 className="font-bold text-[#236c2a] text-base">{currentPageLabel}</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* User Info */}
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-sm font-semibold text-neutral-800">{user.fullName}</p>
+                <p className="text-xs text-neutral-500">Quản trị viên</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
+                {user.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
         {/* Scrollable Canvas */}
         <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
           {children}

@@ -523,8 +523,13 @@ export function useUnassignVolunteer() {
 export function useReviewUserVerification() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { profileId: string; decision: 'approved' | 'rejected'; note?: string }) =>
-      (await api.patch(`/admin/verifications/provider/${p.profileId}`, { decision: p.decision, note: p.note })).data.data,
+    mutationFn: async (p: {
+      type: 'provider' | 'volunteer';
+      profileId: string;
+      decision: 'approved' | 'rejected';
+      note?: string;
+    }) =>
+      (await api.patch(`/admin/verifications/${p.type}/${p.profileId}`, { decision: p.decision, note: p.note })).data.data,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin'] });
     },
