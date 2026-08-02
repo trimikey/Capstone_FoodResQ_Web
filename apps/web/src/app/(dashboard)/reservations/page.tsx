@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Modal } from '@/components/shared/Modal';
 import { QRCodeSVG } from 'qrcode.react';
@@ -67,13 +68,17 @@ function penaltyOutcome(scoreAfter: number): { text: string; severe: boolean } |
   return null;
 }
 
+// Ảnh fallback theo category — ánh xạ sang file thật có trong /public
+// (trước đây fallback dùng /banh-mi-ngot-thap-cam.png, /food_salad.png… không tồn tại → 404 → ảnh trống)
 const CATEGORY_FALLBACK: Record<string, string> = {
-  bakery: '/banh-mi-ngot-thap-cam.png',
-  cooked_meal: '/com-ga-hoi-an.png',
-  fresh_fruit: '/food_salad.png',
-  vegetables: '/food_salad.png',
+  bakery: '/banh-mi.png',
+  cooked_meal: '/com-ga.png',
+  fresh_fruit: '/rau-cu.png',
+  vegetables: '/rau-cu.png',
+  beverage: '/hu-tieu.png',
+  other: '/banh-mi.png',
 };
-const fallbackImg = (c: string) => CATEGORY_FALLBACK[c] ?? '/banh-mi-lua-mach-tuoi.png';
+const fallbackImg = (c: string) => CATEGORY_FALLBACK[c] ?? '/banh-mi.png';
 
 const STATUS_META: Record<
   Reservation['status'],
@@ -188,15 +193,29 @@ export default function ReservationsPage() {
           {!isLoading && !isError && filtered.map((r) => {
             const meta = STATUS_META[r.status];
             const qrValid = r.qrToken && r.qrExpiresAt && new Date(r.qrExpiresAt) > new Date();
+            const cover = r.listing.imageUrls?.[0] || fallbackImg(r.listing.category);
             return (
               <div key={r.id} className="card-interactive bg-white rounded-2xl border border-neutral-150 elevation-1 overflow-hidden flex">
                 {/* dải màu trạng thái */}
                 <div className={`w-1.5 shrink-0 ${meta.accent}`} />
                 <div className="flex-1 min-w-0">
                 <div className="p-5 flex gap-4">
-                  <div className="w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
+                  {/* Cover ảnh có fallback an toàn + overlay gradient + tag category */}
+                  <div className="relative w-24 h-24 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.listing.imageUrls?.[0] || fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
+                    <img
+                      src={cover}
+                      alt={r.listing.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const t = e.currentTarget;
+                        if (t.src !== '/banh-mi.png') t.src = '/banh-mi.png';
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+                    <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/55 backdrop-blur text-white text-[9px] font-bold uppercase tracking-wider">
+                      {r.listing.category}
+                    </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
@@ -221,6 +240,16 @@ export default function ReservationsPage() {
                         <span className="material-symbols-outlined text-[14px]">calendar_today</span>
                         {new Date(r.createdAt).toLocaleDateString('vi-VN')}
                       </span>
+                    </div>
+                    {/* Nút xem chi tiết */}
+                    <div className="mt-3">
+                      <Link
+                        href={`/reservations/${r.id}`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">visibility</span>
+                        Xem chi tiết
+                      </Link>
                     </div>
                   </div>
                 </div>

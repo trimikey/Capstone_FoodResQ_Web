@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import { UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import type { ListingItem } from '@/components/listings/ListingCard';
+import { SafeImage } from '@/components/shared/SafeImage';
 
 interface Props {
   listings: ListingItem[];
@@ -133,7 +134,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
             <div style={{ minWidth: 180 }}>
               {l.imageUrls?.[0] && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <SafeImage
                   src={l.imageUrls[0]}
                   alt={l.title}
                   style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8, marginBottom: 6 }}

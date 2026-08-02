@@ -8,10 +8,11 @@ import { useCreateReservation } from '@/hooks/useReservation';
 import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
-import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL, extractApiError } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
+import { SafeImage } from '@/components/shared/SafeImage';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -178,7 +179,7 @@ export default function ListingDetailPage({ params }: Props) {
         {/* Left Column: Product Image & Details */}
         <div className="lg:col-span-7 flex flex-col gap-6">
           <div className="relative rounded-3xl overflow-hidden aspect-[4/3] bg-surface-container shadow-md border border-outline-variant/10 group">
-            <img
+            <SafeImage
               src={
                 (listing.imageUrls[0] && ![
                   '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
@@ -187,6 +188,7 @@ export default function ListingDetailPage({ params }: Props) {
                   ? mediaUrl(listing.imageUrls[0])
                   : fallbackImage(listing.category)
               }
+              category={listing.category}
               alt={listing.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
@@ -237,16 +239,36 @@ export default function ListingDetailPage({ params }: Props) {
             <ProviderManagementPanel
               listing={listing}
               onPublish={async () => {
-                try { await publishListing.mutateAsync(listing.id); toast.success('Đã đăng tin'); router.refresh(); }
-                catch { toast.error('Đăng tin thất bại'); }
+                try {
+                  // Chặn an toàn phía client: draft đã quá hạn → không gọi BE.
+                  if (
+                    listing.status === 'draft' &&
+                    new Date(listing.pickupEndTime).getTime() < Date.now()
+                  ) {
+                    toast.error('Đã qua thời gian lấy hàng, bạn không thể đăng tin.');
+                    return;
+                  }
+                  await publishListing.mutateAsync(listing.id);
+                  toast.success('Đã đăng tin');
+                  router.refresh();
+                } catch (err) {
+                  // Trích message lỗi từ response BE (nếu có) để user biết lý do thật
+                  const msg =
+                    extractApiError(err, 'Đăng tin thất bại. Vui lòng thử lại.');
+                  toast.error(msg);
+                }
               }}
               onCancel={async () => {
                 try { await cancelListing.mutateAsync({ id: listing.id }); toast.info('Đã huỷ tin'); router.push('/provider'); }
-                catch { toast.error('Huỷ thất bại'); }
+                catch (err) {
+                  toast.error(extractApiError(err, 'Huỷ thất bại. Vui lòng thử lại.'));
+                }
               }}
               onDuplicate={async () => {
                 try { await duplicateListing.mutateAsync(listing.id); toast.success('Đã tạo bản nháp mới'); router.push('/provider'); }
-                catch { toast.error('Nhân bản thất bại'); }
+                catch (err) {
+                  toast.error(extractApiError(err, 'Nhân bản thất bại. Vui lòng thử lại.'));
+                }
               }}
               publishing={publishListing.isPending}
               cancelling={cancelListing.isPending}
@@ -489,15 +511,16 @@ export default function ListingDetailPage({ params }: Props) {
                 className="bg-surface rounded-2xl border border-outline-variant/15 overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col"
               >
                 <div className="relative h-40 bg-surface-container">
-                  <img
+                  <SafeImage
                     src={
                       (item.imageUrls[0] && ![
-                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
+                        '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png',
                         '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                       ].includes(item.imageUrls[0]))
                         ? item.imageUrls[0]
                         : fallbackImage(item.category)
                     }
+                    category={item.category}
                     alt={item.title}
                     className="w-full h-full object-cover"
                   />
@@ -565,6 +588,9 @@ function ProviderManagementPanel({
   };
   const isExpiringSoon = new Date(listing.pickupEndTime).getTime() - Date.now() < 4 * 60 * 60 * 1000;
   const isClosed = ['completed', 'expired', 'cancelled'].includes(listing.status);
+  // Tin nháp có thời gian kết thúc đã qua → không cho đăng
+  const isExpiredDraft =
+    listing.status === 'draft' && new Date(listing.pickupEndTime).getTime() < Date.now();
 
   return (
     <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
@@ -619,6 +645,12 @@ function ProviderManagementPanel({
             <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Khung giờ nhận</p>
             <p className="text-on-surface">
               {fmtDate(listing.pickupStartTime)} · {fmtTime(listing.pickupStartTime)}–{fmtTime(listing.pickupEndTime)}
+              {isExpiredDraft && (
+                <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full align-middle">
+                  <span className="material-symbols-outlined text-[13px]">event_busy</span>
+                  đã hết hạn
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -642,7 +674,33 @@ function ProviderManagementPanel({
 
       {/* Action buttons */}
       <div className="space-y-2 border-t border-outline-variant/10 pt-4">
-        {listing.status === 'draft' ? (
+        {isExpiredDraft ? (
+          /* Tin nháp đã quá thời gian lấy hàng → không thể đăng hay nhân bản.
+             Duplicate sẽ tạo bản nháp mới cùng pickupEndTime đã hết hạn, không giải quyết được.
+             Muốn đăng lại → tạo tin mới từ trang /provider/create. */
+          <>
+            <div
+              role="alert"
+              className="w-full bg-rose-50 text-rose-800 border border-rose-200 rounded-xl p-4 flex items-start gap-3"
+            >
+              <span className="material-symbols-outlined text-[22px] mt-0.5 shrink-0">event_busy</span>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold">Đã qua thời gian lấy hàng, bạn không thể đăng tin.</p>
+                <p className="text-rose-700/80 text-[12px] mt-1">
+                  Hạn lấy đã là {fmtDate(listing.pickupEndTime)} · {fmtTime(listing.pickupEndTime)}.
+                  Hãy tạo tin mới với khung giờ hợp lệ.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/provider/create"
+              className="w-full py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 hover:bg-primary/90"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Tạo tin mới
+            </Link>
+          </>
+        ) : listing.status === 'draft' ? (
           <button
             onClick={onPublish}
             disabled={publishing}

@@ -57,4 +57,30 @@ export class ListingsCron {
       logCronError(this.logger, 'handleExpiryAlerts', e);
     }
   }
+
+  /**
+   * Tự động chuyển tin đã quá thời gian lấy hàng thành `expired`.
+   * Tin `fully_reserved` cũng được xử lý — provider có thể đã đăng nhưng hết suất trước giờ pickup.
+   * Chạy mỗi 5 phút để tab "Đang mở" của provider phản ánh đúng trạng thái thực tế.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleAutoExpire() {
+    try {
+      const now = new Date();
+      const result = await this.prisma.foodListing.updateMany({
+        where: {
+          status: { in: ['active', 'fully_reserved'] },
+          deletedAt: null,
+          pickupEndTime: { lt: now },
+        },
+        data: { status: 'expired' },
+      });
+
+      if (result.count > 0) {
+        this.logger.log(`Auto-expired ${result.count} listing(s) past pickup_end_time`);
+      }
+    } catch (e) {
+      logCronError(this.logger, 'handleAutoExpire', e);
+    }
+  }
 }
