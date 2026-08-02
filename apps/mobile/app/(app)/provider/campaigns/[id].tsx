@@ -17,6 +17,7 @@ import {
 import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /** Hàng thông tin có icon. */
@@ -52,7 +53,7 @@ export default function ProviderCampaignDetailScreen() {
     <View style={styles.header}>
       <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
-      <View style={{ width: 24 }} />
+      <NotificationBell />
     </View>
   );
 
@@ -249,7 +250,7 @@ const styles = StyleSheet.create({
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
+  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },

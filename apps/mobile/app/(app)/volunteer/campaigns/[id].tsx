@@ -21,6 +21,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const ASSIGNMENT_ROLES: AssignmentRole[] = ['chef', 'waiter', 'shipper'];
@@ -52,8 +53,8 @@ export default function VolunteerCampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
   const { data: profile } = useMyProfile(true);
-  const { data: myTasks } = useMyTasks(true);
-  const { data: shifts = [] } = useShifts(id);
+  const { data: myTasks, refetch: refetchTasks } = useMyTasks(true);
+  const { data: shifts = [], refetch: refetchShifts } = useShifts(id);
   const { data: kitchenMenu = [] } = useMenuItems(id);
   const applyMut = useApplyCampaign();
   const applyShiftMut = useApplyShift();
@@ -62,7 +63,7 @@ export default function VolunteerCampaignDetailScreen() {
     <View style={styles.header}>
       <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
-      <View style={{ width: 24 }} />
+      <NotificationBell />
     </View>
   );
 
@@ -117,6 +118,7 @@ export default function VolunteerCampaignDetailScreen() {
     }
     try {
       await applyShiftMut.mutateAsync({ campaignId: c.id, shiftId: shift.id, role: roleToSend });
+      await Promise.all([refetch(), refetchShifts(), refetchTasks()]);
       Popup.show({ type: 'success', text1: 'Đã đăng ký ca', text2: shift.label });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Đăng ký ca thất bại', text2: getErrorMessage(err) });
@@ -179,6 +181,10 @@ export default function VolunteerCampaignDetailScreen() {
                       <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.teal} />
                       <Text style={styles.appliedPillText}>Đã đăng ký</Text>
                     </View>
+                  ) : reason ? (
+                    <View style={styles.disabledPill}>
+                      <Text style={styles.disabledPillText}>{reason}</Text>
+                    </View>
                   ) : (
                     <Button
                       mode="contained"
@@ -218,20 +224,38 @@ export default function VolunteerCampaignDetailScreen() {
               const reason = full ? 'Đã đủ' : alreadyApplied ? 'Đã đăng ký' : !eligible ? 'Không hợp chuyên môn' : null;
               return (
                 <View key={s.id} style={styles.shiftRow}>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.shiftInfo}>
                     <Text style={styles.shiftLabel}>{s.label}</Text>
                     <Text style={styles.shiftMeta}>
                       {s.startTime}-{s.endTime}
                       {s.role ? ` - ${ASSIGNMENT_ROLE_LABEL[s.role] ?? s.role}` : ' - Chung'} - {s.slotsFilled}/{s.slotsNeeded}
                     </Text>
                   </View>
-                  <Button
-                    mode="contained" compact buttonColor={COLORS.primary} disabled={disabled}
-                    loading={applyShiftMut.isPending && applyShiftMut.variables?.shiftId === s.id}
-                    onPress={() => handleApplyShift(s)}
-                  >
-                    {reason ?? 'Đăng ký'}
-                  </Button>
+                  <View style={styles.shiftAction}>
+                    {alreadyApplied ? (
+                      <View style={[styles.appliedPill, styles.shiftPill]}>
+                        <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.teal} />
+                        <Text style={styles.appliedPillText}>Đã đăng ký</Text>
+                      </View>
+                    ) : reason ? (
+                      <View style={[styles.disabledPill, styles.shiftPill]}>
+                        <Text style={styles.disabledPillText}>{reason}</Text>
+                      </View>
+                    ) : (
+                      <Button
+                        mode="contained"
+                        compact
+                        buttonColor={COLORS.primary}
+                        disabled={disabled}
+                        loading={applyShiftMut.isPending && applyShiftMut.variables?.shiftId === s.id}
+                        onPress={() => handleApplyShift(s)}
+                        style={styles.shiftButton}
+                        contentStyle={styles.shiftButtonContent}
+                      >
+                        Đăng ký
+                      </Button>
+                    )}
+                  </View>
                 </View>
               );
             })}
@@ -300,7 +324,7 @@ const styles = StyleSheet.create({
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '900', color: COLORS.onSurface },
+  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '900', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.section },
   titleRow: {
@@ -334,12 +358,19 @@ const styles = StyleSheet.create({
   roleCount: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   appliedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.tealContainer, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   appliedPillText: { fontSize: 13, fontWeight: '600', color: COLORS.teal },
+  disabledPill: { backgroundColor: COLORS.surfaceContainerLow, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+  disabledPillText: { fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant },
   hint: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   shiftRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing.md,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1, borderBottomColor: COLORS.outlineVariant,
   },
+  shiftInfo: { gap: 2 },
+  shiftAction: { marginTop: spacing.sm, alignItems: 'flex-end' },
+  shiftPill: { alignSelf: 'flex-end', maxWidth: '100%' },
+  shiftButton: { alignSelf: 'flex-end', borderRadius: radius.pill },
+  shiftButtonContent: { minHeight: 38, paddingHorizontal: spacing.md },
   shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   shiftMeta: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },

@@ -147,7 +147,12 @@ export function useApplyShift() {
     },
     onSuccess: (_d, { campaignId }) => {
       qc.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
       qc.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
+      void qc.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+      void qc.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
     },
   });
 }
