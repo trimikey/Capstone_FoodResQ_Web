@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   useAdminOverview,
@@ -22,8 +21,6 @@ import {
   useAdminCampaignDetail,
   useAdminCampaignChangeRequests,
   useReviewCampaignChange,
-  useAdminPendingAssignments,
-  useReviewAssignment,
   useAdminFoodListings,
   useUpdateListingCategory,
   useAdminCharities,
@@ -38,7 +35,6 @@ import {
   type AdminCampaign,
   type AdminCampaignDetail,
   type AdminCampaignChangeRequest,
-  type PendingAssignment,
   type AdminFoodListing,
   type VolunteerDetail,
   type AdminUser,
@@ -48,8 +44,6 @@ import { useListings } from '@/hooks/useListings';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
-import { useAuthStore } from '@/stores/auth.store';
-import NotificationBell from '@/components/shared/NotificationBell';
 
 const HCM_CENTER = { lng: 106.6297, lat: 10.8231 };
 const AdminMap = dynamic(() => import('@/components/map/ListingsMap'), {
@@ -82,260 +76,33 @@ const CATEGORY_COLOR: Record<string, string> = {
 const MONTH_TARGET_KG = 2000; // mục tiêu cộng đồng theo tháng (hằng số cấu hình)
 const fmtKg = (n: number) => `${n.toLocaleString('vi-VN')} kg`;
 
-type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'volunteers' | 'reports' | 'monitor' | 'users' | 'settings';
+type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'reports' | 'monitor' | 'users' | 'settings';
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
-const MAIN_TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'dashboard', label: 'Tổng quan thống kê', icon: 'dashboard' },
-  { key: 'map', label: 'Bản đồ trực tiếp', icon: 'map' },
-  { key: 'donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
-  { key: 'campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
-  { key: 'food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
-  // Tab "Duyệt hồ sơ NCC/TNV mới" đã gộp vào "Quản lý tài khoản": bấm Chi tiết
-  // trên tài khoản chờ duyệt sẽ mở modal hồ sơ đầy đủ (GPKD, địa chỉ, duyệt/từ chối).
-  { key: 'reports', label: 'Xử lý khiếu nại', icon: 'warning' },
-  { key: 'monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
-  { key: 'users', label: 'Quản lý tài khoản (khoá/mở)', icon: 'manage_accounts' },
-];
-
-const ROLE_LABEL_ADMIN: Record<string, string> = {
-  admin: 'Quản trị viên',
-  provider: 'Nhà cung cấp',
-  receiver: 'Người nhận',
-  volunteer: 'Tình nguyện viên',
-};
-
 export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('dashboard');
-  const [accountMenu, setAccountMenu] = useState(false);
-  const [showAccount, setShowAccount] = useState(false);
-  const { user, logout } = useAuthStore();
-  const router = useRouter();
-
-  function handleLogout() {
-    logout();
-    toast.success('Đã đăng xuất');
-    router.push('/login');
-  }
-
-  return (
-    <div className="min-h-screen bg-[#fcfcfc] md:flex text-neutral-900">
-      {/* Sidebar (Desktop) */}
-      <aside className="hidden md:flex flex-col w-[280px] bg-[#f9faf9] border-r border-neutral-200 h-screen sticky top-0 shrink-0">
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-700 flex items-center justify-center shrink-0 shadow-sm">
-            <span className="material-symbols-outlined text-white text-[24px]">eco</span>
-          </div>
-          <div>
-            <h1 className="font-extrabold text-2xl text-emerald-800 leading-tight tracking-tight">FoodResQ</h1>
-            <p className="text-xs text-neutral-600 font-medium mt-0.5">Admin Dashboard</p>
-          </div>
-        </div>
-
-        <div className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto">
-          {MAIN_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-[14px] font-bold transition-all ${
-                tab === t.key 
-                  ? 'bg-emerald-300/40 text-emerald-900 shadow-sm' 
-                  : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: tab === t.key ? "'FILL' 1" : "'FILL' 0" }}>{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-4 border-t border-neutral-200/60 space-y-1">
-          <button
-            onClick={() => setTab('settings')}
-            className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-[14px] font-bold transition-all ${
-              tab === 'settings' ? 'bg-emerald-300/40 text-emerald-900 shadow-sm' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: tab === 'settings' ? "'FILL' 1" : "'FILL' 0" }}>settings</span>
-            Cài đặt hệ thống
-          </button>
-          {/* Khối tài khoản — bấm để mở menu */}
-          <div className="relative mt-2">
-            <button
-              onClick={() => setAccountMenu((v) => !v)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-200/50 transition-colors text-left"
-            >
-              <div className="w-10 h-10 rounded-full bg-emerald-800 text-white flex items-center justify-center font-bold text-lg overflow-hidden border-2 border-white shadow-sm shrink-0">
-                {user?.fullName?.[0]?.toUpperCase() || 'A'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-extrabold text-neutral-900 truncate">{user?.fullName || 'Admin FoodResQ'}</p>
-                <p className="text-xs text-neutral-500 truncate">{user ? ROLE_LABEL_ADMIN[user.role] ?? user.role : 'Quản trị viên'}</p>
-              </div>
-              <span className={`material-symbols-outlined text-[20px] text-neutral-400 transition-transform ${accountMenu ? 'rotate-180' : ''}`}>expand_less</span>
-            </button>
-
-            {accountMenu && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setAccountMenu(false)} />
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-neutral-200 rounded-2xl shadow-xl z-40 py-2 overflow-hidden">
-                  <button
-                    onClick={() => { setShowAccount(true); setAccountMenu(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[20px] text-neutral-500">account_circle</span>
-                    Chi tiết tài khoản
-                  </button>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">logout</span>
-                    Đăng xuất
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-h-screen relative overflow-hidden">
-        {/* Top Header */}
-        <header className="h-[72px] bg-white/80 backdrop-blur-md border-b border-neutral-200/60 px-8 flex items-center justify-between sticky top-0 z-30">
-          <div className="text-emerald-700 font-semibold text-sm">
-            FoodResQ Admin
-          </div>
-          <div className="flex items-center gap-4 text-neutral-600">
-            <NotificationBell />
-            <button
-              onClick={() => setShowAccount(true)}
-              title="Chi tiết tài khoản"
-              className="w-8 h-8 rounded-full bg-emerald-800 text-white flex items-center justify-center font-bold text-sm shadow-sm hover:ring-2 hover:ring-emerald-300 transition-all"
-            >
-              {user?.fullName?.[0]?.toUpperCase() || 'A'}
-            </button>
-          </div>
-        </header>
-
-        <div className="p-8 flex-1 overflow-y-auto">
-          {tab === 'dashboard' && <DashboardTab />}
-          {tab === 'map' && <MapTab />}
-          {tab === 'donations' && <DonationsTab />}
-          {tab === 'campaigns' && <CampaignsAdminTab />}
-          {tab === 'food' && <FoodAdminTab />}
-          {tab === 'reports' && <ReportsTab />}
-          {tab === 'monitor' && <MonitorTab />}
-          {tab === 'users' && <UsersTab />}
-          {tab === 'settings' && <SettingsTab />}
-        </div>
-      </main>
-
-      {showAccount && <AccountModal onClose={() => setShowAccount(false)} onLogout={handleLogout} />}
-    </div>
-  );
+  return <AdminShell />;
 }
 
-function AccountModal({ onClose, onLogout }: { onClose: () => void; onLogout: () => void }) {
-  const { user } = useAuthStore();
-  const [notifyNew, setNotifyNew] = useState(true);
-  const [notifyWeekly, setNotifyWeekly] = useState(false);
+/** Trang admin với tab khởi tạo từ URL — dùng cho `/admin/[tab]`. */
+export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
+  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'reports', 'monitor', 'users', 'settings']);
+  const tab: Tab =
+    initialTab && VALID_TABS.has(initialTab as Tab) ? (initialTab as Tab) : 'dashboard';
 
   return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#fcfcfc] rounded-3xl border border-neutral-150 w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-150 bg-white">
-          <h2 className="font-extrabold text-[22px] text-emerald-800 tracking-tight">Chi tiết tài khoản</h2>
-          <button onClick={onClose} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
-        </div>
-
-        <div className="p-6 space-y-6 overflow-y-auto">
-          <div className="bg-white border border-neutral-150 rounded-2xl p-6 shadow-sm space-y-6">
-            <h3 className="font-bold text-lg text-neutral-900 flex items-center gap-2">
-              <span className="material-symbols-outlined text-emerald-700">person</span> Hồ sơ cá nhân
-            </h3>
-            <div className="flex flex-col sm:flex-row gap-6 items-start">
-              <div className="relative shrink-0">
-                <div className="w-20 h-20 rounded-full bg-orange-50 border-[4px] border-white shadow-md flex items-center justify-center overflow-hidden">
-                  <img 
-                    src="/avatar-placeholder.png" 
-                    alt="Avatar" 
-                    className="w-full h-full object-cover" 
-                    onError={(e) => {
-                      e.currentTarget.src = `https://ui-avatars.com/api/?name=${user?.fullName || 'Admin'}&background=fef08a&color=713f12&size=100`;
-                    }} 
-                  />
-                </div>
-                <button className="absolute bottom-0 right-0 w-7 h-7 bg-emerald-700 text-white rounded-full flex items-center justify-center shadow-sm border-2 border-white hover:bg-emerald-800 transition-colors">
-                  <span className="material-symbols-outlined text-[14px]">edit</span>
-                </button>
-              </div>
-              <div className="flex-1 space-y-4 w-full">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1.5">Họ và tên</label>
-                  <input 
-                    type="text" 
-                    value={user?.fullName || 'Nguyễn Minh Anh'} 
-                    readOnly 
-                    className="w-full bg-neutral-100 border-none rounded-xl px-4 py-3 text-sm font-medium text-neutral-900 outline-none cursor-default" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1.5">Email</label>
-                  <input 
-                    type="email" 
-                    value={user?.email || 'minhanh.foodresq@gmail.com'} 
-                    readOnly 
-                    className="w-full bg-neutral-100 border-none rounded-xl px-4 py-3 text-sm font-medium text-neutral-900 outline-none cursor-default" 
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-neutral-150 rounded-2xl p-6 shadow-sm space-y-6">
-            <h3 className="font-bold text-lg text-neutral-900 flex items-center gap-2">
-              <span className="material-symbols-outlined text-emerald-700">notifications_active</span> Thông báo
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
-                <div>
-                  <p className="font-bold text-sm text-neutral-900">Thông báo khi có quyên góp mới</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">Nhận thông tin ngay lập tức khi các nhà hàng cập nhật thực phẩm</p>
-                </div>
-                <button onClick={() => setNotifyNew(!notifyNew)} className={`w-11 h-6 rounded-full relative transition-colors ${notifyNew ? 'bg-emerald-700' : 'bg-neutral-200'}`}>
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm ${notifyNew ? 'left-6' : 'left-1'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-sm text-neutral-900">Báo cáo tuần</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">Tổng kết dữ liệu cứu trợ và tác động cộng đồng hàng tuần</p>
-                </div>
-                <button onClick={() => setNotifyWeekly(!notifyWeekly)} className={`w-11 h-6 rounded-full relative transition-colors ${notifyWeekly ? 'bg-emerald-700' : 'bg-neutral-200'}`}>
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm ${notifyWeekly ? 'left-6' : 'left-1'}`} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-4 bg-white border-t border-neutral-150 flex items-center justify-between">
-          <button 
-            onClick={onLogout} 
-            className="flex items-center gap-2 px-5 py-2.5 text-rose-600 hover:bg-rose-50 rounded-xl text-sm font-bold transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">logout</span> Đăng xuất
-          </button>
-          <button 
-            onClick={() => { toast.success('Đã lưu thay đổi'); onClose(); }} 
-            className="flex items-center gap-2 px-6 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-sm font-bold shadow-sm transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">save</span> Lưu thay đổi
-          </button>
-        </div>
+    <div className="flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-screen">
+      {/* Điều hướng đã nằm trên sidebar — không render tab bar ngang ở đây nữa. */}
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'map' && <MapTab />}
+        {tab === 'donations' && <DonationsTab />}
+        {tab === 'campaigns' && <CampaignsAdminTab />}
+        {tab === 'food' && <FoodAdminTab />}
+        {tab === 'reports' && <ReportsTab />}
+        {tab === 'monitor' && <MonitorTab />}
+        {tab === 'users' && <UsersTab />}
+        {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
   );
@@ -775,7 +542,7 @@ function CampaignsAdminTab() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Chiến dịch</h2>
-          <p className="text-sm text-neutral-500 mt-1">Giám sát chiến dịch bếp ăn, gán tình nguyện viên &amp; điều chỉnh trạng thái.</p>
+          <p className="text-sm text-neutral-500 mt-1">Duyệt chiến dịch mới và xử lý các yêu cầu thay đổi. Duyệt/từ chối tình nguyện viên do tổ chức từ thiện phụ trách.</p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
@@ -784,9 +551,6 @@ function CampaignsAdminTab() {
           <span className="material-symbols-outlined text-[20px]">add</span> Tạo chiến dịch
         </button>
       </div>
-
-      {/* Đăng ký tình nguyện viên chờ duyệt */}
-      <PendingAssignmentsPanel />
 
       {/* Yêu cầu thay đổi chờ duyệt */}
       <ChangeRequestsPanel />
@@ -855,19 +619,19 @@ function CampaignsAdminTab() {
                       </td>
                       <td className="px-6 py-4">
                         {c.status === 'draft' ? (
-                          // Yêu cầu chờ duyệt → nút Duyệt (mở) / Từ chối (huỷ) cho rõ
-                          <div className="flex items-center gap-2">
+                          // Yêu cầu chờ duyệt → nút Duyệt (mở) / Từ chối (huỷ) cho rõ, ép cùng kích thước
+                          <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={() => changeStatus(c.id, 'open')}
                               disabled={setCampaignStatus.isPending}
-                              className="px-3 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50"
+                              className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center"
                             >
                               Duyệt
                             </button>
                             <button
                               onClick={() => changeStatus(c.id, 'cancelled')}
                               disabled={setCampaignStatus.isPending}
-                              className="px-3 py-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50"
+                              className="w-[88px] h-8 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center"
                             >
                               Từ chối
                             </button>
@@ -911,96 +675,6 @@ function CampaignsAdminTab() {
 }
 
 // Panel: các yêu cầu thay đổi chiến dịch đang chờ admin duyệt
-function PendingAssignmentsPanel() {
-  const { data, isLoading } = useAdminPendingAssignments();
-  const items = data ?? [];
-  if (isLoading || items.length === 0) return null;
-
-  return (
-    <div className="bg-sky-50 border border-sky-200 rounded-3xl p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-sky-700">how_to_reg</span>
-        <h3 className="font-extrabold text-neutral-900">Đăng ký tình nguyện viên chờ duyệt ({items.length})</h3>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        {items.map((a) => <PendingAssignmentCard key={a.id} a={a} />)}
-      </div>
-    </div>
-  );
-}
-
-function PendingAssignmentCard({ a }: { a: PendingAssignment }) {
-  const review = useReviewAssignment();
-  const [rejecting, setRejecting] = useState(false);
-  const [note, setNote] = useState('');
-  const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
-  // TNV có đúng chuyên môn cho vai trò đăng ký không (cảnh báo cho admin)
-  const matchesSpec = a.volunteer.specializations.includes(a.role);
-
-  async function decide(decision: 'approve' | 'reject') {
-    try {
-      await review.mutateAsync({ id: a.id, decision, note: decision === 'reject' ? note.trim() || undefined : undefined });
-      toast.success(decision === 'approve' ? 'Đã duyệt đăng ký' : 'Đã từ chối đăng ký');
-      setRejecting(false); setNote('');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
-      toast.error(msg);
-    }
-  }
-
-  return (
-    <div className="bg-white border border-neutral-150 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-extrabold shrink-0">
-          {a.volunteer.fullName.charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-bold text-neutral-900 truncate">{a.volunteer.fullName}</p>
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${rm.cls}`}>
-              <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
-            </span>
-          </div>
-          <p className="text-[11px] text-neutral-500 mt-0.5">
-            {a.volunteer.dedicationPoints} điểm cống hiến · Chuyên môn: {a.volunteer.specializations.map((s) => VOL_ROLE_LABEL[s] ?? s).join(', ') || 'chưa có'}
-          </p>
-          {!matchesSpec && (
-            <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px]">warning</span> Chưa đăng ký chuyên môn {rm.label}
-            </p>
-          )}
-          <p className="text-xs text-neutral-600 mt-1.5 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px] text-emerald-600">soup_kitchen</span>
-            <span className="font-semibold truncate">{a.campaign.title}</span>
-          </p>
-          <p className="text-[11px] text-neutral-400 mt-0.5">
-            {new Date(a.campaign.scheduledDate).toLocaleDateString('vi-VN')} · {a.campaign.startTime}–{a.campaign.endTime}
-          </p>
-        </div>
-      </div>
-
-      {rejecting ? (
-        <div className="mt-3 space-y-2">
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lý do từ chối (tuỳ chọn)"
-            className="w-full px-3 py-2 rounded-lg border border-neutral-200 text-sm" autoFocus />
-          <div className="flex gap-2">
-            <button onClick={() => decide('reject')} disabled={review.isPending}
-              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold disabled:opacity-50">Xác nhận từ chối</button>
-            <button onClick={() => setRejecting(false)} className="px-3 py-2 text-neutral-400 text-xs">Huỷ</button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3 flex gap-2">
-          <button onClick={() => decide('approve')} disabled={review.isPending}
-            className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold disabled:opacity-50">Duyệt</button>
-          <button onClick={() => setRejecting(true)} disabled={review.isPending}
-            className="flex-1 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-bold disabled:opacity-50">Từ chối</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ChangeRequestsPanel() {
   const { data, isLoading } = useAdminCampaignChangeRequests('pending');
   const requests = data ?? [];
@@ -2287,9 +1961,9 @@ function UsersTab() {
     }
   }
 
-  async function reviewUserProfile(profileId: string, decision: 'approved' | 'rejected') {
+  async function reviewUserProfile(type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') {
     try {
-      await reviewUser.mutateAsync({ profileId, decision });
+      await reviewUser.mutateAsync({ type, profileId, decision });
       toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
@@ -2397,13 +2071,14 @@ function trustToFive(score: number): number {
   return Math.round((score / 20) * 10) / 10;
 }
 
-function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean; reviewProfile?: (profileId: string, decision: 'approved' | 'rejected') => void }) {
+function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean; reviewProfile?: (type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') => void }) {
   const [menu, setMenu] = useState(false);
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const five = trustToFive(u.trustScore);
   const goodScore = five >= 3;
-  const canApprove = u.role !== 'admin' && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
+  const verificationType = u.role === 'provider' || u.role === 'volunteer' ? u.role : undefined;
+  const canApprove = !!verificationType && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
 
   return (
     <tr className="hover:bg-neutral-50/50 transition-colors">
@@ -2436,7 +2111,7 @@ function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser;
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
           {u.role !== 'admin' && u.status === 'pending_verification' && (
-            <button onClick={() => canApprove ? reviewProfile(u.profileId!, 'approved') : onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
+            <button onClick={() => canApprove ? reviewProfile(verificationType!, u.profileId!, 'approved') : onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
           )}
           {u.role !== 'admin' && u.status === 'banned' && (
             <button onClick={() => onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50">Khôi phục</button>

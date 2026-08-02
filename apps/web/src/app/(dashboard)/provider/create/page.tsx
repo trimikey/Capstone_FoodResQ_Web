@@ -9,6 +9,7 @@ import { useCreateListing, type CreateListingInput } from '@/hooks/useProviderLi
 import { useMe } from '@/hooks/useProfile';
 import { useUploadImage } from '@/hooks/useUploadImage';
 import { DateTimeField, dateTimeDisplay } from '@/components/forms/date-time-field';
+import { SafeImage } from '@/components/shared/SafeImage';
 import {
   buildForm,
   combineToIso,
@@ -457,6 +458,10 @@ export default function ProviderCreateListingPage() {
                 }
               />
             </div>
+            <p className="text-[11px] text-neutral-500 mt-2">
+              * Bắt buộc đủ 3 mốc thời gian (Bắt đầu lấy → Hạn lấy → Hạn sử dụng).
+              Trên màn hẹp, có thể cuộn ngang để thấy &quot;Hạn sử dụng&quot;.
+            </p>
 
             <div className="grid grid-cols-2 gap-4 mt-4">
               <Field label="Bảo quản" hint="VD: Giữ lạnh / Giữ nóng / Đông lạnh">
@@ -538,8 +543,8 @@ export default function ProviderCreateListingPage() {
               {form.imageUrl ? (
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={toProxyUrl(form.imageUrl)}
+                  <SafeImage
+                    src={form.imageUrl}
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />
@@ -605,19 +610,34 @@ export default function ProviderCreateListingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    console.log('Form state:', JSON.stringify(form, null, 2));
-                    console.log('Validations:', validations);
-                    if (step === 1 && validations.step1) setStep(2);
-                    else if (step === 2 && validations.step2) setStep(3);
-                    else {
+                    if (step === 1) {
+                      if (!validations.step1) {
+                        if (form.title.trim().length < 5) {
+                          toast.error('Tiêu đề tối thiểu 5 ký tự.');
+                        } else {
+                          toast.error('Vui lòng chọn danh mục.');
+                        }
+                        return;
+                      }
+                      setStep(2);
+                      return;
+                    }
+                    if (step === 2) {
                       const missing: string[] = [];
-                      if (!form.pickupStartDate) missing.push('Ngày bắt đầu lấy');
-                      if (!form.pickupStartTime) missing.push('Giờ bắt đầu lấy');
+                      if (!form.quantityTotal || Number(form.quantityTotal) <= 0) missing.push('Tổng số lượng');
+                      if (!form.maxPerReservation || Number(form.maxPerReservation) <= 0) missing.push('Tối đa / đơn');
+                      if (!form.pickupStartDate) missing.push('Ngày bắt đầu');
+                      if (!form.pickupStartTime) missing.push('Giờ bắt đầu');
                       if (!form.pickupEndDate) missing.push('Ngày hạn lấy');
                       if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
-                      if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
-                      if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
-                      toast.error(`Thiếu: ${missing.join(', ')}`);
+                      if (!form.expiryDate) missing.push('Ngày hạn SD');
+                      if (!form.expiryTime) missing.push('Giờ hạn SD');
+                      if (missing.length) {
+                        toast.error(`Thiếu: ${missing.join(', ')}.`);
+                        return;
+                      }
+                      setStep(3);
+                      return;
                     }
                   }}
                   className="px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium inline-flex items-center gap-1 transition-colors"
@@ -728,7 +748,7 @@ function PreviewCard({ form }: { form: ListingForm }) {
     <div className="border border-neutral-200 rounded-xl overflow-hidden">
       {form.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={form.imageUrl} alt="" className="w-full aspect-[16/10] object-cover" />
+        <SafeImage src={form.imageUrl} alt="" className="w-full aspect-[16/10] object-cover" />
       ) : (
         <div className="w-full aspect-[16/10] bg-neutral-100 flex items-center justify-center">
           <span className="material-symbols-outlined text-[40px] text-neutral-300">

@@ -3,7 +3,7 @@ import { AppState, View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
 import { useMyProfile } from '@/hooks/useProfile';
@@ -64,7 +64,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * chuyên môn, slot chưa đầy và chưa đăng ký vai trò đó.
  */
 export default function VolunteerCampaignDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, returnTo, returnSegment } = useLocalSearchParams<{
+    id: string;
+    returnTo?: string;
+    returnSegment?: 'open' | 'tasks';
+  }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
   const { data: profile } = useMyProfile(true);
   const { data: myTasks, refetch: refetchTasks } = useMyTasks(true);
@@ -99,9 +103,28 @@ export default function VolunteerCampaignDetailScreen() {
     return () => clearInterval(timer);
   }, [hasPendingApplication, refetchCampaignState]);
 
+  const handleBack = () => {
+    if (returnTo === '/notifications' || returnTo === '/(app)/notifications') {
+      router.dismissTo('/notifications');
+      return;
+    }
+    if (returnTo === '/volunteer/campaigns' || returnTo === '/(app)/volunteer/campaigns') {
+      router.navigate({
+        pathname: '/volunteer/campaigns',
+        params: returnSegment ? { segment: returnSegment } : undefined,
+      });
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.navigate('/volunteer/campaigns');
+  };
+
   const Header = (
     <View style={styles.header}>
-      <BackButton />
+      <BackButton onPress={handleBack} />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
       <NotificationBell />
     </View>

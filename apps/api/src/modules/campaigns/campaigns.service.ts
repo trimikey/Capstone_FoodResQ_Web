@@ -1569,32 +1569,38 @@ export class CampaignsService {
     const orgName = receiver.user.fullName;
     const providerName = provider.providerProfile.businessName ?? provider.fullName;
 
-    // Upsert request record (tránh gửi trùng)
-    const request = await this.prisma.campaignProviderRequest.upsert({
-      where: {
-        campaignId_providerId: {
-          campaignId: dto.campaignId ?? '00000000-0000-0000-0000-000000000000',
-          providerId: provider.providerProfile.id,
-        },
-      },
-      create: {
-        campaignId: dto.campaignId ?? '00000000-0000-0000-0000-000000000000',
-        receiverId: receiver.id,
-        providerId: provider.providerProfile.id,
-        message: dto.message,
-        durationMonths: dto.durationMonths ?? 1,
-        status: 'pending',
-        listingIds: dto.listingIds ? JSON.stringify(dto.listingIds) : null,
-      },
-      update: {
-        status: 'pending',
-        message: dto.message,
-        durationMonths: dto.durationMonths,
-        listingIds: dto.listingIds ? JSON.stringify(dto.listingIds) : null,
-        reviewedAt: null,
-        reviewedNote: null,
-      },
+    // Tìm request đã tồn tại cho (campaignId, providerId) để upsert thủ công.
+    // Tránh dùng prisma.upsert() vì Postgres cần full unique constraint cho ON CONFLICT,
+    // còn DB hiện chỉ có partial unique index (loại trừ zero-UUID) → upsert báo 42P10.
+    const campaignId = dto.campaignId ?? '00000000-0000-0000-0000-000000000000';
+    const existing = await this.prisma.campaignProviderRequest.findFirst({
+      where: { campaignId, providerId: provider.providerProfile.id },
+      select: { id: true },
     });
+
+    const request = existing
+      ? await this.prisma.campaignProviderRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: 'pending',
+            message: dto.message,
+            durationMonths: dto.durationMonths,
+            listingIds: dto.listingIds ? JSON.stringify(dto.listingIds) : null,
+            reviewedAt: null,
+            reviewedNote: null,
+          },
+        })
+      : await this.prisma.campaignProviderRequest.create({
+          data: {
+            campaignId,
+            receiverId: receiver.id,
+            providerId: provider.providerProfile.id,
+            message: dto.message,
+            durationMonths: dto.durationMonths ?? 1,
+            status: 'pending',
+            listingIds: dto.listingIds ? JSON.stringify(dto.listingIds) : null,
+          },
+        });
 
     // Gửi notification cho provider
     await this.notifications.notify(provider.id, {
@@ -1797,10 +1803,12 @@ export class CampaignsService {
       // ignore — dùng default
     }
 
-    // Tạo Delivery (không có reservation — gắn providerRequestId thay thế)
+    // Tạo Delivery (không có reservation — gắn providerRequest thay thế).
+    // schema.prisma: Delivery.providerRequest là relation → phải dùng `connect`,
+    // không truyền FK thẳng `providerRequestId` (Prisma báo Unknown argument).
     const delivery = await this.prisma.delivery.create({
       data: {
-        providerRequestId: requestId,
+        providerRequest: { connect: { id: requestId } },
         status: 'pending_assignment',
         pickupLocation: Prisma.sql`ST_SetSRID(ST_MakePoint(${pickupLng}, ${pickupLat}), 4326)::geography`,
       } as never,

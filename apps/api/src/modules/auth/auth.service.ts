@@ -113,13 +113,11 @@ export class AuthService {
     }
 
     if (dto.role === 'volunteer') {
-      if (!dto.idCardNumber?.trim()) {
-        throw new BadRequestException('Tình nguyện viên cần nhập số CCCD để admin đối soát hồ sơ.');
-      }
+      // Volunteer phải upload ảnh CCCD ở FE (bắt buộc) — dùng cho eKYC:
+      // BE so khớp khuôn mặt giữa ảnh CCCD và selfie.
       if (!idCard) {
         throw new BadRequestException('Tình nguyện viên cần gửi ảnh CCCD để xác minh eKYC.');
       }
-      await this.ocr.assertIdCardMatches(idCard, dto.idCardNumber);
       const idCardDescriptor = await this.faceMatch.getFaceDescriptor(idCard);
       if (!idCardDescriptor) {
         throw new BadRequestException(
@@ -139,18 +137,6 @@ export class AuthService {
       ]);
       if (!dto.volunteerRole) {
         throw new BadRequestException('Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.');
-      }
-      if (dto.volunteerRole === 'shipper') {
-        if (!dto.vehicleType?.trim()) {
-          throw new BadRequestException('Shipper cần nhập loại phương tiện.');
-        }
-        if (!dto.vehiclePlate?.trim()) {
-          throw new BadRequestException('Shipper cần nhập biển số xe.');
-        }
-        if (!vehiclePlateImage) {
-          throw new BadRequestException('Shipper cần gửi ảnh biển số xe để admin đối chiếu.');
-        }
-        await this.ocr.assertVehiclePlateMatches(vehiclePlateImage, dto.vehiclePlate);
       }
       if (vehiclePlateImage) {
         vehiclePlateImageUrl = await this.storage.saveImage(vehiclePlateImage, 'verifications');
@@ -205,10 +191,11 @@ export class AuthService {
         const vp = await tx.volunteerProfile.create({
           data: {
             userId: created.id,
-            idCardNumber: dto.idCardNumber,
+            // Số CCCD không bắt buộc nhập tay — admin đối soát từ ảnh CCCD.
+            idCardNumber: null,
             idCardImageUrl,
-            vehicleType: dto.vehicleType?.trim() ?? null,
-            vehiclePlate: normalizeVehiclePlate(dto.vehiclePlate),
+            vehicleType: null,
+            vehiclePlate: null,
             // eKYC đã xác thực ở trên (bắt buộc với tình nguyện viên)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
@@ -223,9 +210,6 @@ export class AuthService {
               requestType: 'volunteer_chef_cert',
               status: 'pending',
               documents: {
-                idCardNumber: dto.idCardNumber,
-                vehicleType: dto.vehicleType?.trim() ?? null,
-                vehiclePlate: normalizeVehiclePlate(dto.vehiclePlate),
                 vehiclePlateImageUrl,
                 evidenceUrls: [vehiclePlateImageUrl],
               } as never,

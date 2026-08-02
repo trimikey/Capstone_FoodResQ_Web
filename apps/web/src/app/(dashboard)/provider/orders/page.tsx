@@ -11,6 +11,7 @@ import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import { SafeImage } from '@/components/shared/SafeImage';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -555,10 +556,10 @@ function OrderCard({
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 
   return (
-    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all overflow-hidden">
-      <span className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
+    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all">
+      <span className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar} rounded-l-2xl`} />
 
-      <div className="flex flex-col md:flex-row gap-4 p-4 md:p-5 pl-5 md:pl-6">
+      <div className="flex flex-col md:flex-row md:items-center gap-4 p-4 md:p-5 pl-5 md:pl-6">
         {/* Receiver */}
         <div className="flex items-center gap-3 md:w-56 shrink-0">
           <div className="w-12 h-12 rounded-full bg-[#efe8d8] flex items-center justify-center text-[#236c2a] font-bold text-base shrink-0 overflow-hidden">
@@ -579,7 +580,7 @@ function OrderCard({
         <div className="flex-1 min-w-0 flex items-start gap-3">
           <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt={item.listing.title} className="w-full h-full object-cover" />
+            <SafeImage src={image} alt={item.listing.title} className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-800 text-sm truncate">{item.listing.title}</p>
@@ -600,48 +601,49 @@ function OrderCard({
           </div>
         </div>
 
-        {/* Status + actions */}
-        <div className="flex flex-col items-stretch md:items-end gap-2 md:w-44 shrink-0">
-          <span className={`self-start md:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
+        {/* Status + actions — luôn 1 hàng ngang, dù 1, 2 hay 3 nút */}
+        <div className="flex flex-row items-center justify-between md:justify-end gap-2 md:gap-2 md:flex-1 md:min-w-0 md:max-w-full md:pl-4 md:border-l md:border-neutral-100">
+          <span className={`shrink-0 self-start md:self-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
             {meta.label}
           </span>
-          <div className="flex gap-1.5 mt-auto">
-            <button
-              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+          <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
+            <Link
+              href={`/provider/orders/${item.id}`}
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors shrink-0 whitespace-nowrap"
               title="Xem chi tiết"
             >
               <span className="material-symbols-outlined text-[14px]">visibility</span>
-              Chi tiết
-            </button>
+              <span className="hidden xl:inline">Chi tiết</span>
+            </Link>
             {meta.group === 'pending' && (
-              <button className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
+              <button className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors shrink-0 whitespace-nowrap">
                 <span className="material-symbols-outlined text-[14px]">check</span>
-                Duyệt
+                <span className="hidden xl:inline">Duyệt</span>
               </button>
             )}
             {meta.group === 'confirmed' && (
               <Link
                 href="/provider/scan"
-                className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors"
+                className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors shrink-0 whitespace-nowrap"
               >
                 <span className="material-symbols-outlined text-[14px]">qr_code_scanner</span>
-                Quét QR
+                <span className="hidden xl:inline">Quét QR</span>
               </Link>
             )}
             {canProviderCancel && (
               <button
                 onClick={onCancelRequest}
                 title="Huỷ đơn này (không phạt điểm người nhận)"
-                className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
+                className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors shrink-0 whitespace-nowrap"
               >
                 <span className="material-symbols-outlined text-[14px]">block</span>
-                Huỷ đơn
+                <span className="hidden xl:inline">Huỷ đơn</span>
               </button>
             )}
             {meta.group === 'cancelled' && (
-              <button className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
+              <button className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors shrink-0 whitespace-nowrap">
                 <span className="material-symbols-outlined text-[14px]">refresh</span>
-                Đăng lại
+                <span className="hidden xl:inline">Đăng lại</span>
               </button>
             )}
           </div>

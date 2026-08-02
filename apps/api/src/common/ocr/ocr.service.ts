@@ -41,6 +41,24 @@ export class OcrService {
     }
   }
 
+  /**
+   * OCR ảnh CCCD và trích số 12 chữ số.
+   * Trả về null nếu không đọc được (không throw) — phục vụ luồng đăng ký
+   * FE không còn nhập tay số CCCD nữa, BE chỉ lưu nếu OCR trích được.
+   */
+  async extractIdCardNumber(file: Express.Multer.File): Promise<{ idCardNumber: string } | null> {
+    const text = await this.readImageText(file, 'eng', '0123456789');
+    const digitRuns = text.match(/\d[\d\s.-]{8,}\d/g) ?? [];
+    const candidates = digitRuns
+      .map(normalizeDigits)
+      .filter((candidate) => candidate.length >= 9 && candidate.length <= 15);
+    // Ưu tiên dãy đúng 12 chữ số (CCCD Việt Nam)
+    const twelve = candidates.find((c) => c.length === 12);
+    if (twelve) return { idCardNumber: twelve };
+    const ninePlus = candidates.find((c) => c.length >= 9);
+    return ninePlus ? { idCardNumber: ninePlus } : null;
+  }
+
   async assertVehiclePlateMatches(file: Express.Multer.File, expectedVehiclePlate: string) {
     const text = await this.readImageText(file, 'eng', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');
     const expected = normalizePlate(expectedVehiclePlate);

@@ -24,6 +24,7 @@ import {
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
+import { SafeImage } from '@/components/shared/SafeImage';
 import { OfferCountdown } from '@/components/deliveries/OfferPopup';
 
 const QrScanModal = dynamic(() => import('@/components/deliveries/QrScanModal'), { ssr: false });
@@ -343,8 +344,9 @@ export default function DeliveriesPage() {
             <div className="p-6 border-b border-neutral-100 flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={active.reservation.listing.imageUrls[0] ? mediaUrl(active.reservation.listing.imageUrls[0]) : '/food_bread.png'}
+<SafeImage
+                  src={active.reservation.listing.imageUrls[0] || '/banh-mi.png'}
+                  category={active.reservation.listing.category}
                   alt={active.reservation.listing.title}
                   className="w-full h-full object-cover"
                 />
@@ -572,8 +574,9 @@ export default function DeliveriesPage() {
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={o.delivery.reservation.listing.imageUrls[0] ? mediaUrl(o.delivery.reservation.listing.imageUrls[0]) : '/food_bread.png'}
+                      <SafeImage
+                        src={o.delivery.reservation.listing.imageUrls[0] || '/banh-mi.png'}
+                        category={o.delivery.reservation.listing.category}
                         alt={o.delivery.reservation.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -706,7 +709,7 @@ function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
     <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4 flex items-center gap-4">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <SafeImage
           src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] || '/food_bread.png'}
           alt={h.reservation.listing.title}
           className="w-full h-full object-cover"

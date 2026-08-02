@@ -373,8 +373,10 @@ export function useApplyCampaign() {
   return useMutation({
     mutationFn: async (p: { id: string; role: AssignmentRole }) =>
       (await api.post(`/campaigns/${p.id}/apply`, { role: p.role })).data.data,
-    onSuccess: () => {
+    onSuccess: (_data, p) => {
+      // Refetch campaigns list + manage-detail để trang registrations/overview cập nhật ngay.
       void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.id] });
     },
   });
 }
