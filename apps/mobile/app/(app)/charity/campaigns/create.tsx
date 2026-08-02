@@ -41,6 +41,10 @@ import {
   fmtDate,
   getCampaignStepError,
   hasCampaignDraftData,
+  normalizeCampaignMenuItems,
+  normalizeCampaignScheduleItems,
+  normalizeCampaignShifts,
+  normalizeCampaignSupplyItems,
   toInt,
   toTimeStr,
   toDateStr,
@@ -766,6 +770,11 @@ function ReviewStep({
 }) {
   const dateText = `${fmtDate(draft.scheduledDate)}${draft.endDate ? ` - ${fmtDate(draft.endDate)}` : ''}`;
   const timeText = `${toTimeStr(draft.startTime)} - ${toTimeStr(draft.endTime)}`;
+  const shifts = normalizeCampaignShifts(draft.shifts);
+  const menuItems = normalizeCampaignMenuItems(draft.menuItems);
+  const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
+  const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
+  const slotWarnings = getSlotWarnings(draft, shifts);
 
   return (
     <View style={styles.reviewStack}>
@@ -797,8 +806,20 @@ function ReviewStep({
         <ReviewLine label="Giao hàng" value={`${toInt(draft.shipperSlots)} người`} />
       </ReviewGroup>
 
-      <ReviewListGroup title="Ca trực TNV" icon="calendar-account-outline" count={draft.shifts.length} onEdit={() => onEdit(4)}>
-        {draft.shifts.filter((item) => item.label.trim()).map((item, index) => (
+      {slotWarnings.length > 0 ? (
+        <View style={styles.reviewWarning}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={18} color={COLORS.warning} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reviewWarningTitle}>Cần cân nhắc lại phân bổ ca</Text>
+            {slotWarnings.map((warning) => (
+              <Text key={warning} style={styles.reviewWarningText}>{warning}</Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      <ReviewListGroup title="Ca trực TNV" icon="calendar-account-outline" count={shifts.length} onEdit={() => onEdit(4)}>
+        {shifts.map((item, index) => (
           <ReviewBullet
             key={`${item.label}-${index}`}
             title={item.label}
@@ -807,8 +828,8 @@ function ReviewStep({
         ))}
       </ReviewListGroup>
 
-      <ReviewListGroup title="Thực đơn" icon="silverware-fork-knife" count={draft.menuItems.length} onEdit={() => onEdit(5)}>
-        {draft.menuItems.filter((item) => item.name.trim()).map((item, index) => (
+      <ReviewListGroup title="Thực đơn" icon="silverware-fork-knife" count={menuItems.length} onEdit={() => onEdit(5)}>
+        {menuItems.map((item, index) => (
           <ReviewBullet
             key={`${item.name}-${index}`}
             title={item.name}
@@ -817,18 +838,18 @@ function ReviewStep({
         ))}
       </ReviewListGroup>
 
-      <ReviewListGroup title="Lịch trình" icon="timeline-clock-outline" count={draft.scheduleItems.length} onEdit={() => onEdit(6)}>
-        {draft.scheduleItems.filter((item) => item.label.trim()).map((item, index) => (
+      <ReviewListGroup title="Lịch trình" icon="timeline-clock-outline" count={scheduleItems.length} onEdit={() => onEdit(6)}>
+        {scheduleItems.map((item, index) => (
           <ReviewBullet key={`${item.label}-${index}`} title={item.label} meta={item.time} />
         ))}
       </ReviewListGroup>
 
-      <ReviewListGroup title="Vật phẩm cần hỗ trợ" icon="basket-outline" count={draft.supplyItems.length} onEdit={() => onEdit(7)}>
-        {draft.supplyItems.filter((item) => item.name.trim()).map((item, index) => (
+      <ReviewListGroup title="Vật phẩm cần hỗ trợ" icon="basket-outline" count={supplyItems.length} onEdit={() => onEdit(7)}>
+        {supplyItems.map((item, index) => (
           <ReviewBullet
             key={`${item.name}-${index}`}
             title={item.name}
-            meta={item.quantity ? `${item.quantity}${item.unit ? ` ${item.unit}` : ''}` : 'Chưa nhập số lượng'}
+            meta={`${item.quantity} ${item.unit}`}
           />
         ))}
       </ReviewListGroup>
@@ -836,6 +857,39 @@ function ReviewStep({
       <Text style={styles.note}>Sau khi gửi, chiến dịch sẽ ở trạng thái chờ duyệt cho đến khi quản trị viên phê duyệt.</Text>
     </View>
   );
+}
+
+function getSlotWarnings(
+  draft: ReturnType<typeof useCampaignCreateDraftStore.getState>['draft'],
+  shifts: ReturnType<typeof normalizeCampaignShifts>,
+): string[] {
+  if (shifts.length === 0) return [];
+
+  const totals: Record<AssignmentRole, number> = { chef: 0, waiter: 0, shipper: 0 };
+  let sharedSlots = 0;
+  shifts.forEach((shift) => {
+    if (shift.role) {
+      totals[shift.role] += shift.slotsNeeded;
+    } else {
+      sharedSlots += shift.slotsNeeded;
+    }
+  });
+
+  const targets: Record<AssignmentRole, number> = {
+    chef: toInt(draft.chefSlots),
+    waiter: toInt(draft.waiterSlots),
+    shipper: toInt(draft.shipperSlots),
+  };
+  const warnings: string[] = [];
+  (Object.keys(targets) as AssignmentRole[]).forEach((role) => {
+    if (totals[role] !== targets[role]) {
+      warnings.push(`${ROLE_LABEL[role]}: mục tiêu ${targets[role]} người, các ca riêng đang cần ${totals[role]} người.`);
+    }
+  });
+  if (sharedSlots > 0) {
+    warnings.push(`Ca chung chưa gắn vai trò đang cần ${sharedSlots} người, chưa được cộng vào từng vai trò.`);
+  }
+  return warnings;
 }
 
 function WizardProgress({ step }: { step: number }) {
@@ -1534,5 +1588,17 @@ const styles = StyleSheet.create({
   },
   reviewBulletTitle: { fontSize: 14, fontWeight: '800', color: COLORS.onSurface },
   reviewBulletMeta: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  reviewWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+    backgroundColor: COLORS.warningContainer,
+  },
+  reviewWarningTitle: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface, marginBottom: 3 },
+  reviewWarningText: { fontSize: 12, lineHeight: 18, color: COLORS.onSurfaceVariant },
   note: { fontSize: 12, color: COLORS.onSurfaceVariant, textAlign: 'center', marginTop: 4, fontStyle: 'italic' },
 });

@@ -1,5 +1,11 @@
 import type { CreateCampaignInput } from '@/hooks/useCampaigns';
-import type { CampaignCreateDraft } from '@/stores/campaignCreateDraft';
+import type {
+  CampaignCreateDraft,
+  CampaignMenuDraft,
+  CampaignScheduleDraft,
+  CampaignShiftDraft,
+  CampaignSupplyDraft,
+} from '@/stores/campaignCreateDraft';
 
 export const CAMPAIGN_CREATE_STEPS = [
   { title: 'Thông tin cơ bản', icon: 'clipboard-text-outline' },
@@ -42,6 +48,70 @@ export function dateFromTime(value: string): Date {
   return d;
 }
 
+export type NormalizedCampaignMenuItem = {
+  name: string;
+  type: string;
+  plannedServings?: number;
+};
+
+export type NormalizedCampaignScheduleItem = {
+  time: string;
+  label: string;
+};
+
+export type NormalizedCampaignSupplyItem = {
+  name: string;
+  quantity: number;
+  unit: string;
+};
+
+export type NormalizedCampaignShift = {
+  label: string;
+  role?: CampaignShiftDraft['role'];
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+};
+
+export function normalizeCampaignMenuItems(items: CampaignMenuDraft[]): NormalizedCampaignMenuItem[] {
+  return items
+    .filter((item) => item.name.trim())
+    .map((item) => ({
+      name: item.name.trim(),
+      type: item.type.trim(),
+      ...(item.plannedServings != null ? { plannedServings: item.plannedServings } : {}),
+    }));
+}
+
+export function normalizeCampaignScheduleItems(items: CampaignScheduleDraft[]): NormalizedCampaignScheduleItem[] {
+  return items
+    .filter((item) => item.label.trim())
+    .map((item) => ({ time: item.time.trim(), label: item.label.trim() }))
+    .sort((a, b) => a.time.localeCompare(b.time));
+}
+
+export function normalizeCampaignSupplyItems(items: CampaignSupplyDraft[]): NormalizedCampaignSupplyItem[] {
+  return items
+    .filter((item) => item.name.trim())
+    .map((item) => ({
+      name: item.name.trim(),
+      quantity: item.quantity ?? 0,
+      unit: item.unit?.trim() ?? '',
+    }));
+}
+
+export function normalizeCampaignShifts(items: CampaignShiftDraft[]): NormalizedCampaignShift[] {
+  return items
+    .filter((item) => item.label.trim())
+    .map((item) => ({
+      label: item.label.trim(),
+      role: item.role,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      slotsNeeded: item.slotsNeeded,
+    }));
+}
+
 export function getCampaignStepError(step: number, draft: CampaignCreateDraft): string | null {
   const title = draft.title.trim();
   const description = draft.description.trim();
@@ -78,19 +148,23 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
   }
 
   if (step === 4) {
+    const shifts = normalizeCampaignShifts(draft.shifts);
+    if (shifts.length > 10) return 'Tối đa 10 ca trực hợp lệ.';
     const invalidShift = draft.shifts.find(
       (item) =>
         (item.label.trim() && item.label.trim().length < 2) ||
         item.label.trim().length > 100 ||
         (item.label.trim() && (!item.startTime || !item.endTime)) ||
         (item.startTime && item.endTime && item.endTime <= item.startTime) ||
-        item.slotsNeeded < 0 ||
+        (item.label.trim() && item.slotsNeeded < 1) ||
         item.slotsNeeded > 100,
     );
-    if (invalidShift) return 'Kiểm tra tên ca, giờ bắt đầu/kết thúc và số người cần.';
+    if (invalidShift) return 'Kiểm tra tên ca, giờ bắt đầu/kết thúc và số người cần tối thiểu 1.';
   }
 
   if (step === 5) {
+    const menuItems = normalizeCampaignMenuItems(draft.menuItems);
+    if (menuItems.length > 20) return 'Thực đơn tối đa 20 món hợp lệ.';
     const invalidMenu = draft.menuItems.find(
       (item) =>
         item.name.trim().length > 100 ||
@@ -101,6 +175,8 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
   }
 
   if (step === 6) {
+    const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
+    if (scheduleItems.length > 20) return 'Lịch trình tối đa 20 mốc hợp lệ.';
     const invalidSchedule = draft.scheduleItems.find(
       (item) => item.label.trim().length > 160 || (item.label.trim() && !item.time.trim()),
     );
@@ -108,13 +184,16 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
   }
 
   if (step === 7) {
+    const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
+    if (supplyItems.length > 30) return 'Vật phẩm hỗ trợ tối đa 30 mục hợp lệ.';
     const invalidSupply = draft.supplyItems.find(
       (item) =>
         item.name.trim().length > 80 ||
-        (item.quantity != null && item.quantity < 0) ||
+        (item.name.trim() && (item.quantity == null || item.quantity <= 0)) ||
+        (item.name.trim() && !item.unit?.trim()) ||
         (item.unit != null && item.unit.trim().length > 20),
     );
-    if (invalidSupply) return 'Tên vật phẩm tối đa 80 ký tự, số lượng không âm, đơn vị tối đa 20 ký tự.';
+    if (invalidSupply) return 'Vật phẩm có tên phải có số lượng lớn hơn 0 và đơn vị, tên tối đa 80 ký tự, đơn vị tối đa 20 ký tự.';
   }
 
   if (step === CAMPAIGN_REVIEW_STEP) {
@@ -141,6 +220,11 @@ export function hasCampaignDraftData(draft: CampaignCreateDraft): boolean {
 }
 
 export function buildCampaignPayload(draft: CampaignCreateDraft): CreateCampaignInput {
+  const menuItems = normalizeCampaignMenuItems(draft.menuItems);
+  const shifts = normalizeCampaignShifts(draft.shifts);
+  const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
+  const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
+
   return {
     title: draft.title.trim(),
     kitchenAddress: draft.address!.address.trim(),
@@ -156,47 +240,9 @@ export function buildCampaignPayload(draft: CampaignCreateDraft): CreateCampaign
     expectedServings: toInt(draft.expectedServings),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
     ...(draft.imageUrl ? { imageUrls: [draft.imageUrl] } : {}),
-    ...(draft.menuItems.some((item) => item.name.trim())
-      ? {
-          menuItems: draft.menuItems
-            .filter((item) => item.name.trim())
-            .map((item) => ({
-              name: item.name.trim(),
-              type: item.type.trim(),
-              ...(item.plannedServings != null ? { plannedServings: item.plannedServings } : {}),
-            })),
-        }
-      : {}),
-    ...(draft.shifts.some((item) => item.label.trim())
-      ? {
-          shifts: draft.shifts
-            .filter((item) => item.label.trim())
-            .map((item) => ({
-              label: item.label.trim(),
-              role: item.role,
-              startTime: item.startTime,
-              endTime: item.endTime,
-              slotsNeeded: item.slotsNeeded,
-            })),
-        }
-      : {}),
-    ...(draft.scheduleItems.some((item) => item.label.trim())
-      ? {
-          scheduleItems: draft.scheduleItems
-            .filter((item) => item.label.trim())
-            .map((item) => ({ time: item.time.trim(), label: item.label.trim() })),
-        }
-      : {}),
-    ...(draft.supplyItems.some((item) => item.name.trim())
-      ? {
-          supplyItems: draft.supplyItems
-            .filter((item) => item.name.trim())
-            .map((item) => ({
-              name: item.name.trim(),
-              ...(item.quantity != null ? { quantity: item.quantity } : {}),
-              ...(item.unit?.trim() ? { unit: item.unit.trim() } : {}),
-            })),
-        }
-      : {}),
+    ...(menuItems.length ? { menuItems } : {}),
+    ...(shifts.length ? { shifts } : {}),
+    ...(scheduleItems.length ? { scheduleItems } : {}),
+    ...(supplyItems.length ? { supplyItems } : {}),
   };
 }
