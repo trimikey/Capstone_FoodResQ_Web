@@ -8,6 +8,7 @@ import { useMe } from '@/hooks/useProfile';
 import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { ReportReason, ReportTargetType } from '@foodresq/types';
+import { SafeImage } from '@/components/shared/SafeImage';
 
 // Shape trả về từ GET /reservations/my (đã mở rộng ở BE)
 interface ResHistory {
@@ -297,8 +298,9 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 ring-1 ring-neutral-150">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={t.listing.imageUrls[0] ? mediaUrl(t.listing.imageUrls[0]) : fallbackImage(t.listing.category)}
+                      <SafeImage
+                        src={t.listing.imageUrls[0] || fallbackImage(t.listing.category)}
+                        category={t.listing.category}
                         alt={t.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -507,8 +509,10 @@ export default function HistoryPage() {
             <div className="p-6 space-y-6">
               <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
                 <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
-                  <img
-                    src={viewingItem.listing.imageUrls[0] ? mediaUrl(viewingItem.listing.imageUrls[0]) : fallbackImage(viewingItem.listing.category)}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <SafeImage
+                    src={viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category)}
+                    category={viewingItem.listing.category}
                     alt={viewingItem.listing.title}
                     className="w-full h-full object-cover"
                   />

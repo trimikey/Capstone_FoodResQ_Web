@@ -198,6 +198,49 @@ body {
   animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* QR scan-line animation — quét dọc qua QR liên tục */
+@keyframes qrScan {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+
+.qr-scan {
+  animation: qrScan 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    110deg,
+    #f5f5f4 8%,
+    #fafaf9 18%,
+    #f5f5f4 33%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
 /* ============================================================= */
 /* Shared design language — reusable across every page           */
 /* ============================================================= */

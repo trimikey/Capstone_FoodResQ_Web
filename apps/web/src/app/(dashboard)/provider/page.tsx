@@ -9,6 +9,7 @@ import {
   usePublishListing,
   useCancelListing,
   useDuplicateListing,
+  useDeleteListing,
   useProviderStats,
   type ProviderListing,
 } from '@/hooks/useProviderListings';
@@ -20,6 +21,7 @@ import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
 import ProviderRequestsSection from '@/components/campaigns/ProviderRequestsSection';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import { SafeImage } from '@/components/shared/SafeImage';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
@@ -41,6 +43,7 @@ export default function ProviderDashboardPage() {
   const publishListing = usePublishListing();
   const cancelListing = useCancelListing();
   const duplicateListing = useDuplicateListing();
+  const deleteListing = useDeleteListing();
 
   const providerProfile = me?.provider ?? null;
   const providerVerified = providerProfile?.verificationStatus === 'approved';
@@ -51,13 +54,17 @@ export default function ProviderDashboardPage() {
 
   const listings = (data?.items ?? []) as ProviderListing[];
   const filteredListings = listings.filter((l) => {
+    const isPastPickup = new Date(l.pickupEndTime).getTime() < Date.now();
     const matchesStatus =
       statusFilter === 'all' ||
       (statusFilter === 'open'
-        ? l.status === 'active' || l.status === 'fully_reserved'
+        ? (l.status === 'active' || l.status === 'fully_reserved') && !isPastPickup
         : statusFilter === 'draft'
         ? l.status === 'draft'
-        : ['completed', 'expired', 'cancelled'].includes(l.status));
+        : statusFilter === 'closed'
+        ? ['completed', 'expired', 'cancelled'].includes(l.status) ||
+          (l.status === 'active' && isPastPickup)
+        : true);
     return matchesStatus;
   });
 
@@ -78,6 +85,21 @@ export default function ProviderDashboardPage() {
   async function handleDuplicate(id: string) {
     try { await duplicateListing.mutateAsync(id); toast.success('Đã tạo bản nháp mới'); }
     catch { toast.error('Nhân bản thất bại'); }
+  }
+
+  async function handleDelete(listing: ProviderListing) {
+    if (!window.confirm(`Xoá vĩnh viễn tin nháp "${listing.title}"?\nHành động này không thể hoàn tác.`)) {
+      return;
+    }
+    try {
+      await deleteListing.mutateAsync(listing.id);
+      toast.success('Đã xoá tin nháp');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ??
+        'Xoá thất bại';
+      toast.error(msg);
+    }
   }
 
   return (
@@ -275,6 +297,7 @@ export default function ProviderDashboardPage() {
                       onPublish={() => handlePublish(listing.id)}
                       onCancel={() => handleCancel(listing.id)}
                       onDuplicate={() => handleDuplicate(listing.id)}
+                      onDelete={() => handleDelete(listing)}
                       onExtend={(mode) => setExtendTarget({ listing, mode })}
                       onOpen={() => router.push(`/listings/${listing.id}`)}
                     />
@@ -392,6 +415,7 @@ function PostingItem({
   onPublish,
   onCancel,
   onDuplicate,
+  onDelete,
   onExtend,
   onOpen,
 }: {
@@ -399,6 +423,7 @@ function PostingItem({
   onPublish: () => void;
   onCancel: () => void;
   onDuplicate: () => void;
+  onDelete: () => void;
   onExtend: (mode: 'extend_time' | 'add_quantity' | 'both') => void;
   onOpen: () => void;
 }) {
@@ -426,7 +451,12 @@ function PostingItem({
       <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 flex items-center justify-center overflow-hidden">
         {listing.imageUrls[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(listing.imageUrls[0])} alt={listing.title} className="w-full h-full object-cover" />
+          <SafeImage
+            src={listing.imageUrls[0]}
+            category={listing.category}
+            alt={listing.title}
+            className="w-full h-full object-cover"
+          />
         ) : (
           <span className="material-symbols-outlined text-[24px] text-neutral-300">bakery_dining</span>
         )}
@@ -494,13 +524,22 @@ function PostingItem({
         onKeyDown={(e) => e.stopPropagation()}
       >
         {listing.status === 'draft' ? (
-          <button
-            onClick={onPublish}
-            className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
-            title="Đăng"
-          >
-            <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
-          </button>
+          <>
+            <button
+              onClick={onPublish}
+              className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
+              title="Đăng"
+            >
+              <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+              title="Xoá vĩnh viễn bản nháp"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+            </button>
+          </>
         ) : ['completed', 'expired', 'cancelled'].includes(listing.status) ? (
           <button
             onClick={onDuplicate}
