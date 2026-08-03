@@ -116,12 +116,12 @@ export class KitchenOpsService {
     });
   }
 
-  /** TNV ứng tuyển vào một ca cụ thể. Bị giới hạn 1 assignment / vai trò / chiến dịch (unique). */
+  /** TNV ứng tuyển vào một ca cụ thể. Tổ chức duyệt sau mới tính slot chính thức. */
   async applyToShift(campaignId: string, shiftId: string, userId: string, dto: ApplyShiftDto) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId },
       include: {
-        specializations: { select: { specialization: true } },
+        specializations: { select: { specialization: true, isVerified: true } },
         user: { select: { status: true } },
       },
     });
@@ -155,8 +155,8 @@ export class KitchenOpsService {
     if (!role) throw new BadRequestException('Ca này là ca chung, vui lòng chọn vai trò bạn muốn đăng ký.');
 
     const roleVN = ROLE_VN[role] ?? role;
-    if (!volunteer.specializations.some((s) => s.specialization === role)) {
-      throw new BadRequestException(`Bạn chưa đăng ký chuyên môn "${roleVN}".`);
+    if (!volunteer.specializations.some((s) => s.specialization === role && s.isVerified)) {
+      throw new BadRequestException(`Chuyên môn "${roleVN}" của bạn chưa được xác minh.`);
     }
     if (shift.slotsFilled >= shift.slotsNeeded) {
       throw new BadRequestException(`Ca "${shift.label}" đã đủ người.`);
@@ -166,26 +166,16 @@ export class KitchenOpsService {
       throw new BadRequestException(`Đã đủ ${roleVN} cho chiến dịch này.`);
     }
 
-    const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
-      where: { campaignId_volunteerId_role: { campaignId, volunteerId: volunteer.id, role } },
+    const existing = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: { campaignId, volunteerId: volunteer.id, shiftId, role },
     });
-    if (existing) throw new ConflictException('Bạn đã đăng ký vai trò này trong chiến dịch rồi.');
+    if (existing) throw new ConflictException('Bạn đã đăng ký vai trò này trong ca này rồi.');
 
-    await this.prisma.$transaction([
-      this.prisma.campaignVolunteerAssignment.create({
-        data: { campaignId, volunteerId: volunteer.id, shiftId, role, status: 'assigned' },
-      }),
-      this.prisma.campaignShift.update({
-        where: { id: shiftId },
-        data: { slotsFilled: { increment: 1 } },
-      }),
-      this.prisma.kitchenCampaign.update({
-        where: { id: campaignId },
-        data: { [slot.filled]: { increment: 1 } },
-      }),
-    ]);
+    await this.prisma.campaignVolunteerAssignment.create({
+      data: { campaignId, volunteerId: volunteer.id, shiftId, role, status: 'pending' },
+    });
 
-    return { message: `Đăng ký ca "${shift.label}" (${roleVN}) thành công.` };
+    return { message: `Đã gửi đăng ký ca "${shift.label}" (${roleVN}). Vui lòng chờ tổ chức duyệt.` };
   }
 
   // ── Thực đơn liên kết công thức ──────────────────────────────────────────────

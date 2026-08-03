@@ -216,7 +216,7 @@ export function ManageShell({
 
   const heroImage = c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : null;
   const statusMeta = STATUS_META[c.status];
-  const pendingCount = c.participants?.length ?? 0;
+  const pendingCount = c.participants?.filter((p) => !p.status || p.status === 'pending' || p.status === 'applied').length ?? 0;
   const distCount = c.distributions?.length ?? 0;
 
   function hrefFor(key: NavKey): string {

@@ -53,6 +53,12 @@ function specializationLabel(s: string): string {
   }
 }
 
+function primarySpecializationLabel(specs: { specialization: string; isVerified: boolean }[]): string {
+  const verified = specs.filter((s) => s.isVerified).map((s) => s.specialization);
+  const preferred = ['chef', 'waiter', 'shipper'].find((role) => verified.includes(role));
+  return preferred ? specializationLabel(preferred) : 'Chờ duyệt';
+}
+
 function formatDecimal(value: unknown): string | null {
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(1) : null;
@@ -60,8 +66,7 @@ function formatDecimal(value: unknown): string | null {
 
 /**
  * Hồ sơ Tình nguyện viên (tab "Hồ sơ") — hạng, điểm cống hiến, đánh giá,
- * chuyên môn, phương tiện + công tắc "Sẵn sàng nhận đơn" (kèm vị trí từ
- * expo-location). Lối tắt sang Lịch sử giao hàng + đăng xuất.
+ * chuyên môn và các lối tắt đúng theo chuyên môn đã xác minh.
  */
 export default function VolunteerProfileScreen() {
   const { user, logout, isLoading: authLoading } = useAuth();
@@ -158,6 +163,21 @@ export default function VolunteerProfileScreen() {
   const faceBusy = enrollFace.isPending;
   const faceEnrolled = faceEnrollment.data?.enrolled === true;
   const avgRatingLabel = formatDecimal(vol?.avgRating);
+  const verifiedSpecs = vol?.specializations.filter((s) => s.isVerified).map((s) => s.specialization) ?? [];
+  const hasChef = verifiedSpecs.includes('chef');
+  const hasWaiter = verifiedSpecs.includes('waiter');
+  const hasShipper = verifiedSpecs.includes('shipper');
+  const hasKitchenRole = hasChef || hasWaiter || hasShipper;
+  const primaryRoleLabel = vol ? primarySpecializationLabel(vol.specializations) : 'Chuyên môn';
+  const headerStatus = hasShipper
+    ? vol?.isAvailable
+      ? 'Đang online nhận đơn giao hàng'
+      : 'Đang tắt nhận đơn giao hàng'
+    : hasChef
+      ? 'Sẵn sàng tham gia ca bếp'
+      : hasWaiter
+        ? 'Sẵn sàng tham gia ca phục vụ'
+        : 'Hồ sơ tình nguyện viên';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -180,9 +200,7 @@ export default function VolunteerProfileScreen() {
             <Text variant="titleLarge" style={styles.name}>
               {name}
             </Text>
-            <Text style={styles.headerSub}>
-              {vol?.isAvailable ? 'Đang online nhận đơn' : 'Đang nghỉ, chưa nhận đơn mới'}
-            </Text>
+            <Text style={styles.headerSub}>{headerStatus}</Text>
             {vol ? (
               <View style={styles.badgeRow}>
                 <View style={[styles.badge, { backgroundColor: COLORS.tealContainer }]}>
@@ -220,101 +238,100 @@ export default function VolunteerProfileScreen() {
               </View>
               <View style={styles.quickDivider} />
               <View style={styles.quickStat}>
-                <Text style={styles.quickStatValue}>{vol.isShipper ? 'OK' : 'Chờ'}</Text>
-                <Text style={styles.quickStatLabel}>shipper</Text>
+                <Text style={styles.quickStatValue} numberOfLines={1} adjustsFontSizeToFit>
+                  {verifiedSpecs.length > 1 ? verifiedSpecs.length : primaryRoleLabel}
+                </Text>
+                <Text style={styles.quickStatLabel}>
+                  {verifiedSpecs.length > 1 ? 'chuyên môn' : 'vai trò'}
+                </Text>
               </View>
             </View>
 
             {/* Công tắc sẵn sàng nhận đơn */}
-            <View style={styles.card}>
-              <View style={styles.availRow}>
-                <MaterialCommunityIcons
-                  name={vol.isAvailable ? 'motorbike' : 'sleep'}
-                  size={24}
-                  color={vol.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.availTitle}>Sẵn sàng nhận đơn</Text>
-                  <Text style={styles.availSub}>
-                    {vol.isAvailable
-                      ? 'Đang bật - nhận lời mời giao hàng gần bạn'
-                      : 'Đang tắt - không nhận lời mời mới'}
-                  </Text>
-                </View>
-                {busy ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : (
-                  <Switch
-                    value={vol.isAvailable}
-                    onValueChange={handleToggle}
-                    color={COLORS.blue}
+            {hasShipper ? (
+              <View style={styles.card}>
+                <View style={styles.availRow}>
+                  <MaterialCommunityIcons
+                    name={vol.isAvailable ? 'motorbike' : 'sleep'}
+                    size={24}
+                    color={vol.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
                   />
-                )}
-              </View>
-              {!vol.isShipper ? (
-                <View style={styles.warnBox}>
-                  <MaterialCommunityIcons name="alert" size={18} color={COLORS.warning} />
-                  <Text style={styles.warnText}>
-                    Chuyên môn &quot;Giao hàng&quot; của bạn chưa được xác minh. Bạn có thể chưa nhận được
-                    lời mời cho đến khi quản trị viên duyệt.
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.availTitle}>Sẵn sàng nhận đơn</Text>
+                    <Text style={styles.availSub}>
+                      {vol.isAvailable
+                        ? 'Đang bật - nhận lời mời giao hàng gần bạn'
+                        : 'Đang tắt - không nhận lời mời mới'}
+                    </Text>
+                  </View>
+                  {busy ? (
+                    <ActivityIndicator color={COLORS.primary} />
+                  ) : (
+                    <Switch
+                      value={vol.isAvailable}
+                      onValueChange={handleToggle}
+                      color={COLORS.blue}
+                    />
+                  )}
                 </View>
-              ) : null}
-            </View>
+              </View>
+            ) : null}
 
             {/* Xác minh khuôn mặt */}
-            <View style={styles.card}>
-              <View style={styles.faceHead}>
-                <View style={styles.faceIcon}>
-                  <MaterialCommunityIcons
-                    name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
-                    size={22}
-                    color={COLORS.purple}
-                  />
+            {hasShipper ? (
+              <View style={styles.card}>
+                <View style={styles.faceHead}>
+                  <View style={styles.faceIcon}>
+                    <MaterialCommunityIcons
+                      name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
+                      size={22}
+                      color={COLORS.purple}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
+                    <Text style={styles.faceStatus}>
+                      {faceEnrollment.isLoading
+                        ? 'Đang kiểm tra trạng thái...'
+                        : faceBusy
+                          ? 'Đang cập nhật selfie...'
+                          : faceEnrolled
+                            ? 'Đã đăng ký khuôn mặt'
+                            : 'Chưa đăng ký'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
-                  <Text style={styles.faceStatus}>
-                    {faceEnrollment.isLoading
-                      ? 'Đang kiểm tra trạng thái...'
-                      : faceBusy
-                        ? 'Đang cập nhật selfie...'
-                        : faceEnrolled
-                          ? 'Đã đăng ký khuôn mặt'
-                          : 'Chưa đăng ký'}
-                  </Text>
-                </View>
+                <Text style={styles.faceHint}>
+                  {faceEnrolled
+                    ? 'Bạn đã đủ điều kiện xác minh khi giao nhận.'
+                    : 'Bắt buộc để bật sẵn sàng nhận đơn và xác minh khi giao nhận.'}
+                </Text>
+                {!faceEnrolled ? (
+                  <View style={styles.faceActions}>
+                    <Button
+                      mode="contained"
+                      icon="camera"
+                      buttonColor={COLORS.primary}
+                      loading={faceBusy}
+                      disabled={faceBusy}
+                      onPress={() => handleEnrollFace('camera')}
+                      style={styles.faceButton}
+                    >
+                      {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
+                    </Button>
+                    <Button
+                      mode="text"
+                      icon="image-outline"
+                      textColor={COLORS.onSurfaceVariant}
+                      disabled={faceBusy}
+                      onPress={() => handleEnrollFace('library')}
+                    >
+                      Chọn ảnh
+                    </Button>
+                  </View>
+                ) : null}
               </View>
-              <Text style={styles.faceHint}>
-                {faceEnrolled
-                  ? 'Bạn đã đủ điều kiện xác minh khi giao nhận.'
-                  : 'Bắt buộc để bật sẵn sàng nhận đơn và xác minh khi giao nhận.'}
-              </Text>
-              {!faceEnrolled ? (
-                <View style={styles.faceActions}>
-                  <Button
-                    mode="contained"
-                    icon="camera"
-                    buttonColor={COLORS.primary}
-                    loading={faceBusy}
-                    disabled={faceBusy}
-                    onPress={() => handleEnrollFace('camera')}
-                    style={styles.faceButton}
-                  >
-                    {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
-                  </Button>
-                  <Button
-                    mode="text"
-                    icon="image-outline"
-                    textColor={COLORS.onSurfaceVariant}
-                    disabled={faceBusy}
-                    onPress={() => handleEnrollFace('library')}
-                  >
-                    Chọn ảnh
-                  </Button>
-                </View>
-              ) : null}
-            </View>
+            ) : null}
 
             {/* Điểm cống hiến */}
             <View style={styles.card}>
@@ -347,34 +364,52 @@ export default function VolunteerProfileScreen() {
             ) : null}
 
             {/* Phương tiện */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Phương tiện</Text>
-              <Divider style={{ marginVertical: 8 }} />
-              <Row label="Loại xe" value={vehicleLabel(vol.vehicleType)} />
-              <Row label="Biển số" value={vol.vehiclePlate ?? 'Chưa cập nhật'} />
-            </View>
+            {hasShipper ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Phương tiện</Text>
+                <Divider style={{ marginVertical: 8 }} />
+                <Row label="Loại xe" value={vehicleLabel(vol.vehicleType)} />
+                <Row label="Biển số" value={vol.vehiclePlate ?? 'Chưa cập nhật'} />
+              </View>
+            ) : null}
           </>
         ) : null}
 
         {/* Hành động */}
-        <Button
-          mode="contained"
-          icon="history"
-          onPress={() => router.push('/(app)/volunteer/history')}
-          style={styles.actionBtn}
-          buttonColor={COLORS.primary}
-        >
-          Lịch sử giao hàng
-        </Button>
-        <Button
-          mode="outlined"
-          icon="chef-hat"
-          onPress={() => router.push('/(app)/recipes')}
-          style={styles.recipesBtn}
-          textColor={COLORS.primary}
-        >
-          Công thức nấu ăn
-        </Button>
+        {hasKitchenRole ? (
+          <Button
+            mode={hasShipper ? 'outlined' : 'contained'}
+            icon="charity"
+            onPress={() => router.push('/(app)/volunteer/campaigns')}
+            style={styles.actionBtn}
+            buttonColor={hasShipper ? undefined : COLORS.primary}
+            textColor={hasShipper ? COLORS.primary : undefined}
+          >
+            Chiến dịch bếp ăn
+          </Button>
+        ) : null}
+        {hasShipper ? (
+          <Button
+            mode="contained"
+            icon="history"
+            onPress={() => router.push('/(app)/volunteer/history')}
+            style={styles.actionBtn}
+            buttonColor={COLORS.primary}
+          >
+            Lịch sử giao hàng
+          </Button>
+        ) : null}
+        {hasChef ? (
+          <Button
+            mode="outlined"
+            icon="chef-hat"
+            onPress={() => router.push('/(app)/recipes')}
+            style={styles.recipesBtn}
+            textColor={COLORS.primary}
+          >
+            Công thức nấu ăn
+          </Button>
+        ) : null}
         <Button
           mode="outlined"
           icon="logout"

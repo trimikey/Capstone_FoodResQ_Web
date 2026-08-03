@@ -114,7 +114,9 @@ export function useShifts(campaignId?: string) {
   return useQuery({
     queryKey: ['kitchen', 'shifts', campaignId],
     enabled: !!campaignId,
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignShift[]>>(endpoints.kitchen.shifts(campaignId!));
       return res.data.data;

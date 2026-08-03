@@ -18,6 +18,7 @@ export interface CampaignAssignment {
   id: string;
   role: AssignmentRole;
   status: string;
+  shiftId?: string | null;
   volunteer: { user: { fullName: string; avatarUrl?: string | null } };
 }
 
@@ -343,6 +344,9 @@ export function useCampaignDetail(id?: string) {
   return useQuery({
     queryKey: ['campaign', id],
     enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign>>(endpoints.campaigns.detail(id!));
       return res.data.data;
@@ -559,8 +563,17 @@ export function useConfirmDonation() {
     },
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+      void queryClient.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns', 'mine'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
     },
   });
 }
@@ -639,6 +652,7 @@ export interface CampaignTask {
   id: string;
   role: AssignmentRole;
   status: string;
+  shiftId?: string | null;
   checkInTime?: string | null;
   campaign: {
     id: string;
@@ -676,7 +690,9 @@ export function useMyTasks(enabled: boolean = true) {
   return useQuery({
     queryKey: ['campaign-tasks'],
     enabled,
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
       return res.data.data;

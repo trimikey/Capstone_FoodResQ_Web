@@ -146,6 +146,22 @@ function assignmentReviewLabel(status: string): string {
   }
 }
 
+function assignmentReviewTone(status: string): { color: string; bg: string } {
+  switch (status) {
+    case 'assigned':
+    case 'approved':
+    case 'completed':
+      return { color: COLORS.primary, bg: COLORS.primaryContainer };
+    case 'rejected':
+    case 'absent':
+      return { color: COLORS.error, bg: COLORS.errorContainer };
+    case 'pending':
+      return { color: '#b45309', bg: '#fef3c7' };
+    default:
+      return { color: COLORS.onSurfaceVariant, bg: COLORS.surfaceContainerLow };
+  }
+}
+
 /**
  * Quản lý chiến dịch bếp ăn (Charity-org) — xem chi tiết + bắt đầu/kết thúc
  * chiến dịch, xác nhận nguyên liệu quyên góp, xem danh sách TNV đã ứng tuyển.
@@ -477,39 +493,77 @@ export default function CharityCampaignDetailScreen() {
           {assignments.length === 0 ? (
             <Text style={styles.muted}>Chưa có tình nguyện viên nào ứng tuyển.</Text>
           ) : (
-            assignments.map((a) => (
-              <View key={a.id} style={styles.assignRow}>
-                <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.assignName}>{a.volunteer.user.fullName}</Text>
-                <View style={styles.rolePill}>
-                  <Text style={styles.rolePillText}>{ASSIGNMENT_ROLE_LABEL[a.role] ?? a.role}</Text>
-                </View>
-                {a.status === 'pending' ? (
-                  <View style={styles.reviewActions}>
-                    <Button
-                      mode="text"
-                      compact
-                      textColor={COLORS.error}
-                      disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a, 'rejected')}
-                    >
-                      Từ chối
-                    </Button>
-                    <Button
-                      mode="contained-tonal"
-                      compact
-                      textColor={COLORS.primary}
-                      disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a, 'approved')}
-                    >
-                      Duyệt
-                    </Button>
+            assignments.map((a) => {
+              const shift = a.shiftId ? shifts.find((s) => s.id === a.shiftId) : null;
+              const statusTone = assignmentReviewTone(a.status);
+              const roleLabel = ASSIGNMENT_ROLE_LABEL[a.role] ?? a.role;
+              const isPending = a.status === 'pending';
+
+              return (
+                <View key={a.id} style={styles.assignCard}>
+                  <View style={styles.assignHeader}>
+                    <View style={styles.assignAvatar}>
+                      <Text style={styles.assignAvatarText}>{a.volunteer.user.fullName.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.assignTitleBlock}>
+                      <Text style={styles.assignName} numberOfLines={1}>{a.volunteer.user.fullName}</Text>
+                      <Text style={styles.assignSubMeta}>Tình nguyện viên đăng ký chiến dịch</Text>
+                    </View>
+                    <View style={[styles.assignmentStatusPill, { backgroundColor: statusTone.bg }]}>
+                      <Text style={[styles.assignmentStatusText, { color: statusTone.color }]}>
+                        {assignmentReviewLabel(a.status)}
+                      </Text>
+                    </View>
                   </View>
-                ) : (
-                  <Text style={styles.assignmentStatus}>{assignmentReviewLabel(a.status)}</Text>
-                )}
-              </View>
-            ))
+
+                  <View style={styles.assignInfoGrid}>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Vai trò</Text>
+                      <Text style={styles.assignInfoValue}>{roleLabel}</Text>
+                    </View>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Ca đăng ký</Text>
+                      <Text style={styles.assignInfoValue}>
+                        {shift ? `${shift.label} · ${shift.startTime}-${shift.endTime}` : 'Đăng ký vai trò tổng'}
+                      </Text>
+                    </View>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Slot ca</Text>
+                      <Text style={styles.assignInfoValue}>
+                        {shift ? `${shift.slotsFilled}/${shift.slotsNeeded}` : 'Theo nhu cầu tổng'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {isPending ? (
+                    <View style={styles.reviewActions}>
+                      <Button
+                        mode="outlined"
+                        compact
+                        icon="close"
+                        textColor={COLORS.error}
+                        style={styles.reviewRejectButton}
+                        disabled={reviewAssignmentMut.isPending}
+                        onPress={() => handleReviewAssignment(a, 'rejected')}
+                      >
+                        Từ chối
+                      </Button>
+                      <Button
+                        mode="contained"
+                        compact
+                        icon="check"
+                        buttonColor={COLORS.primary}
+                        style={styles.reviewApproveButton}
+                        disabled={reviewAssignmentMut.isPending}
+                        onPress={() => handleReviewAssignment(a, 'approved')}
+                      >
+                        Duyệt
+                      </Button>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })
           )}
         </Section>
 
@@ -1243,11 +1297,48 @@ const styles = StyleSheet.create({
   slotLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   slotLabel: { fontSize: 14, color: COLORS.onSurface },
   slotCount: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant },
-  assignRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
-  assignName: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  assignCard: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  assignHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  assignAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assignAvatarText: { color: COLORS.onPrimary, fontWeight: '800', fontSize: 16 },
+  assignTitleBlock: { flex: 1, minWidth: 0 },
+  assignName: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  assignSubMeta: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 1 },
+  assignInfoGrid: { gap: 8 },
+  assignInfoCell: {
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  assignInfoLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  assignInfoValue: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface, lineHeight: 18 },
   rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
-  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-end' },
+  reviewRejectButton: { flex: 1, borderColor: COLORS.error },
+  reviewApproveButton: { flex: 1 },
   reviewShiftOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1263,7 +1354,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: COLORS.primaryContainer,
   },
-  assignmentStatus: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
+  assignmentStatusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  assignmentStatusText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   shiftRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.outline },

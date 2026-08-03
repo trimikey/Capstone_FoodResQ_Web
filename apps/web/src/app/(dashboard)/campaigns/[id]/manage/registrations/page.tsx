@@ -62,10 +62,11 @@ export default function RegistrationsPage() {
       : 'plan';
 
   const volunteers: CampaignParticipant[] = c.participants ?? [];
-  const filteredVolunteers: CampaignParticipant[] =
-    filter === 'all' || filter === 'pending'
-      ? volunteers
-      : volunteers.filter((v) => v.role === filter);
+  const filteredVolunteers: CampaignParticipant[] = (() => {
+    if (filter === 'all') return volunteers;
+    if (filter === 'pending') return volunteers.filter((v) => !v.status || v.status === 'pending' || v.status === 'applied');
+    return volunteers.filter((v) => v.role === filter);
+  })();
 
   const pendingCount = volunteers.filter(
     (v) => !v.status || v.status === 'pending' || v.status === 'applied',
@@ -147,7 +148,10 @@ export default function RegistrationsPage() {
       submitDecision(id, name, action);
       return;
     }
-    const firstAvailable = shifts.find((s) => (!s.role || s.role === target.role) && s.slotsFilled < s.slotsNeeded);
+    const selectedShift = target.shiftId
+      ? shifts.find((s) => s.id === target.shiftId && (!s.role || s.role === target.role) && s.slotsFilled < s.slotsNeeded)
+      : null;
+    const firstAvailable = selectedShift ?? shifts.find((s) => (!s.role || s.role === target.role) && s.slotsFilled < s.slotsNeeded);
     if (!firstAvailable) {
       toast.error('Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.');
       return;
@@ -290,6 +294,7 @@ export default function RegistrationsPage() {
                 <RegistrationRow
                   key={p.id}
                   p={p}
+                  shifts={shifts}
                   decision={decisions[p.id]}
                   pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
@@ -452,6 +457,17 @@ export default function RegistrationsPage() {
             <p className="mt-1 text-xs text-neutral-500">
               {reviewTarget.fullName} - {roleLabel(reviewTarget.role)}
             </p>
+            {reviewTarget.shiftId ? (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
+                <span className="material-symbols-outlined text-[14px]">event_available</span>
+                Ca TNV đã chọn
+              </p>
+            ) : (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
+                <span className="material-symbols-outlined text-[14px]">assignment</span>
+                Đăng ký vai trò tổng - cần phân ca
+              </p>
+            )}
           </div>
           <div className="space-y-2 px-5 py-4">
             {eligibleShifts.map((s) => (
@@ -470,13 +486,25 @@ export default function RegistrationsPage() {
                   className="h-4 w-4 accent-emerald-700"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-neutral-900">{s.label}</span>
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-900">
+                    {s.label}
+                    {reviewTarget.shiftId === s.id ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-700">
+                        TNV chọn
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="block text-xs text-neutral-500">
-                    {s.startTime}-{s.endTime} · {s.role ? roleLabel(s.role) : 'Ca chung'} · {s.slotsFilled}/{s.slotsNeeded}
+                    {s.startTime}-{s.endTime} · {s.role ? roleLabel(s.role) : 'Ca chung'} · {s.slotsFilled}/{s.slotsNeeded} đã duyệt
                   </span>
                 </span>
               </label>
             ))}
+            {eligibleShifts.length === 0 ? (
+              <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.
+              </div>
+            ) : null}
           </div>
           <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4">
             <button
