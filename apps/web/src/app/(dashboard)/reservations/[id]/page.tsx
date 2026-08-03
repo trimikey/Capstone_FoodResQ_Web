@@ -97,7 +97,6 @@ export default function ReservationDetailsPage() {
   // Countdown: 4 phút 30 giây khi đang tìm shipper
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownExpired, setCountdownExpired] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Theo dõi đơn giao real-time (toạ độ pickup/delivery + vị trí shipper trực tiếp)
