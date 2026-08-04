@@ -35,7 +35,13 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     }
   }, [user]);
 
-  if (!mounted || !user) return null;
+  if (!mounted || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#fcf9f2]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#236c2a] border-t-transparent" />
+      </div>
+    );
+  }
 
   const handleLogout = () => {
     logout();
@@ -109,8 +115,8 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
-      {/* Desktop Sidebar - nền trắng */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-40">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-[10000]">
         {/* Logo Header - không border dưới */}
         <div className="flex items-center px-5 py-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -141,8 +147,8 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      {/* Main Content - nền xanh nhạt */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
+      {/* Main Content */}
+      <div className="lg:ml-64 min-h-screen flex flex-col bg-[#f0f7f3]">
         {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
         <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <Link
@@ -153,11 +159,6 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
             <span>Về trang chủ</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
-              <span className="material-symbols-outlined text-neutral-700">notifications</span>
-            </button>
-          </div>
         </header>
 
         {/* Scrollable Canvas */}
