@@ -945,65 +945,6 @@ export class ReservationsService {
     return reservation;
   }
 
-  /**
-   * Provider xem chi tiết một đơn thuộc listing của mình.
-   * Trả về cùng shape với findOne của receiver nhưng verify ownership qua listing.provider.userId.
-   */
-  async findOneForProvider(id: string, providerUserId: string) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        listing: { provider: { userId: providerUserId } },
-      },
-      include: {
-        listing: {
-          include: {
-            provider: {
-              select: {
-                id: true,
-                userId: true,
-                businessName: true,
-                address: true,
-                contactPhone: true,
-                avgRating: true,
-              },
-            },
-          },
-        },
-        receiver: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                phone: true,
-                avatarUrl: true,
-                trustScore: true,
-              },
-            },
-          },
-        },
-        delivery: {
-          include: {
-            shipper: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true,
-                    avatarUrl: true,
-                    phone: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
-    return reservation;
-  }
-
   /** Đơn hết hạn QR → expired + hoàn số lượng listing + trả daily count (không phạt trust). */
   private async expire(reservationId: string) {
     const r = await this.prisma.reservation.findUnique({

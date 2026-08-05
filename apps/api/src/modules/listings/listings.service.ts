@@ -246,11 +246,6 @@ export class ListingsService {
     if (listing.status !== 'draft') {
       throw new BadRequestException('Chỉ đăng được tin đang ở trạng thái nháp.');
     }
-    if (new Date(listing.pickupEndTime).getTime() <= Date.now()) {
-      throw new BadRequestException(
-        'Đã qua thời gian lấy hàng, bạn không thể đăng tin. Hãy nhân bản để tạo bản nháp mới.',
-      );
-    }
 
     return this.prisma.foodListing.update({
       where: { id: listingId },
@@ -334,18 +329,7 @@ export class ListingsService {
       );
     }
 
-    // Draft đã quá thời gian lấy hàng → chỉ cho sửa nếu provider vẫn đang kéo dài
-    // pickupEndTime/pickupStartTime tới tương lai. Sửa mà không gia hạn sẽ bị chặn.
     const isDraft = listing.status === 'draft';
-    const draftAlreadyExpired = new Date(listing.pickupEndTime).getTime() <= Date.now();
-    if (isDraft && draftAlreadyExpired) {
-      const nextEnd = dto.pickupEndTime ? new Date(dto.pickupEndTime) : listing.pickupEndTime;
-      if (nextEnd.getTime() <= Date.now()) {
-        throw new BadRequestException(
-          'Đã qua thời gian lấy hàng. Hãy kéo dài giờ kết thúc tới tương lai hoặc nhân bản thành bản nháp mới.',
-        );
-      }
-    }
 
     // Kiểm tra whitelist khi edit active/fully_reserved
     if (!isDraft) {
@@ -520,34 +504,5 @@ export class ListingsService {
     if (!newId) throw new BadRequestException('Nhân bản tin thất bại.');
 
     return this.findOne(newId);
-  }
-
-  /**
-   * Xoá vĩnh viễn một tin nháp.
-   * - Chỉ owner mới xoá được.
-   * - Chỉ xoá được tin đang ở `draft` (không có reservation, chưa từng phát hành).
-   * - Tin đã publish thì dùng `cancel` để set `cancelled`, không xoá khỏi DB — giữ lịch sử.
-   */
-  async remove(listingId: string, userId: string) {
-    const providerId = await this.resolveProviderId(userId);
-    const existing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-      select: { id: true, providerId: true, status: true, _count: { select: { reservations: true } } },
-    });
-    if (!existing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
-    if (existing.providerId !== providerId) throw new ForbiddenException();
-    if (existing.status !== 'draft') {
-      throw new BadRequestException(
-        'Chỉ xoá được tin nháp. Tin đã đăng hãy dùng "Huỷ tin".',
-      );
-    }
-    if (existing._count.reservations > 0) {
-      throw new BadRequestException(
-        'Tin nháp này đã có reservation — không thể xoá. Hãy huỷ thay vì xoá.',
-      );
-    }
-
-    await this.prisma.foodListing.delete({ where: { id: listingId } });
-    return { id: listingId, deleted: true };
   }
 }

@@ -3,12 +3,9 @@
   Get,
   Post,
   Patch,
-  Delete,
   Body,
   Param,
   Query,
-  HttpCode,
-  HttpStatus,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -125,17 +122,5 @@ export class ListingsController {
     @CurrentUser() user: User,
   ) {
     return this.listingsService.duplicate(id, user.id);
-  }
-
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.PROVIDER)
-  @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Provider: Xoá vĩnh viễn một tin nháp (chỉ xoá được draft, không có reservation).',
-  })
-  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.listingsService.remove(id, user.id);
   }
 }

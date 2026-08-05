@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { mediaUrl } from '@/lib/utils';
 import type { TaskOffer } from '@/hooks/useDeliveries';
-import { SafeImage } from '@/components/shared/SafeImage';
 
 /** Đồng hồ đếm ngược thời hạn offer (đỏ khi còn < 30s). */
 export function OfferCountdown({ expiresAt }: { expiresAt: string }) {
@@ -57,12 +55,7 @@ export function OfferPopup({
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <SafeImage
-                src={l.imageUrls[0] || '/banh-mi.png'}
-                category={l.category}
-                alt={l.title}
-                className="w-full h-full object-cover"
-              />
+              <img src={l.imageUrls[0] || '/food_bread.png'} alt={l.title} className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0">
               <h3 className="font-extrabold text-neutral-900 truncate">{l.title}</h3>

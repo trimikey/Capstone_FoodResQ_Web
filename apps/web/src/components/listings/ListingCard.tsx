@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
-import { SafeImage } from '@/components/shared/SafeImage';
 
 export interface ListingItem {
   id: string;
@@ -81,10 +80,9 @@ export default function ListingCard({ listing }: Props) {
     >
       {/* Image Container */}
       <div className="relative h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
-        <SafeImage
+        <img
           src={imageUrl}
           alt={listing.title}
-          category={listing.category}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
 

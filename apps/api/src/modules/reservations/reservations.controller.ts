@@ -81,17 +81,6 @@ export class ReservationsController {
     return this.reservationsService.findProviderReservations(user.id, page, limit);
   }
 
-  @Get('provider/:id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.PROVIDER)
-  @ApiOperation({ summary: 'Provider: Get a single reservation belonging to one of my listings' })
-  providerFindOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-  ) {
-    return this.reservationsService.findOneForProvider(id, user.id);
-  }
-
   @Get(':id')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)

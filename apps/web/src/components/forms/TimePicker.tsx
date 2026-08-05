@@ -15,7 +15,6 @@ export function TimePicker({ value, onChange, minTime }: TimePickerProps) {
   const [selectedAmPm, setSelectedAmPm] = useState<'AM' | 'PM'>('PM');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Sync internal state with value prop
   useEffect(() => {
     if (value) {
       const [h, m] = value.split(':');
@@ -31,20 +30,6 @@ export function TimePicker({ value, onChange, minTime }: TimePickerProps) {
   function handleToggle(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    // Set default time if value is empty when opening picker
-    if (!value && !isOpen) {
-      const now = new Date();
-      now.setHours(now.getHours() + 1, 0, 0, 0);
-      const h = now.getHours();
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const hour12 = h % 12 || 12;
-      const hourStr = hour12.toString().padStart(2, '0');
-      const time24 = `${h.toString().padStart(2, '0')}:00`;
-      setSelectedHour(hourStr);
-      setSelectedMinute('00');
-      setSelectedAmPm(ampm);
-      onChange(time24);
-    }
     setIsOpen(!isOpen);
   }
 

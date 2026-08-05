@@ -8,12 +8,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm, mediaUrl } from '@/lib/utils';
+import { haversineKm } from '@/lib/utils';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
-import { SafeImage } from '@/components/shared/SafeImage';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
-import { ReportTargetType, QuantityUnit } from '@foodresq/types';
-import { UNIT_LABEL } from '@/lib/utils';
+import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -83,7 +81,6 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState(
     isMock
@@ -382,23 +379,8 @@ export default function ReservationDetailsPage() {
     }, 1500);
   };
 
-  const R_STATUS_VI: Record<string, { label: string; badge: string; bar: string; }> = {
-    confirmed: { label: 'Đã đặt đơn', badge: 'bg-sky-100 text-sky-700', bar: 'from-sky-400 to-sky-500' },
-    picked_up: { label: 'Đã lấy hàng', badge: 'bg-amber-100 text-amber-700', bar: 'from-amber-400 to-amber-500' },
-    completed: { label: 'Hoàn tất', badge: 'bg-emerald-100 text-emerald-700', bar: 'from-emerald-500 to-emerald-600' },
-    cancelled: { label: 'Đã huỷ', badge: 'bg-neutral-100 text-neutral-600', bar: 'from-neutral-300 to-neutral-400' },
-    no_show: { label: 'Không đến', badge: 'bg-rose-100 text-rose-700', bar: 'from-rose-400 to-rose-500' },
-    expired: { label: 'Hết hạn', badge: 'bg-neutral-100 text-neutral-600', bar: 'from-neutral-300 to-neutral-400' },
-  };
-  const rMeta = R_STATUS_VI[reservation.status] ?? {
-    label: reservation.status,
-    badge: 'bg-neutral-100 text-neutral-600',
-    bar: 'from-neutral-400 to-neutral-500',
-  };
-  const heroImg = reservation.listing.imageUrls?.[0] || '/banh-mi.png';
-
   return (
-    <div className="min-h-screen bg-[#FAFBF9] pb-20">
+    <div className="min-h-screen bg-neutral-50 pb-20">
       {/* Top Breadcrumb Navigation */}
       <div className="bg-white border-b border-neutral-200 py-3 px-6">
         <div className="max-w-7xl mx-auto flex items-center gap-xs text-xs font-medium text-neutral-500">
@@ -410,81 +392,8 @@ export default function ReservationDetailsPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 space-y-6">
-
-        {/* ── HERO: cover lớn + status + thông tin đơn ───────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
-          {/* Cover ảnh nền */}
-          <div className="relative h-44 md:h-56 overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={heroImg}
-              alt={reservation.listing.title}
-              className="w-full h-full object-cover scale-110"
-              onError={(e) => {
-                const t = e.currentTarget;
-                if (t.src !== '/banh-mi.png') t.src = '/banh-mi.png';
-              }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-            {/* Decorative blobs */}
-            <div className="pointer-events-none absolute -top-12 -right-12 w-56 h-56 rounded-full bg-emerald-400/30 blur-3xl" />
-            {/* Status badge trên ảnh */}
-            <div className="absolute top-4 left-4 flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold shadow ${rMeta.badge}`}>
-                {rMeta.label}
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-black/40 backdrop-blur text-white text-[10px] font-bold uppercase tracking-wider border border-white/20">
-                {reservation.listing.category}
-              </span>
-            </div>
-            {/* Title to ở dưới ảnh */}
-            <div className="absolute bottom-0 left-0 right-0 p-5 md:p-6">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-300">
-                Chi tiết đơn đặt
-              </p>
-              <h1 className="font-black text-2xl md:text-3xl text-white drop-shadow mt-1 truncate">
-                {reservation.listing.title}
-              </h1>
-              <p className="text-sm text-white/85 mt-1 inline-flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]">storefront</span>
-                {reservation.listing.provider.businessName}
-              </p>
-            </div>
-          </div>
-
-          {/* Info strip dưới cover */}
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-neutral-100 bg-gradient-to-r from-neutral-50 to-white">
-            <div className="p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Mã đơn</p>
-              <p className="font-mono text-sm font-bold text-neutral-800 mt-1 truncate">
-                #{reservation.id.slice(0, 8).toUpperCase()}
-              </p>
-            </div>
-            <div className="p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Số lượng</p>
-              <p className="text-sm font-bold text-neutral-800 mt-1 inline-flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px] text-emerald-600">inventory_2</span>
-                {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit}
-              </p>
-            </div>
-            <div className="p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Đặt lúc</p>
-              <p className="text-xs font-bold text-neutral-800 mt-1">
-                {new Date(reservation.createdAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}
-              </p>
-            </div>
-            <div className="p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Phương thức</p>
-              <p className="text-xs font-bold text-neutral-800 mt-1 inline-flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px] text-emerald-600">
-                  {reservation.delivery ? 'local_shipping' : 'directions_walk'}
-                </span>
-                {reservation.delivery ? 'Giao tận nơi' : 'Tự đến lấy'}
-              </p>
-            </div>
-          </div>
-        </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        
         {/* ========================================================================= */}
         {/* LAYOUT A: VOLUNTEER DELIVERY VIEW (IMAGE 1)                               */}
         {/* ========================================================================= */}
@@ -814,18 +723,12 @@ export default function ReservationDetailsPage() {
               <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm space-y-4">
                 <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Chi tiết thực phẩm</h4>
                 <div className="flex items-center gap-3">
-                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-200 shadow-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={reservation.listing.imageUrls?.[0] || '/banh-mi.png'}
-                      alt="Food"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        const t = e.currentTarget as HTMLImageElement;
-                        if (t.src !== '/banh-mi.png') t.src = '/banh-mi.png';
-                      }}
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
+                    <img 
+                      src={reservation.listing.imageUrls?.[0] || "/banh-mi-ngot-thap-cam.png"} 
+                      alt="Food" 
+                      className="w-full h-full object-cover" 
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h5 className="font-bold text-neutral-800 truncate">{reservation.listing.title}</h5>
@@ -1026,64 +929,30 @@ export default function ReservationDetailsPage() {
               {/* Right Column: Listing items bag, Target goal progress bar, Provider information */}
               <div className="space-y-6">
                 
-                {/* Food list bag details card — có ảnh cover gradient đậm nét */}
-                <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
-                  {/* Cover đầu card */}
-                  <div className="relative h-32 overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={reservation.listing.imageUrls?.[0] || '/banh-mi.png'}
-                      alt={reservation.listing.title}
-                      className="w-full h-full object-cover scale-110"
-                      onError={(e) => {
-                        const t = e.currentTarget;
-                        if (t.src !== '/banh-mi.png') t.src = '/banh-mi.png';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-3 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-emerald-300">
-                        <span className="material-symbols-outlined text-[16px]">shopping_bag</span>
-                        <h4 className="text-xs font-extrabold text-white">
-                          Chi tiết túi thực phẩm
-                        </h4>
+                {/* Food list bag details card */}
+                <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-800">
+                    <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
+                    <h4 className="font-bold text-sm">Chi tiết túi thực phẩm {reservation.listing.orderId || reservation.id}</h4>
+                  </div>
+                  
+                  {/* Detailed items list */}
+                  <div className="divide-y divide-neutral-100 text-xs">
+                    {[
+                      { name: 'Bánh mì tươi (6 cái)', qty: 1 },
+                      { name: 'Sữa tươi thanh trùng', qty: 2 },
+                      { name: 'Trái cây tổng hợp', qty: 1 }
+                    ].map((item, idx) => (
+                      <div key={idx} className="py-2.5 flex items-center justify-between text-neutral-600">
+                        <span>{item.name}</span>
+                        <span className="font-bold text-neutral-800">x{item.qty}</span>
                       </div>
-                      <span className="font-mono text-[10px] font-bold text-white/90 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur">
-                        #{reservation.id.slice(0, 8).toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur text-white text-[9px] font-bold uppercase tracking-wider border border-white/20">
-                      {reservation.listing.category}
-                    </span>
+                    ))}
                   </div>
 
-                  <div className="p-5 space-y-3">
-                    {/* Tên món đậm nét */}
-                    <div>
-                      <h5 className="font-bold text-neutral-900 text-base">{reservation.listing.title}</h5>
-                      <p className="text-xs text-neutral-500 mt-0.5">{reservation.listing.provider.businessName}</p>
-                    </div>
-
-                    {/* Detailed items list */}
-                    <div className="divide-y divide-neutral-100 text-xs">
-                      {[
-                        { name: `${reservation.listing.title} (${reservation.quantity} ${UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit})`, qty: reservation.quantity },
-                        { name: 'Đóng gói hợp vệ sinh & an toàn thực phẩm', qty: 1 },
-                      ].map((item, idx) => (
-                        <div key={idx} className="py-2.5 flex items-center justify-between text-neutral-600">
-                          <span className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[14px] text-emerald-600">check_circle</span>
-                            {item.name}
-                          </span>
-                          <span className="font-bold text-neutral-800">x{item.qty}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="border-t border-neutral-100 pt-3 flex items-center justify-between text-xs">
-                      <span className="text-neutral-400">Trọng lượng ước tính:</span>
-                      <span className="font-black text-neutral-800">~2.5 kg</span>
-                    </div>
+                  <div className="border-t border-neutral-100 pt-3 flex items-center justify-between text-xs">
+                    <span className="text-neutral-400">Trọng lượng ước tính:</span>
+                    <span className="font-black text-neutral-800">~2.5 kg</span>
                   </div>
                 </div>
 

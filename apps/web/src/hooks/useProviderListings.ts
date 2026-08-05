@@ -65,8 +65,6 @@ export function useProviderListings(page = 1) {
       return data.data as Paginated<ProviderListing>;
     },
     staleTime: 15_000,
-    refetchInterval: 5 * 60_000,
-    refetchOnWindowFocus: true,
   });
 }
 
@@ -116,20 +114,6 @@ export function useCancelListing() {
     mutationFn: async (params: { id: string; reason?: string }) => {
       const { data } = await api.patch(`/listings/${params.id}/cancel`, { reason: params.reason });
       return data.data;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['listings', 'provider'] });
-    },
-  });
-}
-
-/** Xoá vĩnh viễn một tin nháp (chỉ `draft`, không có reservation). */
-export function useDeleteListing() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await api.delete(`/listings/${id}`);
-      return data.data as { id: string; deleted: boolean };
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['listings', 'provider'] });
@@ -264,74 +248,5 @@ export function useProviderOrders(page = 1, limit = 20) {
       return data.data as PaginatedResult<ProviderOrderItem>;
     },
     staleTime: 15_000,
-  });
-}
-
-/** Provider xem chi tiết 1 đơn (bao gồm receiver + delivery + shipper). */
-export interface ProviderOrderDetail {
-  id: string;
-  status: string;
-  quantity: number;
-  notes: string | null;
-  cancelReason: string | null;
-  cancelledBy: string | null;
-  qrToken: string | null;
-  qrExpiresAt: string | null;
-  createdAt: string;
-  pickedUpAt: string | null;
-  completedAt: string | null;
-  cancelledAt: string | null;
-  listing: {
-    id: string;
-    title: string;
-    description: string | null;
-    imageUrls: string[];
-    category: string;
-    quantityUnit: string;
-    pickupAddress: string;
-    pickupStartTime: string;
-    pickupEndTime: string;
-    storageConditions: string | null;
-    allergenNotes: string | null;
-    provider: {
-      id: string;
-      businessName: string;
-      address: string | null;
-      contactPhone: string | null;
-      avgRating: number | null;
-    };
-  };
-  receiver: {
-    id: string;
-    user: {
-      fullName: string;
-      phone: string | null;
-      avatarUrl: string | null;
-      trustScore: number;
-    };
-  };
-  delivery: {
-    id: string;
-    status: string;
-    pickupAddress: string;
-    deliveryAddress: string;
-    assignedAt: string | null;
-    pickedUpAt: string | null;
-    completedAt: string | null;
-    shipper: {
-      user: { fullName: string; phone: string | null; avatarUrl: string | null };
-    } | null;
-  } | null;
-}
-
-export function useProviderOrder(id: string | null | undefined) {
-  return useQuery({
-    enabled: !!id,
-    queryKey: ['reservations', 'provider', 'detail', id],
-    queryFn: async () => {
-      const { data } = await api.get(`/reservations/provider/${id}`);
-      return data.data as ProviderOrderDetail;
-    },
-    staleTime: 10_000,
   });
 }

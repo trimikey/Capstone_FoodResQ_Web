@@ -1,67 +1,19 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { QuantityUnit } from '@foodresq/types';
-import { AxiosError } from 'axios';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 // Ảnh upload nằm ở /uploads trên API server (cổng 3001) → ghép origin (bỏ đuôi /api/v1).
-// CHỈ prefix đường dẫn upload — ảnh tĩnh của web (/banh-mi.png trong public/) và
+// CHỈ prefix đường dẫn /uploads — ảnh tĩnh của web (/banh-mi.png trong public/) và
 // URL http(s) giữ nguyên, nếu prefix bừa sẽ 404 vì API không serve chúng.
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
   if (path.startsWith('http')) return path;
-  // Chuẩn hoá: nếu backend trả /api/uploads/... → đổi thành /uploads/... để ghép origin
-  const normalized = path.startsWith('/api/uploads/') ? `/uploads/${path.slice('/api/uploads/'.length)}` : path;
-  return normalized.startsWith('/uploads') ? `${API_ORIGIN}${normalized}` : normalized;
-}
-
-// Trích message lỗi thân thiện từ response BE theo wrapper chuẩn của dự án:
-//   { success: false, error: { code, message } } | { message: string }
-// Trả về `fallback` nếu error không phải AxiosError hoặc BE không gửi message hữu ích.
-// React Query có thể wrap AxiosError thành object thường — helper vẫn phải đọc được
-// thông qua trường `cause` hoặc các thuộc tính phẳng của AxiosError.
-export function extractApiError(err: unknown, fallback = 'Đã có lỗi xảy ra, vui lòng thử lại.'): string {
-  // eslint-disable-next-line no-console
-  if (typeof window !== 'undefined') console.error('[extractApiError]', err);
-
-  const tryRead = (e: unknown): string | undefined => {
-    if (!e || typeof e !== 'object') return undefined;
-    const anyErr = e as {
-      isAxiosError?: boolean;
-      response?: { data?: unknown };
-      message?: unknown;
-      code?: unknown;
-    };
-    // Body BE: { success:false, error:{ code, message } } hoặc { message }
-    const data = anyErr.response?.data as
-      | { error?: { message?: unknown }; message?: unknown }
-      | undefined;
-    if (data) {
-      const nested = data.error?.message;
-      if (typeof nested === 'string' && nested.trim()) return nested.trim();
-      if (Array.isArray(nested) && nested.length) return nested.map(String).join(', ');
-      if (typeof data.message === 'string' && data.message.trim()) return data.message.trim();
-      if (Array.isArray(data.message) && data.message.length) return data.message.map(String).join(', ');
-    }
-    if (typeof anyErr.message === 'string' && anyErr.message.trim()) return anyErr.message.trim();
-    return undefined;
-  };
-
-  // 1. Bản thân err
-  const direct = tryRead(err);
-  if (direct) return direct;
-  // 2. React Query wrap: err.cause = AxiosError
-  if (err && typeof err === 'object' && 'cause' in (err as Record<string, unknown>)) {
-    const fromCause = tryRead((err as { cause: unknown }).cause);
-    if (fromCause) return fromCause;
-  }
-  // 3. err là Error chuẩn
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
+  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
 }
 
 // Link điều hướng Google Maps tới một toạ độ

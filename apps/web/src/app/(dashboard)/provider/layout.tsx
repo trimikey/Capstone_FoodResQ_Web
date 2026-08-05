@@ -9,10 +9,12 @@ import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 const PROVIDER_NAV = [
-  { href: '/provider', label: 'Cửa hàng', icon: 'storefront' },
-  { href: '/provider/orders', label: 'Đơn hàng', icon: 'receipt_long' },
-  { href: '/provider/scan', label: 'Quét QR', icon: 'qr_code_scanner' },
-  { href: '/campaigns', label: 'Bếp ăn cộng đồng', icon: 'soup_kitchen' },
+  { href: '/provider', label: 'Trang quản trị', icon: 'dashboard' },
+  { href: '/provider/create', label: 'Tạo bài đăng', icon: 'add_circle' },
+  { href: '/provider/orders', label: 'Theo dõi đơn', icon: 'local_shipping' },
+  { href: '/campaigns', label: 'Chiến dịch', icon: 'campaign' },
+  { href: '/provider/esg', label: 'Báo cáo CSR', icon: 'analytics' },
+  { href: '/profile', label: 'Cài đặt', icon: 'settings' },
 ];
 
 export default function ProviderLayout({ children }: { children: React.ReactNode }) {
@@ -35,13 +37,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     }
   }, [user]);
 
-  if (!mounted || !user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fcf9f2]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#236c2a] border-t-transparent" />
-      </div>
-    );
-  }
+  if (!mounted || !user) return null;
 
   const handleLogout = () => {
     logout();
@@ -49,7 +45,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="min-h-screen bg-[#fcf9f2] font-body-md">
+    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
@@ -95,11 +91,11 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             </div>
             <nav className="flex flex-col gap-1 p-3 flex-grow">
               {PROVIDER_NAV.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = pathname === item.href || (item.href !== '/provider' && pathname.startsWith(item.href));
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
-                    className={`${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-neutral-700 hover:bg-neutral-100'} rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold`}>
-                    <span className="material-symbols-outlined text-lg" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
+                    className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                    <span className="material-symbols-outlined text-lg">{item.icon}</span>
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -115,8 +111,8 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-[10000]">
+      {/* Desktop Sidebar - nền trắng */}
+      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-40">
         {/* Logo Header - không border dưới */}
         <div className="flex items-center px-5 py-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -147,8 +143,8 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="lg:ml-64 min-h-screen flex flex-col bg-[#f0f7f3]">
+      {/* Main Content - nền xanh nhạt */}
+      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
         {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
         <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <Link
@@ -159,6 +155,28 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
             <span>Về trang chủ</span>
           </Link>
+          <div className="flex items-center gap-3">
+            {/* Notifications */}
+            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
+              <span className="material-symbols-outlined text-neutral-700">notifications</span>
+            </button>
+
+            {/* User Info */}
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-sm font-semibold text-neutral-800">{user.fullName}</p>
+                <p className="text-xs text-neutral-500">Quản trị viên</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
+                {user.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+            </div>
+          </div>
         </header>
 
         {/* Scrollable Canvas */}
