@@ -748,7 +748,8 @@ model CampaignVolunteerAssignment {
   volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
   shift     CampaignShift?   @relation(fields: [shiftId], references: [id])
 
-  @@unique([campaignId, volunteerId, role])
+  @@unique([shiftId, volunteerId, role])
+  @@index([campaignId, volunteerId, role])
   @@index([campaignId])
   @@index([volunteerId])
   @@map("campaign_volunteer_assignments")

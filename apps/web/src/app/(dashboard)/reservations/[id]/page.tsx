@@ -95,7 +95,6 @@ export default function ReservationDetailsPage() {
   // Countdown: 4 phút 30 giây khi đang tìm shipper
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownExpired, setCountdownExpired] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Theo dõi đơn giao real-time (toạ độ pickup/delivery + vị trí shipper trực tiếp)
@@ -726,10 +725,10 @@ export default function ReservationDetailsPage() {
                 <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Chi tiết thực phẩm</h4>
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
-                    <img
-                      src={reservation.listing.imageUrls?.[0] ? mediaUrl(reservation.listing.imageUrls[0]) : "/banh-mi-ngot-thap-cam.png"}
-                      alt="Food"
-                      className="w-full h-full object-cover"
+                    <img 
+                      src={reservation.listing.imageUrls?.[0] || "/banh-mi-ngot-thap-cam.png"} 
+                      alt="Food" 
+                      className="w-full h-full object-cover" 
                     />
                   </div>
                   <div className="flex-1 min-w-0">

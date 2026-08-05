@@ -9,10 +9,12 @@ import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 const PROVIDER_NAV = [
-  { href: '/provider', label: 'Cửa hàng', icon: 'storefront' },
-  { href: '/provider/orders', label: 'Đơn hàng', icon: 'receipt_long' },
-  { href: '/provider/scan', label: 'Quét QR', icon: 'qr_code_scanner' },
-  { href: '/campaigns', label: 'Bếp ăn cộng đồng', icon: 'soup_kitchen' },
+  { href: '/provider', label: 'Trang quản trị', icon: 'dashboard' },
+  { href: '/provider/create', label: 'Tạo bài đăng', icon: 'add_circle' },
+  { href: '/provider/orders', label: 'Theo dõi đơn', icon: 'local_shipping' },
+  { href: '/campaigns', label: 'Chiến dịch', icon: 'campaign' },
+  { href: '/provider/esg', label: 'Báo cáo CSR', icon: 'analytics' },
+  { href: '/profile', label: 'Cài đặt', icon: 'settings' },
 ];
 
 export default function ProviderLayout({ children }: { children: React.ReactNode }) {
@@ -43,7 +45,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="min-h-screen bg-[#fcf9f2] font-body-md">
+    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
@@ -89,11 +91,11 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             </div>
             <nav className="flex flex-col gap-1 p-3 flex-grow">
               {PROVIDER_NAV.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = pathname === item.href || (item.href !== '/provider' && pathname.startsWith(item.href));
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
-                    className={`${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-neutral-700 hover:bg-neutral-100'} rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold`}>
-                    <span className="material-symbols-outlined text-lg" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
+                    className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                    <span className="material-symbols-outlined text-lg">{item.icon}</span>
                     <span>{item.label}</span>
                   </Link>
                 );
