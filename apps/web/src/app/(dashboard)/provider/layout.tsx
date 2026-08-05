@@ -155,31 +155,12 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
             <span>Về trang chủ</span>
           </Link>
-          <div className="flex items-center gap-3">
-            {/* Notifications */}
-            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
-              <span className="material-symbols-outlined text-neutral-700">notifications</span>
-            </button>
-
-            {/* User Info */}
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold text-neutral-800">{user.fullName}</p>
-                <p className="text-xs text-neutral-500">Quản trị viên</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
-                {user.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-            </div>
-          </div>
+          <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
+            <span className="material-symbols-outlined text-neutral-700">notifications</span>
+          </button>
         </header>
 
-        {/* Scrollable Canvas */}
+        {/* Main Content */}
         <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
           {children}
         </div>

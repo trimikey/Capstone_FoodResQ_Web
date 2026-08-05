@@ -321,6 +321,8 @@ export const endpoints = {
     addSupplyItem: (id: string) => `/campaigns/${id}/supply-items`,
     // Charity xác nhận đã nhận 1 lượt quyên góp (status pledged → received)
     confirmDonation: (donationId: string) => `/campaigns/donations/${donationId}/confirm`,
+    confirmTransportReceipt: (campaignId: string, transportId: string) =>
+      `/campaigns/${campaignId}/transports/${transportId}/receive`,
     // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch
     apply: (id: string) => `/campaigns/${id}/apply`,
     // Volunteer: các công việc đã đăng ký
@@ -345,6 +347,12 @@ export const endpoints = {
       `/campaigns/${campaignId}/shifts/${shiftId}/apply`,
     menuItems: (campaignId: string) => `/campaigns/${campaignId}/menu-items`,
     removeMenuItem: (itemId: string) => `/campaigns/menu-items/${itemId}`,
+    handoffQr: '/campaigns/handoffs/qr',
+    myHandoffs: '/campaigns/handoffs/mine',
+    submitHandoffFeedback: (handoffId: string) => `/campaigns/handoffs/${handoffId}/feedback`,
+    scanHandoff: (campaignId: string, distributionId: string) =>
+      `/campaigns/${campaignId}/distributions/${distributionId}/scan-handoff`,
+    handoffSummary: (campaignId: string) => `/campaigns/${campaignId}/handoffs/summary`,
   },
   notifications: {
     my: '/notifications/my',

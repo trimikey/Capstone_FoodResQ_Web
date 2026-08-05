@@ -15,11 +15,12 @@ import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagg
 import { KitchenOpsService } from './kitchen-ops.service';
 import {
   AddMenuItemDto,
-  ApplyShiftDto,
+  CreateBeneficiaryFeedbackDto,
   CreateDistributionDto,
   CreateMealFeedbackDto,
   CreateSafetyLogDto,
   CreateShiftDto,
+  ScanHandoffDto,
 } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -53,19 +54,6 @@ export class KitchenOpsController {
   @ApiOperation({ summary: 'Danh sách ca làm việc của chiến dịch' })
   listShifts(@Param('id', ParseUUIDPipe) id: string) {
     return this.kitchen.listShifts(id);
-  }
-
-  @Post(':id/shifts/:shiftId/apply')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Volunteer: đăng ký vào một ca làm việc' })
-  applyShift(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('shiftId', ParseUUIDPipe) shiftId: string,
-    @CurrentUser() user: User,
-    @Body() dto: ApplyShiftDto,
-  ) {
-    return this.kitchen.applyToShift(id, shiftId, user.id, dto);
   }
 
   // ── Thực đơn (công thức) ──────────────────────────────────────────────────────
@@ -151,11 +139,67 @@ export class KitchenOpsController {
   }
 
   @Post('distributions/:distId/feedback')
-  @ApiOperation({ summary: 'Gửi phản hồi của người thụ hưởng cho một đợt phân phát' })
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary: 'Phục vụ: ghi nhận phản hồi vận hành tại điểm phát (không định danh người thụ hưởng)',
+  })
   addFeedback(
     @Param('distId', ParseUUIDPipe) distId: string,
+    @CurrentUser() user: User,
     @Body() dto: CreateMealFeedbackDto,
   ) {
-    return this.kitchen.addFeedback(distId, dto);
+    return this.kitchen.addFeedback(distId, user.id, dto);
+  }
+
+  // ── QR nhận suất ăn + phản hồi có xác thực người thụ hưởng ───────────────────
+
+  @Post('handoffs/qr')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Người nhận: cấp mã QR nhận suất ăn (hiệu lực ngắn, cấp tài khoản)' })
+  issueHandoffQr(@CurrentUser() user: User) {
+    return this.kitchen.issueHandoffQr(user.id);
+  }
+
+  @Get('handoffs/mine')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Người nhận: các suất ăn đã nhận và trạng thái phản hồi' })
+  listMyHandoffs(@CurrentUser() user: User) {
+    return this.kitchen.listMyHandoffs(user.id);
+  }
+
+  @Post('handoffs/:handoffId/feedback')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Người nhận: gửi phản hồi (một lần) cho suất ăn đã nhận' })
+  submitBeneficiaryFeedback(
+    @Param('handoffId', ParseUUIDPipe) handoffId: string,
+    @CurrentUser() user: User,
+    @Body() dto: CreateBeneficiaryFeedbackDto,
+  ) {
+    return this.kitchen.submitBeneficiaryFeedback(handoffId, user.id, dto);
+  }
+
+  @Post(':id/distributions/:distId/scan-handoff')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Phục vụ: quét QR người nhận để lập biên nhận suất ăn' })
+  scanHandoff(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('distId', ParseUUIDPipe) distId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ScanHandoffDto,
+  ) {
+    return this.kitchen.scanHandoff(id, distId, user.id, dto.qrToken);
+  }
+
+  @Get(':id/handoffs/summary')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Tổng hợp phản hồi có xác thực của chiến dịch (không lộ danh tính)' })
+  beneficiaryFeedbackSummary(@Param('id', ParseUUIDPipe) id: string) {
+    return this.kitchen.beneficiaryFeedbackSummary(id);
   }
 }

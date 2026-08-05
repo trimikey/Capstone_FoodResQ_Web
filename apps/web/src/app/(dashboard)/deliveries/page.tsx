@@ -20,6 +20,7 @@ import {
   useUpdateMyLocation,
   type ActiveDelivery,
   type DeliveryHistoryItem,
+  type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
@@ -59,6 +60,14 @@ const STEPS = [
   { key: 'in_transit', label: 'Đang giao' },
   { key: 'delivered', label: 'Hoàn tất' },
 ];
+
+function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+  return delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+}
+
+function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+  return delivery.reservation?.listing.imageUrls?.[0] ?? null;
+}
 
 function getLocation(): Promise<{ lng: number; lat: number }> {
   return new Promise((resolve) => {
@@ -128,6 +137,9 @@ export default function DeliveriesPage() {
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
+  const activeTitle = active ? deliveryTitle(active) : '';
+  const activeImage = active ? deliveryImage(active) : null;
+  const activeRecipient = active?.reservation?.receiver?.user ?? null;
 
   // Trước khi lấy hàng → huỷ (trả đơn); sau khi lấy hàng → báo thất bại
   async function handleIssue() {
@@ -205,10 +217,9 @@ export default function DeliveriesPage() {
   function onAdvanceClick(d: ActiveDelivery) {
     const step = NEXT_STATUS[d.status];
     if (!step) return;
-    if (step.needsQr) {
-      // Hoàn tất giao: quét mã QR trên màn hình người nhận để xác nhận đúng người
+    if (step.needsQr && d.source === 'reservation') {
       setQrScanOpen(true);
-    } else if (step.needsPhoto) {
+    } else if (step.needsQr || step.needsPhoto) {
       setPendingNext(d.id);
       photoInputRef.current?.click();
     } else {
@@ -230,7 +241,7 @@ export default function DeliveriesPage() {
       {qrScanOpen && active && (
         <QrScanModal
           title="Quét mã của người nhận"
-          hint={`Nhờ ${active.reservation.receiver.user.fullName} mở trang theo dõi đơn và đưa mã QR (hoặc bấm copy mã) để xác nhận bàn giao đúng người.`}
+          hint={`Nhờ ${active.reservation?.receiver?.user.fullName ?? 'người nhận'} mở trang theo dõi đơn và đưa mã QR để xác nhận bàn giao đúng người.`}
           busy={updateStatus.isPending}
           onResult={(token) => void advance(active, undefined, token)}
           onClose={() => setQrScanOpen(false)}
@@ -344,17 +355,17 @@ export default function DeliveriesPage() {
               <div className="w-14 h-14 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={active.reservation.listing.imageUrls[0] || '/food_bread.png'}
-                  alt={active.reservation.listing.title}
+                  src={activeImage ? mediaUrl(activeImage) : '/food_bread.png'}
+                  alt={activeTitle}
                   className="w-full h-full object-cover"
                 />
               </div>
               <div className="min-w-0">
                 <h3 className="font-extrabold text-neutral-900 truncate">
-                  {active.reservation.listing.title}
+                  {activeTitle}
                 </h3>
                 <p className="text-xs text-neutral-500 truncate">
-                  {active.reservation.listing.pickupAddress}
+                  {active.pickup.address ?? 'Chưa có địa chỉ lấy hàng'}
                 </p>
               </div>
             </div>
@@ -389,17 +400,21 @@ export default function DeliveriesPage() {
                 </div>
               </div>
 
-              {/* Receiver info */}
               <div className="bg-neutral-50 rounded-2xl p-4 flex items-center justify-between mb-5">
                 <div>
-                  <p className="text-[10px] text-neutral-400 font-bold uppercase">Người nhận</p>
-                  <p className="font-bold text-neutral-800 text-sm">
-                    {active.reservation.receiver.user.fullName}
+                  <p className="text-[10px] text-neutral-400 font-bold uppercase">
+                    {active.source === 'campaign_transport' ? 'Bếp nhận hàng' : 'Người nhận'}
                   </p>
+                  <p className="font-bold text-neutral-800 text-sm">
+                    {activeRecipient?.fullName ?? active.campaignTransport?.campaignTitle ?? 'Điểm giao chiến dịch'}
+                  </p>
+                  {active.source === 'campaign_transport' && active.destination.address && (
+                    <p className="text-xs text-neutral-500 mt-1">{active.destination.address}</p>
+                  )}
                 </div>
-                {active.reservation.receiver.user.phone && (
+                {activeRecipient?.phone && (
                   <a
-                    href={`tel:${active.reservation.receiver.user.phone}`}
+                    href={`tel:${activeRecipient.phone}`}
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
                   >
                     <span className="material-symbols-outlined text-[18px]">call</span>
@@ -434,7 +449,7 @@ export default function DeliveriesPage() {
                 const tLat = toPickup ? c?.pickupLat : c?.deliveryLat;
                 const tLng = toPickup ? c?.pickupLng : c?.deliveryLng;
                 const label = toPickup ? 'Điểm lấy hàng' : 'Điểm giao hàng';
-                const addr = toPickup ? active.reservation.listing.pickupAddress : active.reservation.receiver?.address;
+                const addr = toPickup ? active.pickup.address : active.destination.address;
                 const myLoc = liveLoc ?? me?.currentLocation;
                 const fromMe =
                   myLoc && tLat != null && tLng != null
@@ -478,13 +493,15 @@ export default function DeliveriesPage() {
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[20px]">
-                        {NEXT_STATUS[active.status].needsQr
+                        {NEXT_STATUS[active.status].needsQr && active.source === 'reservation'
                           ? 'qr_code_scanner'
-                          : NEXT_STATUS[active.status].needsPhoto
+                          : NEXT_STATUS[active.status].needsPhoto || NEXT_STATUS[active.status].needsQr
                             ? 'photo_camera'
                             : 'arrow_forward'}
                       </span>
-                      {NEXT_STATUS[active.status].label}
+                      {NEXT_STATUS[active.status].needsQr && active.source === 'campaign_transport'
+                        ? 'Chụp ảnh bàn giao cho bếp'
+                        : NEXT_STATUS[active.status].label}
                     </>
                   )}
                 </button>
@@ -573,19 +590,24 @@ export default function DeliveriesPage() {
                     <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={o.delivery.reservation.listing.imageUrls[0] || '/food_bread.png'}
-                        alt={o.delivery.reservation.listing.title}
+                        src={deliveryImage(o.delivery) ? mediaUrl(deliveryImage(o.delivery)!) : '/food_bread.png'}
+                        alt={deliveryTitle(o.delivery)}
                         className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-extrabold text-neutral-900 truncate">
-                        {o.delivery.reservation.listing.title}
+                        {deliveryTitle(o.delivery)}
                       </h3>
                       <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
                         <span className="material-symbols-outlined text-[14px]">place</span>
-                        {o.delivery.reservation.listing.pickupAddress}
+                        {o.delivery.pickup.address ?? 'Chưa có địa chỉ lấy hàng'}
                       </p>
+                      {o.delivery.source === 'campaign_transport' && (
+                        <p className="text-xs text-emerald-700 mt-0.5 truncate">
+                          Giao đến bếp: {o.delivery.destination.address ?? '—'}
+                        </p>
+                      )}
                       <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2 flex-wrap">
                         {(() => {
                           const c = o.delivery.coords;
@@ -702,21 +724,23 @@ export default function DeliveriesPage() {
 
 function HistoryRow({ h }: { h: DeliveryHistoryItem }) {
   const delivered = h.status === 'delivered';
+  const recipient = h.reservation?.receiver?.user.fullName ?? h.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch';
+  const image = h.deliveryProofUrl ?? deliveryImage(h);
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4 flex items-center gap-4">
       <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] || '/food_bread.png'}
-          alt={h.reservation.listing.title}
+          src={image ? mediaUrl(image) : '/food_bread.png'}
+          alt={deliveryTitle(h)}
           className="w-full h-full object-cover"
         />
       </div>
       <div className="flex-1 min-w-0">
-        <h3 className="font-bold text-neutral-900 truncate">{h.reservation.listing.title}</h3>
+        <h3 className="font-bold text-neutral-900 truncate">{deliveryTitle(h)}</h3>
         <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
           <span className="material-symbols-outlined text-[14px]">person</span>
-          Giao cho {h.reservation.receiver.user.fullName}
+          Giao cho {recipient}
           {h.distanceKm != null && <span className="text-neutral-400">· {h.distanceKm} km</span>}
         </p>
         <p className="text-[11px] text-neutral-400 mt-0.5">

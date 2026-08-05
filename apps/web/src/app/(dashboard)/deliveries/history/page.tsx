@@ -18,6 +18,14 @@ const REPORT_REASONS = [
   { value: ReportReason.UNSAFE_FOOD, label: 'Thực phẩm không an toàn' },
 ] as const;
 
+function historyTitle(h: DeliveryHistoryItem) {
+  return h.reservation?.listing.title ?? h.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+}
+
+function historyRecipient(h: DeliveryHistoryItem) {
+  return h.reservation?.receiver?.user.fullName ?? h.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch';
+}
+
 function HistoryRow({
   h,
   onReport,
@@ -26,23 +34,29 @@ function HistoryRow({
   onReport: (delivery: DeliveryHistoryItem) => void;
 }) {
   const delivered = h.status === 'delivered';
+  const image = h.deliveryProofUrl ?? h.reservation?.listing.imageUrls?.[0] ?? null;
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-md transition-shadow">
       <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0 mx-auto sm:mx-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={h.deliveryProofUrl ? mediaUrl(h.deliveryProofUrl) : h.reservation.listing.imageUrls[0] || '/food_bread.png'}
-          alt={h.reservation.listing.title}
+          src={image ? mediaUrl(image) : '/food_bread.png'}
+          alt={historyTitle(h)}
           className="w-full h-full object-cover"
         />
       </div>
       <div className="flex-1 min-w-0 text-center sm:text-left">
-        <h3 className="font-bold text-neutral-900 truncate text-base">{h.reservation.listing.title}</h3>
+        <h3 className="font-bold text-neutral-900 truncate text-base">{historyTitle(h)}</h3>
         <p className="text-sm text-neutral-500 truncate flex items-center justify-center sm:justify-start gap-1 mt-1">
           <span className="material-symbols-outlined text-[16px]">person</span>
-          Giao cho {h.reservation.receiver.user.fullName}
+          {h.source === 'campaign_transport' ? 'Giao đến bếp' : 'Giao cho'} {historyRecipient(h)}
           {h.distanceKm != null && <span className="text-neutral-400 font-medium">· {h.distanceKm} km</span>}
         </p>
+        {h.source === 'campaign_transport' && (
+          <p className="text-xs text-emerald-700 mt-1 truncate">
+            {h.destination.address ?? 'Chưa có địa chỉ bếp nhận hàng'}
+          </p>
+        )}
         <p className="text-xs text-neutral-400 mt-1 flex items-center justify-center sm:justify-start gap-1">
           <span className="material-symbols-outlined text-[14px]">schedule</span>
           {h.deliveredAt ? new Date(h.deliveredAt).toLocaleString('vi-VN') : new Date(h.createdAt).toLocaleDateString('vi-VN')}
@@ -140,7 +154,7 @@ export default function DeliveryHistoryPage() {
               <div>
                 <h2 className="text-lg font-extrabold text-neutral-900">Báo cáo sự cố giao hàng</h2>
                 <p className="text-sm text-neutral-500 mt-1">
-                  Đơn: {reporting.reservation.listing.title}
+                  Đơn: {historyTitle(reporting)}
                 </p>
               </div>
               <button

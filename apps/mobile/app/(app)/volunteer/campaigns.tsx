@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage } from '@/services/faceCapture';
+import { getCurrentCoords } from '@/services/geolocation';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -67,10 +68,27 @@ export default function VolunteerCampaignsScreen() {
   const handleAdvance = async (task: CampaignTask) => {
     const next = nextAssignmentStatus(task.status);
     if (!next) return;
+
+    let lng: number | undefined;
+    let lat: number | undefined;
+    if (next === 'checked_in') {
+      const { coords } = await getCurrentCoords();
+      if (!coords) {
+        Popup.show({
+          type: 'warning',
+          text1: 'Cần vị trí để điểm danh',
+          text2: 'Hãy bật quyền vị trí và đứng gần bếp trước khi thử lại.',
+        });
+        return;
+      }
+      lng = coords.lng;
+      lat = coords.lat;
+    }
+
     let photo;
     if (assignmentStepRequiresPhoto(next)) {
       try {
-        photo = (await captureImage('id_card')) ?? undefined;
+        photo = (await captureImage('id_card', 'proof')) ?? undefined;
       } catch (e: any) {
         Popup.show({ type: 'error', text1: 'Không mở được camera', text2: e?.message ?? 'Cần quyền camera.' });
         return;
@@ -81,11 +99,17 @@ export default function VolunteerCampaignsScreen() {
       }
     }
     try {
-      const res = await advanceMut.mutateAsync({ assignmentId: task.id, photo });
+      const res = await advanceMut.mutateAsync({
+        assignmentId: task.id,
+        campaignId: task.campaign.id,
+        lng,
+        lat,
+        photo,
+      });
       void notifySuccess();
       Popup.show({
         type: 'success',
-        text1: next === 'completed' ? 'Đã hoàn thành công việc' : 'Đã cập nhật',
+        text1: next === 'completed' ? 'Đã hoàn thành công việc' : next === 'checked_in' ? 'Đã điểm danh tại bếp' : 'Đã cập nhật',
         text2: res?.pointsAwarded ? `+${res.pointsAwarded} điểm cống hiến!` : undefined,
       });
     } catch (err) {

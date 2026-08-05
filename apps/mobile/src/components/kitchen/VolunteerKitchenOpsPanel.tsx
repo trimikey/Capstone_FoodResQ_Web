@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { router, type Href } from 'expo-router';
 import { Button, Chip, Dialog, Portal, Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafetyCheckResult, SafetyCheckType } from '@foodresq/types';
@@ -16,6 +17,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { captureImage, pickImageFromLibrary, type CapturedImage } from '@/services/faceCapture';
+import { getCurrentCoords } from '@/services/geolocation';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const CHECK_TYPE_OPTIONS = [
@@ -147,12 +149,14 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
       return;
     }
     try {
+      const { coords } = await getCurrentCoords();
       await createDistribution.mutateAsync({
         campaignId,
         roundLabel: roundLabel.trim() || undefined,
         servingsServed: servings,
         peopleServed: people,
         leftoverServings: leftover,
+        ...(coords ? { lng: coords.lng, lat: coords.lat } : {}),
         note: distributionNote.trim() || undefined,
         photo: distributionPhoto,
       });
@@ -256,9 +260,28 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
                 </Text>
                 <Text style={styles.muted}>{formatDateTime(item.distributedAt)} - {item.feedbackCount} phản hồi</Text>
               </View>
-              <Pressable style={styles.iconButton} onPress={() => setFeedbackTarget(item)} hitSlop={8}>
-                <MaterialCommunityIcons name="message-text-outline" size={20} color={COLORS.blue} />
-              </Pressable>
+              <View style={styles.rowActions}>
+                <Pressable
+                  style={[styles.iconButton, styles.scanButton]}
+                  onPress={() => router.push(
+                    `/(app)/volunteer/scan-handoff?campaignId=${encodeURIComponent(campaignId)}&distributionId=${encodeURIComponent(item.id)}&roundLabel=${encodeURIComponent(item.roundLabel ?? 'Đợt phân phát')}` as Href,
+                  )}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quét mã người nhận"
+                >
+                  <MaterialCommunityIcons name="qrcode-scan" size={20} color={COLORS.purple} />
+                </Pressable>
+                <Pressable
+                  style={styles.iconButton}
+                  onPress={() => setFeedbackTarget(item)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ghi phản hồi vận hành"
+                >
+                  <MaterialCommunityIcons name="message-text-outline" size={20} color={COLORS.blue} />
+                </Pressable>
+              </View>
             </View>
           ))}
         </View>
@@ -433,6 +456,7 @@ const styles = StyleSheet.create({
   },
   metricValue: { fontSize: 18, fontWeight: '900', color: COLORS.purple },
   metricLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginTop: 1, fontWeight: '800' },
+  rowActions: { gap: 8 },
   iconButton: {
     width: 36,
     height: 36,
@@ -441,6 +465,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.blueContainer,
   },
+  scanButton: { backgroundColor: COLORS.purpleContainer },
   dialogBody: { gap: spacing.md },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

@@ -14,7 +14,7 @@ import { NotificationsGateway } from '@/modules/notifications/notifications.gate
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
 
-const OFFER_EXPIRY_MINUTES = 10;
+const OFFER_EXPIRY_MINUTES = 2;
 const BROADCAST_RADIUS_M = 5000; // 5km
 const MAX_OFFERS_PER_DELIVERY = 5;
 // Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
@@ -27,6 +27,18 @@ interface NearbyShipper {
   id: string;
   user_id: string;
   distance_m: number;
+}
+
+export interface CampaignTransportSummary {
+  id: string;
+  status: string;
+  campaignId: string;
+  campaignTitle: string;
+  providerName: string;
+  providerAddress: string | null;
+  kitchenAddress: string;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
 }
 
 @Injectable()
@@ -45,6 +57,100 @@ export class DeliveriesService {
     return this.storage.saveImage(photo, 'delivery-proofs');
   }
 
+  private async syncCampaignTransport(
+    tx: Prisma.TransactionClient,
+    deliveryId: string,
+    status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'failed',
+    failureReason?: string,
+  ) {
+    const stateRank = {
+      pending: 0,
+      assigned: 1,
+      heading_to_provider: 2,
+      picked_up: 3,
+      in_transit: 4,
+      delivered: 5,
+      failed: 6,
+    } as const;
+
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE campaign_transports
+      SET
+        status = ${status},
+        assigned_at = CASE WHEN ${status} = 'assigned' THEN COALESCE(assigned_at, NOW()) ELSE assigned_at END,
+        picked_up_at = CASE WHEN ${status} = 'picked_up' THEN COALESCE(picked_up_at, NOW()) ELSE picked_up_at END,
+        delivered_at = CASE WHEN ${status} = 'delivered' THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END,
+        failed_at = CASE WHEN ${status} = 'failed' THEN COALESCE(failed_at, NOW()) ELSE failed_at END,
+        failure_reason = CASE WHEN ${status} = 'failed' THEN ${failureReason ?? null} ELSE failure_reason END,
+        updated_at = NOW()
+      WHERE delivery_id = ${deliveryId}::uuid
+        AND status <> 'received'
+        AND (
+          (${status} = 'failed' AND status NOT IN ('delivered', 'failed'))
+          OR (
+            ${status} <> 'failed'
+            AND CASE status
+              WHEN 'pending' THEN 0
+              WHEN 'assigned' THEN 1
+              WHEN 'heading_to_provider' THEN 2
+              WHEN 'picked_up' THEN 3
+              WHEN 'in_transit' THEN 4
+              WHEN 'delivered' THEN 5
+              WHEN 'failed' THEN 6
+              ELSE -1
+            END <= ${stateRank[status]}
+          )
+        )
+    `);
+  }
+
+  private async notifyCampaignTransport(
+    deliveryId: string,
+    status: 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'failed',
+  ) {
+    const [transport] = await this.prisma.$queryRaw<
+      { transport_id: string; campaign_id: string; campaign_title: string; charity_user_id: string; provider_user_id: string }[]
+    >(Prisma.sql`
+      SELECT
+        ct.id AS transport_id,
+        cpr.campaign_id,
+        kc.title AS campaign_title,
+        charity.user_id AS charity_user_id,
+        provider.user_id AS provider_user_id
+      FROM campaign_transports ct
+      JOIN campaign_provider_requests cpr ON cpr.id = ct.provider_request_id
+      JOIN kitchen_campaigns kc ON kc.id = cpr.campaign_id
+      JOIN receiver_profiles charity ON charity.id = cpr.receiver_id
+      JOIN provider_profiles provider ON provider.id = cpr.provider_id
+      WHERE ct.delivery_id = ${deliveryId}::uuid
+    `);
+    if (!transport) return;
+
+    const messages = {
+      assigned: ['Đã có TNV nhận chuyến hàng', `Một tình nguyện viên sẽ đến lấy hàng cho chiến dịch "${transport.campaign_title}".`],
+      heading_to_provider: ['TNV đang đến điểm lấy hàng', `TNV giao hàng đang đến nhận thực phẩm cho chiến dịch "${transport.campaign_title}".`],
+      picked_up: ['Thực phẩm đã được nhận', `TNV đã nhận thực phẩm và chuẩn bị giao đến bếp của chiến dịch "${transport.campaign_title}".`],
+      in_transit: ['Thực phẩm đang được giao', `TNV đang giao thực phẩm đến bếp của chiến dịch "${transport.campaign_title}".`],
+      delivered: ['Chờ xác nhận đã nhận hàng', `TNV đã giao thực phẩm đến bếp cho chiến dịch "${transport.campaign_title}". Vui lòng xác nhận đã nhận hàng.`],
+      failed: ['Chuyến vận chuyển không hoàn tất', `Chuyến vận chuyển thực phẩm cho chiến dịch "${transport.campaign_title}" đã thất bại.`],
+    } as const;
+    const [title, body] = messages[status];
+    await this.notifications.notify(transport.charity_user_id, {
+      type: 'campaign',
+      title,
+      body,
+      data: { campaignId: transport.campaign_id, transportId: transport.transport_id, deliveryId, status },
+    });
+    if (status === 'delivered' || status === 'failed') {
+      await this.notifications.notify(transport.provider_user_id, {
+        type: 'campaign',
+        title,
+        body,
+        data: { campaignId: transport.campaign_id, transportId: transport.transport_id, deliveryId, status },
+      });
+    }
+  }
+
   private async notifyTaskOffer(shipper: NearbyShipper, deliveryId: string, expiresAt: Date) {
     void this.notifQueue.add(
       'delivery-offer-timeout',
@@ -55,24 +161,10 @@ export class DeliveriesService {
   }
 
   private async offerNextNearestShipper(deliveryId: string, pickupLng: number, pickupLat: number) {
-    const [delivery] = await this.prisma.$queryRaw<{ id: string; status: string; shipper_id: string | null }[]>(Prisma.sql`
-      SELECT id, status, shipper_id
-      FROM deliveries
-      WHERE id = ${deliveryId}::uuid
-    `);
-    if (!delivery || delivery.status !== 'pending_assignment' || delivery.shipper_id != null) return null;
-
+    const now = new Date();
     await this.prisma.shipperTaskOffer.updateMany({
-      where: {
-        deliveryId,
-        status: 'pending',
-        expiresAt: { lte: new Date() },
-      },
-      data: {
-        status: 'expired',
-        respondedAt: new Date(),
-        rejectReason: 'Offer timeout',
-      },
+      where: { deliveryId, status: 'pending', expiresAt: { lte: now } },
+      data: { status: 'expired', respondedAt: now, rejectReason: 'Offer timeout' },
     });
 
     const shippers = await this.prisma.$queryRaw<NearbyShipper[]>(Prisma.sql`
@@ -88,20 +180,22 @@ export class DeliveriesService {
       JOIN volunteer_specializations vs ON vs.volunteer_id = vp.id
         AND vs.specialization = 'shipper'
         AND vs.is_verified = TRUE
-      LEFT JOIN shipper_task_offers existing
-        ON existing.delivery_id = ${deliveryId}::uuid
-       AND existing.shipper_id = vp.id
       WHERE vp.is_available = TRUE
         AND vp.verification_status = 'approved'
         AND vp.current_location IS NOT NULL
         AND u.status = 'active'
         AND u.deleted_at IS NULL
-        AND existing.id IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM shipper_task_offers existing
+          WHERE existing.delivery_id = ${deliveryId}::uuid
+            AND existing.shipper_id = vp.id
+        )
         AND ST_DWithin(
           vp.current_location::geography,
           ST_MakePoint(${pickupLng}, ${pickupLat})::geography,
           ${BROADCAST_RADIUS_M}
-      )
+        )
       ORDER BY distance_m ASC
       LIMIT 1
     `);
@@ -109,11 +203,28 @@ export class DeliveriesService {
     const shipper = shippers[0];
     if (!shipper) return null;
 
-    const expiresAt = new Date(Date.now() + OFFER_EXPIRY_MINUTES * 60 * 1000);
-
+    const expiresAt = new Date(now.getTime() + OFFER_EXPIRY_MINUTES * 60 * 1000);
     const inserted = await this.prisma.$executeRaw(Prisma.sql`
       INSERT INTO shipper_task_offers (delivery_id, shipper_id, status, expires_at)
-      VALUES (${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz)
+      SELECT ${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz
+      WHERE EXISTS (
+        SELECT 1
+        FROM deliveries
+        WHERE id = ${deliveryId}::uuid
+          AND status = 'pending_assignment'
+          AND shipper_id IS NULL
+      )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM shipper_task_offers
+          WHERE delivery_id = ${deliveryId}::uuid
+            AND status = 'pending'
+        )
+        AND (
+          SELECT COUNT(*)
+          FROM shipper_task_offers
+          WHERE delivery_id = ${deliveryId}::uuid
+        ) < ${MAX_OFFERS_PER_DELIVERY}
       ON CONFLICT (delivery_id, shipper_id) DO NOTHING
     `);
     if (inserted !== 1) return null;
@@ -124,7 +235,14 @@ export class DeliveriesService {
 
   // Called after reservation created with requestDelivery=true. Kept as public API for the queue processor.
   async broadcastToNearbyShippers(deliveryId: string, pickupLng: number, pickupLat: number) {
-    await this.offerNextNearestShipper(deliveryId, pickupLng, pickupLat);
+    const shipper = await this.offerNextNearestShipper(deliveryId, pickupLng, pickupLat);
+    if (shipper) {
+      await this.prisma.$executeRaw(Prisma.sql`
+        UPDATE campaign_transports
+        SET last_broadcast_at = NOW(), updated_at = NOW()
+        WHERE delivery_id = ${deliveryId}::uuid
+      `);
+    }
   }
 
   async acceptOffer(deliveryId: string, shipperUserId: string) {
@@ -167,6 +285,14 @@ export class DeliveriesService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const claimedVolunteer = await tx.volunteerProfile.updateMany({
+        where: { id: volunteer.id, isAvailable: true },
+        data: { isAvailable: false },
+      });
+      if (claimedVolunteer.count !== 1) {
+        throw new ConflictException('Bạn đã nhận một đơn giao khác.');
+      }
+
       const assigned = await tx.delivery.updateMany({
         where: {
           id: deliveryId,
@@ -185,7 +311,7 @@ export class DeliveriesService {
       }
 
       const accepted = await tx.shipperTaskOffer.updateMany({
-        where: { id: offer.id, status: 'pending' },
+        where: { id: offer.id, status: 'pending', expiresAt: { gt: new Date() } },
         data: { status: 'accepted', respondedAt: new Date() },
       });
       if (accepted.count !== 1) {
@@ -197,10 +323,7 @@ export class DeliveriesService {
         data: { status: 'expired', respondedAt: new Date() },
       });
 
-      await tx.volunteerProfile.update({
-        where: { id: volunteer.id },
-        data: { isAvailable: false },
-      });
+      await this.syncCampaignTransport(tx, deliveryId, 'assigned');
     });
 
     // Realtime: báo cho receiver biết có shipper nhận rồi
@@ -218,6 +341,8 @@ export class DeliveriesService {
         shipperName: updated.shipper?.user.fullName ?? 'TNV',
         shipperPhone: updated.shipper?.user.phone,
       });
+    } else {
+      void this.notifyCampaignTransport(deliveryId, 'assigned');
     }
 
     return updated;
@@ -241,7 +366,7 @@ export class DeliveriesService {
 
     await this.prisma.$transaction(async (tx) => {
       const rejected = await tx.shipperTaskOffer.updateMany({
-        where: { id: offer.id, status: 'pending' },
+        where: { id: offer.id, status: 'pending', expiresAt: { gt: new Date() } },
         data: { status: 'rejected', respondedAt: new Date(), rejectReason: reason ?? 'Shipper bỏ qua' },
       });
       if (rejected.count !== 1) {
@@ -256,17 +381,24 @@ export class DeliveriesService {
     return { message: 'Offer rejected' };
   }
 
-  async expireOfferAndOfferNext(deliveryId: string, shipperId: string) {
+  async expireOfferAndOfferNext(deliveryId: string, shipperId: string, expiresAt?: string) {
+    const expectedExpiry = expiresAt ? new Date(expiresAt) : undefined;
+    if (expectedExpiry && Number.isNaN(expectedExpiry.getTime())) return;
+
     const offer = await this.prisma.shipperTaskOffer.findUnique({
       where: { deliveryId_shipperId: { deliveryId, shipperId } },
       select: { id: true, status: true, expiresAt: true },
     });
-    if (!offer || offer.status !== 'pending' || offer.expiresAt > new Date()) return;
+    if (
+      !offer
+      || offer.status !== 'pending'
+      || offer.expiresAt > new Date()
+      || (expectedExpiry && offer.expiresAt.getTime() !== expectedExpiry.getTime())
+    ) return;
 
     const coords = (await this.getDeliveryCoords([deliveryId])).get(deliveryId);
-
     const expired = await this.prisma.shipperTaskOffer.updateMany({
-      where: { id: offer.id, status: 'pending' },
+      where: { id: offer.id, status: 'pending', expiresAt: offer.expiresAt },
       data: { status: 'expired', respondedAt: new Date(), rejectReason: 'Offer timeout' },
     });
     if (expired.count !== 1) return;
@@ -315,17 +447,21 @@ export class DeliveriesService {
       updateData.qcPhotoAt = new Date();
     }
     if (newStatus === 'delivered') {
-      // Bàn giao đúng người: shipper phải quét mã QR trên màn hình của người nhận.
-      // Campaign delivery (provider→kitchen) chưa có luồng QR người nhận → bỏ qua bước này
-      // (sẽ được xử lý bằng pickup_proof ở bước riêng sau).
       if (!delivery.reservation) {
-        updateData.deliveredAt = new Date();
-        if (proofUrl) {
-          updateData.deliveryProofUrl = proofUrl;
-          updateData.deliveryProofAt = new Date();
+        if (!proofUrl) {
+          throw new BadRequestException('Chuyến giao đến bếp cần ảnh xác nhận bàn giao.');
         }
-        await this.prisma.delivery.update({ where: { id: deliveryId }, data: updateData });
-        return this.prisma.delivery.findUnique({ where: { id: deliveryId } });
+        updateData.deliveredAt = new Date();
+        updateData.deliveryProofUrl = proofUrl;
+        updateData.deliveryProofAt = new Date();
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const result = await tx.delivery.update({ where: { id: deliveryId }, data: updateData });
+          await tx.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } });
+          await this.syncCampaignTransport(tx, deliveryId, 'delivered');
+          return result;
+        });
+        void this.notifyCampaignTransport(deliveryId, 'delivered');
+        return updated;
       }
 
       // Không kiểm tra qr_expires_at — QR của đơn giao là mã xác nhận bàn giao,
@@ -382,7 +518,26 @@ export class DeliveriesService {
       );
     }
 
-    return this.prisma.delivery.update({ where: { id: deliveryId }, data: updateData });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.delivery.update({ where: { id: deliveryId }, data: updateData });
+      if (!delivery.reservation) {
+        const transportStatus = newStatus === 'qc_completed' ? 'picked_up' : newStatus;
+        await this.syncCampaignTransport(
+          tx,
+          deliveryId,
+          transportStatus as 'heading_to_provider' | 'picked_up' | 'in_transit',
+        );
+      }
+      return result;
+    });
+    if (!delivery.reservation) {
+      const transportStatus = newStatus === 'qc_completed' ? 'picked_up' : newStatus;
+      void this.notifyCampaignTransport(
+        deliveryId,
+        transportStatus as 'heading_to_provider' | 'picked_up' | 'in_transit',
+      );
+    }
+    return updated;
   }
 
   /** Shipper huỷ nhận đơn TRƯỚC khi lấy hàng → đơn quay lại 'chờ nhận' + báo shipper khác. */
@@ -402,10 +557,31 @@ export class DeliveriesService {
         where: { id: deliveryId },
         data: { shipperId: null, status: 'pending_assignment', assignedAt: null },
       }),
+      this.prisma.volunteerProfile.update({
+        where: { id: volunteer.id },
+        data: { isAvailable: true },
+      }),
       this.prisma.shipperTaskOffer.updateMany({
         where: { deliveryId, shipperId: volunteer.id, status: 'accepted' },
         data: { status: 'rejected', rejectReason: reason ?? 'Shipper huỷ nhận đơn', respondedAt: new Date() },
       }),
+      ...(delivery.reservationId
+        ? []
+        : [
+            this.prisma.$executeRaw(Prisma.sql`
+              UPDATE campaign_transports
+              SET
+                status = 'pending',
+                assigned_at = NULL,
+                picked_up_at = NULL,
+                delivered_at = NULL,
+                failed_at = NULL,
+                failure_reason = NULL,
+                updated_at = NOW()
+              WHERE delivery_id = ${deliveryId}::uuid
+                AND status IN ('assigned', 'heading_to_provider')
+            `),
+          ]),
     ]);
 
     // Mời lại các shipper khác gần điểm lấy hàng
@@ -456,24 +632,23 @@ export class DeliveriesService {
       throw new BadRequestException('Chỉ báo thất bại sau khi đã lấy hàng (QC xong).');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } }),
-      this.prisma.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } }),
-      // Đóng luôn reservation — nếu để 'confirmed' thì đơn treo vĩnh viễn (không cron nào xử lý)
-      // Campaign delivery (provider→kitchen) không có reservation → bỏ qua.
-      ...(delivery.reservationId
-        ? [
-            this.prisma.reservation.update({
-              where: { id: delivery.reservationId },
-              data: {
-                status: 'cancelled',
-                cancelledAt: new Date(),
-                cancellationReason: `Giao hàng thất bại: ${reason.trim()}`,
-              },
-            }),
-          ]
-        : []),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } });
+      await tx.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } });
+      if (delivery.reservationId) {
+        await tx.reservation.update({
+          where: { id: delivery.reservationId },
+          data: {
+            status: 'cancelled',
+            cancelledAt: new Date(),
+            cancellationReason: `Giao hàng thất bại: ${reason.trim()}`,
+          },
+        });
+      } else {
+        await this.syncCampaignTransport(tx, deliveryId, 'failed', reason.trim());
+      }
+    });
+    if (!delivery.reservationId) void this.notifyCampaignTransport(deliveryId, 'failed');
     return { id: deliveryId, status: 'failed' };
   }
 
@@ -517,9 +692,23 @@ export class DeliveriesService {
           }),
         );
       }
-      // Campaign delivery (provider → kitchen) không có reservation.
       if (!d.reservation) {
-        await this.prisma.$transaction(ops);
+        const reason = `Tự động huỷ: đơn không được cập nhật trạng thái trong ${DELIVERY_STALL_HOURS} giờ.`;
+        await this.prisma.$transaction(async (tx) => {
+          await tx.delivery.update({
+            where: { id: d.id },
+            data: { status: 'failed', failedReason: reason },
+          });
+          if (d.shipperId) {
+            await tx.volunteerProfile.update({ where: { id: d.shipperId }, data: { isAvailable: true } });
+            await tx.shipperTaskOffer.updateMany({
+              where: { deliveryId: d.id, shipperId: d.shipperId, status: 'accepted' },
+              data: { status: 'expired', respondedAt: new Date(), rejectReason: reason },
+            });
+          }
+          await this.syncCampaignTransport(tx, d.id, 'failed', reason);
+        });
+        void this.notifyCampaignTransport(d.id, 'failed');
         continue;
       }
       if (d.reservation.status === 'confirmed') {
@@ -551,8 +740,7 @@ export class DeliveriesService {
   /**
    * Cron: (1) đóng các offer `pending` đã quá hạn thành `expired`;
    * (2) đơn `pending_assignment` còn hiệu lực (reservation chưa hết hạn QR)
-   * mà không còn offer nào đang chờ → phát lại lời mời cho các shipper gần đó
-   * (kể cả shipper đã bỏ lỡ lần trước — trừ người đã từ chối).
+   * mà không còn offer nào đang chờ → mời tuần tự shipper đủ điều kiện tiếp theo.
    */
   /**
    * Quá ASSIGNMENT_TIMEOUT_MS (4ph30) mà chưa shipper nào nhận → dừng tìm:
@@ -565,7 +753,6 @@ export class DeliveriesService {
       where: {
         status: 'pending_assignment',
         createdAt: { lt: cutoff },
-        reservation: { status: 'confirmed' },
       },
       include: {
         reservation: {
@@ -583,13 +770,24 @@ export class DeliveriesService {
     });
 
     for (const d of stale) {
-      // Campaign delivery (provider → kitchen) không có reservation → bỏ qua,
-      // xử lý riêng ở campaign_transports cron nếu cần.
-      if (!d.reservation) continue;
+      const reason = 'Không có tình nguyện viên nào nhận đơn trong thời gian tìm kiếm.';
+      if (!d.reservation) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.delivery.update({ where: { id: d.id }, data: { status: 'failed', failedReason: reason } });
+          await tx.shipperTaskOffer.updateMany({
+            where: { deliveryId: d.id, status: 'pending' },
+            data: { status: 'expired', respondedAt: new Date(), rejectReason: reason },
+          });
+          await this.syncCampaignTransport(tx, d.id, 'failed', reason);
+        });
+        void this.notifyCampaignTransport(d.id, 'failed');
+        continue;
+      }
+
       await this.prisma.$transaction([
         this.prisma.delivery.update({
           where: { id: d.id },
-          data: { status: 'failed', failedReason: 'Không có tình nguyện viên nào nhận đơn trong thời gian tìm kiếm.' },
+          data: { status: 'failed', failedReason: reason },
         }),
         this.prisma.shipperTaskOffer.updateMany({
           where: { deliveryId: d.id, status: 'pending' },
@@ -603,7 +801,6 @@ export class DeliveriesService {
             cancellationReason: 'Không có tình nguyện viên nào nhận đơn giao. Vui lòng đặt lại.',
           },
         }),
-        // Hàng chưa rời bếp → hoàn số lượng cho listing
         this.prisma.$executeRaw(Prisma.sql`
           UPDATE food_listings
           SET
@@ -618,7 +815,6 @@ export class DeliveriesService {
         }),
       ]);
 
-      // Báo người nhận (chuông + socket) để họ biết mà đặt lại
       void this.notifications.notify(d.reservation.receiver.userId, {
         type: 'delivery',
         title: 'Không tìm được tình nguyện viên',
@@ -650,11 +846,14 @@ export class DeliveriesService {
              ST_X(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plng,
              ST_Y(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plat
       FROM deliveries d
-      JOIN reservations r ON r.id = d.reservation_id
-      JOIN food_listings fl ON fl.id = r.listing_id
+      LEFT JOIN reservations r ON r.id = d.reservation_id
+      LEFT JOIN food_listings fl ON fl.id = r.listing_id
+      LEFT JOIN campaign_transports ct ON ct.delivery_id = d.id
       WHERE d.status = 'pending_assignment'
-        AND r.status = 'confirmed'
-        AND r.qr_expires_at > NOW()
+        AND (
+          (r.id IS NOT NULL AND r.status = 'confirmed' AND r.qr_expires_at > NOW())
+          OR (ct.id IS NOT NULL AND ct.status = 'pending')
+        )
         AND NOT EXISTS (
           SELECT 1 FROM shipper_task_offers o
           WHERE o.delivery_id = d.id AND o.status = 'pending'
@@ -687,6 +886,76 @@ export class DeliveriesService {
     );
   }
 
+  private async getCampaignTransportSummaries(deliveryIds: string[]): Promise<Map<string, CampaignTransportSummary>> {
+    if (deliveryIds.length === 0) return new Map<string, CampaignTransportSummary>();
+    const rows = await this.prisma.$queryRaw<{
+      delivery_id: string;
+      id: string;
+      status: string;
+      campaign_id: string;
+      campaign_title: string;
+      provider_name: string;
+      provider_address: string | null;
+      kitchen_address: string;
+      pickup_start_time: string | null;
+      pickup_end_time: string | null;
+    }[]>(Prisma.sql`
+      SELECT
+        ct.delivery_id,
+        ct.id,
+        ct.status,
+        cpr.campaign_id,
+        kc.title AS campaign_title,
+        pp.business_name AS provider_name,
+        pp.address AS provider_address,
+        kc.kitchen_address,
+        cpr.pickup_start_time,
+        cpr.pickup_end_time
+      FROM campaign_transports ct
+      JOIN campaign_provider_requests cpr ON cpr.id = ct.provider_request_id
+      JOIN kitchen_campaigns kc ON kc.id = cpr.campaign_id
+      JOIN provider_profiles pp ON pp.id = cpr.provider_id
+      WHERE ct.delivery_id IN (${Prisma.join(deliveryIds.map((id) => Prisma.sql`${id}::uuid`))})
+    `);
+    return new Map(rows.map((row) => [row.delivery_id, {
+      id: row.id,
+      status: row.status,
+      campaignId: row.campaign_id,
+      campaignTitle: row.campaign_title,
+      providerName: row.provider_name,
+      providerAddress: row.provider_address,
+      kitchenAddress: row.kitchen_address,
+      pickupStartTime: row.pickup_start_time,
+      pickupEndTime: row.pickup_end_time,
+    }]));
+  }
+
+  private sourceAwareDelivery<T extends {
+    id: string;
+    reservation: { listing: { pickupAddress: string }; receiver: { address: string | null } | null } | null;
+    coords?: { pickupLng: number | null; pickupLat: number | null; deliveryLng: number | null; deliveryLat: number | null } | null;
+  }>(delivery: T, campaignTransport?: CampaignTransportSummary) {
+    const reservation = delivery.reservation;
+    const pickupAddress = reservation?.listing.pickupAddress ?? campaignTransport?.providerAddress ?? null;
+    const destinationAddress = reservation?.receiver?.address ?? campaignTransport?.kitchenAddress ?? null;
+    return {
+      ...delivery,
+      source: reservation ? 'reservation' as const : 'campaign_transport' as const,
+      reservation,
+      campaignTransport: campaignTransport ?? null,
+      pickup: {
+        address: pickupAddress,
+        lng: delivery.coords?.pickupLng ?? null,
+        lat: delivery.coords?.pickupLat ?? null,
+      },
+      destination: {
+        address: destinationAddress,
+        lng: delivery.coords?.deliveryLng ?? null,
+        lat: delivery.coords?.deliveryLat ?? null,
+      },
+    };
+  }
+
   async getMyActiveDelivery(shipperUserId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId: shipperUserId },
@@ -711,7 +980,8 @@ export class DeliveriesService {
     });
     if (!delivery) return null;
     const coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
-    return { ...delivery, coords };
+    const transports = await this.getCampaignTransportSummaries([delivery.id]);
+    return this.sourceAwareDelivery({ ...delivery, coords }, transports.get(delivery.id));
   }
 
   /** Lịch sử giao hàng của shipper (đã giao / thất bại) — phân trang server-side. */
@@ -744,7 +1014,17 @@ export class DeliveriesService {
       this.prisma.delivery.count({ where }),
     ]);
 
-    return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+    const [coords, transports] = await Promise.all([
+      this.getDeliveryCoords(items.map((item) => item.id)),
+      this.getCampaignTransportSummaries(items.map((item) => item.id)),
+    ]);
+    return {
+      items: items.map((item) => this.sourceAwareDelivery(
+        { ...item, coords: coords.get(item.id) ?? null },
+        transports.get(item.id),
+      )),
+      meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    };
   }
 
   /** Bảng thành tích shipper (kiểu dashboard tài xế Grab/Xanh SM). */
@@ -879,7 +1159,16 @@ export class DeliveriesService {
       orderBy: { offeredAt: 'asc' },
     });
 
-    const coordsMap = await this.getDeliveryCoords(offers.map((o) => o.deliveryId));
-    return offers.map((o) => ({ ...o, delivery: { ...o.delivery, coords: coordsMap.get(o.deliveryId) ?? null } }));
+    const [coordsMap, transports] = await Promise.all([
+      this.getDeliveryCoords(offers.map((offer) => offer.deliveryId)),
+      this.getCampaignTransportSummaries(offers.map((offer) => offer.deliveryId)),
+    ]);
+    return offers.map((offer) => ({
+      ...offer,
+      delivery: this.sourceAwareDelivery(
+        { ...offer.delivery, coords: coordsMap.get(offer.deliveryId) ?? null },
+        transports.get(offer.deliveryId),
+      ),
+    }));
   }
 }

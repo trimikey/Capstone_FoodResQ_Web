@@ -37,7 +37,12 @@ export function OfferPopup({
   onClose: () => void;
   busy: boolean;
 }) {
-  const l = offer.delivery.reservation.listing;
+  const reservation = offer.delivery.reservation;
+  const transport = offer.delivery.campaignTransport;
+  const title = reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+  const imageUrl = reservation?.listing.imageUrls?.[0];
+  const pickupAddress = offer.delivery.pickup.address ?? 'Chưa có địa chỉ lấy hàng';
+  const destinationAddress = offer.delivery.destination.address ?? 'Chưa có địa chỉ giao hàng';
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
@@ -55,10 +60,11 @@ export function OfferPopup({
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={l.imageUrls[0] || '/food_bread.png'} alt={l.title} className="w-full h-full object-cover" />
+              <img src={imageUrl ? mediaUrl(imageUrl) : '/food_bread.png'} alt={title} className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-extrabold text-neutral-900 truncate">{l.title}</h3>
+              <h3 className="font-extrabold text-neutral-900 truncate">{title}</h3>
+              {transport && <p className="text-xs text-emerald-700">Giao thực phẩm cho bếp chiến dịch</p>}
               {offer.delivery.distanceKm != null && (
                 <p className="text-xs text-neutral-500">~{offer.delivery.distanceKm} km</p>
               )}
@@ -67,11 +73,11 @@ export function OfferPopup({
           <div className="space-y-2 text-sm">
             <p className="flex items-start gap-2">
               <span className="material-symbols-outlined text-emerald-600 text-[18px]">store</span>
-              <span className="text-neutral-700"><b>Lấy:</b> {l.pickupAddress}</span>
+              <span className="text-neutral-700"><b>Lấy:</b> {pickupAddress}</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="material-symbols-outlined text-rose-600 text-[18px]">location_on</span>
-              <span className="text-neutral-700"><b>Giao:</b> {offer.delivery.reservation.receiver?.address ?? '—'}</span>
+              <span className="text-neutral-700"><b>Giao:</b> {destinationAddress}</span>
             </p>
           </div>
           <div className="flex gap-3 pt-1">

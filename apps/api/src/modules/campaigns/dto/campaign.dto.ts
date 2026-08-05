@@ -251,6 +251,11 @@ export class ApplyCampaignDto {
   @ApiProperty({ enum: AssignmentRole })
   @IsEnum(AssignmentRole, { message: 'Vai trò không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)' })
   role!: AssignmentRole;
+
+  @ApiPropertyOptional({ description: 'Ca trực mong muốn; charity duyệt trước khi phân công chính thức' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ca trực không hợp lệ' })
+  shiftId?: string;
 }
 
 export class ReviewCampaignAssignmentDto {
@@ -269,6 +274,24 @@ export class ReviewCampaignAssignmentDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+export class AdvanceCampaignTaskDto {
+  @ApiPropertyOptional({ example: 106.6297, description: 'Kinh độ GPS tại thời điểm điểm danh' })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Kinh độ phải là số' })
+  @Min(-180, { message: 'Kinh độ tối thiểu -180' })
+  @Max(180, { message: 'Kinh độ tối đa 180' })
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({ example: 10.8231, description: 'Vĩ độ GPS tại thời điểm điểm danh' })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Vĩ độ phải là số' })
+  @Min(-90, { message: 'Vĩ độ tối thiểu -90' })
+  @Max(90, { message: 'Vĩ độ tối đa 90' })
+  @Type(() => Number)
+  lat?: number;
 }
 
 export class AddExperienceDto {
@@ -522,6 +545,20 @@ export class ReviewAssignmentDto {
 }
 
 // ─── Manage: Tạo đợt phát suất ăn ────────────────────────────────────────────
+export class ConfirmCampaignTransportReceiptDto {
+  @ApiPropertyOptional({ description: 'Ghi chú khi xác nhận nhận hàng' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
+  note?: string;
+
+  @ApiPropertyOptional({ description: 'URL ảnh biên nhận (tùy chọn)' })
+  @IsOptional()
+  @IsString({ message: 'URL ảnh biên nhận phải là chuỗi' })
+  @MaxLength(2000, { message: 'URL ảnh biên nhận quá dài' })
+  receiptPhotoUrl?: string;
+}
+
 export class CreateDistributionDto {
   @ApiProperty({ example: 150, description: 'Số suất đã phát' })
   @IsInt({ message: 'Số suất phải là số nguyên' })

@@ -10,6 +10,7 @@ import {
   useCancelCampaign,
   useCompleteCampaign,
   useConfirmDonation,
+  useConfirmCampaignTransportReceipt,
   useCampaignChangeRequests,
   useSubmitCampaignChange,
   useCancelCampaignChange,
@@ -173,6 +174,7 @@ export default function CharityCampaignDetailScreen() {
   const cancelMut = useCancelCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
+  const confirmReceiptMut = useConfirmCampaignTransportReceipt();
   const reviewAssignmentMut = useReviewAssignment();
   const canRequestProviders = c?.status === 'open' || c?.status === 'in_progress';
   const { data: providers = [] } = useProviders(canRequestProviders);
@@ -193,6 +195,8 @@ export default function CharityCampaignDetailScreen() {
   const [proposalVisible, setProposalVisible] = useState(false);
   const [reviewShiftTarget, setReviewShiftTarget] = useState<CampaignAssignmentItem | null>(null);
   const [selectedReviewShiftId, setSelectedReviewShiftId] = useState('');
+  const [receiptTransportId, setReceiptTransportId] = useState<string | null>(null);
+  const [receiptNote, setReceiptNote] = useState('');
 
   const Header = (
     <View style={styles.header}>
@@ -227,6 +231,9 @@ export default function CharityCampaignDetailScreen() {
   const supplyProgress = c.supplyProgress ?? [];
   const pendingDonations = donations.filter((d) => d.status !== 'received').length;
   const receivedDonations = donations.length - pendingDonations;
+  const campaignTransportRequests = sentProviderRequests.filter(
+    (request) => request.campaign?.id === c.id && request.transport,
+  );
   const pendingAssignments = assignments.filter((assignment) => assignment.status === 'pending').length;
   const totalSlots = slots.reduce((sum, slot) => sum + slot.needed, 0);
   const filledSlots = slots.reduce((sum, slot) => sum + slot.filled, 0);
@@ -314,6 +321,22 @@ export default function CharityCampaignDetailScreen() {
     try {
       await confirmMut.mutateAsync({ donationId, campaignId: c.id });
       Popup.show({ type: 'success', text1: 'Đã xác nhận nhận nguyên liệu' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Xác nhận thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
+  const handleConfirmTransportReceipt = async () => {
+    if (!receiptTransportId) return;
+    try {
+      await confirmReceiptMut.mutateAsync({
+        campaignId: c.id,
+        transportId: receiptTransportId,
+        note: receiptNote,
+      });
+      setReceiptTransportId(null);
+      setReceiptNote('');
+      Popup.show({ type: 'success', text1: 'Đã xác nhận nhận thực phẩm' });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Xác nhận thất bại', text2: getErrorMessage(err) });
     }
@@ -672,6 +695,41 @@ export default function CharityCampaignDetailScreen() {
           </Section>
         ) : null}
 
+        {campaignTransportRequests.length > 0 ? (
+          <Section title="Vận chuyển đến bếp">
+            {campaignTransportRequests.map((request) => {
+              const transport = request.transport!;
+              const label = transportStatusLabel(transport.status);
+              return (
+                <View key={transport.id} style={styles.transportRow}>
+                  <MaterialCommunityIcons
+                    name={transport.status === 'received' ? 'check-circle' : transport.status === 'failed' ? 'alert-circle' : 'truck-delivery-outline'}
+                    size={20}
+                    color={transport.status === 'received' ? COLORS.primary : transport.status === 'failed' ? COLORS.error : COLORS.onSurfaceVariant}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.donationItem}>{request.provider?.businessName ?? 'Nhà cung cấp'}</Text>
+                    <Text style={styles.muted}>{label}</Text>
+                    {transport.failureReason ? <Text style={styles.transportError}>{transport.failureReason}</Text> : null}
+                    {transport.receiptNote ? <Text style={styles.donationNote}>“{transport.receiptNote}”</Text> : null}
+                  </View>
+                  {transport.status === 'delivered' ? (
+                    <Button
+                      mode="contained-tonal"
+                      compact
+                      textColor={COLORS.primary}
+                      onPress={() => setReceiptTransportId(transport.id)}
+                      disabled={confirmReceiptMut.isPending}
+                    >
+                      Xác nhận
+                    </Button>
+                  ) : null}
+                </View>
+              );
+            })}
+          </Section>
+        ) : null}
+
         <Section title={`Nguyên liệu quyên góp (${donations.length})`}>
           {donations.length === 0 ? (
             <Text style={styles.muted}>Chưa có quyên góp nào.</Text>
@@ -816,6 +874,55 @@ export default function CharityCampaignDetailScreen() {
             </Button>
             <Button mode="contained" buttonColor={COLORS.error} onPress={handleCancelCampaign} loading={cancelMut.isPending} disabled={cancelMut.isPending}>
               Huỷ chiến dịch
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={!!receiptTransportId}
+          onDismiss={() => {
+            if (!confirmReceiptMut.isPending) {
+              setReceiptTransportId(null);
+              setReceiptNote('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Xác nhận nhận thực phẩm</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.muted}>Xác nhận chỉ thực hiện sau khi đã kiểm tra thực phẩm shipper bàn giao tại bếp.</Text>
+            <TextInput
+              mode="outlined"
+              label="Ghi chú (tuỳ chọn)"
+              multiline
+              numberOfLines={3}
+              value={receiptNote}
+              onChangeText={setReceiptNote}
+              disabled={confirmReceiptMut.isPending}
+              outlineColor={COLORS.outline}
+              activeOutlineColor={COLORS.primary}
+              style={{ backgroundColor: COLORS.surface, marginTop: 12 }}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReceiptTransportId(null);
+                setReceiptNote('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={confirmReceiptMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              onPress={handleConfirmTransportReceipt}
+              loading={confirmReceiptMut.isPending}
+              disabled={confirmReceiptMut.isPending}
+            >
+              Xác nhận đã nhận
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1221,6 +1328,20 @@ function ChangeRequestRow({
   );
 }
 
+function transportStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: 'Đang tìm shipper',
+    assigned: 'Shipper đã nhận chuyến',
+    heading_to_provider: 'Shipper đang đến nhà cung cấp',
+    picked_up: 'Đã nhận thực phẩm',
+    in_transit: 'Đang giao đến bếp',
+    delivered: 'Chờ xác nhận tại bếp',
+    received: 'Đã xác nhận nhận hàng',
+    failed: 'Giao hàng thất bại',
+  };
+  return labels[status] ?? status;
+}
+
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 }
@@ -1384,8 +1505,10 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'center' },
+  transportRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, alignItems: 'center' },
   donationItem: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   donationNote: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 2 },
+  transportError: { fontSize: 12, color: COLORS.error, marginTop: 2 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
     borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,

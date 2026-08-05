@@ -83,7 +83,7 @@ function mapsUrls(target: RouteTarget): { primary: string; fallback: string } | 
   if (Platform.OS === 'ios') return { primary: `comgooglemaps://?daddr=${encoded}&directionsmode=driving`, fallback };
   return { primary: fallback, fallback };
 }
-function advanceLabel(status: string, hasPickupPhoto: boolean): string {
+function advanceLabel(status: string, hasPickupPhoto: boolean, isCampaignTransport: boolean): string {
   switch (status) {
     case 'assigned':
       return 'Đi tới điểm lấy';
@@ -92,22 +92,26 @@ function advanceLabel(status: string, hasPickupPhoto: boolean): string {
     case 'qc_completed':
       return 'Chỉ đường đến điểm giao';
     case 'in_transit':
-      return 'Hoàn tất giao hàng';
+      return isCampaignTransport ? 'Chụp ảnh bàn giao cho bếp' : 'Hoàn tất giao hàng';
     default:
       return 'Cập nhật trạng thái';
   }
 }
-function advanceIcon(status: string, hasPickupPhoto: boolean): keyof typeof MaterialCommunityIcons.glyphMap {
+function advanceIcon(
+  status: string,
+  hasPickupPhoto: boolean,
+  isCampaignTransport: boolean,
+): keyof typeof MaterialCommunityIcons.glyphMap {
   switch (status) {
     case 'heading_to_provider':
       return hasPickupPhoto ? 'check-circle-outline' : 'camera';
     case 'in_transit':
-      return 'qrcode-scan';
+      return isCampaignTransport ? 'camera' : 'qrcode-scan';
     default:
       return 'arrow-right-circle';
   }
 }
-function statusHint(status: string, hasPickupPhoto: boolean): string {
+function statusHint(status: string, hasPickupPhoto: boolean, isCampaignTransport: boolean): string {
   switch (status) {
     case 'assigned':
       return 'Chờ đi lấy hàng';
@@ -116,9 +120,9 @@ function statusHint(status: string, hasPickupPhoto: boolean): string {
     case 'qc_completed':
       return 'Đã lấy hàng, chờ đi giao';
     case 'in_transit':
-      return 'Đang giao, chờ mã người nhận';
+      return isCampaignTransport ? 'Đang giao đến bếp, cần ảnh bàn giao' : 'Đang giao, chờ mã người nhận';
     case 'delivered':
-      return 'Đơn đã hoàn tất';
+      return isCampaignTransport ? 'Đã giao, chờ bếp xác nhận nhận hàng' : 'Đơn đã hoàn tất';
     default:
       return 'Theo dõi tiến trình giao hàng';
   }
@@ -219,7 +223,26 @@ export default function VolunteerActiveScreen() {
     const next = nextDeliveryStatus(d.status);
     if (!next) return;
     if (next === 'delivered') {
-      openQrSheet();
+      if (d.source === 'reservation') {
+        openQrSheet();
+        return;
+      }
+
+      try {
+        const photo = await captureImage('id_card');
+        if (!photo) {
+          Popup.show({ type: 'info', text1: 'Cần ảnh bàn giao', text2: 'Hãy chụp ảnh thực phẩm tại bếp trước khi hoàn tất.' });
+          return;
+        }
+        await updateDeliveryStatus(d, next, { photo, successText: 'Đã bàn giao cho bếp' });
+      } catch (e: any) {
+        void notifyError();
+        Popup.show({
+          type: 'error',
+          text1: 'Không thể hoàn tất giao hàng',
+          text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+        });
+      }
       return;
     }
 
@@ -370,30 +393,35 @@ export default function VolunteerActiveScreen() {
     );
   }
 
-  const { listing, receiver } = delivery.reservation;
-  const pickup = pickupOf(delivery.coords);
-  const dropoff = dropoffOf(delivery.coords);
+  const reservation = delivery.reservation;
+  const transport = delivery.campaignTransport;
+  const isCampaignTransport = delivery.source === 'campaign_transport';
+  const pickup = pickupOf(delivery.coords) ?? toLatLng(delivery.pickup.lat, delivery.pickup.lng);
+  const dropoff = dropoffOf(delivery.coords) ?? toLatLng(delivery.destination.lat, delivery.destination.lng);
   const meta = deliveryStatusMeta(delivery.status);
   const canAdvance = nextDeliveryStatus(delivery.status) != null;
   const canCancel = ['assigned', 'heading_to_provider'].includes(delivery.status);
   const canFail = ['qc_completed', 'in_transit'].includes(delivery.status);
-  const phone = receiver?.user.phone ?? null;
+  const phone = reservation?.receiver?.user.phone ?? null;
   const distanceLabel = formatKm(delivery.distanceKm);
+  const deliveryTitle = reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+  const quantity = reservation?.quantity ?? null;
+  const recipientName = reservation?.receiver?.user.fullName ?? transport?.campaignTitle ?? 'Bếp chiến dịch';
   const routeTargets: RouteTarget[] = [
     {
       key: 'pickup',
       title: 'Điểm lấy hàng',
-      subtitle: listing.pickupAddress,
-      address: listing.pickupAddress,
+      subtitle: delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
+      address: delivery.pickup.address ?? reservation?.listing.pickupAddress,
       coords: pickup,
       icon: 'storefront-outline',
       color: COLORS.secondary,
     },
     {
       key: 'dropoff',
-      title: 'Điểm giao hàng',
-      subtitle: receiver?.address ?? receiver?.user.fullName ?? 'Địa chỉ người nhận',
-      address: receiver?.address,
+      title: isCampaignTransport ? 'Bếp nhận hàng' : 'Điểm giao hàng',
+      subtitle: delivery.destination.address ?? reservation?.receiver?.address ?? recipientName,
+      address: delivery.destination.address ?? reservation?.receiver?.address,
       coords: dropoff,
       icon: 'map-marker-radius-outline',
       color: COLORS.primary,
@@ -422,7 +450,7 @@ export default function VolunteerActiveScreen() {
             <View style={[styles.pulseDot, { backgroundColor: meta.color }]} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-              <Text style={styles.statusSub}>{statusHint(delivery.status, hasPickupPhoto)}</Text>
+              <Text style={styles.statusSub}>{statusHint(delivery.status, hasPickupPhoto, isCampaignTransport)}</Text>
             </View>
           </View>
           {distanceLabel ? <Text style={[styles.statusDist, { color: meta.color }]}>{distanceLabel}</Text> : null}
@@ -484,15 +512,15 @@ export default function VolunteerActiveScreen() {
               <MaterialCommunityIcons name="food-variant" size={22} color={COLORS.orange} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>{listing.title}</Text>
-              <Text style={styles.qty}>Số lượng: {delivery.reservation.quantity}</Text>
+              <Text style={styles.title}>{deliveryTitle}</Text>
+              {quantity != null ? <Text style={styles.qty}>Số lượng: {quantity}</Text> : null}
             </View>
           </View>
           <View style={styles.receiverRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.locLabel}>Người nhận</Text>
-              <Text style={styles.locValue}>{receiver?.user.fullName ?? 'Người nhận'}</Text>
-              {receiver?.address ? <Text style={styles.locSub}>{receiver.address}</Text> : null}
+              <Text style={styles.locLabel}>{isCampaignTransport ? 'Bếp nhận hàng' : 'Người nhận'}</Text>
+              <Text style={styles.locValue}>{recipientName}</Text>
+              {routeTargets[1].address ? <Text style={styles.locSub}>{routeTargets[1].address}</Text> : null}
             </View>
             {phone ? (
               <Button
@@ -548,7 +576,7 @@ export default function VolunteerActiveScreen() {
         {canAdvance ? (
           <Button
             mode="contained"
-            icon={advanceIcon(delivery.status, hasPickupPhoto)}
+            icon={advanceIcon(delivery.status, hasPickupPhoto, isCampaignTransport)}
             onPress={() => handleAdvance(delivery, pickupTarget, dropoffTarget)}
             loading={updateStatus.isPending}
             disabled={busy}
@@ -556,7 +584,7 @@ export default function VolunteerActiveScreen() {
             style={styles.primaryBtn}
             contentStyle={styles.primaryContent}
           >
-            {advanceLabel(delivery.status, hasPickupPhoto)}
+            {advanceLabel(delivery.status, hasPickupPhoto, isCampaignTransport)}
           </Button>
         ) : null}
 

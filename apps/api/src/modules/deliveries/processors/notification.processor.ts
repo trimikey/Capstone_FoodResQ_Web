@@ -31,7 +31,11 @@ export class NotificationProcessor extends WorkerHost {
     }
     if (job.name === 'delivery-offer-timeout') {
       const data = job.data as DeliveryOfferTimeoutJob;
-      await this.deliveriesService.expireOfferAndOfferNext(data.deliveryId, data.shipperId);
+      await this.deliveriesService.expireOfferAndOfferNext(
+        data.deliveryId,
+        data.shipperId,
+        data.expiresAt,
+      );
     }
   }
 }

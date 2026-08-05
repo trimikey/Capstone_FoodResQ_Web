@@ -74,18 +74,18 @@ function offerSortValue(offer: TaskOffer): number {
 }
 
 function offerDetails(offer: TaskOffer) {
-  const delivery = offer.delivery;
-  const reservation = delivery?.reservation;
-  const listing = reservation?.listing;
-  const receiver = reservation?.receiver;
+  const { delivery } = offer;
+  const reservation = delivery.reservation;
+  const transport = delivery.campaignTransport;
 
   return {
-    title: listing?.title ?? 'Đơn giao hàng',
+    title: reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch',
     quantity: reservation?.quantity ?? null,
-    pickupAddress: listing?.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
-    dropoffAddress: receiver?.address ?? 'Theo địa chỉ người nhận',
-    distanceLabel: formatKm(delivery?.distanceKm),
+    pickupAddress: delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
+    dropoffAddress: delivery.destination.address ?? reservation?.receiver?.address ?? 'Chưa có địa chỉ giao hàng',
+    distanceLabel: formatKm(delivery.distanceKm),
     offeredTime: formatTime(offer.offeredAt),
+    isCampaignTransport: delivery.source === 'campaign_transport',
   };
 }
 
@@ -97,6 +97,7 @@ function offerDetails(offer: TaskOffer) {
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
+  useDeliveryOfferSocket();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,

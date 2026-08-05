@@ -2159,6 +2159,8 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
 
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
+  // Ảnh eKYC đã đăng ký (receiver/volunteer) — hoist ra biến để giữ narrowing trong closure onClick
+  const faceSrc = u.faceImageUrl ? mediaUrl(u.faceImageUrl) : null;
 
   async function decide(decision: 'approved' | 'rejected') {
     if (!verif) return;
@@ -2213,13 +2215,32 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
               </div>
               <div>
                 <p className="text-[11px] text-neutral-500">Số điện thoại</p>
-                <p className="font-semibold text-neutral-900">{verif?.phone || '—'}</p>
+                <p className="font-semibold text-neutral-900">{u.phone || verif?.phone || '—'}</p>
               </div>
               <div>
                 <p className="text-[11px] text-neutral-500">Điểm uy tín</p>
                 <p className="font-semibold text-neutral-900">{u.trustScore}/100 ({trustToFive(u.trustScore).toFixed(1)}/5.0)</p>
               </div>
             </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Khuôn mặt đã đăng ký</h3>
+            {faceSrc ? (
+              <button
+                type="button"
+                onClick={() => setZoomedImg(faceSrc)}
+                className="relative h-28 w-28 overflow-hidden rounded-xl border border-neutral-200 hover:opacity-90"
+                title="Bấm để phóng to"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                <img src={faceSrc} alt="Ảnh khuôn mặt đã đăng ký" className="h-full w-full object-cover" />
+              </button>
+            ) : (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
+                Chưa đăng ký khuôn mặt.
+              </div>
+            )}
           </section>
 
           {/* Provider chờ duyệt: thông tin doanh nghiệp */}
