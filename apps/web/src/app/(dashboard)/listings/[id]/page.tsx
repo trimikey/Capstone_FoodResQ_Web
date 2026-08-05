@@ -65,6 +65,7 @@ export default function ListingDetailPage({ params }: Props) {
 
   const [quantity, setQuantity] = useState(1);
   const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup');
+  const [showPickupConfirm, setShowPickupConfirm] = useState(false);
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -208,24 +209,30 @@ export default function ListingDetailPage({ params }: Props) {
           {/* Three Selling points pills */}
           <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-4 bg-surface-container-low rounded-2xl border border-outline-variant/15 text-center sm:text-left transition-colors hover:bg-surface-container-high/40">
-              <span className="material-symbols-outlined text-primary text-[28px]">eco</span>
+              <span className="material-symbols-outlined text-primary text-[28px]">inventory_2</span>
               <div>
-                <p className="font-label-lg text-sm text-on-surface font-semibold">Giảm lãng phí</p>
-                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">Cứu thực phẩm dư</p>
+                <p className="font-label-lg text-sm text-on-surface font-semibold">Còn lại</p>
+                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">
+                  {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
+                </p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-4 bg-surface-container-low rounded-2xl border border-outline-variant/15 text-center sm:text-left transition-colors hover:bg-surface-container-high/40">
               <span className="material-symbols-outlined text-primary text-[28px]">schedule</span>
               <div>
-                <p className="font-label-lg text-sm text-on-surface font-semibold">Nhận trước</p>
-                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">{formattedEndTime}</p>
+                <p className="font-label-lg text-sm text-on-surface font-semibold">Giờ nhận</p>
+                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">
+                  {formattedEndTime}
+                </p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-4 bg-surface-container-low rounded-2xl border border-outline-variant/15 text-center sm:text-left transition-colors hover:bg-surface-container-high/40">
-              <span className="material-symbols-outlined text-primary text-[28px]">volunteer_activism</span>
+              <span className="material-symbols-outlined text-primary text-[28px]">straighten</span>
               <div>
-                <p className="font-label-lg text-sm text-on-surface font-semibold">Yêu thương</p>
-                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">Kết nối cộng đồng</p>
+                <p className="font-label-lg text-sm text-on-surface font-semibold">Đơn vị</p>
+                <p className="text-[11px] text-on-surface-variant/70 hidden sm:block">
+                  {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
+                </p>
               </div>
             </div>
           </div>
@@ -386,7 +393,12 @@ export default function ListingDetailPage({ params }: Props) {
                   <span className="font-label-lg text-sm text-on-surface font-bold block">Phương thức nhận hàng</span>
                   <div className="flex flex-col gap-2">
                     <label
-                      onClick={() => setDeliveryMethod('pickup')}
+                      onClick={() => {
+                        if (deliveryMethod !== 'pickup') {
+                          setDeliveryMethod('pickup');
+                          setShowPickupConfirm(true);
+                        }
+                      }}
                       className={`flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${deliveryMethod === 'pickup'
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-outline-variant/15 hover:border-primary/40 bg-surface'
@@ -397,7 +409,10 @@ export default function ListingDetailPage({ params }: Props) {
                           type="radio"
                           name="deliveryMethod"
                           checked={deliveryMethod === 'pickup'}
-                          onChange={() => setDeliveryMethod('pickup')}
+                          onChange={() => {
+                            setDeliveryMethod('pickup');
+                            setShowPickupConfirm(true);
+                          }}
                           className="w-4 h-4 text-primary focus:ring-primary cursor-pointer accent-primary"
                         />
                       </div>
@@ -517,6 +532,21 @@ export default function ListingDetailPage({ params }: Props) {
             ))}
           </div>
         </section>
+      )}
+
+      {/* Popup xác nhận đặt trước */}
+      {showPickupConfirm && !isOwnerProvider && (
+        <PickupConfirmPopup
+          listing={listing}
+          quantity={quantity}
+          onConfirm={() => {
+            setShowPickupConfirm(false);
+            handlePreOrder();
+          }}
+          onCancel={() => {
+            setShowPickupConfirm(false);
+          }}
+        />
       )}
     </div>
   );
@@ -683,6 +713,122 @@ function ProviderManagementPanel({
           <span className="material-symbols-outlined text-[18px]">arrow_back</span>
           Quay lại bảng điều khiển
         </Link>
+      </div>
+    </div>
+  );
+}
+
+// Popup xác nhận khi chọn "Tôi sẽ tự đến lấy"
+function PickupConfirmPopup({
+  listing,
+  quantity,
+  onConfirm,
+  onCancel,
+}: {
+  listing: ListingDetail;
+  quantity: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit;
+  const now = Date.now();
+  const thirtyMinMs = 30 * 60 * 1000;
+  
+  // Thời gian bắt đầu có hiệu lực = max(thời gian hiện tại + 30p, pickupStartTime)
+  const effectiveStartTime = Math.max(now + thirtyMinMs, new Date(listing.pickupStartTime).getTime());
+  const pickupEndTime = new Date(listing.pickupEndTime).getTime();
+  
+  // Thời gian còn lại để đến = effectiveStartTime - now (thời gian thực tế còn lại để chuẩn bị)
+  // Deadline để đến = pickupEndTime - 30p
+  const deadlineToArrive = pickupEndTime - thirtyMinMs;
+  const timeUntilDeadline = deadlineToArrive - now;
+  const isUrgent = timeUntilDeadline < thirtyMinMs; // < 30 phút nữa là phải đến
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isUrgent ? 'bg-amber-100' : 'bg-emerald-100'}`}>
+            <span className={`material-symbols-outlined text-[24px] ${isUrgent ? 'text-amber-600' : 'text-emerald-600'}`}>
+              storefront
+            </span>
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-neutral-900">Xác nhận đặt trước</h3>
+            <p className="text-sm text-neutral-500">Tự đến lấy tại cửa hàng</p>
+          </div>
+        </div>
+
+        {/* Thông tin đơn hàng */}
+        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Món</span>
+            <span className="text-sm font-bold text-neutral-900">{listing.title}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Số lượng</span>
+            <span className="text-sm font-bold text-neutral-900">
+              {quantity} {unit}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+            <span className="text-sm font-bold text-neutral-900">
+              {new Date(effectiveStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Địa điểm</span>
+            <span className="text-sm font-bold text-neutral-900 text-right max-w-[200px]">{listing.pickupAddress}</span>
+          </div>
+        </div>
+
+        {/* Cảnh báo thời gian */}
+        <div className={`flex items-start gap-3 p-4 rounded-2xl mb-5 ${isUrgent ? 'bg-rose-50 border border-rose-200' : 'bg-amber-50 border border-amber-200'}`}>
+          <span className={`material-symbols-outlined text-[20px] ${isUrgent ? 'text-rose-600' : 'text-amber-600'}`}>
+            schedule
+          </span>
+          <div className="flex-1">
+            {isUrgent ? (
+              <>
+                <p className="text-sm font-bold text-rose-700">⚠️ Sắp hết giờ nhận hàng!</p>
+                <p className="text-xs text-rose-600 mt-1">
+                  Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold text-amber-700">Lưu ý về thời gian</p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 transition-colors"
+          >
+            Đóng
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold text-white transition-colors ${isUrgent ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          >
+            Xác nhận đặt
+          </button>
+        </div>
       </div>
     </div>
   );

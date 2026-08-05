@@ -311,6 +311,19 @@ export interface CampaignProviderRequest {
   } | null;
   provider?: { businessName: string; user?: { fullName: string } } | null;
   receiver?: { organizationName: string | null; user: { fullName: string } };
+  transport?: {
+    id: string;
+    status: string;
+    deliveryId: string;
+    assignedAt?: string | null;
+    pickedUpAt?: string | null;
+    deliveredAt?: string | null;
+    receivedAt?: string | null;
+    failedAt?: string | null;
+    failureReason?: string | null;
+    receiptNote?: string | null;
+    receiptPhotoUrl?: string | null;
+  } | null;
 }
 
 export interface SubmitProviderProposalInput {
@@ -565,6 +578,32 @@ export function useConfirmDonation() {
   });
 }
 
+export function useConfirmCampaignTransportReceipt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      campaignId,
+      transportId,
+      note,
+    }: {
+      campaignId: string;
+      transportId: string;
+      note?: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<{ id: string; status: string }>>(
+        endpoints.campaigns.confirmTransportReceipt(campaignId, transportId),
+        note?.trim() ? { note: note.trim() } : {},
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
+    },
+  });
+}
+
 export function useReviewAssignment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -691,8 +730,22 @@ export function useMyTasks(enabled: boolean = true) {
 export function useAdvanceTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assignmentId, photo }: { assignmentId: string; photo?: CapturedImage }) => {
+    mutationFn: async ({
+      assignmentId,
+      campaignId,
+      lng,
+      lat,
+      photo,
+    }: {
+      assignmentId: string;
+      campaignId: string;
+      lng?: number;
+      lat?: number;
+      photo?: CapturedImage;
+    }) => {
       const form = new FormData();
+      if (lng != null) form.append('lng', String(lng));
+      if (lat != null) form.append('lat', String(lat));
       if (photo) form.append('photo', photo as unknown as Blob);
       const res = await apiClient.post<ApiResponse<{ id: string; status: string; pointsAwarded?: number }>>(
         endpoints.campaigns.advanceTask(assignmentId),
@@ -701,8 +754,10 @@ export function useAdvanceTask() {
       );
       return res.data.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
     },
   });
 }

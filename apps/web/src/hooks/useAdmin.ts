@@ -48,10 +48,13 @@ export interface AdminUser {
   id: string;
   email: string;
   fullName: string;
+  phone: string | null;
   role: string;
   status: string;
   trustScore: number;
   avatarUrl: string | null;
+  /** Ảnh khuôn mặt eKYC đã đăng ký — chỉ receiver/volunteer có, provider/admin là null */
+  faceImageUrl: string | null;
   createdAt: string;
   specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
   isCharityOrg: boolean;

@@ -265,6 +265,7 @@ model User {
   campaignChangeRequestsReviewed  CampaignChangeRequest[] @relation("campaign_change_requests_reviewed_by_user_idTousers")
   providerProposalsProposed       ProviderProposal[]      @relation("provider_proposals_proposed_by")
   providerProposalsReviewed       ProviderProposal[]      @relation("provider_proposals_reviewed_by")
+  receivedCampaignTransports      CampaignTransport[]     @relation("CampaignTransportReceipt")
 
   @@index([email])
   @@index([role, status])
@@ -330,6 +331,8 @@ model ReceiverProfile {
   reservations     Reservation[]
   kitchenCampaigns KitchenCampaign[]
   campaignRequests CampaignProviderRequest[]
+  handoffQrTokens  ReceiverHandoffQr[]
+  mealHandoffs     MealHandoff[]
 
   @@index([userId])
   @@map("receiver_profiles")
@@ -365,6 +368,7 @@ model VolunteerProfile {
   campaignExperiences    CampaignExperience[]
   kitchenSafetyLogs      KitchenSafetyLog[]
   mealDistributions      MealDistribution[]
+  scannedMealHandoffs    MealHandoff[]
   bulkRuns               BulkRun[]
 
   @@index([userId])
@@ -683,20 +687,29 @@ model CampaignProviderRequest {
 /// Liên kết 1-1 giữa provider-request và delivery (khi needsTransport=true).
 /// Cho phép sau này 1 request có thể gắn nhiều delivery (multi-item).
 model CampaignTransport {
-  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  providerRequestId String   @unique @map("provider_request_id") @db.Uuid
-  deliveryId        String?  @unique @map("delivery_id") @db.Uuid
-  /// pending = vừa tạo, chưa có shipper nhận
-  /// assigned = đã có shipper accept offer
-  /// delivered = shipper đã giao xong tới kitchen
-  /// failed = hết offer / timeout
-  status            String   @default("pending") @db.VarChar(20)
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  providerRequestId String    @unique @map("provider_request_id") @db.Uuid
+  deliveryId        String?   @unique @map("delivery_id") @db.Uuid
+  status            String    @default("pending") @db.VarChar(20)
+  assignedAt        DateTime? @map("assigned_at") @db.Timestamptz
+  pickedUpAt        DateTime? @map("picked_up_at") @db.Timestamptz
+  deliveredAt       DateTime? @map("delivered_at") @db.Timestamptz
+  receivedAt        DateTime? @map("received_at") @db.Timestamptz
+  failedAt          DateTime? @map("failed_at") @db.Timestamptz
+  failureReason     String?   @map("failure_reason")
+  receivedByUserId  String?   @map("received_by_user_id") @db.Uuid
+  receiptNote       String?   @map("receipt_note") @db.VarChar(500)
+  receiptPhotoUrl   String?   @map("receipt_photo_url")
+  lastBroadcastAt   DateTime? @map("last_broadcast_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   providerRequest CampaignProviderRequest @relation(fields: [providerRequestId], references: [id], onDelete: Cascade)
   delivery        Delivery?              @relation("DeliveryForTransport", fields: [deliveryId], references: [id])
+  receivedByUser  User?                  @relation("CampaignTransportReceipt", fields: [receivedByUserId], references: [id], onDelete: SetNull)
 
   @@index([providerRequestId])
+  @@index([status])
   @@map("campaign_transports")
 }
 
@@ -1169,6 +1182,7 @@ model MealDistribution {
   campaign            KitchenCampaign                        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   servedBy            VolunteerProfile                       @relation(fields: [servedByVolunteerId], references: [id])
   feedback            MealFeedback[]
+  handoffs            MealHandoff[]
 
   @@index([campaignId])
   @@index([servedByVolunteerId])
@@ -1185,4 +1199,48 @@ model MealFeedback {
 
   @@index([distributionId])
   @@map("meal_feedback")
+}
+
+model ReceiverHandoffQr {
+  id          String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  receiverId  String          @map("receiver_id") @db.Uuid
+  qrToken     String          @unique @map("qr_token") @db.VarChar(64)
+  qrExpiresAt DateTime        @map("qr_expires_at") @db.Timestamptz(6)
+  consumedAt  DateTime?       @map("consumed_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  receiver    ReceiverProfile @relation(fields: [receiverId], references: [id], onDelete: Cascade)
+  handoff     MealHandoff?
+
+  @@index([receiverId, qrExpiresAt])
+  @@map("receiver_handoff_qr_tokens")
+}
+
+model MealHandoff {
+  id                    String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  distributionId        String            @map("distribution_id") @db.Uuid
+  receiverId            String            @map("receiver_id") @db.Uuid
+  scannedByVolunteerId  String            @map("scanned_by_volunteer_id") @db.Uuid
+  qrTokenId             String            @unique @map("qr_token_id") @db.Uuid
+  servedAt              DateTime          @default(now()) @map("served_at") @db.Timestamptz(6)
+  distribution          MealDistribution  @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  receiver              ReceiverProfile   @relation(fields: [receiverId], references: [id], onDelete: Cascade)
+  scannedBy             VolunteerProfile  @relation(fields: [scannedByVolunteerId], references: [id])
+  qrToken               ReceiverHandoffQr @relation(fields: [qrTokenId], references: [id])
+  feedback              BeneficiaryFeedback?
+
+  @@unique([distributionId, receiverId])
+  @@index([receiverId, servedAt])
+  @@index([distributionId])
+  @@map("meal_handoffs")
+}
+
+model BeneficiaryFeedback {
+  id           String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  handoffId    String      @unique @map("handoff_id") @db.Uuid
+  satisfaction Int         @db.SmallInt
+  comment      String?
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  handoff      MealHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+
+  @@map("beneficiary_feedback")
 }

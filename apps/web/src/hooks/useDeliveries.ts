@@ -14,7 +14,7 @@ function socketUrl(): string {
 interface ListingBrief {
   title: string;
   pickupAddress: string;
-  imageUrls: string[];
+  imageUrls: string[] | null;
 }
 
 export interface DeliveryCoords {
@@ -24,23 +24,42 @@ export interface DeliveryCoords {
   deliveryLat: number | null;
 }
 
+export interface CampaignTransportBrief {
+  id: string;
+  status: string;
+  campaignId: string;
+  campaignTitle: string;
+  providerName: string;
+  providerAddress: string | null;
+  kitchenAddress: string;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+}
+
+interface DeliverySourceFields {
+  source: 'reservation' | 'campaign_transport';
+  campaignTransport: CampaignTransportBrief | null;
+  pickup: { address: string | null; lng: number | null; lat: number | null };
+  destination: { address: string | null; lng: number | null; lat: number | null };
+}
+
 export interface TaskOffer {
   id: string;
   deliveryId: string;
   status: string;
   expiresAt: string;
   offeredAt: string;
-  delivery: {
+  delivery: DeliverySourceFields & {
     id: string;
     distanceKm: number | null;
     coords: DeliveryCoords | null;
-    reservation: { listing: ListingBrief; receiver: { address: string | null } };
+    reservation: { quantity: number; listing: ListingBrief; receiver: { address: string | null } | null } | null;
   };
 }
 
-export interface ActiveDelivery {
+export interface ActiveDelivery extends DeliverySourceFields {
   id: string;
-  status: 'assigned' | 'heading_to_provider' | 'qc_completed' | 'in_transit' | 'delivered';
+  status: 'assigned' | 'heading_to_provider' | 'qc_completed' | 'in_transit';
   qcPhotoUrl: string | null;
   deliveryProofUrl: string | null;
   distanceKm: number | null;
@@ -49,11 +68,11 @@ export interface ActiveDelivery {
     id: string;
     quantity: number;
     listing: ListingBrief;
-    receiver: { address: string | null; user: { fullName: string; phone: string | null } };
-  };
+    receiver: { address: string | null; user: { fullName: string; phone: string | null } } | null;
+  } | null;
 }
 
-export interface DeliveryHistoryItem {
+export interface DeliveryHistoryItem extends DeliverySourceFields {
   id: string;
   status: 'delivered' | 'failed';
   distanceKm: number | null;
@@ -61,10 +80,12 @@ export interface DeliveryHistoryItem {
   deliveryProofUrl: string | null;
   failedReason: string | null;
   createdAt: string;
+  coords: DeliveryCoords | null;
   reservation: {
+    quantity: number;
     listing: ListingBrief;
-    receiver: { user: { fullName: string } };
-  };
+    receiver: { user: { fullName: string } } | null;
+  } | null;
 }
 
 export interface VolunteerMe {

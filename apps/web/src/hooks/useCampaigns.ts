@@ -119,6 +119,18 @@ export interface MyTask {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId?: string | null;
+  shift?: {
+    id: string;
+    label: string;
+    role: 'chef' | 'waiter' | 'shipper' | null;
+    startTime: string;
+    endTime: string;
+  } | null;
+  notes?: string | null;
+  checkInTime?: string | null;
+  ingredientProofAt?: string | null;
+  cookedProofAt?: string | null;
   campaign: {
     id: string;
     title: string;
@@ -478,15 +490,20 @@ export function useCancelCampaignChange() {
 export function useAdvanceTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { assignmentId: string; photo?: File }) => {
+    mutationFn: async (p: { assignmentId: string; photo?: File; lng?: number; lat?: number }) => {
       const fd = new FormData();
       if (p.photo) fd.append('photo', p.photo);
+      if (p.lng != null) fd.append('lng', String(p.lng));
+      if (p.lat != null) fd.append('lat', String(p.lat));
       const { data } = await api.post(`/campaigns/assignments/${p.assignmentId}/advance`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       return data.data as { id: string; status: string; pointsAwarded?: number };
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+    },
   });
 }
 
@@ -565,6 +582,20 @@ export function useReviewProviderRequest() {
 }
 
 /** Charity: xem danh sách request đã gửi đến provider */
+export interface CampaignTransportItem {
+  id: string;
+  status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'received' | 'failed';
+  deliveryId: string | null;
+  assignedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  receivedAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+  receiptNote: string | null;
+  receiptPhotoUrl: string | null;
+}
+
 export interface SentRequestItem {
   id: string;
   campaignId: string;
@@ -575,7 +606,11 @@ export interface SentRequestItem {
   durationMonths: number | null;
   reviewedAt: string | null;
   reviewedNote: string | null;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+  needsTransport: boolean;
   createdAt: string;
+  transport: CampaignTransportItem | null;
   provider: {
     id: string;
     businessName: string | null;
@@ -592,6 +627,18 @@ export function useSentRequests() {
       return data.data as SentRequestItem[];
     },
     staleTime: 15_000,
+  });
+}
+
+export function useConfirmCampaignTransportReceipt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; transportId: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/transports/${p.transportId}/receive`)).data.data,
+    onSuccess: (_data, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+    },
   });
 }
 
@@ -657,7 +704,7 @@ export function useCreateDistribution() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: CreateDistributionInput }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/distributions`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/distributions`, p.input);
       return data.data;
     },
     onSuccess: (_d, p) => {
@@ -696,7 +743,7 @@ export function useAddShift() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: ShiftInput }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/shifts`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/shifts`, p.input);
       return data.data as CampaignShift;
     },
     onSuccess: (_d, p) => {
@@ -744,7 +791,7 @@ export function useAppendMenuItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: { name: string; type: string; plannedServings?: number } }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/menu-items`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/menu-items`, p.input);
       return data.data as { menuItems: Array<{ name: string; type: string; plannedServings?: number | null }> };
     },
     onSuccess: (_d, p) => {

@@ -8,6 +8,8 @@ import { AssignmentRole, SafetyCheckResult, SafetyCheckType, UserRole } from '@f
 import { useMe } from '@/hooks/useProfile';
 import { useVolunteerMe } from '@/hooks/useDeliveries';
 import { useRecipes } from '@/hooks/useRecipes';
+import ChefKitchenDashboard from './_components/ChefKitchenDashboard';
+import { useKitchenChefTask } from './_components/KitchenChefContext';
 import {
   useShifts, useCreateShift, useApplyShift,
   useMenuItems, useAddMenuItem, useRemoveMenuItem,
@@ -39,13 +41,18 @@ export default function KitchenManagePage() {
   const { id } = useParams<{ id: string }>();
   const { data: me } = useMe();
   const { data: vol } = useVolunteerMe(me?.role === UserRole.VOLUNTEER);
+  const [tab, setTab] = useState<Tab>('menu');
+  const activeChefTask = useKitchenChefTask();
+
+  if (activeChefTask) {
+    return <ChefKitchenDashboard task={activeChefTask} />;
+  }
 
   const isCharity = me?.role === UserRole.RECEIVER;
   const specs = (vol?.specializations ?? []).map((s) => s.specialization);
   const isChef = specs.includes('chef');
   const isWaiter = specs.includes('waiter');
 
-  const [tab, setTab] = useState<Tab>('menu');
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'menu', label: 'Thực đơn', icon: 'restaurant_menu' },
     { key: 'shifts', label: 'Ca làm việc', icon: 'schedule' },

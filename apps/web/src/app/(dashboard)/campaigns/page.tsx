@@ -27,7 +27,7 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
-import { useAuthStore } from '@/stores/auth.store';
+import { type Section } from './_components/CharitySidebar';
 
 const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
@@ -54,11 +54,12 @@ export default function CampaignsPage() {
 }
 
 function CampaignsSkeleton() {
+  // Sidebar do (dashboard)/campaigns/layout.tsx render ngoài Suspense boundary,
+  // nên skeleton này chỉ cần mô phỏng main content — không giả lập sidebar nữa.
   return (
     <div className="cm-page cm-scope">
       <div className="cm-console">
-        <aside className="cm-sidebar hidden md:flex w-[260px] shrink-0 bg-white border-r border-neutral-200" />
-        <main className="cm-content min-w-0 flex-1 p-4 lg:p-6 space-y-4">
+        <main className="cm-content min-w-0 space-y-4">
           <div className="h-10 w-full max-w-xl skeleton rounded-2xl" />
           <div className="h-32 w-full skeleton rounded-2xl" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -81,12 +82,7 @@ function CampaignsPageInner() {
   // chỉ cho xem trang tổng quan (đọc) chứ không cho đăng ký / tạo chiến dịch.
   const isAccountActive = me?.status === 'active';
 
-  const auth = useAuthStore();
   const router = useRouter();
-  const handleSidebarLogout = () => {
-    auth.logout();
-    router.push('/login');
-  };
 
   const { data, isLoading } = useCampaigns();
   const { data: vol } = useVolunteerMe(isVolunteer);
@@ -109,9 +105,9 @@ function CampaignsPageInner() {
   }, []);
 
   // Đọc tab hiện tại từ query string ?tab=orders|history; mặc định overview.
-  // Dùng lazy initializer + đồng bộ qua `tab` param → tránh re-render lặp khi switch tab browser.
+  // Dùng URL param làm source of truth — tránh re-render lặp khi switch tab browser.
   const searchParams = useSearchParams();
-  const initialSection: Section = (() => {
+  const section: Section = (() => {
     const t = searchParams?.get('tab');
     if (
       t === 'orders' ||
@@ -128,11 +124,8 @@ function CampaignsPageInner() {
     return 'overview';
   })();
 
-  const [section, setSection] = useState<Section>(initialSection);
-
-  // Đồng bộ section → ?tab=... (KHÔNG ép setSection trong effect — tránh flash khi remount)
+  // Handler cho sidebar/button click → cập nhật state + URL
   const handleSetSection = (key: Section) => {
-    setSection(key);
     const current = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
     if (key === 'overview') current.delete('tab');
     else current.set('tab', key);
@@ -140,18 +133,10 @@ function CampaignsPageInner() {
     router.replace(qs ? `/campaigns?${qs}` : '/campaigns');
   };
 
-  // Nếu user back/forward → searchParams đổi → section cũng phải đổi theo.
-  // Lưu ý: chỉ sync khi giá trị thực sự khác để không tạo re-render thừa.
-  useEffect(() => {
-    if (initialSection && initialSection !== section) {
-      setSection(initialSection);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSection]);
-
   const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
 
   const allCampaigns = data ?? [];
+
   const filteredCampaigns = useMemo(() => {
     return allCampaigns.filter((c) => {
       if (filter !== 'all' && c.status !== filter) return false;
@@ -269,7 +254,6 @@ function CampaignsPageInner() {
           {/* ═════ OVERVIEW (default) ═════ */}
           {section === 'overview' && (
             <OverviewDashboard
-              key="overview"
               isCharity={isCharity}
               isVolunteer={isVolunteer}
               isProvider={isProvider}
@@ -287,7 +271,6 @@ function CampaignsPageInner() {
           {/* ═════ MINE — Gom 3 trang (đang chạy / chờ duyệt / đã kết thúc) thành 1 ═════ */}
           {section === 'mine' && isCharity && (
             <MineTabbedSection
-              key="mine"
               stats={stats}
               onCreate={() => setShowForm(true)}
               onJumpTo={handleSetSection}
@@ -296,13 +279,12 @@ function CampaignsPageInner() {
 
           {/* ═════ TASKS (volunteer) ═════ */}
           {section === 'tasks' && isVolunteer && (
-            <TasksSection key="tasks" myTasks={myTasks ?? []} />
+            <TasksSection myTasks={myTasks ?? []} />
           )}
 
           {/* ═════ BROWSE (community) ═════ */}
           {section === 'browse' && (
             <BrowseSection
-              key="browse"
               isLoading={isLoading}
               filtered={filteredCampaigns}
               search={search}
@@ -318,16 +300,16 @@ function CampaignsPageInner() {
             />
           )}
           {section === 'suppliers' && isCharity && (
-            <SuppliersSection key="suppliers" campaigns={stats.active} />
+            <SuppliersSection campaigns={stats.active} />
           )}
           {section === 'providers' && isProvider && (
-            <ProviderSection key="providers" />
+            <ProviderSection />
           )}
           {section === 'orders' && isCharity && (
-            <EmbeddedTab key="orders" source="reservations" title="Đơn nhận của tôi" />
+            <EmbeddedTab source="reservations" title="Đơn nhận của tôi" />
           )}
           {section === 'history' && isCharity && (
-            <EmbeddedTab key="history" source="history" title="Lịch sử đơn hàng" />
+            <EmbeddedTab source="history" title="Lịch sử đơn hàng" />
           )}
         </main>
       </div>

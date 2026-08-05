@@ -33,13 +33,18 @@ function formatKm(km: unknown): string {
 }
 
 function formatOfferPopup(offer: TaskOffer) {
-  const listing = offer.delivery.reservation.listing;
-  const receiver = offer.delivery.reservation.receiver;
+  const { delivery } = offer;
+  const reservation = delivery.reservation;
+  const transport = delivery.campaignTransport;
+  const title = reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+  const pickup = delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng';
+  const destination = delivery.destination.address ?? reservation?.receiver?.address ?? 'Chưa có địa chỉ giao hàng';
+
   return [
-    listing.title,
-    `Khoảng cách: ${formatKm(offer.delivery.distanceKm)}`,
-    `Lấy: ${listing.pickupAddress}`,
-    `Giao: ${receiver?.address ?? 'Theo địa chỉ người nhận'}`,
+    title,
+    `Khoảng cách: ${formatKm(delivery.distanceKm)}`,
+    `Lấy: ${pickup}`,
+    `Giao: ${destination}`,
   ].join('\n');
 }
 

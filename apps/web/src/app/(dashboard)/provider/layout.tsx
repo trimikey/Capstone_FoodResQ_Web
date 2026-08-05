@@ -153,44 +153,12 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
             <span>Về trang chủ</span>
           </Link>
-          <div className="flex items-center gap-3">
-            {/* Notifications */}
-            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
-              <span className="material-symbols-outlined text-neutral-700">notifications</span>
-            </button>
+          <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
+            <span className="material-symbols-outlined text-neutral-700">notifications</span>
+          </button>
+        </header>
 
-          {/* Section Label */}
-          <p className="px-5 mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-            Nhà cung cấp
-          </p>
-
-          {/* Navigation */}
-          <nav className="flex flex-col gap-1 px-3 flex-grow">
-            {PROVIDER_NAV.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link key={item.href} href={item.href}
-                  className={`${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-neutral-700 hover:bg-neutral-100'} rounded-xl px-4 py-3 flex items-center gap-3 transition-colors text-sm font-semibold`}>
-                  <span className="material-symbols-outlined text-[20px]" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Bottom Section */}
-          <div className="p-3">
-            <button onClick={handleLogout}
-              className="w-full text-left text-neutral-700 px-4 py-3 flex items-center gap-3 hover:bg-neutral-100 rounded-xl transition-colors text-sm font-semibold">
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-              <span>Đăng xuất</span>
-            </button>
-          </div>
-        </aside>
-
-      {/* Main Content */}
-      <div className="lg:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
-        {/* Scrollable Canvas */}
+        {/* Main Content */}
         <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
           {children}
         </div>

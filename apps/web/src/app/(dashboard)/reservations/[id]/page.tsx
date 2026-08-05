@@ -8,7 +8,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm, mediaUrl } from '@/lib/utils';
+import { haversineKm, mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
 import { ReportTargetType } from '@foodresq/types';
@@ -734,16 +735,39 @@ export default function ReservationDetailsPage() {
                   <div className="flex-1 min-w-0">
                     <h5 className="font-bold text-neutral-800 truncate">{reservation.listing.title}</h5>
                     <p className="text-xs text-neutral-500 mt-0.5">Từ: {reservation.listing.provider.businessName}</p>
-                    <span className="inline-block mt-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
-                      Đã đóng gói
-                    </span>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                        Đã đóng gói
+                      </span>
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-[10px]">
+                        {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="border-t border-neutral-100 pt-3 flex flex-col gap-2 text-xs">
                   <div className="flex items-center justify-between text-neutral-500">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px] text-emerald-600">schedule</span>
+                      Giờ nhận hàng
+                    </span>
+                    <span className="font-bold text-neutral-800">
+                      {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-neutral-500">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px] text-emerald-600">inventory_2</span>
+                      Số lượng đặt
+                    </span>
+                    <span className="font-bold text-neutral-800">
+                      {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-neutral-500">
                     <span>Mã đơn hàng:</span>
-                    <span className="font-bold text-neutral-800">{reservation.listing.orderId || '#RESQ-8821'}</span>
+                    <span className="font-bold text-neutral-800">{reservation.listing.orderId || `#${reservation.id.slice(0, 8).toUpperCase()}`}</span>
                   </div>
                   <div className="flex items-center justify-between text-neutral-500">
                     <span>Dự kiến giao:</span>
@@ -903,14 +927,14 @@ export default function ReservationDetailsPage() {
                   </div>
 
                   {/* Details row below camera */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-100 bg-neutral-50/50">
+                  <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-100 bg-neutral-50/50">
                     <div className="p-4 flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
                         <span className="material-symbols-outlined text-[18px]">storefront</span>
                       </div>
                       <div>
                         <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Nhà cung cấp</p>
-                        <p className="text-xs font-bold text-neutral-800">{reservation.listing.provider.businessName}</p>
+                        <p className="text-xs font-bold text-neutral-800 truncate">{reservation.listing.provider.businessName}</p>
                       </div>
                     </div>
                     <div className="p-4 flex items-center gap-3">
@@ -919,7 +943,18 @@ export default function ReservationDetailsPage() {
                       </div>
                       <div>
                         <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Địa chỉ lấy</p>
-                        <p className="text-xs font-bold text-neutral-800 truncate max-w-[240px]">{reservation.listing.pickupAddress}</p>
+                        <p className="text-xs font-bold text-neutral-800 truncate max-w-[200px]">{reservation.listing.pickupAddress}</p>
+                      </div>
+                    </div>
+                    <div className="p-4 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">schedule</span>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Giờ nhận</p>
+                        <p className="text-xs font-bold text-emerald-700">
+                          {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -934,26 +969,45 @@ export default function ReservationDetailsPage() {
                 <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-2 text-emerald-800">
                     <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
-                    <h4 className="font-bold text-sm">Chi tiết túi thực phẩm {reservation.listing.orderId || reservation.id}</h4>
-                  </div>
-                  
-                  {/* Detailed items list */}
-                  <div className="divide-y divide-neutral-100 text-xs">
-                    {[
-                      { name: 'Bánh mì tươi (6 cái)', qty: 1 },
-                      { name: 'Sữa tươi thanh trùng', qty: 2 },
-                      { name: 'Trái cây tổng hợp', qty: 1 }
-                    ].map((item, idx) => (
-                      <div key={idx} className="py-2.5 flex items-center justify-between text-neutral-600">
-                        <span>{item.name}</span>
-                        <span className="font-bold text-neutral-800">x{item.qty}</span>
-                      </div>
-                    ))}
+                    <h4 className="font-bold text-sm">Chi tiết túi thực phẩm</h4>
                   </div>
 
-                  <div className="border-t border-neutral-100 pt-3 flex items-center justify-between text-xs">
-                    <span className="text-neutral-400">Trọng lượng ước tính:</span>
-                    <span className="font-black text-neutral-800">~2.5 kg</span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
+                      <img
+                        src={reservation.listing.imageUrls?.[0] ? mediaUrl(reservation.listing.imageUrls[0]) : "/banh-mi-ngot-thap-cam.png"}
+                        alt="Food"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-neutral-800 truncate">{reservation.listing.title}</p>
+                      <p className="text-xs text-neutral-500">Từ: {reservation.listing.provider.businessName}</p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                        {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-neutral-100 pt-3 flex flex-col gap-2 text-xs">
+                    <div className="flex items-center justify-between text-neutral-500">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] text-emerald-600">schedule</span>
+                        Giờ nhận hàng
+                      </span>
+                      <span className="font-bold text-neutral-800">
+                        {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-neutral-500">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] text-emerald-600">inventory_2</span>
+                        Số lượng đặt
+                      </span>
+                      <span className="font-bold text-neutral-800">
+                        {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

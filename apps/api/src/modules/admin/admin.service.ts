@@ -1067,15 +1067,20 @@ export class AdminService {
         id: true,
         email: true,
         fullName: true,
+        phone: true,
         role: true,
         status: true,
         trustScore: true,
         avatarUrl: true,
         createdAt: true,
         volunteerProfile: {
-          select: { id: true, specializations: { select: { specialization: true, isVerified: true } } },
+          select: {
+            id: true,
+            faceImageUrl: true,
+            specializations: { select: { specialization: true, isVerified: true } },
+          },
         },
-        receiverProfile: { select: { isCharityOrg: true } },
+        receiverProfile: { select: { isCharityOrg: true, faceImageUrl: true } },
         providerProfile: { select: { id: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -1083,10 +1088,12 @@ export class AdminService {
     });
     // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render + cờ tổ chức
     // Đồng thời gắn profileId để admin có thể xét duyệt hồ sơ từ màn Quản lý Tài khoản
+    // faceImageUrl: ảnh eKYC đã đăng ký (chỉ receiver/volunteer có) — provider/admin luôn null
     return users.map(({ volunteerProfile, receiverProfile, providerProfile, ...u }) => ({
       ...u,
       specializations: volunteerProfile?.specializations ?? [],
       isCharityOrg: receiverProfile?.isCharityOrg ?? false,
+      faceImageUrl: receiverProfile?.faceImageUrl ?? volunteerProfile?.faceImageUrl ?? null,
       profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
     }));
   }

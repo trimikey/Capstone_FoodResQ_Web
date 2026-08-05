@@ -91,6 +91,10 @@ export default function VolunteerHistoryScreen() {
     const meta = deliveryStatusMeta(item.status);
     const failed = item.status === 'failed';
     const distanceLabel = formatKm(item.distanceKm);
+    const isCampaignTransport = item.source === 'campaign_transport';
+    const title = item.reservation?.listing.title ?? item.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+    const recipient = item.reservation?.receiver?.user.fullName ?? item.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch';
+    const quantity = item.reservation?.quantity ?? null;
     return (
       <View style={[styles.card, failed && styles.cardFailed]}>
         <View style={styles.cardHead}>
@@ -106,19 +110,19 @@ export default function VolunteerHistoryScreen() {
           <View style={styles.locRow}>
             <View style={styles.routeDotPickup} />
             <Text style={styles.locText} numberOfLines={1}>
-              {item.reservation.listing.title}
+              {title}
             </Text>
           </View>
           <View style={styles.routeLine} />
           <View style={styles.locRow}>
             <View style={styles.routeDotDropoff} />
             <Text style={styles.locText} numberOfLines={1}>
-              {item.reservation.receiver?.user.fullName ?? 'Người nhận'}
+              {isCampaignTransport ? 'Giao đến bếp ' : ''}{recipient}
             </Text>
           </View>
         </View>
         <View style={styles.metaRow}>
-          <Text style={styles.metaText}>{item.reservation.quantity} phần</Text>
+          {quantity != null ? <Text style={styles.metaText}>{quantity} phần</Text> : null}
           {distanceLabel ? <Text style={styles.metaText}>{distanceLabel}</Text> : null}
         </View>
         {failed && item.failedReason ? (
