@@ -373,10 +373,17 @@ export function useDeliveryOfferSocket(enabled = true) {
       socket.on('delivery:offer', () => {
         void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
       });
+      // Để trôi lời mời → BE tắt sẵn sàng. Đồng bộ lại nút gạt, nếu không nó vẫn
+      // hiện "Đang sẵn sàng" trong khi thực tế đã offline.
+      socket.on('shipper:auto_offline', () => {
+        void qc.invalidateQueries({ queryKey: ['volunteer', 'me'] });
+        void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+      });
     })();
     return () => {
       cancelled = true;
       socket?.off('delivery:offer');
+      socket?.off('shipper:auto_offline');
       socket?.disconnect();
     };
   }, [enabled, accessToken, qc]);

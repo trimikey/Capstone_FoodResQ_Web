@@ -21,6 +21,15 @@ export function mapsDirUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
+/**
+ * Link Google Maps ghim một toạ độ.
+ * Dùng dạng `search/?api=1&query=` theo tài liệu chính thức — dạng cũ `?q=lat,lng`
+ * hay bị Google bỏ qua và mở về vị trí hiện tại của người dùng thay vì ghim đúng điểm.
+ */
+export function mapsPlaceUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
 // Khoảng cách đường chim bay (km) giữa 2 toạ độ — Haversine
 export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371;

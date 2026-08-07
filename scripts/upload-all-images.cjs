@@ -1,6 +1,5 @@
 /**
- * Migration script: upload food assets lên Cloudinary.
- * Tự load CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET từ apps/web/.env.local
+ * Upload all public images to Cloudinary
  */
 
 const fs = require('node:fs');
@@ -12,7 +11,8 @@ const ENV_FILE = path.join(ROOT, 'apps', 'web', '.env.local');
 const PUBLIC_DIR = path.join(ROOT, 'apps', 'web', 'public');
 const OUTPUT = path.join(ROOT, 'cloudinary-urls.json');
 
-const FILES = ['food_bread.png', 'food_lunchbox.png', 'food_salad.png', 'food_pattern.png'];
+// Skip non-image files
+const SKIP_FILES = ['firebase-messaging-sw.js', 'vercel.svg', 'file.svg', 'window.svg'];
 
 function loadEnv() {
   if (!fs.existsSync(ENV_FILE)) {
@@ -34,10 +34,7 @@ const API_SECRET = env.CLOUDINARY_API_SECRET;
 const FOLDER = env.CLOUDINARY_FOLDER || 'foodresq';
 
 if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-  console.error('Thiếu Cloudinary credentials trong apps/web/.env.local.');
-  console.error(`  CLOUDINARY_CLOUD_NAME: ${CLOUD_NAME ? 'OK' : 'MISSING'}`);
-  console.error(`  CLOUDINARY_API_KEY: ${API_KEY ? 'OK' : 'MISSING'}`);
-  console.error(`  CLOUDINARY_API_SECRET: ${API_SECRET ? 'OK' : 'MISSING'}`);
+  console.error('Thiếu Cloudinary credentials');
   process.exit(1);
 }
 
@@ -48,27 +45,21 @@ function sha1Hex(str) {
 async function uploadFile(localPath, publicId) {
   const timestamp = Math.floor(Date.now() / 1000);
   const folder = FOLDER;
-  
-  // Build signature params (alphabetically sorted for Cloudinary)
   const paramsToSign = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}`;
   const signature = sha1Hex(paramsToSign + API_SECRET);
 
   const fileBuffer = fs.readFileSync(localPath);
   const fileName = path.basename(localPath);
+  const ext = path.extname(fileName).toLowerCase();
+  const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/svg+xml';
   const boundary = '----FoodResQUpload' + Date.now();
 
-  // Build multipart form data manually
   let body = '';
-
-  // File field
   body += `--${boundary}\r\n`;
   body += `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`;
-  body += `Content-Type: image/png\r\n\r\n`;
+  body += `Content-Type: ${mimeType}\r\n\r\n`;
   
-  // Convert to buffer and concat with file content
   const headerBuffer = Buffer.from(body, 'utf8');
-  const fileContentBuffer = fileBuffer;
-  
   const footer = Buffer.from(
     `\r\n--${boundary}\r\n` +
     `Content-Disposition: form-data; name="api_key"\r\n\r\n${API_KEY}\r\n` +
@@ -83,7 +74,7 @@ async function uploadFile(localPath, publicId) {
     `--${boundary}--\r\n`
   );
 
-  const finalBody = Buffer.concat([headerBuffer, fileContentBuffer, footer]);
+  const finalBody = Buffer.concat([headerBuffer, fileBuffer, footer]);
 
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -122,26 +113,28 @@ async function uploadFile(localPath, publicId) {
 (async () => {
   const urls = fs.existsSync(OUTPUT) ? JSON.parse(fs.readFileSync(OUTPUT, 'utf8')) : {};
   
-  console.log(`Cloud Name: ${CLOUD_NAME}`);
-  console.log(`Folder: ${FOLDER}\n`);
+  const files = fs.readdirSync(PUBLIC_DIR).filter(f => {
+    const ext = path.extname(f).toLowerCase();
+    return ['.png', '.jpg', '.jpeg', '.svg'].includes(ext) && !SKIP_FILES.includes(f);
+  });
   
-  for (const file of FILES) {
+  console.log(`Cloud Name: ${CLOUD_NAME}`);
+  console.log(`Folder: ${FOLDER}`);
+  console.log(`Files to upload: ${files.length}\n`);
+  
+  for (const file of files) {
     const local = path.join(PUBLIC_DIR, file);
-    if (!fs.existsSync(local)) {
-      console.warn(`Skip ${file} (không tìm thấy)`);
-      continue;
-    }
-    const publicId = file.replace(/\.png$/, '');
+    const publicId = file.replace(/\.[^.]+$/, '').replace(/\s+/g, '_');
     try {
       console.log(`Uploading ${file} → ${FOLDER}/${publicId}`);
       const res = await uploadFile(local, publicId);
       urls[file] = res.secure_url;
-      console.log(`  ✓ Uploaded: ${res.secure_url}`);
+      console.log(`  ✓ ${res.secure_url}`);
     } catch (err) {
       console.error(`  ✗ ${file}: ${err.message}`);
-      process.exitCode = 1;
     }
   }
+  
   fs.writeFileSync(OUTPUT, JSON.stringify(urls, null, 2));
   console.log(`\nĐã ghi ${Object.keys(urls).length} URLs vào ${OUTPUT}`);
 })();

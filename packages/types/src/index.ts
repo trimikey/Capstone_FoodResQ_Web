@@ -112,6 +112,11 @@ export interface BulkRun {
   pickedUpAt: string | null;
   completedAt: string | null;
   pickupCoords: GeoPoint | null;
+  /**
+   * Hạn chót của giai đoạn hiện tại (ISO): chờ duyệt → hạn duyệt; đã duyệt → hạn đến
+   * lấy hàng; đã lấy hàng → hạn phát xong. Null khi chuyến đã kết thúc.
+   */
+  deadlineAt?: string | null;
   listing: {
     title: string;
     pickupAddress: string;
@@ -122,12 +127,23 @@ export interface BulkRun {
     contactPhone: string | null;
   };
   shipper?: {
+    id?: string;
     rank: string;
     dedicationPoints: number;
+    /** Điểm đánh giá trung bình do người nhận chấm (null nếu chưa có lượt nào) */
+    avgRating?: number | null;
     user: {
       fullName: string;
       phone: string | null;
+      /** Điểm uy tín hiện tại — cơ sở để NCC quyết định duyệt hay từ chối */
+      trustScore?: number;
     };
   };
+  /** Thành tích của shipper, chỉ trả về ở API phía nhà cung cấp */
+  shipperStats?: {
+    completedRuns: number;
+    deliveredOrders: number;
+    failedOrders: number;
+  } | null;
   stops: BulkRunStop[];
 }

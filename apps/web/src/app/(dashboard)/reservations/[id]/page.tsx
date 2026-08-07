@@ -12,6 +12,7 @@ import { haversineKm, mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
+import RateProviderModal from '@/components/reservations/RateProviderModal';
 import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -35,6 +36,7 @@ const DELIVERY_STEP: Record<string, number> = {
   in_transit: 2,
   delivered: 3,
   failed: 0,
+  cancelled: -1, // receiver đã hủy tìm shipper
 };
 
 // Tiêu đề/mô tả theo trạng thái giao hàng thật.
@@ -58,6 +60,8 @@ function deliveryHeadline(status?: string, failedReason?: string | null): { titl
       return { title: 'Đã giao thành công', desc: 'Cảm ơn bạn đã đồng hành cứu trợ thực phẩm cùng FoodResQ!' };
     case 'failed':
       return { title: 'Giao hàng thất bại', desc: 'Đơn giao gặp sự cố. Vui lòng liên hệ hỗ trợ để được hỗ trợ.' };
+    case 'cancelled':
+      return { title: 'Đã hủy tìm tình nguyện viên', desc: 'Bạn đã hủy tìm. Vui lòng đến địa chỉ nhận trong khung giờ đã chọn.' };
     default:
       return { title: 'Đang xử lý đơn', desc: 'Đang cập nhật trạng thái đơn giao.' };
   }
@@ -82,6 +86,7 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState(
     isMock
@@ -95,7 +100,23 @@ export default function ReservationDetailsPage() {
   // Countdown: 4 phút 30 giây khi đang tìm shipper
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownExpired, setCountdownExpired] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [showTimeInfo, setShowTimeInfo] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Đánh giá cửa hàng sau khi nhận hàng. Người dùng bỏ qua được — ghi nhớ lựa chọn
+  // đó theo từng đơn để không hỏi lại mỗi lần mở trang.
+  const [rateSkipped, setRateSkipped] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.localStorage.getItem(`rate-skipped:${id}`) === '1',
+  );
+  const skipRating = useCallback(() => {
+    setRateSkipped(true);
+    try {
+      window.localStorage.setItem(`rate-skipped:${id}`, '1');
+    } catch {
+      // localStorage bị chặn (chế độ ẩn danh…) → chỉ bỏ qua trong phiên này
+    }
+  }, [id]);
 
   // Theo dõi đơn giao real-time (toạ độ pickup/delivery + vị trí shipper trực tiếp)
   const isDeliveryOrder = !isMock && !!fetchedData?.delivery;
@@ -134,8 +155,10 @@ export default function ReservationDetailsPage() {
         ? `Quãng đường giao khoảng ${tracking.distanceKm.toFixed(1)}km`
         : null;
   // Đơn THẬT có delivery → dùng trạng thái giao hàng thật từ tracking (không dùng mock currentStep).
-  const useRealDelivery = !isMock && isDeliveryOrder && !!tracking;
-  const realDeliveryStatus = tracking?.status;
+  // Khi user chuyển sang "tự đến lấy" (deliveryMethod=pickup) thì KHÔNG dùng delivery tracking nữa,
+  // để giao diện chuyển sang flow pickup (QR + camera confirm) mà không cần reload.
+  const useRealDelivery = !isMock && isDeliveryOrder && !!tracking && deliveryMethod === 'delivery';
+  const realDeliveryStatus = tracking?.status as string | undefined;
   const realDeliveryStep = useRealDelivery ? (DELIVERY_STEP[realDeliveryStatus ?? ''] ?? 0) : null;
   const realShipper = tracking?.shipper ?? null;
   const isDelivered = useRealDelivery
@@ -144,24 +167,32 @@ export default function ReservationDetailsPage() {
 
   // ── Đếm ngược 4:30 tìm shipper (đặt SAU các khai báo tracking/isMock ở trên) ──
 
-  // Khi có shipper nhận → dừng countdown ngay
+  // Khi có shipper nhận hoặc delivery bị cancelled → dừng countdown ngay
   useEffect(() => {
-    const status = tracking?.status ?? (isMock ? null : realDeliveryStatus);
+    const status = tracking?.status as string | undefined ?? (isMock ? null : realDeliveryStatus);
     const hasShipper = !!tracking?.shipper;
-    if (hasShipper && status !== 'pending_assignment') {
+    if ((hasShipper && status !== 'pending_assignment') || status === 'cancelled') {
       if (countdownRef.current) clearInterval(countdownRef.current);
       setCountdown(null);
       setCountdownExpired(false);
     }
+    // Khi cancelled → tự chuyển sang pickup mode
+    if (status === 'cancelled') {
+      setDeliveryMethod('pickup');
+    }
   }, [tracking?.status, tracking?.shipper, isMock, realDeliveryStatus]);
 
-  // Khởi động đếm ngược khi status = pending_assignment VÀ chưa có shipper
+  // Đếm ngược theo HẠN TUYỆT ĐỐI do server trả về (searchExpiresAt), không đếm từ
+  // lúc mở trang — nếu không, reload giữa chừng sẽ nhảy về 4:30 dù đã tìm gần hết giờ.
   useEffect(() => {
-    const status = tracking?.status ?? (isMock ? null : realDeliveryStatus);
-    if (status === 'pending_assignment' && !tracking?.shipper && countdown === null && !countdownExpired) {
-      setCountdown(4 * 60 + 30); // 270 giây = 4:30
-    }
-  }, [tracking?.status, tracking?.shipper, isMock, realDeliveryStatus, countdown, countdownExpired]);
+    const status = tracking?.status as string | undefined ?? (isMock ? null : realDeliveryStatus);
+    const deadline = tracking?.searchExpiresAt;
+    if (status !== 'pending_assignment' || tracking?.shipper || !deadline) return;
+
+    const left = Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000));
+    setCountdown(left);
+    setCountdownExpired(left === 0);
+  }, [tracking?.searchExpiresAt, tracking?.status, tracking?.shipper, isMock, realDeliveryStatus]);
 
   // Tick đếm ngược
   useEffect(() => {
@@ -179,11 +210,18 @@ export default function ReservationDetailsPage() {
     return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
   }, [countdown]);
 
+
   // Lấy deliveryId từ tracking
   const deliveryId = tracking?.deliveryId ?? (fetchedData?.delivery as { id?: string } | null)?.id;
 
   // Hàm hủy tìm shipper (gọi API BE)
-  const handleCancelSearch = useCallback(async () => {
+  const handleCancelSearch = useCallback(() => {
+    setShowCancelConfirm(true);
+  }, []);
+
+  // Xác nhận → gọi API hủy tìm + chuyển sang tự đến lấy
+  const confirmGoPickup = useCallback(async () => {
+    setShowCancelConfirm(false);
     if (countdownRef.current) clearInterval(countdownRef.current);
     setCountdown(null);
     setCountdownExpired(false);
@@ -213,8 +251,9 @@ export default function ReservationDetailsPage() {
   // Sync deliveryMethod based on database response
   useEffect(() => {
     if (fetchedData) {
-      // If delivery relation exists, it's a volunteer delivery
-      if (fetchedData.delivery) {
+      // Nếu delivery đã bị hủy (cancelled) → user đã chọn tự đến lấy, hiển thị flow pickup
+      const deliveryRec = fetchedData.delivery as { status?: string } | null;
+      if (fetchedData.delivery && deliveryRec?.status !== 'cancelled') {
         setDeliveryMethod('delivery');
       } else {
         setDeliveryMethod('pickup');
@@ -231,11 +270,28 @@ export default function ReservationDetailsPage() {
 
   // Trạng thái thật của đơn (chỉ có khi không phải mock). Driver cho bước hiển thị + thông báo chờ quét.
   const liveStatus = fetchedData?.status as string | undefined;
+  // Đơn đã kết thúc (huỷ vì không tìm được TNV, hết hạn, no-show) → không còn mã
+  // nào để quét, phải ẩn panel QR thay vì để nó quay "đang chờ TNV quét mã".
+  // Kèm cả lúc vừa hết giờ tìm TNV: BE huỷ đơn qua cron 30s nên có khoảng trễ, nếu
+  // không tính vào đây thì thẻ trái báo "không tìm được TNV" mà thẻ phải vẫn mời quét mã.
+  const isOrderClosed = !isMock && (
+    ['cancelled', 'expired', 'no_show'].includes(liveStatus ?? '')
+    || (countdownExpired && realDeliveryStatus === 'pending_assignment')
+  );
 
   // Đơn thật hoàn tất → tự chuyển sang bước thành công (đồng bộ với UI mô phỏng dùng currentStep)
   useEffect(() => {
     if (!isMock && liveStatus === 'completed') setCurrentStep(2);
   }, [isMock, liveStatus]);
+
+  // Auto-show time info popup khi page load (chỉ cho đơn pickup đang active)
+  useEffect(() => {
+    const reservation = fetchedData as { status?: string; listing?: { pickupEndTime?: string } } | null | undefined;
+    if (reservation && reservation.status !== 'completed' && reservation.status !== 'cancelled' && reservation.status !== 'no_show') {
+      const timer = setTimeout(() => setShowTimeInfo(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [fetchedData]);
 
   if (isLoading && !isMock) {
     return (
@@ -286,7 +342,7 @@ export default function ReservationDetailsPage() {
     );
   }
 
-  // --- MOCK DATA ---
+  // --- MOCK DATA (đặt trước để tránh lỗi hoisting) ---
   const mockListing = isMock
     ? {
         title: deliveryMethod === 'delivery' ? 'Gói Bánh Mì & Bơ' : 'Gói Bánh Mì Dinh Dưỡng',
@@ -295,8 +351,28 @@ export default function ReservationDetailsPage() {
         providerPhone: '0912345678',
         orderId: deliveryMethod === 'delivery' ? '#RESQ-8821' : '#RQ-882',
         imageUrl: deliveryMethod === 'delivery' ? '/banh-mi-ngot-thap-cam.png' : '/banh-mi-lua-mach-tuoi.png',
+        pickupStartTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        pickupEndTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
       }
     : null;
+
+  // Lấy thông tin listing từ fetchedData hoặc mock
+  const listing = fetchedData?.listing ?? (isMock ? mockListing : null);
+
+  // Show time info popup cho đơn pickup đang active
+  if (showTimeInfo && listing && deliveryMethod === 'pickup') {
+    const isCompleted = (fetchedData?.status === 'completed' || fetchedData?.status === 'cancelled' || fetchedData?.status === 'no_show');
+    if (!isCompleted) {
+      return (
+        <ReservationTimeInfoPopup
+          pickupStartTime={(fetchedData?.listing as { pickupStartTime?: string } | null)?.pickupStartTime ?? mockListing?.pickupStartTime ?? new Date().toISOString()}
+          pickupEndTime={(fetchedData?.listing as { pickupEndTime?: string } | null)?.pickupEndTime ?? mockListing?.pickupEndTime ?? new Date().toISOString()}
+          pickupAddress={listing.pickupAddress}
+          onClose={() => setShowTimeInfo(false)}
+        />
+      );
+    }
+  }
 
   let reservation = fetchedData;
   if (!reservation) {
@@ -523,7 +599,26 @@ export default function ReservationDetailsPage() {
             {/* Right Column: QR verify, Volunteer info, Listing info */}
             <div className="space-y-6">
               
-              {/* QR Verification Confirmation Card */}
+              {/* QR Verification Confirmation Card — ẩn khi đơn đã kết thúc */}
+              {isOrderClosed ? (
+                <div className="bg-neutral-50 rounded-2xl border border-neutral-200 p-6 shadow-sm text-center flex flex-col items-center">
+                  <span className="material-symbols-outlined text-neutral-400 text-[36px]">cancel</span>
+                  <h4 className="font-bold text-neutral-800 text-md mt-2">
+                    {liveStatus === 'cancelled' ? 'Đơn đã huỷ' : 'Đơn đã hết hạn'}
+                  </h4>
+                  <p className="text-xs text-neutral-500 mt-1.5 max-w-[260px]">
+                    {(fetchedData as { cancellationReason?: string } | null)?.cancellationReason
+                      ?? 'Đơn này đã kết thúc nên mã xác nhận không còn hiệu lực. Suất ăn đã được trả lại cho nhà cung cấp.'}
+                  </p>
+                  <Link
+                    href="/listings"
+                    className="mt-4 w-full py-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                    Tìm suất ăn khác
+                  </Link>
+                </div>
+              ) : (
               <div className="bg-emerald-50 rounded-2xl border border-emerald-200 p-6 shadow-sm text-center flex flex-col items-center">
                 <h4 className="font-bold text-emerald-800 text-md">Xác nhận nhận hàng</h4>
                 <p className="text-xs text-emerald-700/80 mt-1 max-w-[240px] mx-auto">
@@ -588,6 +683,7 @@ export default function ReservationDetailsPage() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Volunteer Shipper Details Card */}
               {useRealDelivery && !realShipper ? (
@@ -752,7 +848,14 @@ export default function ReservationDetailsPage() {
                       Giờ nhận hàng
                     </span>
                     <span className="font-bold text-neutral-800">
-                      {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      {(() => {
+                        const now = Date.now();
+                        const thirtyMinMs = 30 * 60 * 1000;
+                        const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
+                        const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
+                        const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+                        return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} -   `;
+                      })()}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-neutral-500">
@@ -835,7 +938,28 @@ export default function ReservationDetailsPage() {
                   {/* Camera Screen view */}
                   <div className="bg-neutral-900 aspect-video relative flex items-center justify-center group overflow-hidden">
                     
-                    {currentStep === 1 ? (
+                    {isOrderClosed ? (
+                      /* Đơn đã đóng (không đến / huỷ / hết hạn) — KHÔNG hiện mã nữa,
+                         tránh việc đưa một mã đã hết hiệu lực cho nhà cung cấp quét. */
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-900 text-white p-6 text-center z-10">
+                        <span className="material-symbols-outlined text-[48px] text-neutral-500">block</span>
+                        <p className="font-bold text-base">
+                          {liveStatus === 'no_show'
+                            ? 'Đơn đã đóng vì quá hạn nhận hàng'
+                            : liveStatus === 'cancelled' ? 'Đơn đã huỷ' : 'Đơn đã hết hạn'}
+                        </p>
+                        <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
+                          Mã QR không còn hiệu lực. Suất ăn đã được trả lại cho nhà cung cấp để nhường cho người khác.
+                        </p>
+                        <Link
+                          href="/listings"
+                          className="mt-2 px-5 py-2.5 bg-white text-emerald-900 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-50 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                          Tìm suất ăn khác
+                        </Link>
+                      </div>
+                    ) : currentStep === 1 ? (
                       !isMock ? (
                         /* ĐƠN THẬT: người nhận chỉ ĐƯA mã QR cho NCC quét (không có camera phía người nhận) */
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-neutral-900 text-white p-6 text-center z-10">
@@ -952,7 +1076,14 @@ export default function ReservationDetailsPage() {
                       <div>
                         <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Giờ nhận</p>
                         <p className="text-xs font-bold text-emerald-700">
-                          {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          {(() => {
+                            const now = Date.now();
+                            const thirtyMinMs = 30 * 60 * 1000;
+                            const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
+                            const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
+                            const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+                            return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+                          })()}
                         </p>
                       </div>
                     </div>
@@ -995,7 +1126,14 @@ export default function ReservationDetailsPage() {
                         Giờ nhận hàng
                       </span>
                       <span className="font-bold text-neutral-800">
-                        {new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        {(() => {
+                          const now = Date.now();
+                          const thirtyMinMs = 30 * 60 * 1000;
+                          const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
+                          const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
+                          const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+                          return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+                        })()}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-neutral-500">
@@ -1217,6 +1355,177 @@ export default function ReservationDetailsPage() {
         </div>
       )}
 
+      {/* Popup xác nhận hủy tìm TNV */}
+      {showCancelConfirm && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => !cancelDeliveryMutation.isPending && setShowCancelConfirm(false)}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <span className="material-symbols-outlined text-amber-600">priority_high</span>
+              </div>
+              <h3 className="text-base font-bold text-neutral-900 flex-1">Hủy tìm tình nguyện viên?</h3>
+              <button
+                onClick={() => !cancelDeliveryMutation.isPending && setShowCancelConfirm(false)}
+                disabled={cancelDeliveryMutation.isPending}
+                aria-label="Đóng"
+                className="text-neutral-400 hover:text-neutral-700 disabled:opacity-40 shrink-0"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <p className="text-sm text-neutral-600 leading-relaxed mb-6">
+              Bạn muốn tiếp tục đợi tình nguyện viên giao hàng hay tự đến địa chỉ nhận?
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">delivery_dining</span>
+                Vẫn tìm tình nguyện viên
+              </button>
+              <button
+                onClick={confirmGoPickup}
+                disabled={cancelDeliveryMutation.isPending}
+                className="w-full py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl text-sm font-bold hover:bg-neutral-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {cancelDeliveryMutation.isPending ? (
+                  <>
+                    <span className="animate-spin border-2 border-neutral-300 border-t-neutral-600 rounded-full w-4 h-4" />
+                    Đang xử lý…
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[18px]">directions_walk</span>
+                    Tự đến lấy trực tiếp
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Đánh giá sau khi nhận hàng thành công — có thể bỏ qua.
+          Đơn có TNV giao thì chấm cả hai bên; đơn tự đến lấy chỉ chấm cửa hàng. */}
+      {!isMock && liveStatus === 'completed' && !rateSkipped && (() => {
+        const d = fetchedData as {
+          ratedScore?: number | null;
+          ratedShipperScore?: number | null;
+          delivery?: { shipper?: { user?: { fullName?: string } } | null } | null;
+        } | null;
+        const shipperName = d?.delivery?.shipper?.user?.fullName ?? null;
+        const needProvider = d?.ratedScore == null;
+        const needShipper = !!shipperName && d?.ratedShipperScore == null;
+        if (!needProvider && !needShipper) return null;
+        return (
+          <RateProviderModal
+            reservationId={id}
+            providerName={reservation.listing.provider.businessName}
+            listingTitle={reservation.listing.title}
+            shipperName={shipperName}
+            needProvider={needProvider}
+            needShipper={needShipper}
+            onSkip={skipRating}
+            onDone={skipRating}
+          />
+        );
+      })()}
+
+    </div>
+  );
+}
+
+// Popup thông tin thời gian nhận hàng - tự động hiện khi vào trang chi tiết đơn
+function ReservationTimeInfoPopup({
+  pickupStartTime,
+  pickupEndTime,
+  pickupAddress,
+  onClose,
+}: {
+  pickupStartTime: string;
+  pickupEndTime: string;
+  pickupAddress: string;
+  onClose: () => void;
+}) {
+  const now = Date.now();
+  const thirtyMinMs = 30 * 60 * 1000;
+
+  const pickupStart = new Date(pickupStartTime).getTime();
+  const pickupEnd = new Date(pickupEndTime).getTime();
+
+  // Giờ bắt đầu = max(giờ hiện tại + 30p, pickupStartTime)
+  const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+
+  // Thời hạn đến = giờ hiện tại + 30 phút
+  const deadlineToArrive = now + thirtyMinMs;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10">
+            <span className="material-symbols-outlined text-[24px] text-primary">
+              schedule
+            </span>
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-neutral-900">Thông tin nhận hàng</h3>
+            <p className="text-sm text-neutral-500">Đơn của bạn đang chờ xử lý</p>
+          </div>
+        </div>
+
+        {/* Thông tin thời gian */}
+        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+            <span className="text-sm font-bold text-neutral-900">
+              {new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Thời hạn đến</span>
+            <span className="text-sm font-bold text-rose-600">
+              Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-sm text-neutral-500">Địa điểm</span>
+            <span className="text-sm font-bold text-neutral-900 text-right flex-1">{pickupAddress}</span>
+          </div>
+        </div>
+
+        {/* Cảnh báo */}
+        <div className="flex items-start gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200">
+          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">
+            warning
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
+            <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+              Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
+            </p>
+          </div>
+        </div>
+
+        {/* Button đóng */}
+        <button
+          onClick={onClose}
+          className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+        >
+          Đã hiểu
+        </button>
+      </div>
     </div>
   );
 }

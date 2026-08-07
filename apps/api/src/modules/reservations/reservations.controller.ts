@@ -59,12 +59,14 @@ export class ReservationsController {
   @ApiOperation({ summary: 'Receiver: Get my reservations' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'group', required: false, enum: ['active', 'history'] })
   myReservations(
     @CurrentUser() user: User,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('group') group?: 'active' | 'history',
   ) {
-    return this.reservationsService.findMyReservations(user.id, page, limit);
+    return this.reservationsService.findMyReservations(user.id, page, limit, group);
   }
 
   @Get('provider/my')
@@ -174,6 +176,6 @@ export class ReservationsController {
     @CurrentUser() user: User,
     @Body() dto: RateReservationDto,
   ) {
-    return this.reservationsService.rateReservation(id, user.id, dto.score, dto.comment);
+    return this.reservationsService.rateReservation(id, user.id, dto.score, dto.comment, dto.target);
   }
 }

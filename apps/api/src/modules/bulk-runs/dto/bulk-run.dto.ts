@@ -71,6 +71,50 @@ export class AddStopDto {
   plannedQty?: number;
 }
 
+/** Sửa điểm phát. Mọi trường đều tuỳ chọn — chỉ cập nhật thứ được gửi lên. */
+export class UpdateStopDto {
+  @ApiPropertyOptional({ example: 'Điểm phát cầu Sài Gòn' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  label?: string;
+
+  @ApiPropertyOptional({ example: 'Chân cầu Sài Gòn, P. Thảo Điền' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  address?: string;
+
+  @ApiPropertyOptional({ example: 106.72, description: 'Gửi kèm lat để đổi vị trí' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({ example: 10.8, description: 'Gửi kèm lng để đổi vị trí' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+  lat?: number;
+
+  @ApiPropertyOptional({ example: 5 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  plannedQty?: number;
+
+  @ApiPropertyOptional({ example: 'Ưu tiên người già' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class ServeStopDto {
   @ApiProperty({ example: 5, description: 'Số phần đã phát tại điểm này' })
   @IsInt()

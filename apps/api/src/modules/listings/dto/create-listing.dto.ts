@@ -7,6 +7,7 @@ import {
   IsDateString,
   IsOptional,
   IsArray,
+  ArrayNotEmpty,
   Min,
   Max,
   MaxLength,
@@ -97,11 +98,13 @@ export class CreateListingDto {
   @Type(() => Number)
   maxPerReservation!: number;
 
-  @ApiPropertyOptional({ example: ['https://...'] })
-  @IsOptional()
+  // BẮT BUỘC ít nhất 1 ảnh: người nhận không có cách nào đánh giá thực phẩm trước khi
+  // tới lấy, và tin không ảnh gần như không có lượt đặt.
+  @ApiProperty({ example: ['https://...'], description: 'Ít nhất 1 ảnh thực phẩm' })
   @IsArray()
+  @ArrayNotEmpty({ message: 'Tin đăng phải có ít nhất 1 ảnh thực phẩm.' })
   @IsString({ each: true })
-  imageUrls?: string[];
+  imageUrls!: string[];
 
   @ApiPropertyOptional({ example: false, description: 'Túi bất ngờ (kiểu Too Good To Go)' })
   @IsOptional()

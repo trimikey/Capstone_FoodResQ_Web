@@ -16,10 +16,9 @@ import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
 import { UNIT_LABEL } from '@/lib/utils';
-import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
-import ProviderRequestsSection from '@/components/campaigns/ProviderRequestsSection';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import PendingRequestsBanner from '@/components/provider/PendingRequestsBanner';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
@@ -293,18 +292,9 @@ export default function ProviderDashboardPage() {
           </div>
         </div>
 
-        <BulkRunRequests />
-
-        {/* Yêu cầu hợp tác từ charity */}
-        <section className="bg-white rounded-2xl border border-neutral-150 shadow-sm overflow-hidden">
-          <header className="px-5 py-4 border-b border-neutral-100 flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-500 text-[20px]">storefront</span>
-            <h3 className="font-bold text-sm text-neutral-900">Yêu cầu hợp tác từ tổ chức</h3>
-          </header>
-          <div className="p-5">
-            <ProviderRequestsSection />
-          </div>
-        </section>
+        {/* Yêu cầu giao sỉ + hợp tác đã chuyển sang tab "Yêu cầu" — ở đây chỉ nhắc
+            khi có việc chờ xử lý, tránh lặp nội dung ở hai nơi. */}
+        <PendingRequestsBanner />
 
         {extendTarget && (
           <ExtendListingModal

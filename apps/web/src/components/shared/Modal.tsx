@@ -22,12 +22,17 @@ export function Modal({
   if (typeof document === 'undefined') return null;
   const items = align === 'top' ? 'items-start' : 'items-center';
   return createPortal(
+    // Thanh cuộn nằm ở LỚP PHỦ, khung căn giữa dùng `min-h-full`.
+    // Nếu đặt cả `flex items-center` lẫn `overflow-y-auto` trên cùng một thẻ, nội dung
+    // cao hơn màn hình sẽ bị đẩy tràn lên trên và không cuộn ngược lại được — mất phần đầu.
     <div
-      className={`fixed inset-0 z-50 flex justify-center ${items} bg-black/55 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in-up`}
+      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm overflow-y-auto animate-fade-in-up"
       onClick={closeOnBackdrop ? onClose : undefined}
     >
-      <div className={className} onClick={(e) => e.stopPropagation()}>
-        {children}
+      <div className={`flex min-h-full justify-center p-4 ${items}`}>
+        <div className={className} onClick={(e) => e.stopPropagation()}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body,

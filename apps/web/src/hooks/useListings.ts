@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { FoodCategory, type ApiResponse } from '@foodresq/types';
 
-interface ListingItem {
+export interface ListingItem {
   id: string;
   title: string;
   category: string;
@@ -50,11 +50,12 @@ async function fetchListingById(id: string): Promise<ListingDetail> {
   return data.data;
 }
 
-export function useListings(params: QueryParams = {}) {
+export function useListings(params: QueryParams = {}, enabled = true) {
   return useQuery({
     queryKey: ['listings', 'nearby', params],
     queryFn: () => fetchListings(params),
     staleTime: 30_000,
+    enabled,
   });
 }
 

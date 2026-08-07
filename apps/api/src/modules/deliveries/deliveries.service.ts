@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -14,14 +15,22 @@ import { NotificationsGateway } from '@/modules/notifications/notifications.gate
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
 
-const OFFER_EXPIRY_MINUTES = 2;
+// Cửa sổ phản hồi của shipper. Theo mô hình gọi xe (mời lần lượt từng người,
+// đếm ngược ngắn) — để 2 phút thì một tài khoản không phản hồi chặn trọn 2 phút
+// của hàng đợi.
+export const OFFER_EXPIRY_SECONDS = 15;
 const BROADCAST_RADIUS_M = 5000; // 5km
-const MAX_OFFERS_PER_DELIVERY = 5;
 // Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
 const DELIVERY_STALL_HOURS = 6;
 // Tìm shipper tối đa 4 phút 30 giây — quá hạn không ai nhận thì đóng đơn,
 // báo người nhận "không có tình nguyện viên nào nhận, vui lòng đặt lại".
-const ASSIGNMENT_TIMEOUT_MS = 270 * 1000;
+export const ASSIGNMENT_TIMEOUT_MS = 270 * 1000;
+// SUY RA từ hai hằng số trên, không đặt tay: trần số lượt phải đủ lấp kín cửa sổ
+// tìm kiếm. Đặt cứng 5 với cửa sổ 15s thì quota cạn sau 75s, đơn nằm im hơn 3 phút
+// còn lại dù vẫn còn shipper hợp lệ chưa được mời.
+export const MAX_OFFERS_PER_DELIVERY = Math.ceil(
+  ASSIGNMENT_TIMEOUT_MS / (OFFER_EXPIRY_SECONDS * 1000),
+);
 
 interface NearbyShipper {
   id: string;
@@ -43,6 +52,8 @@ export interface CampaignTransportSummary {
 
 @Injectable()
 export class DeliveriesService {
+  private readonly logger = new Logger(DeliveriesService.name);
+
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
@@ -57,12 +68,32 @@ export class DeliveriesService {
     return this.storage.saveImage(photo, 'delivery-proofs');
   }
 
+  /**
+   * Delivery này có phải chuyến của chiến dịch không.
+   * Chỉ đụng tới `id`/`delivery_id` — hai cột luôn tồn tại — nên an toàn kể cả khi
+   * DB chưa có các cột lifecycle.
+   */
+  private async hasCampaignTransport(
+    client: Prisma.TransactionClient | PrismaService,
+    deliveryId: string,
+  ): Promise<boolean> {
+    const rows = await client.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM campaign_transports WHERE delivery_id = ${deliveryId}::uuid LIMIT 1
+    `);
+    return rows.length > 0;
+  }
+
   private async syncCampaignTransport(
     tx: Prisma.TransactionClient,
     deliveryId: string,
     status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'failed',
     failureReason?: string,
   ) {
+    // Đơn lẻ không có dòng campaign_transports — UPDATE dưới đây sẽ khớp 0 dòng,
+    // nhưng Postgres vẫn phân tích câu lệnh và nổ 42703 nếu thiếu cột lifecycle.
+    // Thoát sớm để vòng đời đơn lẻ hoàn toàn độc lập với bảng của chiến dịch.
+    if (!(await this.hasCampaignTransport(tx, deliveryId))) return;
+
     const stateRank = {
       pending: 0,
       assigned: 1,
@@ -151,21 +182,63 @@ export class DeliveriesService {
     }
   }
 
+  /**
+   * Shipper để lời mời trôi qua (không bấm nhận, cũng không bấm từ chối) → tắt
+   * chế độ sẵn sàng.
+   *
+   * Người thực sự đang online sẽ bấm một trong hai nút; im lặng hết cửa sổ nghĩa
+   * là không có ai ngồi trước máy. Để nguyên `is_available = true` thì tài khoản
+   * đó tiếp tục đứng đầu hàng đợi của mọi đơn kế tiếp và chặn shipper thật.
+   *
+   * TỪ CHỐI TƯỜNG MINH KHÔNG BỊ TẮT — đó là phản hồi hợp lệ.
+   */
+  private async goOfflineAfterLapse(shipperIds: string[]) {
+    const ids = [...new Set(shipperIds)];
+    if (ids.length === 0) return;
+
+    const affected = await this.prisma.volunteerProfile.updateMany({
+      where: { id: { in: ids }, isAvailable: true },
+      data: { isAvailable: false },
+    });
+    if (affected.count === 0) return;
+
+    const shippers = await this.prisma.volunteerProfile.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, userId: true },
+    });
+    for (const s of shippers) {
+      this.gateway.emitToUser(s.userId, 'shipper:auto_offline', { reason: 'offer_lapsed' });
+      await this.notifications.notify(s.userId, {
+        type: 'delivery',
+        title: 'Đã tắt chế độ nhận đơn',
+        body: 'Bạn không phản hồi lời mời giao hàng trong thời gian cho phép nên hệ thống đã tắt chế độ sẵn sàng. Bật lại khi bạn muốn tiếp tục nhận đơn.',
+        data: { reason: 'offer_lapsed' },
+      });
+    }
+  }
+
   private async notifyTaskOffer(shipper: NearbyShipper, deliveryId: string, expiresAt: Date) {
     void this.notifQueue.add(
       'delivery-offer-timeout',
       { shipperId: shipper.id, deliveryId, expiresAt },
-      { delay: OFFER_EXPIRY_MINUTES * 60 * 1000, removeOnComplete: true },
+      { delay: OFFER_EXPIRY_SECONDS * 1000, removeOnComplete: true },
     );
     this.gateway.emitToUser(shipper.user_id, 'delivery:offer', { deliveryId });
   }
 
   private async offerNextNearestShipper(deliveryId: string, pickupLng: number, pickupLat: number) {
     const now = new Date();
-    await this.prisma.shipperTaskOffer.updateMany({
+    const lapsed = await this.prisma.shipperTaskOffer.findMany({
       where: { deliveryId, status: 'pending', expiresAt: { lte: now } },
-      data: { status: 'expired', respondedAt: now, rejectReason: 'Offer timeout' },
+      select: { shipperId: true },
     });
+    if (lapsed.length > 0) {
+      await this.prisma.shipperTaskOffer.updateMany({
+        where: { deliveryId, status: 'pending', expiresAt: { lte: now } },
+        data: { status: 'expired', respondedAt: now, rejectReason: 'Offer timeout' },
+      });
+      await this.goOfflineAfterLapse(lapsed.map((o) => o.shipperId));
+    }
 
     const shippers = await this.prisma.$queryRaw<NearbyShipper[]>(Prisma.sql`
       SELECT
@@ -203,7 +276,7 @@ export class DeliveriesService {
     const shipper = shippers[0];
     if (!shipper) return null;
 
-    const expiresAt = new Date(now.getTime() + OFFER_EXPIRY_MINUTES * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + OFFER_EXPIRY_SECONDS * 1000);
     const inserted = await this.prisma.$executeRaw(Prisma.sql`
       INSERT INTO shipper_task_offers (delivery_id, shipper_id, status, expires_at)
       SELECT ${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz
@@ -236,12 +309,25 @@ export class DeliveriesService {
   // Called after reservation created with requestDelivery=true. Kept as public API for the queue processor.
   async broadcastToNearbyShippers(deliveryId: string, pickupLng: number, pickupLat: number) {
     const shipper = await this.offerNextNearestShipper(deliveryId, pickupLng, pickupLat);
-    if (shipper) {
+    if (!shipper) return;
+
+    // Mốc broadcast chỉ tồn tại cho chuyến của chiến dịch — đơn lẻ không có dòng
+    // campaign_transports nào, nên không chạm vào bảng đó.
+    if (!(await this.hasCampaignTransport(this.prisma, deliveryId))) return;
+
+    // Bookkeeping thuần: offer đã được tạo và socket `delivery:offer` đã bắn ở trên.
+    // Lỗi ở đây KHÔNG được phép làm job fail — job retry sẽ bị guard "đã có offer
+    // pending" chặn nên sẽ không emit lại lần nào nữa, shipper mất popup.
+    try {
       await this.prisma.$executeRaw(Prisma.sql`
         UPDATE campaign_transports
         SET last_broadcast_at = NOW(), updated_at = NOW()
         WHERE delivery_id = ${deliveryId}::uuid
       `);
+    } catch (err) {
+      this.logger.warn(
+        `Không ghi được mốc broadcast cho delivery ${deliveryId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -402,6 +488,9 @@ export class DeliveriesService {
       data: { status: 'expired', respondedAt: new Date(), rejectReason: 'Offer timeout' },
     });
     if (expired.count !== 1) return;
+
+    // Để trôi lời mời → tắt sẵn sàng, trước khi chuyển lượt cho người kế tiếp.
+    await this.goOfflineAfterLapse([shipperId]);
 
     if (coords?.pickupLng != null && coords?.pickupLat != null) {
       await this.offerNextNearestShipper(deliveryId, coords.pickupLng, coords.pickupLat);
@@ -592,31 +681,48 @@ export class DeliveriesService {
     return { id: deliveryId, status: 'pending_assignment' };
   }
 
-  /** Người nhận huỷ tìm shipper → xoá delivery record, reservation giữ nguyên để tự đến lấy. */
+  /** Người nhận huỷ tìm shipper → đánh dấu delivery = cancelled, reservation giữ nguyên để tự đến lấy. */
   async cancelDeliverySearchByReceiver(deliveryId: string, userId: string) {
+    // reservations.receiver_id trỏ tới receiver_profiles.id, KHÔNG phải users.id →
+    // phải map userId sang profile id trước khi so sánh (giống getTrackingForReceiver).
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
       include: { reservation: true },
     });
     if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
 
-    if (delivery.reservation?.receiverId !== userId) throw new ForbiddenException('Bạn không có quyền thực hiện thao tác này.');
+    // Check cả 2 cách: receiver_id = receiver_profiles.id HOẶC = users.id (một số bản ghi cũ có thể là users.id).
+    const receiverMatch =
+      delivery.reservation?.receiverId === receiver.id ||
+      delivery.reservation?.receiverId === userId;
+    if (!receiverMatch) {
+      throw new ForbiddenException('Bạn không có quyền thực hiện thao tác này.');
+    }
 
     if (!['pending_assignment', 'assigned'].includes(delivery.status)) {
       throw new BadRequestException('Không thể huỷ: đơn đang trong quá trình giao hàng.');
     }
 
     await this.prisma.$transaction([
-      // Xoá các offer đang chờ
+      // Expire các offer đang chờ
       this.prisma.shipperTaskOffer.updateMany({
         where: { deliveryId, status: 'pending' },
         data: { status: 'expired' },
       }),
-      // Xoá delivery
-      this.prisma.delivery.delete({ where: { id: deliveryId } }),
+      // Đánh dấu delivery = cancelled (không xoá) để FE polling vẫn nhận được status
+      this.prisma.delivery.update({
+        where: { id: deliveryId },
+        data: { status: 'cancelled' },
+      }),
     ]);
 
-    return { id: deliveryId, message: 'Đã hủy tìm shipper. Bạn có thể đến lấy trực tiếp.' };
+    return { id: deliveryId, status: 'cancelled', message: 'Đã hủy tìm shipper. Bạn có thể đến lấy trực tiếp.' };
   }
 
   /** Shipper báo giao THẤT BẠI (sau khi đã lấy hàng) — bắt buộc lý do. */
@@ -833,11 +939,14 @@ export class DeliveriesService {
     // Bỏ cuộc các đơn đã tìm quá 4ph30 TRƯỚC, để không mời lại vô ích
     await this.failUnassignedTimeouts();
 
-    await this.prisma.$executeRaw(Prisma.sql`
+    // RETURNING để biết ai đã để trôi lời mời → tắt sẵn sàng cho họ.
+    const lapsed = await this.prisma.$queryRaw<{ shipper_id: string }[]>(Prisma.sql`
       UPDATE shipper_task_offers
       SET status = 'expired'::offer_status, responded_at = NOW()
       WHERE status = 'pending' AND expires_at < NOW()
+      RETURNING shipper_id
     `);
+    await this.goOfflineAfterLapse(lapsed.map((o) => o.shipper_id));
 
     const stuck = await this.prisma.$queryRaw<
       { id: string; plng: number | null; plat: number | null }[]
@@ -1063,6 +1172,78 @@ export class DeliveriesService {
     };
   }
 
+  /**
+   * Đánh giá mà shipper đã NHẬN được từ người nhận, kèm phân bố sao.
+   * Rating là bảng đa hình nên nối sang reservation/listing bằng raw query.
+   */
+  async getMyRatings(shipperUserId: string, page = 1, limit = 10) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId: shipperUserId },
+      select: { id: true, avgRating: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const skip = (page - 1) * limit;
+    const items = await this.prisma.$queryRaw<
+      {
+        id: string;
+        score: number;
+        comment: string | null;
+        created_at: Date;
+        listing_title: string | null;
+        rater_name: string | null;
+      }[]
+    >(Prisma.sql`
+      SELECT rt.id, rt.score, rt.comment, rt.created_at,
+             fl.title AS listing_title,
+             u.full_name AS rater_name
+      FROM ratings rt
+      JOIN users u ON u.id = rt.rater_id
+      LEFT JOIN reservations r ON r.id = rt.reference_id
+      LEFT JOIN food_listings fl ON fl.id = r.listing_id
+      WHERE rt.reference_type = 'reservation' AND rt.ratee_id = ${shipperUserId}::uuid
+      ORDER BY rt.created_at DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `);
+
+    const [dist] = await this.prisma.$queryRaw<
+      { total: bigint; s5: bigint; s4: bigint; s3: bigint; s2: bigint; s1: bigint }[]
+    >(Prisma.sql`
+      SELECT COUNT(*) AS total,
+             COUNT(*) FILTER (WHERE score = 5) AS s5,
+             COUNT(*) FILTER (WHERE score = 4) AS s4,
+             COUNT(*) FILTER (WHERE score = 3) AS s3,
+             COUNT(*) FILTER (WHERE score = 2) AS s2,
+             COUNT(*) FILTER (WHERE score = 1) AS s1
+      FROM ratings
+      WHERE reference_type = 'reservation' AND ratee_id = ${shipperUserId}::uuid
+    `);
+
+    const total = Number(dist?.total ?? 0);
+    return {
+      items: items.map((r) => ({
+        id: r.id,
+        score: r.score,
+        comment: r.comment,
+        createdAt: r.created_at,
+        listingTitle: r.listing_title,
+        raterName: r.rater_name,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      avgRating: volunteer.avgRating != null ? Number(volunteer.avgRating) : null,
+      distribution: {
+        5: Number(dist?.s5 ?? 0),
+        4: Number(dist?.s4 ?? 0),
+        3: Number(dist?.s3 ?? 0),
+        2: Number(dist?.s2 ?? 0),
+        1: Number(dist?.s1 ?? 0),
+      },
+    };
+  }
+
   /** Người nhận theo dõi đơn giao của mình: trạng thái + vị trí shipper trực tiếp. */
   async getTrackingForReceiver(reservationId: string, receiverUserId: string) {
     const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId: receiverUserId }, select: { id: true } });
@@ -1078,6 +1259,19 @@ export class DeliveriesService {
     if (!delivery) throw new NotFoundException('Đơn này chưa có thông tin giao hàng.');
     if (!delivery.reservation) throw new BadRequestException('Đơn này không gắn với đặt suất ăn.');
     if (delivery.reservation.receiverId !== receiver.id) throw new ForbiddenException();
+
+    // Khi delivery bị cancelled (receiver hủy tìm shipper), vẫn trả về status để FE nhận biết
+    if (delivery.status === 'cancelled') {
+      return {
+        deliveryId: delivery.id,
+        status: 'cancelled' as const,
+        failedReason: 'Người nhận đã hủy tìm shipper.',
+        searchExpiresAt: null,
+        shipper: null,
+        coords: null,
+        distanceKm: null,
+      };
+    }
 
     let coords = (await this.getDeliveryCoords([delivery.id])).get(delivery.id) ?? null;
 
@@ -1122,6 +1316,12 @@ export class DeliveriesService {
       deliveryId: delivery.id,
       status: delivery.status,
       failedReason: delivery.failedReason,
+      // Hạn tìm shipper TUYỆT ĐỐI, tính từ lúc tạo đơn — để FE đếm ngược theo mốc
+      // này thay vì đếm từ lúc mở trang (reload sẽ nhảy về 4:30 dù đã tìm gần hết giờ).
+      searchExpiresAt:
+        delivery.status === 'pending_assignment'
+          ? new Date(delivery.createdAt.getTime() + ASSIGNMENT_TIMEOUT_MS).toISOString()
+          : null,
       distanceKm: delivery.distanceKm != null ? Number(delivery.distanceKm) : null,
       listingTitle: delivery.reservation.listing.title,
       pickupAddress: delivery.reservation.listing.pickupAddress,

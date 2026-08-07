@@ -13,7 +13,8 @@ describe('CampaignsService', () => {
   const prisma = {
     volunteerProfile: { findUnique: jest.fn() },
     kitchenCampaign: { findUnique: jest.fn() },
-    campaignShift: { findUnique: jest.fn() },
+    // `count` được service gọi khi kiểm tra ca làm — thiếu mock thì 3 test apply() đỏ
+    campaignShift: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
     campaignVolunteerAssignment: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },

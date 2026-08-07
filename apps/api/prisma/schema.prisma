@@ -131,6 +131,7 @@ enum DeliveryStatus {
   in_transit
   delivered
   failed
+  cancelled // Người nhận hủy tìm shipper
 
   @@map("delivery_status")
 }

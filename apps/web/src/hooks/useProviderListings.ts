@@ -43,7 +43,8 @@ export interface CreateListingInput {
   storageConditions?: string;
   allergenNotes?: string;
   maxPerReservation: number;
-  imageUrls?: string[];
+  /** Bắt buộc ít nhất 1 ảnh — khớp ràng buộc @ArrayNotEmpty phía BE */
+  imageUrls: string[];
   isSurpriseBag?: boolean;
 }
 

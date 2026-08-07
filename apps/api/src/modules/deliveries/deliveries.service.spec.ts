@@ -1,10 +1,27 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import { DeliveriesService } from './deliveries.service';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  DeliveriesService,
+  OFFER_EXPIRY_SECONDS,
+  MAX_OFFERS_PER_DELIVERY,
+  ASSIGNMENT_TIMEOUT_MS,
+} from './deliveries.service';
+
+describe('hằng số vòng đời mời shipper', () => {
+  it('trần số lượt mời đủ lấp kín cửa sổ tìm kiếm', () => {
+    // Mời tuần tự: mỗi lượt chiếm trọn OFFER_EXPIRY_SECONDS. Nếu quota lượt cạn
+    // TRƯỚC khi hết ngân sách thời gian, đơn nằm im phần thời gian còn lại dù vẫn
+    // còn shipper hợp lệ chưa được mời — đúng lỗi đã gặp: 5 lượt × 15s = 75s cạn
+    // quota, đơn treo hơn 3 phút rồi failed trong khi có shipper ở 3km đang online.
+    expect(MAX_OFFERS_PER_DELIVERY * OFFER_EXPIRY_SECONDS * 1000)
+      .toBeGreaterThanOrEqual(ASSIGNMENT_TIMEOUT_MS);
+  });
+});
 
 describe('DeliveriesService', () => {
   const prisma = {
-    volunteerProfile: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-    shipperTaskOffer: { findUnique: jest.fn(), updateMany: jest.fn() },
+    volunteerProfile: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+    receiverProfile: { findUnique: jest.fn() },
+    shipperTaskOffer: { findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
     delivery: { findUnique: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     bulkRun: { findFirst: jest.fn() },
     $queryRaw: jest.fn(),
@@ -21,6 +38,8 @@ describe('DeliveriesService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$queryRaw.mockResolvedValue([]);
+    prisma.shipperTaskOffer.findMany.mockResolvedValue([]);
+    prisma.volunteerProfile.findMany.mockResolvedValue([]);
     service = new DeliveriesService(
       prisma as never,
       storage as never,
@@ -84,6 +103,51 @@ describe('DeliveriesService', () => {
     expect(prisma.shipperTaskOffer.updateMany).not.toHaveBeenCalled();
   });
 
+  it('để trôi lời mời → tắt chế độ sẵn sàng của shipper', async () => {
+    const expired = new Date(Date.now() - 1000);
+    prisma.shipperTaskOffer.findUnique.mockResolvedValue({
+      id: 'offer-1',
+      status: 'pending',
+      expiresAt: expired,
+    });
+    prisma.shipperTaskOffer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.volunteerProfile.updateMany.mockResolvedValue({ count: 1 });
+    prisma.volunteerProfile.findMany.mockResolvedValue([
+      { id: 'shipper-1', userId: 'shipper-user-1' },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([]);
+    prisma.shipperTaskOffer.findMany.mockResolvedValue([]);
+
+    await service.expireOfferAndOfferNext('delivery-1', 'shipper-1', expired.toISOString());
+
+    expect(prisma.volunteerProfile.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['shipper-1'] }, isAvailable: true },
+      data: { isAvailable: false },
+    });
+    expect(gateway.emitToUser).toHaveBeenCalledWith(
+      'shipper-user-1',
+      'shipper:auto_offline',
+      { reason: 'offer_lapsed' },
+    );
+  });
+
+  it('từ chối tường minh KHÔNG bị tắt sẵn sàng', async () => {
+    prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1' });
+    prisma.shipperTaskOffer.findUnique.mockResolvedValue({
+      id: 'offer-1',
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 15_000),
+    });
+    prisma.shipperTaskOffer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.shipperTaskOffer.findMany.mockResolvedValue([]);
+    prisma.$queryRaw.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
+
+    await service.rejectOffer('delivery-1', 'shipper-user-1');
+
+    expect(prisma.volunteerProfile.updateMany).not.toHaveBeenCalled();
+  });
+
   it('keeps a stale timeout job from expiring a newer offer', async () => {
     const newerExpiry = new Date(Date.now() + 60_000);
     prisma.shipperTaskOffer.findUnique.mockResolvedValue({
@@ -138,5 +202,96 @@ describe('DeliveriesService', () => {
       where: { id: 'delivery-1' },
       data: expect.objectContaining({ deliveryProofUrl: 'https://proof.example/image.jpg' }),
     }));
+  });
+
+  it('nhận đơn lẻ thành công mà không đụng campaign_transports', async () => {
+    // Hồi quy: syncCampaignTransport chạy vô điều kiện → đơn lẻ nổ 42703
+    // `column "assigned_at" does not exist` ngay khi shipper bấm "Nhận đơn".
+    prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1' });
+    prisma.shipperTaskOffer.findUnique.mockResolvedValue({
+      id: 'offer-1',
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    prisma.delivery.findFirst.mockResolvedValue(null);
+    prisma.bulkRun.findFirst.mockResolvedValue(null);
+    prisma.volunteerProfile.updateMany.mockResolvedValue({ count: 1 });
+    prisma.delivery.updateMany.mockResolvedValue({ count: 1 });
+    prisma.shipperTaskOffer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.delivery.findUnique.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([]); // đơn lẻ → không có campaign_transports
+    prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
+
+    await service.acceptOffer('delivery-1', 'shipper-user-1');
+
+    // Không có UPDATE campaign_transports nào được phát ra
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('không chạm campaign_transports khi broadcast đơn lẻ', async () => {
+    // Hồi quy: UPDATE campaign_transports chạy vô điều kiện cho MỌI đơn → đơn lẻ
+    // vẫn nổ 42703 khi DB thiếu cột lifecycle, làm job retry và mất socket emit.
+    prisma.shipperTaskOffer.updateMany.mockResolvedValue({ count: 0 });
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ id: 'shipper-1', user_id: 'shipper-user-1', distance_m: 900 }])
+      .mockResolvedValueOnce([]); // đơn lẻ → không có dòng campaign_transports
+    prisma.$executeRaw.mockResolvedValue(1);
+
+    await service.broadcastToNearbyShippers('delivery-1', 106.6297, 10.8231);
+
+    expect(gateway.emitToUser).toHaveBeenCalledWith('shipper-user-1', 'delivery:offer', {
+      deliveryId: 'delivery-1',
+    });
+    // Chỉ INSERT lời mời — không có UPDATE campaign_transports nào
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('lỗi ghi mốc broadcast không làm job fail sau khi đã emit lời mời', async () => {
+    // Hồi quy: throw ở bookkeeping → BullMQ retry, nhưng guard "đã có offer pending"
+    // chặn lần mời lại nên shipper không bao giờ nhận thêm popup.
+    prisma.shipperTaskOffer.updateMany.mockResolvedValue({ count: 0 });
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ id: 'shipper-1', user_id: 'shipper-user-1', distance_m: 900 }])
+      .mockResolvedValueOnce([{ id: 'transport-1' }]);
+    prisma.$executeRaw
+      .mockResolvedValueOnce(1)
+      .mockRejectedValueOnce(new Error('column "last_broadcast_at" does not exist'));
+
+    await expect(service.broadcastToNearbyShippers('delivery-1', 106.6297, 10.8231))
+      .resolves.toBeUndefined();
+
+    expect(gateway.emitToUser).toHaveBeenCalledWith('shipper-user-1', 'delivery:offer', {
+      deliveryId: 'delivery-1',
+    });
+  });
+
+  it('cho người nhận huỷ tìm shipper khi receiver_id là profile id (không phải user id)', async () => {
+    // Hồi quy: trước đây so sánh reservation.receiverId với userId → luôn 403.
+    prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-profile-1' });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 'delivery-1',
+      status: 'pending_assignment',
+      reservation: { id: 'res-1', receiverId: 'receiver-profile-1' },
+    });
+    prisma.$transaction.mockResolvedValue([]);
+
+    await expect(service.cancelDeliverySearchByReceiver('delivery-1', 'receiver-user-1'))
+      .resolves.toEqual(expect.objectContaining({ id: 'delivery-1', status: 'cancelled' }));
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('chặn người nhận khác huỷ tìm shipper của đơn không thuộc mình', async () => {
+    prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-profile-2' });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 'delivery-1',
+      status: 'pending_assignment',
+      reservation: { id: 'res-1', receiverId: 'receiver-profile-1' },
+    });
+
+    await expect(service.cancelDeliverySearchByReceiver('delivery-1', 'other-user'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
