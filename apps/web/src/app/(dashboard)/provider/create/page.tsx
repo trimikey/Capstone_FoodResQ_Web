@@ -17,15 +17,6 @@ import {
   type ListingForm,
 } from '@/lib/listing-form';
 
-// Convert /uploads/... to proxy URL for display
-function toProxyUrl(url: string): string {
-  if (!url) return url;
-  if (url.startsWith('/uploads/')) {
-    return `/api/uploads${url.slice(8)}`;
-  }
-  return url;
-}
-
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse rounded-xl" />,
@@ -110,10 +101,8 @@ export default function ProviderCreateListingPage() {
       const url = await uploadImage.mutateAsync({ file, kind: 'listing' });
       set('imageUrl', url);
       toast.success('Đã tải ảnh lên.');
-    } catch (err: unknown) {
-      console.error('Upload failed:', err);
-      const msg = err instanceof Error ? err.message : 'Tải ảnh thất bại.';
-      toast.error(msg);
+    } catch {
+      toast.error('Tải ảnh thất bại.');
     }
   }
 
@@ -549,7 +538,7 @@ export default function ProviderCreateListingPage() {
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={toProxyUrl(form.imageUrl)}
+                    src={form.imageUrl}
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />

@@ -661,17 +661,21 @@ export function useReviewAssignment() {
       );
       return data.data;
     },
-    onSuccess: (_d, p) => {
+    onSuccess: async (_d, p) => {
       // Refetch ngay lập tức cả manage-detail và public-detail để RegistrationRow
       // đọc được serverStatus mới (assigned/rejected) thay vì giữ optimistic local.
-      void qc.invalidateQueries({
-        queryKey: ['campaigns', 'manage-detail', p.campaignId],
-        refetchType: 'all',
-      });
-      void qc.invalidateQueries({
-        queryKey: ['campaigns', 'public', p.campaignId],
-        refetchType: 'all',
-      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'open'], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'mine'], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'], refetchType: 'all' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'public', p.campaignId], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'open'], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'mine'], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'my-tasks'], type: 'active' }),
+      ]);
     },
   });
 }
@@ -682,7 +686,9 @@ export function useCampaignManageDetail(id: string) {
     queryKey: ['campaigns', 'manage-detail', id],
     queryFn: async () => (await api.get(`/campaigns/${id}/manage-detail`)).data.data as CampaignManageDetail,
     enabled: !!id,
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 }
 

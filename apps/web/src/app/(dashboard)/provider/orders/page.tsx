@@ -6,7 +6,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
-import { UNIT_LABEL, mediaUrl, errMsg } from '@/lib/utils';
+import { UNIT_LABEL, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
@@ -557,7 +557,7 @@ function OrderCard({
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
   const code = item.id.slice(0, 8).toUpperCase();
-  const image = item.listing.imageUrls[0] ? mediaUrl(item.listing.imageUrls[0]) : FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+  const image = item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
   const qty = formatWeight(item);
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 

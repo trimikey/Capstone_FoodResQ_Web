@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { combineToIso } from '@/lib/listing-form';
 import { TimePicker } from './TimePicker';
 import { DatePicker } from './DatePicker';
@@ -22,13 +21,18 @@ export function DateTimeField({
   minDate?: Date;
   minTime?: string;
 }) {
+  function handleDateChange(v: string) {
+    onDateChange(v);
+    onTimeChange('');
+  }
+
   return (
     <div className="space-y-1.5">
       <label className="text-xs text-neutral-500 font-medium uppercase tracking-wide block">
         {label}
       </label>
       <div className="space-y-2">
-        <DatePicker value={dateValue} onChange={onDateChange} minDate={minDate} />
+        <DatePicker value={dateValue} onChange={handleDateChange} minDate={minDate} />
         <TimePicker value={timeValue} onChange={onTimeChange} minTime={minTime} />
       </div>
       {hint && <p className="text-[11px] text-neutral-400 font-normal">{hint}</p>}

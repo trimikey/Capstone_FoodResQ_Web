@@ -15,7 +15,7 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
+import { UNIT_LABEL } from '@/lib/utils';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 import PendingRequestsBanner from '@/components/provider/PendingRequestsBanner';
@@ -416,7 +416,7 @@ function PostingItem({
       <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 flex items-center justify-center overflow-hidden">
         {listing.imageUrls[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(listing.imageUrls[0])} alt={listing.title} className="w-full h-full object-cover" />
+          <img src={listing.imageUrls[0]} alt={listing.title} className="w-full h-full object-cover" />
         ) : (
           <span className="material-symbols-outlined text-[24px] text-neutral-300">bakery_dining</span>
         )}
