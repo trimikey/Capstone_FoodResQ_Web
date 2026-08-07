@@ -11,6 +11,24 @@ Khi làm việc với người dùng trong project này, **ưu tiên dùng tiế
 
 ---
 
+## 0.1 Git Workflow — Branch Lifecycle
+
+- Mỗi tính năng / fix tạo branch riêng từ `master` theo convention: `feat/<tên>`, `fix/<tên>`, `chore/<tên>`.
+- Sau khi PR được **merged**, **phải xóa branch chức năng ngay** — cả remote lẫn local:
+
+```bash
+# Xóa remote
+git push origin --delete <branch-name>
+
+# Xóa local (đang ở branch khác)
+git branch -d <branch-name>
+```
+
+- Không để branch cũ tồn tại sau khi merge — gây rác và nhầm lẫn khi `git branch` / `git fetch`.
+- Nếu cần rollback, dùng `git revert` trên `master`, không reopen branch cũ.
+
+---
+
 ## 1. Project Structure
 
 ```
