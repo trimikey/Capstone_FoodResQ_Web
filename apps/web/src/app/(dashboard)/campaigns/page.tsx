@@ -27,7 +27,8 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
-import { type Section } from './_components/CharitySidebar';
+import type { Section } from './_components/CharitySidebar';
+import { useAuthStore } from '@/stores/auth.store';
 
 const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',

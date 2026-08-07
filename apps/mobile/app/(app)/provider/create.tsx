@@ -29,6 +29,7 @@ import {
 } from '@/hooks/useProviderListings';
 import { getCurrentCoords, type Coords } from '@/services/geolocation';
 import {
+  captureAndUploadListingImage,
   pickAndUploadListingImages,
   ImagePickCancelledError,
 } from '@/services/listingImageUpload';
@@ -154,12 +155,30 @@ export default function CreateListingScreen() {
   const handlePickImages = async () => {
     try {
       setUploading(true);
-      const urls = await pickAndUploadListingImages(5);
+      const urls = await pickAndUploadListingImages(5 - imageUrls.length);
       setImageUrls((prev) => [...prev, ...urls].slice(0, 5));
       Popup.show({ type: 'success', text1: `Đã tải ${urls.length} ảnh` });
     } catch (err) {
       if (err instanceof ImagePickCancelledError) return;
       Popup.show({ type: 'error', text1: 'Tải ảnh thất bại', text2: getErrorMessage(err) });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleCaptureImage = async () => {
+    try {
+      setUploading(true);
+      const url = await captureAndUploadListingImage();
+      setImageUrls((prev) => [...prev, url].slice(0, 5));
+      Popup.show({ type: 'success', text1: 'Đã chụp và tải ảnh' });
+    } catch (err) {
+      if (err instanceof ImagePickCancelledError) return;
+      Popup.show({
+        type: 'error',
+        text1: 'Không chụp được ảnh',
+        text2: getErrorMessage(err),
+      });
     } finally {
       setUploading(false);
     }
@@ -282,21 +301,34 @@ export default function CreateListingScreen() {
                 </View>
               ))}
               {imageUrls.length < 5 ? (
-                <Pressable
-                  style={[styles.addImage, uploading && styles.controlDisabled]}
-                  onPress={handlePickImages}
-                  disabled={uploading}
-                  accessibilityRole="button"
-                  accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Thêm ảnh món ăn'}
-                  accessibilityState={{ disabled: uploading }}
-                >
-                  <MaterialCommunityIcons
-                    name={uploading ? 'progress-upload' : 'camera-plus-outline'}
-                    size={26}
-                    color={COLORS.primary}
-                  />
-                  <Text style={styles.addImageText}>{uploading ? 'Đang tải' : 'Thêm ảnh'}</Text>
-                </Pressable>
+                <>
+                  <Pressable
+                    style={[styles.addImage, uploading && styles.controlDisabled]}
+                    onPress={handleCaptureImage}
+                    disabled={uploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Chụp ảnh món ăn'}
+                    accessibilityState={{ disabled: uploading, busy: uploading }}
+                  >
+                    <MaterialCommunityIcons
+                      name={uploading ? 'progress-upload' : 'camera-outline'}
+                      size={26}
+                      color={COLORS.primary}
+                    />
+                    <Text style={styles.addImageText}>{uploading ? 'Đang tải' : 'Chụp ảnh'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.addImage, uploading && styles.controlDisabled]}
+                    onPress={handlePickImages}
+                    disabled={uploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Chọn ảnh món ăn từ thư viện'}
+                    accessibilityState={{ disabled: uploading, busy: uploading }}
+                  >
+                    <MaterialCommunityIcons name="image-multiple-outline" size={26} color={COLORS.primary} />
+                    <Text style={styles.addImageText}>Thư viện</Text>
+                  </Pressable>
+                </>
               ) : null}
             </View>
           </Section>
@@ -721,7 +753,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addImage: {
-    width: 118,
+    width: 104,
     height: 82,
     borderRadius: radius.md,
     borderWidth: 1,

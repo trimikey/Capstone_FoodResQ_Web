@@ -72,9 +72,7 @@ export default function EditProfileScreen() {
     addressValue ??
     (currentAddress && currentLat != null && currentLng != null
       ? { address: currentAddress, lat: currentLat, lng: currentLng }
-      : currentAddress
-        ? { address: currentAddress, lat: 10.8231, lng: 106.6297 }
-        : null);
+      : null);
 
   // Chọn ảnh từ thư viện → upload Firebase Storage → gán URL vào form.
   const handleChangeAvatar = async () => {

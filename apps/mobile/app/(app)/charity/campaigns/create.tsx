@@ -179,12 +179,22 @@ export default function CreateCampaignScreen() {
       Popup.show({ type: 'warning', text1: 'Hồ sơ chưa có địa chỉ mặc định' });
       return;
     }
+    const lat = profileLat ?? coords?.lat;
+    const lng = profileLng ?? coords?.lng;
+    if (lat == null || lng == null) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa lấy được GPS thật',
+        text2: 'Hãy bật định vị trên thiết bị rồi thử lại.',
+      });
+      return;
+    }
     patchDraft({
       addressMode: 'profile',
       address: {
         address: profileAddress,
-        lat: profileLat ?? coords?.lat ?? 10.8231,
-        lng: profileLng ?? coords?.lng ?? 106.6297,
+        lat,
+        lng,
       },
     });
   };

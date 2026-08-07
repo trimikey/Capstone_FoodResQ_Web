@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { UserRole } from '@foodresq/types';
 import { useMe } from '@/hooks/useProfile';
@@ -36,7 +36,7 @@ const VALID_SECTIONS: Section[] = [
  * Section hiện tại lấy từ ?tab=… trên URL (single source of truth);
  * page.tsx cũng đọc cùng param nên sidebar và main luôn đồng bộ.
  */
-export default function CampaignsLayout({ children }: { children: React.React.ReactNode }) {
+export default function CampaignsLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

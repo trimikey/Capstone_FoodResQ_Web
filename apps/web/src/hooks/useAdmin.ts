@@ -31,6 +31,8 @@ export interface VerificationItem {
   description?: string | null;
   lng?: number | null;
   lat?: number | null;
+  faceImageUrl?: string | null;
+  idCardImageUrl?: string | null;
 }
 
 export interface AdminReport {
@@ -60,6 +62,9 @@ export interface AdminUser {
   isCharityOrg: boolean;
   /** Provider/volunteer profile ID — needed to call /admin/verifications/{type}/{profileId} */
   profileId?: string;
+  /** Ảnh khuôn mặt/CCCD đã đăng ký eKYC (receiver/volunteer) — hiển thị cho admin khi xem chi tiết */
+  faceImageUrl?: string | null;
+  idCardImageUrl?: string | null;
 }
 
 export function useAdminStats() {

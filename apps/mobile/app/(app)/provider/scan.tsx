@@ -26,6 +26,8 @@ export default function ScanQrScreen() {
   const [scanning, setScanning] = useState(false); // khoá khi đang gọi API
   const [manualToken, setManualToken] = useState('');
   const [torch, setTorch] = useState(false); // đèn flash
+  const [verificationImageLoaded, setVerificationImageLoaded] = useState(false);
+  const [verificationImageFailed, setVerificationImageFailed] = useState(false);
 
   if (user && user.role !== 'provider') {
     return <Redirect href="/(app)/home" />;
@@ -37,6 +39,8 @@ export default function ScanQrScreen() {
       setScanning(true);
       const data = await scan.mutateAsync(token);
       void notifySuccess();
+      setVerificationImageLoaded(false);
+      setVerificationImageFailed(false);
       setResult(data);
     } catch (err) {
       void notifyError();
@@ -48,6 +52,14 @@ export default function ScanQrScreen() {
 
   const handleConfirm = async () => {
     if (!result) return;
+    if (!result.receiver.verificationImageAvailable || !verificationImageLoaded) {
+      Popup.show({
+        type: 'error',
+        text1: 'Ảnh xác minh không khả dụng',
+        text2: 'Yêu cầu người nhận cập nhật lại selfie trước khi giao.',
+      });
+      return;
+    }
     try {
       setScanning(true);
       await confirm.mutateAsync(result.id);
@@ -65,12 +77,15 @@ export default function ScanQrScreen() {
   const reset = () => {
     setResult(null);
     setManualToken('');
+    setVerificationImageLoaded(false);
+    setVerificationImageFailed(false);
   };
 
   // ---- Màn đối chiếu sau khi quét ----
   if (result) {
     const r = result.receiver;
-    const photo = r.faceImageUrl ?? r.avatarUrl ?? r.idCardImageUrl;
+    const photo = r.faceImageUrl ?? r.idCardImageUrl;
+    const photoAvailable = r.verificationImageAvailable && !verificationImageFailed;
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header />
@@ -79,16 +94,42 @@ export default function ScanQrScreen() {
             <Text style={styles.matchKicker}>Đối chiếu QR</Text>
             <Text variant="titleMedium" style={styles.matchTitle}>Xác nhận đúng người nhận</Text>
           </View>
-          {photo ? (
-            <AppImage source={{ uri: photo }} style={styles.facePhoto} />
+          {photo && photoAvailable ? (
+            <AppImage
+              source={{ uri: photo }}
+              style={styles.facePhoto}
+              onLoad={() => setVerificationImageLoaded(true)}
+              onError={() => {
+                setVerificationImageLoaded(false);
+                setVerificationImageFailed(true);
+              }}
+            />
           ) : (
             <View style={[styles.facePhoto, styles.faceEmpty]}>
-              <MaterialCommunityIcons name="account" size={64} color={COLORS.onSurfaceVariant} />
+              <MaterialCommunityIcons name="image-off-outline" size={56} color={COLORS.onSurfaceVariant} />
             </View>
           )}
           <Text variant="headlineSmall" style={styles.receiverName}>{r.fullName}</Text>
           {r.phone ? <Text style={styles.meta}>{r.phone}</Text> : null}
-          <StatusBadge label={r.enrolled ? 'Đã đăng ký khuôn mặt' : 'Chưa đăng ký khuôn mặt'} tone={r.enrolled ? 'success' : 'warning'} />
+          <StatusBadge
+            label={
+              r.enrolled && photoAvailable
+                ? 'Đã đăng ký khuôn mặt'
+                : r.enrolled
+                  ? 'Ảnh đăng ký không khả dụng'
+                  : 'Chưa đăng ký khuôn mặt'
+            }
+            tone={r.enrolled && photoAvailable ? 'success' : 'warning'}
+          />
+
+          {!photoAvailable ? (
+            <View style={styles.photoWarning}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={20} color={COLORS.error} />
+              <Text style={styles.photoWarningText}>
+                Không thể đối chiếu danh tính. Yêu cầu người nhận vào Tài khoản → Xác minh khuôn mặt để cập nhật selfie.
+              </Text>
+            </View>
+          ) : null}
 
           <SurfaceCard style={styles.matchInfo}>
             <Row label="Món" value={result.listing.title} />
@@ -96,7 +137,8 @@ export default function ScanQrScreen() {
             {r.idCardNumber ? <Row label="CCCD" value={r.idCardNumber} /> : null}
           </SurfaceCard>
 
-          <Button mode="contained" icon="check-bold" onPress={handleConfirm} loading={scanning} disabled={scanning}
+          <Button mode="contained" icon="check-bold" onPress={handleConfirm} loading={scanning}
+            disabled={scanning || !photoAvailable || !verificationImageLoaded}
             buttonColor={COLORS.primary} style={styles.confirmBtn} labelStyle={{ fontSize: 16, fontWeight: 'bold' }}>
             Xác nhận đã giao
           </Button>
@@ -220,6 +262,8 @@ const styles = StyleSheet.create({
   matchTitle: { fontWeight: '900', color: COLORS.onPrimary },
   facePhoto: { width: 160, height: 160, borderRadius: 80, backgroundColor: COLORS.outline },
   faceEmpty: { alignItems: 'center', justifyContent: 'center' },
+  photoWarning: { alignSelf: 'stretch', flexDirection: 'row', gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: COLORS.errorContainer },
+  photoWarningText: { flex: 1, color: COLORS.onErrorContainer, fontSize: 13, lineHeight: 18 },
   receiverName: { fontWeight: '800', color: COLORS.onSurface, marginTop: 14 },
   meta: { color: COLORS.onSurfaceVariant, marginTop: 2 },
   matchInfo: { alignSelf: 'stretch', padding: spacing.lg },

@@ -268,7 +268,7 @@ export default function ProfileTab() {
                 </View>
                 <Text style={styles.faceHint}>
                   {faceEnrolled
-                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng.'
+                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng. Có thể cập nhật selfie nếu ảnh cũ không còn hiển thị.'
                     : 'Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.'}
                 </Text>
                 {faceFeedback ? (
@@ -295,8 +295,7 @@ export default function ProfileTab() {
                     </Text>
                   </View>
                 ) : null}
-                {!faceEnrolled ? (
-                  <View style={styles.faceActions}>
+                <View style={styles.faceActions}>
                     <Button
                       mode="contained"
                       icon="camera"
@@ -306,7 +305,7 @@ export default function ProfileTab() {
                       onPress={() => handleEnrollFace('camera')}
                       style={styles.faceButton}
                     >
-                      {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
+                      {faceBusy ? 'Đang cập nhật...' : faceEnrolled ? 'Cập nhật selfie' : 'Đăng ký selfie'}
                     </Button>
                     <Button
                       mode="text"
@@ -317,8 +316,7 @@ export default function ProfileTab() {
                     >
                       Chọn ảnh
                     </Button>
-                  </View>
-                ) : null}
+                </View>
               </SurfaceCard>
             ) : null}
 
@@ -409,8 +407,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      <Text style={styles.rowLabel} numberOfLines={2}>{label}</Text>
+      <Text style={styles.rowValue} numberOfLines={3}>{value}</Text>
     </View>
   );
 }
@@ -464,12 +462,14 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.outlineVariant,
   },
-  rowLabel: { color: COLORS.onSurfaceVariant },
-  rowValue: { color: COLORS.onSurface, fontWeight: '600' },
+  rowLabel: { flex: 1, fontSize: 14, color: COLORS.onSurfaceVariant },
+  rowValue: { flex: 1.5, fontSize: 14, color: COLORS.onSurface, fontWeight: '600', textAlign: 'right' },
   faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   faceIcon: {
     width: 42,
