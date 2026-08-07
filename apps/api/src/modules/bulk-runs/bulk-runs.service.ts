@@ -12,17 +12,24 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
-import { RequestBulkRunDto, AddStopDto, ServeStopDto } from './dto/bulk-run.dto';
+import { TrustService } from '@/modules/trust/trust.service';
+import { RequestBulkRunDto, AddStopDto, UpdateStopDto, ServeStopDto } from './dto/bulk-run.dto';
 
 // UUID cố định cho placeholder receiver — hệ thống tự tạo user/receiver profile khi app khởi động.
 const BULK_PLACEHOLDER_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 // Ngưỡng giao sỉ: từ số phần này trở lên mới được yêu cầu (CLAUDE.md-style constant)
 export const BULK_MIN_QTY = 2;
-// Yêu cầu chờ NCC duyệt quá lâu → tự hết hạn (không giữ slot vô hạn)
-const REQUEST_EXPIRY_HOURS = 24;
-// Chuyến đã duyệt/đã lấy hàng mà không có cập nhật quá lâu → tự đóng, hoàn kho phần chưa phát
-const RUN_STALL_HOURS = 6;
+// ── Hạn chót từng giai đoạn ───────────────────────────────────────────────────
+// Đều là hạn TUYỆT ĐỐI tính từ mốc vào giai đoạn, KHÔNG dựa trên `updatedAt`:
+// nếu dựa vào lần cập nhật cuối, shipper chỉ cần thao tác lặt vặt là gia hạn vô hạn
+// trong khi hàng vẫn nằm im và kho vẫn bị giữ.
+export const REQUEST_EXPIRY_HOURS = 24; // NCC phải duyệt/từ chối trong 24h
+export const PICKUP_DEADLINE_HOURS = 4; // đã duyệt → phải đến lấy hàng (kho đang bị giữ)
+export const RUN_COMPLETION_HOURS = 8;  // đã lấy hàng → phải phát xong
+// Huỷ chuyến SAU KHI NCC đã duyệt → phạt uy tín (bằng mức huỷ trễ của đơn lẻ).
+// Huỷ khi còn chờ duyệt thì không phạt vì chưa gây thiệt hại cho ai.
+export const BULK_CANCEL_PENALTY = 10;
 
 const ACTIVE_RUN_STATUSES = ['requested', 'approved', 'picked_up'] as const;
 const ACTIVE_DELIVERY_STATUSES = ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] as const;
@@ -38,6 +45,7 @@ export class BulkRunsService implements OnModuleInit {
     private storage: StorageService,
     private notifications: NotificationsService,
     private systemConfig: SystemConfigService,
+    private trust: TrustService,
   ) {}
 
   /** Chạy 1 lần khi module khởi tạo — đảm bảo placeholder receiver luôn tồn tại. */
@@ -152,8 +160,35 @@ export class BulkRunsService implements OnModuleInit {
     );
   }
 
-  /** Gắn {lng,lat} vào từng stop + toạ độ điểm lấy của listing. */
-  private async hydrateRuns<T extends { id: string; listingId: string; stops: { id: string }[] }>(runs: T[]) {
+  /**
+   * Hạn chót của chuyến theo giai đoạn hiện tại — FE dùng để đếm ngược.
+   * Trả null khi chuyến đã kết thúc (không còn gì để chờ).
+   */
+  private runDeadline(run: {
+    status: string;
+    createdAt: Date;
+    approvedAt: Date | null;
+    pickedUpAt: Date | null;
+  }): Date | null {
+    const h = (base: Date, hours: number) => new Date(base.getTime() + hours * 3600 * 1000);
+    if (run.status === 'requested') return h(run.createdAt, REQUEST_EXPIRY_HOURS);
+    if (run.status === 'approved' && run.approvedAt) return h(run.approvedAt, PICKUP_DEADLINE_HOURS);
+    if (run.status === 'picked_up' && run.pickedUpAt) return h(run.pickedUpAt, RUN_COMPLETION_HOURS);
+    return null;
+  }
+
+  /** Gắn {lng,lat} vào từng stop + toạ độ điểm lấy của listing + hạn chót giai đoạn. */
+  private async hydrateRuns<
+    T extends {
+      id: string;
+      listingId: string;
+      status: string;
+      createdAt: Date;
+      approvedAt: Date | null;
+      pickedUpAt: Date | null;
+      stops: { id: string }[];
+    },
+  >(runs: T[]) {
     const stopCoords = await this.getStopCoords(runs.map((r) => r.id));
     const listingIds = [...new Set(runs.map((r) => r.listingId))];
     const pickupRows = listingIds.length
@@ -170,6 +205,7 @@ export class BulkRunsService implements OnModuleInit {
     return runs.map((r) => ({
       ...r,
       pickupCoords: pickupMap.get(r.listingId) ?? null,
+      deadlineAt: this.runDeadline(r),
       stops: r.stops.map((s) => ({
         ...s,
         coords: stopCoords.get(s.id) ?? null,
@@ -413,6 +449,15 @@ export class BulkRunsService implements OnModuleInit {
     if (!(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)) {
       throw new BadRequestException('Chuyến đã kết thúc — không thêm được điểm phát.');
     }
+    // Hàng đã rời cửa hàng → tuyến thuộc quyền shipper, NCC không ghim thêm được nữa.
+    if (run.status === 'picked_up' && createdBy === 'provider') {
+      throw new ForbiddenException(
+        'Tình nguyện viên đã lấy hàng và đang trên tuyến — chỉ họ mới thêm được điểm phát.',
+      );
+    }
+    if (dto.plannedQty != null) {
+      await this.assertPlannedWithinQuota(runId, run.quantity, dto.plannedQty);
+    }
 
     const ops: Prisma.PrismaPromise<unknown>[] = [];
 
@@ -484,6 +529,132 @@ export class BulkRunsService implements OnModuleInit {
     return { ...stop, coords: { lng: dto.lng, lat: dto.lat }, reservationId: undefined };
   }
 
+  /**
+   * Quyền thao tác lên điểm phát: chỉ NCC chủ tin hoặc shipper của chuyến.
+   * Trả về stop kèm cờ đã phát để nơi gọi tự quyết định chặn hay không.
+   */
+  private async stopForEdit(runId: string, stopId: string, userId: string) {
+    const run = await this.prisma.bulkRun.findUnique({
+      where: { id: runId },
+      include: {
+        shipper: { select: { userId: true } },
+        provider: { select: { userId: true } },
+      },
+    });
+    if (!run) throw new NotFoundException('Không tìm thấy chuyến giao sỉ.');
+    const isShipper = run.shipper.userId === userId;
+    const isProvider = run.provider.userId === userId;
+    if (!isShipper && !isProvider) {
+      throw new ForbiddenException('Chỉ nhà cung cấp hoặc shipper của chuyến này mới sửa được điểm phát.');
+    }
+    if (!(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)) {
+      throw new BadRequestException('Chuyến đã kết thúc — không sửa được điểm phát.');
+    }
+    // Hàng đã rời cửa hàng → tuyến đường thuộc quyền shipper. NCC đổi điểm lúc này
+    // sẽ khiến shipper đang chạy ngoài đường bị đổi đích giữa chừng.
+    if (run.status === 'picked_up' && isProvider) {
+      throw new ForbiddenException(
+        'Tình nguyện viên đã lấy hàng và đang trên tuyến — chỉ họ mới điều chỉnh được điểm phát.',
+      );
+    }
+
+    // Reservation gắn với stop qua `reservations.bulk_run_stop_id`, không phải cột
+    // `bulk_run_stops.reservation_id` (di sản, luôn NULL).
+    const [stop] = await this.prisma.$queryRaw<
+      { id: string; served_qty: number; reservation_id: string | null }[]
+    >(Prisma.sql`
+      SELECT s.id, s.served_qty, r.id AS reservation_id
+      FROM bulk_run_stops s
+      LEFT JOIN reservations r ON r.bulk_run_stop_id = s.id
+      WHERE s.id = ${stopId}::uuid AND s.run_id = ${runId}::uuid
+    `);
+    if (!stop) throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
+    // Đã phát rồi thì số liệu đã đi vào thống kê — sửa/xoá sẽ làm sai sổ sách
+    if (stop.served_qty > 0) {
+      throw new BadRequestException('Điểm này đã phát hàng — không sửa hoặc xoá được nữa.');
+    }
+    return { stop, run };
+  }
+
+  /**
+   * Tổng số phần DỰ KIẾN của các điểm không được vượt số phần cả chuyến — nếu không
+   * shipper sẽ lên kế hoạch phát nhiều hơn số hàng thực có và thiếu ở điểm cuối.
+   * `excludeStopId` dùng khi đang sửa chính điểm đó (không tính hai lần).
+   */
+  private async assertPlannedWithinQuota(
+    runId: string,
+    runQuantity: number,
+    plannedQty: number,
+    excludeStopId?: string,
+  ) {
+    const agg = await this.prisma.bulkRunStop.aggregate({
+      where: { runId, ...(excludeStopId ? { id: { not: excludeStopId } } : {}) },
+      _sum: { plannedQty: true },
+    });
+    const used = Number(agg._sum.plannedQty ?? 0);
+    if (used + plannedQty > runQuantity) {
+      throw new BadRequestException(
+        `Chuyến chỉ có ${runQuantity} phần, các điểm khác đã dự kiến ${used} phần — điểm này tối đa ${Math.max(0, runQuantity - used)} phần.`,
+      );
+    }
+  }
+
+  /** Sửa điểm phát (nhãn / địa chỉ / toạ độ / số phần dự kiến). */
+  async updateStop(runId: string, stopId: string, userId: string, dto: UpdateStopDto) {
+    const { run } = await this.stopForEdit(runId, stopId, userId);
+
+    if ((dto.lng == null) !== (dto.lat == null)) {
+      throw new BadRequestException('Đổi vị trí phải gửi đủ cả lng và lat.');
+    }
+    if (dto.plannedQty != null) {
+      await this.assertPlannedWithinQuota(runId, run.quantity, dto.plannedQty, stopId);
+    }
+
+    await this.prisma.bulkRunStop.update({
+      where: { id: stopId },
+      data: {
+        ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
+        ...(dto.address !== undefined ? { address: dto.address.trim() || null } : {}),
+        ...(dto.plannedQty !== undefined ? { plannedQty: dto.plannedQty } : {}),
+        ...(dto.note !== undefined ? { note: dto.note.trim() || null } : {}),
+      },
+    });
+
+    if (dto.lng != null && dto.lat != null) {
+      await this.prisma.$executeRaw(Prisma.sql`
+        UPDATE bulk_run_stops
+        SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
+        WHERE id = ${stopId}::uuid
+      `);
+    }
+
+    return { id: stopId, message: 'Đã cập nhật điểm phát.' };
+  }
+
+  /** Xoá điểm phát chưa phát hàng. */
+  async removeStop(runId: string, stopId: string, userId: string) {
+    const { stop } = await this.stopForEdit(runId, stopId, userId);
+
+    // Điểm ghim sau khi lấy hàng có kèm một reservation ghi sổ — huỷ theo để không
+    // để lại đơn mồ côi. Không hoàn kho ở đây: kho đã trừ theo cả chuyến lúc duyệt
+    // và phần dư được trả lại khi kết thúc chuyến.
+    await this.prisma.$transaction([
+      ...(stop.reservation_id
+        ? [this.prisma.reservation.update({
+            where: { id: stop.reservation_id },
+            data: {
+              status: 'cancelled',
+              cancelledAt: new Date(),
+              cancellationReason: 'Điểm phát đã bị gỡ khỏi chuyến giao sỉ.',
+            },
+          })]
+        : []),
+      this.prisma.bulkRunStop.delete({ where: { id: stopId } }),
+    ]);
+
+    return { id: stopId, message: 'Đã gỡ điểm phát khỏi chuyến.' };
+  }
+
   /** Ghi nhận đã phát N phần tại một điểm; phát đủ thì tự hoàn tất chuyến.
    *  Đồng thời chuyển reservation tương ứng → picked_up. */
   async serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl?: string) {
@@ -491,9 +662,16 @@ export class BulkRunsService implements OnModuleInit {
     if (run.status !== 'picked_up') {
       throw new BadRequestException('Chỉ ghi nhận phát hàng sau khi đã lấy hàng.');
     }
-    // Dùng raw query vì reservationId là 1:1 FK từ phía Reservation (Prisma không expose trong BulkRunStopSelect)
+    // Quan hệ stop ↔ reservation nằm ở `reservations.bulk_run_stop_id` (phía Reservation
+    // giữ khoá ngoại). Cột `bulk_run_stops.reservation_id` là di sản, KHÔNG nơi nào ghi —
+    // đọc nó luôn ra NULL và chặn nhầm mọi điểm phát hợp lệ.
     const [stop] = await this.prisma.$queryRaw<{ id: string; reservation_id: string | null }[]>(
-      Prisma.sql`SELECT id, reservation_id FROM bulk_run_stops WHERE id = ${stopId}::uuid AND run_id = ${runId}::uuid`,
+      Prisma.sql`
+        SELECT s.id, r.id AS reservation_id
+        FROM bulk_run_stops s
+        LEFT JOIN reservations r ON r.bulk_run_stop_id = s.id
+        WHERE s.id = ${stopId}::uuid AND s.run_id = ${runId}::uuid
+      `,
     );
     if (!stop) throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
     if (!stop.reservation_id) {
@@ -638,11 +816,27 @@ export class BulkRunsService implements OnModuleInit {
       throw new BadRequestException('Chuyến này không còn huỷ được.');
     }
 
+    const wasApproved = run.status === 'approved';
+
     await this.prisma.$transaction([
       this.prisma.bulkRun.update({ where: { id: runId }, data: { status: 'cancelled' } }),
       // Đã duyệt (kho đã trừ) thì hoàn lại toàn bộ
-      ...(run.status === 'approved' ? [this.restockSql(run.listingId, run.quantity)] : []),
+      ...(wasApproved ? [this.restockSql(run.listingId, run.quantity)] : []),
     ]);
+
+    // Phạt uy tín CÓ PHÂN BIỆT MỨC ĐỘ:
+    // - Còn 'requested': NCC chưa duyệt, chưa ai bị ảnh hưởng → không phạt.
+    // - Đã 'approved': kho đã bị giữ, NCC đã từ chối khách khác để dành hàng, và
+    //   suất ăn nằm chờ hết hạn → phạt như huỷ trễ.
+    if (wasApproved) {
+      void this.trust.applyDelta(
+        shipperUserId,
+        -BULK_CANCEL_PENALTY,
+        'bulk_run_cancelled_after_approval',
+        'bulk_run',
+        runId,
+      );
+    }
 
     const full = await this.prisma.bulkRun.findUnique({
       where: { id: runId },
@@ -708,7 +902,15 @@ export class BulkRunsService implements OnModuleInit {
       take: 30,
       include: {
         listing: { select: { title: true, pickupAddress: true } },
-        shipper: { select: { rank: true, dedicationPoints: true, user: { select: { fullName: true, phone: true } } } },
+        shipper: {
+          select: {
+            id: true,
+            rank: true,
+            dedicationPoints: true,
+            avgRating: true,
+            user: { select: { fullName: true, phone: true, trustScore: true } },
+          },
+        },
         stops: {
           orderBy: { orderIndex: 'asc' },
           include: {
@@ -719,37 +921,100 @@ export class BulkRunsService implements OnModuleInit {
         },
       },
     });
-    return this.hydrateRuns(runs);
+
+    const hydrated = await this.hydrateRuns(runs);
+
+    // Thành tích của từng shipper để NCC có căn cứ duyệt — đếm riêng vì `_count` của
+    // Prisma không lọc theo trạng thái được.
+    const shipperIds = [...new Set(runs.map((r) => r.shipperId))];
+    const stats = new Map<string, { completedRuns: number; deliveredOrders: number; failedOrders: number }>();
+    if (shipperIds.length > 0) {
+      const perShipper = await Promise.all(
+        shipperIds.map(async (id) => {
+          const [completedRuns, deliveredOrders, failedOrders] = await Promise.all([
+            this.prisma.bulkRun.count({ where: { shipperId: id, status: 'completed' } }),
+            this.prisma.delivery.count({ where: { shipperId: id, status: 'delivered' } }),
+            this.prisma.delivery.count({ where: { shipperId: id, status: 'failed' } }),
+          ]);
+          return { id, completedRuns, deliveredOrders, failedOrders };
+        }),
+      );
+      for (const s of perShipper) {
+        stats.set(s.id, {
+          completedRuns: s.completedRuns,
+          deliveredOrders: s.deliveredOrders,
+          failedOrders: s.failedOrders,
+        });
+      }
+    }
+
+    return hydrated.map((r) => ({
+      ...r,
+      shipperStats: stats.get(r.shipperId) ?? null,
+    }));
   }
 
   // ── Cron: dọn yêu cầu/chuyến bị bỏ quên ────────────────────────────────────
   async expireStalled(): Promise<number> {
     let n = 0;
+    const now = Date.now();
 
-    // Yêu cầu chờ duyệt quá 24h → hết hạn (chưa trừ kho nên không cần hoàn)
-    const requestCutoff = new Date(Date.now() - REQUEST_EXPIRY_HOURS * 3600 * 1000);
+    // 1. Chờ duyệt quá hạn → huỷ (chưa trừ kho nên không cần hoàn)
     const staleRequests = await this.prisma.bulkRun.updateMany({
-      where: { status: 'requested', createdAt: { lt: requestCutoff } },
-      data: { status: 'cancelled', rejectReason: 'Quá 24 giờ không được nhà cung cấp duyệt.' },
+      where: {
+        status: 'requested',
+        createdAt: { lt: new Date(now - REQUEST_EXPIRY_HOURS * 3600 * 1000) },
+      },
+      data: {
+        status: 'cancelled',
+        rejectReason: `Quá ${REQUEST_EXPIRY_HOURS} giờ không được nhà cung cấp duyệt.`,
+      },
     });
     n += staleRequests.count;
 
-    // Đã duyệt/đã lấy hàng nhưng bỏ quên quá 6h → đóng + hoàn phần chưa phát
-    const stallCutoff = new Date(Date.now() - RUN_STALL_HOURS * 3600 * 1000);
-    const stalled = await this.prisma.bulkRun.findMany({
-      where: { status: { in: ['approved', 'picked_up'] }, updatedAt: { lt: stallCutoff } },
-      select: { id: true, listingId: true, quantity: true, quantityDistributed: true, status: true },
+    // 2. Đã duyệt nhưng không đến lấy → huỷ + trả lại TOÀN BỘ kho đang bị giữ.
+    //    Tính từ approvedAt, không phải lần cập nhật cuối.
+    const notPickedUp = await this.prisma.bulkRun.findMany({
+      where: {
+        status: 'approved',
+        approvedAt: { lt: new Date(now - PICKUP_DEADLINE_HOURS * 3600 * 1000) },
+      },
+      select: { id: true, listingId: true, quantity: true },
       take: 50,
     });
-    for (const r of stalled) {
+    for (const r of notPickedUp) {
+      await this.prisma.$transaction([
+        this.prisma.bulkRun.update({
+          where: { id: r.id },
+          data: {
+            status: 'cancelled',
+            rejectReason: `Tự động huỷ: quá ${PICKUP_DEADLINE_HOURS} giờ không đến lấy hàng.`,
+          },
+        }),
+        this.restockSql(r.listingId, r.quantity),
+      ]);
+      n += 1;
+    }
+
+    // 3. Đã lấy hàng nhưng chưa phát xong → đóng chuyến + hoàn phần còn dư.
+    //    Tính từ pickedUpAt để có hạn cứng, tránh việc phát nhỏ giọt kéo dài vô hạn.
+    const overdue = await this.prisma.bulkRun.findMany({
+      where: {
+        status: 'picked_up',
+        pickedUpAt: { lt: new Date(now - RUN_COMPLETION_HOURS * 3600 * 1000) },
+      },
+      select: { id: true, listingId: true, quantity: true, quantityDistributed: true },
+      take: 50,
+    });
+    for (const r of overdue) {
       const leftover = r.quantity - r.quantityDistributed;
       await this.prisma.$transaction([
         this.prisma.bulkRun.update({
           where: { id: r.id },
           data: {
-            status: r.status === 'picked_up' ? 'completed' : 'cancelled',
-            completedAt: r.status === 'picked_up' ? new Date() : undefined,
-            rejectReason: 'Tự động đóng: chuyến không được cập nhật trong 6 giờ.',
+            status: 'completed',
+            completedAt: new Date(),
+            rejectReason: `Tự động đóng: quá ${RUN_COMPLETION_HOURS} giờ chưa phát xong.`,
           },
         }),
         ...(leftover > 0 ? [this.restockSql(r.listingId, leftover)] : []),

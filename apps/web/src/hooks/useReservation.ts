@@ -15,13 +15,21 @@ async function createReservation(dto: CreateReservationInput): Promise<Reservati
   return data.data;
 }
 
-async function fetchMyReservations(page = 1) {
-  const { data } = await api.get('/reservations/my', { params: { page, limit: 20 } });
+async function fetchMyReservations(page = 1, group?: 'active' | 'history', limit = 20) {
+  const { data } = await api.get('/reservations/my', { params: { page, limit, group } });
   return data.data as {
     items: unknown[];
     total: number;
     page: number;
     totalPages: number;
+    /** Đếm trên TOÀN BỘ đơn (không phụ thuộc trang) — dùng cho nhãn tab và thống kê */
+    counts: {
+      active: number;
+      history: number;
+      completed: number;
+      noShow: number;
+      portionsSaved: number;
+    };
   };
 }
 
@@ -65,28 +73,40 @@ export function useCreateReservation() {
   });
 }
 
-export function useMyReservations(page = 1) {
+export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20) {
   return useQuery({
-    queryKey: ['reservations', 'my', page],
-    queryFn: () => fetchMyReservations(page),
+    queryKey: ['reservations', 'my', page, group, limit],
+    queryFn: () => fetchMyReservations(page, group, limit),
     staleTime: 30_000,
+    // Giữ dữ liệu trang cũ khi đang tải trang mới → không nhấp nháy khi phân trang
+    placeholderData: (prev) => prev,
   });
 }
 
-async function rateReservation(params: { id: string; score: number; comment?: string }) {
+async function rateReservation(params: {
+  id: string;
+  score: number;
+  comment?: string;
+  /** Đánh giá cửa hàng (mặc định) hay tình nguyện viên đã giao */
+  target?: 'provider' | 'shipper';
+}) {
   const { data } = await api.post(`/reservations/${params.id}/rating`, {
     score: params.score,
     comment: params.comment,
+    target: params.target,
   });
-  return data.data as { id: string; score: number; message: string };
+  return data.data as { id: string; score: number; target: string; message: string };
 }
 
 export function useRateReservation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: rateReservation,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['reservations', 'my'] });
+      // Trang chi tiết đọc `ratedScore` để biết đã đánh giá chưa — không làm mới thì
+      // popup đánh giá sẽ hiện lại khi quay lại trang.
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'detail', variables.id] });
     },
   });
 }

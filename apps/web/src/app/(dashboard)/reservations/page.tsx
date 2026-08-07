@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Modal } from '@/components/shared/Modal';
 import { QRCodeSVG } from 'qrcode.react';
@@ -87,12 +87,16 @@ const STATUS_META: Record<
   expired: { label: 'Hết hạn', badge: 'badge-neutral', accent: 'bg-neutral-300', icon: 'schedule', group: 'history' },
 };
 
+const PAGE_SIZE = 6;
+
 export default function ReservationsPage() {
-  const { data, isLoading, isError } = useMyReservations();
+  const [tab, setTab] = useState<'active' | 'history'>('active');
+  const [page, setPage] = useState(1);
+  // Lọc + phân trang thực hiện ở server: đơn đang xử lý nằm ngoài trang đầu vẫn hiện đúng tab
+  const { data, isLoading, isError, isPlaceholderData } = useMyReservations(page, tab, PAGE_SIZE);
   const { data: me } = useMe(); // điểm uy tín hiện tại — dự báo hậu quả khi huỷ trễ
   const cancelMutation = useCancelReservation();
 
-  const [tab, setTab] = useState<'active' | 'history'>('active');
   const [expandedQR, setExpandedQR] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -100,12 +104,24 @@ export default function ReservationsPage() {
   const [trackingId, setTrackingId] = useState<string | null>(null);
 
   const reservations = (data?.items ?? []) as Reservation[];
-  const filtered = useMemo(
-    () => reservations.filter((r) => STATUS_META[r.status]?.group === tab),
-    [reservations, tab],
-  );
-  const activeCount = reservations.filter((r) => STATUS_META[r.status]?.group === 'active').length;
-  const historyCount = reservations.filter((r) => STATUS_META[r.status]?.group === 'history').length;
+  const filtered = reservations;
+  // Số đếm lấy từ server trên TOÀN BỘ đơn — không phụ thuộc trang đang xem
+  const activeCount = data?.counts?.active ?? 0;
+  const historyCount = data?.counts?.history ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+
+  // Thống kê lấy từ server trên toàn bộ đơn — nếu tính từ `reservations` thì con số
+  // sẽ nhảy mỗi khi chuyển trang vì chỉ phản ánh trang đang xem.
+  const stats = {
+    completed: data?.counts?.completed ?? 0,
+    missed: data?.counts?.noShow ?? 0,
+    portions: data?.counts?.portionsSaved ?? 0,
+  };
+
+  const switchTab = (next: 'active' | 'history') => {
+    setTab(next);
+    setPage(1); // đổi tab phải về trang 1, nếu không có thể rơi vào trang trống
+  };
 
   async function handleCancel(id: string) {
     try {
@@ -135,24 +151,49 @@ export default function ReservationsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-fit elevation-1">
-          <button
-            onClick={() => setTab('active')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            Đang xử lý ({activeCount})
-          </button>
-          <button
-            onClick={() => setTab('history')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            Lịch sử ({historyCount})
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-fit elevation-1">
+            <button
+              onClick={() => switchTab('active')}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              Đang xử lý ({activeCount})
+            </button>
+            <button
+              onClick={() => switchTab('history')}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              Lịch sử ({historyCount})
+            </button>
+          </div>
+
+          {!isLoading && !isError && filtered.length > 0 && (
+            <p className="text-xs text-neutral-500 font-medium">
+              Trang {data?.page ?? 1}/{totalPages} · {data?.total ?? 0} đơn
+            </p>
+          )}
         </div>
+
+        {/* Thống kê nhanh — tab lịch sử */}
+        {tab === 'history' && !isLoading && !isError && filtered.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { icon: 'verified', label: 'Đã nhận', value: stats.completed, cls: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+              { icon: 'inventory_2', label: 'Số phần đã cứu', value: stats.portions, cls: 'text-sky-700 bg-sky-50 border-sky-100' },
+              { icon: 'person_off', label: 'Không đến', value: stats.missed, cls: 'text-rose-700 bg-rose-50 border-rose-100' },
+            ].map((s) => (
+              <div key={s.label} className={`rounded-2xl border p-4 ${s.cls}`}>
+                <span className="material-symbols-outlined text-[20px]">{s.icon}</span>
+                <p className="text-2xl font-extrabold mt-1 leading-none">{s.value}</p>
+                <p className="text-[11px] font-semibold opacity-80 mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* States */}
         {isLoading && (
@@ -326,6 +367,51 @@ export default function ReservationsPage() {
             );
           })}
         </div>
+
+        {/* Phân trang */}
+        {!isLoading && !isError && totalPages > 1 && (
+          <div className={`flex items-center justify-center gap-2 pt-2 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              aria-label="Trang trước"
+              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+            </button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                // Chỉ hiện trang đầu, trang cuối và lân cận trang hiện tại — tránh tràn khi nhiều trang
+                .filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
+                .map((n, idx, arr) => (
+                  <span key={n} className="flex items-center gap-1">
+                    {idx > 0 && arr[idx - 1] !== n - 1 && <span className="text-neutral-400 px-1">…</span>}
+                    <button
+                      onClick={() => setPage(n)}
+                      aria-current={n === page ? 'page' : undefined}
+                      className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
+                        n === page
+                          ? 'bg-emerald-700 text-white elevation-2'
+                          : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  </span>
+                ))}
+            </div>
+
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              aria-label="Trang sau"
+              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {verifying && (

@@ -108,7 +108,6 @@ export default function ProviderCreateListingPage() {
     if (!file) return;
     try {
       const url = await uploadImage.mutateAsync({ file, kind: 'listing' });
-      console.log('Upload success, URL:', url);
       set('imageUrl', url);
       toast.success('Đã tải ảnh lên.');
     } catch (err: unknown) {
@@ -144,6 +143,11 @@ export default function ProviderCreateListingPage() {
       setStep(3);
       return;
     }
+    if (!form.imageUrl.trim()) {
+      toast.error('Vui lòng tải lên ảnh thực phẩm — người nhận cần nhìn thấy món trước khi đặt.');
+      setStep(3);
+      return;
+    }
     const payload: CreateListingInput = {
       title: form.title.trim(),
       description: form.description.trim() || undefined,
@@ -160,7 +164,7 @@ export default function ProviderCreateListingPage() {
       storageConditions: form.storageConditions.trim() || undefined,
       allergenNotes: form.allergenNotes.trim() || undefined,
       maxPerReservation: Number(form.maxPerReservation),
-      imageUrls: form.imageUrl.trim() ? [form.imageUrl.trim()] : undefined,
+      imageUrls: [form.imageUrl.trim()], // đã chặn rỗng ở trên
     };
     try {
       await createListing.mutateAsync(payload);
@@ -186,7 +190,13 @@ export default function ProviderCreateListingPage() {
         Boolean(form.pickupEndTime) &&
         Boolean(form.expiryDate) &&
         Boolean(form.expiryTime),
-      step3: form.pickupAddress.trim().length > 0 && form.lng != null && form.lat != null,
+      // Ảnh là BẮT BUỘC: tin không ảnh gần như không ai đặt, và người nhận không có
+      // cách nào đánh giá thực phẩm trước khi tới lấy.
+      step3:
+        form.pickupAddress.trim().length > 0 &&
+        form.lng != null &&
+        form.lat != null &&
+        form.imageUrl.trim().length > 0,
     };
   }, [form]);
 
@@ -534,7 +544,7 @@ export default function ProviderCreateListingPage() {
               </div>
             </Field>
 
-            <Field label="Ảnh thực phẩm" hint="Ảnh rõ giúp tin đăng uy tín hơn">
+            <Field label="Ảnh thực phẩm" required hint="Bắt buộc — ảnh rõ giúp tin đăng uy tín hơn">
               {form.imageUrl ? (
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -605,20 +615,29 @@ export default function ProviderCreateListingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    console.log('Form state:', JSON.stringify(form, null, 2));
-                    console.log('Validations:', validations);
-                    if (step === 1 && validations.step1) setStep(2);
-                    else if (step === 2 && validations.step2) setStep(3);
-                    else {
-                      const missing: string[] = [];
+                    if (step === 1 && validations.step1) return setStep(2);
+                    if (step === 2 && validations.step2) return setStep(3);
+
+                    // Liệt kê thiếu sót THEO ĐÚNG BƯỚC đang đứng. Trước đây luôn kiểm
+                    // các trường của bước 2, nên kẹt ở bước 1 sẽ hiện "Thiếu:" trống trơn.
+                    const missing: string[] = [];
+                    if (step === 1) {
+                      if (form.title.trim().length < 5) missing.push('Tiêu đề (tối thiểu 5 ký tự)');
+                    } else {
+                      if (!(Number(form.quantityTotal) > 0)) missing.push('Tổng số lượng');
+                      if (!(Number(form.maxPerReservation) > 0)) missing.push('Tối đa / đơn');
                       if (!form.pickupStartDate) missing.push('Ngày bắt đầu lấy');
                       if (!form.pickupStartTime) missing.push('Giờ bắt đầu lấy');
                       if (!form.pickupEndDate) missing.push('Ngày hạn lấy');
                       if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
                       if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
                       if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
-                      toast.error(`Thiếu: ${missing.join(', ')}`);
                     }
+                    toast.error(
+                      missing.length > 0
+                        ? `Thiếu: ${missing.join(', ')}`
+                        : 'Vui lòng kiểm tra lại thông tin trước khi tiếp tục.',
+                    );
                   }}
                   className="px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium inline-flex items-center gap-1 transition-colors"
                 >

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings, type ListingDetail } from '@/hooks/useListings';
@@ -72,6 +72,21 @@ export default function ListingDetailPage({ params }: Props) {
     qrExpiresAt: string;
   } | null>(null);
   const [renderNowMs] = useState(() => Date.now());
+  const [showTimeInfo, setShowTimeInfo] = useState(false);
+
+  // Derived values cần cho useEffect - đặt ở đây để tránh ReferenceError
+  const isSoldOut = !!(listing && listing.quantityRemaining <= 0);
+  const nowMs = renderNowMs;
+  const notYetOpen = !!(listing && nowMs < new Date(listing.pickupStartTime).getTime());
+  const windowClosed = !!(listing && nowMs > new Date(listing.pickupEndTime).getTime());
+
+  // Auto-show time info popup when listing loads (only for non-owner/non-sold-out)
+  useEffect(() => {
+    if (!isLoading && listing && !isOwnerProvider && !isSoldOut && !notYetOpen && !windowClosed) {
+      const timer = setTimeout(() => setShowTimeInfo(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, listing, isOwnerProvider, isSoldOut, notYetOpen, windowClosed]);
 
   if (isLoading) {
     return (
@@ -143,16 +158,12 @@ export default function ListingDetailPage({ params }: Props) {
 
   const dateObj = new Date(listing.pickupEndTime);
   const formattedEndTime = `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
-  const isSoldOut = listing.quantityRemaining <= 0;
 
   // Khung giờ nhận hàng — ngoài khung này thì không cho đặt (BE cũng chặn tương tự)
   const fmtTime = (iso: string) => {
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
-  const nowMs = renderNowMs;
-  const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
-  const windowClosed = nowMs > new Date(listing.pickupEndTime).getTime();
 
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -548,6 +559,14 @@ export default function ListingDetailPage({ params }: Props) {
           }}
         />
       )}
+
+      {/* Popup thông tin thời gian nhận hàng - tự động hiện khi vào trang */}
+      {showTimeInfo && !isOwnerProvider && !isSoldOut && !reservationResult && (
+        <TimeInfoPopup
+          listing={listing}
+          onClose={() => setShowTimeInfo(false)}
+        />
+      )}
     </div>
   );
 }
@@ -829,6 +848,93 @@ function PickupConfirmPopup({
             Xác nhận đặt
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Popup thông tin thời gian nhận hàng - tự động hiện khi vào trang
+function TimeInfoPopup({
+  listing,
+  onClose,
+}: {
+  listing: ListingDetail;
+  onClose: () => void;
+}) {
+  const now = Date.now();
+  const thirtyMinMs = 30 * 60 * 1000;
+
+  // pickupStartTime và pickupEndTime từ listing (mỗi tin đăng khác nhau)
+  const pickupStartTime = new Date(listing.pickupStartTime).getTime();
+  const pickupEndTime = new Date(listing.pickupEndTime).getTime();
+
+  // Thời hạn đến = giờ hiện tại + 30 phút (sau thời điểm này chưa đến → tự hủy để dành cho người khác)
+  const deadlineToArrive = now + thirtyMinMs;
+  const timeUntilDeadline = deadlineToArrive - now; // luôn = 30 phút
+  const isUrgent = timeUntilDeadline < thirtyMinMs;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10">
+            <span className="material-symbols-outlined text-[24px] text-primary">
+              schedule
+            </span>
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-neutral-900">Thông tin nhận hàng</h3>
+            <p className="text-sm text-neutral-500">Vui lòng đọc trước khi đặt</p>
+          </div>
+        </div>
+
+        {/* Thông tin thời gian */}
+        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+            <span className="text-sm font-bold text-neutral-900">
+              {new Date(pickupStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">Thời hạn đến</span>
+            <span className="text-sm font-bold text-rose-600">
+              Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-sm text-neutral-500">Địa điểm</span>
+            <span className="text-sm font-bold text-neutral-900 text-right flex-1">{listing.pickupAddress}</span>
+          </div>
+        </div>
+
+        {/* Cảnh báo thời gian */}
+        <div className="flex items-start gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200">
+          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">
+            warning
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
+            <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+              Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
+            </p>
+          </div>
+        </div>
+
+        {/* Button đóng */}
+        <button
+          onClick={onClose}
+          className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+        >
+          Đã hiểu
+        </button>
       </div>
     </div>
   );

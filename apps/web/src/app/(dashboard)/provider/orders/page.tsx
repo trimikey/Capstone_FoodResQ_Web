@@ -6,7 +6,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
-import { UNIT_LABEL, mediaUrl } from '@/lib/utils';
+import { UNIT_LABEL, mediaUrl, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
@@ -458,9 +458,16 @@ export default function ProviderOrdersPage() {
               quantityLabel={formatWeight(cancelling)}
               isPending={providerCancel.isPending}
               onConfirm={async (reason) => {
-                await providerCancel.mutateAsync({ id: cancelling.id, reason });
-                toast.success('Đã huỷ đơn và hoàn số lượng cho tin đăng.');
-                setCancelling(null);
+                // Modal gọi `void onConfirm(...)` nên lỗi không được bắt ở đó — phải
+                // bắt tại đây, nếu không huỷ thất bại sẽ im lặng hoàn toàn và modal
+                // cứ đứng yên khiến người dùng tưởng hệ thống treo.
+                try {
+                  await providerCancel.mutateAsync({ id: cancelling.id, reason });
+                  toast.success('Đã huỷ đơn và hoàn số lượng cho tin đăng.');
+                  setCancelling(null);
+                } catch (e) {
+                  toast.error(errMsg(e, 'Huỷ đơn thất bại. Vui lòng thử lại.'));
+                }
               }}
               onClose={() => setCancelling(null)}
             />

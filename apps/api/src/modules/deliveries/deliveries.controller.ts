@@ -55,6 +55,17 @@ export class DeliveriesController {
     return this.deliveriesService.getTrackingForReceiver(reservationId, user.id);
   }
 
+  @Get('my/ratings')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: đánh giá đã nhận từ người nhận (kèm phân bố sao)' })
+  myRatings(
+    @CurrentUser() user: User,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.deliveriesService.getMyRatings(user.id, Number(page) || 1, Number(limit) || 10);
+  }
+
   @Get('my/stats')
   @Roles(UserRole.VOLUNTEER)
   @ApiOperation({ summary: 'Shipper: Bảng thành tích (số đơn, km, tỉ lệ hoàn thành, ★)' })

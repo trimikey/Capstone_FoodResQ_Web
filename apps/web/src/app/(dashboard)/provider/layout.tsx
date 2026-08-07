@@ -11,6 +11,7 @@ import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 const PROVIDER_NAV = [
   { href: '/provider', label: 'Cửa hàng', icon: 'storefront' },
   { href: '/provider/orders', label: 'Đơn hàng', icon: 'receipt_long' },
+  { href: '/provider/requests', label: 'Yêu cầu', icon: 'inbox' },
   { href: '/provider/scan', label: 'Quét QR', icon: 'qr_code_scanner' },
   { href: '/campaigns', label: 'Bếp ăn cộng đồng', icon: 'soup_kitchen' },
 ];
@@ -43,7 +44,10 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="min-h-screen bg-[#fcf9f2] font-body-md">
+    // Layout dashboard chừa sẵn 104px dưới header bằng padding, và dải đó mang nền kem
+    // của dashboard. Kéo ngược lên rồi bù lại padding để nền xanh của khu NCC phủ kín,
+    // không còn vệt kem lạ ở giữa trang.
+    <div className="min-h-screen bg-[#f0f7f3] font-body-md md:-mt-[104px] md:pt-[104px]">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
@@ -109,12 +113,19 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
-      {/* Desktop Sidebar - nền trắng */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-40">
-        {/* Logo Header - không border dưới */}
-        <div className="flex items-center px-5 py-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-12 w-auto object-contain" />
+      {/* Desktop Sidebar — bắt đầu NGAY DƯỚI header chung (fixed, cao 104px).
+          Để top-0 thì phần đầu sidebar chui xuống dưới header và bị che. */}
+      <aside className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-64 flex-col bg-white z-40">
+        {/* Tiêu đề vai trò thay cho logo — logo đã có sẵn trên thanh header phía trên,
+            để ở đây vừa lặp vừa bị cắt khi cuộn. */}
+        <div className="px-5 pt-6 pb-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+            Nhà cung cấp
+          </p>
+          <p className="mt-1 text-base font-extrabold text-neutral-900 truncate">
+            {user.fullName}
+          </p>
+          <p className="text-xs text-neutral-500 mt-0.5">Quản lý cửa hàng thực phẩm</p>
         </div>
 
         {/* Navigation */}
