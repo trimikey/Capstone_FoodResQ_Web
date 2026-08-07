@@ -318,9 +318,16 @@ export class ReservationsService {
       throw new ForbiddenException('Chỉ nhà cung cấp của tin này mới quét được mã QR.');
     }
 
+    const verificationImageUrl =
+      reservation.receiver.faceImageUrl ?? reservation.receiver.idCardImageUrl;
+    const verificationImageAvailable = !!verificationImageUrl;
+
     // Lần quét đầu (confirmed → picked_up) mới đổi trạng thái + thông báo; quét lại thì idempotent.
     let status: string = reservation.status;
-    if (reservation.status === 'confirmed') {
+    // Nếu DB có URL ảnh đăng ký, chuyển trạng thái để provider đối chiếu trực tiếp.
+    // FE sẽ chỉ cho confirm sau khi ảnh load thành công; storage có thể là local /uploads
+    // hoặc object storage nên không fs.stat() tại đây.
+    if (reservation.status === 'confirmed' && verificationImageAvailable) {
       const updated = await this.prisma.reservation.update({
         where: { id: reservation.id },
         data: {
@@ -353,6 +360,7 @@ export class ReservationsService {
         idCardImageUrl: reservation.receiver.idCardImageUrl,
         idCardNumber: reservation.receiver.idCardNumber,
         enrolled: reservation.receiver.faceDescriptor !== null,
+        verificationImageAvailable,
       },
     };
   }
@@ -384,6 +392,11 @@ export class ReservationsService {
 
     // Lưu lại ảnh đăng ký đã dùng để đối chiếu làm bằng chứng bàn giao
     const proofUrl = reservation.receiver.faceImageUrl ?? reservation.receiver.idCardImageUrl ?? null;
+    if (!proofUrl) {
+      throw new BadRequestException(
+        'Ảnh khuôn mặt xác minh không còn khả dụng. Yêu cầu người nhận cập nhật lại selfie trước khi giao.',
+      );
+    }
     const verificationType: PickupVerificationType | null = reservation.receiver.faceImageUrl
       ? PickupVerificationType.FACE
       : reservation.receiver.idCardImageUrl

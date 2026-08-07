@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Popup } from '@/components/ui/AppPopup';
 import {
   SignUpVerificationScreen as SignUpVerificationForm,
+  type VerificationSubmitData,
 } from '../../components/SignUpVerificationScreen';
 import { useAuth } from '../../hooks/useAuth';
+import { useOnboardingStore } from '../../stores/onboarding';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
 
 interface SignUpVerificationScreenProps {
@@ -19,7 +21,8 @@ export default function SignUpVerificationScreen({
   navigation,
   route,
 }: SignUpVerificationScreenProps) {
-  const { register } = useAuth();
+  const { register, initialize } = useAuth();
+  const resetOnboarding = useOnboardingStore((s) => s.reset);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const basicInfo = route?.params?.basicInfo || {};
@@ -27,18 +30,26 @@ export default function SignUpVerificationScreen({
   const recipientData = route?.params?.recipientData || {};
   const type = route?.params?.type || 'receiver';
 
-  const handleSuccess = async () => {
+  const handleSuccess = async (verificationData: VerificationSubmitData) => {
     try {
       setIsSubmitting(true);
+      const isCharity = recipientData.recipientType === 'charity' || !!recipientData.isCharityOrg;
 
       // Gộp dữ liệu các bước (store register chỉ lấy email/password/name->fullName/role)
       const fullData = {
         ...basicInfo,
         role: type === 'volunteer' ? 'volunteer' : 'receiver',
         ...(type === 'volunteer' ? volunteerData : recipientData),
+        ...(type === 'receiver' && isCharity ? { isCharityOrg: true } : {}),
+        ...(isCharity && recipientData.organizationName?.trim()
+          ? { businessName: recipientData.organizationName.trim() }
+          : {}),
+        ...(verificationData.selfie ? { selfie: verificationData.selfie } : {}),
       };
 
       await register(fullData as any);
+      await initialize();
+      resetOnboarding();
 
       Popup.show({
         type: 'success',

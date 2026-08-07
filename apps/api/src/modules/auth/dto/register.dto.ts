@@ -11,9 +11,10 @@ import {
   Min,
   MinLength,
   IsArray,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { BusinessType, UserRole } from '@foodresq/types';
 
 export class RegisterDto {
@@ -84,6 +85,12 @@ export class RegisterDto {
 
   @ApiPropertyOptional({ example: true, description: 'Charity: is a charity organization' })
   @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return value;
+  })
   isCharityOrg?: boolean;
 
   // ── Provider verification (mở rộng P3) ────────────────────────────────────

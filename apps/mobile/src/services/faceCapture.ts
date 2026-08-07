@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { preprocessImage } from './imagePreprocess';
 import type { ImageKind } from './imagePreprocess';
+import { waitForNativePickerReady } from './nativePickerReady';
 
 /** Ảnh đã chụp/chọn, sẵn sàng nhét vào FormData (RN multipart). */
 export interface CapturedImage {
@@ -24,6 +25,7 @@ export async function captureImage(type: 'face' | 'id_card', imageKind: ImageKin
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) throw new Error('Cần quyền camera để chụp ảnh xác minh.');
 
+  await waitForNativePickerReady();
   const result = await ImagePicker.launchCameraAsync({
     mediaTypes: ['images'],
     cameraType: type === 'face' ? ImagePicker.CameraType.front : ImagePicker.CameraType.back,
@@ -39,6 +41,7 @@ export async function pickImageFromLibrary(imageKind: ImageKind = 'proof'): Prom
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) throw new Error('Cần quyền thư viện ảnh.');
 
+  await waitForNativePickerReady();
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     quality: 0.7,

@@ -14,7 +14,6 @@ const PROVIDER_NAV = [
   { href: '/provider/orders', label: 'Theo dõi đơn', icon: 'local_shipping' },
   { href: '/provider/requests', label: 'Yêu cầu', icon: 'inbox' },
   { href: '/campaigns', label: 'Chiến dịch', icon: 'campaign' },
-  { href: '/provider/esg', label: 'Báo cáo CSR', icon: 'analytics' },
   { href: '/profile', label: 'Cài đặt', icon: 'settings' },
 ];
 

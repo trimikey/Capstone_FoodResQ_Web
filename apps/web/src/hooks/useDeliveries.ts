@@ -14,6 +14,7 @@ function socketUrl(): string {
 // ── Types (khớp shape BE trả về) ────────────────────────────────────────────
 interface ListingBrief {
   title: string;
+  category?: string;
   pickupAddress: string;
   imageUrls: string[] | null;
 }

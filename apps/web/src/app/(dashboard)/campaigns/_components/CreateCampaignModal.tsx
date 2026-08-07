@@ -81,7 +81,7 @@ export default function CreateCampaignModal({
   const [addressSearching, setAddressSearching] = useState(false);
   const [addressNoResults, setAddressNoResults] = useState(false);
   const searchAbortRef = useRef<AbortController | null>(null);
-  const searchTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const searchTimerRef = useRef<number | null>(null);
   const { data: me } = useMe();
 
   const profileAddress = me?.receiver?.address?.trim() ?? '';

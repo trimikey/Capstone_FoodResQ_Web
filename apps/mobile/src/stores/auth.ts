@@ -199,6 +199,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         phone?: string;
         businessName?: string;
         address?: string;
+        lat?: number;
+        lng?: number;
         vehicleType?: string;
         vehiclePlate?: string;
         idCardNumber?: string;
@@ -216,6 +218,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         ...(extra.phone ? { phone: extra.phone } : {}),
         ...(extra.businessName ? { businessName: extra.businessName } : {}),
         ...(extra.address ? { address: extra.address } : {}),
+        ...(extra.lat != null ? { lat: extra.lat } : {}),
+        ...(extra.lng != null ? { lng: extra.lng } : {}),
         ...(extra.idCardNumber ? { idCardNumber: extra.idCardNumber.trim() } : {}),
         ...(extra.vehicleType ? { vehicleType: extra.vehicleType } : {}),
         ...(extra.vehiclePlate ? { vehiclePlate: extra.vehiclePlate.trim().toUpperCase() } : {}),
