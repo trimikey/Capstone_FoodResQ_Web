@@ -12,7 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Text, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import {
@@ -34,6 +34,7 @@ import {
   ImagePickCancelledError,
 } from '@/services/listingImageUpload';
 import { CATEGORY_LABELS, UNIT_LABELS } from '@/utils/listingFormat';
+import { buildValidationMessage } from '@/utils/listingValidation';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
@@ -42,6 +43,7 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 const UNIT_KEYS = Object.keys(UNIT_LABELS);
+const DISCRETE_UNITS = ['portion', 'item', 'box'];
 
 function fmtDateTime(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -101,7 +103,8 @@ export default function CreateListingScreen() {
     resolver: zodResolver(createListingSchema),
     defaultValues: {
       title: '',
-      category: '',
+      categories: [] as string[],
+      categoryOtherLabel: '',
       quantityTotal: undefined as unknown as number,
       quantityUnit: 'portion',
       maxPerReservation: 1,
@@ -124,7 +127,8 @@ export default function CreateListingScreen() {
     if (!editingListing) return;
     reset({
       title: editingListing.title ?? '',
-      category: editingListing.category ?? '',
+      categories: editingListing.category ? [editingListing.category] : [],
+      categoryOtherLabel: '',
       quantityTotal: Number(editingListing.quantityTotal ?? editingListing.quantityRemaining) || 1,
       quantityUnit: editingListing.quantityUnit ?? 'portion',
       maxPerReservation: editingListing.maxPerReservation ?? 1,
@@ -145,7 +149,8 @@ export default function CreateListingScreen() {
     return <Redirect href="/(app)/home" />;
   }
 
-  const category = watch('category');
+  const categories = watch('categories');
+  const categoryOtherLabel = watch('categoryOtherLabel');
   const quantityUnit = watch('quantityUnit');
   const pickupAddress = watch('pickupAddress');
   const pickupStart = watch('pickupStartTime');
@@ -188,6 +193,15 @@ export default function CreateListingScreen() {
     setImageUrls((prev) => prev.filter((item) => item !== url));
   };
 
+  const onInvalid = (errs: FieldErrors<CreateListingFormInput>) => {
+    Popup.show({
+      type: 'error',
+      text1: 'Vui lòng kiểm tra lại thông tin',
+      text2: buildValidationMessage(errs) || 'Có trường chưa hợp lệ, hãy xem chi tiết bên dưới.',
+      duration: 0,
+    });
+  };
+
   const onSubmit = async (form: CreateListingFormInput) => {
     if (!coords) {
       Popup.show({ type: 'warning', text1: 'Chưa lấy được vị trí', text2: 'Vui lòng thử lại sau giây lát.' });
@@ -205,7 +219,7 @@ export default function CreateListingScreen() {
     }
     const fullPayload: CreateListingInput = {
       title: form.title,
-      category: form.category,
+      category: form.categories[0],
       quantityTotal: form.quantityTotal,
       quantityUnit: form.quantityUnit,
       maxPerReservation: form.maxPerReservation,
@@ -361,16 +375,27 @@ export default function CreateListingScreen() {
               )} />
             </Field>
 
-            <Field label="Loại thực phẩm *" error={errors.category?.message}>
+            <Field
+              label="Loại thực phẩm *"
+              helper="Chọn một hoặc nhiều loại phù hợp."
+              error={errors.categories?.message ?? (errors as Record<string, { message?: string }>)['categories']?.message}
+            >
               <View style={styles.chips}>
                 {CATEGORY_KEYS.map((k) => {
-                  const selected = category === k;
+                  const selected = categories?.includes(k) ?? false;
                   return (
                     <Chip
                       key={k}
                       selected={selected}
                       showSelectedCheck
-                      onPress={() => !editingIsPublished && setValue('category', k, { shouldValidate: true })}
+                      onPress={() => {
+                        if (editingIsPublished) return;
+                        const current = categories ?? [];
+                        const next = selected
+                          ? current.filter((c) => c !== k)
+                          : [...current, k];
+                        setValue('categories', next, { shouldValidate: true });
+                      }}
                       disabled={editingIsPublished}
                       selectedColor={selected ? COLORS.primary : COLORS.onSurface}
                       style={[styles.chip, selected && styles.chipSelected]}
@@ -382,6 +407,35 @@ export default function CreateListingScreen() {
                 })}
               </View>
             </Field>
+
+            {categories?.includes('other') ? (
+              <Field
+                label="Mô tả loại thực phẩm *"
+                helper="Nhập tên loại thực phẩm cụ thể, ví dụ: bánh cuốn, chè đậu."
+                error={errors.categoryOtherLabel?.message}
+              >
+                <Controller
+                  control={control}
+                  name="categoryOtherLabel"
+                  render={({ field: { onChange, value } }) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Loại thực phẩm khác"
+                      placeholder="VD: bánh cuốn, chè đậu xanh"
+                      value={value ?? ''}
+                      onChangeText={onChange}
+                      outlineColor={COLORS.outline}
+                      activeOutlineColor={COLORS.primary}
+                      style={styles.input}
+                      dense
+                      error={!!errors.categoryOtherLabel}
+                      disabled={editingIsPublished}
+                      maxLength={100}
+                    />
+                  )}
+                />
+              </Field>
+            ) : null}
           </Section>
 
           <Section icon="scale-balance" title="Số lượng">
@@ -389,7 +443,11 @@ export default function CreateListingScreen() {
               <View style={styles.rowField}>
                 <Field
                   label="Số lượng *"
-                  helper="Nhập tổng số phần có thể chia sẻ."
+                  helper={
+                    DISCRETE_UNITS.includes(quantityUnit)
+                      ? 'Số nguyên (phần/cái/hộp không tính lẻ).'
+                      : 'Cho phép số thập phân, ví dụ 2.5 kg.'
+                  }
                   error={errors.quantityTotal?.message}
                 >
                   <Controller control={control} name="quantityTotal" render={({ field: { onChange, value } }) => (
@@ -437,7 +495,7 @@ export default function CreateListingScreen() {
 
             <Field
               label="Tối đa mỗi lượt đặt *"
-              helper="Giới hạn 1-10 để nhiều người cùng nhận được."
+              helper="1–10, không vượt quá tổng số lượng."
               error={errors.maxPerReservation?.message}
             >
               <Controller control={control} name="maxPerReservation" render={({ field: { onChange, value } }) => (
@@ -479,14 +537,15 @@ export default function CreateListingScreen() {
           <Section
             icon="clock-outline"
             title="Thời gian nhận"
-            helper="Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
+            helper="Giờ bắt đầu phải cách hiện tại ít nhất 30 phút. Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
           >
-            <Field label="Giờ bắt đầu lấy *">
+            <Field label="Giờ bắt đầu lấy *" error={errors.pickupStartTime?.message}>
               <DateButton
                 label="Bắt đầu"
                 value={pickupStart}
                 onPress={() => openDateTimePicker(pickupStart, (d) => setValue('pickupStartTime', d, { shouldValidate: true }))}
                 disabled={editingIsPublished}
+                hasError={!!errors.pickupStartTime}
               />
             </Field>
             <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
@@ -580,7 +639,7 @@ export default function CreateListingScreen() {
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <Button
             mode="contained"
-            onPress={handleSubmit(onSubmit)}
+            onPress={handleSubmit(onSubmit, onInvalid)}
             loading={submitting}
             disabled={submitting || uploading}
             buttonColor={COLORS.primary}
@@ -654,17 +713,19 @@ function DateButton({
   value,
   onPress,
   disabled,
+  hasError,
 }: {
   label: string;
   value: Date;
   onPress: () => void;
   disabled?: boolean;
+  hasError?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={[styles.dateBtn, disabled && styles.controlDisabled]}
+      style={[styles.dateBtn, disabled && styles.controlDisabled, hasError && styles.dateBtnError]}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={`Chọn ${label.toLowerCase()}: ${fmtDateTime(value)}`}
@@ -786,6 +847,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dateBtnError: { borderColor: COLORS.error },
   dateLabel: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
   dateText: { marginTop: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '700' },
   footer: {
