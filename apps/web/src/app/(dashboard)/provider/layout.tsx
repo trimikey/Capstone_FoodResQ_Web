@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { mediaUrl } from '@/lib/utils';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
@@ -74,7 +75,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
           {user.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
+            <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
           ) : (
             <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
           )}

@@ -121,6 +121,8 @@ export interface BulkRun {
     title: string;
     pickupAddress: string;
     imageUrls?: string[] | null;
+    /** Đơn vị của tin gốc (phần/kg/cái/lít…) — để chi tiết chuyến không ghi bừa "phần" */
+    quantityUnit?: string;
   };
   provider?: {
     businessName: string;

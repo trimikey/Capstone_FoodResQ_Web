@@ -9,6 +9,8 @@ import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { usePickupWindow } from '@/hooks/usePickupWindow';
+import { minuteToHHmm } from '@/lib/listing-form';
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
@@ -71,14 +73,20 @@ export default function ListingDetailPage({ params }: Props) {
     qrToken: string;
     qrExpiresAt: string;
   } | null>(null);
-  const [renderNowMs] = useState(() => Date.now());
   const [showTimeInfo, setShowTimeInfo] = useState(false);
 
   // Derived values cần cho useEffect - đặt ở đây để tránh ReferenceError
   const isSoldOut = !!(listing && listing.quantityRemaining <= 0);
-  const nowMs = renderNowMs;
-  const notYetOpen = !!(listing && nowMs < new Date(listing.pickupStartTime).getTime());
-  const windowClosed = !!(listing && nowMs > new Date(listing.pickupEndTime).getTime());
+  // Khung giờ TỰ CẬP NHẬT: trước đây chốt Date.now() lúc mount nên mở trang sát giờ
+  // đóng thì nút đặt vẫn bấm được sau khi đã quá hạn.
+  const pickupWindow = usePickupWindow(
+    listing?.pickupStartTime,
+    listing?.pickupEndTime,
+    listing?.dailyStartMinute,
+    listing?.dailyEndMinute,
+  );
+  const notYetOpen = !!listing && pickupWindow.notYetOpen;
+  const windowClosed = !!listing && pickupWindow.closed;
 
   // Auto-show time info popup when listing loads (only for non-owner/non-sold-out)
   useEffect(() => {
@@ -371,7 +379,9 @@ export default function ListingDetailPage({ params }: Props) {
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                   {notYetOpen
                     ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
-                    : `Đã quá giờ nhận hàng hôm nay (đến ${fmtTime(listing.pickupEndTime)})`}
+                    : pickupWindow.outsideDaily && listing.dailyStartMinute != null && listing.dailyEndMinute != null
+                      ? `Ngoài giờ mở cửa — cửa hàng nhận từ ${minuteToHHmm(listing.dailyStartMinute)} đến ${minuteToHHmm(listing.dailyEndMinute)} mỗi ngày`
+                      : `Đã quá giờ nhận hàng hôm nay (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>
             ) : (
@@ -666,9 +676,26 @@ function ProviderManagementPanel({
           <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">schedule</span>
           <div>
             <p className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant/60">Khung giờ nhận</p>
+            {/* Mốc đầu/cuối thường khác NGÀY nhưng trùng giờ (vd 20:50 hôm nay → 20:50 mai).
+                In gộp một ngày sẽ ra "20:50–20:50" trông như khung rỗng. */}
             <p className="text-on-surface">
-              {fmtDate(listing.pickupStartTime)} · {fmtTime(listing.pickupStartTime)}–{fmtTime(listing.pickupEndTime)}
+              {fmtDate(listing.pickupStartTime) === fmtDate(listing.pickupEndTime) ? (
+                <>
+                  {fmtDate(listing.pickupStartTime)} · {fmtTime(listing.pickupStartTime)}–{fmtTime(listing.pickupEndTime)}
+                </>
+              ) : (
+                <>
+                  Từ {fmtDate(listing.pickupStartTime)} {fmtTime(listing.pickupStartTime)}
+                  {' → '}
+                  {fmtDate(listing.pickupEndTime)} {fmtTime(listing.pickupEndTime)}
+                </>
+              )}
             </p>
+            {listing.dailyStartMinute != null && listing.dailyEndMinute != null && (
+              <p className="text-xs text-on-surface-variant/80 mt-0.5">
+                Mở cửa nhận hàng: {minuteToHHmm(listing.dailyStartMinute)}–{minuteToHHmm(listing.dailyEndMinute)} mỗi ngày
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-start gap-2">

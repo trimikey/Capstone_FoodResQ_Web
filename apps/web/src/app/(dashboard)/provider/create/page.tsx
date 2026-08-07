@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { mediaUrl } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -12,6 +13,7 @@ import { DateTimeField, dateTimeDisplay } from '@/components/forms/date-time-fie
 import {
   buildForm,
   combineToIso,
+  hhmmToMinute,
   DEFAULT_CATEGORIES,
   DEFAULT_UNITS,
   type ListingForm,
@@ -153,6 +155,8 @@ export default function ProviderCreateListingPage() {
       storageConditions: form.storageConditions.trim() || undefined,
       allergenNotes: form.allergenNotes.trim() || undefined,
       maxPerReservation: Number(form.maxPerReservation),
+      dailyStartMinute: hhmmToMinute(form.dailyStart) ?? undefined,
+      dailyEndMinute: hhmmToMinute(form.dailyEnd) ?? undefined,
       imageUrls: [form.imageUrl.trim()], // đã chặn rỗng ở trên
     };
     try {
@@ -168,6 +172,12 @@ export default function ProviderCreateListingPage() {
   }
 
   const validations = useMemo(() => {
+    // Giờ mở phải trước giờ đóng. BE cũng chặn, nhưng chặn ngay ở bước 2 thì NCC
+    // không phải đi hết 3 bước mới biết sai.
+    const dailyStartMin = hhmmToMinute(form.dailyStart);
+    const dailyEndMin = hhmmToMinute(form.dailyEnd);
+    const dailyOk = dailyStartMin != null && dailyEndMin != null && dailyStartMin < dailyEndMin;
+
     return {
       step1: form.title.trim().length >= 5 && form.title.trim().length > 0,
       step2:
@@ -178,7 +188,9 @@ export default function ProviderCreateListingPage() {
         Boolean(form.pickupEndDate) &&
         Boolean(form.pickupEndTime) &&
         Boolean(form.expiryDate) &&
-        Boolean(form.expiryTime),
+        Boolean(form.expiryTime) &&
+        dailyOk,
+      dailyOk,
       // Ảnh là BẮT BUỘC: tin không ảnh gần như không ai đặt, và người nhận không có
       // cách nào đánh giá thực phẩm trước khi tới lấy.
       step3:
@@ -415,6 +427,21 @@ export default function ProviderCreateListingPage() {
               </Field>
             </div>
 
+            {/* Khung giờ quyết định lúc nào người nhận đặt được — nói rõ để NCC
+                không đặt giờ quá hẹp rồi thắc mắc sao không ai đặt. */}
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">schedule</span>
+              <div className="text-xs text-amber-900 leading-relaxed">
+                <p className="font-bold">Khung giờ dưới đây quyết định lúc nào người nhận đặt được</p>
+                <p className="mt-0.5 text-amber-800/90">
+                  Người nhận phải thoả <strong>cả hai</strong> điều kiện: nằm trong khoảng
+                  &ldquo;Bắt đầu lấy&rdquo; → &ldquo;Hạn lấy&rdquo;, <strong>và</strong> đang trong
+                  giờ mở cửa hằng ngày bên dưới. Ngoài khung, nút đặt tự khoá và tin hiện
+                  &ldquo;ngoài giờ nhận hàng&rdquo;. Nên chừa đủ thời gian để người nhận kịp tới lấy.
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               <DateTimeField
                 label="Bắt đầu lấy"
@@ -455,6 +482,35 @@ export default function ProviderCreateListingPage() {
                     : undefined
                 }
               />
+            </div>
+
+            {/* Khung giờ MỞ CỬA trong ngày — khác với mốc bắt đầu/hạn lấy ở trên.
+                Tin kéo dài nhiều ngày mà không có khung này thì người nhận đặt được
+                lúc 3h sáng, tới nơi thì cửa hàng đóng. */}
+            <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+              <p className="text-sm font-bold text-neutral-800">Giờ mở cửa nhận hàng trong ngày</p>
+              <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                Mỗi ngày chỉ nhận trong khung này. Ví dụ 07:00–21:00: sau 21:00 nút đặt tự khoá,
+                sáng hôm sau 07:00 mở lại — cho tới khi hết &ldquo;Hạn lấy&rdquo; ở trên.
+              </p>
+              <div className="grid grid-cols-2 gap-4 mt-3 max-w-md">
+                <Field label="Mở nhận từ" required>
+                  <input
+                    type="time"
+                    value={form.dailyStart}
+                    onChange={(e) => set('dailyStart', e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#236c2a]/30"
+                  />
+                </Field>
+                <Field label="Đóng nhận lúc" required>
+                  <input
+                    type="time"
+                    value={form.dailyEnd}
+                    onChange={(e) => set('dailyEnd', e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#236c2a]/30"
+                  />
+                </Field>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mt-4">
@@ -538,7 +594,7 @@ export default function ProviderCreateListingPage() {
                 <div className="space-y-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={form.imageUrl}
+                    src={mediaUrl(form.imageUrl)}
                     alt=""
                     className="w-full max-w-xs aspect-square rounded-xl object-cover"
                   />
@@ -621,6 +677,7 @@ export default function ProviderCreateListingPage() {
                       if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
                       if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
                       if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
+                      if (!validations.dailyOk) missing.push('Giờ mở cửa phải trước giờ đóng cửa');
                     }
                     toast.error(
                       missing.length > 0
@@ -736,7 +793,7 @@ function PreviewCard({ form }: { form: ListingForm }) {
     <div className="border border-neutral-200 rounded-xl overflow-hidden">
       {form.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={form.imageUrl} alt="" className="w-full aspect-[16/10] object-cover" />
+        <img src={mediaUrl(form.imageUrl)} alt="" className="w-full aspect-[16/10] object-cover" />
       ) : (
         <div className="w-full aspect-[16/10] bg-neutral-100 flex items-center justify-center">
           <span className="material-symbols-outlined text-[40px] text-neutral-300">

@@ -418,6 +418,11 @@ model FoodListing {
   weightPerUnitKg   Decimal?                               @map("weight_per_unit_kg") @db.Decimal(6, 3)
   pickupStartTime   DateTime                               @map("pickup_start_time") @db.Timestamptz
   pickupEndTime     DateTime                               @map("pickup_end_time") @db.Timestamptz
+  /// Khung giờ mở cửa TRONG NGÀY, tính bằng phút từ 00:00 giờ VN (7:00 → 420, 21:00 → 1260).
+  /// Lưu số phút thay vì kiểu `time` để tránh nhập nhằng múi giờ khi server chạy UTC.
+  /// Null = tin cũ chưa có khung giờ ngày → không áp ràng buộc này.
+  dailyStartMinute  Int?                                   @map("daily_start_minute") @db.SmallInt
+  dailyEndMinute    Int?                                   @map("daily_end_minute") @db.SmallInt
   expiryTime        DateTime                               @map("expiry_time") @db.Timestamptz
   pickupAddress     String                                 @map("pickup_address")
   pickupLocation    Unsupported("geography(Point, 4326)")? @map("pickup_location")

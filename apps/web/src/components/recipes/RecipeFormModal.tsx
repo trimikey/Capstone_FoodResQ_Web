@@ -98,7 +98,7 @@ export default function RecipeFormModal({
   }
 
   return (
-    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden">
+    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg elevation-3 overflow-hidden">
         <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="material-symbols-outlined">menu_book</span>

@@ -15,7 +15,7 @@ describe('CampaignsService', () => {
     kitchenCampaign: { findUnique: jest.fn() },
     // `count` được service gọi khi kiểm tra ca làm — thiếu mock thì 3 test apply() đỏ
     campaignShift: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-    campaignVolunteerAssignment: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    campaignVolunteerAssignment: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     $queryRaw: jest.fn(),
@@ -61,7 +61,7 @@ describe('CampaignsService', () => {
   it('creates a pending assignment without increasing campaign capacity', async () => {
     activeVolunteer();
     prisma.kitchenCampaign.findUnique.mockResolvedValue(campaign);
-    prisma.campaignVolunteerAssignment.findUnique.mockResolvedValue(null);
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
 
     await expect(service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF })).resolves.toEqual(
       expect.objectContaining({ message: expect.stringContaining('chờ tổ chức duyệt') }),
@@ -80,7 +80,7 @@ describe('CampaignsService', () => {
   it('rejects a duplicate pending campaign application', async () => {
     activeVolunteer();
     prisma.kitchenCampaign.findUnique.mockResolvedValue(campaign);
-    prisma.campaignVolunteerAssignment.findUnique.mockResolvedValue({ id: 'assignment-1', status: 'pending' });
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({ id: 'assignment-1', status: 'pending' });
 
     await expect(service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }))
       .rejects.toBeInstanceOf(ConflictException);
@@ -96,7 +96,7 @@ describe('CampaignsService', () => {
   it('allows a rejected volunteer to resubmit as pending', async () => {
     activeVolunteer();
     prisma.kitchenCampaign.findUnique.mockResolvedValue(campaign);
-    prisma.campaignVolunteerAssignment.findUnique.mockResolvedValue({
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({
       id: 'assignment-1',
       status: 'rejected',
       shiftId: null,

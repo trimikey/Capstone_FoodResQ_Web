@@ -272,7 +272,7 @@ export default function ProfilePage() {
             <div className="relative shrink-0">
               <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white/30 overflow-hidden bg-white/10 shadow-2xl shadow-black/20">
                 {me.avatarUrl ? (
-                  <img src={me.avatarUrl} alt={me.fullName} className="w-full h-full object-cover" />
+                  <img src={imgUrl(me.avatarUrl) ?? undefined} alt={me.fullName} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-emerald-600/40">
                     <span className="text-5xl md:text-6xl font-extrabold text-white">

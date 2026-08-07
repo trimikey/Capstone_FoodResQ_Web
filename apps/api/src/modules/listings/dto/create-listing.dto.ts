@@ -6,6 +6,7 @@ import {
   IsPositive,
   IsDateString,
   IsOptional,
+  IsInt,
   IsArray,
   ArrayNotEmpty,
   Min,
@@ -97,6 +98,24 @@ export class CreateListingDto {
   @Max(10)
   @Type(() => Number)
   maxPerReservation!: number;
+
+  // Khung giờ mở cửa TRONG NGÀY, phút từ 00:00 giờ VN. Cặp đi cùng nhau: gửi cả hai
+  // hoặc không gửi cái nào (tin không giới hạn giờ trong ngày).
+  @ApiPropertyOptional({ example: 420, description: 'Giờ mở nhận trong ngày (phút từ 00:00, 7:00 → 420)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
+  @Type(() => Number)
+  dailyStartMinute?: number;
+
+  @ApiPropertyOptional({ example: 1260, description: 'Giờ đóng nhận trong ngày (phút từ 00:00, 21:00 → 1260)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
+  @Type(() => Number)
+  dailyEndMinute?: number;
 
   // BẮT BUỘC ít nhất 1 ảnh: người nhận không có cách nào đánh giá thực phẩm trước khi
   // tới lấy, và tin không ảnh gần như không có lượt đặt.

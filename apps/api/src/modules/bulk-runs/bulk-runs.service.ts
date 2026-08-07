@@ -879,7 +879,7 @@ export class BulkRunsService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
       take: 15,
       include: {
-        listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+        listing: { select: { title: true, pickupAddress: true, imageUrls: true, quantityUnit: true } },
         provider: { select: { businessName: true, contactPhone: true } },
         stops: {
           orderBy: { orderIndex: 'asc' },
@@ -901,7 +901,7 @@ export class BulkRunsService implements OnModuleInit {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       take: 30,
       include: {
-        listing: { select: { title: true, pickupAddress: true } },
+        listing: { select: { title: true, pickupAddress: true, quantityUnit: true } },
         shipper: {
           select: {
             id: true,

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { mediaUrl } from '@/lib/utils';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
@@ -199,7 +200,7 @@ export default function PublicHeader() {
                 <div className="w-8 h-8 rounded-full bg-[#faf9f8] flex items-center justify-center border border-neutral-200 overflow-hidden">
                   {user!.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={user!.avatarUrl} alt={user!.fullName} className="w-full h-full object-cover" />
+                    <img src={mediaUrl(user!.avatarUrl)} alt={user!.fullName} className="w-full h-full object-cover" />
                   ) : (
                     <span className="font-bold text-xs text-[#236c2a]">
                       {user!.fullName.charAt(0).toUpperCase()}

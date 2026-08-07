@@ -1203,8 +1203,11 @@ export class CampaignsService {
       shiftId = shift.id;
     }
 
-    const existing = await this.prisma.campaignVolunteerAssignment.findUnique({
-      where: { campaignId_volunteerId_role: { campaignId, volunteerId: volunteer.id, role: dto.role } },
+    // findFirst chứ không findUnique: DB không có UNIQUE trên (campaign, volunteer, role)
+    // — chỉ có @@index. Client Prisma cũ từng sinh ra khoá phức hợp này nên code biên
+    // dịch được, nhưng nó không tồn tại trong schema lẫn database.
+    const existing = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: { campaignId, volunteerId: volunteer.id, role: dto.role },
     });
     if (existing) {
       // Chỉ rejected/cancelled được gửi lại. Slot chỉ tăng khi charity duyệt pending → assigned.

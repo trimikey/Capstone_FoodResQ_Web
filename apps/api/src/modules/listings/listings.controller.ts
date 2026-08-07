@@ -3,6 +3,7 @@
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -110,6 +111,15 @@ export class ListingsController {
     @Body('reason') reason?: string,
   ) {
     return this.listingsService.cancel(id, user.id, reason);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Provider: Xoá bản nháp (chỉ tin chưa từng đăng)' })
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.listingsService.removeDraft(id, user.id);
   }
 
   @Post(':id/duplicate')

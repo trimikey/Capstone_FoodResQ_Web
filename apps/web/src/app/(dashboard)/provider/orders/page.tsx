@@ -6,7 +6,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
-import { UNIT_LABEL, errMsg } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
@@ -571,7 +571,7 @@ function OrderCard({
           <div className="w-12 h-12 rounded-full bg-[#efe8d8] flex items-center justify-center text-[#236c2a] font-bold text-base shrink-0 overflow-hidden">
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+              <img src={mediaUrl(avatarUrl)} alt="" className="w-full h-full object-cover" />
             ) : (
               receiverInitial(fullName)
             )}

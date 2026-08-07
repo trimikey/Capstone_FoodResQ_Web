@@ -357,23 +357,18 @@
     }
   }
 
-  /* === Console layout === */
-  .cm-console {
-    display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
-    gap: 28px;
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 28px 32px 64px;
-    align-items: start;
-  }
-  @media (max-width: 1024px) {
-    .cm-console {
-      grid-template-columns: 1fr;
-      padding: 20px 16px 100px;
-      gap: 16px;
-    }
-  }
+  /* === Console layout ===
+     KHÔNG khai báo .cm-console ở file này.
+
+     `.cm-console` chỉ được dùng bởi trang dashboard (app/(dashboard)/campaigns/page.tsx)
+     và đã có rule riêng trong app/(dashboard)/campaigns/campaign-tokens.css. Route công
+     khai không dùng class này.
+
+     Hai stylesheet cùng nằm trong document sau khi điều hướng client-side (Next giữ lại
+     CSS chunk của mọi route đã ghé). Cùng tên class + cùng specificity + cùng @layer
+     ⇒ file nạp SAU thắng. Nếu để bản grid 260px ở đây, trang dashboard (vốn chỉ còn một
+     con duy nhất vì sidebar đã tách ra layout) sẽ bị ép vào cột 260px — nội dung co lại
+     thành một dải hẹp. Reload thì đúng vì lúc đó chỉ nạp CSS của route hiện tại. */
 
   /* === Console sidebar rail === */
   .cm-rail {

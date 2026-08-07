@@ -81,7 +81,7 @@ export default function CreateCampaignModal({
   const [addressSearching, setAddressSearching] = useState(false);
   const [addressNoResults, setAddressNoResults] = useState(false);
   const searchAbortRef = useRef<AbortController | null>(null);
-  const searchTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: me } = useMe();
 
   const profileAddress = me?.receiver?.address?.trim() ?? '';
@@ -115,7 +115,7 @@ export default function CreateCampaignModal({
 
   function queueAddressSearch(text: string) {
     searchAbortRef.current?.abort();
-    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
 
     const q = text.trim();
     if (q.length < 3) {
@@ -129,7 +129,7 @@ export default function CreateCampaignModal({
     searchAbortRef.current = controller;
     setAddressSearching(true);
     setAddressNoResults(false);
-    searchTimerRef.current = window.setTimeout(() => {
+    searchTimerRef.current = setTimeout(() => {
       void searchAddress(q, controller.signal)
         .then((items) => {
           if (controller.signal.aborted) return;
@@ -176,7 +176,7 @@ export default function CreateCampaignModal({
   useEffect(() => {
     return () => {
       searchAbortRef.current?.abort();
-      if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
   }, []);
 
