@@ -1,11 +1,12 @@
 'use client';
 
+import '../../campaigns/campaign-tokens.css';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { ReactNode, createContext, useContext, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  usePublicCampaignDetail,
+  useCampaignManageDetail,
   useStartCampaign,
   useCompleteCampaign,
   useCancelCampaign,
@@ -150,7 +151,7 @@ export function ManageShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const { data: c, isLoading, isError } = usePublicCampaignDetail(campaignId);
+  const { data: c, isLoading, isError } = useCampaignManageDetail(campaignId);
   const startCampaign = useStartCampaign();
   const completeCampaign = useCompleteCampaign();
   const cancelCampaign = useCancelCampaign();
@@ -215,7 +216,7 @@ export function ManageShell({
 
   const heroImage = c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : null;
   const statusMeta = STATUS_META[c.status];
-  const pendingCount = c.participants?.length ?? 0;
+  const pendingCount = c.participants?.filter((p) => !p.status || p.status === 'pending' || p.status === 'applied').length ?? 0;
   const distCount = c.distributions?.length ?? 0;
 
   function hrefFor(key: NavKey): string {
@@ -434,13 +435,6 @@ function CompleteCampaignModal({
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
 
-  // Reset ack/reason khi user đóng/mở lại modal (đảm bảo checkbox luôn unchecked lúc đầu).
-  useEffect(() => {
-    setAck(false);
-    setReason('');
-    setReasonError(undefined);
-  }, []);
-
   function validateServings(): number | null {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -519,7 +513,7 @@ function CompleteCampaignModal({
       <div className="p-6 space-y-4">
         <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-start gap-2">
           <span className="material-symbols-outlined text-[16px]">warning</span>
-          Hành động này <b>không thể hoàn tác</b>. Sau khi hoàn tất, chiến dịch sẽ chuyển sang trạng thái "Đã hoàn tất" và tổng kết suất ăn phục vụ.
+          Hành động này <b>không thể hoàn tác</b>. Sau khi hoàn tất, chiến dịch sẽ chuyển sang trạng thái &quot;Đã hoàn tất&quot; và tổng kết suất ăn phục vụ.
         </div>
 
         {isPremature && (

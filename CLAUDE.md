@@ -250,6 +250,59 @@ const form = useForm<z.infer<typeof schema>>({
 - Room naming: `user:{userId}` for personal notifications
 - Use `socket.io-client` with auto-reconnect
 
+### 3.7 Image Rules
+
+> **Current state (2026-08-06):** 0 uses of `next/image`, 87 raw `<img>` tags (65 with
+> `eslint-disable @next/next/no-img-element`), and `next.config.ts` has no `images` block.
+> Cloudinary exists only as migration scripts, not wired into app code. The rules below are
+> the target — apply them to new code first, then migrate hot paths (listing cards, hero,
+> campaign covers). Do NOT bulk-rewrite all 87 at once.
+
+**Above-the-fold images (hero / banner / first listing card)**
+- Add `priority` so the image is preloaded. Default lazy-loading delays LCP because the
+  browser waits for scroll before fetching.
+- Exactly one `priority` per viewport — marking everything priority defeats the purpose.
+
+**Responsive images — never hardcode `width`/`height`**
+- Wrap in a `position: relative` container that owns the size, then use `fill`:
+  ```tsx
+  <div className="relative aspect-square w-full overflow-hidden rounded-xl">
+    <Image src={mediaUrl(url)} alt={title} fill className="object-cover" sizes="..." />
+  </div>
+  ```
+- `fill` makes Next emit `position:absolute; inset:0; width:100%; height:100%`.
+- **`sizes` is mandatory with `fill`** and with any grid/multi-column layout. Without it the
+  browser downloads the largest candidate — a phone pulls a 4K file.
+  Example for our 1/2/3-column listing grid:
+  `sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"`
+
+**CSS `background-image`**
+- `<Image>` renders an `<img>`; it cannot be used as a CSS background.
+- Use `getImageProps()` to extract the optimized `srcSet`/`src`, then feed it into CSS.
+
+**SVG and GIF → `unoptimized`**
+- SVG is already vector; GIF is animated. Running them through Sharp/libvips burns CPU and
+  RAM for zero gain (and can break GIF animation).
+
+**Remote sources**
+- Any non-relative host (Cloudinary, S3, CDN) must be declared in `next.config.ts` under
+  `images.remotePatterns` or the request is rejected.
+
+**Who does the resizing — this is the load-bearing decision**
+- Next.js optimizes on-demand using Sharp/libvips in the Node process. Fine for a handful of
+  static assets; fatal for user uploads at volume — the server OOMs.
+- FoodResQ has **user-uploaded** provider/listing/eKYC images → resizing belongs on a CDN,
+  not on our API box. Use a Cloudinary custom loader and let URL params do the work:
+  `.../upload/f_auto,q_auto,w_500/sample.jpg`
+- Keep `mediaUrl()` as the single entry point for image URLs so the loader swap happens in
+  one place.
+
+**Whitelist `images.qualities`**
+- On-demand optimization is a DoS surface: an attacker loops `?q=1..100` and the server
+  renders and caches thousands of variants until disk/RAM is gone.
+- Pin the allowed set (e.g. `qualities: [25, 50, 75]`); anything else is clamped or 400s.
+- Delegating to a CDN removes this surface entirely — prefer that for production.
+
 ---
 
 ## 4. Shared TypeScript Conventions
@@ -316,11 +369,15 @@ NEXTAUTH_URL=http://localhost:3000
 | QR code validity | 30 min | `QR_VALIDITY_MINUTES` |
 | Trust score ban threshold | ≤ 30 | `TRUST_BAN_THRESHOLD` |
 | Trust score restriction threshold | ≤ 60 | `TRUST_RESTRICT_THRESHOLD` |
-| Shipper offer expiry | 2 min | `SHIPPER_OFFER_EXPIRY_MINUTES` |
+| Shipper offer expiry (sequential, one shipper at a time) | 15 s | hardcoded `OFFER_EXPIRY_SECONDS` |
+| Shipper lets an offer lapse (no accept, no reject) | auto `is_available = false` | hardcoded in DeliveriesService |
 | Shipper assignment timeout (no one accepts → close order, notify receiver) | 4 min 30 s | hardcoded `ASSIGNMENT_TIMEOUT_MS` |
 | Stalled delivery auto-fail (no status update after accept) | 6 h | hardcoded `DELIVERY_STALL_HOURS` |
-| Bulk run minimum quantity | 10 portions | hardcoded `BULK_MIN_QTY` |
-| Bulk run request approval expiry | 24 h | hardcoded in BulkRunsService |
+| Bulk run minimum quantity | 2 portions | hardcoded `BULK_MIN_QTY` |
+| Bulk run: provider must approve/reject within | 24 h | `REQUEST_EXPIRY_HOURS` |
+| Bulk run: shipper must pick up after approval within | 4 h | `PICKUP_DEADLINE_HOURS` |
+| Bulk run: shipper must finish distributing within | 8 h from pickup | `RUN_COMPLETION_HOURS` |
+| Bulk run cancelled AFTER provider approval | −10 trust | `BULK_CANCEL_PENALTY` |
 | Trust score starting value | 100 | hardcoded |
 | Reservation window | only within listing `pickup_start_time → pickup_end_time` | enforced in ReservationsService.create |
 | Late cancellation | cancel < 30 min before `pickup_end_time` → −10 trust | hardcoded |
@@ -355,11 +412,16 @@ No-show cron (pickup orders only — delivery orders are governed by the deliver
 ```
 Reservation created with delivery=true (receiver must have address + location in profile)
   → BE: create deliveries row (status=pending_assignment) + copy pickup/delivery coords
-  → find 5 nearest available VERIFIED shippers (ST_DWithin 5km), excluding those who
-    already rejected this delivery → upsert 5 shipper_task_offers (expires_at=+2min)
+  → offer SEQUENTIALLY, one shipper at a time (ride-hailing model): pick the single
+    nearest available VERIFIED shipper (ST_DWithin 5km) not yet offered this delivery
+    → insert 1 shipper_task_offer (expires_at=+15s), max 5 offers per delivery
   → socket `delivery:offer` pops a global accept popup on the shipper app
-  → first shipper to accept → UPDATE deliveries.shipper_id, status=assigned
+  → accept → UPDATE deliveries.shipper_id, status=assigned
     (blocked if the shipper already has an active delivery or bulk run)
+  → explicit reject → offer moves to the next-nearest immediately (no penalty)
+  → LAPSE (neither accept nor reject within 15s) → offer expires, shipper is set
+    `is_available = false` (nobody is actually at the device — otherwise a dead
+    account blocks the queue for every later order), then the next-nearest is offered
   → sweep cron (30s): expire stale offers + re-broadcast to next-nearest shippers
   → no acceptance within 4m30s → delivery failed, reservation cancelled (no penalty),
     stock restored, receiver notified to re-order

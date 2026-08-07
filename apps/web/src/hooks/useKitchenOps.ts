@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { errMsg } from '@/lib/utils';
 import { AssignmentRole, SafetyCheckResult, SafetyCheckType } from '@foodresq/types';
 
 // ── Ca làm việc ────────────────────────────────────────────────────────────────
@@ -95,6 +97,9 @@ export function useRemoveMenuItem() {
     mutationFn: async (p: { campaignId: string; itemId: string }) =>
       (await api.delete(`/campaigns/menu-items/${p.itemId}`)).data.data,
     onSuccess: (_d, p) => void qc.invalidateQueries({ queryKey: ['kitchen', 'menu', p.campaignId] }),
+    // Nút xoá gọi thẳng .mutate() không try/catch — thiếu onError thì thao tác thất bại
+    // sẽ im lặng hoàn toàn, người dùng tưởng đã xoá xong.
+    onError: (e) => toast.error(errMsg(e, 'Không xoá được món khỏi thực đơn.')),
   });
 }
 

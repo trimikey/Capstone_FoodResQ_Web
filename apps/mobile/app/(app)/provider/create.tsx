@@ -174,6 +174,16 @@ export default function CreateListingScreen() {
       Popup.show({ type: 'warning', text1: 'Chưa lấy được vị trí', text2: 'Vui lòng thử lại sau giây lát.' });
       return;
     }
+    // Ảnh là bắt buộc khi TẠO tin (BE chặn bằng @ArrayNotEmpty). Sửa tin đã đăng thì
+    // không cần vì ảnh cũ vẫn còn.
+    if (!editingIsPublished && imageUrls.length === 0) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Cần ít nhất 1 ảnh thực phẩm',
+        text2: 'Người nhận cần nhìn thấy món trước khi đặt.',
+      });
+      return;
+    }
     const fullPayload: CreateListingInput = {
       title: form.title,
       category: form.category,

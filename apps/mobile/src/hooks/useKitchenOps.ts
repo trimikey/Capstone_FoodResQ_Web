@@ -69,6 +69,34 @@ export interface DistributionSummary {
   totalLeftover: number;
 }
 
+export interface HandoffQr {
+  id: string;
+  qrToken: string;
+  expiresAt: string;
+}
+
+export interface BeneficiaryHandoff {
+  id: string;
+  servedAt: string;
+  distributionId: string;
+  roundLabel: string | null;
+  distributedAt: string;
+  campaign: { id: string; title: string; kitchenAddress: string | null };
+  hasSubmitted: boolean;
+  myFeedback: {
+    id: string;
+    satisfaction: number;
+    comment: string | null;
+    createdAt: string;
+  } | null;
+}
+
+export interface HandoffScanResult {
+  id: string;
+  servedAt: string;
+  alreadyRecorded: boolean;
+}
+
 /** Body tạo ca (charity). startTime/endTime dạng 'HH:mm'. */
 export interface CreateShiftInput {
   campaignId: string;
@@ -114,7 +142,9 @@ export function useShifts(campaignId?: string) {
   return useQuery({
     queryKey: ['kitchen', 'shifts', campaignId],
     enabled: !!campaignId,
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignShift[]>>(endpoints.kitchen.shifts(campaignId!));
       return res.data.data;
@@ -147,7 +177,12 @@ export function useApplyShift() {
     },
     onSuccess: (_d, { campaignId }) => {
       qc.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
       qc.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
+      void qc.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+      void qc.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
     },
   });
 }
@@ -224,6 +259,8 @@ export function useCreateSafetyLog() {
     },
     onSuccess: (_d, { campaignId }) => {
       qc.invalidateQueries({ queryKey: ['kitchen', 'safety', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
     },
   });
 }
@@ -282,6 +319,8 @@ export function useCreateDistribution() {
     onSuccess: (_d, { campaignId }) => {
       qc.invalidateQueries({ queryKey: ['kitchen', 'dist', campaignId] });
       qc.invalidateQueries({ queryKey: ['kitchen', 'dist-summary', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      qc.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
     },
   });
 }
@@ -309,6 +348,83 @@ export function useAddDistributionFeedback() {
     },
     onSuccess: (_d, { campaignId }) => {
       qc.invalidateQueries({ queryKey: ['kitchen', 'dist', campaignId] });
+    },
+  });
+}
+
+export function useIssueHandoffQr() {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<ApiResponse<HandoffQr>>(endpoints.kitchen.handoffQr);
+      return res.data.data;
+    },
+  });
+}
+
+export function useMyHandoffs(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['kitchen', 'handoffs', 'mine'],
+    enabled,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<BeneficiaryHandoff[]>>(endpoints.kitchen.myHandoffs);
+      return res.data.data;
+    },
+  });
+}
+
+export function useSubmitBeneficiaryFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ handoffId, satisfaction, comment }: {
+      handoffId: string;
+      satisfaction: number;
+      comment?: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<unknown>>(
+        endpoints.kitchen.submitHandoffFeedback(handoffId),
+        { satisfaction, ...(comment ? { comment } : {}) },
+      );
+      return res.data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kitchen', 'handoffs', 'mine'] }),
+  });
+}
+
+export function useScanHandoff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, distributionId, qrToken }: {
+      campaignId: string;
+      distributionId: string;
+      qrToken: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<HandoffScanResult>>(
+        endpoints.kitchen.scanHandoff(campaignId, distributionId),
+        { qrToken },
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      qc.invalidateQueries({ queryKey: ['kitchen', 'dist', campaignId] });
+      qc.invalidateQueries({ queryKey: ['kitchen', 'handoffs', 'mine'] });
+      qc.invalidateQueries({ queryKey: ['kitchen', 'handoff-summary', campaignId] });
+    },
+  });
+}
+
+export function useHandoffSummary(campaignId?: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['kitchen', 'handoff-summary', campaignId],
+    enabled: enabled && !!campaignId,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<{
+        verifiedHandoffs: number;
+        feedbackCount: number;
+        avgSatisfaction: number | null;
+      }>>(endpoints.kitchen.handoffSummary(campaignId!));
+      return res.data.data;
     },
   });
 }

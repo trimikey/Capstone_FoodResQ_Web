@@ -5,8 +5,10 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { useListings } from '@/hooks/useListings';
+import { useVolunteerMe } from '@/hooks/useDeliveries';
 import {
   BULK_MIN_QTY,
+  BULK_CANCEL_PENALTY,
   isActiveRun,
   useMyBulkRuns,
   useRequestBulkRun,
@@ -20,19 +22,20 @@ import {
 } from '@/hooks/useBulkRuns';
 import { errMsg, mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
-import { reverseGeocode } from '@/lib/geocode';
 import { Spinner } from '@/components/shared/Spinner';
+import { Modal } from '@/components/shared/Modal';
+import BulkRunConfirmModal from '@/components/deliveries/BulkRunConfirmModal';
+import BulkStopForm from '@/components/deliveries/BulkStopForm';
+import RunDeadline from '@/components/deliveries/RunDeadline';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-neutral-100 animate-pulse" />,
 });
-const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
-  ssr: false,
-  loading: () => <div className="h-full w-full bg-neutral-100 animate-pulse" />,
-});
 
-const HCM = { lng: 106.6297, lat: 10.8231 };
+// Bán kính tìm tin cho giao sỉ — khớp bán kính mời shipper của đơn lẻ (5km), để
+// shipper không phải chạy quá xa chỉ để lấy hàng.
+const BULK_RADIUS_KM = 5;
 
 const STATUS_VI: Record<BulkRun['status'], { label: string; cls: string }> = {
   requested: { label: 'Chờ nhà cung cấp duyệt', cls: 'bg-amber-100 text-amber-700' },
@@ -42,103 +45,6 @@ const STATUS_VI: Record<BulkRun['status'], { label: string; cls: string }> = {
   rejected: { label: 'Bị từ chối', cls: 'bg-rose-100 text-rose-700' },
   cancelled: { label: 'Đã huỷ', cls: 'bg-neutral-200 text-neutral-600' },
 };
-
-/** Form ghim điểm phát: nhãn + bản đồ kéo ghim (GPS làm điểm khởi đầu). */
-function AddStopForm({ busy, onAdd, onClose }: {
-  busy: boolean;
-  onAdd: (p: { label: string; address?: string; lng: number; lat: number; plannedQty?: number }) => void;
-  onClose: () => void;
-}) {
-  const [label, setLabel] = useState('');
-  const [plannedQty, setPlannedQty] = useState('');
-  const [coords, setCoords] = useState<{ lng: number; lat: number } | null>(null);
-  const [address, setAddress] = useState('');
-  const [locating, setLocating] = useState(false);
-
-  const useGps = () => {
-    if (!navigator.geolocation) return toast.error('Trình duyệt không hỗ trợ định vị.');
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const c = { lng: pos.coords.longitude, lat: pos.coords.latitude };
-        setCoords(c);
-        setAddress((await reverseGeocode(c.lat, c.lng)) ?? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`);
-        setLocating(false);
-      },
-      () => { toast.error('Không lấy được vị trí.'); setLocating(false); },
-      { enableHighAccuracy: true, timeout: 10_000 },
-    );
-  };
-
-  return (
-    <div className="bg-white border border-emerald-200 rounded-2xl p-4 space-y-3">
-      <p className="text-sm font-bold text-neutral-800">Ghim điểm phát mới</p>
-      <input
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        placeholder="Tên điểm phát (vd: Chân cầu Sài Gòn)"
-        className="w-full border border-neutral-200 rounded-xl p-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-      />
-      <div className="flex gap-2">
-        <input
-          value={plannedQty}
-          onChange={(e) => setPlannedQty(e.target.value.replace(/\D/g, ''))}
-          placeholder="Số phần dự kiến (tuỳ chọn)"
-          inputMode="numeric"
-          className="flex-1 border border-neutral-200 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        />
-        <button
-          type="button"
-          onClick={useGps}
-          disabled={locating}
-          className="shrink-0 px-3 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 disabled:opacity-50"
-          title="Dùng vị trí hiện tại"
-        >
-          <span className={`material-symbols-outlined text-[20px] ${locating ? 'animate-pulse' : ''}`}>my_location</span>
-        </button>
-      </div>
-      {coords ? (
-        <>
-          <div className="h-44 rounded-xl overflow-hidden border border-neutral-200">
-            <LocationPicker
-              lng={coords.lng}
-              lat={coords.lat}
-              onPick={(lng, lat) => {
-                setCoords({ lng, lat });
-                void reverseGeocode(lat, lng).then((a) => a && setAddress(a));
-              }}
-            />
-          </div>
-          {address && <p className="text-[11px] text-neutral-500">{address}</p>}
-        </>
-      ) : (
-        <p className="text-[11px] text-amber-600 font-semibold">Bấm nút định vị để ghim vị trí điểm phát.</p>
-      )}
-      <div className="flex gap-2">
-        <button onClick={onClose} className="flex-1 py-2 border border-neutral-200 rounded-xl text-xs font-bold text-neutral-600 hover:bg-neutral-50">
-          Đóng
-        </button>
-        <button
-          onClick={() => {
-            if (!label.trim()) return toast.error('Nhập tên điểm phát.');
-            if (!coords) return toast.error('Chưa ghim vị trí.');
-            onAdd({
-              label: label.trim(),
-              address: address || undefined,
-              lng: coords.lng,
-              lat: coords.lat,
-              plannedQty: plannedQty ? Number(plannedQty) : undefined,
-            });
-          }}
-          disabled={busy}
-          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold disabled:opacity-50"
-        >
-          {busy ? 'Đang thêm...' : 'Thêm điểm phát'}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /** Một điểm phát trong danh sách: hiện QR code + log số phần đã phát. */
 function StopRow({ stop, index, remaining, canServe, busy, onServe }: {
@@ -218,16 +124,59 @@ export default function BulkRunsPage() {
   const [quantity, setQuantity] = useState('');
   const [selectedListing, setSelectedListing] = useState<string | null>(null);
   const [showAddStop, setShowAddStop] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const active = useMemo(() => (runs ?? []).find(isActiveRun) ?? null, [runs]);
   const history = useMemo(() => (runs ?? []).filter((r) => !isActiveRun(r)).slice(0, 5), [runs]);
 
-  // Listing đủ điều kiện giao sỉ quanh HCM (kho còn ≥ ngưỡng)
-  const { data: nearby } = useListings({ lat: HCM.lat, lng: HCM.lng, radiusKm: 15 });
-  const eligible = useMemo(
-    () => (nearby ?? []).filter((l) => l.quantityRemaining >= BULK_MIN_QTY).slice(0, 12),
-    [nearby],
+  // Tin quanh VỊ TRÍ THẬT của shipper, không phải một điểm cố định giữa thành phố —
+  // shipper ở Thủ Đức mà hiện tin Quận 1 thì không đi lấy nổi.
+  const { data: volunteer } = useVolunteerMe();
+  const origin = volunteer?.currentLocation ?? null;
+  const { data: nearby, isLoading: loadingNearby } = useListings(
+    origin ? { lat: origin.lat, lng: origin.lng, radiusKm: BULK_RADIUS_KM } : {},
+    !!origin,
   );
+  // Mốc thời gian chốt lúc mở trang — chỉ dùng để LỌC HIỂN THỊ. Kiểm tra quyết định
+  // vẫn nằm ở validate() lúc bấm gửi và ở backend, nên tin hết hạn giữa chừng không lọt.
+  const [openedAt] = useState(() => Date.now());
+  // Chỉ hiện tin còn đủ hàng, còn hiệu lực và chưa quá giờ nhận — tránh để shipper
+  // chọn rồi mới bị backend từ chối.
+  const eligible = useMemo(
+    () =>
+      (nearby ?? [])
+        .filter(
+          (l) =>
+            l.quantityRemaining >= BULK_MIN_QTY &&
+            l.status === 'active' &&
+            new Date(l.pickupEndTime).getTime() > openedAt,
+        )
+        .slice(0, 12),
+    [nearby, openedAt],
+  );
+  const picked = useMemo(
+    () => eligible.find((l) => l.id === selectedListing) ?? null,
+    [eligible, selectedListing],
+  );
+  const pickedUnit = picked
+    ? UNIT_LABEL[picked.quantityUnit as QuantityUnit] ?? picked.quantityUnit
+    : 'phần';
+
+  /** Kiểm tra đầu vào trước khi mở popup xác nhận. Trả lỗi đầu tiên gặp phải. */
+  const validate = (): string | null => {
+    if (!picked) return 'Chọn một tin thực phẩm.';
+    const q = Number(quantity);
+    if (!quantity || Number.isNaN(q) || q <= 0) return 'Nhập số lượng muốn nhận.';
+    if (q < BULK_MIN_QTY) return `Giao sỉ tối thiểu ${BULK_MIN_QTY} ${pickedUnit}.`;
+    if (q > picked.quantityRemaining) {
+      return `Kho chỉ còn ${picked.quantityRemaining} ${pickedUnit} — không đủ cho yêu cầu này.`;
+    }
+    if (new Date(picked.pickupEndTime).getTime() <= Date.now()) {
+      return 'Tin này đã quá giờ nhận hàng.';
+    }
+    return null;
+  };
 
   const act = async (fn: () => Promise<unknown>, okMsg: string) => {
     try {
@@ -280,6 +229,18 @@ export default function BulkRunsPage() {
                 </span>
               </div>
 
+              {/* Hạn chót giai đoạn — hết hạn hệ thống tự đóng và hoàn kho */}
+              <RunDeadline
+                deadlineAt={active.deadlineAt}
+                label={
+                  active.status === 'requested'
+                    ? 'để NCC duyệt'
+                    : active.status === 'approved'
+                      ? 'để bạn đến lấy hàng'
+                      : 'để phát xong'
+                }
+              />
+
               {/* Tiến độ phát */}
               <div>
                 <div className="flex justify-between text-xs font-bold text-neutral-600 mb-1">
@@ -312,15 +273,18 @@ export default function BulkRunsPage() {
                   <p className="text-sm font-extrabold text-neutral-800">
                     Điểm phát ({active.stops.length})
                   </p>
-                  {['requested', 'approved', 'picked_up'].includes(active.status) && (
+                  {/* Chỉ ghim điểm sau khi được duyệt — lúc còn chờ duyệt thì chưa
+                      chắc có hàng, lên tuyến trước là công cốc nếu NCC từ chối. */}
+                  {['approved', 'picked_up'].includes(active.status) && (
                     <button onClick={() => setShowAddStop((v) => !v)} className="text-xs font-bold text-emerald-700 hover:underline">
                       + Ghim điểm phát
                     </button>
                   )}
                 </div>
                 {showAddStop && (
-                  <AddStopForm
+                  <BulkStopForm
                     busy={addStop.isPending}
+                    defaultCoords={active.pickupCoords}
                     onClose={() => setShowAddStop(false)}
                     onAdd={(p) =>
                       void act(async () => {
@@ -332,7 +296,9 @@ export default function BulkRunsPage() {
                 )}
                 {active.stops.length === 0 && !showAddStop && (
                   <p className="text-xs text-neutral-400">
-                    Chưa có điểm phát nào — bạn hoặc nhà cung cấp ghim điểm trên tuyến để bắt đầu.
+                    {active.status === 'requested'
+                      ? 'Ghim điểm phát sau khi nhà cung cấp duyệt. Nhà cung cấp cũng có thể gợi ý sẵn điểm cho bạn.'
+                      : 'Chưa có điểm phát nào — ghim điểm trên tuyến để bắt đầu.'}
                   </p>
                 )}
                 {active.stops.map((s, i) => (
@@ -378,8 +344,10 @@ export default function BulkRunsPage() {
                     <span className="material-symbols-outlined text-[20px]">inventory</span>
                     Đã nhận {active.quantity} phần từ cửa hàng
                   </button>
+                  {/* Chuyến ĐÃ DUYỆT: kho đã bị giữ cho bạn → huỷ là bị trừ điểm.
+                      Phải xác nhận rõ trước khi gọi API, không để bấm nhầm. */}
                   <button
-                    onClick={() => void act(() => cancelRun.mutateAsync(active.id), 'Đã huỷ chuyến — kho được hoàn lại.')}
+                    onClick={() => setConfirmCancel(true)}
                     disabled={cancelRun.isPending}
                     className="w-full text-center text-xs font-bold text-rose-600 hover:underline disabled:opacity-50"
                   >
@@ -406,10 +374,35 @@ export default function BulkRunsPage() {
         ) : (
           /* ── Form yêu cầu chuyến mới ── */
           <div className="bg-white rounded-3xl border border-neutral-150 shadow-sm p-5 space-y-4">
-            <p className="font-extrabold text-neutral-900">Tạo yêu cầu giao sỉ</p>
-            {eligible.length === 0 ? (
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="font-extrabold text-neutral-900">Tạo yêu cầu giao sỉ</p>
+              {origin && (
+                <span className="text-[11px] text-neutral-400">
+                  Trong bán kính {BULK_RADIUS_KM} km quanh bạn
+                </span>
+              )}
+            </div>
+            {!origin ? (
+              /* Chưa có toạ độ → không thể biết tin nào gần. Bật sẵn sàng sẽ ghi lại GPS. */
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-bold text-amber-900">Chưa xác định được vị trí của bạn</p>
+                <p className="text-xs text-amber-800/80 mt-1 leading-relaxed">
+                  Hãy bật <strong>&ldquo;Đang sẵn sàng&rdquo;</strong> ở trang Tổng quan để cập nhật vị trí.
+                  Hệ thống cần vị trí để chỉ hiện những cửa hàng bạn đi lấy được.
+                </p>
+                <Link
+                  href="/deliveries"
+                  className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold"
+                >
+                  <span className="material-symbols-outlined text-[16px]">my_location</span>
+                  Tới trang Tổng quan
+                </Link>
+              </div>
+            ) : loadingNearby ? (
+              <p className="text-sm text-neutral-400">Đang tìm tin quanh bạn…</p>
+            ) : eligible.length === 0 ? (
               <p className="text-sm text-neutral-400">
-                Hiện chưa có tin nào còn đủ {BULK_MIN_QTY} phần quanh khu vực. Quay lại sau nhé.
+                Chưa có tin nào còn đủ {BULK_MIN_QTY} phần trong bán kính {BULK_RADIUS_KM} km quanh bạn. Quay lại sau nhé.
               </p>
             ) : (
               <>
@@ -425,39 +418,136 @@ export default function BulkRunsPage() {
                       }`}
                     >
                       <p className="text-sm font-bold text-neutral-800 truncate">{l.title}</p>
-                      <p className="text-[11px] text-neutral-500 truncate">{l.pickupAddress}</p>
-                      <p className="text-[11px] font-bold text-emerald-700 mt-0.5">Còn {l.quantityRemaining} {UNIT_LABEL[l.quantityUnit as QuantityUnit] ?? l.quantityUnit}</p>
+                      <p className="text-[11px] text-neutral-500 truncate">{l.provider.businessName}</p>
+                      <p className="text-[11px] text-neutral-400 truncate">{l.pickupAddress}</p>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-[11px] font-bold text-emerald-700">
+                          Còn {l.quantityRemaining} {UNIT_LABEL[l.quantityUnit as QuantityUnit] ?? l.quantityUnit}
+                        </p>
+                        <span className="text-[10px] text-neutral-400 shrink-0">
+                          ~{(l.distanceM / 1000).toFixed(1)} km
+                        </span>
+                      </div>
                     </button>
                   ))}
                 </div>
+
+                {/* Đơn vị bám theo tin đang chọn (phần / cái / lít / kg…) */}
                 <div className="flex gap-2">
-                  <input
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value.replace(/\D/g, ''))}
-                    placeholder={`Số phần muốn nhận (≥ ${BULK_MIN_QTY})`}
-                    inputMode="numeric"
-                    className="flex-1 border border-neutral-200 rounded-xl p-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  <div className="flex-1 relative">
+                    <input
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value.replace(/\D/g, ''))}
+                      placeholder={
+                        picked
+                          ? `Số ${pickedUnit} muốn nhận (${BULK_MIN_QTY}–${picked.quantityRemaining})`
+                          : 'Chọn tin thực phẩm trước'
+                      }
+                      inputMode="numeric"
+                      disabled={!picked}
+                      className="w-full border border-neutral-200 rounded-xl p-3 pr-16 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-neutral-50 disabled:text-neutral-400"
+                    />
+                    {picked && quantity && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-neutral-400">
+                        {pickedUnit}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={() => {
-                      const q = Number(quantity);
-                      if (!selectedListing) return toast.error('Chọn một tin thực phẩm.');
-                      if (!q || q < BULK_MIN_QTY) return toast.error(`Giao sỉ tối thiểu ${BULK_MIN_QTY} phần.`);
-                      void act(async () => {
-                        await requestRun.mutateAsync({ listingId: selectedListing, quantity: q });
-                        setQuantity('');
-                        setSelectedListing(null);
-                      }, 'Đã gửi yêu cầu — chờ nhà cung cấp duyệt.');
+                      const err = validate();
+                      if (err) return toast.error(err);
+                      setConfirming(true);
                     }}
                     disabled={requestRun.isPending}
                     className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-extrabold disabled:opacity-50"
                   >
-                    {requestRun.isPending ? 'Đang gửi...' : 'Gửi yêu cầu'}
+                    Tiếp tục
                   </button>
                 </div>
+                {picked && (
+                  <p className="text-[11px] text-neutral-400 -mt-1">
+                    Bạn sẽ xem lại chi tiết cửa hàng và xác nhận cam kết ở bước tiếp theo.
+                  </p>
+                )}
               </>
             )}
           </div>
+        )}
+
+        {/* Xác nhận huỷ chuyến đã duyệt — nêu rõ mức trừ điểm */}
+        {confirmCancel && active && (
+          <Modal
+            onClose={() => setConfirmCancel(false)}
+            closeOnBackdrop={!cancelRun.isPending}
+            className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl"
+          >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined">gpp_maybe</span>
+                  </div>
+                  <h3 className="font-bold text-lg text-neutral-900">Huỷ chuyến giao sỉ?</h3>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <p className="text-sm font-bold text-rose-900">
+                    Bạn sẽ bị trừ {BULK_CANCEL_PENALTY} điểm uy tín
+                  </p>
+                  <p className="text-xs text-rose-800/80 mt-1 leading-relaxed">
+                    Nhà cung cấp đã duyệt và giữ {active.quantity} phần cho bạn — số hàng này bị khoá,
+                    khách lẻ không đặt được. Huỷ lúc này gây lãng phí nên bị tính như huỷ trễ.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={() => setConfirmCancel(false)}
+                    disabled={cancelRun.isPending}
+                    className="flex-1 py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Giữ chuyến
+                  </button>
+                  <button
+                    onClick={() =>
+                      void act(async () => {
+                        await cancelRun.mutateAsync(active.id);
+                        setConfirmCancel(false);
+                      }, 'Đã huỷ chuyến — kho được hoàn lại.')
+                    }
+                    disabled={cancelRun.isPending}
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                  >
+                    {cancelRun.isPending ? 'Đang huỷ…' : 'Vẫn huỷ'}
+                  </button>
+                </div>
+          </Modal>
+        )}
+
+        {/* Popup xác nhận: chi tiết cửa hàng + cam kết trách nhiệm */}
+        {confirming && picked && (
+          <BulkRunConfirmModal
+            listing={picked}
+            quantity={Number(quantity)}
+            busy={requestRun.isPending}
+            onCancel={() => setConfirming(false)}
+            onConfirm={() => {
+              // Kiểm tra lại ngay trước khi gửi: kho có thể đã đổi trong lúc mở popup
+              const err = validate();
+              if (err) {
+                setConfirming(false);
+                return toast.error(err);
+              }
+              void act(async () => {
+                await requestRun.mutateAsync({
+                  listingId: picked.id,
+                  quantity: Number(quantity),
+                });
+                setConfirming(false);
+                setQuantity('');
+                setSelectedListing(null);
+              }, 'Đã gửi yêu cầu — chờ nhà cung cấp duyệt.');
+            }}
+          />
         )}
 
         {/* ── Lịch sử gần đây ── */}

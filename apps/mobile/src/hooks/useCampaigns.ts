@@ -18,6 +18,7 @@ export interface CampaignAssignment {
   id: string;
   role: AssignmentRole;
   status: string;
+  shiftId?: string | null;
   volunteer: { user: { fullName: string; avatarUrl?: string | null } };
 }
 
@@ -258,6 +259,7 @@ export interface ReviewAssignmentInput {
   assignmentId: string;
   action: 'approved' | 'rejected';
   note?: string;
+  shiftId?: string;
 }
 
 export interface ProviderSummary {
@@ -310,6 +312,19 @@ export interface CampaignProviderRequest {
   } | null;
   provider?: { businessName: string; user?: { fullName: string } } | null;
   receiver?: { organizationName: string | null; user: { fullName: string } };
+  transport?: {
+    id: string;
+    status: string;
+    deliveryId: string;
+    assignedAt?: string | null;
+    pickedUpAt?: string | null;
+    deliveredAt?: string | null;
+    receivedAt?: string | null;
+    failedAt?: string | null;
+    failureReason?: string | null;
+    receiptNote?: string | null;
+    receiptPhotoUrl?: string | null;
+  } | null;
 }
 
 export interface SubmitProviderProposalInput {
@@ -342,6 +357,9 @@ export function useCampaignDetail(id?: string) {
   return useQuery({
     queryKey: ['campaign', id],
     enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign>>(endpoints.campaigns.detail(id!));
       return res.data.data;
@@ -558,8 +576,43 @@ export function useConfirmDonation() {
     },
     onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+      void queryClient.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns', 'mine'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
+      void queryClient.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
+    },
+  });
+}
+
+export function useConfirmCampaignTransportReceipt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      campaignId,
+      transportId,
+      note,
+    }: {
+      campaignId: string;
+      transportId: string;
+      note?: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<{ id: string; status: string }>>(
+        endpoints.campaigns.confirmTransportReceipt(campaignId, transportId),
+        note?.trim() ? { note: note.trim() } : {},
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
     },
   });
 }
@@ -567,10 +620,10 @@ export function useConfirmDonation() {
 export function useReviewAssignment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId, assignmentId, action, note }: ReviewAssignmentInput) => {
+    mutationFn: async ({ campaignId, assignmentId, action, note, shiftId }: ReviewAssignmentInput) => {
       const res = await apiClient.patch<ApiResponse<CampaignAssignment>>(
         endpoints.campaigns.reviewAssignment(campaignId, assignmentId),
-        { action, ...(note ? { note } : {}) }
+        { action, ...(note ? { note } : {}), ...(shiftId ? { shiftId } : {}) }
       );
       return res.data.data;
     },
@@ -638,6 +691,7 @@ export interface CampaignTask {
   id: string;
   role: AssignmentRole;
   status: string;
+  shiftId?: string | null;
   checkInTime?: string | null;
   campaign: {
     id: string;
@@ -675,7 +729,9 @@ export function useMyTasks(enabled: boolean = true) {
   return useQuery({
     queryKey: ['campaign-tasks'],
     enabled,
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
       return res.data.data;
@@ -690,8 +746,22 @@ export function useMyTasks(enabled: boolean = true) {
 export function useAdvanceTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assignmentId, photo }: { assignmentId: string; photo?: CapturedImage }) => {
+    mutationFn: async ({
+      assignmentId,
+      campaignId,
+      lng,
+      lat,
+      photo,
+    }: {
+      assignmentId: string;
+      campaignId: string;
+      lng?: number;
+      lat?: number;
+      photo?: CapturedImage;
+    }) => {
       const form = new FormData();
+      if (lng != null) form.append('lng', String(lng));
+      if (lat != null) form.append('lat', String(lat));
       if (photo) form.append('photo', photo as unknown as Blob);
       const res = await apiClient.post<ApiResponse<{ id: string; status: string; pointsAwarded?: number }>>(
         endpoints.campaigns.advanceTask(assignmentId),
@@ -700,8 +770,10 @@ export function useAdvanceTask() {
       );
       return res.data.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { campaignId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
     },
   });
 }

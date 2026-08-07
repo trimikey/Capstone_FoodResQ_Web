@@ -20,9 +20,11 @@ interface CampaignCardProps {
   onApply: (id: string, role: AssignmentRole) => void;
   applying: boolean;
   isProvider?: boolean;
+  /** Tài khoản chưa active → vô hiệu hoá nút apply / pledge. */
+  disabled?: boolean;
 }
 
-export default function CampaignCard({ c, myRoles, onApply, applying, isProvider }: CampaignCardProps) {
+export default function CampaignCard({ c, myRoles, onApply, applying, isProvider, disabled }: CampaignCardProps) {
   const pledge = usePledgeDonation();
   const [donating, setDonating] = useState(false);
   const [item, setItem] = useState('');
@@ -110,6 +112,7 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           onApply={(r) => onApply(c.id, r)}
           applying={applying}
           overdue={overdue}
+          disabled={disabled}
         />
         <Slot
           role={AssignmentRole.WAITER}
@@ -119,6 +122,7 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           onApply={(r) => onApply(c.id, r)}
           applying={applying}
           overdue={overdue}
+          disabled={disabled}
         />
         <Slot
           role={AssignmentRole.SHIPPER}
@@ -128,6 +132,7 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           onApply={(r) => onApply(c.id, r)}
           applying={applying}
           overdue={overdue}
+          disabled={disabled}
         />
       </div>
 
@@ -278,6 +283,7 @@ function Slot({
   onApply,
   applying,
   overdue,
+  disabled,
 }: {
   role: AssignmentRole;
   filled: number;
@@ -286,6 +292,7 @@ function Slot({
   onApply: (role: AssignmentRole) => void;
   applying: boolean;
   overdue?: boolean;
+  disabled?: boolean;
 }) {
   if (needed <= 0) return null;
   const full = filled >= needed;
@@ -314,10 +321,11 @@ function Slot({
         <button
           type="button"
           onClick={() => onApply(role)}
-          disabled={full || applying || overdue}
+          disabled={full || applying || overdue || disabled}
+          title={disabled ? 'Tài khoản đang chờ admin duyệt' : undefined}
           className="mt-2.5 w-full py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed bg-[#236c2a] hover:bg-[#1a4f1f] text-white transition-colors"
         >
-          {overdue ? 'Hết hạn' : full ? 'Đã đủ' : 'Đăng ký'}
+          {disabled ? 'Chờ duyệt' : overdue ? 'Hết hạn' : full ? 'Đã đủ' : 'Đăng ký'}
         </button>
       )}
     </div>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -15,19 +15,18 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { useProviderEsg } from '@/hooks/useEsg';
-import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
-import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
+import { UNIT_LABEL } from '@/lib/utils';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
-import ProviderRequestsSection from '@/components/campaigns/ProviderRequestsSection';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import PendingRequestsBanner from '@/components/provider/PendingRequestsBanner';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'NhÃ¡p', cls: 'bg-neutral-100 text-neutral-600' },
-  active: { label: 'Äang má»Ÿ', cls: 'bg-emerald-100 text-emerald-800' },
-  fully_reserved: { label: 'Háº¿t suáº¥t', cls: 'bg-amber-100 text-amber-800' },
-  completed: { label: 'HoÃ n táº¥t', cls: 'bg-blue-100 text-blue-800' },
-  expired: { label: 'Háº¿t háº¡n', cls: 'bg-neutral-100 text-neutral-500' },
-  cancelled: { label: 'ÄÃ£ huá»·', cls: 'bg-rose-100 text-rose-700' },
+  draft: { label: 'Nháp', cls: 'bg-neutral-100 text-neutral-600' },
+  active: { label: 'Đang mở', cls: 'bg-emerald-100 text-emerald-800' },
+  fully_reserved: { label: 'Hết suất', cls: 'bg-amber-100 text-amber-800' },
+  completed: { label: 'Hoàn tất', cls: 'bg-blue-100 text-blue-800' },
+  expired: { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-500' },
+  cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
 };
 
 type StatusFilter = 'all' | 'open' | 'draft' | 'closed';
@@ -44,7 +43,7 @@ export default function ProviderDashboardPage() {
 
   const providerProfile = me?.provider ?? null;
   const providerVerified = providerProfile?.verificationStatus === 'approved';
-  const providerAddress = providerProfile?.address?.trim() || 'ChÆ°a cáº­p nháº­t Ä‘á»‹a chá»‰';
+  const providerAddress = providerProfile?.address?.trim() || 'Chưa cập nhật địa chỉ';
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open');
   const [extendTarget, setExtendTarget] = useState<{ listing: ProviderListing; mode: 'extend_time' | 'add_quantity' | 'both' } | null>(null);
@@ -66,31 +65,31 @@ export default function ProviderDashboardPage() {
   }
 
   async function handlePublish(id: string) {
-    try { await publishListing.mutateAsync(id); toast.success('ÄÃ£ Ä‘Äƒng tin'); }
-    catch { toast.error('ÄÄƒng tin tháº¥t báº¡i'); }
+    try { await publishListing.mutateAsync(id); toast.success('Đã đăng tin'); }
+    catch { toast.error('Đăng tin thất bại'); }
   }
 
   async function handleCancel(id: string) {
-    try { await cancelListing.mutateAsync({ id }); toast.info('ÄÃ£ huá»· tin'); }
-    catch { toast.error('Huá»· tháº¥t báº¡i'); }
+    try { await cancelListing.mutateAsync({ id }); toast.info('Đã huỷ tin'); }
+    catch { toast.error('Huỷ thất bại'); }
   }
 
   async function handleDuplicate(id: string) {
-    try { await duplicateListing.mutateAsync(id); toast.success('ÄÃ£ táº¡o báº£n nhÃ¡p má»›i'); }
-    catch { toast.error('NhÃ¢n báº£n tháº¥t báº¡i'); }
+    try { await duplicateListing.mutateAsync(id); toast.success('Đã tạo bản nháp mới'); }
+    catch { toast.error('Nhân bản thất bại'); }
   }
 
   return (
     <div className="flex-1 min-w-0 bg-mesh-brand">
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
-        {/* Page header â€” dÃ¹ng component dÃ¹ng chung Ä‘á»ƒ Ä‘á»“ng bá»™ vá»›i create/scan/orders */}
+        {/* Page header — dùng component dùng chung để đồng bộ với create/scan/orders */}
         <ProviderHeaderCard
-          eyebrow="Quáº£n lÃ½ cá»­a hÃ ng"
-          title={providerProfile?.businessName ?? 'Cá»­a hÃ ng cá»§a tÃ´i'}
+          eyebrow="Quản lý cửa hàng"
+          title={providerProfile?.businessName ?? 'Cửa hàng của tôi'}
           description={
             providerVerified
-              ? `Tráº¡ng thÃ¡i: Ä‘Ã£ xÃ¡c minh Â· ${providerAddress}`
-              : 'TÃ i khoáº£n Ä‘ang chá» xÃ¡c minh â€” vui lÃ²ng hoÃ n táº¥t há»“ sÆ¡ Ä‘á»ƒ Ä‘Äƒng bÃ i.'
+              ? `Trạng thái: đã xác minh · ${providerAddress}`
+              : 'Tài khoản đang chờ xác minh — vui lòng hoàn tất hồ sơ để đăng bài.'
           }
           meta={
             <div className="flex items-center gap-3 flex-wrap text-xs">
@@ -102,17 +101,17 @@ export default function ProviderDashboardPage() {
                 <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {providerVerified ? 'verified' : 'pending'}
                 </span>
-                {providerVerified ? 'ÄÃ£ duyá»‡t' : providerProfile?.verificationStatus ?? 'ChÆ°a duyá»‡t'}
+                {providerVerified ? 'Đã duyệt' : providerProfile?.verificationStatus ?? 'Chưa duyệt'}
               </span>
               {stats?.completionRate != null && (
                 <span className="inline-flex items-center gap-1 text-neutral-500 font-normal">
                   <span className="material-symbols-outlined text-[14px] text-emerald-700">star</span>
-                  {stats.completionRate}% hoÃ n thÃ nh
+                  {stats.completionRate}% hoàn thành
                 </span>
               )}
               <span className="inline-flex items-center gap-1 text-neutral-500 font-normal">
                 <span className="material-symbols-outlined text-[14px] text-emerald-700">history</span>
-                Tham gia tá»« {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }) : 'nay'}
+                Tham gia từ {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }) : 'nay'}
               </span>
             </div>
           }
@@ -127,14 +126,14 @@ export default function ProviderDashboardPage() {
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">add</span>
-                Táº¡o bÃ i Ä‘Äƒng
+                Tạo bài đăng
               </Link>
               <Link
                 href="/profile"
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors"
               >
                 <span className="material-symbols-outlined text-[16px]">edit</span>
-                Sá»­a cá»­a hÃ ng
+                Sửa cửa hàng
               </Link>
             </>
           }
@@ -142,10 +141,10 @@ export default function ProviderDashboardPage() {
 
         {/* Metric Grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <MetricCard icon="eco" label="Thá»±c pháº©m Ä‘Ã£ cá»©u" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
-          <MetricCard icon="cloud_done" label="COâ‚‚ giáº£m thiá»ƒu" value={`${esg?.co2SavedKg ?? 0}`} unit="táº¥n" tone="sky" />
-          <MetricCard icon="restaurant" label="Suáº¥t Äƒn chia sáº»" value={`${esg?.mealsServed ?? 0}`} unit="suáº¥t" tone="amber" />
-          <MetricCard icon="volunteer_activism" label="NgÆ°á»i Ä‘Æ°á»£c giÃºp" value={`${esg?.peopleHelped ?? 0}`} unit="ngÆ°á»i" tone="emerald" />
+          <MetricCard icon="eco" label="Thực phẩm đã cứu" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
+          <MetricCard icon="cloud_done" label="CO₂ giảm thiểu" value={`${esg?.co2SavedKg ?? 0}`} unit="tấn" tone="sky" />
+          <MetricCard icon="restaurant" label="Suất ăn chia sẻ" value={`${esg?.mealsServed ?? 0}`} unit="suất" tone="amber" />
+          <MetricCard icon="volunteer_activism" label="Người được giúp" value={`${esg?.peopleHelped ?? 0}`} unit="người" tone="emerald" />
         </section>
 
         {/* Main Dashboard Split Layout */}
@@ -157,7 +156,7 @@ export default function ProviderDashboardPage() {
               <div className="relative z-10">
                 <h4 className="text-[#236c2a] font-bold text-sm flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px]">verified</span>
-                  Chá»‰ sá»‘ tin cáº­y
+                  Chỉ số tin cậy
                 </h4>
                 <div className="flex items-center gap-2 mb-3 mt-3">
                   <div className="h-2.5 flex-1 max-w-[180px] bg-white/70 rounded-full overflow-hidden">
@@ -171,7 +170,7 @@ export default function ProviderDashboardPage() {
                   </span>
                 </div>
                 <p className="text-[#236c2a]/85 text-xs font-normal leading-relaxed">
-                  Thá»© háº¡ng cá»§a báº¡n cao hÆ¡n 85% cá»­a hÃ ng cÃ¹ng khu vá»±c.
+                  Thứ hạng của bạn cao hơn 85% cửa hàng cùng khu vực.
                 </p>
               </div>
               <span className="material-symbols-outlined absolute -bottom-3 -right-3 text-[88px] text-[#236c2a]/10 rotate-12">
@@ -184,13 +183,13 @@ export default function ProviderDashboardPage() {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-700 text-[18px]">timeline</span>
-                  Hoáº¡t Ä‘á»™ng gáº§n Ä‘Ã¢y
+                  Hoạt động gần đây
                 </h3>
                 <Link
                   href="/provider/orders"
                   className="text-xs font-bold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
                 >
-                  Táº¥t cáº£
+                  Tất cả
                   <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                 </Link>
               </div>
@@ -198,20 +197,20 @@ export default function ProviderDashboardPage() {
                 <ActivityItem
                   icon="local_mall"
                   iconColor="emerald"
-                  title="ÄÆ¡n hÃ ng #ORD-4592 Ä‘Ã£ Ä‘Æ°á»£c nháº­n"
-                  time="10 phÃºt trÆ°á»›c"
+                  title="Đơn hàng #ORD-4592 đã được nhận"
+                  time="10 phút trước"
                 />
                 <ActivityItem
                   icon="post_add"
                   iconColor="sky"
-                  title="Báº¡n Ä‘Ã£ táº¡o bÃ i Ä‘Äƒng má»›i"
-                  time="2 giá» trÆ°á»›c"
+                  title="Bạn đã tạo bài đăng mới"
+                  time="2 giờ trước"
                 />
                 <ActivityItem
                   icon="reviews"
                   iconColor="amber"
-                  title="ÄÃ¡nh giÃ¡ 5 sao tá»« Há»™i Tá»« Thiá»‡n"
-                  time="HÃ´m qua"
+                  title="Đánh giá 5 sao từ Hội Từ Thiện"
+                  time="Hôm qua"
                 />
               </div>
             </section>
@@ -223,10 +222,10 @@ export default function ProviderDashboardPage() {
               <header className="px-5 py-4 border-b border-neutral-100">
                 <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-700 text-[18px]">inventory_2</span>
-                  BÃ i Ä‘Äƒng hiá»‡n táº¡i
+                  Bài đăng hiện tại
                 </h3>
                 <p className="text-xs text-neutral-500 font-normal mt-0.5">
-                  {filteredListings.length} máº·t hÃ ng Ä‘ang Ä‘Æ°á»£c chia sáº»
+                  {filteredListings.length} mặt hàng đang được chia sẻ
                 </p>
               </header>
 
@@ -244,7 +243,7 @@ export default function ProviderDashboardPage() {
                             : 'bg-white text-neutral-600 border-neutral-200 hover:border-[#236c2a]/40 hover:text-[#236c2a]'
                         }`}
                       >
-                        { { open: 'Äang má»Ÿ', draft: 'NhÃ¡p', all: 'Táº¥t cáº£', closed: 'ÄÃ£ Ä‘Ã³ng' }[filter] }
+                        { { open: 'Đang mở', draft: 'Nháp', all: 'Tất cả', closed: 'Đã đóng' }[filter] }
                       </button>
                     );
                   })}
@@ -262,8 +261,8 @@ export default function ProviderDashboardPage() {
                     <div className="w-16 h-16 mx-auto rounded-full bg-neutral-50 flex items-center justify-center">
                       <span className="material-symbols-outlined text-neutral-300 text-[36px]">inventory_2</span>
                     </div>
-                    <p className="mt-3 font-bold text-sm text-neutral-600">ChÆ°a cÃ³ bÃ i Ä‘Äƒng nÃ o</p>
-                    <p className="text-xs text-neutral-500 font-normal mt-1">Báº¥m nÃºt bÃªn dÆ°á»›i Ä‘á»ƒ táº¡o bÃ i Ä‘Äƒng Ä‘áº§u tiÃªn.</p>
+                    <p className="mt-3 font-bold text-sm text-neutral-600">Chưa có bài đăng nào</p>
+                    <p className="text-xs text-neutral-500 font-normal mt-1">Bấm nút bên dưới để tạo bài đăng đầu tiên.</p>
                   </div>
                 )}
 
@@ -276,6 +275,7 @@ export default function ProviderDashboardPage() {
                       onCancel={() => handleCancel(listing.id)}
                       onDuplicate={() => handleDuplicate(listing.id)}
                       onExtend={(mode) => setExtendTarget({ listing, mode })}
+                      onOpen={() => router.push(`/listings/${listing.id}`)}
                     />
                   ))}
 
@@ -285,25 +285,16 @@ export default function ProviderDashboardPage() {
                   className="w-full py-3 border-2 border-dashed border-neutral-300 rounded-2xl text-neutral-500 hover:border-[#236c2a] hover:text-[#236c2a] transition-colors flex items-center justify-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-base">add_circle</span>
-                  Táº¡o bÃ i Ä‘Äƒng má»›i
+                  Tạo bài đăng mới
                 </button>
               </div>
             </section>
           </div>
         </div>
 
-        <BulkRunRequests />
-
-        {/* YÃªu cáº§u há»£p tÃ¡c tá»« charity */}
-        <section className="bg-white rounded-2xl border border-neutral-150 shadow-sm overflow-hidden">
-          <header className="px-5 py-4 border-b border-neutral-100 flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-500 text-[20px]">storefront</span>
-            <h3 className="font-bold text-sm text-neutral-900">YÃªu cáº§u há»£p tÃ¡c tá»« tá»• chá»©c</h3>
-          </header>
-          <div className="p-5">
-            <ProviderRequestsSection />
-          </div>
-        </section>
+        {/* Yêu cầu giao sỉ + hợp tác đã chuyển sang tab "Yêu cầu" — ở đây chỉ nhắc
+            khi có việc chờ xử lý, tránh lặp nội dung ở hai nơi. */}
+        <PendingRequestsBanner />
 
         {extendTarget && (
           <ExtendListingModal
@@ -392,27 +383,40 @@ function PostingItem({
   onCancel,
   onDuplicate,
   onExtend,
+  onOpen,
 }: {
   listing: ProviderListing;
   onPublish: () => void;
   onCancel: () => void;
   onDuplicate: () => void;
   onExtend: (mode: 'extend_time' | 'add_quantity' | 'both') => void;
+  onOpen: () => void;
 }) {
   const statusMeta = STATUS_META[listing.status] ?? { label: listing.status, cls: 'bg-neutral-100 text-neutral-600' };
   const remaining = Number(listing.quantityRemaining);
   const total = Number(listing.quantityTotal);
-  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] || 'suáº¥t';
+  const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] || 'suất';
   const isExpiringSoon = new Date(listing.pickupEndTime).getTime() - Date.now() < 4 * 60 * 60 * 1000;
   const isExtendable = listing.status === 'active' || listing.status === 'fully_reserved';
   const isOutOfStock = listing.status === 'fully_reserved';
 
   return (
-    <div className="flex items-start gap-3 p-3 rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:bg-neutral-50 transition-all">
+    <div
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="flex items-start gap-3 p-3 rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:bg-neutral-50 transition-all cursor-pointer"
+    >
       <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 flex items-center justify-center overflow-hidden">
         {listing.imageUrls[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(listing.imageUrls[0])} alt={listing.title} className="w-full h-full object-cover" />
+          <img src={listing.imageUrls[0]} alt={listing.title} className="w-full h-full object-cover" />
         ) : (
           <span className="material-symbols-outlined text-[24px] text-neutral-300">bakery_dining</span>
         )}
@@ -438,44 +442,52 @@ function PostingItem({
           </div>
         </div>
         {isExtendable && (
-          <div className="flex gap-1.5 mt-2 flex-wrap">
+          <div
+            className="flex gap-1.5 mt-2 flex-wrap"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {isExpiringSoon && (
               <button
                 onClick={() => onExtend('extend_time')}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-full transition-colors border border-amber-200"
-                title="KÃ©o dÃ i thá»i gian nháº­n hÃ ng"
+                title="Kéo dài thời gian nhận hàng"
               >
                 <span className="material-symbols-outlined text-[12px]">schedule</span>
-                Gia háº¡n giá»
+                Gia hạn giờ
               </button>
             )}
             {isOutOfStock && (
               <button
                 onClick={() => onExtend('add_quantity')}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-full transition-colors border border-amber-200"
-                title="Bá»• sung thÃªm pháº§n Äƒn Ä‘á»ƒ má»Ÿ bÃ¡n láº¡i"
+                title="Bổ sung thêm phần ăn để mở bán lại"
               >
                 <span className="material-symbols-outlined text-[12px]">add_circle</span>
-                ThÃªm sá»‘ lÆ°á»£ng
+                Thêm số lượng
               </button>
             )}
             <button
               onClick={() => onExtend('both')}
               className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors border border-emerald-200"
-              title="Gia háº¡n giá» vÃ  thÃªm pháº§n Äƒn cÃ¹ng lÃºc"
+              title="Gia hạn giờ và thêm phần ăn cùng lúc"
             >
               <span className="material-symbols-outlined text-[12px]">bolt</span>
-              Gia háº¡n + ThÃªm SL
+              Gia hạn + Thêm SL
             </button>
           </div>
         )}
       </div>
-      <div className="flex gap-1 shrink-0">
+      <div
+        className="flex gap-1 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         {listing.status === 'draft' ? (
           <button
             onClick={onPublish}
             className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
-            title="ÄÄƒng"
+            title="Đăng"
           >
             <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
           </button>
@@ -483,7 +495,7 @@ function PostingItem({
           <button
             onClick={onDuplicate}
             className="p-2 text-sky-700 hover:bg-sky-50 rounded-lg transition-colors"
-            title="ÄÄƒng láº¡i"
+            title="Đăng lại"
           >
             <span className="material-symbols-outlined text-[18px]">content_copy</span>
           </button>
@@ -491,7 +503,7 @@ function PostingItem({
           <button
             onClick={onCancel}
             className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-            title="Huá»·"
+            title="Huỷ"
           >
             <span className="material-symbols-outlined text-[18px]">delete</span>
           </button>

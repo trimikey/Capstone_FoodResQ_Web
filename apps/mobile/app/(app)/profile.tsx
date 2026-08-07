@@ -325,6 +325,31 @@ export default function ProfileTab() {
                 ) : null}
               </SurfaceCard>
             ) : null}
+
+            {isReceiver && !isCharityOrg ? (
+              <SurfaceCard style={styles.card}>
+                <View style={styles.handoffHead}>
+                  <View style={styles.handoffIcon}>
+                    <MaterialCommunityIcons name="qrcode-scan" size={22} color={COLORS.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>Nhận suất ăn cộng đồng</Text>
+                    <Text style={styles.handoffHint}>
+                      Hiển thị mã QR khi nhận suất ăn và phản hồi sau khi được phục vụ.
+                    </Text>
+                  </View>
+                </View>
+                <Button
+                  mode="contained"
+                  icon="qrcode"
+                  buttonColor={COLORS.primary}
+                  onPress={() => router.push('/(app)/meals/qr' as Href)}
+                  style={styles.handoffButton}
+                >
+                  Mở mã nhận suất ăn
+                </Button>
+              </SurfaceCard>
+            ) : null}
           </>
         )}
 
@@ -563,6 +588,17 @@ const styles = StyleSheet.create({
   faceFeedbackTextError: { color: COLORS.error },
   faceActions: { marginTop: 12, gap: 8 },
   faceButton: { borderRadius: 12 },
+  handoffHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  handoffIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  handoffHint: { marginTop: 2, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  handoffButton: { marginTop: 12, borderRadius: 12 },
   reportsBtn: { marginTop: 24, borderRadius: 12, borderColor: COLORS.primary },
   actionCard: { marginTop: spacing.xl, padding: spacing.md, gap: spacing.sm },
   actionBtn: { borderRadius: radius.md, paddingVertical: 3 },

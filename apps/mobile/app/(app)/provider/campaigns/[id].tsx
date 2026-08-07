@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { useCampaignDetail } from '@/hooks/useCampaigns';
+import { useCampaignDetail, useProviderRequests } from '@/hooks/useCampaigns';
 import { DonationDialog } from '@/components/DonationDialog';
 import {
   statusMeta,
@@ -17,6 +17,7 @@ import {
 import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /** Hàng thông tin có icon. */
@@ -46,13 +47,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function ProviderCampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
+  const { data: providerRequests = [] } = useProviderRequests();
   const [dialogVisible, setDialogVisible] = useState(false);
 
   const Header = (
     <View style={styles.header}>
       <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Chi tiết chiến dịch</Text>
-      <View style={{ width: 24 }} />
+      <NotificationBell />
     </View>
   );
 
@@ -80,6 +82,9 @@ export default function ProviderCampaignDetailScreen() {
   const supplyProgress = c.supplyProgress ?? [];
   const donatable = canDonate(c.status);
   const hasRemainingSupply = supplyProgress.some((item) => item.remainingQuantity > 0);
+  const campaignTransports = providerRequests.filter(
+    (request) => request.campaign?.id === c.id && request.transport,
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -175,6 +180,27 @@ export default function ProviderCampaignDetailScreen() {
           </Section>
         ) : null}
 
+        {campaignTransports.length > 0 ? (
+          <Section title="Vận chuyển đến bếp">
+            {campaignTransports.map((request) => {
+              const transport = request.transport!;
+              return (
+                <View key={transport.id} style={styles.transportRow}>
+                  <MaterialCommunityIcons
+                    name={transport.status === 'received' ? 'check-circle' : transport.status === 'failed' ? 'alert-circle' : 'truck-delivery-outline'}
+                    size={20}
+                    color={transport.status === 'received' ? COLORS.primary : transport.status === 'failed' ? COLORS.error : COLORS.onSurfaceVariant}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.donationItem}>{transportStatusLabel(transport.status)}</Text>
+                    {transport.failureReason ? <Text style={styles.transportError}>{transport.failureReason}</Text> : null}
+                  </View>
+                </View>
+              );
+            })}
+          </Section>
+        ) : null}
+
         <Section title={`Đã quyên góp (${donations.length})`}>
           {donations.length === 0 ? (
             <Text style={styles.muted}>Chưa có quyên góp nào. Hãy là người đầu tiên chung tay!</Text>
@@ -239,6 +265,20 @@ export default function ProviderCampaignDetailScreen() {
   );
 }
 
+function transportStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: 'Đang tìm shipper',
+    assigned: 'Shipper đã nhận chuyến',
+    heading_to_provider: 'Shipper đang đến nhà cung cấp',
+    picked_up: 'Đã nhận thực phẩm',
+    in_transit: 'Đang giao đến bếp',
+    delivered: 'Đã bàn giao, chờ bếp xác nhận',
+    received: 'Bếp đã xác nhận nhận hàng',
+    failed: 'Giao hàng thất bại',
+  };
+  return labels[status] ?? status;
+}
+
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 }
@@ -249,7 +289,7 @@ const styles = StyleSheet.create({
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
+  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
@@ -289,8 +329,10 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'flex-start' },
+  transportRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, alignItems: 'center' },
   donationItem: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   donationNote: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 2 },
+  transportError: { fontSize: 12, color: COLORS.error, marginTop: 2 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
     borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,

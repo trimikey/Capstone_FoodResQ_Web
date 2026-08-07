@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { mediaUrl } from '@/lib/utils';
@@ -56,6 +56,38 @@ export default function PublicHeader() {
   const [mounted, setMounted] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [activeHash, setActiveHash] = useState<string>('');
+
+  // Anchor links: smooth scroll tới section, không reload trang, cập nhật hash
+  const handleAnchorClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+      e.preventDefault();
+      if (pathname !== '/') {
+        // Chưa ở trang chủ → điều hướng về / kèm hash rồi Next sẽ scroll
+        router.push(`/#${id}`);
+        return;
+      }
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        history.replaceState(null, '', `#${id}`);
+        setActiveHash(id);
+      }
+    },
+    [pathname, router],
+  );
+
+  // Đồng bộ activeHash với URL hash + highlight section khi user scroll tới
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      setActiveHash(hash);
+    };
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, [pathname]);
 
   useEffect(() => {
     setMounted(true);
@@ -106,12 +138,16 @@ export default function PublicHeader() {
         <nav className="hidden md:flex items-center gap-6">
           <Link
             href="/"
+            onClick={() => {
+              setActiveHash('');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             className={`relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors ${
-              pathname === '/' ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
+              pathname === '/' && !activeHash ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
             }`}
           >
             Trang chủ
-            {pathname === '/' && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
+            {pathname === '/' && !activeHash && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
           </Link>
           <Link
             href={foodNavLink.href}
@@ -122,18 +158,26 @@ export default function PublicHeader() {
             {foodNavLink.label}
             {pathname === foodNavLink.href && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
           </Link>
-          <Link
-            href="/#about"
-            className="relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors text-neutral-600 hover:text-emerald-700"
+          <a
+            href="#about"
+            onClick={(e) => handleAnchorClick(e, 'about')}
+            className={`relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+              activeHash === 'about' ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
+            }`}
           >
             Về chúng tôi
-          </Link>
-          <Link
-            href="/#contact"
-            className="relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors text-neutral-600 hover:text-emerald-700"
+            {activeHash === 'about' && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
+          </a>
+          <a
+            href="#contact"
+            onClick={(e) => handleAnchorClick(e, 'contact')}
+            className={`relative py-1.5 px-3 text-[14px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+              activeHash === 'contact' ? 'text-emerald-800' : 'text-neutral-600 hover:text-emerald-700'
+            }`}
           >
             Liên hệ
-          </Link>
+            {activeHash === 'contact' && <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-full" />}
+          </a>
         </nav>
 
         {/* Right actions */}

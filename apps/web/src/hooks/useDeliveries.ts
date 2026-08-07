@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import type { ApiResponse, Paginated } from '@foodresq/types';
@@ -14,7 +15,7 @@ function socketUrl(): string {
 interface ListingBrief {
   title: string;
   pickupAddress: string;
-  imageUrls: string[];
+  imageUrls: string[] | null;
 }
 
 export interface DeliveryCoords {
@@ -24,23 +25,42 @@ export interface DeliveryCoords {
   deliveryLat: number | null;
 }
 
+export interface CampaignTransportBrief {
+  id: string;
+  status: string;
+  campaignId: string;
+  campaignTitle: string;
+  providerName: string;
+  providerAddress: string | null;
+  kitchenAddress: string;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+}
+
+interface DeliverySourceFields {
+  source: 'reservation' | 'campaign_transport';
+  campaignTransport: CampaignTransportBrief | null;
+  pickup: { address: string | null; lng: number | null; lat: number | null };
+  destination: { address: string | null; lng: number | null; lat: number | null };
+}
+
 export interface TaskOffer {
   id: string;
   deliveryId: string;
   status: string;
   expiresAt: string;
   offeredAt: string;
-  delivery: {
+  delivery: DeliverySourceFields & {
     id: string;
     distanceKm: number | null;
     coords: DeliveryCoords | null;
-    reservation: { listing: ListingBrief; receiver: { address: string | null } };
+    reservation: { quantity: number; listing: ListingBrief; receiver: { address: string | null } | null } | null;
   };
 }
 
-export interface ActiveDelivery {
+export interface ActiveDelivery extends DeliverySourceFields {
   id: string;
-  status: 'assigned' | 'heading_to_provider' | 'qc_completed' | 'in_transit' | 'delivered';
+  status: 'assigned' | 'heading_to_provider' | 'qc_completed' | 'in_transit';
   qcPhotoUrl: string | null;
   deliveryProofUrl: string | null;
   distanceKm: number | null;
@@ -49,11 +69,11 @@ export interface ActiveDelivery {
     id: string;
     quantity: number;
     listing: ListingBrief;
-    receiver: { address: string | null; user: { fullName: string; phone: string | null } };
-  };
+    receiver: { address: string | null; user: { fullName: string; phone: string | null } } | null;
+  } | null;
 }
 
-export interface DeliveryHistoryItem {
+export interface DeliveryHistoryItem extends DeliverySourceFields {
   id: string;
   status: 'delivered' | 'failed';
   distanceKm: number | null;
@@ -61,10 +81,12 @@ export interface DeliveryHistoryItem {
   deliveryProofUrl: string | null;
   failedReason: string | null;
   createdAt: string;
+  coords: DeliveryCoords | null;
   reservation: {
+    quantity: number;
     listing: ListingBrief;
-    receiver: { user: { fullName: string } };
-  };
+    receiver: { user: { fullName: string } } | null;
+  } | null;
 }
 
 export interface VolunteerMe {
@@ -153,6 +175,37 @@ export function useActiveDelivery(enabled = true) {
   });
 }
 
+export interface ShipperRating {
+  id: string;
+  score: number;
+  comment: string | null;
+  createdAt: string;
+  listingTitle: string | null;
+  raterName: string | null;
+}
+
+export interface ShipperRatingsPage {
+  items: ShipperRating[];
+  total: number;
+  page: number;
+  totalPages: number;
+  avgRating: number | null;
+  /** Số lượt theo từng mức sao, dùng vẽ biểu đồ phân bố */
+  distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
+}
+
+/** Shipper: đánh giá đã nhận được từ người nhận. */
+export function useMyRatings(page = 1, enabled = true) {
+  return useQuery({
+    queryKey: ['deliveries', 'my-ratings', page],
+    queryFn: async () =>
+      (await api.get<ApiResponse<ShipperRatingsPage>>('/deliveries/my/ratings', { params: { page } }))
+        .data.data,
+    enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
 /** Nghe socket `delivery:offer` để bật popup nhận đơn NGAY khi có (không chờ poll 15s). */
 export function useOfferSocket(enabled: boolean) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -167,8 +220,18 @@ export function useOfferSocket(enabled: boolean) {
     socket.on('delivery:offer', () => {
       void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
     });
+    // Để trôi lời mời → BE tắt sẵn sàng. Đồng bộ lại nút gạt, nếu không nó vẫn
+    // hiện "Đang sẵn sàng" trong khi thực tế đã offline.
+    socket.on('shipper:auto_offline', () => {
+      void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+      toast.warning('Đã tắt chế độ nhận đơn', {
+        description: 'Bạn không phản hồi lời mời trong 15 giây. Bật lại để tiếp tục nhận đơn.',
+      });
+    });
     return () => {
       socket.off('delivery:offer');
+      socket.off('shipper:auto_offline');
       socket.disconnect();
     };
   }, [enabled, accessToken, qc]);
@@ -221,9 +284,16 @@ export function useRejectOffer() {
 export interface DeliveryTracking {
   /** ID đơn giao hàng — dùng để gọi API hủy tìm shipper */
   deliveryId: string;
-  status: ActiveDelivery['status'] | 'pending_assignment' | 'failed';
+  /** Trạng thái giao hàng: pending_assignment → assigned → heading_to_provider → qc_completed → in_transit → delivered/failed/cancelled */
+  status: 'pending_assignment' | 'assigned' | 'heading_to_provider' | 'qc_completed' | 'in_transit' | 'delivered' | 'failed' | 'cancelled';
   /** Lý do thất bại (vd: không có tình nguyện viên nào nhận) — chỉ có khi status=failed. */
   failedReason: string | null;
+  /**
+   * Hạn tìm shipper TUYỆT ĐỐI (ISO), tính từ lúc tạo đơn. Đếm ngược theo mốc này
+   * thay vì đếm từ lúc mở trang — nếu không, reload sẽ nhảy về 4:30. Null khi đơn
+   * đã rời trạng thái pending_assignment.
+   */
+  searchExpiresAt: string | null;
   distanceKm: number | null;
   listingTitle: string;
   pickupAddress: string;

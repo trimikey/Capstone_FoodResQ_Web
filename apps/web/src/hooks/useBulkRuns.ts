@@ -4,6 +4,8 @@ import { BulkRunStatus, type ApiResponse, type BulkRun, type BulkRunStop } from 
 
 // Ngưỡng giao sỉ — khớp BULK_MIN_QTY phía BE
 export const BULK_MIN_QTY = 2;
+// Điểm uy tín bị trừ khi huỷ chuyến ĐÃ ĐƯỢC DUYỆT — khớp BULK_CANCEL_PENALTY phía BE
+export const BULK_CANCEL_PENALTY = 10;
 
 export type { BulkRun, BulkRunStop } from '@foodresq/types';
 export type BulkStop = BulkRunStop;
@@ -84,6 +86,31 @@ export function useAddBulkStop() {
         lat: p.lat,
         plannedQty: p.plannedQty,
       })).data.data,
+  );
+}
+
+/** Sửa điểm phát chưa phát hàng (NCC chủ tin hoặc shipper của chuyến). */
+export function useUpdateBulkStop() {
+  return useBulkMutation(
+    async (p: {
+      runId: string;
+      stopId: string;
+      label?: string;
+      address?: string;
+      lng?: number;
+      lat?: number;
+      plannedQty?: number;
+    }) => {
+      const { runId, stopId, ...body } = p;
+      return (await api.patch(`/bulk-runs/${runId}/stops/${stopId}`, body)).data.data;
+    },
+  );
+}
+
+/** Gỡ điểm phát chưa phát hàng khỏi chuyến. */
+export function useRemoveBulkStop() {
+  return useBulkMutation(async (p: { runId: string; stopId: string }) =>
+    (await api.delete(`/bulk-runs/${p.runId}/stops/${p.stopId}`)).data.data,
   );
 }
 

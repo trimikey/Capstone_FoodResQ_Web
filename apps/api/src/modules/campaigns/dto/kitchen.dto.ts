@@ -171,3 +171,27 @@ export class CreateMealFeedbackDto {
   @MaxLength(500)
   comment?: string;
 }
+
+// ── QR nhận suất ăn của người thụ hưởng ────────────────────────────────────────
+
+export class ScanHandoffDto {
+  @ApiProperty({ description: 'Mã QR người nhận hiển thị trên ứng dụng của họ' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/, { message: 'Mã QR không đúng định dạng.' })
+  qrToken!: string;
+}
+
+export class CreateBeneficiaryFeedbackDto {
+  @ApiProperty({ example: 5, description: 'Mức hài lòng 1–5' })
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  @Type(() => Number)
+  satisfaction!: number;
+
+  @ApiPropertyOptional({ example: 'Suất ăn nóng, đủ phần.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
+}

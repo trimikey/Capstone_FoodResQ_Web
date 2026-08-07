@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, View, StyleSheet } from 'react-native';
+import { InteractionManager, ScrollView, View, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Dialog, Portal, Text, Button } from 'react-native-paper';
 import {
@@ -10,7 +10,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, useFocusEffect } from 'expo-router';
+import { Redirect, router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
   useAcceptOffer,
@@ -31,6 +31,8 @@ import { getCurrentCoords, getLocationLabel, isLegacyTestLocation } from '@/serv
 import { reverseGeocode } from '@/services/geocoding';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
+
+const OFFER_SHEET_SNAP_POINTS = ['46%'];
 
 function formatKm(km: unknown): string | null {
   if (km == null) return null;
@@ -58,8 +60,12 @@ function countdown(expiresAt: string, now: number): string {
   return `Còn ${mm}:${String(ss).padStart(2, '0')}`;
 }
 
+function isExpiredAt(expiresAt: string, now: number): boolean {
+  return new Date(expiresAt).getTime() - now <= 0;
+}
+
 function isExpired(offer: TaskOffer, now: number): boolean {
-  return new Date(offer.expiresAt).getTime() - now <= 0;
+  return isExpiredAt(offer.expiresAt, now);
 }
 
 function offerSortValue(offer: TaskOffer): number {
@@ -68,18 +74,18 @@ function offerSortValue(offer: TaskOffer): number {
 }
 
 function offerDetails(offer: TaskOffer) {
-  const delivery = offer.delivery;
-  const reservation = delivery?.reservation;
-  const listing = reservation?.listing;
-  const receiver = reservation?.receiver;
+  const { delivery } = offer;
+  const reservation = delivery.reservation;
+  const transport = delivery.campaignTransport;
 
   return {
-    title: listing?.title ?? 'Đơn giao hàng',
+    title: reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch',
     quantity: reservation?.quantity ?? null,
-    pickupAddress: listing?.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
-    dropoffAddress: receiver?.address ?? 'Theo địa chỉ người nhận',
-    distanceLabel: formatKm(delivery?.distanceKm),
+    pickupAddress: delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
+    dropoffAddress: delivery.destination.address ?? reservation?.receiver?.address ?? 'Chưa có địa chỉ giao hàng',
+    distanceLabel: formatKm(delivery.distanceKm),
     offeredTime: formatTime(offer.offeredAt),
+    isCampaignTransport: delivery.source === 'campaign_transport',
   };
 }
 
@@ -91,12 +97,16 @@ function offerDetails(offer: TaskOffer) {
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
+  useDeliveryOfferSocket();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,
     isError: isVolunteerError,
     refetch: refetchVolunteer,
   } = useVolunteerMe();
+  const hasVerifiedShipper = volunteer?.specializations.some(
+    (s) => s.specialization === 'shipper' && s.isVerified
+  ) === true;
   useDeliveryOfferSocket(); // nhận lời mời realtime, không chờ poll 15s
   const accept = useAcceptOffer();
   const reject = useRejectOffer();
@@ -104,13 +114,16 @@ export default function VolunteerOffersScreen() {
   const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
   const updateLocation = useUpdateLocation();
-  const [now, setNow] = useState(() => Date.now());
   const [actingId, setActingId] = useState<string | null>(null);
   const [resolvedAddress, setResolvedAddress] = useState<{ key: string; value: string } | null>(null);
   const [deferredIds, setDeferredIds] = useState<string[]>([]);
   const [facePromptVisible, setFacePromptVisible] = useState(false);
+  const [renderNow, setRenderNow] = useState(() => Date.now());
   const lastPromptedIdRef = useRef<string | null>(null);
   const needsFaceEnrollment = faceEnrollment.data?.enrolled === false;
+  const handleOfferExpired = useCallback(() => {
+    setRenderNow(Date.now());
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -123,14 +136,9 @@ export default function VolunteerOffersScreen() {
     [data]
   );
 
-  useEffect(() => {
-    if (offers.length === 0) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [offers.length]);
   const activeOffer = useMemo(
-    () => offers.find((offer) => !deferredIds.includes(offer.id) && !isExpired(offer, now)) ?? null,
-    [deferredIds, now, offers]
+    () => offers.find((offer) => !deferredIds.includes(offer.id) && !isExpired(offer, renderNow)) ?? null,
+    [deferredIds, offers, renderNow]
   );
   const queueOffers = useMemo(
     () => offers.filter((offer) => offer.id !== activeOffer?.id),
@@ -307,7 +315,7 @@ export default function VolunteerOffersScreen() {
 
   const renderPriorityCard = (offer: TaskOffer) => {
     const details = offerDetails(offer);
-    const expired = isExpired(offer, now);
+    const expired = isExpired(offer, renderNow);
     const busy = actingId === offer.id;
 
     return (
@@ -349,7 +357,10 @@ export default function VolunteerOffersScreen() {
         </View>
 
         <View style={styles.priorityMetaRow}>
-          <MetaPill icon="timer-sand" text={countdown(offer.expiresAt, now)} danger={expired} />
+          <CountdownMetaPill
+            expiresAt={offer.expiresAt}
+            onExpire={handleOfferExpired}
+          />
           {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} tone="purple" /> : null}
           {details.offeredTime ? <MetaPill icon="clock-outline" text={details.offeredTime} tone="blue" /> : null}
         </View>
@@ -398,7 +409,7 @@ export default function VolunteerOffersScreen() {
   };
 
   const renderItem = ({ item }: { item: TaskOffer }) => {
-    const expired = isExpired(item, now);
+    const expired = isExpired(item, renderNow);
     const busy = actingId === item.id;
     const deferred = deferredIds.includes(item.id);
     const details = offerDetails(item);
@@ -436,9 +447,11 @@ export default function VolunteerOffersScreen() {
               size={15}
               color={expired ? COLORS.danger : COLORS.onSurfaceVariant}
             />
-            <Text style={[styles.countdown, expired && { color: COLORS.danger }]}>
-              {countdown(item.expiresAt, now)}
-            </Text>
+            <CountdownText
+              expiresAt={item.expiresAt}
+              onExpire={handleOfferExpired}
+              style={[styles.countdown, expired && styles.countdownDanger]}
+            />
           </View>
           <View style={styles.queueActions}>
             <Button
@@ -503,13 +516,13 @@ export default function VolunteerOffersScreen() {
   const renderOfferSheet = () => {
     if (!activeOffer) return null;
     const details = offerDetails(activeOffer);
-    const expired = isExpired(activeOffer, now);
+    const expired = isExpired(activeOffer, renderNow);
     const busy = actingId === activeOffer.id;
 
     return (
       <BottomSheetModal
         ref={offerSheetRef}
-        snapPoints={['46%']}
+        snapPoints={OFFER_SHEET_SNAP_POINTS}
         backdropComponent={renderBackdrop}
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.sheetHandle}
@@ -547,7 +560,10 @@ export default function VolunteerOffersScreen() {
           </View>
 
           <View style={styles.priorityMetaRow}>
-            <MetaPill icon="timer-sand" text={countdown(activeOffer.expiresAt, now)} danger={expired} />
+            <CountdownMetaPill
+              expiresAt={activeOffer.expiresAt}
+              onExpire={handleOfferExpired}
+            />
             {details.distanceLabel ? <MetaPill icon="map-marker-distance" text={details.distanceLabel} tone="blue" /> : null}
             {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} tone="purple" /> : null}
           </View>
@@ -596,6 +612,10 @@ export default function VolunteerOffersScreen() {
       ? `${offers.length} lời mời đang chờ, ${queueOffers.length} đơn trong hàng chờ`
       : 'Nếu chưa có lời mời, hãy kiểm tra đơn gần vị trí này đã chọn giao hàng.';
   })();
+
+  if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
+    return <Redirect href="/(app)/volunteer/campaigns" />;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -716,7 +736,7 @@ export default function VolunteerOffersScreen() {
           data={queueOffers}
           keyExtractor={(item: TaskOffer, index) => item.id ?? `${item.deliveryId}-${index}`}
           renderItem={renderItem}
-          extraData={{ now, actingId, deferredIds, activeOfferId: activeOffer?.id }}
+          extraData={{ actingId, deferredIds, activeOfferId: activeOffer?.id, renderNow }}
           contentContainerStyle={styles.list}
           ListHeaderComponent={renderListHeader}
           refreshing={isRefetching}
@@ -802,12 +822,29 @@ const MapWatchCard = memo(function MapWatchCard({
 }) {
   const hasRoute = Boolean(route?.pickup || route?.dropoff);
   const hasMap = listings.length > 0 || hasRoute;
+  const mapKey = [
+    center?.lat,
+    center?.lng,
+    route?.pickup?.lat,
+    route?.pickup?.lng,
+    route?.dropoff?.lat,
+    route?.dropoff?.lng,
+    listings.map((item) => `${item.id}:${item.lat}:${item.lng}`).join('|'),
+  ].join(':');
+  const [readyMapKey, setReadyMapKey] = useState<string | null>(null);
   const nearest = hasRoute ? [] : listings.slice(0, compact ? 2 : 3);
   const resolvedCenter =
     center ??
     (route?.pickup ? { lat: route.pickup.lat, lng: route.pickup.lng } : null) ??
     (route?.dropoff ? { lat: route.dropoff.lat, lng: route.dropoff.lng } : null) ??
     (listings[0] ? { lat: listings[0].lat, lng: listings[0].lng } : null);
+
+  useEffect(() => {
+    if (!hasMap) return;
+
+    const task = InteractionManager.runAfterInteractions(() => setReadyMapKey(mapKey));
+    return () => task.cancel();
+  }, [hasMap, mapKey]);
 
   return (
     <View style={[styles.watchCard, compact && styles.watchCardCompact]}>
@@ -832,7 +869,7 @@ const MapWatchCard = memo(function MapWatchCard({
         </View>
       </View>
 
-      {hasMap ? (
+      {hasMap && readyMapKey === mapKey ? (
         <>
           <View style={[styles.mapFrame, compact && styles.mapFrameCompact]}>
             <ListingsMapView
@@ -859,16 +896,18 @@ const MapWatchCard = memo(function MapWatchCard({
         <View style={[styles.radarPanel, compact && styles.radarPanelCompact]}>
           <View style={styles.radarCircle}>
             <MaterialCommunityIcons
-              name={isLoading ? 'map-search-outline' : 'map-marker-question-outline'}
+              name={isLoading || hasMap ? 'map-search-outline' : 'map-marker-question-outline'}
               size={32}
               color={COLORS.blue}
             />
           </View>
           <Text style={styles.radarTitle}>
-            {isLoading ? 'Đang đọc khu vực quanh bạn' : 'Chưa có điểm quanh vị trí này'}
+            {isLoading || hasMap ? 'Đang chuẩn bị bản đồ' : 'Chưa có điểm quanh vị trí này'}
           </Text>
           <Text style={styles.radarText}>
-            Ứng dụng sẽ tự cập nhật khi vị trí hoặc dữ liệu gần bạn thay đổi.
+            {hasMap
+              ? 'Bản đồ sẽ hiển thị sau khi màn hình sẵn sàng.'
+              : 'Ứng dụng sẽ tự cập nhật khi vị trí hoặc dữ liệu gần bạn thay đổi.'}
           </Text>
         </View>
       )}
@@ -982,6 +1021,53 @@ function CompactLine({
       </Text>
     </View>
   );
+}
+
+const CountdownText = memo(function CountdownText({
+  expiresAt,
+  onExpire,
+  style,
+}: {
+  expiresAt: string;
+  onExpire?: () => void;
+  style?: StyleProp<TextStyle>;
+}) {
+  const { clockNow } = useCountdownClock(expiresAt, onExpire);
+
+  return <Text style={style}>{countdown(expiresAt, clockNow)}</Text>;
+});
+
+function CountdownMetaPill({ expiresAt, onExpire }: { expiresAt: string; onExpire?: () => void }) {
+  const { clockNow, expired } = useCountdownClock(expiresAt, onExpire);
+
+  return (
+    <View style={[styles.metaPill, expired ? styles.metaPillDanger : { backgroundColor: COLORS.tealContainer }]}>
+      <MaterialCommunityIcons name="timer-sand" size={14} color={expired ? COLORS.danger : COLORS.teal} />
+      <Text style={[styles.metaPillText, { color: COLORS.teal }, expired && styles.metaPillTextDanger]}>
+        {countdown(expiresAt, clockNow)}
+      </Text>
+    </View>
+  );
+}
+
+function useCountdownClock(expiresAt: string, onExpire?: () => void) {
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const notifiedRef = useRef(false);
+  const expired = isExpiredAt(expiresAt, clockNow);
+
+  useEffect(() => {
+    notifiedRef.current = false;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+
+  useEffect(() => {
+    if (!expired || notifiedRef.current) return;
+    notifiedRef.current = true;
+    onExpire?.();
+  }, [expired, onExpire]);
+
+  return { clockNow, expired };
 }
 
 function MetaPill({
@@ -1303,6 +1389,7 @@ const styles = StyleSheet.create({
   queueFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   queueTimer: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
   countdown: { fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  countdownDanger: { color: COLORS.danger },
   queueActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   queueAcceptBtn: { borderRadius: 999 },
   queueActionLabel: { fontSize: 12, fontWeight: '800', marginHorizontal: 8 },

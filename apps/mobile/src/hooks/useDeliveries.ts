@@ -110,6 +110,25 @@ interface ListingBrief {
   imageUrls: string[] | null;
 }
 
+export interface CampaignTransportBrief {
+  id: string;
+  status: string;
+  campaignId: string;
+  campaignTitle: string;
+  providerName: string;
+  providerAddress: string | null;
+  kitchenAddress: string;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+}
+
+interface DeliverySourceFields {
+  source: 'reservation' | 'campaign_transport';
+  campaignTransport: CampaignTransportBrief | null;
+  pickup: { address: string | null; lng: number | null; lat: number | null };
+  destination: { address: string | null; lng: number | null; lat: number | null };
+}
+
 /** Một lời mời giao hàng đang chờ (GET /deliveries/my/offers). */
 export interface TaskOffer {
   id: string;
@@ -117,7 +136,7 @@ export interface TaskOffer {
   status: string;
   offeredAt: string;
   expiresAt: string;
-  delivery: {
+  delivery: DeliverySourceFields & {
     id: string;
     status: DeliveryStatus;
     distanceKm: number | null;
@@ -125,13 +144,13 @@ export interface TaskOffer {
       quantity: number;
       listing: ListingBrief;
       receiver: { address: string | null } | null;
-    };
+    } | null;
     coords: DeliveryCoords | null;
   };
 }
 
 /** Đơn đang giao của shipper (GET /deliveries/my/active). */
-export interface ActiveDelivery {
+export interface ActiveDelivery extends DeliverySourceFields {
   id: string;
   status: DeliveryStatus;
   distanceKm: number | null;
@@ -145,22 +164,23 @@ export interface ActiveDelivery {
       address: string | null;
       user: { fullName: string; phone: string | null };
     } | null;
-  };
+  } | null;
   coords: DeliveryCoords | null;
 }
 
 /** Một chuyến trong lịch sử (GET /deliveries/my/history). */
-export interface DeliveryHistoryItem {
+export interface DeliveryHistoryItem extends DeliverySourceFields {
   id: string;
   status: DeliveryStatus;
   distanceKm: number | null;
   deliveredAt: string | null;
   failedReason: string | null;
+  coords: DeliveryCoords | null;
   reservation: {
     quantity: number;
     listing: ListingBrief;
     receiver: { user: { fullName: string } } | null;
-  };
+  } | null;
 }
 
 /** Bảng thành tích shipper (GET /deliveries/my/stats). */
@@ -353,10 +373,17 @@ export function useDeliveryOfferSocket(enabled = true) {
       socket.on('delivery:offer', () => {
         void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
       });
+      // Để trôi lời mời → BE tắt sẵn sàng. Đồng bộ lại nút gạt, nếu không nó vẫn
+      // hiện "Đang sẵn sàng" trong khi thực tế đã offline.
+      socket.on('shipper:auto_offline', () => {
+        void qc.invalidateQueries({ queryKey: ['volunteer', 'me'] });
+        void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+      });
     })();
     return () => {
       cancelled = true;
       socket?.off('delivery:offer');
+      socket?.off('shipper:auto_offline');
       socket?.disconnect();
     };
   }, [enabled, accessToken, qc]);

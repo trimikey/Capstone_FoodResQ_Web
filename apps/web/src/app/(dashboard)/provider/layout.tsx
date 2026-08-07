@@ -7,12 +7,12 @@ import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
 import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
-import { mediaUrl } from '@/lib/utils';
 
 const PROVIDER_NAV = [
   { href: '/provider', label: 'Trang quản trị', icon: 'dashboard' },
   { href: '/provider/create', label: 'Tạo bài đăng', icon: 'add_circle' },
   { href: '/provider/orders', label: 'Theo dõi đơn', icon: 'local_shipping' },
+  { href: '/provider/requests', label: 'Yêu cầu', icon: 'inbox' },
   { href: '/campaigns', label: 'Chiến dịch', icon: 'campaign' },
   { href: '/provider/esg', label: 'Báo cáo CSR', icon: 'analytics' },
   { href: '/profile', label: 'Cài đặt', icon: 'settings' },
@@ -46,15 +46,27 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
+    // Layout dashboard chừa sẵn 104px dưới header bằng padding, và dải đó mang nền kem
+    // của dashboard. Kéo ngược lên rồi bù lại padding để nền khu NCC phủ kín,
+    // không còn vệt màu lạ ở giữa trang.
+    <div className="min-h-screen bg-[#FAFBF9] font-body-md md:-mt-[104px] md:pt-[104px]">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4">
-        <button onClick={() => setMobileMenuOpen(true)} className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
-          <span className="material-symbols-outlined text-[#236c2a]">menu</span>
-        </button>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/"
+            aria-label="Về trang chủ"
+            className="p-2 hover:bg-neutral-100 rounded-lg transition-colors"
+          >
+            <span className="material-symbols-outlined text-[#236c2a]">arrow_back</span>
+          </Link>
+          <button onClick={() => setMobileMenuOpen(true)} className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+            <span className="material-symbols-outlined text-[#236c2a]">menu</span>
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-8 w-auto object-contain" />
@@ -62,7 +74,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
           {user.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
+            <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
           ) : (
             <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
           )}
@@ -103,12 +115,19 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
-      {/* Desktop Sidebar - nền trắng */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white z-40">
-        {/* Logo Header - không border dưới */}
-        <div className="flex items-center px-5 py-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-12 w-auto object-contain" />
+      {/* Desktop Sidebar — bắt đầu NGAY DƯỚI header chung (fixed, cao 104px).
+          Để top-0 thì phần đầu sidebar chui xuống dưới header và bị che. */}
+      <aside className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-64 flex-col bg-white z-40">
+        {/* Tiêu đề vai trò thay cho logo — logo đã có sẵn trên thanh header phía trên,
+            để ở đây vừa lặp vừa bị cắt khi cuộn. */}
+        <div className="px-5 pt-6 pb-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+            Nhà cung cấp
+          </p>
+          <p className="mt-1 text-base font-extrabold text-neutral-900 truncate">
+            {user.fullName}
+          </p>
+          <p className="text-xs text-neutral-500 mt-0.5">Quản lý cửa hàng thực phẩm</p>
         </div>
 
         {/* Navigation */}
@@ -137,33 +156,22 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
       {/* Main Content - nền xanh nhạt */}
       <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
-        {/* TopAppBar - Desktop - chỉ giữ user info, đã bỏ tiêu đề trang góc trái */}
-        <header className="hidden lg:flex justify-end items-center w-full px-6 h-16 sticky top-0 z-30">
-          <div className="flex items-center gap-3">
-            {/* Notifications */}
-            <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
-              <span className="material-symbols-outlined text-neutral-700">notifications</span>
-            </button>
-
-            {/* User Info */}
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold text-neutral-800">{user.fullName}</p>
-                <p className="text-xs text-neutral-500">Quản trị viên</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
-                {user.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-            </div>
-          </div>
+        {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
+        <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-neutral-700 hover:bg-white hover:text-[#236c2a] transition-colors"
+            aria-label="Về trang chủ"
+          >
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+            <span>Về trang chủ</span>
+          </Link>
+          <button className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-full transition-colors">
+            <span className="material-symbols-outlined text-neutral-700">notifications</span>
+          </button>
         </header>
 
-        {/* Scrollable Canvas */}
+        {/* Main Content */}
         <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
           {children}
         </div>

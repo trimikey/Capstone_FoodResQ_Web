@@ -59,7 +59,12 @@ export default function ShipperOfferWatcher() {
         })
       }
       onReject={() => {
-        rejectOffer.mutate({ deliveryId: offer.deliveryId });
+        // Từ chối thất bại mà im lặng thì lời mời vẫn treo ở BE: nó sẽ hết hạn và
+        // kéo theo việc tự tắt "sẵn sàng" của shipper — phải báo để họ biết mà thử lại.
+        rejectOffer.mutate(
+          { deliveryId: offer.deliveryId },
+          { onError: () => toast.error('Không gửi được từ chối. Lời mời có thể vẫn đang chờ bạn.') },
+        );
         dismiss(offer.id);
       }}
       onClose={() => dismiss(offer.id)}

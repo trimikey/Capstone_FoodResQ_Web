@@ -88,7 +88,7 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
   }
 
   return (
-    <div className="cm-card p-4">
+    <div className="cm-card p-4 min-w-0">
       <div className="flex items-center justify-between gap-2 mb-2">
         <h3 className="font-bold text-neutral-900 text-sm truncate flex-1">{c.title}</h3>
         <span className={st.chip}>{st.label}</span>

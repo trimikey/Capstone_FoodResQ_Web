@@ -10,6 +10,7 @@ import {
   useCancelCampaign,
   useCompleteCampaign,
   useConfirmDonation,
+  useConfirmCampaignTransportReceipt,
   useCampaignChangeRequests,
   useSubmitCampaignChange,
   useCancelCampaignChange,
@@ -44,6 +45,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS } from '@/theme/design';
 
 const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -53,6 +55,7 @@ const CHANGE_STATUS_META: Record<string, { label: string; color: string; bg: str
   cancelled: { label: 'Đã huỷ', color: '#6b7280', bg: '#f3f4f6' },
 };
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+type CampaignAssignmentItem = NonNullable<Campaign['assignments']>[number];
 
 function InfoRow({ icon, children }: { icon: any; children: React.ReactNode }) {
   return (
@@ -144,6 +147,22 @@ function assignmentReviewLabel(status: string): string {
   }
 }
 
+function assignmentReviewTone(status: string): { color: string; bg: string } {
+  switch (status) {
+    case 'assigned':
+    case 'approved':
+    case 'completed':
+      return { color: COLORS.primary, bg: COLORS.primaryContainer };
+    case 'rejected':
+    case 'absent':
+      return { color: COLORS.error, bg: COLORS.errorContainer };
+    case 'pending':
+      return { color: '#b45309', bg: '#fef3c7' };
+    default:
+      return { color: COLORS.onSurfaceVariant, bg: COLORS.surfaceContainerLow };
+  }
+}
+
 /**
  * Quản lý chiến dịch bếp ăn (Charity-org) — xem chi tiết + bắt đầu/kết thúc
  * chiến dịch, xác nhận nguyên liệu quyên góp, xem danh sách TNV đã ứng tuyển.
@@ -155,6 +174,7 @@ export default function CharityCampaignDetailScreen() {
   const cancelMut = useCancelCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
+  const confirmReceiptMut = useConfirmCampaignTransportReceipt();
   const reviewAssignmentMut = useReviewAssignment();
   const canRequestProviders = c?.status === 'open' || c?.status === 'in_progress';
   const { data: providers = [] } = useProviders(canRequestProviders);
@@ -173,12 +193,16 @@ export default function CharityCampaignDetailScreen() {
   const [changeDialog, setChangeDialog] = useState(false);
   const [cancelVisible, setCancelVisible] = useState(false);
   const [proposalVisible, setProposalVisible] = useState(false);
+  const [reviewShiftTarget, setReviewShiftTarget] = useState<CampaignAssignmentItem | null>(null);
+  const [selectedReviewShiftId, setSelectedReviewShiftId] = useState('');
+  const [receiptTransportId, setReceiptTransportId] = useState<string | null>(null);
+  const [receiptNote, setReceiptNote] = useState('');
 
   const Header = (
     <View style={styles.header}>
       <BackButton />
       <Text variant="titleMedium" style={styles.headerTitle}>Quản lý chiến dịch</Text>
-      <View style={{ width: 24 }} />
+      <NotificationBell />
     </View>
   );
 
@@ -207,6 +231,9 @@ export default function CharityCampaignDetailScreen() {
   const supplyProgress = c.supplyProgress ?? [];
   const pendingDonations = donations.filter((d) => d.status !== 'received').length;
   const receivedDonations = donations.length - pendingDonations;
+  const campaignTransportRequests = sentProviderRequests.filter(
+    (request) => request.campaign?.id === c.id && request.transport,
+  );
   const pendingAssignments = assignments.filter((assignment) => assignment.status === 'pending').length;
   const totalSlots = slots.reduce((sum, slot) => sum + slot.needed, 0);
   const filledSlots = slots.reduce((sum, slot) => sum + slot.filled, 0);
@@ -222,6 +249,9 @@ export default function CharityCampaignDetailScreen() {
       : startDayOffset < 0
         ? 'Đã quá ngày tổ chức'
         : 'Bắt đầu chiến dịch';
+  const eligibleReviewShifts = reviewShiftTarget
+    ? shifts.filter((shift) => (!shift.role || shift.role === reviewShiftTarget.role) && shift.slotsFilled < shift.slotsNeeded)
+    : [];
 
   const handleStart = async () => {
     if (!canStartToday) {
@@ -296,6 +326,22 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
+  const handleConfirmTransportReceipt = async () => {
+    if (!receiptTransportId) return;
+    try {
+      await confirmReceiptMut.mutateAsync({
+        campaignId: c.id,
+        transportId: receiptTransportId,
+        note: receiptNote,
+      });
+      setReceiptTransportId(null);
+      setReceiptNote('');
+      Popup.show({ type: 'success', text1: 'Đã xác nhận nhận thực phẩm' });
+    } catch (err) {
+      Popup.show({ type: 'error', text1: 'Xác nhận thất bại', text2: getErrorMessage(err) });
+    }
+  };
+
   const handleRemoveMenu = async (itemId: string) => {
     try {
       await removeMenuMut.mutateAsync({ itemId, campaignId: c.id });
@@ -305,9 +351,11 @@ export default function CharityCampaignDetailScreen() {
     }
   };
 
-  const handleReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected') => {
+  const submitReviewAssignment = async (assignmentId: string, action: 'approved' | 'rejected', shiftId?: string) => {
     try {
-      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action });
+      await reviewAssignmentMut.mutateAsync({ campaignId: c.id, assignmentId, action, shiftId });
+      setReviewShiftTarget(null);
+      setSelectedReviewShiftId('');
       Popup.show({
         type: 'success',
         text1: action === 'approved' ? 'Đã duyệt tình nguyện viên' : 'Đã từ chối đăng ký',
@@ -315,6 +363,28 @@ export default function CharityCampaignDetailScreen() {
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Cập nhật đăng ký thất bại', text2: getErrorMessage(err) });
     }
+  };
+
+  const handleReviewAssignment = async (assignment: CampaignAssignmentItem, action: 'approved' | 'rejected') => {
+    if (action === 'rejected') {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    if (shifts.length === 0) {
+      await submitReviewAssignment(assignment.id, action);
+      return;
+    }
+    const firstAvailable = shifts.find((shift) => (!shift.role || shift.role === assignment.role) && shift.slotsFilled < shift.slotsNeeded);
+    if (!firstAvailable) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa có ca phù hợp',
+        text2: 'Hãy tăng slot hoặc thêm ca trước khi duyệt tình nguyện viên này.',
+      });
+      return;
+    }
+    setReviewShiftTarget(assignment);
+    setSelectedReviewShiftId(firstAvailable.id);
   };
 
   const handleSendProviderRequest = async (provider: ProviderSummary) => {
@@ -446,39 +516,77 @@ export default function CharityCampaignDetailScreen() {
           {assignments.length === 0 ? (
             <Text style={styles.muted}>Chưa có tình nguyện viên nào ứng tuyển.</Text>
           ) : (
-            assignments.map((a) => (
-              <View key={a.id} style={styles.assignRow}>
-                <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.onSurfaceVariant} />
-                <Text style={styles.assignName}>{a.volunteer.user.fullName}</Text>
-                <View style={styles.rolePill}>
-                  <Text style={styles.rolePillText}>{ASSIGNMENT_ROLE_LABEL[a.role] ?? a.role}</Text>
-                </View>
-                {a.status === 'pending' ? (
-                  <View style={styles.reviewActions}>
-                    <Button
-                      mode="text"
-                      compact
-                      textColor={COLORS.error}
-                      disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'rejected')}
-                    >
-                      Từ chối
-                    </Button>
-                    <Button
-                      mode="contained-tonal"
-                      compact
-                      textColor={COLORS.primary}
-                      disabled={reviewAssignmentMut.isPending}
-                      onPress={() => handleReviewAssignment(a.id, 'approved')}
-                    >
-                      Duyệt
-                    </Button>
+            assignments.map((a) => {
+              const shift = a.shiftId ? shifts.find((s) => s.id === a.shiftId) : null;
+              const statusTone = assignmentReviewTone(a.status);
+              const roleLabel = ASSIGNMENT_ROLE_LABEL[a.role] ?? a.role;
+              const isPending = a.status === 'pending';
+
+              return (
+                <View key={a.id} style={styles.assignCard}>
+                  <View style={styles.assignHeader}>
+                    <View style={styles.assignAvatar}>
+                      <Text style={styles.assignAvatarText}>{a.volunteer.user.fullName.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.assignTitleBlock}>
+                      <Text style={styles.assignName} numberOfLines={1}>{a.volunteer.user.fullName}</Text>
+                      <Text style={styles.assignSubMeta}>Tình nguyện viên đăng ký chiến dịch</Text>
+                    </View>
+                    <View style={[styles.assignmentStatusPill, { backgroundColor: statusTone.bg }]}>
+                      <Text style={[styles.assignmentStatusText, { color: statusTone.color }]}>
+                        {assignmentReviewLabel(a.status)}
+                      </Text>
+                    </View>
                   </View>
-                ) : (
-                  <Text style={styles.assignmentStatus}>{assignmentReviewLabel(a.status)}</Text>
-                )}
-              </View>
-            ))
+
+                  <View style={styles.assignInfoGrid}>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Vai trò</Text>
+                      <Text style={styles.assignInfoValue}>{roleLabel}</Text>
+                    </View>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Ca đăng ký</Text>
+                      <Text style={styles.assignInfoValue}>
+                        {shift ? `${shift.label} · ${shift.startTime}-${shift.endTime}` : 'Đăng ký vai trò tổng'}
+                      </Text>
+                    </View>
+                    <View style={styles.assignInfoCell}>
+                      <Text style={styles.assignInfoLabel}>Slot ca</Text>
+                      <Text style={styles.assignInfoValue}>
+                        {shift ? `${shift.slotsFilled}/${shift.slotsNeeded}` : 'Theo nhu cầu tổng'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {isPending ? (
+                    <View style={styles.reviewActions}>
+                      <Button
+                        mode="outlined"
+                        compact
+                        icon="close"
+                        textColor={COLORS.error}
+                        style={styles.reviewRejectButton}
+                        disabled={reviewAssignmentMut.isPending}
+                        onPress={() => handleReviewAssignment(a, 'rejected')}
+                      >
+                        Từ chối
+                      </Button>
+                      <Button
+                        mode="contained"
+                        compact
+                        icon="check"
+                        buttonColor={COLORS.primary}
+                        style={styles.reviewApproveButton}
+                        disabled={reviewAssignmentMut.isPending}
+                        onPress={() => handleReviewAssignment(a, 'approved')}
+                      >
+                        Duyệt
+                      </Button>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })
           )}
         </Section>
 
@@ -584,6 +692,41 @@ export default function CharityCampaignDetailScreen() {
                 <View key={i} style={styles.tag}><Text style={styles.tagText}>{formatSupplyItem(s)}</Text></View>
               ))}
             </View>
+          </Section>
+        ) : null}
+
+        {campaignTransportRequests.length > 0 ? (
+          <Section title="Vận chuyển đến bếp">
+            {campaignTransportRequests.map((request) => {
+              const transport = request.transport!;
+              const label = transportStatusLabel(transport.status);
+              return (
+                <View key={transport.id} style={styles.transportRow}>
+                  <MaterialCommunityIcons
+                    name={transport.status === 'received' ? 'check-circle' : transport.status === 'failed' ? 'alert-circle' : 'truck-delivery-outline'}
+                    size={20}
+                    color={transport.status === 'received' ? COLORS.primary : transport.status === 'failed' ? COLORS.error : COLORS.onSurfaceVariant}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.donationItem}>{request.provider?.businessName ?? 'Nhà cung cấp'}</Text>
+                    <Text style={styles.muted}>{label}</Text>
+                    {transport.failureReason ? <Text style={styles.transportError}>{transport.failureReason}</Text> : null}
+                    {transport.receiptNote ? <Text style={styles.donationNote}>“{transport.receiptNote}”</Text> : null}
+                  </View>
+                  {transport.status === 'delivered' ? (
+                    <Button
+                      mode="contained-tonal"
+                      compact
+                      textColor={COLORS.primary}
+                      onPress={() => setReceiptTransportId(transport.id)}
+                      disabled={confirmReceiptMut.isPending}
+                    >
+                      Xác nhận
+                    </Button>
+                  ) : null}
+                </View>
+              );
+            })}
           </Section>
         ) : null}
 
@@ -731,6 +874,125 @@ export default function CharityCampaignDetailScreen() {
             </Button>
             <Button mode="contained" buttonColor={COLORS.error} onPress={handleCancelCampaign} loading={cancelMut.isPending} disabled={cancelMut.isPending}>
               Huỷ chiến dịch
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={!!receiptTransportId}
+          onDismiss={() => {
+            if (!confirmReceiptMut.isPending) {
+              setReceiptTransportId(null);
+              setReceiptNote('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Xác nhận nhận thực phẩm</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.muted}>Xác nhận chỉ thực hiện sau khi đã kiểm tra thực phẩm shipper bàn giao tại bếp.</Text>
+            <TextInput
+              mode="outlined"
+              label="Ghi chú (tuỳ chọn)"
+              multiline
+              numberOfLines={3}
+              value={receiptNote}
+              onChangeText={setReceiptNote}
+              disabled={confirmReceiptMut.isPending}
+              outlineColor={COLORS.outline}
+              activeOutlineColor={COLORS.primary}
+              style={{ backgroundColor: COLORS.surface, marginTop: 12 }}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReceiptTransportId(null);
+                setReceiptNote('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={confirmReceiptMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              onPress={handleConfirmTransportReceipt}
+              loading={confirmReceiptMut.isPending}
+              disabled={confirmReceiptMut.isPending}
+            >
+              Xác nhận đã nhận
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={!!reviewShiftTarget}
+          onDismiss={() => {
+            if (!reviewAssignmentMut.isPending) {
+              setReviewShiftTarget(null);
+              setSelectedReviewShiftId('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Chọn ca trước khi duyệt</Dialog.Title>
+          <Dialog.ScrollArea style={styles.changeScrollArea}>
+            <ScrollView contentContainerStyle={styles.changeContent}>
+              {reviewShiftTarget ? (
+                <Text style={styles.formHint}>
+                  {reviewShiftTarget.volunteer.user.fullName} - {ASSIGNMENT_ROLE_LABEL[reviewShiftTarget.role] ?? reviewShiftTarget.role}
+                </Text>
+              ) : null}
+              {eligibleReviewShifts.map((shift) => {
+                const active = selectedReviewShiftId === shift.id;
+                return (
+                  <Pressable
+                    key={shift.id}
+                    onPress={() => setSelectedReviewShiftId(shift.id)}
+                    style={[styles.reviewShiftOption, active && styles.reviewShiftOptionActive]}
+                    disabled={reviewAssignmentMut.isPending}
+                  >
+                    <MaterialCommunityIcons
+                      name={active ? 'radiobox-marked' : 'radiobox-blank'}
+                      size={20}
+                      color={active ? COLORS.primary : COLORS.onSurfaceVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shiftLabel}>{shift.label}</Text>
+                      <Text style={styles.muted}>
+                        {shift.startTime}-{shift.endTime} - {shift.role ? ASSIGNMENT_ROLE_LABEL[shift.role] ?? shift.role : 'Ca chung'} - {shift.slotsFilled}/{shift.slotsNeeded}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReviewShiftTarget(null);
+                setSelectedReviewShiftId('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={reviewAssignmentMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              loading={reviewAssignmentMut.isPending}
+              disabled={!reviewShiftTarget || !selectedReviewShiftId || reviewAssignmentMut.isPending}
+              onPress={() => {
+                if (reviewShiftTarget) {
+                  void submitReviewAssignment(reviewShiftTarget.id, 'approved', selectedReviewShiftId);
+                }
+              }}
+            >
+              Duyệt & phân ca
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1066,6 +1328,20 @@ function ChangeRequestRow({
   );
 }
 
+function transportStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: 'Đang tìm shipper',
+    assigned: 'Shipper đã nhận chuyến',
+    heading_to_provider: 'Shipper đang đến nhà cung cấp',
+    picked_up: 'Đã nhận thực phẩm',
+    in_transit: 'Đang giao đến bếp',
+    delivered: 'Chờ xác nhận tại bếp',
+    received: 'Đã xác nhận nhận hàng',
+    failed: 'Giao hàng thất bại',
+  };
+  return labels[status] ?? status;
+}
+
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 }
@@ -1076,7 +1352,7 @@ const styles = StyleSheet.create({
     height: 56, paddingHorizontal: 20, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
   },
-  headerTitle: { fontWeight: '700', color: COLORS.onSurface },
+  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
   heroCard: {
@@ -1142,12 +1418,65 @@ const styles = StyleSheet.create({
   slotLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   slotLabel: { fontSize: 14, color: COLORS.onSurface },
   slotCount: { fontSize: 14, fontWeight: '600', color: COLORS.onSurfaceVariant },
-  assignRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
-  assignName: { flex: 1, fontSize: 14, color: COLORS.onSurface },
+  assignCard: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  assignHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  assignAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assignAvatarText: { color: COLORS.onPrimary, fontWeight: '800', fontSize: 16 },
+  assignTitleBlock: { flex: 1, minWidth: 0 },
+  assignName: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  assignSubMeta: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 1 },
+  assignInfoGrid: { gap: 8 },
+  assignInfoCell: {
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  assignInfoLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  assignInfoValue: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface, lineHeight: 18 },
   rolePill: { backgroundColor: COLORS.primaryContainer, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   rolePillText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
-  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  assignmentStatus: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
+  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-end' },
+  reviewRejectButton: { flex: 1, borderColor: COLORS.error },
+  reviewApproveButton: { flex: 1 },
+  reviewShiftOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: COLORS.surface,
+  },
+  reviewShiftOptionActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  assignmentStatusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  assignmentStatusText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   shiftRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.outline },
@@ -1176,8 +1505,10 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 19 },
   donationRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'center' },
+  transportRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, alignItems: 'center' },
   donationItem: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   donationNote: { fontSize: 13, color: COLORS.onSurfaceVariant, fontStyle: 'italic', marginTop: 2 },
+  transportError: { fontSize: 12, color: COLORS.error, marginTop: 2 },
   footer: {
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
     borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,

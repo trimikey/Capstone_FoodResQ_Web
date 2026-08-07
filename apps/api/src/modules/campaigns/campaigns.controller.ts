@@ -16,9 +16,12 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto } from './dto/campaign.dto';
+import { KitchenOpsService } from './kitchen-ops.service';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto } from './dto/campaign.dto';
+import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Public } from '@/common/decorators/public.decorator';
@@ -30,7 +33,10 @@ import { User } from '@prisma/client';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class CampaignsController {
-  constructor(private campaignsService: CampaignsService) {}
+  constructor(
+    private campaignsService: CampaignsService,
+    private kitchen: KitchenOpsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Danh sách chiến dịch bếp ăn đang mở' })
@@ -74,12 +80,6 @@ export class CampaignsController {
     return this.campaignsService.getPublicDetail(id);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết chiến dịch' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.campaignsService.findOne(id);
-  }
-
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
@@ -100,16 +100,42 @@ export class CampaignsController {
     return { url };
   }
 
-  @Post(':id/apply')
-  @UseGuards(RolesGuard)
+  @Post(':id/assignments')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Volunteer: đăng ký tham gia một vai trò' })
+  @ApiOperation({ summary: 'Volunteer: gửi đăng ký tham gia một vai trò (chờ charity duyệt)' })
+  createAssignment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ApplyCampaignDto,
+  ) {
+    return this.campaignsService.apply(id, user.id, dto);
+  }
+
+  @Post(':id/apply')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: alias tương thích cho đăng ký tham gia một vai trò' })
   apply(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
     @Body() dto: ApplyCampaignDto,
   ) {
     return this.campaignsService.apply(id, user.id, dto);
+  }
+
+  @Post(':id/shifts/:shiftId/apply')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: alias tương thích để đăng ký ca (chờ charity duyệt)' })
+  async applyToShift(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('shiftId', ParseUUIDPipe) shiftId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ApplyShiftDto,
+  ) {
+    const application = await this.kitchen.resolveShiftApplication(id, shiftId, dto);
+    return this.campaignsService.apply(id, user.id, application);
   }
 
   @Patch(':id/start')
@@ -204,7 +230,7 @@ export class CampaignsController {
   }
 
   @Post(':id/donations')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, ActiveAccountGuard)
   @Roles(UserRole.PROVIDER)
   @ApiOperation({ summary: 'Provider: quyên góp nguyên liệu cho chiến dịch' })
   pledge(
@@ -232,10 +258,11 @@ export class CampaignsController {
   async advance(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
+    @Body() dto: AdvanceCampaignTaskDto,
     @UploadedFile() photo?: Express.Multer.File,
   ) {
     const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
-    return this.campaignsService.advanceTask(id, user.id, proofUrl);
+    return this.campaignsService.advanceTask(id, user.id, dto, proofUrl);
   }
 
   @Post('requests')
@@ -291,12 +318,33 @@ export class CampaignsController {
     return this.campaignsService.submitProviderProposal(user.id, dto);
   }
 
+  @Post(':id/transports/:transportId/receive')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: xác nhận đã nhận thực phẩm từ shipper' })
+  receiveTransport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('transportId', ParseUUIDPipe) transportId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ConfirmCampaignTransportReceiptDto,
+  ) {
+    return this.campaignsService.confirmTransportReceipt(id, transportId, user.id, dto);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Chi tiết chiến dịch' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.findOne(id);
+  }
+
   // ─── Manage endpoints (trang /campaigns/[id]/manage/*) ─────────────────────
 
   @Get(':id/manage-detail')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Charity: chi tiết chiến dịch cho trang quản lý (bao gồm pending assignments)' })
-  getManageDetail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.campaignsService.getManageDetail(id);
+  getManageDetail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.getManageDetail(id, user.id);
   }
 
   @Patch(':id/assignments/:assignmentId/review')
@@ -312,7 +360,7 @@ export class CampaignsController {
     return this.campaignsService.reviewAssignment(id, assignmentId, user.id, dto);
   }
 
-  @Post(':id/distributions')
+  @Post(':id/manage/distributions')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Tổ chức: ghi nhận 1 đợt phát suất ăn (in_progress/completed)' })
@@ -324,7 +372,7 @@ export class CampaignsController {
     return this.campaignsService.createDistribution(id, user.id, dto);
   }
 
-  @Post(':id/shifts')
+  @Post(':id/manage/shifts')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Tổ chức: thêm ca trực cho chiến dịch' })
@@ -361,7 +409,7 @@ export class CampaignsController {
     return this.campaignsService.deleteShift(id, shiftId, user.id);
   }
 
-  @Post(':id/menu-items')
+  @Post(':id/manage/menu-items')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Tổ chức: thêm món vào thực đơn chiến dịch' })

@@ -1,9 +1,6 @@
 /**
  * Migration script: upload food assets lên Cloudinary.
  * Tự load CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET từ apps/web/.env.local
- * — không bao giờ in credential ra stdout.
- *
- *   node scripts/migrate-food-assets-to-cloudinary.cjs
  */
 
 const fs = require('node:fs');
@@ -50,32 +47,43 @@ function sha1Hex(str) {
 
 async function uploadFile(localPath, publicId) {
   const timestamp = Math.floor(Date.now() / 1000);
-  const params = `folder=${FOLDER}&public_id=${publicId}&timestamp=${timestamp}${API_SECRET}`;
-  const signature = sha1Hex(params);
+  const folder = FOLDER;
+  
+  // Build signature params (alphabetically sorted for Cloudinary)
+  const paramsToSign = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}`;
+  const signature = sha1Hex(paramsToSign + API_SECRET);
 
-  const boundary = '----foodresq' + Date.now();
   const fileBuffer = fs.readFileSync(localPath);
   const fileName = path.basename(localPath);
+  const boundary = '----FoodResQUpload' + Date.now();
 
-  const head = Buffer.from(
+  // Build multipart form data manually
+  let body = '';
+
+  // File field
+  body += `--${boundary}\r\n`;
+  body += `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`;
+  body += `Content-Type: image/png\r\n\r\n`;
+  
+  // Convert to buffer and concat with file content
+  const headerBuffer = Buffer.from(body, 'utf8');
+  const fileContentBuffer = fileBuffer;
+  
+  const footer = Buffer.from(
+    `\r\n--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="api_key"\r\n\r\n${API_KEY}\r\n` +
     `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
-      `Content-Type: image/png\r\n\r\n`,
-  );
-  const tail = Buffer.from(
+    `Content-Disposition: form-data; name="timestamp"\r\n\r\n${timestamp}\r\n` +
     `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="api_key"\r\n\r\n${API_KEY}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="timestamp"\r\n\r\n${timestamp}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="signature"\r\n\r\n${signature}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="folder"\r\n\r\n${FOLDER}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="public_id"\r\n\r\n${publicId}\r\n` +
-      `--${boundary}--\r\n`,
+    `Content-Disposition: form-data; name="signature"\r\n\r\n${signature}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="folder"\r\n\r\n${folder}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="public_id"\r\n\r\n${publicId}\r\n` +
+    `--${boundary}--\r\n`
   );
-  const body = Buffer.concat([head, fileBuffer, tail]);
+
+  const finalBody = Buffer.concat([headerBuffer, fileContentBuffer, footer]);
 
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -85,7 +93,7 @@ async function uploadFile(localPath, publicId) {
         method: 'POST',
         headers: {
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          'Content-Length': body.length,
+          'Content-Length': finalBody.length,
         },
       },
       (res) => {
@@ -106,13 +114,17 @@ async function uploadFile(localPath, publicId) {
       },
     );
     req.on('error', reject);
-    req.write(body);
+    req.write(finalBody);
     req.end();
   });
 }
 
 (async () => {
   const urls = fs.existsSync(OUTPUT) ? JSON.parse(fs.readFileSync(OUTPUT, 'utf8')) : {};
+  
+  console.log(`Cloud Name: ${CLOUD_NAME}`);
+  console.log(`Folder: ${FOLDER}\n`);
+  
   for (const file of FILES) {
     const local = path.join(PUBLIC_DIR, file);
     if (!fs.existsSync(local)) {
@@ -124,7 +136,7 @@ async function uploadFile(localPath, publicId) {
       console.log(`Uploading ${file} → ${FOLDER}/${publicId}`);
       const res = await uploadFile(local, publicId);
       urls[file] = res.secure_url;
-      console.log(`  ✓ uploaded`);
+      console.log(`  ✓ Uploaded: ${res.secure_url}`);
     } catch (err) {
       console.error(`  ✗ ${file}: ${err.message}`);
       process.exitCode = 1;

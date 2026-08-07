@@ -18,6 +18,8 @@ export default function RegistrationsPage() {
   const { campaign: c, openAction } = useManageContext();
   const [filter, setFilter] = useState<'all' | 'pending' | 'chef' | 'waiter' | 'shipper'>('all');
   const [decisions, setDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
+  const [reviewTarget, setReviewTarget] = useState<CampaignParticipant | null>(null);
+  const [selectedShiftId, setSelectedShiftId] = useState('');
   const review = useReviewAssignment();
   const startCampaign = useStartCampaign();
 
@@ -60,10 +62,11 @@ export default function RegistrationsPage() {
       : 'plan';
 
   const volunteers: CampaignParticipant[] = c.participants ?? [];
-  const filteredVolunteers: CampaignParticipant[] =
-    filter === 'all' || filter === 'pending'
-      ? volunteers
-      : volunteers.filter((v) => v.role === filter);
+  const filteredVolunteers: CampaignParticipant[] = (() => {
+    if (filter === 'all') return volunteers;
+    if (filter === 'pending') return volunteers.filter((v) => !v.status || v.status === 'pending' || v.status === 'applied');
+    return volunteers.filter((v) => v.role === filter);
+  })();
 
   const pendingCount = volunteers.filter(
     (v) => !v.status || v.status === 'pending' || v.status === 'applied',
@@ -99,14 +102,27 @@ export default function RegistrationsPage() {
     return list;
   }, [c.chefSlotsNeeded, c.chefSlotsFilled, c.waiterSlotsNeeded, c.waiterSlotsFilled, c.shipperSlotsNeeded, c.shipperSlotsFilled]);
 
-  function decide(id: string, name: string, action: 'approved' | 'rejected') {
+  const shifts = useMemo(() => c.shifts ?? [], [c.shifts]);
+  const eligibleShifts = useMemo(() => {
+    if (!reviewTarget) return [];
+    return shifts.filter((s) => (!s.role || s.role === reviewTarget.role) && s.slotsFilled < s.slotsNeeded);
+  }, [reviewTarget, shifts]);
+
+  function submitDecision(
+    id: string,
+    name: string,
+    action: 'approved' | 'rejected',
+    shiftId?: string,
+  ) {
     // Optimistic update cho UX phản hồi nhanh
     setDecisions((prev) => ({ ...prev, [id]: action }));
     void review.mutateAsync(
-      { campaignId: c.id, assignmentId: id, action },
+      { campaignId: c.id, assignmentId: id, action, shiftId },
       {
         onSuccess: () => {
           toast.success(action === 'approved' ? `Đã duyệt ${name}` : `Đã từ chối ${name}`);
+          setReviewTarget(null);
+          setSelectedShiftId('');
         },
         onError: (e) => {
           // rollback nếu lỗi
@@ -121,7 +137,31 @@ export default function RegistrationsPage() {
     );
   }
 
+  function decide(id: string, name: string, action: 'approved' | 'rejected') {
+    if (action === 'rejected') {
+      submitDecision(id, name, action);
+      return;
+    }
+    const target = volunteers.find((v) => v.id === id);
+    if (!target) return;
+    if (shifts.length === 0) {
+      submitDecision(id, name, action);
+      return;
+    }
+    const selectedShift = target.shiftId
+      ? shifts.find((s) => s.id === target.shiftId && (!s.role || s.role === target.role) && s.slotsFilled < s.slotsNeeded)
+      : null;
+    const firstAvailable = selectedShift ?? shifts.find((s) => (!s.role || s.role === target.role) && s.slotsFilled < s.slotsNeeded);
+    if (!firstAvailable) {
+      toast.error('Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.');
+      return;
+    }
+    setReviewTarget(target);
+    setSelectedShiftId(firstAvailable.id);
+  }
+
   return (
+    <>
     <div className="cm-manage-2col">
       <div className="cm-manage-2col-main space-y-4">
         {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
@@ -254,6 +294,7 @@ export default function RegistrationsPage() {
                 <RegistrationRow
                   key={p.id}
                   p={p}
+                  shifts={shifts}
                   decision={decisions[p.id]}
                   pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
@@ -360,7 +401,7 @@ export default function RegistrationsPage() {
 
             {/* Ca thiếu người */}
             {slotWarnings.length > 0 ? (
-              slotWarnings.map((w, i) => (
+              slotWarnings.map((w) => (
                 <li key={w.label} className="cm-notif-item">
                   <span className={`cm-notif-dot cm-notif-dot--${w.tone === 'rose' ? 'rose' : 'honey'}`} />
                   <div>
@@ -408,6 +449,88 @@ export default function RegistrationsPage() {
         </section>
       </aside>
     </div>
+    {reviewTarget ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+        <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
+          <div className="border-b border-neutral-100 px-5 py-4">
+            <h3 className="text-base font-extrabold text-neutral-900">Chọn ca trước khi duyệt</h3>
+            <p className="mt-1 text-xs text-neutral-500">
+              {reviewTarget.fullName} - {roleLabel(reviewTarget.role)}
+            </p>
+            {reviewTarget.shiftId ? (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
+                <span className="material-symbols-outlined text-[14px]">event_available</span>
+                Ca TNV đã chọn
+              </p>
+            ) : (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
+                <span className="material-symbols-outlined text-[14px]">assignment</span>
+                Đăng ký vai trò tổng - cần phân ca
+              </p>
+            )}
+          </div>
+          <div className="space-y-2 px-5 py-4">
+            {eligibleShifts.map((s) => (
+              <label
+                key={s.id}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${
+                  selectedShiftId === s.id ? 'border-emerald-600 bg-emerald-50' : 'border-neutral-200'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="review-shift"
+                  value={s.id}
+                  checked={selectedShiftId === s.id}
+                  onChange={() => setSelectedShiftId(s.id)}
+                  className="h-4 w-4 accent-emerald-700"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-900">
+                    {s.label}
+                    {reviewTarget.shiftId === s.id ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-700">
+                        TNV chọn
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="block text-xs text-neutral-500">
+                    {s.startTime}-{s.endTime} · {s.role ? roleLabel(s.role) : 'Ca chung'} · {s.slotsFilled}/{s.slotsNeeded} đã duyệt
+                  </span>
+                </span>
+              </label>
+            ))}
+            {eligibleShifts.length === 0 ? (
+              <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.
+              </div>
+            ) : null}
+          </div>
+          <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4">
+            <button
+              type="button"
+              onClick={() => {
+                setReviewTarget(null);
+                setSelectedShiftId('');
+              }}
+              disabled={review.isPending}
+              className="cm-reg-btn cm-reg-btn--reject disabled:opacity-50"
+            >
+              Huỷ
+            </button>
+            <button
+              type="button"
+              onClick={() => submitDecision(reviewTarget.id, reviewTarget.fullName, 'approved', selectedShiftId)}
+              disabled={!selectedShiftId || review.isPending}
+              className="cm-reg-btn cm-reg-btn--approve disabled:opacity-50"
+            >
+              {review.isPending ? 'Đang duyệt...' : 'Duyệt & phân ca'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
@@ -429,6 +552,12 @@ function iconForMeal(type: string): string {
 
 function toneForMeal(idx: number): 'honey' | 'emerald' | 'rose' {
   return (['honey', 'emerald', 'rose'] as const)[idx % 3];
+}
+
+function roleLabel(role: 'chef' | 'waiter' | 'shipper'): string {
+  if (role === 'chef') return 'Đầu bếp';
+  if (role === 'waiter') return 'Phục vụ';
+  return 'Giao hàng';
 }
 
 // ─── Inline sub-components ─────────────────────────────────────────────────────

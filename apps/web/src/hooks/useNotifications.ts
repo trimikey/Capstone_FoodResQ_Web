@@ -15,6 +15,25 @@ export interface AppNotification {
   createdAt: string;
 }
 
+function notificationCampaignId(n: AppNotification): string | null {
+  return typeof n.data?.campaignId === 'string' && n.data.campaignId.length > 0
+    ? n.data.campaignId
+    : null;
+}
+
+function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignId: string) {
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', campaignId] });
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'open'] });
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'manage-detail', campaignId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'open'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'mine'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'my-tasks'], type: 'active' });
+}
+
 // Socket nối tới origin của API (bỏ hậu tố /api/v1)
 function socketUrl(): string {
   const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
@@ -75,6 +94,8 @@ export function useNotificationSocket() {
     socket.on('notification:new', (n: AppNotification) => {
       toast(n.title, { description: n.body });
       void qc.invalidateQueries({ queryKey: ['notifications'] });
+      const campaignId = notificationCampaignId(n);
+      if (campaignId) refreshCampaignQueries(qc, campaignId);
     });
 
     return () => {

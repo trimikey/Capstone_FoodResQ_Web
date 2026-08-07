@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Modal } from '@/components/shared/Modal';
 import { QRCodeSVG } from 'qrcode.react';
@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { useMyReservations, useCancelReservation } from '@/hooks/useReservation';
 import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import { useMe } from '@/hooks/useProfile';
-import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
 
@@ -87,12 +87,16 @@ const STATUS_META: Record<
   expired: { label: 'Hết hạn', badge: 'badge-neutral', accent: 'bg-neutral-300', icon: 'schedule', group: 'history' },
 };
 
+const PAGE_SIZE = 6;
+
 export default function ReservationsPage() {
-  const { data, isLoading, isError } = useMyReservations();
+  const [tab, setTab] = useState<'active' | 'history'>('active');
+  const [page, setPage] = useState(1);
+  // Lọc + phân trang thực hiện ở server: đơn đang xử lý nằm ngoài trang đầu vẫn hiện đúng tab
+  const { data, isLoading, isError, isPlaceholderData } = useMyReservations(page, tab, PAGE_SIZE);
   const { data: me } = useMe(); // điểm uy tín hiện tại — dự báo hậu quả khi huỷ trễ
   const cancelMutation = useCancelReservation();
 
-  const [tab, setTab] = useState<'active' | 'history'>('active');
   const [expandedQR, setExpandedQR] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -100,12 +104,24 @@ export default function ReservationsPage() {
   const [trackingId, setTrackingId] = useState<string | null>(null);
 
   const reservations = (data?.items ?? []) as Reservation[];
-  const filtered = useMemo(
-    () => reservations.filter((r) => STATUS_META[r.status]?.group === tab),
-    [reservations, tab],
-  );
-  const activeCount = reservations.filter((r) => STATUS_META[r.status]?.group === 'active').length;
-  const historyCount = reservations.filter((r) => STATUS_META[r.status]?.group === 'history').length;
+  const filtered = reservations;
+  // Số đếm lấy từ server trên TOÀN BỘ đơn — không phụ thuộc trang đang xem
+  const activeCount = data?.counts?.active ?? 0;
+  const historyCount = data?.counts?.history ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+
+  // Thống kê lấy từ server trên toàn bộ đơn — nếu tính từ `reservations` thì con số
+  // sẽ nhảy mỗi khi chuyển trang vì chỉ phản ánh trang đang xem.
+  const stats = {
+    completed: data?.counts?.completed ?? 0,
+    missed: data?.counts?.noShow ?? 0,
+    portions: data?.counts?.portionsSaved ?? 0,
+  };
+
+  const switchTab = (next: 'active' | 'history') => {
+    setTab(next);
+    setPage(1); // đổi tab phải về trang 1, nếu không có thể rơi vào trang trống
+  };
 
   async function handleCancel(id: string) {
     try {
@@ -135,24 +151,49 @@ export default function ReservationsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-fit elevation-1">
-          <button
-            onClick={() => setTab('active')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            Đang xử lý ({activeCount})
-          </button>
-          <button
-            onClick={() => setTab('history')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            Lịch sử ({historyCount})
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-fit elevation-1">
+            <button
+              onClick={() => switchTab('active')}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              Đang xử lý ({activeCount})
+            </button>
+            <button
+              onClick={() => switchTab('history')}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              Lịch sử ({historyCount})
+            </button>
+          </div>
+
+          {!isLoading && !isError && filtered.length > 0 && (
+            <p className="text-xs text-neutral-500 font-medium">
+              Trang {data?.page ?? 1}/{totalPages} · {data?.total ?? 0} đơn
+            </p>
+          )}
         </div>
+
+        {/* Thống kê nhanh — tab lịch sử */}
+        {tab === 'history' && !isLoading && !isError && filtered.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { icon: 'verified', label: 'Đã nhận', value: stats.completed, cls: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+              { icon: 'inventory_2', label: 'Số phần đã cứu', value: stats.portions, cls: 'text-sky-700 bg-sky-50 border-sky-100' },
+              { icon: 'person_off', label: 'Không đến', value: stats.missed, cls: 'text-rose-700 bg-rose-50 border-rose-100' },
+            ].map((s) => (
+              <div key={s.label} className={`rounded-2xl border p-4 ${s.cls}`}>
+                <span className="material-symbols-outlined text-[20px]">{s.icon}</span>
+                <p className="text-2xl font-extrabold mt-1 leading-none">{s.value}</p>
+                <p className="text-[11px] font-semibold opacity-80 mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* States */}
         {isLoading && (
@@ -193,15 +234,17 @@ export default function ReservationsPage() {
                 {/* dải màu trạng thái */}
                 <div className={`w-1.5 shrink-0 ${meta.accent}`} />
                 <div className="flex-1 min-w-0">
-                <div className="p-5 flex gap-4">
+                <div className="p-5 flex gap-4 items-center">
                   <div className="w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.listing.imageUrls?.[0] ? mediaUrl(r.listing.imageUrls[0]) : fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
+                    <img src={r.listing.imageUrls?.[0] || fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h3 className="font-bold text-neutral-900 truncate">{r.listing.title}</h3>
+                        <a href={`/reservations/${r.id}`} className="font-bold text-neutral-900 truncate hover:text-emerald-700 transition-colors">
+                          {r.listing.title}
+                        </a>
                         <p className="text-xs text-neutral-500 mt-0.5">{r.listing.provider.businessName}</p>
                       </div>
                       <span className={`badge ${meta.badge} shrink-0`}>
@@ -225,6 +268,51 @@ export default function ReservationsPage() {
                   </div>
                 </div>
 
+                {/* Actions */}
+                <div className="border-t border-neutral-100 px-5 py-3 flex items-center justify-between gap-3">
+                  <a
+                    href={`/reservations/${r.id}`}
+                    className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">info</span>
+                    Xem chi tiết đơn
+                  </a>
+
+                  <div className="flex items-center gap-3">
+                    {/* confirmed: QR toggle */}
+                    {r.status === 'confirmed' && qrValid && (
+                      <button
+                        onClick={() => setExpandedQR(expandedQR === r.id ? null : r.id)}
+                        className="flex items-center gap-2 text-sky-600 font-bold text-sm hover:text-sky-800 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
+                        {expandedQR === r.id ? 'Ẩn QR' : 'Xem QR'}
+                      </button>
+                    )}
+
+                    {/* confirmed: nút hủy đơn */}
+                    {r.status === 'confirmed' && (
+                      <button
+                        onClick={() => setConfirmCancel(r.id)}
+                        className="flex items-center gap-1.5 text-rose-500 font-bold text-sm hover:text-rose-700 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">cancel</span>
+                        Hủy đơn
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* QR hiện inline */}
+                {r.status === 'confirmed' && qrValid && expandedQR === r.id && (
+                  <div className="border-t border-neutral-100 px-5 py-4 flex flex-col items-center gap-2">
+                    <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-sm">
+                      <QRCodeSVG value={r.qrToken!} size={160} level="H" includeMargin />
+                    </div>
+                    <p className="text-xs text-neutral-500">Hết hạn: {new Date(r.qrExpiresAt!).toLocaleString('vi-VN')}</p>
+                  </div>
+                )}
+
                 {/* Theo dõi giao hàng trực tiếp (đơn có giao + đang trong tiến trình) */}
                 {r.delivery && ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'].includes(r.delivery.status) && (
                   <div className="border-t border-neutral-100 px-5 py-3">
@@ -238,118 +326,6 @@ export default function ReservationsPage() {
                   </div>
                 )}
 
-                {/* confirmed: QR + cancel */}
-                {r.status === 'confirmed' && (
-                  <div className="border-t border-neutral-100 p-5 flex flex-col gap-3">
-                    {qrValid ? (
-                      <>
-                        <button
-                          onClick={() => setExpandedQR(expandedQR === r.id ? null : r.id)}
-                          className="flex items-center gap-2 text-emerald-700 font-bold text-sm"
-                        >
-                          <span className="material-symbols-outlined">qr_code_2</span>
-                          {expandedQR === r.id ? 'Ẩn mã QR' : 'Xem mã QR đưa nhà cung cấp quét'}
-                        </button>
-                        {expandedQR === r.id && (
-                          <div className="flex flex-col items-center gap-2 py-2">
-                            <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-sm">
-                              <QRCodeSVG value={r.qrToken!} size={180} level="H" includeMargin />
-                            </div>
-                            <p className="text-xs text-neutral-500">
-                              Hết hạn: {new Date(r.qrExpiresAt!).toLocaleString('vi-VN')}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-xs text-rose-600 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">warning</span> Mã QR đã hết hạn
-                      </p>
-                    )}
-
-                    {confirmCancel === r.id ? (
-                      <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 space-y-3">
-                        {/* Cảnh báo trừ điểm uy tín trước khi huỷ */}
-                        {(() => {
-                          const isLate =
-                            new Date(r.listing.pickupEndTime).getTime() - Date.now() < LATE_WINDOW_MS;
-                          const score = me?.trustScore;
-                          const after = score != null ? Math.max(0, score - LATE_CANCEL_PENALTY) : null;
-                          const outcome = after != null ? penaltyOutcome(after) : null;
-                          return isLate ? (
-                            <div className="flex items-start gap-2 bg-white border border-rose-300 rounded-lg p-3">
-                              <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
-                              <div className="text-xs leading-relaxed">
-                                <p className="font-bold text-rose-700">
-                                  Huỷ lúc này là HUỶ TRỄ (còn dưới 30 phút trước giờ kết thúc nhận) —
-                                  bạn sẽ bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
-                                  {score != null ? ` (${score} → ${after})` : ''}.
-                                </p>
-                                {outcome && (
-                                  <p className={`mt-1 font-bold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
-                                    ⚠ {outcome.text}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-start gap-2 bg-white border border-neutral-200 rounded-lg p-3">
-                              <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
-                              <p className="text-xs text-neutral-600 leading-relaxed">
-                                Huỷ bây giờ <b>chưa bị trừ điểm</b> (còn hơn 30 phút trước giờ kết thúc nhận).
-                                Lưu ý: nếu giữ đơn mà <b>không đến nhận</b>, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm uy tín
-                                — điểm ≤ {BAN_THRESHOLD} sẽ bị khoá tài khoản.
-                              </p>
-                            </div>
-                          );
-                        })()}
-                        <p className="text-sm font-bold text-neutral-800">Vì sao bạn huỷ đơn này?</p>
-                        {/* Lý do nhanh */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {['Bận việc đột xuất', 'Đổi ý / không cần nữa', 'Đặt nhầm', 'Quá xa'].map((reason) => (
-                            <button
-                              key={reason}
-                              type="button"
-                              onClick={() => setCancelReason(reason)}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
-                                cancelReason === reason
-                                  ? 'bg-rose-600 text-white border-rose-600'
-                                  : 'bg-white text-neutral-600 border-neutral-200 hover:border-rose-300'
-                              }`}
-                            >
-                              {reason}
-                            </button>
-                          ))}
-                        </div>
-                        <textarea
-                          value={cancelReason}
-                          onChange={(e) => setCancelReason(e.target.value)}
-                          placeholder="Lý do khác (không bắt buộc)..."
-                          rows={2}
-                          maxLength={500}
-                          className="input-base text-sm"
-                        />
-                        <div className="flex gap-2">
-                          <button onClick={() => { setConfirmCancel(null); setCancelReason(''); }} className="flex-1 py-2 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 hover:bg-white transition-colors">Không huỷ</button>
-                          <button onClick={() => handleCancel(r.id)} disabled={cancelMutation.isPending} className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 transition-colors">
-                            {cancelMutation.isPending ? 'Đang huỷ...' : 'Xác nhận huỷ'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {/* Nhắc luật no-show thường trực để người nhận không "quên" đơn */}
-                        <p className="text-[11px] text-neutral-400 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">info</span>
-                          Không đến nhận đúng hạn sẽ bị trừ {NO_SHOW_PENALTY} điểm uy tín.
-                        </p>
-                        <button onClick={() => { setConfirmCancel(r.id); setCancelReason(''); }} className="self-start text-rose-500 text-xs font-semibold hover:underline">
-                          Huỷ đặt chỗ
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* picked_up: chờ nhà cung cấp đối chiếu & xác nhận bàn giao */}
                 {r.status === 'picked_up' && (
@@ -391,6 +367,51 @@ export default function ReservationsPage() {
             );
           })}
         </div>
+
+        {/* Phân trang */}
+        {!isLoading && !isError && totalPages > 1 && (
+          <div className={`flex items-center justify-center gap-2 pt-2 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              aria-label="Trang trước"
+              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+            </button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                // Chỉ hiện trang đầu, trang cuối và lân cận trang hiện tại — tránh tràn khi nhiều trang
+                .filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
+                .map((n, idx, arr) => (
+                  <span key={n} className="flex items-center gap-1">
+                    {idx > 0 && arr[idx - 1] !== n - 1 && <span className="text-neutral-400 px-1">…</span>}
+                    <button
+                      onClick={() => setPage(n)}
+                      aria-current={n === page ? 'page' : undefined}
+                      className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
+                        n === page
+                          ? 'bg-emerald-700 text-white elevation-2'
+                          : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  </span>
+                ))}
+            </div>
+
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              aria-label="Trang sau"
+              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {verifying && (
@@ -400,6 +421,98 @@ export default function ReservationsPage() {
           onClose={() => setVerifying(null)}
         />
       )}
+
+      {/* Modal xác nhận hủy đơn */}
+      {confirmCancel && (() => {
+        const r = reservations.find(res => res.id === confirmCancel);
+        if (!r) return null;
+        const isLate = new Date(r.listing.pickupEndTime).getTime() - Date.now() < LATE_WINDOW_MS;
+        const score = me?.trustScore;
+        const after = score != null ? Math.max(0, score - LATE_CANCEL_PENALTY) : null;
+        const outcome = after != null ? penaltyOutcome(after) : null;
+        return (
+          <Modal onClose={() => { setConfirmCancel(null); setCancelReason(''); }} align="center" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md p-0 overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-rose-600 text-[24px]">cancel</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-neutral-900">Hủy đơn hàng</h3>
+                  <p className="text-sm text-neutral-500">{r.listing.title}</p>
+                </div>
+              </div>
+
+              {isLate ? (
+                <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3">
+                  <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
+                  <div className="text-sm leading-relaxed">
+                    <p className="font-bold text-rose-700">
+                      Huỷ lúc này là HUỶ TRỄ — bạn sẽ bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
+                      {score != null ? ` (${score} → ${after})` : ''}.
+                    </p>
+                    {outcome && (
+                      <p className={`mt-1 font-semibold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
+                        ⚠ {outcome.text}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                  <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm font-bold text-neutral-800 mb-2">Lý do hủy (tùy chọn):</p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['Bận việc đột xuất', 'Đổi ý', 'Đặt nhầm', 'Quá xa'].map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => setCancelReason(reason)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        cancelReason === reason
+                          ? 'bg-rose-600 text-white border-rose-600'
+                          : 'bg-white text-neutral-600 border-neutral-200 hover:border-rose-300'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Lý do khác (không bắt buộc)..."
+                  rows={2}
+                  className="w-full border border-neutral-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-300"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setConfirmCancel(null); setCancelReason(''); }}
+                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50"
+                >
+                  Không hủy
+                </button>
+                <button
+                  onClick={() => handleCancel(confirmCancel)}
+                  disabled={cancelMutation.isPending}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+                >
+                  {cancelMutation.isPending ? 'Đang hủy...' : 'Xác nhận hủy'}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {trackingId && <DeliveryTrackingModal reservationId={trackingId} onClose={() => setTrackingId(null)} />}
     </div>

@@ -2,7 +2,7 @@
 
 import './campaign-tokens.css';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AssignmentRole, UserRole } from '@foodresq/types';
@@ -27,8 +27,7 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
-
-type Section = 'overview' | 'mine' | 'tasks' | 'browse' | 'suppliers' | 'providers' | 'orders' | 'history';
+import { type Section } from './_components/CharitySidebar';
 
 const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
@@ -43,11 +42,47 @@ const STATUS_META: Record<string, { label: string; icon: string }> = {
   completed: { label: 'Đã hoàn tất', icon: 'verified' },
 };
 
+// Bọc ngoài để tuân thủ Next.js: component dùng useSearchParams phải nằm trong <Suspense>
+// — tránh page bị deopt sang CSR-only và tránh lỗi "Invalid hook call" khi re-mount
+// sau khi user switch tab browser rồi quay lại.
 export default function CampaignsPage() {
+  return (
+    <Suspense fallback={<CampaignsSkeleton />}>
+      <CampaignsPageInner />
+    </Suspense>
+  );
+}
+
+function CampaignsSkeleton() {
+  // Sidebar do (dashboard)/campaigns/layout.tsx render ngoài Suspense boundary,
+  // nên skeleton này chỉ cần mô phỏng main content — không giả lập sidebar nữa.
+  return (
+    <div className="cm-page cm-scope">
+      <div className="cm-console">
+        <main className="cm-content min-w-0 space-y-4">
+          <div className="h-10 w-full max-w-xl skeleton rounded-2xl" />
+          <div className="h-32 w-full skeleton rounded-2xl" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-24 skeleton rounded-2xl" />
+            ))}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function CampaignsPageInner() {
   const { data: me } = useMe();
   const isVolunteer = me?.role === UserRole.VOLUNTEER;
   const isProvider = me?.role === UserRole.PROVIDER;
   const isCharity = me?.role === UserRole.RECEIVER && !!me?.receiver?.isCharityOrg;
+  // Tài khoản chưa được admin duyệt (pending / banned) → chặn mọi thao tác,
+  // chỉ cho xem trang tổng quan (đọc) chứ không cho đăng ký / tạo chiến dịch.
+  const isAccountActive = me?.status === 'active';
+
+  const router = useRouter();
 
   const { data, isLoading } = useCampaigns();
   const { data: vol } = useVolunteerMe(isVolunteer);
@@ -60,11 +95,20 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string>('all');
 
-  // Đọc tab hiện tại từ query string ?tab=orders|history; mặc định overview
+  // Sidebar giờ do (dashboard)/campaigns/layout.tsx render (pattern /provider).
+  // Khi user bấm "Tạo chiến dịch" trên sidebar → layout dispatch custom event,
+  // page lắng nghe và mở CreateCampaignModal tương ứng.
+  useEffect(() => {
+    const onOpenCreate = () => setShowForm(true);
+    window.addEventListener('campaigns:open-create', onOpenCreate);
+    return () => window.removeEventListener('campaigns:open-create', onOpenCreate);
+  }, []);
+
+  // Đọc tab hiện tại từ query string ?tab=orders|history; mặc định overview.
+  // Dùng URL param làm source of truth — tránh re-render lặp khi switch tab browser.
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const initialSection: Section = (() => {
-    const t = searchParams.get('tab');
+  const section: Section = (() => {
+    const t = searchParams?.get('tab');
     if (
       t === 'orders' ||
       t === 'history' ||
@@ -79,26 +123,20 @@ export default function CampaignsPage() {
     }
     return 'overview';
   })();
-  const [section, setSection] = useState<Section>(initialSection);
 
-  // Đồng bộ section → ?tab=...
+  // Handler cho sidebar/button click → cập nhật state + URL
   const handleSetSection = (key: Section) => {
-    setSection(key);
-    const params = new URLSearchParams(Array.from(searchParams.entries()));
-    if (key === 'overview') params.delete('tab');
-    else params.set('tab', key);
-    const qs = params.toString();
+    const current = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+    if (key === 'overview') current.delete('tab');
+    else current.set('tab', key);
+    const qs = current.toString();
     router.replace(qs ? `/campaigns?${qs}` : '/campaigns');
   };
-
-  useEffect(() => {
-    setSection(initialSection);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSection]);
 
   const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
 
   const allCampaigns = data ?? [];
+
   const filteredCampaigns = useMemo(() => {
     return allCampaigns.filter((c) => {
       if (filter !== 'all' && c.status !== filter) return false;
@@ -186,59 +224,10 @@ export default function CampaignsPage() {
   return (
     <div className="cm-page cm-scope">
       <div className="cm-console">
-        {/* ─── Sidebar rail ─── */}
-        <aside className="cm-rail" aria-label="Điều hướng chiến dịch">
-          <div className="cm-rail-brand">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/Logo_FoodResQ.png"
-              alt="FoodResQ Logo"
-              className="h-8 w-auto object-contain shrink-0"
-            />
-            <div>
-              <p className="font-extrabold text-sm text-[var(--cm-ink-900)] leading-tight">
-                Bếp ăn cộng đồng
-              </p>
-              <p className="text-[11px] text-neutral-500 font-medium mt-0.5">
-                FoodResQ · {isCharity ? 'Quản lý' : 'Khám phá'}
-              </p>
-            </div>
-          </div>
-
-          <ul className="cm-rail-list">
-            {railEntries.map((entry) => (
-              <li key={entry.key}>
-                <button
-                  type="button"
-                  aria-current={section === entry.key}
-                  onClick={() => handleSetSection(entry.key)}
-                  className="cm-rail-link"
-                >
-                  <span className="material-symbols-outlined text-[18px]">{entry.icon}</span>
-                  <span>{entry.label}</span>
-                  {entry.badge != null && <span className="badge">{entry.badge}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          {/* Create CTA pinned to bottom of rail (charity only) */}
-          {isCharity && (
-            <div className="cm-rail-bottom">
-              <button
-                type="button"
-                onClick={() => setShowForm(true)}
-                className="cm-btn-ember w-full inline-flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-[18px]">add</span>
-                <span>Tạo chiến dịch</span>
-              </button>
-            </div>
-          )}
-        </aside>
-
-        {/* ─── Main content column ─── */}
-        <main className="min-w-0 space-y-6">
+        {/* Sidebar được render bởi (dashboard)/campaigns/layout.tsx
+            (pattern giống /provider: fixed + lg:ml-56 main wrapper).
+            Page này chỉ render main content. */}
+        <main className="cm-content min-w-0 space-y-6">
           {/* Top bar: search + role */}
           <div className="cm-topbar">
             <label className="cm-topbar-search">
@@ -268,6 +257,7 @@ export default function CampaignsPage() {
               isCharity={isCharity}
               isVolunteer={isVolunteer}
               isProvider={isProvider}
+              isAccountActive={isAccountActive}
               meName={greetingName}
               greetingSubtitle={greetingSubtitle}
               stats={stats}
@@ -303,6 +293,7 @@ export default function CampaignsPage() {
               isVolunteer={isVolunteer}
               isProvider={isProvider}
               isCharity={isCharity}
+              isAccountActive={isAccountActive}
               myRoles={myRoles}
               onApply={handleApply}
               applying={apply.isPending}
@@ -356,6 +347,7 @@ function OverviewDashboard({
   isCharity,
   isVolunteer,
   isProvider,
+  isAccountActive,
   meName,
   greetingSubtitle,
   stats,
@@ -367,6 +359,7 @@ function OverviewDashboard({
   isCharity: boolean;
   isVolunteer: boolean;
   isProvider: boolean;
+  isAccountActive: boolean;
   meName: string;
   greetingSubtitle: string;
   stats: { active: Campaign[]; drafts: Campaign[]; finished: Campaign[]; pendingApprovals: number; totalVolunteers: number; all: Campaign[] };
@@ -377,6 +370,25 @@ function OverviewDashboard({
 }) {
   return (
     <>
+      {/* Banner cảnh báo khi tài khoản chưa được admin duyệt */}
+      {!isAccountActive && (isVolunteer || isProvider) && (
+        <div className="cm-alert">
+          <div className="cm-alert-icon">
+            <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+          </div>
+          <div className="cm-alert-body">
+            <p className="cm-alert-title">
+              Tài khoản của bạn đang chờ quản trị viên duyệt
+            </p>
+            <p className="cm-alert-sub">
+              {isVolunteer
+                ? 'Bạn có thể khám phá chiến dịch nhưng chưa thể đăng ký tham gia cho đến khi admin phê duyệt hồ sơ tình nguyện viên.'
+                : 'Bạn có thể xem chiến dịch nhưng chưa thể hứa góp nguyên liệu cho đến khi admin phê duyệt hồ sơ nhà cung cấp.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Greeting hero */}
       <div className="cm-greeting">
         <div className="relative z-10 min-w-0">
@@ -509,6 +521,7 @@ function OverviewDashboard({
                   onApply={() => undefined}
                   applying={false}
                   isProvider={isProvider}
+                  disabled={!isAccountActive}
                 />
               ))}
           </div>
@@ -886,25 +899,11 @@ function MineTabbedSection({
 }) {
   const [tab, setTab] = useState<MineTab>('all');
 
-  // Gom 3 nhóm: active (đang chạy), drafts + pendingTNV (chờ duyệt), finished (đã kết thúc)
+  // Gom 3 nhóm: active (đang chạy), drafts (campaign chờ admin duyệt), finished
   const running = stats.active;
   const pendingCampaigns = stats.drafts;
   const finished = stats.finished;
   const pendingTNVCount = stats.pendingApprovals;
-
-  const counts: Record<MineTab, number> = {
-    all: running.length + pendingCampaigns.length + finished.length,
-    running: running.length,
-    pending: pendingCampaigns.length + pendingTNVCount,
-    finished: finished.length,
-  };
-
-  const visible = useMemo(() => {
-    if (tab === 'all') return [...running, ...pendingCampaigns, ...finished];
-    if (tab === 'running') return running;
-    if (tab === 'pending') return pendingCampaigns;
-    return finished;
-  }, [tab, running, pendingCampaigns, finished]);
 
   // Đăng ký TNV chờ duyệt (gộp các assignment pending từ tất cả campaign)
   const pendingRows = useMemo(() => {
@@ -914,6 +913,16 @@ function MineTabbedSection({
         .map((a) => ({ campaign: c, assignment: a })),
     );
   }, [stats.all]);
+
+  const counts: Record<MineTab, number> = {
+    all: running.length + pendingCampaigns.length + finished.length + pendingTNVCount,
+    running: running.length,
+    pending: pendingRows.length + pendingCampaigns.length,
+    finished: finished.length,
+  };
+
+  // Có nội dung "chờ duyệt" gì không (TNV + draft campaign)
+  const hasPendingContent = pendingRows.length > 0 || pendingCampaigns.length > 0;
 
   return (
     <section className="space-y-5">
@@ -980,85 +989,147 @@ function MineTabbedSection({
         </div>
       )}
 
-      {/* Grid chiến dịch */}
-      {visible.length === 0 ? (
-        <EmptyState
-          icon={tab === 'finished' ? 'verified' : 'soup_kitchen'}
-          title={
-            tab === 'running'
-              ? 'Chưa có chiến dịch đang chạy'
-              : tab === 'pending'
-                ? 'Không có chiến dịch chờ duyệt'
-                : tab === 'finished'
-                  ? 'Chưa có chiến dịch kết thúc'
-                  : 'Chưa có chiến dịch nào'
-          }
-          description={
-            tab === 'running'
-              ? 'Bấm "Tạo chiến dịch" để bắt đầu hoạt động đầu tiên.'
-              : tab === 'pending'
-                ? 'Các chiến dịch chưa được duyệt sẽ hiển thị ở đây.'
-                : tab === 'finished'
-                  ? 'Các chiến dịch hoàn tất sẽ hiển thị ở đây.'
-                  : 'Bấm "Tạo chiến dịch" ở góc trên bên phải hoặc trong thanh bên để bắt đầu.'
-          }
-          action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
-        />
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
-          {visible.map((c) => (
-            <MyCampaignCard key={c.id} c={c} />
-          ))}
-        </div>
+      {/* ════════ Tab "Đang chạy" / "Đã kết thúc": chỉ grid campaign ════════ */}
+      {(tab === 'running' || tab === 'finished') && (
+        <>
+          {(tab === 'running' ? running : finished).length === 0 ? (
+            <EmptyState
+              icon={tab === 'finished' ? 'verified' : 'soup_kitchen'}
+              title={
+                tab === 'running'
+                  ? 'Chưa có chiến dịch đang chạy'
+                  : 'Chưa có chiến dịch kết thúc'
+              }
+              description={
+                tab === 'running'
+                  ? 'Bấm "Tạo chiến dịch" để bắt đầu hoạt động đầu tiên.'
+                  : 'Các chiến dịch hoàn tất sẽ hiển thị ở đây.'
+              }
+              action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
+            />
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {(tab === 'running' ? running : finished).map((c) => (
+                <MyCampaignCard key={c.id} c={c} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Inline pending registrations block — show khi tab all / pending */}
-      {(tab === 'all' || tab === 'pending') && pendingRows.length > 0 && (
-        <div className="space-y-3">
-          <div className="cm-section-head !mb-2">
-            <h3 className="cm-section-title !text-base">
-              <span className="material-symbols-outlined text-[#B91C1C] text-[18px]">
-                pending_actions
-              </span>
-              Đơn đăng ký đang chờ ({pendingRows.length})
-            </h3>
-          </div>
-          <div className="cm-card overflow-hidden">
-            {pendingRows.slice(0, 10).map(({ campaign, assignment }) => (
-              <div key={assignment.id} className="cm-row">
-                <span className="cm-row-thumb">
-                  {assignment.volunteer.user.fullName.charAt(0).toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm text-neutral-900 truncate">
-                    {assignment.volunteer.user.fullName}
-                  </p>
-                  <p className="text-xs text-neutral-500 truncate">{campaign.title}</p>
-                </div>
-                <span className="cm-row-meta text-xs text-neutral-600 font-semibold">
-                  {ROLE_LABEL[assignment.role] ?? assignment.role}
-                </span>
-                <span className="cm-row-when text-xs text-neutral-400">Vừa xong</span>
-                <Link
-                  href={`/campaigns/${campaign.id}/manage`}
-                  className="cm-active-link !text-emerald-700 hover:!bg-emerald-50"
-                >
-                  Duyệt →
-                </Link>
-              </div>
-            ))}
-            {pendingRows.length > 10 && (
-              <div className="p-3 text-center">
-                <span className="text-xs font-bold text-neutral-400">
-                  +{pendingRows.length - 10} đơn khác — mở trang quản lý để xem tất cả
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* ════════ Tab "Tất cả": grid các campaign (active + draft + finished), bỏ qua đơn TNV (xem riêng bên dưới) ════════ */}
+      {tab === 'all' && (
+        <>
+          {running.length + pendingCampaigns.length + finished.length === 0 ? (
+            <EmptyState
+              icon="soup_kitchen"
+              title="Chưa có chiến dịch nào"
+              description="Bấm 'Tạo chiến dịch' ở góc trên bên phải hoặc trong thanh bên để bắt đầu."
+              action={{ label: 'Tạo chiến dịch đầu tiên', onClick: onCreate, icon: 'add' }}
+            />
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {[...running, ...pendingCampaigns, ...finished].map((c) => (
+                <MyCampaignCard key={c.id} c={c} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ════════ Tab "Chờ duyệt": ưu tiên đơn TNV chờ duyệt + draft campaigns ════════ */}
+      {tab === 'pending' && (
+        <>
+          {!hasPendingContent ? (
+            <EmptyState
+              icon="task_alt"
+              title="Không có gì đang chờ duyệt"
+              description="Mọi đơn đăng ký và chiến dịch đã được xử lý — tuyệt vời!"
+            />
+          ) : (
+            <>
+              {pendingRows.length > 0 && (
+                <PendingRegistrationsBlock pendingRows={pendingRows} />
+              )}
+              {pendingCampaigns.length > 0 && (
+                <section className="space-y-3">
+                  <div className="cm-section-head !mb-2">
+                    <h3 className="cm-section-title !text-base">
+                      <span className="material-symbols-outlined text-amber-600 text-[18px]">
+                        hourglass_top
+                      </span>
+                      Chiến dịch chờ admin duyệt ({pendingCampaigns.length})
+                    </h3>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {pendingCampaigns.map((c) => (
+                      <MyCampaignCard key={c.id} c={c} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* Inline pending registrations block — hiện ở tab "Tất cả" (nếu có) */}
+      {tab === 'all' && pendingRows.length > 0 && (
+        <PendingRegistrationsBlock pendingRows={pendingRows} />
       )}
 
     </section>
+  );
+}
+
+function PendingRegistrationsBlock({
+  pendingRows,
+}: {
+  pendingRows: Array<{ campaign: Campaign; assignment: { id: string; role: string; volunteer: { user: { fullName: string } } } }>;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="cm-section-head !mb-2">
+        <h3 className="cm-section-title !text-base">
+          <span className="material-symbols-outlined text-[#B91C1C] text-[18px]">
+            pending_actions
+          </span>
+          Đơn đăng ký đang chờ ({pendingRows.length})
+        </h3>
+      </div>
+      <div className="cm-card overflow-hidden">
+        {pendingRows.slice(0, 10).map(({ campaign, assignment }) => (
+          <div key={assignment.id} className="cm-row">
+            <span className="cm-row-thumb">
+              {assignment.volunteer.user.fullName.charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="font-bold text-sm text-neutral-900 truncate">
+                {assignment.volunteer.user.fullName}
+              </p>
+              <p className="text-xs text-neutral-500 truncate">{campaign.title}</p>
+            </div>
+            <span className="cm-row-meta text-xs text-neutral-600 font-semibold">
+              {ROLE_LABEL[assignment.role] ?? assignment.role}
+            </span>
+            <span className="cm-row-when text-xs text-neutral-400">Vừa xong</span>
+            <Link
+              href={`/campaigns/${campaign.id}/manage`}
+              className="cm-active-link !text-emerald-700 hover:!bg-emerald-50"
+            >
+              Duyệt →
+            </Link>
+          </div>
+        ))}
+        {pendingRows.length > 10 && (
+          <div className="p-3 text-center">
+            <span className="text-xs font-bold text-neutral-400">
+              +{pendingRows.length - 10} đơn khác — mở trang quản lý để xem tất cả
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1166,6 +1237,7 @@ function BrowseSection({
   isVolunteer,
   isProvider,
   isCharity,
+  isAccountActive,
   myRoles,
   onApply,
   applying,
@@ -1178,6 +1250,7 @@ function BrowseSection({
   isVolunteer: boolean;
   isProvider: boolean;
   isCharity: boolean;
+  isAccountActive: boolean;
   myRoles: string[];
   onApply: (id: string, role: AssignmentRole) => void;
   applying: boolean;
@@ -1191,6 +1264,21 @@ function BrowseSection({
         </h2>
         <span className="text-xs font-bold text-neutral-500">{filtered.length} kết quả</span>
       </div>
+
+      {!isAccountActive && (isVolunteer || isProvider) && (
+        <div className="cm-alert mb-3">
+          <div className="cm-alert-icon">
+            <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+          </div>
+          <div className="cm-alert-body">
+            <p className="cm-alert-title">Tài khoản đang chờ admin duyệt</p>
+            <p className="cm-alert-sub">
+              Bạn có thể xem chi tiết chiến dịch nhưng chưa thể đăng ký tham gia.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
         {(Object.keys(STATUS_META) as Array<keyof typeof STATUS_META>).map((k) => {
           const meta = STATUS_META[k];
@@ -1230,6 +1318,8 @@ function BrowseSection({
               onApply={onApply}
               applying={applying}
               isProvider={isProvider}
+              // Khi tài khoản chưa active: vô hiệu hoá nút đăng ký (đi qua wrapper).
+              disabled={!isAccountActive}
             />
           ))}
         </div>

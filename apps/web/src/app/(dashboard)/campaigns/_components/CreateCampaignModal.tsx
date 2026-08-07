@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { reverseGeocode, searchAddress, type AddressSuggestion } from '@/lib/geocode';
@@ -10,11 +10,17 @@ import {
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
 import { errMsg, mediaUrl } from '@/lib/utils';
-import CreateCampaignSuggestions from '@/components/campaigns/CreateCampaignSuggestions';
+import {
+  ShiftSuggestions,
+  ScheduleSuggestions,
+  SupplySuggestions,
+  MenuSuggestions,
+} from '@/components/campaigns/CreateCampaignSuggestions';
 import type {
   ShiftTemplate,
   ScheduleTemplate,
   SupplyTemplate,
+  MenuTemplate,
 } from '@/components/campaigns/create-campaign-templates';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
@@ -230,6 +236,22 @@ export default function CreateCampaignModal({
             { name: t.name, quantity: t.quantity, unit: t.unit },
           ];
         });
+      } else if (kind === 'menu') {
+        const t = payload as MenuTemplate;
+        setMenu((prev) => {
+          // Tránh trùng tên món (case-insensitive)
+          if (prev.some((m) => m.name.trim().toLowerCase() === t.name.trim().toLowerCase())) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              name: t.name,
+              type: t.type,
+              plannedServings: t.plannedServings,
+            },
+          ];
+        });
       }
     }
     window.addEventListener('cm:insert-template', onInsert as EventListener);
@@ -241,6 +263,19 @@ export default function CreateCampaignModal({
   function emitFormReset() {
     window.dispatchEvent(new Event('cm:form-reset'));
   }
+
+  // Tổng hợp số thành viên theo vai trò từ các ca đã thêm — hiển thị
+  // ngay dưới dropdown gợi ý để user thấy ngay tổng khi chèn từng mẫu.
+  const shiftsSummary = useMemo(() => {
+    const total = shifts.reduce((sum, s) => sum + (s.slotsNeeded || 0), 0);
+    const byRole = { chef: 0, waiter: 0, shipper: 0, any: 0 };
+    shifts.forEach((s) => {
+      const role = s.role ?? 'any';
+      byRole[role] += s.slotsNeeded || 0;
+    });
+    const valid = shifts.filter((s) => s.label.trim()).length;
+    return { total, byRole, valid };
+  }, [shifts]);
 
   // Field-level errors (key = field path, value = Vietnamese message)
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -416,7 +451,17 @@ export default function CreateCampaignModal({
   const previewTitle = f.title.trim() || 'Tên chiến dịch của bạn';
 
   return (
-    <div className="cm-create-page">
+    <div className="cm-create-overlay" role="dialog" aria-modal="true" aria-labelledby="cm-modal-title">
+      {/* Backdrop click để đóng */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="cm-create-overlay-backdrop"
+        aria-label="Đóng popup"
+        tabIndex={-1}
+      />
+
+      <div className="cm-create-page">
       {/* ─── Header gọn: tiêu đề + nút đóng (không che form) ─── */}
       <header className="cm-create-header">
         <div className="min-w-0">
@@ -521,6 +566,15 @@ export default function CreateCampaignModal({
                 <span className="cm-form-block-label">
                   <span className="material-symbols-outlined">restaurant_menu</span>Thực đơn trong ngày
                 </span>
+                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                  Gợi ý sẽ tự lọc món phù hợp với vật phẩm đã nhập bên dưới.
+                </p>
+                <div className="mb-3">
+                  <MenuSuggestions
+                    supplies={supplies}
+                    expectedServings={f.expectedServings}
+                  />
+                </div>
                 <div className="cm-repeat">
                   {menu.map((m, i) => (
                     <div key={i} className="cm-repeat-row cm-repeat-row--menu">
@@ -839,6 +893,12 @@ export default function CreateCampaignModal({
                     error={errors.shipperSlotsNeeded}
                   />
                 </div>
+                <SlotsSummary
+                  chef={f.chefSlotsNeeded}
+                  waiter={f.waiterSlotsNeeded}
+                  shipper={f.shipperSlotsNeeded}
+                  expectedServings={f.expectedServings}
+                />
               </div>
 
               <div className="cm-form-block">
@@ -851,8 +911,16 @@ export default function CreateCampaignModal({
                   Tạo sẵn các ca để tình nguyện viên đăng ký ngay khi chiến dịch được duyệt.
                 </p>
                 <div className="mb-3">
-                  <CreateCampaignSuggestions tone="emerald" />
+                  <ShiftSuggestions expectedServings={f.expectedServings} />
                 </div>
+                {shifts.length > 0 && (
+                  <ShiftsSummary
+                    total={shiftsSummary.total}
+                    byRole={shiftsSummary.byRole}
+                    valid={shiftsSummary.valid}
+                    expectedServings={f.expectedServings}
+                  />
+                )}
                 <div className="cm-repeat">
                   {shifts.map((s, i) => (
                     <div key={i} className="space-y-1">
@@ -977,7 +1045,7 @@ export default function CreateCampaignModal({
                   </span>
                 </div>
                 <div className="mb-3">
-                  <CreateCampaignSuggestions tone="sky" />
+                  <ScheduleSuggestions expectedServings={f.expectedServings} />
                 </div>
                 <div className="cm-repeat">
                   {schedule.map((s, i) => (
@@ -1031,7 +1099,7 @@ export default function CreateCampaignModal({
                   </span>
                 </div>
                 <div className="mb-3">
-                  <CreateCampaignSuggestions tone="amber" />
+                  <SupplySuggestions expectedServings={f.expectedServings} />
                 </div>
                 <div className="cm-repeat">
                   {supplies.map((s, i) => (
@@ -1125,6 +1193,7 @@ export default function CreateCampaignModal({
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }
@@ -1349,6 +1418,231 @@ function MiniStepper({
       >
         <span className="material-symbols-outlined text-[14px]">add</span>
       </button>
+    </div>
+  );
+}
+
+/**
+ * Tóm tắt tổng số thành viên từ các ca đã thêm.
+ * Hiển thị ngay sau dropdown gợi ý và trước danh sách ca — giúp user thấy
+ * ngay tổng đầu bếp / phục vụ / giao hàng sau khi chèn từng mẫu, đồng thời
+ * cảnh báo nếu tổng nhân sự quá mỏng / quá dày so với số suất dự kiến.
+ */
+function ShiftsSummary({
+  total,
+  byRole,
+  valid,
+  expectedServings,
+}: {
+  total: number;
+  byRole: { chef: number; waiter: number; shipper: number; any: number };
+  valid: number;
+  expectedServings: number;
+}) {
+  // Gợi ý ngưỡng nhân sự tối thiểu theo số suất:
+  //   <50 suất  → 4–6 người
+  //   50–200    → 8–14 người
+  //   >200      → ≥ 14 người, scale theo servings/15
+  const recommendedMin =
+    expectedServings < 50
+      ? 4
+      : expectedServings <= 200
+        ? 8
+        : Math.max(14, Math.ceil(expectedServings / 15));
+
+  let verdict: { tone: 'rose' | 'amber' | 'emerald'; text: string; icon: string };
+  if (total === 0) {
+    verdict = {
+      tone: 'amber',
+      icon: 'priority_high',
+      text: 'Chưa có ca nào — chèn mẫu hoặc tự thêm ca bên dưới.',
+    };
+  } else if (valid === 0) {
+    verdict = {
+      tone: 'amber',
+      icon: 'edit',
+      text: 'Các ca đang trống tên — bổ sung nhãn để tình nguyện viên nhận diện.',
+    };
+  } else if (total < recommendedMin) {
+    verdict = {
+      tone: 'amber',
+      icon: 'group_remove',
+      text: `Tổng ${total} người — khá mỏng cho ${expectedServings} suất (khuyến nghị ≥ ${recommendedMin}).`,
+    };
+  } else if (total > recommendedMin * 2.5) {
+    verdict = {
+      tone: 'rose',
+      icon: 'group_add',
+      text: `Tổng ${total} người — có thể thừa cho ${expectedServings} suất (khuyến nghị ≤ ${Math.ceil(recommendedMin * 2.5)}).`,
+    };
+  } else {
+    verdict = {
+      tone: 'emerald',
+      icon: 'check_circle',
+      text: `Tổng ${total} người — phù hợp với quy mô ${expectedServings} suất.`,
+    };
+  }
+
+  const verdictCls: Record<typeof verdict.tone, string> = {
+    rose: 'bg-rose-50 text-rose-800 border-rose-200',
+    amber: 'bg-amber-50 text-amber-800 border-amber-200',
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  };
+
+  return (
+    <div
+      className={`mb-3 rounded-2xl border px-3 py-2.5 ${verdictCls[verdict.tone]}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-extrabold inline-flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[14px]">
+            {verdict.icon}
+          </span>
+          {verdict.text}
+        </p>
+        <span className="text-[10px] font-bold uppercase tracking-wide opacity-75">
+          {valid}/{valid === 1 ? 'ca' : 'các ca'} đã đặt tên
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+        <SummaryCell
+          icon="group"
+          label="Tổng thành viên"
+          value={total}
+          accent
+        />
+        <SummaryCell
+          icon="skillet"
+          label="Đầu bếp"
+          value={byRole.chef}
+        />
+        <SummaryCell
+          icon="room_service"
+          label="Phục vụ"
+          value={byRole.waiter}
+        />
+        <SummaryCell
+          icon="local_shipping"
+          label="Giao hàng"
+          value={byRole.shipper}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SummaryCell({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border px-2 py-1.5 flex items-center gap-2 ${
+        accent
+          ? 'bg-white/70 border-current'
+          : 'bg-white/50 border-current/30'
+      }`}
+    >
+      <span className="material-symbols-outlined text-[14px]">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[9px] font-bold uppercase tracking-wider opacity-70 truncate">
+          {label}
+        </p>
+        <p className="text-sm font-extrabold leading-tight">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Tóm tắt tổng nhân sự từ 3 stepper (đầu bếp / phục vụ / giao hàng).
+ * Hiển thị ngay dưới grid stepper — độc lập với danh sách ca trực.
+ */
+function SlotsSummary({
+  chef,
+  waiter,
+  shipper,
+  expectedServings,
+}: {
+  chef: number;
+  waiter: number;
+  shipper: number;
+  expectedServings: number;
+}) {
+  const total = chef + waiter + shipper;
+
+  // Khuyến nghị: ~1 nhân sự / 12–15 suất.
+  const recommendedMin =
+    expectedServings < 50
+      ? 4
+      : expectedServings <= 200
+        ? 8
+        : Math.max(14, Math.ceil(expectedServings / 15));
+
+  let verdict: { tone: 'rose' | 'amber' | 'emerald'; text: string; icon: string };
+  if (total === 0) {
+    verdict = {
+      tone: 'amber',
+      icon: 'priority_high',
+      text: 'Chưa có nhân sự — tăng stepper bên trên để chuẩn bị nhân lực.',
+    };
+  } else if (total < recommendedMin) {
+    verdict = {
+      tone: 'amber',
+      icon: 'group_remove',
+      text: `Tổng ${total} người — khá mỏng cho ${expectedServings} suất (khuyến nghị ≥ ${recommendedMin}).`,
+    };
+  } else if (total > recommendedMin * 2.5) {
+    verdict = {
+      tone: 'rose',
+      icon: 'group_add',
+      text: `Tổng ${total} người — có thể thừa cho ${expectedServings} suất (khuyến nghị ≤ ${Math.ceil(
+        recommendedMin * 2.5,
+      )}).`,
+    };
+  } else {
+    verdict = {
+      tone: 'emerald',
+      icon: 'check_circle',
+      text: `Tổng ${total} người — phù hợp với quy mô ${expectedServings} suất.`,
+    };
+  }
+
+  const verdictCls: Record<typeof verdict.tone, string> = {
+    rose: 'bg-rose-50 text-rose-800 border-rose-200',
+    amber: 'bg-amber-50 text-amber-800 border-amber-200',
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  };
+
+  return (
+    <div
+      className={`mt-2 rounded-2xl border px-3 py-2.5 ${verdictCls[verdict.tone]}`}
+      role="status"
+      aria-live="polite"
+    >
+      <p className="text-xs font-extrabold inline-flex items-center gap-1.5">
+        <span className="material-symbols-outlined text-[14px]">
+          {verdict.icon}
+        </span>
+        {verdict.text}
+      </p>
+
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+        <SummaryCell icon="group" label="Tổng thành viên" value={total} accent />
+        <SummaryCell icon="skillet" label="Đầu bếp" value={chef} />
+        <SummaryCell icon="room_service" label="Phục vụ" value={waiter} />
+        <SummaryCell icon="local_shipping" label="Giao hàng" value={shipper} />
+      </div>
     </div>
   );
 }

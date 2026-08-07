@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   FileTypeValidator,
   Get,
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   UploadedFile,
   UseGuards,
@@ -15,7 +17,13 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BulkRunsService } from './bulk-runs.service';
-import { RequestBulkRunDto, RejectBulkRunDto, AddStopDto, ServeStopDto } from './dto/bulk-run.dto';
+import {
+  RequestBulkRunDto,
+  RejectBulkRunDto,
+  AddStopDto,
+  UpdateStopDto,
+  ServeStopDto,
+} from './dto/bulk-run.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -102,6 +110,29 @@ export class BulkRunsController {
     @Body() dto: AddStopDto,
   ) {
     return this.bulkRuns.addStop(id, user.id, dto);
+  }
+
+  @Patch(':id/stops/:stopId')
+  @Roles(UserRole.VOLUNTEER, UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Sửa điểm phát chưa phát hàng (NCC chủ tin hoặc shipper của chuyến)' })
+  updateStop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stopId', ParseUUIDPipe) stopId: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateStopDto,
+  ) {
+    return this.bulkRuns.updateStop(id, stopId, user.id, dto);
+  }
+
+  @Delete(':id/stops/:stopId')
+  @Roles(UserRole.VOLUNTEER, UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Gỡ điểm phát chưa phát hàng khỏi chuyến' })
+  removeStop(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stopId', ParseUUIDPipe) stopId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.bulkRuns.removeStop(id, stopId, user.id);
   }
 
   @Post(':id/stops/:stopId/serve')

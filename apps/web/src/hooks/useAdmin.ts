@@ -48,10 +48,13 @@ export interface AdminUser {
   id: string;
   email: string;
   fullName: string;
+  phone: string | null;
   role: string;
   status: string;
   trustScore: number;
   avatarUrl: string | null;
+  /** Ảnh khuôn mặt eKYC đã đăng ký — chỉ receiver/volunteer có, provider/admin là null */
+  faceImageUrl: string | null;
   createdAt: string;
   specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
   isCharityOrg: boolean;
@@ -523,8 +526,13 @@ export function useUnassignVolunteer() {
 export function useReviewUserVerification() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { profileId: string; decision: 'approved' | 'rejected'; note?: string }) =>
-      (await api.patch(`/admin/verifications/provider/${p.profileId}`, { decision: p.decision, note: p.note })).data.data,
+    mutationFn: async (p: {
+      type: 'provider' | 'volunteer';
+      profileId: string;
+      decision: 'approved' | 'rejected';
+      note?: string;
+    }) =>
+      (await api.patch(`/admin/verifications/${p.type}/${p.profileId}`, { decision: p.decision, note: p.note })).data.data,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin'] });
     },

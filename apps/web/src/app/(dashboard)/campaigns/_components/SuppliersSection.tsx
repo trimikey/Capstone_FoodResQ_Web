@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import { useProviders, useProviderListings, type ProviderSummary, type ProviderListing } from '@/hooks/useProviders';
-import { useSentRequests, type SentRequestItem, type Campaign } from '@/hooks/useCampaigns';
+import {
+  useConfirmCampaignTransportReceipt,
+  useSentRequests,
+  type SentRequestItem,
+  type Campaign,
+} from '@/hooks/useCampaigns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/utils';
@@ -69,6 +74,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function SuppliersSection({ campaigns = [] }: Props) {
   const { data: suppliers, isLoading } = useProviders();
   const { data: sentRequests } = useSentRequests();
+  const confirmReceipt = useConfirmCampaignTransportReceipt();
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [showProposalForm, setShowProposalForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -270,6 +276,22 @@ export default function SuppliersSection({ campaigns = [] }: Props) {
             selectedListings={selectedListingsByProvider[profileId] ?? []}
             onListingsChange={(ids) => setSelectedListingsByProvider((prev) => ({ ...prev, [profileId]: ids }))}
             openCampaigns={openCampaigns}
+            confirmingTransportId={confirmReceipt.isPending ? confirmReceipt.variables?.transportId ?? null : null}
+            onConfirmReceipt={async (request) => {
+              if (!request.campaign || !request.transport) return;
+              try {
+                await confirmReceipt.mutateAsync({
+                  campaignId: request.campaign.id,
+                  transportId: request.transport.id,
+                });
+                toast.success('Đã xác nhận bếp nhận thực phẩm.');
+              } catch (e: unknown) {
+                const message =
+                  (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message
+                  ?? 'Không thể xác nhận nhận hàng.';
+                toast.error(message);
+              }
+            }}
           />
         );
       })}
@@ -295,6 +317,8 @@ function SupplierCard({
   selectedListings,
   onListingsChange,
   openCampaigns,
+  confirmingTransportId,
+  onConfirmReceipt,
 }: {
   supplier: ProviderSummary;
   profileId: string;
@@ -310,6 +334,8 @@ function SupplierCard({
   selectedListings: string[];
   onListingsChange: (ids: string[]) => void;
   openCampaigns: { id: string; title: string }[];
+  confirmingTransportId: string | null;
+  onConfirmReceipt: (request: SentRequestItem) => void;
 }) {
   const { data: listings, isLoading: loadingListings } = useProviderListings(
     isExpanded ? profileId : null,
@@ -386,9 +412,18 @@ function SupplierCard({
 
         {/* ─── Request area (hide when accepted) ─── */}
         {req?.status === 'accepted' ? (
-          <div className="bg-emerald-50 rounded-lg px-3 py-2 text-sm text-emerald-700 border border-emerald-200 flex items-center gap-2">
-            <span className="material-symbols-outlined text-emerald-600">check_circle</span>
-            Đã đồng ý hợp tác — chờ NCC đăng thực phẩm.
+          <div className="space-y-2">
+            <div className="bg-emerald-50 rounded-lg px-3 py-2 text-sm text-emerald-700 border border-emerald-200 flex items-center gap-2">
+              <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+              Đã đồng ý hợp tác — chờ NCC đăng thực phẩm.
+            </div>
+            {req.needsTransport && req.transport && (
+              <CampaignTransportStatus
+                request={req}
+                busy={confirmingTransportId === req.transport.id}
+                onConfirmReceipt={onConfirmReceipt}
+              />
+            )}
           </div>
         ) : req?.status === 'pending' ? (
           <div className="bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-700 flex items-center gap-2">
@@ -486,10 +521,63 @@ function SupplierCard({
   );
 }
 
+function CampaignTransportStatus({
+  request,
+  busy,
+  onConfirmReceipt,
+}: {
+  request: SentRequestItem;
+  busy: boolean;
+  onConfirmReceipt: (request: SentRequestItem) => void;
+}) {
+  const transport = request.transport;
+  if (!transport) return null;
+
+  const labels: Record<string, string> = {
+    pending: 'Đang tìm shipper',
+    assigned: 'Shipper đã nhận chuyến',
+    heading_to_provider: 'Shipper đang đến NCC',
+    picked_up: 'Đã lấy thực phẩm',
+    in_transit: 'Đang giao đến bếp',
+    delivered: 'Chờ bếp xác nhận',
+    received: 'Bếp đã xác nhận nhận hàng',
+    failed: 'Giao hàng thất bại',
+  };
+  const tone = transport.status === 'failed'
+    ? 'bg-rose-50 border-rose-200 text-rose-700'
+    : transport.status === 'received'
+      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+      : transport.status === 'delivered'
+        ? 'bg-amber-50 border-amber-200 text-amber-800'
+        : 'bg-sky-50 border-sky-200 text-sky-700';
+
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 text-sm ${tone}`}>
+      <div className="flex items-center gap-2">
+        <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+        <span className="font-semibold">{labels[transport.status] ?? transport.status}</span>
+      </div>
+      {transport.failureReason && <p className="mt-1 text-xs">Lý do: {transport.failureReason}</p>}
+      {transport.receiptNote && <p className="mt-1 text-xs">Ghi chú nhận hàng: {transport.receiptNote}</p>}
+      {transport.status === 'delivered' && (
+        <button
+          type="button"
+          onClick={() => onConfirmReceipt(request)}
+          disabled={busy}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-[16px]">inventory</span>
+          {busy ? 'Đang xác nhận…' : 'Xác nhận bếp đã nhận hàng'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ListingRow — một dòng món ăn trong expanded panel
 // ─────────────────────────────────────────────────────────────────────────────
-function ListingRow({ 
+function ListingRow({
   item, 
   isSelected, 
   onToggle 

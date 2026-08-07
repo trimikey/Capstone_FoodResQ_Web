@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/auth';
 import { Popup, Toast } from '../components/ui/AppPopup';
 import { notifyError, notifySuccess } from '../services/haptics';
 import type { TaskOffer } from './useDeliveries';
+import type { CampaignTask } from './useCampaigns';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 /** Origin cho WebSocket — bỏ prefix /api/v1 (gateway gắn ở gốc). */
@@ -33,14 +34,61 @@ function formatKm(km: unknown): string {
 }
 
 function formatOfferPopup(offer: TaskOffer) {
-  const listing = offer.delivery.reservation.listing;
-  const receiver = offer.delivery.reservation.receiver;
+  const { delivery } = offer;
+  const reservation = delivery.reservation;
+  const transport = delivery.campaignTransport;
+  const title = reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+  const pickup = delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng';
+  const destination = delivery.destination.address ?? reservation?.receiver?.address ?? 'Chưa có địa chỉ giao hàng';
+
   return [
-    listing.title,
-    `Khoảng cách: ${formatKm(offer.delivery.distanceKm)}`,
-    `Lấy: ${listing.pickupAddress}`,
-    `Giao: ${receiver?.address ?? 'Theo địa chỉ người nhận'}`,
+    title,
+    `Khoảng cách: ${formatKm(delivery.distanceKm)}`,
+    `Lấy: ${pickup}`,
+    `Giao: ${destination}`,
   ].join('\n');
+}
+
+function notificationCampaignId(n: AppNotification): string | null {
+  return typeof n.data?.campaignId === 'string' && n.data.campaignId.length > 0
+    ? n.data.campaignId
+    : null;
+}
+
+function notificationString(n: AppNotification, key: string): string | null {
+  return typeof n.data?.[key] === 'string' && n.data[key].length > 0 ? n.data[key] : null;
+}
+
+function patchCampaignTaskFromNotification(qc: ReturnType<typeof useQueryClient>, n: AppNotification) {
+  const assignmentId = notificationString(n, 'assignmentId');
+  const status = notificationString(n, 'status');
+  if (!assignmentId || !status) return;
+
+  qc.setQueryData<CampaignTask[]>(['campaign-tasks'], (current) =>
+    current?.map((task) =>
+      task.id === assignmentId
+        ? {
+            ...task,
+            status,
+            shiftId: notificationString(n, 'shiftId') ?? task.shiftId,
+          }
+        : task
+    )
+  );
+}
+
+function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignId: string, notification?: AppNotification) {
+  if (notification) patchCampaignTaskFromNotification(qc, notification);
+  void qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
+  void qc.invalidateQueries({ queryKey: ['campaigns'] });
+  void qc.invalidateQueries({ queryKey: ['campaign-tasks'] });
+  void qc.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
+  void qc.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaigns'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
 }
 
 /** Danh sách 50 thông báo gần nhất. GET /notifications/my */
@@ -163,6 +211,8 @@ export function useNotificationSocket() {
         if (__DEV__) console.log('[notif-ws] notification:new', n.title);
         Toast.show({ type: 'info', text1: n.title, text2: n.body });
         void qc.invalidateQueries({ queryKey: ['notifications'] });
+        const campaignId = notificationCampaignId(n);
+        if (campaignId) refreshCampaignQueries(qc, campaignId, n);
       });
 
       socket.on('delivery:offer', async (event: DeliveryOfferEvent) => {

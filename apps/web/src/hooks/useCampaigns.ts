@@ -119,6 +119,18 @@ export interface MyTask {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId?: string | null;
+  shift?: {
+    id: string;
+    label: string;
+    role: 'chef' | 'waiter' | 'shipper' | null;
+    startTime: string;
+    endTime: string;
+  } | null;
+  notes?: string | null;
+  checkInTime?: string | null;
+  ingredientProofAt?: string | null;
+  cookedProofAt?: string | null;
   campaign: {
     id: string;
     title: string;
@@ -165,6 +177,7 @@ export interface CampaignParticipant {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId?: string | null;
   fullName: string;
   avatarUrl: string | null;
   rank: string;
@@ -192,6 +205,10 @@ export interface CampaignManageParticipant {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  shiftId: string | null;
+  fullName: string;
+  avatarUrl: string | null;
+  rank: string;
   checkInTime: string | null;
   notes: string | null;
   createdAt: string;
@@ -368,8 +385,10 @@ export function useApplyCampaign() {
   return useMutation({
     mutationFn: async (p: { id: string; role: AssignmentRole }) =>
       (await api.post(`/campaigns/${p.id}/apply`, { role: p.role })).data.data,
-    onSuccess: () => {
+    onSuccess: (_data, p) => {
+      // Refetch campaigns list + manage-detail để trang registrations/overview cập nhật ngay.
       void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.id] });
     },
   });
 }
@@ -471,15 +490,20 @@ export function useCancelCampaignChange() {
 export function useAdvanceTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { assignmentId: string; photo?: File }) => {
+    mutationFn: async (p: { assignmentId: string; photo?: File; lng?: number; lat?: number }) => {
       const fd = new FormData();
       if (p.photo) fd.append('photo', p.photo);
+      if (p.lng != null) fd.append('lng', String(p.lng));
+      if (p.lat != null) fd.append('lat', String(p.lat));
       const { data } = await api.post(`/campaigns/assignments/${p.assignmentId}/advance`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       return data.data as { id: string; status: string; pointsAwarded?: number };
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+    },
   });
 }
 
@@ -558,6 +582,20 @@ export function useReviewProviderRequest() {
 }
 
 /** Charity: xem danh sách request đã gửi đến provider */
+export interface CampaignTransportItem {
+  id: string;
+  status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'received' | 'failed';
+  deliveryId: string | null;
+  assignedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  receivedAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+  receiptNote: string | null;
+  receiptPhotoUrl: string | null;
+}
+
 export interface SentRequestItem {
   id: string;
   campaignId: string;
@@ -568,7 +606,11 @@ export interface SentRequestItem {
   durationMonths: number | null;
   reviewedAt: string | null;
   reviewedNote: string | null;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+  needsTransport: boolean;
   createdAt: string;
+  transport: CampaignTransportItem | null;
   provider: {
     id: string;
     businessName: string | null;
@@ -588,6 +630,18 @@ export function useSentRequests() {
   });
 }
 
+export function useConfirmCampaignTransportReceipt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; transportId: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/transports/${p.transportId}/receive`)).data.data,
+    onSuccess: (_data, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+    },
+  });
+}
+
 // ─── Manage endpoints (cho trang /campaigns/[id]/manage/*) ──────────────────
 
 /** Tổ chức: duyệt / từ chối 1 đăng ký TNV (status=pending → assigned/rejected). */
@@ -599,24 +653,29 @@ export function useReviewAssignment() {
       assignmentId: string;
       action: 'approved' | 'rejected';
       note?: string;
+      shiftId?: string;
     }) => {
       const { data } = await api.patch(
         `/campaigns/${p.campaignId}/assignments/${p.assignmentId}/review`,
-        { action: p.action, note: p.note },
+        { action: p.action, note: p.note, shiftId: p.shiftId },
       );
       return data.data;
     },
-    onSuccess: (_d, p) => {
+    onSuccess: async (_d, p) => {
       // Refetch ngay lập tức cả manage-detail và public-detail để RegistrationRow
       // đọc được serverStatus mới (assigned/rejected) thay vì giữ optimistic local.
-      void qc.invalidateQueries({
-        queryKey: ['campaigns', 'manage-detail', p.campaignId],
-        refetchType: 'all',
-      });
-      void qc.invalidateQueries({
-        queryKey: ['campaigns', 'public', p.campaignId],
-        refetchType: 'all',
-      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'open'], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'mine'], refetchType: 'all' }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'], refetchType: 'all' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'public', p.campaignId], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'open'], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'mine'], type: 'active' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'my-tasks'], type: 'active' }),
+      ]);
     },
   });
 }
@@ -627,7 +686,9 @@ export function useCampaignManageDetail(id: string) {
     queryKey: ['campaigns', 'manage-detail', id],
     queryFn: async () => (await api.get(`/campaigns/${id}/manage-detail`)).data.data as CampaignManageDetail,
     enabled: !!id,
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -649,7 +710,7 @@ export function useCreateDistribution() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: CreateDistributionInput }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/distributions`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/distributions`, p.input);
       return data.data;
     },
     onSuccess: (_d, p) => {
@@ -688,7 +749,7 @@ export function useAddShift() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: ShiftInput }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/shifts`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/shifts`, p.input);
       return data.data as CampaignShift;
     },
     onSuccess: (_d, p) => {
@@ -736,7 +797,7 @@ export function useAppendMenuItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { campaignId: string; input: { name: string; type: string; plannedServings?: number } }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/menu-items`, p.input);
+      const { data } = await api.post(`/campaigns/${p.campaignId}/manage/menu-items`, p.input);
       return data.data as { menuItems: Array<{ name: string; type: string; plannedServings?: number | null }> };
     },
     onSuccess: (_d, p) => {

@@ -26,15 +26,24 @@ function pin(color: string, glyph: string, size = 34) {
 
 function FitBounds({ points }: { points: Pt[] }) {
   const map = useMap();
+  // Khoá ổn định theo toạ độ thay vì tham chiếu mảng: trang chi tiết đơn re-render
+  // mỗi giây (countdown tìm TNV) và tạo mảng points mới mỗi lần → nếu phụ thuộc vào
+  // tham chiếu thì fitBounds bị gọi lại liên tục, animation chồng nhau.
+  const key = points.map((p) => `${p.lat},${p.lng}`).join('|');
   useEffect(() => {
     if (points.length === 0) return;
+    // Map có thể đã bị huỷ (đổi nhánh JSX khi hết giờ chờ / huỷ tìm TNV) trong lúc
+    // animation còn chạy → Leaflet đọc _leaflet_pos trên pane đã gỡ và ném TypeError.
+    // Vì vậy: chặn khi container không còn, và tắt animation cho mọi lần canh khung.
+    if (!map.getContainer()) return;
     if (points.length === 1) {
-      map.setView([points[0].lat, points[0].lng], 14);
+      map.setView([points[0].lat, points[0].lng], 14, { animate: false });
       return;
     }
     const b = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
-    map.fitBounds(b, { padding: [40, 40], maxZoom: 15 });
-  }, [map, points]);
+    map.fitBounds(b, { padding: [40, 40], maxZoom: 15, animate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key thay cho tham chiếu points
+  }, [map, key]);
   return null;
 }
 

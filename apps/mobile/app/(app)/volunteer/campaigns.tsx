@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router, Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useCampaigns,
@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage } from '@/services/faceCapture';
+import { getCurrentCoords } from '@/services/geolocation';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -43,12 +44,21 @@ type Segment = 'open' | 'tasks';
  *   → completed (kèm ảnh minh chứng ở bước làm việc/hoàn thành).
  */
 export default function VolunteerCampaignsScreen() {
+  const params = useLocalSearchParams<{ segment?: Segment }>();
   const { user } = useAuth();
-  const [segment, setSegment] = useState<Segment>('open');
+  const initialSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
+  const [segment, setSegment] = useState<Segment>(initialSegment);
 
   const openQuery = useCampaigns();
   const tasksQuery = useMyTasks(user?.role === 'volunteer');
   const advanceMut = useAdvanceTask();
+
+  useFocusEffect(
+    useCallback(() => {
+      const nextSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
+      setSegment(nextSegment);
+    }, [params.segment])
+  );
 
   // Chỉ volunteer dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'volunteer') {
@@ -58,10 +68,27 @@ export default function VolunteerCampaignsScreen() {
   const handleAdvance = async (task: CampaignTask) => {
     const next = nextAssignmentStatus(task.status);
     if (!next) return;
+
+    let lng: number | undefined;
+    let lat: number | undefined;
+    if (next === 'checked_in') {
+      const { coords } = await getCurrentCoords();
+      if (!coords) {
+        Popup.show({
+          type: 'warning',
+          text1: 'Cần vị trí để điểm danh',
+          text2: 'Hãy bật quyền vị trí và đứng gần bếp trước khi thử lại.',
+        });
+        return;
+      }
+      lng = coords.lng;
+      lat = coords.lat;
+    }
+
     let photo;
     if (assignmentStepRequiresPhoto(next)) {
       try {
-        photo = (await captureImage('id_card')) ?? undefined;
+        photo = (await captureImage('id_card', 'proof')) ?? undefined;
       } catch (e: any) {
         Popup.show({ type: 'error', text1: 'Không mở được camera', text2: e?.message ?? 'Cần quyền camera.' });
         return;
@@ -72,17 +99,34 @@ export default function VolunteerCampaignsScreen() {
       }
     }
     try {
-      const res = await advanceMut.mutateAsync({ assignmentId: task.id, photo });
+      const res = await advanceMut.mutateAsync({
+        assignmentId: task.id,
+        campaignId: task.campaign.id,
+        lng,
+        lat,
+        photo,
+      });
       void notifySuccess();
       Popup.show({
         type: 'success',
-        text1: next === 'completed' ? 'Đã hoàn thành công việc' : 'Đã cập nhật',
+        text1: next === 'completed' ? 'Đã hoàn thành công việc' : next === 'checked_in' ? 'Đã điểm danh tại bếp' : 'Đã cập nhật',
         text2: res?.pointsAwarded ? `+${res.pointsAwarded} điểm cống hiến!` : undefined,
       });
     } catch (err) {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Cập nhật thất bại', text2: getErrorMessage(err) });
     }
+  };
+
+  const openCampaignDetail = (campaignId: string, returnSegment: Segment) => {
+    router.push({
+      pathname: '/volunteer/campaigns/[id]',
+      params: {
+        id: campaignId,
+        returnTo: '/volunteer/campaigns',
+        returnSegment,
+      },
+    });
   };
 
   const renderOpenEmpty = () => {
@@ -147,7 +191,7 @@ export default function VolunteerCampaignsScreen() {
           data={openQuery.data ?? []}
           keyExtractor={(item: Campaign) => item.id}
           renderItem={({ item }: { item: Campaign }) => (
-            <CampaignCard campaign={item} onPress={() => router.push(`/(app)/volunteer/campaigns/${item.id}`)} />
+            <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
           )}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderOpenEmpty}
@@ -163,7 +207,7 @@ export default function VolunteerCampaignsScreen() {
               task={item}
               advancing={advanceMut.isPending}
               onAdvance={() => handleAdvance(item)}
-              onOpen={() => router.push(`/(app)/volunteer/campaigns/${item.campaign.id}`)}
+              onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
             />
           )}
           contentContainerStyle={styles.list}
