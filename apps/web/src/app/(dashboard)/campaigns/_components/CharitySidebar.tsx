@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { mediaUrl } from '@/lib/utils';
 
 export type Section =
   | 'overview'
@@ -46,20 +46,24 @@ export default function CharitySidebar({
   onLogout,
 }: CharitySidebarProps) {
   return (
+    // Bắt đầu NGAY DƯỚI header chung (fixed, cao 104px) — giống sidebar /provider và
+    // /deliveries. Để top-0 h-screen thì 104px đầu của sidebar chui xuống dưới header,
+    // logo bị cắt còn một mẩu thò ra góc trái.
     <aside
-      className="hidden lg:flex fixed left-0 top-0 h-screen w-56 flex-col bg-white z-40 border-r border-neutral-200"
+      className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-56 flex-col bg-white z-40 border-r border-neutral-200"
       aria-label="Điều hướng chiến dịch"
     >
-      {/* Logo Header */}
-      <Link href="/campaigns" className="flex items-center px-5 py-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-10 w-auto object-contain" />
-      </Link>
-
-      {/* Section label */}
-      <p className="px-5 mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-        Bếp ăn cộng đồng
-      </p>
+      {/* Tiêu đề vai trò thay cho logo — logo đã có trên thanh header phía trên,
+          lặp lại ở đây vừa thừa vừa bị header che mất. */}
+      <div className="px-5 pt-6 pb-4">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+          Bếp ăn cộng đồng
+        </p>
+        {userFullName && (
+          <p className="mt-1 text-base font-extrabold text-neutral-900 truncate">{userFullName}</p>
+        )}
+        <p className="text-xs text-neutral-500 mt-0.5">Quản lý chiến dịch cộng đồng</p>
+      </div>
 
       {/* Navigation */}
       <nav className="flex flex-col gap-1 px-3 flex-grow overflow-y-auto">
@@ -124,7 +128,7 @@ export default function CharitySidebar({
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4e9853] to-[#2a662e] flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                <img src={mediaUrl(avatarUrl)} alt="" className="w-full h-full object-cover" />
               ) : (
                 <span>{userFullName.charAt(0).toUpperCase()}</span>
               )}

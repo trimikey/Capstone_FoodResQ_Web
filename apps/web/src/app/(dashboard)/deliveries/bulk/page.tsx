@@ -26,6 +26,7 @@ import { Spinner } from '@/components/shared/Spinner';
 import { Modal } from '@/components/shared/Modal';
 import BulkRunConfirmModal from '@/components/deliveries/BulkRunConfirmModal';
 import BulkStopForm from '@/components/deliveries/BulkStopForm';
+import BulkRunDetailModal from '@/components/deliveries/BulkRunDetailModal';
 import RunDeadline from '@/components/deliveries/RunDeadline';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -126,6 +127,7 @@ export default function BulkRunsPage() {
   const [showAddStop, setShowAddStop] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [detailRun, setDetailRun] = useState<BulkRun | null>(null);
 
   const active = useMemo(() => (runs ?? []).find(isActiveRun) ?? null, [runs]);
   const history = useMemo(() => (runs ?? []).filter((r) => !isActiveRun(r)).slice(0, 5), [runs]);
@@ -555,7 +557,14 @@ export default function BulkRunsPage() {
           <div className="bg-white rounded-3xl border border-neutral-150 shadow-sm p-5 space-y-3">
             <p className="font-extrabold text-neutral-900">Chuyến gần đây</p>
             {history.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 border-b border-neutral-100 last:border-0 pb-2.5 last:pb-0">
+              // Cả dòng là nút mở chi tiết — bấm chỗ nào cũng được, không phải nhắm
+              // đúng link nhỏ ở cuối hàng.
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setDetailRun(r)}
+                className="w-full text-left flex items-center gap-3 border-b border-neutral-100 last:border-0 pb-2.5 last:pb-0 hover:bg-neutral-50 rounded-xl px-1 -mx-1 transition-colors"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={mediaUrl(r.listing.imageUrls?.[0] ?? '') || '/banh-mi.png'}
@@ -565,16 +574,25 @@ export default function BulkRunsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-neutral-800 truncate">{r.listing.title}</p>
                   <p className="text-[11px] text-neutral-500">
-                    {r.quantityDistributed}/{r.quantity} phần · {r.stops.filter((s) => s.servedQty > 0).length} điểm phát
+                    {r.quantityDistributed}/{r.quantity}{' '}
+                    {UNIT_LABEL[r.listing.quantityUnit as QuantityUnit] ?? r.listing.quantityUnit ?? 'phần'} ·{' '}
+                    {r.stops.filter((s) => s.servedQty > 0).length} điểm phát
                     {r.rejectReason ? ` · ${r.rejectReason}` : ''}
                   </p>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 ${STATUS_VI[r.status].cls}`}>
                   {STATUS_VI[r.status].label}
                 </span>
-              </div>
+                <span className="material-symbols-outlined text-[18px] text-neutral-300 shrink-0">
+                  chevron_right
+                </span>
+              </button>
             ))}
           </div>
+        )}
+
+        {detailRun && (
+          <BulkRunDetailModal run={detailRun} onClose={() => setDetailRun(null)} />
         )}
       </div>
     </div>

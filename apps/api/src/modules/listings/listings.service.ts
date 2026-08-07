@@ -35,6 +35,9 @@ export interface NearbyRow {
   weight_per_unit_kg: string | null;
   pickup_start_time: Date;
   pickup_end_time: Date;
+  /** Khung giờ mở cửa trong ngày (phút từ 00:00 giờ VN); null = không giới hạn */
+  daily_start_minute: number | null;
+  daily_end_minute: number | null;
   pickup_address: string;
   storage_conditions: string | null;
   allergen_notes: string | null;
@@ -80,12 +83,25 @@ export class ListingsService {
       throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
     }
 
+    // Khung giờ trong ngày đi theo cặp — có mở thì phải có đóng, và không hỗ trợ
+    // khung vắt qua nửa đêm (đơn giản hoá cho cả BE lẫn hiển thị).
+    const hasDaily = dto.dailyStartMinute != null || dto.dailyEndMinute != null;
+    if (hasDaily) {
+      if (dto.dailyStartMinute == null || dto.dailyEndMinute == null) {
+        throw new BadRequestException('Cần nhập đủ cả giờ mở và giờ đóng nhận trong ngày.');
+      }
+      if (dto.dailyStartMinute >= dto.dailyEndMinute) {
+        throw new BadRequestException('Giờ đóng nhận trong ngày phải sau giờ mở nhận.');
+      }
+    }
+
     // Insert via raw SQL to handle the GEOGRAPHY column
     const result = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
       INSERT INTO food_listings (
         provider_id, title, description, category,
         quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
         pickup_start_time, pickup_end_time, expiry_time,
+        daily_start_minute, daily_end_minute,
         pickup_address, pickup_location,
         storage_conditions, allergen_notes, max_per_reservation, image_urls,
         is_surprise_bag, status, created_at, updated_at
@@ -95,6 +111,7 @@ export class ListingsService {
         ${dto.weightPerUnitKg ?? null},
         ${dto.pickupStartTime}::timestamptz, ${dto.pickupEndTime}::timestamptz,
         ${dto.expiryTime}::timestamptz,
+        ${dto.dailyStartMinute ?? null}, ${dto.dailyEndMinute ?? null},
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
         ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
@@ -125,6 +142,7 @@ export class ListingsService {
         SELECT
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
+          fl.daily_start_minute, fl.daily_end_minute,
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
@@ -156,6 +174,7 @@ export class ListingsService {
         SELECT
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
+          fl.daily_start_minute, fl.daily_end_minute,
           fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
@@ -184,6 +203,8 @@ export class ListingsService {
       weightPerUnitKg: r.weight_per_unit_kg ? Number(r.weight_per_unit_kg) : null,
       pickupStartTime: r.pickup_start_time,
       pickupEndTime: r.pickup_end_time,
+      dailyStartMinute: r.daily_start_minute ?? null,
+      dailyEndMinute: r.daily_end_minute ?? null,
       pickupAddress: r.pickup_address,
       storageConditions: r.storage_conditions,
       allergenNotes: r.allergen_notes,
@@ -204,6 +225,7 @@ export class ListingsService {
       SELECT
         fl.id, fl.title, fl.description, fl.category, fl.quantity_remaining, fl.quantity_unit,
         fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time, fl.pickup_address,
+        fl.daily_start_minute, fl.daily_end_minute,
         fl.storage_conditions, fl.allergen_notes, fl.max_per_reservation, fl.image_urls, fl.status,
         fl.provider_id, pp.business_name,
         ST_X(fl.pickup_location::geometry) AS lng,
@@ -226,6 +248,8 @@ export class ListingsService {
       weightPerUnitKg: r.weight_per_unit_kg ? Number(r.weight_per_unit_kg) : null,
       pickupStartTime: r.pickup_start_time,
       pickupEndTime: r.pickup_end_time,
+      dailyStartMinute: r.daily_start_minute ?? null,
+      dailyEndMinute: r.daily_end_minute ?? null,
       pickupAddress: r.pickup_address,
       storageConditions: r.storage_conditions,
       allergenNotes: r.allergen_notes,
@@ -263,6 +287,26 @@ export class ListingsService {
       where: { id: listingId },
       data: { status: 'cancelled', cancelledReason: reason ?? null },
     });
+  }
+
+  /**
+   * Xoá mềm một BẢN NHÁP. Chỉ áp dụng cho tin chưa từng đăng: tin đã đăng có thể đã
+   * có người đặt nên phải dùng luồng huỷ (giữ lịch sử) thay vì xoá.
+   */
+  async removeDraft(listingId: string, userId: string) {
+    const providerId = await this.resolveProviderId(userId);
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
+    if (!listing || listing.deletedAt) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+    if (listing.providerId !== providerId) throw new ForbiddenException();
+    if (listing.status !== 'draft') {
+      throw new BadRequestException('Chỉ xoá được bản nháp. Tin đã đăng vui lòng dùng chức năng huỷ.');
+    }
+
+    await this.prisma.foodListing.update({
+      where: { id: listingId },
+      data: { deletedAt: new Date() },
+    });
+    return { id: listingId, message: 'Đã xoá bản nháp.' };
   }
 
   async findByProvider(userId: string, page = 1, limit = 20) {
@@ -471,6 +515,7 @@ export class ListingsService {
         provider_id, title, description, category,
         quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
         pickup_start_time, pickup_end_time, expiry_time,
+        daily_start_minute, daily_end_minute,
         pickup_address, pickup_location,
         storage_conditions, allergen_notes, max_per_reservation, image_urls,
         is_surprise_bag, status, created_at, updated_at
@@ -486,6 +531,7 @@ export class ListingsService {
         ${original.pickupStartTime}::timestamptz,
         ${original.pickupEndTime}::timestamptz,
         ${original.expiryTime}::timestamptz,
+        ${original.dailyStartMinute}, ${original.dailyEndMinute},
         ${original.pickupAddress},
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
         ${original.storageConditions},

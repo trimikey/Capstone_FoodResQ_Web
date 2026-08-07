@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { mediaUrl } from '@/lib/utils';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
@@ -102,7 +103,7 @@ export default function VolunteerKitchenSidebar({ task }: { task: MyTask }) {
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#4e9853] to-[#2a662e] font-bold text-white">
               {me.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={me.avatarUrl} alt="" className="h-full w-full object-cover" />
+                <img src={mediaUrl(me.avatarUrl)} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span>{me.fullName.charAt(0).toUpperCase()}</span>
               )}

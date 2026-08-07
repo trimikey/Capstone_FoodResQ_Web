@@ -269,7 +269,14 @@ export function ManageShell({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={heroImage} alt={c.title} />
           )}
-          <Link href={`/campaigns/${c.id}`} className="cm-manage-hero-back" aria-label="Quay lại">
+          {/* Về danh sách chiến dịch của tổ chức, KHÔNG về trang chi tiết công khai
+              của chính chiến dịch đang mở — đó là đi tới, không phải quay lại. */}
+          <Link
+            href="/campaigns?tab=mine"
+            className="cm-manage-hero-back"
+            aria-label="Quay lại danh sách chiến dịch"
+            title="Quay lại danh sách chiến dịch"
+          >
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </Link>
           <div className="cm-manage-hero-actions">

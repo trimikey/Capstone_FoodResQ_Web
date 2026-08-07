@@ -39,6 +39,24 @@ export class ReservationsService {
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {}
 
+  /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
+  private minuteOfDayVN(d: Date): number {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).formatToParts(d);
+    const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+    const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+    return h * 60 + m;
+  }
+
+  /** 420 → "07:00" */
+  private formatMinute(min: number): string {
+    return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  }
+
   /** Định dạng giờ VN (HH:mm dd/MM) cho thông báo lỗi hiển thị tới người dùng. */
   private formatVN(d: Date): string {
     return new Intl.DateTimeFormat('vi-VN', {
@@ -106,11 +124,14 @@ export class ReservationsService {
           pickup_start_time: Date;
           pickup_end_time: Date;
           expiry_time: Date;
+          daily_start_minute: number | null;
+          daily_end_minute: number | null;
         }[]
       >(
         Prisma.sql`
           SELECT id, quantity_remaining, status, max_per_reservation,
-                 pickup_start_time, pickup_end_time, expiry_time
+                 pickup_start_time, pickup_end_time, expiry_time,
+                 daily_start_minute, daily_end_minute
           FROM food_listings
           WHERE id = ${dto.listingId}::uuid AND deleted_at IS NULL
         `,
@@ -134,6 +155,19 @@ export class ReservationsService {
         throw new BadRequestException(
           'Đã quá giờ nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
         );
+      }
+
+      // Khung giờ MỞ CỬA TRONG NGÀY (vd 07:00–21:00). Khác với mốc bắt đầu/hạn lấy ở
+      // trên: tin kéo dài nhiều ngày vẫn phải đóng nhận ngoài giờ cửa hàng làm việc,
+      // nếu không người nhận đặt lúc 3h sáng rồi không ai giao được.
+      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
+      if (dayStart != null && dayEnd != null) {
+        const nowMinute = this.minuteOfDayVN(nowTs);
+        if (nowMinute < dayStart || nowMinute >= dayEnd) {
+          throw new BadRequestException(
+            `Ngoài giờ nhận hàng của cửa hàng (${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}). Vui lòng quay lại trong khung giờ này.`,
+          );
+        }
       }
 
       if (listingRow.quantity_remaining < dto.quantity) {

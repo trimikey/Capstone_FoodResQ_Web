@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { mediaUrl } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { UserRole } from '@foodresq/types';
@@ -36,7 +37,7 @@ const VALID_SECTIONS: Section[] = [
  * Section hiện tại lấy từ ?tab=… trên URL (single source of truth);
  * page.tsx cũng đọc cùng param nên sidebar và main luôn đồng bộ.
  */
-export default function CampaignsLayout({ children }: { children: React.React.ReactNode }) {
+export default function CampaignsLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -47,11 +48,16 @@ export default function CampaignsLayout({ children }: { children: React.React.Re
   const isProvider = me?.role === UserRole.PROVIDER;
   const isCharity = me?.role === UserRole.RECEIVER && !!me?.receiver?.isCharityOrg;
 
-  // Section hiện tại từ URL — single source of truth, layout + page cùng đọc
+  // Section hiện tại từ URL — single source of truth, layout + page cùng đọc.
+  // Riêng /campaigns/{id}/manage/... không có ?tab= nhưng vẫn thuộc nhánh
+  // "Chiến dịch của tôi" — highlight đúng mục đó thay vì rơi về Tổng quan.
   const tabParam = searchParams?.get('tab');
+  const inManage = /^\/campaigns\/[^/]+\/manage/.test(pathname ?? '');
   const section: Section = (VALID_SECTIONS as string[]).includes(tabParam ?? '')
     ? (tabParam as Section)
-    : 'overview';
+    : inManage
+      ? 'mine'
+      : 'overview';
 
   // Pre-compute rail entries theo role để hiển thị badge số campaign của charity
   const { data: myCampaigns } = useMyCampaigns(isCharity);
@@ -96,7 +102,11 @@ export default function CampaignsLayout({ children }: { children: React.React.Re
     if (key === 'overview') current.delete('tab');
     else current.set('tab', key);
     const qs = current.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
+    // Luôn về /campaigns, KHÔNG dùng pathname hiện tại: khi đang ở
+    // /campaigns/{id}/manage/... thì gắn ?tab= vào chính đường dẫn đó chỉ đổi query
+    // mà vẫn nằm nguyên trang quản lý — bấm sidebar trông như không có tác dụng.
+    // Dùng push (không phải replace) để nút Back của trình duyệt quay lại được trang quản lý.
+    router.push(qs ? `/campaigns?${qs}` : '/campaigns');
   };
 
   const handleLogout = () => {
@@ -113,7 +123,10 @@ export default function CampaignsLayout({ children }: { children: React.React.Re
   }, [pathname, searchParams]);
 
   return (
-    <div className="cm-scope">
+    // Layout dashboard chừa sẵn 104px dưới header bằng padding, và dải đó mang nền kem
+    // của dashboard. Kéo ngược lên rồi bù lại padding để nền khu chiến dịch phủ kín,
+    // không còn vệt màu lạ ở giữa trang (giống cách /provider xử lý).
+    <div className="cm-scope md:-mt-[104px] md:pt-[104px]">
       <FaceEnrollmentGate />
 
       {/* Mobile top header — chỉ hiện <lg */}
@@ -133,7 +146,7 @@ export default function CampaignsLayout({ children }: { children: React.React.Re
         <div className="ml-auto w-9 h-9 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center text-white font-bold">
           {me?.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={me.avatarUrl} alt="" className="w-full h-full object-cover" />
+            <img src={mediaUrl(me.avatarUrl)} alt="" className="w-full h-full object-cover" />
           ) : (
             (me?.fullName?.charAt(0) ?? '?').toUpperCase()
           )}

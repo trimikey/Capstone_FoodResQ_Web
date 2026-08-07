@@ -138,6 +138,70 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
   });
 });
 
+/**
+ * Khung giờ MỞ CỬA trong ngày (vd 07:00–21:00) tách biệt với mốc bắt đầu/hạn lấy.
+ * Tin kéo dài nhiều ngày mà thiếu ràng buộc này sẽ cho đặt lúc 3h sáng.
+ */
+describe('ReservationsService.create — khung giờ mở cửa trong ngày', () => {
+  const listingBase = {
+    id: 'listing-1',
+    quantity_remaining: 10,
+    status: 'active',
+    max_per_reservation: 3,
+    pickup_start_time: new Date(Date.now() - 86_400_000),
+    pickup_end_time: new Date(Date.now() + 86_400_000),
+    expiry_time: new Date(Date.now() + 172_800_000),
+  };
+
+  const prisma = {
+    receiverProfile: { findUnique: jest.fn() },
+    reservation: { findFirst: jest.fn() },
+    $queryRaw: jest.fn(),
+  };
+  const lock = { release: jest.fn() };
+  let service: ReservationsService;
+
+  const build = (daily: { start: number | null; end: number | null }) => {
+    prisma.receiverProfile.findUnique.mockResolvedValue({
+      id: 'receiver-1',
+      isCharityOrg: false,
+      faceDescriptor: [1],
+      reservationsToday: 0,
+    });
+    prisma.$queryRaw.mockResolvedValue([
+      { ...listingBase, daily_start_minute: daily.start, daily_end_minute: daily.end },
+    ]);
+    return new ReservationsService(
+      prisma as never,
+      {} as never,
+      { acquire: jest.fn().mockResolvedValue(lock) } as never,
+      {} as never, {} as never,
+      { getNumber: jest.fn().mockResolvedValue(3) } as never,
+      { notify: jest.fn() } as never,
+      { applyDelta: jest.fn() } as never,
+      { add: jest.fn() } as never,
+    );
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('chặn đặt khi đang ngoài giờ mở cửa của tin', async () => {
+    // Khung 00:00–00:01 nên mọi thời điểm thực tế đều nằm ngoài
+    service = build({ start: 0, end: 1 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/Ngoài giờ nhận hàng/);
+  });
+
+  it('không áp ràng buộc khi tin cũ chưa khai báo khung giờ ngày', async () => {
+    service = build({ start: null, end: null });
+
+    // Đi qua được bước kiểm giờ → dừng ở bước sau, KHÔNG phải lỗi "ngoài giờ"
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.not.toThrow(/Ngoài giờ nhận hàng/);
+  });
+});
+
 describe('ReservationsService.expireNoShows', () => {
   const prisma = {
     reservation: { findMany: jest.fn(), update: jest.fn() },

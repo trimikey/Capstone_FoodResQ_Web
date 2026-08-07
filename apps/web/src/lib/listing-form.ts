@@ -13,6 +13,10 @@ export interface ListingForm {
   pickupEndTime: string;
   expiryDate: string;
   expiryTime: string;
+  /** Giờ mở nhận trong ngày, dạng "HH:mm" — khác với mốc bắt đầu/hạn lấy ở trên */
+  dailyStart: string;
+  /** Giờ đóng nhận trong ngày, dạng "HH:mm" */
+  dailyEnd: string;
   pickupAddress: string;
   lng: number;
   lat: number;
@@ -24,6 +28,22 @@ export interface ListingForm {
 
 const FALLBACK_LNG = 106.6297;
 const FALLBACK_LAT = 10.8231;
+
+/** "07:00" → 420. Trả null nếu chuỗi rỗng/không hợp lệ. */
+export function hhmmToMinute(v: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** 420 → "07:00" */
+export function minuteToHHmm(v?: number | null): string | null {
+  if (v == null) return null;
+  return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+}
 
 export function localDateTime(offsetH = 0): string {
   const d = new Date(Date.now() + offsetH * 3_600_000);
@@ -86,6 +106,8 @@ export function buildForm(
       pickupEndTime: end.time,
       expiryDate: expiry.date,
       expiryTime: expiry.time,
+      dailyStart: minuteToHHmm(source.dailyStartMinute) ?? '07:00',
+      dailyEnd: minuteToHHmm(source.dailyEndMinute) ?? '21:00',
       pickupAddress: source.pickupAddress ?? '',
       lng: source.lng ?? (hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG),
       lat: source.lat ?? (hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT),
@@ -113,6 +135,9 @@ export function buildForm(
     pickupEndTime: in24h[1],
     expiryDate: in48h[0],
     expiryTime: in48h[1],
+    // Mặc định giờ hành chính mở rộng — hợp với đa số cửa hàng ăn uống
+    dailyStart: '07:00',
+    dailyEnd: '21:00',
     pickupAddress: provider?.address ?? '',
     lng: hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG,
     lat: hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT,

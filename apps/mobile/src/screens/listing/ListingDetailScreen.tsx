@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import {
   Text,
@@ -67,8 +67,43 @@ export default function ListingDetailScreen({ id }: Props) {
   const soldOut = listing.quantityRemaining <= 0 || listing.status !== 'active';
   const providerBlocked = user?.role === 'provider';
   const unit = listing.quantityUnit;
+
+  // Chỉ đặt được TRONG khung giờ nhận hàng — backend cũng chặn, nhưng nếu ở đây không
+  // khoá thì người dùng bấm xong mới nhận lỗi. Tick để khoá đúng lúc cửa hàng đóng.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
+  // Khung giờ MỞ CỬA trong ngày (vd 07:00–21:00), tính theo giờ VN cho khớp backend.
+  // Khác với hạn lấy: tin kéo dài nhiều ngày vẫn phải đóng ngoài giờ làm việc.
+  const dailyStart = listing.dailyStartMinute;
+  const dailyEnd = listing.dailyEndMinute;
+  let outsideDaily = false;
+  if (dailyStart != null && dailyEnd != null) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Ho_Chi_Minh',
+    }).formatToParts(new Date(nowMs));
+    const minuteOfDay =
+      Number(parts.find((p) => p.type === 'hour')?.value ?? 0) * 60 +
+      Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+    outsideDaily = minuteOfDay < dailyStart || minuteOfDay >= dailyEnd;
+  }
+  const windowClosed = nowMs > new Date(listing.pickupEndTime).getTime() || outsideDaily;
+  const outsideWindow = notYetOpen || windowClosed;
+
   const listingStatus = soldOut
     ? { label: listing.status === 'active' ? 'Đã hết phần' : 'Không còn nhận đặt', tone: 'warning' as const }
+    : outsideWindow
+    ? {
+        label: notYetOpen
+          ? 'Chưa tới giờ nhận hàng'
+          : outsideDaily
+            ? 'Ngoài giờ mở cửa'
+            : 'Đã đóng nhận hàng',
+        tone: 'warning' as const,
+      }
     : { label: 'Có thể đặt nhận', tone: 'success' as const };
 
   const openDialog = () => {
@@ -173,10 +208,18 @@ export default function ListingDetailScreen({ id }: Props) {
           buttonColor={COLORS.primary}
           style={styles.cta}
           contentStyle={styles.ctaContent}
-          disabled={soldOut && !providerBlocked}
+          disabled={(soldOut || outsideWindow) && !providerBlocked}
           onPress={providerBlocked ? () => router.replace('/(app)/provider/listings') : openDialog}
         >
-          {providerBlocked ? 'Về Tin của tôi' : soldOut ? 'Đã hết phần' : 'Đặt nhận món'}
+          {providerBlocked
+            ? 'Về Tin của tôi'
+            : soldOut
+            ? 'Đã hết phần'
+            : notYetOpen
+            ? 'Chưa tới giờ nhận'
+            : windowClosed
+            ? 'Đã đóng nhận hàng'
+            : 'Đặt nhận món'}
         </Button>
       </StickyActionBar>
 

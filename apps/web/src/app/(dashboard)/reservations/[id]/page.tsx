@@ -822,7 +822,7 @@ export default function ReservationDetailsPage() {
                 <div className="flex items-center gap-3">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
                     <img 
-                      src={reservation.listing.imageUrls?.[0] || "/banh-mi-ngot-thap-cam.png"} 
+                      src={mediaUrl(reservation.listing.imageUrls?.[0] || "/banh-mi-ngot-thap-cam.png")} 
                       alt="Food" 
                       className="w-full h-full object-cover" 
                     />
