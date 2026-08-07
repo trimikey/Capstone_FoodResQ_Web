@@ -5,6 +5,12 @@ Stack: NestJS (BE) · Next.js (FE) · PostgreSQL + PostGIS · TypeScript
 
 ---
 
+## 0. Ngôn ngữ giao tiếp
+
+Khi làm việc với người dùng trong project này, **ưu tiên dùng tiếng Việt** cho mọi phản hồi, giải thích, và thảo luận. Chỉ dùng tiếng Anh khi trích dẫn code, tên biến, tên hàm, hoặc khi người dùng chủ động viết tiếng Anh.
+
+---
+
 ## 1. Project Structure
 
 ```

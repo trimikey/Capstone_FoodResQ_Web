@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useListings } from '@/hooks/useListings';
+import { searchAddress, type AddressSuggestion } from '@/lib/geocode';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import ListingCard, { type ListingItem } from '@/components/listings/ListingCard';
 import { useSearchParams } from 'next/navigation';
@@ -52,18 +53,39 @@ function ListingsPageContent() {
     lng: DEFAULT_LNG,
   });
   const [locStatus, setLocStatus] = useState<'default' | 'locating' | 'gps' | 'denied'>('default');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualQuery, setManualQuery] = useState('');
+  const [manualSuggestions, setManualSuggestions] = useState<AddressSuggestion[]>([]);
+  const [manualSearching, setManualSearching] = useState(false);
+  const [manualLocationLabel, setManualLocationLabel] = useState<string | null>(null);
+  const [geoBlockedReason, setGeoBlockedReason] = useState<'insecure' | 'denied' | 'unsupported' | null>(null);
+
+  const isGeoSecureContext = () => {
+    if (typeof window === 'undefined') return true;
+    return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  };
 
   // Xin GPS (gọi lúc mở trang + khi bấm "Định vị lại")
   const locate = useCallback(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocStatus('denied');
+      setGeoBlockedReason('unsupported');
+      setManualOpen(true);
+      return;
+    }
+    if (!isGeoSecureContext()) {
+      setLocStatus('denied');
+      setGeoBlockedReason('insecure');
+      setManualOpen(true);
       return;
     }
     setLocStatus('locating');
+    setGeoBlockedReason(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setLocStatus('gps');
+        setManualLocationLabel(null);
       },
       () => setLocStatus('denied'), // từ chối/không lấy được → giữ tâm HCM
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
@@ -73,6 +95,50 @@ function ListingsPageContent() {
   useEffect(() => {
     locate();
   }, [locate]);
+
+  useEffect(() => {
+    if (!manualOpen) return;
+    const query = manualQuery.trim();
+    if (query.length < 3) {
+      setManualSuggestions([]);
+      setManualSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setManualSearching(true);
+      const results = await searchAddress(query, controller.signal);
+      setManualSuggestions(results);
+      setManualSearching(false);
+    }, 500);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [manualOpen, manualQuery]);
+
+  const applyManualLocation = (suggestion: AddressSuggestion) => {
+    setUserLoc({ lat: suggestion.lat, lng: suggestion.lng });
+    setLocStatus('gps');
+    setManualLocationLabel(suggestion.displayName);
+    setManualOpen(false);
+    setManualQuery(suggestion.displayName);
+    setManualSuggestions([]);
+    setGeoBlockedReason(null);
+  };
+
+  const locationStatusText = useMemo(() => {
+    if (manualLocationLabel) return `Đang hiển thị quanh: ${manualLocationLabel}`;
+    if (locStatus === 'gps') return 'Đang hiển thị thực phẩm quanh vị trí GPS của bạn';
+    if (locStatus === 'locating') return 'Đang xác định vị trí…';
+    if (geoBlockedReason === 'insecure') {
+      return 'Chrome chặn định vị trên địa chỉ LAN không HTTPS. Hãy chọn vị trí thủ công hoặc mở bằng localhost.';
+    }
+    if (locStatus === 'denied') return 'Chưa cấp quyền vị trí — đang dùng trung tâm TP.HCM.';
+    return 'Trung tâm TP.HCM';
+  }, [geoBlockedReason, locStatus, manualLocationLabel]);
 
   const { data: apiListings, isLoading, isError, refetch } = useListings({
     lat: userLoc.lat,
@@ -147,12 +213,23 @@ function ListingsPageContent() {
                 </span>
                 {locStatus === 'locating' ? 'Đang định vị…' : 'Định vị lại'}
               </button>
+              <button
+                onClick={() => setManualOpen((open) => !open)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm ${manualOpen
+                  ? 'border-[#236c2a] text-[#236c2a] bg-[#eef7ee]'
+                  : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
+                  }`}
+                title="Chọn vị trí tìm kiếm thủ công"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit_location_alt</span>
+                Chọn vị trí
+              </button>
 
             </div>
           </div>
 
           {/* Trạng thái định vị */}
-          <div className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
+          <div title={locationStatusText} className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
             }`}>
             <span className="material-symbols-outlined text-[14px]">
               {locStatus === 'gps' ? 'location_on' : locStatus === 'denied' ? 'location_off' : 'location_searching'}
@@ -165,6 +242,68 @@ function ListingsPageContent() {
                   ? 'Chưa cấp quyền vị trí — đang dùng trung tâm TP.HCM. Bấm "Định vị lại".'
                   : 'Trung tâm TP.HCM'}
           </div>
+
+          {manualLocationLabel && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 -mt-2">
+              Đang tìm thực phẩm quanh vị trí đã chọn: {manualLocationLabel}
+            </div>
+          )}
+
+          {geoBlockedReason === 'insecure' && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 -mt-2">
+              Chrome không cho web trên địa chỉ LAN chưa HTTPS dùng GPS. Mở bằng localhost trên máy này, hoặc chọn vị trí thủ công bên dưới.
+            </div>
+          )}
+
+          {manualOpen && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm space-y-3 -mt-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-neutral-900">Chọn vị trí tìm kiếm</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">Nhập địa chỉ rồi chọn một gợi ý để tìm thực phẩm quanh khu vực đó.</p>
+                </div>
+                <button
+                  onClick={() => setManualOpen(false)}
+                  className="text-neutral-400 hover:text-neutral-700"
+                  title="Đóng"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">
+                  location_on
+                </span>
+                <input
+                  type="text"
+                  value={manualQuery}
+                  onChange={(e) => setManualQuery(e.target.value)}
+                  placeholder="VD: Vinhomes Grand Park, Thủ Đức"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:border-[#236c2a] focus:ring-1 focus:ring-[#236c2a]"
+                />
+              </div>
+              {(manualSearching || manualSuggestions.length > 0) && (
+                <div className="rounded-xl border border-neutral-200 overflow-hidden">
+                  {manualSearching && (
+                    <div className="px-3 py-2 text-xs text-neutral-500 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      Đang tìm địa chỉ...
+                    </div>
+                  )}
+                  {manualSuggestions.map((item) => (
+                    <button
+                      key={`${item.lat}:${item.lng}:${item.displayName}`}
+                      onClick={() => applyManualLocation(item)}
+                      className="w-full text-left px-3 py-2.5 text-xs text-neutral-700 hover:bg-[#eef7ee] border-t border-neutral-100 flex items-start gap-2"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-[#236c2a] mt-0.5">place</span>
+                      <span className="line-clamp-2">{item.displayName}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Quick Search */}
           <div className="relative">

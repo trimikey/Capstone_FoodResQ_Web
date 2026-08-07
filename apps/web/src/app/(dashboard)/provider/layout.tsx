@@ -15,6 +15,8 @@ const PROVIDER_NAV = [
   { href: '/provider/orders', label: 'Theo dõi đơn', icon: 'local_shipping' },
   { href: '/provider/requests', label: 'Yêu cầu', icon: 'inbox' },
   { href: '/campaigns', label: 'Chiến dịch', icon: 'campaign' },
+  // Số liệu ESG đã được gỡ khỏi trang tổng quan NCC và dồn vào trang báo cáo riêng
+  // /provider/esg — link này là lối vào duy nhất tới đó.
   { href: '/provider/esg', label: 'Báo cáo CSR', icon: 'analytics' },
   { href: '/profile', label: 'Cài đặt', icon: 'settings' },
 ];

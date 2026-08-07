@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToBackend } from './imageUpload';
 import { preprocessImage } from './imagePreprocess';
+import { waitForNativePickerReady } from './nativePickerReady';
 
 /** Người dùng huỷ chọn ảnh — phân biệt với lỗi thật để không hiện toast lỗi. */
 export class ImagePickCancelledError extends Error {
@@ -21,6 +22,7 @@ export async function pickAvatarImage(): Promise<string> {
     throw new Error('Cần quyền truy cập thư viện ảnh để chọn ảnh đại diện.');
   }
 
+  await waitForNativePickerReady();
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsEditing: true,

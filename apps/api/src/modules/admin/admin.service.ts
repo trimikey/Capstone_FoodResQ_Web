@@ -877,6 +877,8 @@ export class AdminService {
         idCardNumber: true,
         vehicleType: true,
         vehiclePlate: true,
+        faceImageUrl: true,
+        idCardImageUrl: true,
         createdAt: true,
         user: { select: { id: true, email: true, fullName: true, phone: true } },
         specializations: { select: { specialization: true, isVerified: true } },
@@ -950,6 +952,8 @@ export class AdminService {
           phone: v.user.phone,
           detail: `TNV · CCCD ${v.idCardNumber ?? 'chưa cập nhật'} · ${v.vehicleType ?? 'chưa rõ xe'} ${v.vehiclePlate ?? ''} · ${v.specializations.map((s) => s.specialization).join(', ') || 'chưa có chuyên môn'}`,
           evidenceUrls,
+          faceImageUrl: v.faceImageUrl ?? null,
+          idCardImageUrl: v.idCardImageUrl ?? null,
           createdAt: v.createdAt,
         };
       }),
@@ -1077,10 +1081,11 @@ export class AdminService {
           select: {
             id: true,
             faceImageUrl: true,
+            idCardImageUrl: true,
             specializations: { select: { specialization: true, isVerified: true } },
           },
         },
-        receiverProfile: { select: { isCharityOrg: true, faceImageUrl: true } },
+        receiverProfile: { select: { isCharityOrg: true, faceImageUrl: true, idCardImageUrl: true } },
         providerProfile: { select: { id: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -1088,13 +1093,14 @@ export class AdminService {
     });
     // Gắn mảng chuyên môn TNV (chef/waiter/shipper) phẳng để FE dễ render + cờ tổ chức
     // Đồng thời gắn profileId để admin có thể xét duyệt hồ sơ từ màn Quản lý Tài khoản
-    // faceImageUrl: ảnh eKYC đã đăng ký (chỉ receiver/volunteer có) — provider/admin luôn null
+    // Ảnh khuôn mặt/CCCD đã đăng ký (receiver/volunteer) để admin xem chi tiết trước khi duyệt/khoá
     return users.map(({ volunteerProfile, receiverProfile, providerProfile, ...u }) => ({
       ...u,
       specializations: volunteerProfile?.specializations ?? [],
       isCharityOrg: receiverProfile?.isCharityOrg ?? false,
-      faceImageUrl: receiverProfile?.faceImageUrl ?? volunteerProfile?.faceImageUrl ?? null,
       profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
+      faceImageUrl: volunteerProfile?.faceImageUrl ?? receiverProfile?.faceImageUrl ?? null,
+      idCardImageUrl: volunteerProfile?.idCardImageUrl ?? receiverProfile?.idCardImageUrl ?? null,
     }));
   }
 

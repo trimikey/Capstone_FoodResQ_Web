@@ -15,7 +15,6 @@ import {
 } from '@/hooks/useProviderListings';
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
-import { useProviderEsg } from '@/hooks/useEsg';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
 import { minuteToHHmm } from '@/lib/listing-form';
 import { Modal } from '@/components/shared/Modal';
@@ -37,7 +36,6 @@ type StatusFilter = 'all' | 'open' | 'draft' | 'closed';
 export default function ProviderDashboardPage() {
   const router = useRouter();
   const { data, isLoading } = useProviderListings();
-  const { data: esg } = useProviderEsg();
   const { data: me } = useMe();
   const { data: stats } = useProviderStats();
   const publishListing = usePublishListing();
@@ -153,14 +151,6 @@ export default function ProviderDashboardPage() {
             </>
           }
         />
-
-        {/* Metric Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <MetricCard icon="eco" label="Thực phẩm đã cứu" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
-          <MetricCard icon="cloud_done" label="CO₂ giảm thiểu" value={`${esg?.co2SavedKg ?? 0}`} unit="tấn" tone="sky" />
-          <MetricCard icon="restaurant" label="Suất ăn chia sẻ" value={`${esg?.mealsServed ?? 0}`} unit="suất" tone="amber" />
-          <MetricCard icon="volunteer_activism" label="Người được giúp" value={`${esg?.peopleHelped ?? 0}`} unit="người" tone="emerald" />
-        </section>
 
         {/* Main Dashboard Split Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -363,41 +353,6 @@ export default function ProviderDashboardPage() {
   );
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  unit,
-  tone,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  unit: string;
-  tone: 'sage' | 'amber' | 'sky' | 'emerald';
-}) {
-  const tones = {
-    sage: { bg: 'bg-[#efe8d8]', text: 'text-[#236c2a]' },
-    amber: { bg: 'bg-amber-100', text: 'text-amber-700' },
-    sky: { bg: 'bg-sky-100', text: 'text-sky-700' },
-    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  } as const;
-  const t = tones[tone];
-  return (
-    <div className="bg-white p-4 md:p-5 rounded-2xl border border-neutral-150 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex justify-between items-start mb-3">
-        <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} flex items-center justify-center`}>
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-      </div>
-      <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">{label}</p>
-      <p className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1 tabular-nums">
-        {value}
-        <span className="text-xs font-medium text-neutral-500 ml-1">{unit}</span>
-      </p>
-    </div>
-  );
-}
 
 function ActivityItem({
   icon,

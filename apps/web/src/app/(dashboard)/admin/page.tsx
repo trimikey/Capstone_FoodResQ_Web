@@ -12,7 +12,6 @@ import {
   useResolveReport,
   useAdminUsers,
   useSetUserStatus,
-  useReviewUserVerification,
   useRecentReservations,
   useAdminConfigs,
   useSetConfig,
@@ -156,7 +155,7 @@ function DashboardTab() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard icon="eco" tone="emerald" label="Thực phẩm đã cứu trợ" value={fmtKg(data.kgRescued)} />
         <StatCard icon="group" tone="honey" label="Người dùng" value={data.users.toLocaleString('vi-VN')} sub={`${data.providers} cửa hàng · ${data.volunteers} TNV`} />
-        <StatCard icon="cloud" tone="emerald" label="CO₂ tránh được" value={`${data.co2SavedKg.toLocaleString('vi-VN')} kg`} sub={`${data.mealsServed} bữa ăn đã trao`} />
+        <StatCard icon="restaurant" tone="emerald" label="Bữa ăn đã trao" value={`${data.mealsServed.toLocaleString('vi-VN')} suất`} />
         <StatCard icon="warning" tone={data.pendingReports > 0 ? 'rose' : 'neutral'} label="Khiếu nại chờ xử lý" value={`${data.pendingReports} mục`} />
       </div>
 
@@ -1949,22 +1948,11 @@ function UsersTab() {
   const { data, isLoading } = useAdminUsers(undefined, q || undefined);
   const { data: ov } = useAdminOverview();
   const setStatus = useSetUserStatus();
-  const reviewUser = useReviewUserVerification();
 
   async function act(id: string, status: 'active' | 'banned') {
     try {
       await setStatus.mutateAsync({ id, status });
       toast.success(status === 'banned' ? 'Đã khoá tài khoản' : 'Đã cập nhật tài khoản');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
-      toast.error(msg);
-    }
-  }
-
-  async function reviewUserProfile(type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') {
-    try {
-      await reviewUser.mutateAsync({ type, profileId, decision });
-      toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
       toast.error(msg);
@@ -2043,7 +2031,7 @@ function UsersTab() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {paged.slice.map((u) => (
-                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} reviewProfile={reviewUserProfile} />
+                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} />
                 ))}
               </tbody>
             </table>
@@ -2071,14 +2059,12 @@ function trustToFive(score: number): number {
   return Math.round((score / 20) * 10) / 10;
 }
 
-function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean; reviewProfile?: (type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') => void }) {
+function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean }) {
   const [menu, setMenu] = useState(false);
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const five = trustToFive(u.trustScore);
   const goodScore = five >= 3;
-  const verificationType = u.role === 'provider' || u.role === 'volunteer' ? u.role : undefined;
-  const canApprove = !!verificationType && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
 
   return (
     <tr className="hover:bg-neutral-50/50 transition-colors">
@@ -2111,7 +2097,8 @@ function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser;
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
           {u.role !== 'admin' && u.status === 'pending_verification' && (
-            <button onClick={() => canApprove ? reviewProfile(verificationType!, u.profileId!, 'approved') : onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
+            // Luôn mở modal chi tiết để admin xem hồ sơ/ảnh khuôn mặt/bằng chứng trước khi duyệt — không duyệt ngay từ danh sách.
+            <button onClick={onDetail} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
           )}
           {u.role !== 'admin' && u.status === 'banned' && (
             <button onClick={() => onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50">Khôi phục</button>
@@ -2224,24 +2211,43 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
             </div>
           </section>
 
-          <section>
-            <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Khuôn mặt đã đăng ký</h3>
-            {faceSrc ? (
-              <button
-                type="button"
-                onClick={() => setZoomedImg(faceSrc)}
-                className="relative h-28 w-28 overflow-hidden rounded-xl border border-neutral-200 hover:opacity-90"
-                title="Bấm để phóng to"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
-                <img src={faceSrc} alt="Ảnh khuôn mặt đã đăng ký" className="h-full w-full object-cover" />
-              </button>
-            ) : (
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
-                Chưa đăng ký khuôn mặt.
+          {/* Ảnh khuôn mặt/CCCD đã đăng ký eKYC — bắt buộc kiểm tra trước khi duyệt/xử lý tài khoản (receiver/volunteer) */}
+          {(u.faceImageUrl || u.idCardImageUrl) && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {u.faceImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    title="Bấm để phóng to"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                    <img src={mediaUrl(u.faceImageUrl)} alt="Ảnh khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">Ảnh selfie</span>
+                  </button>
+                )}
+                {u.idCardImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    title="Bấm để phóng to"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                    <img src={mediaUrl(u.idCardImageUrl)} alt="Ảnh CCCD đã đăng ký" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-neutral-800 text-white text-center py-1 font-bold">CCCD</span>
+                  </button>
+                )}
               </div>
-            )}
-          </section>
+            </section>
+          )}
+          {!u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+              <strong>Chưa đăng ký khuôn mặt (eKYC).</strong> Tài khoản này chưa hoàn tất xác minh khuôn mặt bắt buộc.
+            </div>
+          )}
 
           {/* Provider chờ duyệt: thông tin doanh nghiệp */}
           {verif?.type === 'provider' && (
@@ -2362,6 +2368,17 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
               <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm shadow-sm">
                 Khôi phục tài khoản
               </button>
+            ) : u.status === 'pending_verification' ? (
+              // Không có hồ sơ verification (NCC/TNV) đi kèm — vd người nhận tổ chức từ thiện —
+              // vẫn cần một hành động Duyệt/Từ chối tường minh, không để admin bí lối.
+              <>
+                <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="px-5 py-2.5 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full font-bold text-sm">
+                  Từ chối
+                </button>
+                <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm shadow-sm">
+                  Duyệt tài khoản
+                </button>
+              </>
             ) : (
               <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full font-bold text-sm">
                 Khoá tài khoản

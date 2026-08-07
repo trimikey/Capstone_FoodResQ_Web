@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { isAbsolute, join, relative, resolve } from 'path';
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -16,6 +16,26 @@ const EXT_BY_MIME: Record<string, string> = {
 @Injectable()
 export class StorageService {
   private readonly uploadRoot = join(process.cwd(), 'uploads');
+
+  /**
+   * Kiểm tra file upload local còn tồn tại trước khi dùng làm bằng chứng
+   * xác minh. URL http(s) do object storage quản lý nên không đọc như file local.
+   */
+  async imageExists(url: string): Promise<boolean> {
+    if (/^https?:\/\//i.test(url)) return true;
+    if (!url.startsWith('/uploads/')) return false;
+
+    const filePath = resolve(this.uploadRoot, url.slice('/uploads/'.length));
+    const relativePath = relative(this.uploadRoot, filePath);
+    if (relativePath.startsWith('..') || isAbsolute(relativePath)) return false;
+
+    try {
+      const stat = await fs.stat(filePath);
+      return stat.isFile();
+    } catch {
+      return false;
+    }
+  }
 
   async saveImage(file: Express.Multer.File, subdir: string): Promise<string> {
     const ext = EXT_BY_MIME[file.mimetype];

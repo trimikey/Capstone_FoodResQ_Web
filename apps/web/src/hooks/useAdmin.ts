@@ -31,6 +31,8 @@ export interface VerificationItem {
   description?: string | null;
   lng?: number | null;
   lat?: number | null;
+  faceImageUrl?: string | null;
+  idCardImageUrl?: string | null;
 }
 
 export interface AdminReport {
@@ -55,6 +57,8 @@ export interface AdminUser {
   avatarUrl: string | null;
   /** Ảnh khuôn mặt eKYC đã đăng ký — chỉ receiver/volunteer có, provider/admin là null */
   faceImageUrl: string | null;
+  /** Ảnh CCCD đã đăng ký eKYC — hiển thị cho admin khi xem chi tiết */
+  idCardImageUrl?: string | null;
   createdAt: string;
   specializations: { specialization: 'chef' | 'waiter' | 'shipper'; isVerified: boolean }[];
   isCharityOrg: boolean;
