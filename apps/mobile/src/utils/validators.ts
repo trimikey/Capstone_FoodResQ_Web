@@ -217,9 +217,9 @@ export function makeCreateListingSchema(now: Date = new Date()) {
         .int('Phải là số nguyên')
         .min(1, 'Tối thiểu 1')
         .max(10, 'Tối đa 10'),
-      pickupStartTime: z.date(),
-      pickupEndTime: z.date(),
-      expiryTime: z.date(),
+      pickupStartTime: z.date().optional(),
+      pickupEndTime: z.date().optional(),
+      expiryTime: z.date().optional(),
       pickupAddress: z.string().min(1, 'Nhập địa chỉ lấy hàng'),
       description: z.string().optional(),
       weightPerUnitKg: optionalPositive,
@@ -255,15 +255,15 @@ export function makeCreateListingSchema(now: Date = new Date()) {
       { message: 'Số lượng phải là số nguyên cho đơn vị phần/cái/hộp', path: ['quantityTotal'] }
     )
     .refine(
-      (d) => d.pickupStartTime.getTime() >= now.getTime() + 30 * 60_000,
+      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() + 30 * 60_000,
       { message: 'Giờ bắt đầu phải ít nhất 30 phút từ bây giờ', path: ['pickupStartTime'] }
     )
     .refine(
-      (d) => d.pickupEndTime > d.pickupStartTime,
+      (d) => !d.pickupEndTime || !d.pickupStartTime || d.pickupEndTime > d.pickupStartTime,
       { message: 'Giờ kết thúc phải sau giờ bắt đầu', path: ['pickupEndTime'] }
     )
     .refine(
-      (d) => d.expiryTime >= d.pickupEndTime,
+      (d) => !d.expiryTime || !d.pickupEndTime || d.expiryTime >= d.pickupEndTime,
       { message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi', path: ['expiryTime'] }
     );
 }
