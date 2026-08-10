@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { CampaignParticipant, CampaignDistribution, CampaignManageParticipant } from '@/hooks/useCampaigns';
 import { mediaUrl } from '@/lib/utils';
 
@@ -39,6 +40,7 @@ export function RegistrationRow({
   pending?: boolean;
   onDecide: (id: string, name: string, action: 'approved' | 'rejected') => void;
 }) {
+  const [open, setOpen] = useState(false);
   const roleKey = p.role as keyof typeof ROLE_LABEL;
   const roleLabel = ROLE_LABEL[roleKey] ?? p.role;
   const roleClass =
@@ -96,32 +98,55 @@ export function RegistrationRow({
           </div>
         </div>
 
-        <div className="cm-reg-review-grid">
-          <span>
-            <b>Ca đăng ký</b>
+        {/* Thu gọn mặc định: 5 ô thông tin luôn bung ra làm hàng cao gấp đôi và ép
+            cột nút Duyệt/Từ chối tràn đè lên nhau. Ca đăng ký là thứ duy nhất cần
+            thấy ngay để quyết định, nên giữ lại ở dòng tóm tắt. */}
+        <div className="cm-reg-summary">
+          <span className="cm-reg-summary-shift truncate">
+            <span className="material-symbols-outlined text-[13px]">schedule</span>
             {shiftText}
           </span>
-          <span>
-            <b>Liên hệ</b>
-            {phoneText}
-          </span>
-          <span>
-            <b>Uy tín</b>
-            {ratingText}
-          </span>
-          {pointsText ? (
-            <span>
-              <b>Đóng góp</b>
-              {pointsText}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="cm-reg-toggle"
+          >
+            {open ? 'Thu gọn' : 'Chi tiết'}
+            <span className="material-symbols-outlined text-[14px]">
+              {open ? 'expand_less' : 'expand_more'}
             </span>
-          ) : null}
-          {pastText ? (
-            <span>
-              <b>Kinh nghiệm</b>
-              {pastText}
-            </span>
-          ) : null}
+          </button>
         </div>
+
+        {open && (
+          <div className="cm-reg-review-grid">
+            <span>
+              <b>Ca đăng ký</b>
+              {shiftText}
+            </span>
+            <span>
+              <b>Liên hệ</b>
+              {phoneText}
+            </span>
+            <span>
+              <b>Uy tín</b>
+              {ratingText}
+            </span>
+            {pointsText ? (
+              <span>
+                <b>Đóng góp</b>
+                {pointsText}
+              </span>
+            ) : null}
+            {pastText ? (
+              <span>
+                <b>Kinh nghiệm</b>
+                {pastText}
+              </span>
+            ) : null}
+          </div>
+        )}
       </div>
       {!isPendingReview && serverBadge ? null : decision ? (
         <span className={`cm-reg-status cm-reg-status--${decision}`}>

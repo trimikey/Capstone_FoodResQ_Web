@@ -10,8 +10,9 @@ import {
   useStartCampaign,
   useCompleteCampaign,
   useCancelCampaign,
-  type CampaignParticipant,
+  type CampaignManageParticipant,
 } from '@/hooks/useCampaigns';
+import { campaignStartWindow } from '@/lib/campaign-schedule';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import { Modal } from '@/components/shared/Modal';
 
@@ -76,7 +77,7 @@ type CampaignData = {
   status: string;
   organizationName?: string | null;
   imageUrls?: string[];
-  participants?: CampaignParticipant[];
+  participants?: CampaignManageParticipant[];
   distributions?: Array<{
     id: string;
     roundLabel?: string | null;
@@ -285,14 +286,11 @@ export function ManageShell({
               {statusMeta.label}
             </span>
             {c.status === 'open' && (() => {
-              const canStart = isSameUtcDay(c.scheduledDate);
-              const days = daysUntilUtc(c.scheduledDate);
-              const hint =
-                days > 0
-                  ? `Còn ${days} ngày nữa mới tới ngày diễn ra`
-                  : days < 0
-                    ? `Đã qua ngày dự kiến ${Math.abs(days)} ngày — không thể bắt đầu`
-                    : '';
+              // Cùng luật với backend: mở được từ 12h trước mốc bắt đầu (giờ VN)
+              // để kịp các ca chuẩn bị rạng sáng.
+              const win = campaignStartWindow(c);
+              const canStart = win.canStart;
+              const hint = win.canStart ? '' : win.message;
               return (
                 <button
                   type="button"
@@ -306,8 +304,8 @@ export function ManageShell({
                     ? 'Đang bắt đầu...'
                     : canStart
                       ? 'Bắt đầu'
-                      : days > 0
-                        ? `Bắt đầu sau ${days} ngày`
+                      : win.reason === 'too_early'
+                        ? 'Chưa tới giờ'
                         : 'Quá ngày'}
                 </button>
               );

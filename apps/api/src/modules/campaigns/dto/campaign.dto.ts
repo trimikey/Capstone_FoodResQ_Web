@@ -560,16 +560,24 @@ export class ConfirmCampaignTransportReceiptDto {
 }
 
 export class CreateDistributionDto {
+  @ApiPropertyOptional({
+    description:
+      'Tình nguyện viên phụ trách đợt phát — phải là TNV ĐÃ ĐƯỢC DUYỆT của chính chiến dịch này.',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'Người phụ trách không hợp lệ' })
+  servedByVolunteerId?: string;
+
   @ApiProperty({ example: 150, description: 'Số suất đã phát' })
   @IsInt({ message: 'Số suất phải là số nguyên' })
-  @Min(0, { message: 'Số suất không được âm' })
+  @Min(1, { message: 'Số suất đã phát phải ít nhất 1' })
   @Max(100000, { message: 'Số suất tối đa 100.000' })
   @Type(() => Number)
   servingsServed!: number;
 
-  @ApiProperty({ example: 150, description: 'Số người nhận' })
+  @ApiProperty({ example: 150, description: 'Số người nhận (mỗi người ít nhất 1 suất)' })
   @IsInt({ message: 'Số người phải là số nguyên' })
-  @Min(0, { message: 'Số người không được âm' })
+  @Min(1, { message: 'Số người nhận phải ít nhất 1' })
   @Max(100000, { message: 'Số người tối đa 100.000' })
   @Type(() => Number)
   peopleServed!: number;

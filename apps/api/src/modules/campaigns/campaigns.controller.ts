@@ -66,6 +66,20 @@ export class CampaignsController {
     return this.campaignsService.myAssignments(user.id);
   }
 
+  @Get('my-tasks/:assignmentId')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary:
+      'Volunteer: chi tiết 1 nhiệm vụ — gồm ca, chiến dịch, danh sách món + 4 khâu + trạng thái hiệu lực.',
+  })
+  myTaskDetail(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.getMyTaskDetail(assignmentId, user.id);
+  }
+
   @Public()
   @Get('public')
   @ApiOperation({ summary: 'Công khai: chiến dịch sắp diễn ra (cho trang chủ)' })

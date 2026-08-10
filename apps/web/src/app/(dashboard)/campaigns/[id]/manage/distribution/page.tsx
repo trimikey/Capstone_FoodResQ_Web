@@ -19,6 +19,31 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 export default function DistributionPage() {
   const { campaign: c } = useManageContext();
+
+  // Chỉ TNV ĐÃ DUYỆT mới được đứng tên phụ trách đợt phát (backend kiểm lại).
+  // Khử trùng theo volunteerId: một người nhận NHIỀU CA sẽ có nhiều bản ghi phân công,
+  // để nguyên thì danh sách hiện trùng tên và React báo lỗi key trùng.
+  const APPROVED = ['assigned', 'checked_in', 'in_progress', 'completed'];
+  const approvedVolunteers = [
+    ...new Map(
+      (c.participants ?? [])
+        .filter((p) => APPROVED.includes(p.status))
+        .map((p) => [
+          p.volunteerId,
+          { volunteerId: p.volunteerId, fullName: p.fullName, role: p.role },
+        ]),
+    ).values(),
+  ];
+
+  // Suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa của các đợt trước).
+  const distributed = (c.distributions ?? []).reduce(
+    (sum, d) => sum + d.servingsServed + d.leftoverServings,
+    0,
+  );
+  const remainingServings =
+    c.expectedServings != null && c.expectedServings > 0
+      ? Math.max(c.expectedServings - distributed, 0)
+      : null;
   const [filter, setFilter] = useState<FilterKey>('all');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -349,6 +374,8 @@ export default function DistributionPage() {
         <CreateDistributionModal
           campaignId={c.id}
           onClose={() => setCreateOpen(false)}
+          volunteers={approvedVolunteers}
+          remainingServings={remainingServings}
         />
       )}
     </>

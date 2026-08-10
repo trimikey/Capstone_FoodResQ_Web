@@ -18,6 +18,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { StorageService } from '@/common/storage/storage.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { OcrService } from '@/common/ocr/ocr.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -59,6 +60,7 @@ export class AuthService {
     private faceMatch: FaceMatchService,
     private storage: StorageService,
     private ocr: OcrService,
+    private notifications: NotificationsService,
     @Inject('REDIS_CLIENT') private redis: Redis,
   ) {}
 
@@ -279,6 +281,19 @@ export class AuthService {
 
       return created;
     });
+
+    // Hồ sơ chờ xác minh nằm im tới khi có admin tình cờ mở trang duyệt — báo ngay
+    // sau khi transaction commit (báo bên trong transaction thì rollback vẫn gửi nhầm).
+    if (user.role === 'provider' || user.role === 'volunteer') {
+      void this.notifications.notifyAdmins({
+        type: 'verification',
+        title: 'Hồ sơ mới chờ xác minh',
+        body: `${user.fullName} vừa đăng ký tài khoản ${
+          user.role === 'provider' ? 'nhà cung cấp' : 'tình nguyện viên'
+        } và đang chờ duyệt hồ sơ.`,
+        data: { userId: user.id, role: user.role },
+      });
+    }
 
     return this.issueTokens(user);
   }

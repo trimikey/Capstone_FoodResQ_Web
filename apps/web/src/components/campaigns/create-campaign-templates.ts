@@ -151,6 +151,9 @@ export const MENU_TEMPLATES: MenuTemplate[] = [
 ];
 
 export const SHIFT_TEMPLATES: ShiftTemplate[] = [
+  // ── Lấy nguyên liệu (trước giờ sơ chế — đi chợ/nhận hàng tài trợ rồi chở về bếp)
+  { id: 'shift-supply-run', label: 'Lấy nguyên liệu sáng', role: 'shipper', startTime: '04:30', endTime: '06:00', slotsNeeded: 2 },
+  { id: 'shift-supply-receive', label: 'Nhận & kiểm nguyên liệu tại bếp', role: 'chef', startTime: '05:30', endTime: '06:30', slotsNeeded: 2 },
   // ── Sơ chế
   { id: 'shift-prep-morning', label: 'Ca sáng — Sơ chế', role: 'chef', startTime: '06:00', endTime: '08:00', slotsNeeded: 4 },
   { id: 'shift-prep-midday', label: 'Ca trưa — Sơ chế', role: 'chef', startTime: '09:00', endTime: '11:00', slotsNeeded: 3 },

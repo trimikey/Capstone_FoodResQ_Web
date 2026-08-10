@@ -10,7 +10,11 @@ import { UserRole } from '@foodresq/types';
 import NotificationBell from '@/components/shared/NotificationBell';
 
 // Dropdown dashboard menu theo vai trò
-function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: string; icon: string; label: string }[] {
+function dashboardLinksFor(
+  role?: string,
+  isCharityOrg?: boolean,
+  volunteerSpecializations?: { specialization: 'chef' | 'waiter' | 'shipper' }[],
+): { href: string; icon: string; label: string }[] {
   if (role === UserRole.ADMIN) {
     return [
       { href: '/admin', icon: 'dashboard', label: 'Bảng Quản trị' },
@@ -23,11 +27,21 @@ function dashboardLinksFor(role?: string, isCharityOrg?: boolean): { href: strin
     ];
   }
   if (role === UserRole.VOLUNTEER) {
-    return [
-      { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
-      { href: '/deliveries/history', icon: 'history', label: 'Lịch sử giao hàng' },
-      { href: '/campaigns', icon: 'volunteer_activism', label: 'Bếp ăn' },
-    ];
+    // Chỉ shipper (hoặc TNV có cả 3 vai trò, trong đó có shipper) mới có
+    // menu "Giao hàng" + "Lịch sử giao hàng". Chef/waiter thuần → chỉ "Bếp ăn",
+    // để tránh click nhầm vào khu vực shipper.
+    const isShipper = !!volunteerSpecializations?.some(
+      (s) => s.specialization === 'shipper',
+    );
+    const links: { href: string; icon: string; label: string }[] = [];
+    if (isShipper) {
+      links.push(
+        { href: '/deliveries', icon: 'local_shipping', label: 'Giao hàng' },
+        { href: '/deliveries/history', icon: 'history', label: 'Lịch sử giao hàng' },
+      );
+    }
+    links.push({ href: '/campaigns', icon: 'volunteer_activism', label: 'Bếp ăn' });
+    return links;
   }
   // receiver / khách
   const links = [
@@ -228,7 +242,7 @@ export default function PublicHeader() {
                       <span>Hồ sơ cá nhân</span>
                     </Link>
 
-                    {dashboardLinksFor(user?.role, isCharityOrg).map((link) => (
+                    {dashboardLinksFor(user?.role, isCharityOrg, me?.volunteer?.specializations).map((link) => (
                       <Link
                         key={link.href}
                         href={link.href}

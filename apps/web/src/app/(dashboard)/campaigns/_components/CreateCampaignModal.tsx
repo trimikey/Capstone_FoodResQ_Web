@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { staffingDemand, staffingVerdict, type StaffRole } from '@/lib/campaign-staffing';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { reverseGeocode, searchAddress, type AddressSuggestion } from '@/lib/geocode';
@@ -45,6 +46,44 @@ function FieldError({ message }: { message?: string }) {
     </p>
   );
 }
+
+/** Ba bước của form — dùng cho thanh tiến trình và điều hướng footer. */
+const FORM_STEPS = [
+  { num: 1 as const, label: 'Thông tin & Địa điểm', icon: 'info' },
+  { num: 2 as const, label: 'Thời gian & Nhân sự', icon: 'event' },
+  { num: 3 as const, label: 'Thực đơn & Chuẩn bị', icon: 'restaurant_menu' },
+];
+
+/** Trường lỗi thuộc bước nào — để "Tiếp tục" chỉ chặn vì lỗi của chính bước đó. */
+function stepOfField(key: string | undefined): 1 | 2 | 3 {
+  if (!key) return 1;
+  if (key.startsWith('menu.') || key.startsWith('schedule.') || key.startsWith('supplies.')) return 3;
+  if (key.startsWith('shifts.')) return 2;
+  if (
+    [
+      'scheduledDate',
+      'endDate',
+      'startTime',
+      'endTime',
+      'expectedServings',
+      'chefSlotsNeeded',
+      'waiterSlotsNeeded',
+      'shipperSlotsNeeded',
+    ].includes(key)
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+/** Một ca trực đang soạn trong form — khớp ShiftLike của lib tính nhân sự. */
+type ShiftDraft = {
+  label: string;
+  role?: StaffRole;
+  startTime: string;
+  endTime: string;
+  slotsNeeded: number;
+};
 
 interface CreateCampaignModalProps {
   onClose: () => void;
@@ -185,9 +224,10 @@ export default function CreateCampaignModal({
   const [menu, setMenu] = useState<{ name: string; type: string; plannedServings?: number }[]>([]);
   const [schedule, setSchedule] = useState<{ time: string; label: string }[]>([]);
   const [supplies, setSupplies] = useState<{ name: string; quantity?: number; unit?: string }[]>([]);
-  const [shifts, setShifts] = useState<
-    { label: string; role?: 'chef' | 'waiter' | 'shipper'; startTime: string; endTime: string; slotsNeeded: number }[]
-  >([]);
+  const [shifts, setShifts] = useState<ShiftDraft[]>([]);
+  // Form dài ~8 khối; gom thành 3 bước như trang tạo tin của NCC để popup không
+  // phải cuộn hàng nghìn pixel mới tới nút gửi.
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Lắng nghe dropdown gợi ý — chèn mẫu vào state tương ứng.
   useEffect(() => {
@@ -254,9 +294,43 @@ export default function CreateCampaignModal({
         });
       }
     }
+    // Gỡ mẫu đã chèn — so khớp theo NỘI DUNG (label + giờ) đúng như lúc chèn
+    // dedupe, vì mẫu không lưu id vào state của form.
+    function onRemove(e: Event) {
+      const ce = e as CustomEvent<{ kind: string; payload: unknown }>;
+      const { kind, payload } = ce.detail;
+      if (kind === 'shift') {
+        const t = payload as ShiftTemplate;
+        setShifts((prev) =>
+          prev.filter(
+            (p) =>
+              !(
+                p.label.trim() === t.label.trim() &&
+                p.startTime === t.startTime &&
+                p.endTime === t.endTime
+              ),
+          ),
+        );
+      } else if (kind === 'schedule') {
+        const t = payload as ScheduleTemplate;
+        setSchedule((prev) =>
+          prev.filter((p) => !(p.label.trim() === t.label.trim() && p.time === t.time)),
+        );
+      } else if (kind === 'supply') {
+        const t = payload as SupplyTemplate;
+        setSupplies((prev) => prev.filter((p) => p.name.trim() !== t.name.trim()));
+      } else if (kind === 'menu') {
+        const t = payload as MenuTemplate;
+        setMenu((prev) => prev.filter((p) => p.name.trim() !== t.name.trim()));
+      }
+    }
+
     window.addEventListener('cm:insert-template', onInsert as EventListener);
-    return () =>
+    window.addEventListener('cm:remove-template', onRemove as EventListener);
+    return () => {
       window.removeEventListener('cm:insert-template', onInsert as EventListener);
+      window.removeEventListener('cm:remove-template', onRemove as EventListener);
+    };
   }, []);
 
   // Bắn event để dropdown reset sau khi form đóng thành công.
@@ -279,6 +353,9 @@ export default function CreateCampaignModal({
 
   // Field-level errors (key = field path, value = Vietnamese message)
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // setState là bất đồng bộ nên ngay sau validateAll() thì `errors` vẫn là giá trị cũ.
+  // Giữ thêm bản mới nhất ở ref để điều hướng bước đọc được đúng lỗi vừa tính.
+  const lastErrorsRef = useRef<Record<string, string>>({});
   const setErr = (k: string, v: string | undefined) =>
     setErrors((prev) => {
       const next = { ...prev };
@@ -370,6 +447,7 @@ export default function CreateCampaignModal({
       }
     });
     setErrors(next);
+    lastErrorsRef.current = next;
     return Object.keys(next).length === 0;
   }
 
@@ -377,16 +455,49 @@ export default function CreateCampaignModal({
     return `${base} ${errors[key] ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`;
   }
 
+  /**
+   * Chỉ chặn "Tiếp tục" khi lỗi thuộc CHÍNH bước đang mở — nếu chặn theo toàn form
+   * thì bước 1 không qua nổi chỉ vì bước 3 chưa điền.
+   */
+  function goToStep(target: 1 | 2 | 3) {
+    if (target <= step) {
+      setStep(target);
+      return;
+    }
+    validateAll();
+    const blocking = Object.keys(lastErrorsRef.current).filter((k) => stepOfField(k) === step);
+    if (blocking.length > 0) {
+      toast.error(lastErrorsRef.current[blocking[0]] ?? 'Vui lòng kiểm tra lại các trường');
+      focusFirstError();
+      return;
+    }
+    setStep(target);
+  }
+
+  function focusFirstError() {
+    requestAnimationFrame(() => {
+      const el = document.querySelector('[data-field-error]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Chốt chặn cuối: chỉ bước 3 mới được gửi. Enter trong ô input cũng kích hoạt
+    // submit ngầm của trình duyệt, không riêng gì nút bấm.
+    if (step < 3) {
+      goToStep((step + 1) as 2 | 3);
+      return;
+    }
     if (!validateAll()) {
-      const firstKey = Object.keys(errors)[0];
-      toast.error(errors[firstKey] ?? 'Vui lòng kiểm tra lại các trường');
-      // Scroll to first error
-      requestAnimationFrame(() => {
-        const el = document.querySelector('[data-field-error]');
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
+      // Nhảy tới bước chứa lỗi đầu tiên — nếu chỉ báo toast mà giữ nguyên bước
+      // thì người dùng không thấy trường nào sai.
+      const keys = Object.keys(lastErrorsRef.current);
+      const firstKey = keys[0];
+      const targetStep = stepOfField(firstKey);
+      if (targetStep !== step) setStep(targetStep);
+      toast.error(lastErrorsRef.current[firstKey] ?? 'Vui lòng kiểm tra lại các trường');
+      focusFirstError();
       return;
     }
     try {
@@ -514,660 +625,698 @@ export default function CreateCampaignModal({
         </div>
 
         {/* ─── Body: 2 columns ─── */}
-        <div className="cm-modal-body">
-          <div className="cm-modal-grid">
-            {/* ──────── Cột trái: thông tin + ảnh + thực đơn ──────── */}
-            <div>
-              <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">info</span>Thông tin cơ bản
-                </span>
-                <input
-                  value={f.title}
-                  onChange={(e) => {
-                    setF({ ...f, title: e.target.value });
-                    if (errors.title) setErr('title', undefined);
-                  }}
-                  onBlur={() => {
-                    if (!f.title.trim()) setErr('title', 'Vui lòng nhập tiêu đề');
-                    else if (f.title.trim().length < 5) setErr('title', 'Tiêu đề tối thiểu 5 ký tự');
-                    else setErr('title', undefined);
-                  }}
-                  placeholder="Tiêu đề chiến dịch *"
-                  className={inputCls('title', 'cm-input')}
-                  aria-invalid={!!errors.title}
-                  data-field-error={errors.title ? 'title' : undefined}
-                  maxLength={255}
-                />
-                <FieldError message={errors.title} />
-                <textarea
-                  value={f.description}
-                  onChange={(e) => {
-                    setF({ ...f, description: e.target.value });
-                    if (errors.description) setErr('description', undefined);
-                  }}
-                  placeholder="Mô tả ngắn — bạn sẽ phục vụ ai, ở đâu, vì sao quan trọng?"
-                  rows={3}
-                  maxLength={5000}
-                  className={inputCls('description', 'cm-input')}
-                  aria-invalid={!!errors.description}
-                />
-                <FieldError message={errors.description} />
-              </div>
-
-              <div id="cm-image-block" className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">image</span>Ảnh bìa chiến dịch
-                </span>
-                <ImageUploader value={imageUrl} onChange={setImageUrl} uploading={upload.isPending} />
-              </div>
-
-              <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">restaurant_menu</span>Thực đơn trong ngày
-                </span>
-                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
-                  Gợi ý sẽ tự lọc món phù hợp với vật phẩm đã nhập bên dưới.
-                </p>
-                <div className="mb-3">
-                  <MenuSuggestions
-                    supplies={supplies}
-                    expectedServings={f.expectedServings}
-                  />
-                </div>
-                <div className="cm-repeat">
-                  {menu.map((m, i) => (
-                    <div key={i} className="cm-repeat-row cm-repeat-row--menu">
-                      <input
-                        value={m.name}
-                        onChange={(e) =>
-                          setMenu(
-                            menu.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
-                          )
-                        }
-                        placeholder="Tên món (vd: Cơm thịt kho)"
-                        className="cm-input"
-                      />
-                      <select
-                        value={m.type}
-                        onChange={(e) =>
-                          setMenu(
-                            menu.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)),
-                          )
-                        }
-                        className="cm-input"
-                        aria-label="Bữa ăn"
-                      >
-                        <option value="">— Bữa —</option>
-                        <option value="breakfast">Bữa sáng</option>
-                        <option value="lunch">Bữa trưa</option>
-                        <option value="dinner">Bữa tối</option>
-                      </select>
-                      <input
-                        type="number"
-                        min={0}
-                        value={m.plannedServings ?? ''}
-                        onChange={(e) =>
-                          setMenu(
-                            menu.map((x, j) =>
-                              j === i
-                                ? {
-                                    ...x,
-                                    plannedServings: e.target.value === '' ? undefined : Number(e.target.value),
-                                  }
-                                : x,
-                            ),
-                          )
-                        }
-                        placeholder="Suất dự kiến"
-                        className="cm-input"
-                        title="Số suất dự kiến cho món này"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setMenu(menu.filter((_, j) => j !== i))}
-                        className="cm-repeat-remove"
-                        aria-label="Xoá món"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">close</span>
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setMenu([...menu, { name: '', type: 'lunch' }])}
-                    className="cm-repeat-add"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm món
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* ──────── Cột phải ──────── */}
-            <div>
-              <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">place</span>Địa điểm
-                </span>
-                <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={applyProfileAddress}
-                    disabled={!hasProfileAddress}
-                    className={`rounded-xl border px-3 py-2 text-left transition-colors ${
-                      addressMode === 'profile'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
-                      <span className="material-symbols-outlined text-[17px]">home_pin</span>
-                      Dùng địa chỉ mặc định
-                    </span>
-                    <span className="mt-1 block text-xs text-neutral-500 line-clamp-2">
-                      {hasProfileAddress ? profileAddress : 'Chưa có địa chỉ trong hồ sơ'}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={switchToCustomAddress}
-                    className={`rounded-xl border px-3 py-2 text-left transition-colors ${
-                      addressMode === 'custom'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
-                      <span className="material-symbols-outlined text-[17px]">travel_explore</span>
-                      Chọn địa chỉ khác
-                    </span>
-                    <span className="mt-1 block text-xs text-neutral-500">
-                      Nhập để search hoặc kéo ghim trên bản đồ.
-                    </span>
-                  </button>
-                </div>
-                <input
-                  value={f.kitchenAddress}
-                  onChange={(e) => {
-                    const nextAddress = e.target.value;
-                    setGeocodeError(false);
-                    setAddressMode('custom');
-                    setF({ ...f, kitchenAddress: nextAddress });
-                    queueAddressSearch(nextAddress);
-                    if (errors.kitchenAddress) setErr('kitchenAddress', undefined);
-                  }}
-                  onBlur={() => {
-                    if (!f.kitchenAddress.trim()) setErr('kitchenAddress', 'Vui lòng nhập địa chỉ bếp');
-                    else if (f.kitchenAddress.trim().length < 5)
-                      setErr('kitchenAddress', 'Địa chỉ tối thiểu 5 ký tự');
-                    else setErr('kitchenAddress', undefined);
-                  }}
-                  placeholder="Địa chỉ bếp *"
-                  className={inputCls('kitchenAddress', 'cm-input')}
-                  aria-invalid={!!errors.kitchenAddress}
-                  data-field-error={errors.kitchenAddress ? 'kitchenAddress' : undefined}
-                  maxLength={500}
-                />
-                {addressSearching ? (
-                  <p className="mt-1 text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">progress_activity</span>
-                    Đang tìm địa chỉ…
-                  </p>
-                ) : null}
-                {addressNoResults ? (
-                  <p className="mt-1 text-[11px] text-neutral-500">Không tìm thấy địa chỉ phù hợp.</p>
-                ) : null}
-                {addressSuggestions.length > 0 ? (
-                  <div className="mt-2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
-                    {addressSuggestions.map((item, idx) => (
-                      <button
-                        key={`${item.lat},${item.lng},${idx}`}
-                        type="button"
-                        onClick={() => selectAddressSuggestion(item)}
-                        className="flex w-full items-start gap-2 border-b border-neutral-100 px-3 py-2 text-left text-xs text-neutral-700 last:border-b-0 hover:bg-emerald-50"
-                      >
-                        <span className="material-symbols-outlined mt-0.5 text-[16px] text-emerald-700">place</span>
-                        <span className="line-clamp-2">{item.displayName}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <FieldError message={errors.kitchenAddress} />
-                <div className="cm-modal-map">
-                  <LocationPicker lng={f.lng} lat={f.lat} onPick={onMapPick} />
-                </div>
-                <p
-                  className={`cm-modal-meta ${
-                    geocodeError ? '!text-[#B45309]' : ''
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">
-                    {geocoding ? 'progress_activity' : geocodeError ? 'warning' : 'my_location'}
+        {/* Thanh bước — bấm được để quay lại bước đã qua, tiến tới thì phải qua validate */}
+        <nav className="cm-stepper" aria-label="Các bước tạo chiến dịch">
+          {FORM_STEPS.map((s, i) => {
+            const isActive = step === s.num;
+            const isDone = step > s.num;
+            return (
+              <button
+                key={s.num}
+                type="button"
+                onClick={() => goToStep(s.num)}
+                aria-current={isActive ? 'step' : undefined}
+                className={`cm-stepper-item ${isActive ? 'is-active' : ''} ${isDone ? 'is-done' : ''}`}
+              >
+                <span className="cm-stepper-dot">
+                  <span className="material-symbols-outlined text-[16px]">
+                    {isDone ? 'check' : s.icon}
                   </span>
-                  {geocoding
-                    ? 'Đang lấy địa chỉ từ bản đồ…'
-                    : geocodeError
-                      ? 'Không lấy được địa chỉ — bạn có thể tự nhập tay phía trên.'
-                      : `Toạ độ: ${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}`}
-                </p>
-              </div>
-
-              <div className="cm-form-block">
-                <span className="cm-form-block-label">
-                  <span className="material-symbols-outlined">event</span>Thời gian & nhân lực
                 </span>
-                <div className="grid grid-cols-3 gap-2">
+                <span className="cm-stepper-text">
+                  <span className="cm-stepper-index">Bước {s.num}</span>
+                  <span className="cm-stepper-label">{s.label}</span>
+                </span>
+                {i < FORM_STEPS.length - 1 && <span className="cm-stepper-line" />}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="cm-modal-body">
+          <div className="cm-modal-steps">
+            {step === 1 && (
+              <>
+                <div className="cm-form-block">
+                  <span className="cm-form-block-label">
+                    <span className="material-symbols-outlined">info</span>Thông tin cơ bản
+                  </span>
                   <input
-                    type="date"
-                    value={f.scheduledDate}
-                    min={new Date().toISOString().slice(0, 10)}
+                    value={f.title}
                     onChange={(e) => {
-                      setF({ ...f, scheduledDate: e.target.value });
-                      if (errors.scheduledDate) setErr('scheduledDate', undefined);
-                      // Nếu endDate trước scheduledDate mới → clear endDate
-                      if (f.endDate && f.endDate < e.target.value) {
-                        setF((prev) => ({ ...prev, scheduledDate: e.target.value, endDate: '' }));
-                      }
+                      setF({ ...f, title: e.target.value });
+                      if (errors.title) setErr('title', undefined);
                     }}
-                    className={inputCls('scheduledDate', 'cm-input')}
-                    aria-invalid={!!errors.scheduledDate}
-                    data-field-error={errors.scheduledDate ? 'scheduledDate' : undefined}
+                    onBlur={() => {
+                      if (!f.title.trim()) setErr('title', 'Vui lòng nhập tiêu đề');
+                      else if (f.title.trim().length < 5) setErr('title', 'Tiêu đề tối thiểu 5 ký tự');
+                      else setErr('title', undefined);
+                    }}
+                    placeholder="Tiêu đề chiến dịch *"
+                    className={inputCls('title', 'cm-input')}
+                    aria-invalid={!!errors.title}
+                    data-field-error={errors.title ? 'title' : undefined}
+                    maxLength={255}
                   />
-                  <input
-                    type="time"
-                    value={f.startTime}
+                  <FieldError message={errors.title} />
+                  <textarea
+                    value={f.description}
                     onChange={(e) => {
-                      setF({ ...f, startTime: e.target.value });
-                      if (errors.startTime) setErr('startTime', undefined);
+                      setF({ ...f, description: e.target.value });
+                      if (errors.description) setErr('description', undefined);
                     }}
-                    className={inputCls('startTime', 'cm-input')}
-                    aria-invalid={!!errors.startTime}
+                    placeholder="Mô tả ngắn — bạn sẽ phục vụ ai, ở đâu, vì sao quan trọng?"
+                    rows={3}
+                    maxLength={5000}
+                    className={inputCls('description', 'cm-input')}
+                    aria-invalid={!!errors.description}
                   />
-                  <input
-                    type="time"
-                    value={f.endTime}
-                    onChange={(e) => {
-                      setF({ ...f, endTime: e.target.value });
-                      if (errors.endTime) setErr('endTime', undefined);
-                    }}
-                    className={inputCls('endTime', 'cm-input')}
-                    aria-invalid={!!errors.endTime}
-                    data-field-error={errors.endTime ? 'endTime' : undefined}
-                  />
+                  <FieldError message={errors.description} />
                 </div>
-                <FieldError message={errors.scheduledDate} />
-                <FieldError message={errors.startTime} />
-                <FieldError message={errors.endTime} />
-                {/* Ngày kết thúc (optional) — bỏ trống = 1 ngày duy nhất */}
-                <div className="mt-2 flex items-center gap-2">
-                  <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide shrink-0">
-                    Ngày kết thúc
-                  </label>
-                  <input
-                    type="date"
-                    value={f.endDate}
-                    min={f.scheduledDate || new Date().toISOString().slice(0, 10)}
-                    placeholder="Bỏ trống nếu 1 ngày"
-                    onChange={(e) => {
-                      setF({ ...f, endDate: e.target.value });
-                      if (errors.endDate) setErr('endDate', undefined);
-                    }}
-                    className={`cm-input flex-1 ${errors.endDate ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
-                    aria-invalid={!!errors.endDate}
-                    data-field-error={errors.endDate ? 'endDate' : undefined}
-                  />
-                  {f.endDate && (
+                <div id="cm-image-block" className="cm-form-block">
+                  <span className="cm-form-block-label">
+                    <span className="material-symbols-outlined">image</span>Ảnh bìa chiến dịch
+                  </span>
+                  <ImageUploader value={imageUrl} onChange={setImageUrl} uploading={upload.isPending} />
+                </div>
+                <div className="cm-form-block">
+                  <span className="cm-form-block-label">
+                    <span className="material-symbols-outlined">place</span>Địa điểm
+                  </span>
+                  <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setF({ ...f, endDate: '' });
-                        setErr('endDate', undefined);
-                      }}
-                      className="text-[11px] text-neutral-500 hover:text-rose-600 underline shrink-0"
-                      title="Bỏ chọn ngày kết thúc"
+                      onClick={applyProfileAddress}
+                      disabled={!hasProfileAddress}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        addressMode === 'profile'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                          : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
-                      Xoá
+                      <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
+                        <span className="material-symbols-outlined text-[17px]">home_pin</span>
+                        Dùng địa chỉ mặc định
+                      </span>
+                      <span className="mt-1 block text-xs text-neutral-500 line-clamp-2">
+                        {hasProfileAddress ? profileAddress : 'Chưa có địa chỉ trong hồ sơ'}
+                      </span>
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={switchToCustomAddress}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        addressMode === 'custom'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                          : 'border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide">
+                        <span className="material-symbols-outlined text-[17px]">travel_explore</span>
+                        Chọn địa chỉ khác
+                      </span>
+                      <span className="mt-1 block text-xs text-neutral-500">
+                        Nhập để search hoặc kéo ghim trên bản đồ.
+                      </span>
+                    </button>
+                  </div>
+                  <input
+                    value={f.kitchenAddress}
+                    onChange={(e) => {
+                      const nextAddress = e.target.value;
+                      setGeocodeError(false);
+                      setAddressMode('custom');
+                      setF({ ...f, kitchenAddress: nextAddress });
+                      queueAddressSearch(nextAddress);
+                      if (errors.kitchenAddress) setErr('kitchenAddress', undefined);
+                    }}
+                    onBlur={() => {
+                      if (!f.kitchenAddress.trim()) setErr('kitchenAddress', 'Vui lòng nhập địa chỉ bếp');
+                      else if (f.kitchenAddress.trim().length < 5)
+                        setErr('kitchenAddress', 'Địa chỉ tối thiểu 5 ký tự');
+                      else setErr('kitchenAddress', undefined);
+                    }}
+                    placeholder="Địa chỉ bếp *"
+                    className={inputCls('kitchenAddress', 'cm-input')}
+                    aria-invalid={!!errors.kitchenAddress}
+                    data-field-error={errors.kitchenAddress ? 'kitchenAddress' : undefined}
+                    maxLength={500}
+                  />
+                  {addressSearching ? (
+                    <p className="mt-1 text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">progress_activity</span>
+                      Đang tìm địa chỉ…
+                    </p>
+                  ) : null}
+                  {addressNoResults ? (
+                    <p className="mt-1 text-[11px] text-neutral-500">Không tìm thấy địa chỉ phù hợp.</p>
+                  ) : null}
+                  {addressSuggestions.length > 0 ? (
+                    <div className="mt-2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+                      {addressSuggestions.map((item, idx) => (
+                        <button
+                          key={`${item.lat},${item.lng},${idx}`}
+                          type="button"
+                          onClick={() => selectAddressSuggestion(item)}
+                          className="flex w-full items-start gap-2 border-b border-neutral-100 px-3 py-2 text-left text-xs text-neutral-700 last:border-b-0 hover:bg-emerald-50"
+                        >
+                          <span className="material-symbols-outlined mt-0.5 text-[16px] text-emerald-700">place</span>
+                          <span className="line-clamp-2">{item.displayName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <FieldError message={errors.kitchenAddress} />
+                  <div className="cm-modal-map">
+                    <LocationPicker lng={f.lng} lat={f.lat} onPick={onMapPick} />
+                  </div>
+                  <p
+                    className={`cm-modal-meta ${
+                      geocodeError ? '!text-[#B45309]' : ''
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {geocoding ? 'progress_activity' : geocodeError ? 'warning' : 'my_location'}
+                    </span>
+                    {geocoding
+                      ? 'Đang lấy địa chỉ từ bản đồ…'
+                      : geocodeError
+                        ? 'Không lấy được địa chỉ — bạn có thể tự nhập tay phía trên.'
+                        : `Toạ độ: ${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}`}
+                  </p>
                 </div>
-                <p className="text-[10px] text-neutral-400 mt-0.5">
-                  {f.endDate
-                    ? `Chiến dịch kéo dài từ ${new Date(f.scheduledDate).toLocaleDateString('vi-VN')} đến ${new Date(f.endDate).toLocaleDateString('vi-VN')}.`
-                    : 'Bỏ trống nếu chiến dịch chỉ diễn ra 1 ngày.'}
-                </p>
-                <FieldError message={errors.endDate} />
-                <input
-                  type="number"
-                  min={1}
-                  max={100000}
-                  value={f.expectedServings}
-                  onChange={(e) => {
-                    setF({ ...f, expectedServings: Number(e.target.value) });
-                    if (errors.expectedServings) setErr('expectedServings', undefined);
-                  }}
-                  onBlur={() => {
-                    if (!f.expectedServings || f.expectedServings < 1)
-                      setErr('expectedServings', 'Số suất ăn dự kiến tối thiểu 1');
-                    else if (f.expectedServings > 100000)
-                      setErr('expectedServings', 'Số suất ăn tối đa 100.000');
-                    else setErr('expectedServings', undefined);
-                  }}
-                  placeholder="Số suất ăn dự kiến *"
-                  className={inputCls('expectedServings', 'cm-input')}
-                  aria-invalid={!!errors.expectedServings}
-                />
-                <FieldError message={errors.expectedServings} />
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  <SlotStepper
-                    tone="chef"
-                    label="Đầu bếp"
-                    icon="skillet"
-                    value={f.chefSlotsNeeded}
-                    onChange={(v) => {
-                      bumpSlot('chefSlotsNeeded', v - f.chefSlotsNeeded);
-                      setErr('chefSlotsNeeded', undefined);
-                    }}
-                    error={errors.chefSlotsNeeded}
-                  />
-                  <SlotStepper
-                    tone="waiter"
-                    label="Phục vụ"
-                    icon="room_service"
-                    value={f.waiterSlotsNeeded}
-                    onChange={(v) => {
-                      bumpSlot('waiterSlotsNeeded', v - f.waiterSlotsNeeded);
-                      setErr('waiterSlotsNeeded', undefined);
-                    }}
-                    error={errors.waiterSlotsNeeded}
-                  />
-                  <SlotStepper
-                    tone="shipper"
-                    label="Giao hàng"
-                    icon="local_shipping"
-                    value={f.shipperSlotsNeeded}
-                    onChange={(v) => {
-                      bumpSlot('shipperSlotsNeeded', v - f.shipperSlotsNeeded);
-                      setErr('shipperSlotsNeeded', undefined);
-                    }}
-                    error={errors.shipperSlotsNeeded}
-                  />
-                </div>
-                <SlotsSummary
-                  chef={f.chefSlotsNeeded}
-                  waiter={f.waiterSlotsNeeded}
-                  shipper={f.shipperSlotsNeeded}
-                  expectedServings={f.expectedServings}
-                />
-              </div>
+              </>
+            )}
 
-              <div className="cm-form-block">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="cm-form-block-label !mb-0">
-                    <span className="material-symbols-outlined">schedule</span>Ca trực cho tình nguyện viên
+            {step === 2 && (
+              <>
+                <div className="cm-form-block">
+                  <span className="cm-form-block-label">
+                    <span className="material-symbols-outlined">event</span>Thời gian & nhân lực
                   </span>
-                </div>
-                <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
-                  Tạo sẵn các ca để tình nguyện viên đăng ký ngay khi chiến dịch được duyệt.
-                </p>
-                <div className="mb-3">
-                  <ShiftSuggestions expectedServings={f.expectedServings} />
-                </div>
-                {shifts.length > 0 && (
-                  <ShiftsSummary
-                    total={shiftsSummary.total}
-                    byRole={shiftsSummary.byRole}
-                    valid={shiftsSummary.valid}
-                    expectedServings={f.expectedServings}
-                  />
-                )}
-                <div className="cm-repeat">
-                  {shifts.map((s, i) => (
-                    <div key={i} className="space-y-1">
-                      <div
-                        className={`cm-repeat-row cm-repeat-row--shift ${
-                          errors[`shifts.${i}.label`] ||
-                          errors[`shifts.${i}.startTime`] ||
-                          errors[`shifts.${i}.endTime`] ||
-                          errors[`shifts.${i}.slotsNeeded`]
-                            ? '!ring-1 !ring-rose-300'
-                            : ''
-                        }`}
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      type="date"
+                      value={f.scheduledDate}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => {
+                        setF({ ...f, scheduledDate: e.target.value });
+                        if (errors.scheduledDate) setErr('scheduledDate', undefined);
+                        // Nếu endDate trước scheduledDate mới → clear endDate
+                        if (f.endDate && f.endDate < e.target.value) {
+                          setF((prev) => ({ ...prev, scheduledDate: e.target.value, endDate: '' }));
+                        }
+                      }}
+                      className={inputCls('scheduledDate', 'cm-input')}
+                      aria-invalid={!!errors.scheduledDate}
+                      data-field-error={errors.scheduledDate ? 'scheduledDate' : undefined}
+                    />
+                    <input
+                      type="time"
+                      value={f.startTime}
+                      onChange={(e) => {
+                        setF({ ...f, startTime: e.target.value });
+                        if (errors.startTime) setErr('startTime', undefined);
+                      }}
+                      className={inputCls('startTime', 'cm-input')}
+                      aria-invalid={!!errors.startTime}
+                    />
+                    <input
+                      type="time"
+                      value={f.endTime}
+                      onChange={(e) => {
+                        setF({ ...f, endTime: e.target.value });
+                        if (errors.endTime) setErr('endTime', undefined);
+                      }}
+                      className={inputCls('endTime', 'cm-input')}
+                      aria-invalid={!!errors.endTime}
+                      data-field-error={errors.endTime ? 'endTime' : undefined}
+                    />
+                  </div>
+                  <FieldError message={errors.scheduledDate} />
+                  <FieldError message={errors.startTime} />
+                  <FieldError message={errors.endTime} />
+                  {/* Ngày kết thúc (optional) — bỏ trống = 1 ngày duy nhất */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide shrink-0">
+                      Ngày kết thúc
+                    </label>
+                    <input
+                      type="date"
+                      value={f.endDate}
+                      min={f.scheduledDate || new Date().toISOString().slice(0, 10)}
+                      placeholder="Bỏ trống nếu 1 ngày"
+                      onChange={(e) => {
+                        setF({ ...f, endDate: e.target.value });
+                        if (errors.endDate) setErr('endDate', undefined);
+                      }}
+                      className={`cm-input flex-1 ${errors.endDate ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+                      aria-invalid={!!errors.endDate}
+                      data-field-error={errors.endDate ? 'endDate' : undefined}
+                    />
+                    {f.endDate && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setF({ ...f, endDate: '' });
+                          setErr('endDate', undefined);
+                        }}
+                        className="text-[11px] text-neutral-500 hover:text-rose-600 underline shrink-0"
+                        title="Bỏ chọn ngày kết thúc"
                       >
-                        <input
-                          value={s.label}
-                          onChange={(e) =>
-                            setShifts(shifts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
-                          }
-                          onBlur={() => {
-                            if (s.label.trim() && s.label.trim().length < 2)
-                              setErr(`shifts.${i}.label`, 'Tối thiểu 2 ký tự');
-                            else setErr(`shifts.${i}.label`, undefined);
-                          }}
-                          placeholder="Tên ca (vd: Ca sáng — Sơ chế & nấu)"
-                          className="cm-input cm-shift-label"
-                          maxLength={100}
-                        />
-                        <div className="cm-shift-role">
-                          <select
-                            value={s.role ?? ''}
+                        Xoá
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-0.5">
+                    {f.endDate
+                      ? `Chiến dịch kéo dài từ ${new Date(f.scheduledDate).toLocaleDateString('vi-VN')} đến ${new Date(f.endDate).toLocaleDateString('vi-VN')}.`
+                      : 'Bỏ trống nếu chiến dịch chỉ diễn ra 1 ngày.'}
+                  </p>
+                  <FieldError message={errors.endDate} />
+                  <input
+                    type="number"
+                    min={1}
+                    max={100000}
+                    value={f.expectedServings}
+                    onChange={(e) => {
+                      setF({ ...f, expectedServings: Number(e.target.value) });
+                      if (errors.expectedServings) setErr('expectedServings', undefined);
+                    }}
+                    onBlur={() => {
+                      if (!f.expectedServings || f.expectedServings < 1)
+                        setErr('expectedServings', 'Số suất ăn dự kiến tối thiểu 1');
+                      else if (f.expectedServings > 100000)
+                        setErr('expectedServings', 'Số suất ăn tối đa 100.000');
+                      else setErr('expectedServings', undefined);
+                    }}
+                    placeholder="Số suất ăn dự kiến *"
+                    className={inputCls('expectedServings', 'cm-input')}
+                    aria-invalid={!!errors.expectedServings}
+                  />
+                  <FieldError message={errors.expectedServings} />
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <SlotStepper
+                      tone="chef"
+                      label="Đầu bếp"
+                      icon="skillet"
+                      value={f.chefSlotsNeeded}
+                      onChange={(v) => {
+                        bumpSlot('chefSlotsNeeded', v - f.chefSlotsNeeded);
+                        setErr('chefSlotsNeeded', undefined);
+                      }}
+                      error={errors.chefSlotsNeeded}
+                    />
+                    <SlotStepper
+                      tone="waiter"
+                      label="Phục vụ"
+                      icon="room_service"
+                      value={f.waiterSlotsNeeded}
+                      onChange={(v) => {
+                        bumpSlot('waiterSlotsNeeded', v - f.waiterSlotsNeeded);
+                        setErr('waiterSlotsNeeded', undefined);
+                      }}
+                      error={errors.waiterSlotsNeeded}
+                    />
+                    <SlotStepper
+                      tone="shipper"
+                      label="Giao hàng"
+                      icon="local_shipping"
+                      value={f.shipperSlotsNeeded}
+                      onChange={(v) => {
+                        bumpSlot('shipperSlotsNeeded', v - f.shipperSlotsNeeded);
+                        setErr('shipperSlotsNeeded', undefined);
+                      }}
+                      error={errors.shipperSlotsNeeded}
+                    />
+                  </div>
+                  <SlotsSummary
+                    chef={f.chefSlotsNeeded}
+                    waiter={f.waiterSlotsNeeded}
+                    shipper={f.shipperSlotsNeeded}
+                    expectedServings={f.expectedServings}
+                    shifts={shifts}
+                    onApplySuggestion={(v) =>
+                      setF((prev) => ({
+                        ...prev,
+                        chefSlotsNeeded: v.chef,
+                        waiterSlotsNeeded: v.waiter,
+                        shipperSlotsNeeded: v.shipper,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="cm-form-block">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="cm-form-block-label !mb-0">
+                      <span className="material-symbols-outlined">schedule</span>Ca trực cho tình nguyện viên
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                    Tạo sẵn các ca để tình nguyện viên đăng ký ngay khi chiến dịch được duyệt.
+                  </p>
+                  <div className="mb-3">
+                    <ShiftSuggestions expectedServings={f.expectedServings} />
+                  </div>
+                  {shifts.length > 0 && (
+                    <ShiftsSummary
+                      total={shiftsSummary.total}
+                      byRole={shiftsSummary.byRole}
+                      valid={shiftsSummary.valid}
+                      expectedServings={f.expectedServings}
+                    />
+                  )}
+                  <div className="cm-repeat">
+                    {shifts.map((s, i) => (
+                      <div key={i} className="space-y-1">
+                        <div
+                          className={`cm-repeat-row cm-repeat-row--shift ${
+                            errors[`shifts.${i}.label`] ||
+                            errors[`shifts.${i}.startTime`] ||
+                            errors[`shifts.${i}.endTime`] ||
+                            errors[`shifts.${i}.slotsNeeded`]
+                              ? '!ring-1 !ring-rose-300'
+                              : ''
+                          }`}
+                        >
+                          <input
+                            value={s.label}
                             onChange={(e) =>
-                              setShifts(
-                                shifts.map((x, j) =>
-                                  j === i
-                                    ? {
-                                        ...x,
-                                        role: e.target.value === '' ? undefined : (e.target.value as 'chef' | 'waiter' | 'shipper'),
-                                      }
-                                    : x,
-                                ),
-                              )
+                              setShifts(shifts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
                             }
-                            aria-label="Vai trò ca"
+                            onBlur={() => {
+                              if (s.label.trim() && s.label.trim().length < 2)
+                                setErr(`shifts.${i}.label`, 'Tối thiểu 2 ký tự');
+                              else setErr(`shifts.${i}.label`, undefined);
+                            }}
+                            placeholder="Tên ca (vd: Ca sáng — Sơ chế & nấu)"
+                            className="cm-input cm-shift-label"
+                            maxLength={100}
+                          />
+                          <div className="cm-shift-role">
+                            <select
+                              value={s.role ?? ''}
+                              onChange={(e) =>
+                                setShifts(
+                                  shifts.map((x, j) =>
+                                    j === i
+                                      ? {
+                                          ...x,
+                                          role: e.target.value === '' ? undefined : (e.target.value as 'chef' | 'waiter' | 'shipper'),
+                                        }
+                                      : x,
+                                  ),
+                                )
+                              }
+                              aria-label="Vai trò ca"
+                            >
+                              <option value="">Mọi vai trò</option>
+                              <option value="chef">Đầu bếp</option>
+                              <option value="waiter">Phục vụ</option>
+                              <option value="shipper">Giao hàng</option>
+                            </select>
+                          </div>
+                          <div className="cm-shift-slots">
+                            <MiniStepper
+                              value={s.slotsNeeded}
+                              onChange={(v) => {
+                                setShifts(shifts.map((x, j) => (j === i ? { ...x, slotsNeeded: v } : x)));
+                                setErr(`shifts.${i}.slotsNeeded`, undefined);
+                              }}
+                              title="Số người cần cho ca"
+                            />
+                          </div>
+                          <div className="cm-shift-times">
+                            <input
+                              type="time"
+                              value={s.startTime}
+                              onChange={(e) => {
+                                setShifts(shifts.map((x, j) => (j === i ? { ...x, startTime: e.target.value } : x)));
+                                setErr(`shifts.${i}.startTime`, undefined);
+                              }}
+                              className={`cm-input ${errors[`shifts.${i}.startTime`] ? '!border-rose-500' : ''}`}
+                              aria-label="Giờ bắt đầu"
+                            />
+                            <span className="cm-shift-sep">→</span>
+                            <input
+                              type="time"
+                              value={s.endTime}
+                              onChange={(e) => {
+                                setShifts(shifts.map((x, j) => (j === i ? { ...x, endTime: e.target.value } : x)));
+                                setErr(`shifts.${i}.endTime`, undefined);
+                              }}
+                              className={`cm-input ${errors[`shifts.${i}.endTime`] ? '!border-rose-500' : ''}`}
+                              aria-label="Giờ kết thúc"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShifts(shifts.filter((_, j) => j !== i))}
+                            className="cm-repeat-remove"
+                            aria-label="Xoá ca"
                           >
-                            <option value="">Mọi vai trò</option>
-                            <option value="chef">Đầu bếp</option>
-                            <option value="waiter">Phục vụ</option>
-                            <option value="shipper">Giao hàng</option>
-                          </select>
+                            <span className="material-symbols-outlined text-[18px]">close</span>
+                          </button>
                         </div>
-                        <div className="cm-shift-slots">
-                          <MiniStepper
-                            value={s.slotsNeeded}
-                            onChange={(v) => {
-                              setShifts(shifts.map((x, j) => (j === i ? { ...x, slotsNeeded: v } : x)));
-                              setErr(`shifts.${i}.slotsNeeded`, undefined);
-                            }}
-                            title="Số người cần cho ca"
-                          />
-                        </div>
-                        <div className="cm-shift-times">
-                          <input
-                            type="time"
-                            value={s.startTime}
-                            onChange={(e) => {
-                              setShifts(shifts.map((x, j) => (j === i ? { ...x, startTime: e.target.value } : x)));
-                              setErr(`shifts.${i}.startTime`, undefined);
-                            }}
-                            className={`cm-input ${errors[`shifts.${i}.startTime`] ? '!border-rose-500' : ''}`}
-                            aria-label="Giờ bắt đầu"
-                          />
-                          <span className="cm-shift-sep">→</span>
-                          <input
-                            type="time"
-                            value={s.endTime}
-                            onChange={(e) => {
-                              setShifts(shifts.map((x, j) => (j === i ? { ...x, endTime: e.target.value } : x)));
-                              setErr(`shifts.${i}.endTime`, undefined);
-                            }}
-                            className={`cm-input ${errors[`shifts.${i}.endTime`] ? '!border-rose-500' : ''}`}
-                            aria-label="Giờ kết thúc"
-                          />
-                        </div>
+                        {(errors[`shifts.${i}.label`] || errors[`shifts.${i}.startTime`] || errors[`shifts.${i}.endTime`] || errors[`shifts.${i}.slotsNeeded`]) && (
+                          <p className="text-[11px] text-rose-600 font-semibold pl-1">
+                            {errors[`shifts.${i}.label`] ??
+                              errors[`shifts.${i}.startTime`] ??
+                              errors[`shifts.${i}.endTime`] ??
+                              errors[`shifts.${i}.slotsNeeded`]}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShifts([
+                          ...shifts,
+                          { label: '', role: undefined, startTime: '08:00', endTime: '12:00', slotsNeeded: 2 },
+                        ])
+                      }
+                      className="cm-repeat-add"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">add</span> Thêm ca trực
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {step === 3 && (
+              <>
+                <div className="cm-form-block">
+                  <span className="cm-form-block-label">
+                    <span className="material-symbols-outlined">restaurant_menu</span>Thực đơn trong ngày
+                  </span>
+                  <p className="text-[11px] text-neutral-500 -mt-1 mb-2">
+                    Gợi ý sẽ tự lọc món phù hợp với vật phẩm đã nhập bên dưới.
+                  </p>
+                  <div className="mb-3">
+                    <MenuSuggestions
+                      supplies={supplies}
+                      expectedServings={f.expectedServings}
+                    />
+                  </div>
+                  <div className="cm-repeat">
+                    {menu.map((m, i) => (
+                      <div key={i} className="cm-repeat-row cm-repeat-row--menu">
+                        <input
+                          value={m.name}
+                          onChange={(e) =>
+                            setMenu(
+                              menu.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                            )
+                          }
+                          placeholder="Tên món (vd: Cơm thịt kho)"
+                          className="cm-input"
+                        />
+                        <select
+                          value={m.type}
+                          onChange={(e) =>
+                            setMenu(
+                              menu.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)),
+                            )
+                          }
+                          className="cm-input"
+                          aria-label="Bữa ăn"
+                        >
+                          <option value="">— Bữa —</option>
+                          <option value="breakfast">Bữa sáng</option>
+                          <option value="lunch">Bữa trưa</option>
+                          <option value="dinner">Bữa tối</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          value={m.plannedServings ?? ''}
+                          onChange={(e) =>
+                            setMenu(
+                              menu.map((x, j) =>
+                                j === i
+                                  ? {
+                                      ...x,
+                                      plannedServings: e.target.value === '' ? undefined : Number(e.target.value),
+                                    }
+                                  : x,
+                              ),
+                            )
+                          }
+                          placeholder="Suất dự kiến"
+                          className="cm-input"
+                          title="Số suất dự kiến cho món này"
+                        />
                         <button
                           type="button"
-                          onClick={() => setShifts(shifts.filter((_, j) => j !== i))}
+                          onClick={() => setMenu(menu.filter((_, j) => j !== i))}
                           className="cm-repeat-remove"
-                          aria-label="Xoá ca"
+                          aria-label="Xoá món"
                         >
                           <span className="material-symbols-outlined text-[18px]">close</span>
                         </button>
                       </div>
-                      {(errors[`shifts.${i}.label`] || errors[`shifts.${i}.startTime`] || errors[`shifts.${i}.endTime`] || errors[`shifts.${i}.slotsNeeded`]) && (
-                        <p className="text-[11px] text-rose-600 font-semibold pl-1">
-                          {errors[`shifts.${i}.label`] ??
-                            errors[`shifts.${i}.startTime`] ??
-                            errors[`shifts.${i}.endTime`] ??
-                            errors[`shifts.${i}.slotsNeeded`]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShifts([
-                        ...shifts,
-                        { label: '', role: undefined, startTime: '08:00', endTime: '12:00', slotsNeeded: 2 },
-                      ])
-                    }
-                    className="cm-repeat-add"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm ca trực
-                  </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setMenu([...menu, { name: '', type: 'lunch' }])}
+                      className="cm-repeat-add"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">add</span> Thêm món
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div className="cm-form-block">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="cm-form-block-label !mb-0">
-                    <span className="material-symbols-outlined">schedule</span>Lịch trình hoạt động
-                  </span>
+                <div className="cm-form-block">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="cm-form-block-label !mb-0">
+                      <span className="material-symbols-outlined">schedule</span>Lịch trình hoạt động
+                    </span>
+                  </div>
+                  <div className="mb-3">
+                    <ScheduleSuggestions expectedServings={f.expectedServings} />
+                  </div>
+                  <div className="cm-repeat">
+                    {schedule.map((s, i) => (
+                      <div key={i} className="cm-repeat-row cm-repeat-row--schedule">
+                        <input
+                          type="time"
+                          value={s.time}
+                          onChange={(e) =>
+                            setSchedule(
+                              schedule.map((x, j) => (j === i ? { ...x, time: e.target.value } : x)),
+                            )
+                          }
+                          className="cm-input"
+                        />
+                        <input
+                          value={s.label}
+                          onChange={(e) =>
+                            setSchedule(
+                              schedule.map((x, j) =>
+                                j === i ? { ...x, label: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          placeholder="Mô tả công việc (vd: Chuẩn bị nguyên liệu)"
+                          className="cm-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSchedule(schedule.filter((_, j) => j !== i))}
+                          className="cm-repeat-remove"
+                          aria-label="Xoá mốc"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">close</span>
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setSchedule([...schedule, { time: '', label: '' }])}
+                      className="cm-repeat-add"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">add</span> Thêm mốc
+                    </button>
+                  </div>
                 </div>
-                <div className="mb-3">
-                  <ScheduleSuggestions expectedServings={f.expectedServings} />
+                <div className="cm-form-block">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="cm-form-block-label !mb-0">
+                      <span className="material-symbols-outlined">inventory_2</span>Vật phẩm cần thiết
+                    </span>
+                  </div>
+                  <div className="mb-3">
+                    <SupplySuggestions expectedServings={f.expectedServings} />
+                  </div>
+                  <div className="cm-repeat">
+                    {supplies.map((s, i) => (
+                      <div key={i} className="cm-repeat-row cm-repeat-row--supplies">
+                        <input
+                          value={s.name}
+                          onChange={(e) =>
+                            setSupplies(
+                              supplies.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                            )
+                          }
+                          placeholder="vd: Gạo sạch, Thùng giữ nhiệt…"
+                          className="cm-input"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={s.quantity ?? ''}
+                          onChange={(e) =>
+                            setSupplies(
+                              supplies.map((x, j) =>
+                                j === i
+                                  ? {
+                                      ...x,
+                                      quantity: e.target.value === '' ? undefined : Number(e.target.value),
+                                    }
+                                  : x,
+                              ),
+                            )
+                          }
+                          placeholder="SL"
+                          className="cm-input"
+                          title="Số lượng cần thiết"
+                        />
+                        <input
+                          value={s.unit ?? ''}
+                          onChange={(e) =>
+                            setSupplies(
+                              supplies.map((x, j) =>
+                                j === i ? { ...x, unit: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          placeholder="kg"
+                          className="cm-input"
+                          title="Đơn vị (vd: kg, thùng, hộp)"
+                          maxLength={20}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSupplies(supplies.filter((_, j) => j !== i))}
+                          className="cm-repeat-remove"
+                          aria-label="Xoá vật phẩm"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">close</span>
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setSupplies([...supplies, { name: '' }])}
+                      className="cm-repeat-add"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">add</span> Thêm vật phẩm
+                    </button>
+                  </div>
                 </div>
-                <div className="cm-repeat">
-                  {schedule.map((s, i) => (
-                    <div key={i} className="cm-repeat-row cm-repeat-row--schedule">
-                      <input
-                        type="time"
-                        value={s.time}
-                        onChange={(e) =>
-                          setSchedule(
-                            schedule.map((x, j) => (j === i ? { ...x, time: e.target.value } : x)),
-                          )
-                        }
-                        className="cm-input"
-                      />
-                      <input
-                        value={s.label}
-                        onChange={(e) =>
-                          setSchedule(
-                            schedule.map((x, j) =>
-                              j === i ? { ...x, label: e.target.value } : x,
-                            ),
-                          )
-                        }
-                        placeholder="Mô tả công việc (vd: Chuẩn bị nguyên liệu)"
-                        className="cm-input"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setSchedule(schedule.filter((_, j) => j !== i))}
-                        className="cm-repeat-remove"
-                        aria-label="Xoá mốc"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">close</span>
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setSchedule([...schedule, { time: '', label: '' }])}
-                    className="cm-repeat-add"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm mốc
-                  </button>
-                </div>
-              </div>
-
-              <div className="cm-form-block">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="cm-form-block-label !mb-0">
-                    <span className="material-symbols-outlined">inventory_2</span>Vật phẩm cần thiết
-                  </span>
-                </div>
-                <div className="mb-3">
-                  <SupplySuggestions expectedServings={f.expectedServings} />
-                </div>
-                <div className="cm-repeat">
-                  {supplies.map((s, i) => (
-                    <div key={i} className="cm-repeat-row cm-repeat-row--supplies">
-                      <input
-                        value={s.name}
-                        onChange={(e) =>
-                          setSupplies(
-                            supplies.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
-                          )
-                        }
-                        placeholder="vd: Gạo sạch, Thùng giữ nhiệt…"
-                        className="cm-input"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        value={s.quantity ?? ''}
-                        onChange={(e) =>
-                          setSupplies(
-                            supplies.map((x, j) =>
-                              j === i
-                                ? {
-                                    ...x,
-                                    quantity: e.target.value === '' ? undefined : Number(e.target.value),
-                                  }
-                                : x,
-                            ),
-                          )
-                        }
-                        placeholder="SL"
-                        className="cm-input"
-                        title="Số lượng cần thiết"
-                      />
-                      <input
-                        value={s.unit ?? ''}
-                        onChange={(e) =>
-                          setSupplies(
-                            supplies.map((x, j) =>
-                              j === i ? { ...x, unit: e.target.value } : x,
-                            ),
-                          )
-                        }
-                        placeholder="kg"
-                        className="cm-input"
-                        title="Đơn vị (vd: kg, thùng, hộp)"
-                        maxLength={20}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setSupplies(supplies.filter((_, j) => j !== i))}
-                        className="cm-repeat-remove"
-                        aria-label="Xoá vật phẩm"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">close</span>
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setSupplies([...supplies, { name: '' }])}
-                    className="cm-repeat-add"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">add</span> Thêm vật phẩm
-                  </button>
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -1176,21 +1325,50 @@ export default function CreateCampaignModal({
           <button type="button" onClick={onClose} className="cm-btn-cancel">
             Huỷ
           </button>
-          <button type="submit" disabled={pending} className="cm-btn-submit">
-            {pending ? (
-              <>
-                <span className="material-symbols-outlined text-[18px] animate-spin">
-                  progress_activity
-                </span>
-                Đang gửi...
-              </>
-            ) : (
-              <>
-                <span className="material-symbols-outlined text-[18px]">send</span>
-                Gửi yêu cầu
-              </>
-            )}
-          </button>
+
+          {step > 1 && (
+            <button
+              type="button"
+              onClick={() => setStep((s) => (s === 3 ? 2 : 1))}
+              className="cm-btn-cancel"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+              Quay lại
+            </button>
+          )}
+
+          {step < 3 ? (
+            // `key` khác nhau là BẮT BUỘC: hai nút ở cùng vị trí, cùng class nên React
+            // sẽ tái dùng đúng thẻ <button> đó và chỉ vá lại thuộc tính `type`. Khi bấm
+            // "Tiếp tục", state cập nhật đồng bộ ngay trong sự kiện click → tới lúc
+            // click nổi bọt lên <form> thì nút đã mang type="submit" và trình duyệt
+            // gửi form luôn. Key riêng buộc React dựng thẻ mới, cắt đứt chuỗi đó.
+            <button
+              key="next"
+              type="button"
+              onClick={() => goToStep((step + 1) as 2 | 3)}
+              className="cm-btn-submit"
+            >
+              Tiếp tục
+              <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+            </button>
+          ) : (
+            <button key="submit" type="submit" disabled={pending} className="cm-btn-submit">
+              {pending ? (
+                <>
+                  <span className="material-symbols-outlined text-[18px] animate-spin">
+                    progress_activity
+                  </span>
+                  Đang gửi...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[18px]">send</span>
+                  Gửi yêu cầu
+                </>
+              )}
+            </button>
+          )}
         </div>
       </form>
       </div>
@@ -1573,50 +1751,22 @@ function SlotsSummary({
   waiter,
   shipper,
   expectedServings,
+  shifts,
+  onApplySuggestion,
 }: {
   chef: number;
   waiter: number;
   shipper: number;
   expectedServings: number;
+  shifts: ShiftDraft[];
+  onApplySuggestion: (v: Record<StaffRole, number>) => void;
 }) {
   const total = chef + waiter + shipper;
-
-  // Khuyến nghị: ~1 nhân sự / 12–15 suất.
-  const recommendedMin =
-    expectedServings < 50
-      ? 4
-      : expectedServings <= 200
-        ? 8
-        : Math.max(14, Math.ceil(expectedServings / 15));
-
-  let verdict: { tone: 'rose' | 'amber' | 'emerald'; text: string; icon: string };
-  if (total === 0) {
-    verdict = {
-      tone: 'amber',
-      icon: 'priority_high',
-      text: 'Chưa có nhân sự — tăng stepper bên trên để chuẩn bị nhân lực.',
-    };
-  } else if (total < recommendedMin) {
-    verdict = {
-      tone: 'amber',
-      icon: 'group_remove',
-      text: `Tổng ${total} người — khá mỏng cho ${expectedServings} suất (khuyến nghị ≥ ${recommendedMin}).`,
-    };
-  } else if (total > recommendedMin * 2.5) {
-    verdict = {
-      tone: 'rose',
-      icon: 'group_add',
-      text: `Tổng ${total} người — có thể thừa cho ${expectedServings} suất (khuyến nghị ≤ ${Math.ceil(
-        recommendedMin * 2.5,
-      )}).`,
-    };
-  } else {
-    verdict = {
-      tone: 'emerald',
-      icon: 'check_circle',
-      text: `Tổng ${total} người — phù hợp với quy mô ${expectedServings} suất.`,
-    };
-  }
+  // Số người ≠ tổng lượt ca: một người nhận được nhiều ca miễn không trùng giờ.
+  // staffingVerdict đối chiếu 3 stepper với khoảng [cao điểm, tổng lượt ca] của
+  // từng vai trò thay vì chỉ so tổng với số suất.
+  const demand = staffingDemand(shifts);
+  const verdict = staffingVerdict({ chef, waiter, shipper }, shifts, expectedServings);
 
   const verdictCls: Record<typeof verdict.tone, string> = {
     rose: 'bg-rose-50 text-rose-800 border-rose-200',
@@ -1636,12 +1786,38 @@ function SlotsSummary({
         </span>
         {verdict.text}
       </p>
+      {verdict.hint && <p className="mt-1 text-[11px] opacity-80">{verdict.hint}</p>}
+      {/* Chèn mẫu ca KHÔNG tự cộng vào 3 stepper — lượt ca và số người là hai đại
+          lượng khác nhau. Nút này áp con số đã tính sẵn để khỏi cộng tay. */}
+      {verdict.suggested && (
+        <button
+          type="button"
+          onClick={() => onApplySuggestion(verdict.suggested!)}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-current/30 px-2.5 py-1 text-[11px] font-bold hover:bg-white/60 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[14px]">auto_fix_high</span>
+          Dùng số đề xuất ({verdict.suggested.chef} bếp · {verdict.suggested.waiter} phục vụ ·{' '}
+          {verdict.suggested.shipper} giao hàng)
+        </button>
+      )}
 
       <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
         <SummaryCell icon="group" label="Tổng thành viên" value={total} accent />
-        <SummaryCell icon="skillet" label="Đầu bếp" value={chef} />
-        <SummaryCell icon="room_service" label="Phục vụ" value={waiter} />
-        <SummaryCell icon="local_shipping" label="Giao hàng" value={shipper} />
+        <SummaryCell
+          icon="skillet"
+          label={demand.byRole.chef.shiftCount > 0 ? `Đầu bếp · ${demand.byRole.chef.slots} lượt ca` : 'Đầu bếp'}
+          value={chef}
+        />
+        <SummaryCell
+          icon="room_service"
+          label={demand.byRole.waiter.shiftCount > 0 ? `Phục vụ · ${demand.byRole.waiter.slots} lượt ca` : 'Phục vụ'}
+          value={waiter}
+        />
+        <SummaryCell
+          icon="local_shipping"
+          label={demand.byRole.shipper.shiftCount > 0 ? `Giao hàng · ${demand.byRole.shipper.slots} lượt ca` : 'Giao hàng'}
+          value={shipper}
+        />
       </div>
     </div>
   );

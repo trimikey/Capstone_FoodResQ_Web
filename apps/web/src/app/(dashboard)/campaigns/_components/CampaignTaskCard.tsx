@@ -128,9 +128,9 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
           Xem chi tiết chiến dịch
         </Link>
         {(t.role === 'chef' || t.role === 'waiter') && (
-          <Link href={`/kitchen/${t.campaign.id}`} className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100">
+          <Link href={`/my-tasks/${t.id}`} className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100">
             <span className="material-symbols-outlined text-[15px]">soup_kitchen</span>
-            {t.role === 'chef' ? 'Không gian làm việc bếp' : 'Ghi phân phát'}
+            Vào nhiệm vụ →
           </Link>
         )}
       </div>

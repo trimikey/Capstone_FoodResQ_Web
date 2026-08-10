@@ -22,6 +22,7 @@ const VALID_SECTIONS: Section[] = [
   'orders',
   'history',
   'tasks',
+  'schedule',
   'browse',
 ];
 
@@ -51,13 +52,17 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
   // Section hiện tại từ URL — single source of truth, layout + page cùng đọc.
   // Riêng /campaigns/{id}/manage/... không có ?tab= nhưng vẫn thuộc nhánh
   // "Chiến dịch của tôi" — highlight đúng mục đó thay vì rơi về Tổng quan.
+  // Trang /campaigns/schedule là full-screen riêng, không dùng ?tab.
   const tabParam = searchParams?.get('tab');
   const inManage = /^\/campaigns\/[^/]+\/manage/.test(pathname ?? '');
-  const section: Section = (VALID_SECTIONS as string[]).includes(tabParam ?? '')
-    ? (tabParam as Section)
-    : inManage
-      ? 'mine'
-      : 'overview';
+  const onSchedulePage = pathname === '/campaigns/schedule';
+  const section: Section = onSchedulePage
+    ? 'schedule'
+    : (VALID_SECTIONS as string[]).includes(tabParam ?? '')
+      ? (tabParam as Section)
+      : inManage
+        ? 'mine'
+        : 'overview';
 
   // Pre-compute rail entries theo role để hiển thị badge số campaign của charity
   const { data: myCampaigns } = useMyCampaigns(isCharity);
@@ -83,10 +88,14 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
         { key: 'suppliers', label: 'Nhà cung cấp', icon: 'storefront' },
         { key: 'orders', label: 'Đơn nhận', icon: 'bookmark' },
         { key: 'history', label: 'Lịch sử đơn', icon: 'history' },
+        { key: 'schedule', label: 'Lịch làm việc', icon: 'calendar_month' },
       );
     }
     if (isVolunteer) {
-      entries.push({ key: 'tasks', label: 'Việc của tôi', icon: 'assignment_ind' });
+      entries.push(
+        { key: 'tasks', label: 'Việc của tôi', icon: 'assignment_ind' },
+        { key: 'schedule', label: 'Lịch làm việc', icon: 'calendar_month' },
+      );
     }
     entries.push({ key: 'browse', label: 'Khám phá', icon: 'travel_explore' });
     if (isProvider) {
@@ -98,6 +107,12 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
   }, [isCharity, isVolunteer, isProvider, myCampaigns, vol]);
 
   const handleSectionChange = (key: Section) => {
+    // 'schedule' là trang riêng (full-screen grid tuần) — navigate trực tiếp
+    // thay vì gắn query param vào /campaigns.
+    if (key === 'schedule') {
+      router.push('/campaigns/schedule');
+      return;
+    }
     const current = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
     if (key === 'overview') current.delete('tab');
     else current.set('tab', key);

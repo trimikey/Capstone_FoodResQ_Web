@@ -202,7 +202,10 @@ export interface VolunteerDetail {
 
 /** Participant từ manage-detail: có thêm trường volunteer chi tiết + checkInTime + notes. */
 export interface CampaignManageParticipant {
+  /** id của bản ghi phân công (dùng cho duyệt/từ chối) */
   id: string;
+  /** id hồ sơ tình nguyện viên — dùng khi API cần volunteerId, vd người phụ trách đợt phát */
+  volunteerId: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
   shiftId: string | null;
@@ -242,6 +245,8 @@ export interface CampaignExperience {
 }
 
 export interface PublicCampaignDetail extends PublicCampaign {
+  /** Ngày kết thúc của chiến dịch nhiều ngày; null = chỉ diễn ra trong ngày bắt đầu. */
+  endDate?: string | null;
   chefSlotsNeeded: number;
   waiterSlotsNeeded: number;
   shipperSlotsNeeded: number;
@@ -383,8 +388,15 @@ export function useUploadCampaignImage() {
 export function useApplyCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { id: string; role: AssignmentRole }) =>
-      (await api.post(`/campaigns/${p.id}/apply`, { role: p.role })).data.data,
+    // shiftId là BẮT BUỘC với chiến dịch có chia ca — backend từ chối đăng ký chung
+    // chung khi campaign_shifts không rỗng. Bỏ trống chỉ dùng cho chiến dịch không ca.
+    mutationFn: async (p: { id: string; role: AssignmentRole; shiftId?: string }) =>
+      (
+        await api.post(`/campaigns/${p.id}/apply`, {
+          role: p.role,
+          ...(p.shiftId ? { shiftId: p.shiftId } : {}),
+        })
+      ).data.data,
     onSuccess: (_data, p) => {
       // Refetch campaigns list + manage-detail để trang registrations/overview cập nhật ngay.
       void qc.invalidateQueries({ queryKey: ['campaigns'] });
@@ -698,6 +710,8 @@ export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'partic
 }
 
 export interface CreateDistributionInput {
+  /** TNV phụ trách — phải là người ĐÃ ĐƯỢC DUYỆT của chính chiến dịch này */
+  servedByVolunteerId?: string;
   servingsServed: number;
   peopleServed: number;
   leftoverServings?: number;
@@ -819,5 +833,273 @@ export function useAppendSupplyItem() {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
     },
+  });
+}
+
+// ─── Dish steps (quy trình 4 khâu cố định) ─────────────────────────────────
+
+export interface DishStep {
+  id: string;
+  stepOrder: 1 | 2 | 3 | 4;
+  stepName: string;
+  scheduledTime: string;
+  status: 'locked' | 'available' | 'in_progress' | 'done';
+  effectiveStatus: 'locked' | 'available' | 'in_progress' | 'done';
+  completedAt: string | null;
+  completedByVolunteerId: string | null;
+  proofUrl: string | null;
+  note: string | null;
+  /// Cờ QC fail — true khi step bị bếp trưởng / TNV đánh dấu ngắt khẩn cấp.
+  /// Step vẫn tồn tại trong flow (không xoá); UI hiển thị banner đỏ.
+  qcFailedAt?: string | null;
+  qcFailureReason?: string | null;
+  qcFailedByVolunteer?: {
+    user: { fullName: string; avatarUrl: string | null };
+  } | null;
+  completedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
+}
+
+export interface DishProcessItem {
+  id: string;
+  name: string;
+  recipe?: {
+    id: string;
+    name: string;
+    description: string | null;
+    instructions: string | null;
+    prepMinutes: number | null;
+    cookMinutes: number | null;
+    difficulty: string | null;
+    imageUrls: unknown;
+    ingredients: Array<{ name: string; quantity: string | null }>;
+  } | null;
+  plannedServings: number | null;
+  steps: DishStep[];
+}
+
+export interface CookingTeamMember {
+  volunteerId: string;
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  shift: { label: string; startTime: string; endTime: string } | null;
+  isMe: boolean;
+}
+
+export interface SafetyLog {
+  id: string;
+  checkType: 'temperature' | 'hygiene' | 'storage' | 'cross_contamination' | 'handwashing';
+  measuredValue: string | null;
+  result: 'pass' | 'warning' | 'fail';
+  photoUrl: string | null;
+  note: string | null;
+  checkedAt: string;
+  checkedBy: { user: { fullName: string } };
+}
+
+export interface MyTaskDetail {
+  assignment: {
+    id: string;
+    role: 'chef' | 'waiter' | 'shipper';
+    status: string;
+    checkInTime: string | null;
+    ingredientProofUrl: string | null;
+    cookedProofUrl: string | null;
+    distributionProofUrl: string | null;
+    pointsAwarded: number | null;
+    shift: {
+      id: string;
+      label: string;
+      role: 'chef' | 'waiter' | 'shipper' | null;
+      startTime: string;
+      endTime: string;
+    } | null;
+  };
+  campaign: {
+    id: string;
+    title: string;
+    description: string | null;
+    kitchenAddress: string;
+    scheduledDate: string;
+    endDate: string | null;
+    startTime: string;
+    endTime: string;
+    status: string;
+    charityReceiver: { organizationName: string | null; user: { fullName: string; phone: string | null } };
+  };
+  /** Danh sách món — thay vì dishSteps[] trực tiếp */
+  dishes: DishProcessItem[];
+  cookingTeam: CookingTeamMember[];
+  safetyLogs: SafetyLog[];
+}
+
+/** TNV: chi tiết 1 nhiệm vụ — gồm ca, chiến dịch, món + 4 khâu. */
+export function useMyTaskDetail(assignmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-task-detail', assignmentId],
+    queryFn: async () => {
+      const { data } = await api.get(`/campaigns/my-tasks/${assignmentId}`);
+      return data.data as MyTaskDetail;
+    },
+    enabled: enabled && !!assignmentId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** TNV: tick "xong" 1 khâu — bắt buộc ảnh bằng chứng. */
+export function useTickDishStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; stepId: string; proof: File; note?: string }) => {
+      const fd = new FormData();
+      fd.append('proof', p.proof);
+      if (p.note) fd.append('note', p.note);
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/complete`,
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      return data.data as DishStep;
+    },
+    onSuccess: (_d, p) => {
+      // Refetch my-task-detail để cập nhật trạng thái step kế tiếp.
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+    },
+  });
+}
+
+/** Tổ chức: thiết lập 4 giờ dự kiến cho 1 món. */
+export function useSetDishStepTimes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; menuItemId: string; scheduledTimes: string[] }) => {
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/menu-items/${p.menuItemId}/step-times`,
+        { scheduledTimes: p.scheduledTimes },
+      );
+      return data.data as DishStep[];
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
+/** Nguyên liệu charity khai báo lúc đăng ký campaign — lưu ở `Campaign.supplyItems`. */
+export interface CampaignSupplyRequested {
+  name: string;
+  unit: string | null;
+  quantity: number | null;
+}
+
+/** Bếp trưởng / TNV: danh sách thực phẩm đang có sẵn cho campaign (đã received). */
+export interface CampaignSupplyItem {
+  itemName: string;
+  entries: number;
+  quantities: string[];
+}
+export interface CampaignSupplyDonation {
+  id: string;
+  itemName: string;
+  quantity: string | null;
+  note: string | null;
+  receivedAt: string | null;
+  provider: {
+    id: string;
+    businessName: string;
+    user: { fullName: string };
+  };
+}
+export interface CampaignSuppliesPayload {
+  /** Nguyên liệu đăng ký (charity khai báo lúc tạo campaign). */
+  requested: CampaignSupplyRequested[];
+  /** Tổng số donation đã nhận. */
+  total: number;
+  /** Group theo itemName từ donations đã nhận. */
+  items: CampaignSupplyItem[];
+  /** Chi tiết từng donation. */
+  donations: CampaignSupplyDonation[];
+}
+
+export function useCampaignSupplies(campaignId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['campaigns', 'supplies', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data } = await api.get(
+        `/campaigns/${campaignId}/supplies`,
+      );
+      return data.data as CampaignSuppliesPayload;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Bếp trưởng / TNV: QC fail / ngắt khẩn cấp 1 step. */
+export function useFlagStepQualityFail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; stepId: string; reason: string }) => {
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/qc-fail`,
+        { reason: p.reason },
+      );
+      return data.data as DishStep;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'supplies', p.campaignId] });
+    },
+  });
+}
+
+// ─── Lịch tuần ─────────────────────────────────────────────────────────────
+
+export interface WeeklyScheduleCampaign {
+  /** Assignment UUID — dùng làm React list key */
+  id: string;
+  /** Campaign UUID — dùng cho navigation link */
+  campaignId: string;
+  title: string;
+  status: 'open' | 'in_progress' | 'completed';
+  /** Chỉ có khi isPersonalView=true (TNV) */
+  role?: 'chef' | 'waiter' | 'shipper';
+  /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */
+  shift?: {
+    id: string;
+    label: string;
+    startTime: string;
+    endTime: string;
+  } | null;
+}
+
+export interface WeeklyScheduleDay {
+  date: string; // YYYY-MM-DD
+  campaigns: WeeklyScheduleCampaign[];
+}
+
+export interface WeeklySchedule {
+  weekStart: string;
+  /** true = lịch cá nhân TNV, false = lịch tổ chức */
+  isPersonalView: boolean;
+  days: WeeklyScheduleDay[];
+}
+
+/** TNV hoặc bất kỳ ai đã đăng nhập: lịch tuần các khâu của mọi campaign. */
+export function useWeeklySchedule(weekStart?: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'weekly-schedule', weekStart ?? 'current'],
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/schedule/weekly', {
+        params: weekStart ? { weekStart } : {},
+      });
+      return data.data as WeeklySchedule;
+    },
+    staleTime: 60_000,
   });
 }

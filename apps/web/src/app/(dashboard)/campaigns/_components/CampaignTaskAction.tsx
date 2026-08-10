@@ -43,11 +43,31 @@ function getCheckInLocation(): Promise<{ lng: number; lat: number }> {
   });
 }
 
+/** Vì sao chưa thao tác được — backend chỉ nhận cập nhật khi chiến dịch `in_progress`. */
+const BLOCKED_REASON: Record<string, string> = {
+  draft: 'Chiến dịch đang chờ quản trị viên duyệt.',
+  open: 'Chiến dịch chưa bắt đầu — chờ tổ chức bấm “Bắt đầu chiến dịch”.',
+  completed: 'Chiến dịch đã kết thúc — không cập nhật được nữa.',
+  cancelled: 'Chiến dịch đã bị huỷ.',
+};
+
 export function CampaignTaskAction({ t, className }: { t: MyTask; className?: string }) {
   const advance = useAdvanceTask();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isLocating, setIsLocating] = useState(false);
   const next = TASK_NEXT[t.status]?.(t.role) ?? null;
+
+  // Trước đây nút chỉ nhìn vào trạng thái CÔNG VIỆC, nên chiến dịch đã kết thúc mà
+  // công việc còn dở vẫn hiện "Điểm danh tại bếp" — bấm vào chỉ nhận toast lỗi từ BE.
+  const blockedReason = t.campaign.status !== 'in_progress' ? BLOCKED_REASON[t.campaign.status] : null;
+  if (next && blockedReason) {
+    return (
+      <p className="mt-3 flex items-start gap-1.5 rounded-xl bg-neutral-100 px-3 py-2 text-[11px] font-semibold text-neutral-600">
+        <span className="material-symbols-outlined text-[14px] shrink-0">info</span>
+        {blockedReason}
+      </p>
+    );
+  }
 
   async function advanceTask(photo?: File) {
     try {

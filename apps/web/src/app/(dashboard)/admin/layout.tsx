@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
 import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
+import NotificationBell from '@/components/shared/NotificationBell';
 
 const ADMIN_NAV = [
   { href: '/admin', label: 'Tổng quan thống kê', icon: 'dashboard' },
@@ -16,8 +17,15 @@ const ADMIN_NAV = [
   { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
   { href: '/admin/food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
   { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
-  { href: '/admin/monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
   { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+  { href: '/admin/monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
+];
+
+/**
+ * Mục neo ở đáy sidebar, chung khối với nút Đăng xuất — đây là nhóm "tài khoản &
+ * cấu hình", không phải việc phải làm hằng ngày như các mục nghiệp vụ phía trên.
+ */
+const ADMIN_FOOTER_NAV = [
   { href: '/admin/settings', label: 'Cài đặt hệ thống', icon: 'settings' },
 ];
 
@@ -48,8 +56,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.push('/login');
   };
 
-  const currentPageLabel = ADMIN_NAV.find((n) => pathname === n.href)?.label
-    ?? 'Quản trị viên';
+  // Tìm ở cả hai danh sách — nếu chỉ tra ADMIN_NAV thì trang Cài đặt (đã chuyển
+  // xuống khối chân sidebar) sẽ mất tiêu đề và rơi về nhãn mặc định.
+  const currentPageLabel =
+    [...ADMIN_NAV, ...ADMIN_FOOTER_NAV].find((n) => pathname === n.href)?.label ?? 'Quản trị viên';
 
   return (
     <div className="min-h-screen bg-[#FAFBF9] font-body-md">
@@ -65,13 +75,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-8 w-auto object-contain" />
         </div>
-        <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
-          {user.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
-          ) : (
-            <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
-          )}
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
+            {user.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-bold text-white">{user.fullName?.charAt(0).toUpperCase()}</span>
+            )}
+          </div>
         </div>
       </header>
 
@@ -99,7 +112,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 );
               })}
             </nav>
-            <div className="p-3">
+            <div className="p-3 border-t border-neutral-200 flex flex-col gap-1">
+              {ADMIN_FOOTER_NAV.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
+                    className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                    <span className="material-symbols-outlined text-lg">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
               <button onClick={handleLogout} className="w-full text-left text-neutral-700 px-4 py-3 flex items-center gap-3 hover:bg-neutral-100 rounded-lg transition-colors text-sm">
                 <span className="material-symbols-outlined text-lg">logout</span>
                 <span>Đăng xuất</span>
@@ -131,8 +154,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        {/* Bottom Section */}
-        <div className="p-3">
+        {/* Bottom Section — cài đặt + đăng xuất neo chung ở đáy */}
+        <div className="p-3 border-t border-neutral-200 flex flex-col gap-1">
+          {ADMIN_FOOTER_NAV.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href}
+                className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                <span className="material-symbols-outlined text-lg">{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
           <button onClick={handleLogout}
             className="w-full text-left text-neutral-700 px-4 py-3 flex items-center gap-3 hover:bg-neutral-100 rounded-lg transition-colors text-sm">
             <span className="material-symbols-outlined text-lg">logout</span>
@@ -149,6 +182,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <h1 className="font-bold text-[#236c2a] text-base">{currentPageLabel}</h1>
           </div>
           <div className="flex items-center gap-3">
+            {/* Chuông thông báo — khu admin không render PublicHeader nên trước đây
+                không có lối nào thấy được thông báo, dù backend vẫn đang gửi. */}
+            <NotificationBell />
+
             {/* User Info */}
             <div className="flex items-center gap-3">
               <div className="text-right">

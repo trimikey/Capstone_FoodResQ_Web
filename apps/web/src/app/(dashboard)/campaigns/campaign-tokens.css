@@ -1202,6 +1202,110 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 40px;
   }
+
+  /* === Form chia bước ===
+     Mỗi bước chỉ hiện 2–3 khối nên vẫn xếp 2 cột cho rộng rãi, nhưng tổng chiều
+     cao popup giảm hẳn so với việc đổ cả 8 khối ra một lượt. */
+  .cm-modal-steps {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 32px 40px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .cm-modal-steps {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+  }
+
+  /* Thanh bước */
+  .cm-stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 36px;
+    border-bottom: 1px solid var(--cm-rule);
+    background: var(--cm-paper);
+    flex-shrink: 0;
+  }
+  .cm-stepper-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+  .cm-stepper-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--cm-cream-100);
+    color: rgba(16, 24, 16, 0.35);
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .cm-stepper-item.is-active .cm-stepper-dot {
+    background: var(--cm-emerald-700);
+    color: #fff;
+  }
+  .cm-stepper-item.is-done .cm-stepper-dot {
+    background: var(--cm-emerald-100);
+    color: var(--cm-emerald-700);
+  }
+  .cm-stepper-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .cm-stepper-index {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(16, 24, 16, 0.4);
+  }
+  .cm-stepper-item.is-active .cm-stepper-index {
+    color: var(--cm-emerald-700);
+  }
+  .cm-stepper-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(16, 24, 16, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cm-stepper-item.is-active .cm-stepper-label {
+    color: var(--cm-ink-900);
+  }
+  .cm-stepper-line {
+    flex: 1;
+    height: 1px;
+    background: var(--cm-rule);
+    margin-left: 4px;
+  }
+  @media (max-width: 720px) {
+    .cm-stepper {
+      padding: 12px 14px;
+    }
+    /* Màn hẹp chỉ giữ chấm tròn — nhãn 3 bước xếp ngang sẽ vỡ dòng */
+    .cm-stepper-text,
+    .cm-stepper-line {
+      display: none;
+    }
+    .cm-stepper-item {
+      flex: 0 0 auto;
+    }
+  }
   @media (max-width: 900px) {
     .cm-modal {
       padding: 0;
@@ -2373,9 +2477,45 @@
     gap: 6px;
     flex-wrap: wrap;
   }
+  /* Dòng tóm tắt luôn hiện: ca đăng ký + nút bung chi tiết */
+  .cm-reg-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 7px;
+    min-width: 0;
+  }
+  .cm-reg-summary-shift {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 12px;
+    color: rgba(16, 24, 16, 0.62);
+  }
+  .cm-reg-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-left: auto;
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--cm-emerald-700);
+  }
+  .cm-reg-toggle:hover {
+    text-decoration: underline;
+  }
+
+  /* auto-fit + minmax: trước đây 5 cột min-width cố định cộng lại ~574px, rộng hơn
+     chỗ còn trống nên lưới tràn ra và nằm đè dưới cột nút Duyệt/Từ chối. */
   .cm-reg-review-grid {
     display: grid;
-    grid-template-columns: minmax(180px, 1.4fr) minmax(110px, 0.8fr) minmax(100px, 0.7fr) repeat(2, minmax(92px, 0.7fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 8px;
     margin-top: 9px;
   }
@@ -2427,17 +2567,25 @@
     gap: 6px;
     justify-content: flex-end;
     align-items: center;
-    align-self: center;
+    /* Neo lên đầu hàng: căn giữa thì khi bung "Chi tiết", cụm nút trôi xuống giữa
+       khối thông tin, nhìn như đang đè lên nó. */
+    align-self: start;
+    flex-shrink: 0;
     flex-wrap: wrap;
   }
   .cm-reg-btn {
-    padding: 6px 12px;
+    padding: 7px 14px;
     border-radius: 10px;
     font-size: 12px;
     font-weight: 800;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
+    /* Không có nowrap thì "Từ chối" xuống 2 dòng khi cột hẹp, làm một nút cao gấp đôi
+       nút kia. min-width cho hai nút bằng nhau dù chữ dài ngắn khác nhau. */
+    white-space: nowrap;
+    min-width: 104px;
     transition: background 140ms ease, transform 100ms ease;
   }
   .cm-reg-btn:active { transform: translateY(1px); }

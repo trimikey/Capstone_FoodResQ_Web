@@ -116,6 +116,7 @@ function CampaignsPageInner() {
       t === 'overview' ||
       t === 'mine' ||
       t === 'tasks' ||
+      t === 'schedule' ||
       t === 'browse' ||
       t === 'suppliers' ||
       t === 'providers'

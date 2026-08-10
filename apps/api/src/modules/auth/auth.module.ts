@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { FirebaseAdminService } from './firebase-admin.service';
@@ -16,6 +17,7 @@ import { OcrModule } from '@/common/ocr/ocr.module';
     FaceMatchModule,
     StorageModule,
     OcrModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

@@ -10,6 +10,7 @@ export type Section =
   | 'orders'
   | 'history'
   | 'tasks'
+  | 'schedule'
   | 'browse';
 
 interface CharitySidebarProps {

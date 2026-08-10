@@ -3,17 +3,30 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Modal } from '@/components/shared/Modal';
-import { useCreateDistribution } from '@/hooks/useCampaigns';
+import { useCreateDistribution, type CreateDistributionInput } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 
 interface Props {
   campaignId: string;
   onClose: () => void;
   onCreated?: () => void;
+  /** TNV đã được duyệt của chiến dịch — nguồn cho ô "người phụ trách". */
+  volunteers: Array<{ volunteerId: string; fullName: string; role: string }>;
+  /** Số suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa). null = chưa đặt mục tiêu. */
+  remainingServings: number | null;
 }
 
-export default function CreateDistributionModal({ campaignId, onClose, onCreated }: Props) {
+const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
+
+export default function CreateDistributionModal({
+  campaignId,
+  onClose,
+  onCreated,
+  volunteers,
+  remainingServings,
+}: Props) {
   const create = useCreateDistribution();
+  const [servedBy, setServedBy] = useState('');
   const [roundLabel, setRoundLabel] = useState('');
   const [servings, setServings] = useState<string>('');
   const [people, setPeople] = useState<string>('');
@@ -30,19 +43,30 @@ export default function CreateDistributionModal({ campaignId, onClose, onCreated
     });
   };
 
-  function validate(): { servingsServed: number; peopleServed: number; leftoverServings: number; roundLabel?: string; note?: string } | null {
+  function validate(): CreateDistributionInput | null {
     const next: Record<string, string> = {};
     const s = Number(servings);
     const p = Number(people);
     const l = Number(leftover || '0');
-    if (!servings.trim() || !Number.isFinite(s) || s < 0 || !Number.isInteger(s)) {
-      next.servings = 'Vui lòng nhập số nguyên ≥ 0';
+    if (!servings.trim() || !Number.isFinite(s) || s < 1 || !Number.isInteger(s)) {
+      next.servings = 'Vui lòng nhập số nguyên ≥ 1';
     }
-    if (!people.trim() || !Number.isFinite(p) || p < 0 || !Number.isInteger(p)) {
-      next.people = 'Vui lòng nhập số nguyên ≥ 0';
+    if (!people.trim() || !Number.isFinite(p) || p < 1 || !Number.isInteger(p)) {
+      next.people = 'Vui lòng nhập số nguyên ≥ 1';
     }
     if (leftover.trim() && (!Number.isFinite(l) || l < 0 || !Number.isInteger(l))) {
       next.leftover = 'Số suất thừa phải là số nguyên ≥ 0';
+    }
+    // Mỗi người nhận ít nhất 1 suất — 10 suất mà ghi 25 người là số liệu sai.
+    if (!next.servings && !next.people && p > s) {
+      next.people = `Không thể nhiều hơn số suất đã phát (${s})`;
+    }
+    // Không vượt số suất chiến dịch đăng ký. Suất thừa cùng mẻ nấu nên tính chung.
+    if (!next.servings && !next.leftover && remainingServings != null && s + l > remainingServings) {
+      next.servings = `Chỉ còn ${remainingServings} suất — đang ghi ${s} phát + ${l} thừa`;
+    }
+    if (!servedBy) {
+      next.servedBy = 'Chọn tình nguyện viên phụ trách đợt phát';
     }
     if (roundLabel.trim().length > 100) {
       next.roundLabel = 'Tên đợt tối đa 100 ký tự';
@@ -53,6 +77,7 @@ export default function CreateDistributionModal({ campaignId, onClose, onCreated
     setErrors(next);
     if (Object.keys(next).length > 0) return null;
     return {
+      servedByVolunteerId: servedBy,
       servingsServed: s,
       peopleServed: p,
       leftoverServings: l,
@@ -90,6 +115,43 @@ export default function CreateDistributionModal({ campaignId, onClose, onCreated
       </div>
 
       <form onSubmit={onSubmit} className="p-6 space-y-4">
+        {/* Người phụ trách phải là TNV đã được duyệt của CHÍNH chiến dịch này — backend
+            cũng kiểm lại. Trước đây trường này không có và server tự gán bừa. */}
+        <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
+          Người phụ trách <span className="text-rose-500">*</span>
+          {volunteers.length === 0 ? (
+            <p className="mt-1 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-semibold normal-case text-amber-800">
+              Chưa có tình nguyện viên nào được duyệt — hãy duyệt ít nhất 1 đăng ký trước.
+            </p>
+          ) : (
+            <select
+              value={servedBy}
+              onChange={(e) => {
+                setServedBy(e.target.value);
+                if (errors.servedBy) setErr('servedBy', undefined);
+              }}
+              className={`input-base ${errors.servedBy ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+            >
+              <option value="">— Chọn người phụ trách —</option>
+              {volunteers.map((v) => (
+                <option key={v.volunteerId} value={v.volunteerId}>
+                  {v.fullName} · {ROLE_VN[v.role] ?? v.role}
+                </option>
+              ))}
+            </select>
+          )}
+          {errors.servedBy && (
+            <p className="text-[11px] text-rose-600 font-semibold normal-case">{errors.servedBy}</p>
+          )}
+        </label>
+
+        {remainingServings != null && (
+          <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
+            <span className="material-symbols-outlined text-[14px]">inventory</span>
+            Còn {remainingServings} suất được ghi nhận (đã trừ các đợt trước).
+          </p>
+        )}
+
         <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
           Tên đợt (tuỳ chọn)
           <input

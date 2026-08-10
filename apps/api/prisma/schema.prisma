@@ -371,6 +371,8 @@ model VolunteerProfile {
   mealDistributions      MealDistribution[]
   scannedMealHandoffs    MealHandoff[]
   bulkRuns               BulkRun[]
+  dishStepsCompleted     CampaignDishStep[]
+  dishStepsQcFailed      CampaignDishStep[] @relation("CampaignDishStep_QCFailure")
 
   @@index([userId])
   @@index([isAvailable])
@@ -618,6 +620,7 @@ model KitchenCampaign {
   changeRequests    CampaignChangeRequest[]
   experiences       CampaignExperience[]
   menuItemRefs      CampaignMenuItem[]
+  dishSteps         CampaignDishStep[]
   safetyLogs        KitchenSafetyLog[]
   mealDistributions MealDistribution[]
   shifts            CampaignShift[]
@@ -1132,6 +1135,7 @@ model CampaignMenuItem {
   sortOrder       Int             @default(0) @map("sort_order")
   campaign        KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   recipe          Recipe?         @relation(fields: [recipeId], references: [id])
+  dishSteps       CampaignDishStep[]
 
   @@index([campaignId])
   @@index([recipeId])
@@ -1239,6 +1243,63 @@ model MealHandoff {
   @@index([receiverId, servedAt])
   @@index([distributionId])
   @@map("meal_handoffs")
+}
+
+enum CampaignMenuStepStatus {
+  /// Bếp trưởng tạo step, đang chờ đến giờ VÀ/HOẶC khâu trước xong mới mở.
+  locked
+  /// Đủ 2 điều kiện (đến giờ + khâu trước done) — chef có thể tick "bắt đầu" (optional) hoặc "xong".
+  available
+  /// Đã tick "đang làm" — dùng cho UX (đang thao tác).
+  in_progress
+  /// Đã tick "hoàn thành" kèm ảnh bằng chứng — không thể chỉnh sửa.
+  done
+
+  @@map("campaign_dish_step_status")
+}
+
+/// Quy trình 4 khâu cố định cho mỗi món trong chiến dịch:
+/// 1. Sơ chế → 2. Nấu → 3. Trình bày → 4. Sẵn sàng phát xuất
+/// Mỗi món có 1 bản ghi step cho mỗi khâu; chef tick "xong" kèm ảnh bằng chứng.
+/// Mở khâu: locked → available chỉ khi ĐỦ 2 điều kiện AND:
+///   1. Đến `scheduled_time` của khâu đó (so với giờ thực tế).
+///   2. Khâu trước cùng món đã ở trạng thái `done`.
+model CampaignDishStep {
+  id                        String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId                String                 @map("campaign_id") @db.Uuid
+  menuItemId                String                 @map("menu_item_id") @db.Uuid
+  /// 1 = Sơ chế, 2 = Nấu, 3 = Trình bày, 4 = Sẵn sàng phát xuất
+  stepOrder                 Int                    @map("step_order") @db.SmallInt
+  stepName                  String                 @map("step_name") @db.VarChar(100)
+  /// Giờ dự kiến bắt đầu trong ngày (HH:mm, giờ VN). Lưu chuỗi để tránh timezone.
+  scheduledTime             String                 @map("scheduled_time") @db.VarChar(8)
+  status                    CampaignMenuStepStatus @default(locked)
+  completedAt               DateTime?              @map("completed_at") @db.Timestamptz
+  completedByVolunteerId    String?                @map("completed_by_volunteer_id") @db.Uuid
+  proofUrl                  String?                @map("proof_url")
+  note                      String?                @db.VarChar(500)
+  /// Đánh dấu thời điểm server xác nhận khâu đủ điều kiện mở (đến giờ + khâu trư�c done).
+  /// Dùng để debug + analytics, không ảnh hưởng logic.
+  openedAt                  DateTime?              @map("opened_at") @db.Timestamptz
+  /// Bếp trưởng / QC đánh dấu khâu này fail chất lượng (ngắt khẩn cấp từ QC step).
+  /// Món vẫn chạy tiếp từng phần — các món khác trong campaign không bị ảnh hưởng.
+  qcFailedAt                DateTime?              @map("qc_failed_at") @db.Timestamptz
+  qcFailedByVolunteerId     String?                @map("qc_failed_by_volunteer_id") @db.Uuid
+  qcFailureReason           String?                @map("qc_failure_reason") @db.VarChar(500)
+  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                 DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  campaign             KitchenCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  menuItem             CampaignMenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  completedByVolunteer VolunteerProfile?  @relation(fields: [completedByVolunteerId], references: [id], onDelete: SetNull)
+  qcFailedByVolunteer  VolunteerProfile?  @relation("CampaignDishStep_QCFailure", fields: [qcFailedByVolunteerId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, menuItemId, stepOrder])
+  @@index([campaignId])
+  @@index([menuItemId])
+  @@index([status])
+  @@index([scheduledTime])
+  @@map("campaign_dish_steps")
 }
 
 model BeneficiaryFeedback {

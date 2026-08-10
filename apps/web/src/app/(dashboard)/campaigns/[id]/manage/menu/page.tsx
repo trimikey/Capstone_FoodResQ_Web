@@ -42,19 +42,25 @@ export default function MenuPage() {
     }
   }
 
-  // Lọc món theo bữa (nếu type trùng) — nếu không có type thì hiện tất cả khi tab "all"
+  // Lọc món theo bữa. Món có `type` NGOÀI 3 bữa (dữ liệu cũ, hoặc nhập từ nguồn khác
+  // với type kiểu 'main'/'soup') trước đây bị bỏ im lặng — thực đơn có món mà giao diện
+  // báo "chưa có món nào". Gom chúng vào nhóm riêng để không mất món nào.
   const allItems = c?.menuItems ?? [];
   const itemsByMeal = useMemo(() => {
     const map: Record<MealTab, typeof allItems> = { breakfast: [], lunch: [], dinner: [] };
+    const other: typeof allItems = [];
     for (const it of allItems) {
       if (it.type === 'breakfast' || it.type === 'lunch' || it.type === 'dinner') {
         map[it.type as MealTab].push(it);
+      } else {
+        other.push(it);
       }
     }
-    return map;
+    return { ...map, other };
   }, [allItems]);
 
   const items = itemsByMeal[meal];
+  const unassigned = itemsByMeal.other;
 
   // Vật phẩm cần chuẩn bị — lấy từ c.supplyItems (hỗ trợ cả string[] và object[])
   const supplies = useMemo(() => {
@@ -134,7 +140,9 @@ export default function MenuPage() {
             {items.length === 0 ? (
               <div className="cm-mini-empty">
                 <span className="material-symbols-outlined">restaurant</span>
-                Chưa có món nào cho bữa này trong chiến dịch.
+                {unassigned.length > 0
+                  ? 'Chưa có món nào gắn vào bữa này — xem mục “Chưa phân bữa” bên dưới.'
+                  : 'Chưa có món nào cho bữa này trong chiến dịch.'}
               </div>
             ) : (
               <ul className="cm-menu-meal">
@@ -162,6 +170,35 @@ export default function MenuPage() {
                   );
                 })}
               </ul>
+            )}
+
+            {/* Món không thuộc 3 bữa — vẫn phải thấy được, nếu không thì thực đơn
+                có món mà giao diện báo trống và người dùng tưởng mất dữ liệu. */}
+            {unassigned.length > 0 && (
+              <div className="mt-4 border-t border-neutral-100 pt-4">
+                <p className="text-xs font-bold text-neutral-700 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-amber-600">label_off</span>
+                  Chưa phân bữa ({unassigned.length})
+                </p>
+                <ul className="cm-menu-meal mt-2">
+                  {unassigned.map((it, idx) => (
+                    <li key={`other-${it.name}-${idx}`} className="cm-menu-meal-item">
+                      <span className="cm-menu-meal-icon">
+                        <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="cm-menu-meal-name">{it.name}</p>
+                        <div className="cm-menu-meal-tags">
+                          <span className="cm-nutri-chip">{it.type || 'không rõ bữa'}</span>
+                        </div>
+                      </div>
+                      {it.plannedServings != null && it.plannedServings > 0 && (
+                        <span className="cm-menu-meal-cal">{it.plannedServings} suất</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         </section>
