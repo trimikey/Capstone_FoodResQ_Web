@@ -56,7 +56,7 @@ export class AdminController {
     @CurrentUser() user: User,
     @Body() dto: ReviewVerificationDto,
   ) {
-    return this.adminService.reviewVerification(type as 'provider' | 'volunteer', id, user.id, dto);
+    return this.adminService.reviewVerification(type as 'provider' | 'volunteer' | 'charity', id, user.id, dto);
   }
 
   @Get('reports')
@@ -101,8 +101,12 @@ export class AdminController {
 
   @Get('campaigns')
   @ApiOperation({ summary: 'Admin: tất cả chiến dịch bếp ăn' })
-  campaigns(@Query('status') status?: string) {
-    return this.adminService.listCampaigns(status);
+  campaigns(
+    @Query('status') status?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.adminService.listCampaigns(status, dateFrom, dateTo);
   }
 
   @Get('charities')

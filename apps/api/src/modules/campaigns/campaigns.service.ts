@@ -1070,6 +1070,7 @@ export class CampaignsService {
                 isAvailable: true,
                 vehicleType: true,
                 vehiclePlate: true,
+                faceImageUrl: true,
                 specializations: { select: { specialization: true } },
                 campaignExperiences: { select: { id: true } },
                 user: {
@@ -1155,6 +1156,7 @@ export class CampaignsService {
       volunteer: {
         fullName: a.volunteer.user.fullName,
         avatarUrl: a.volunteer.user.avatarUrl,
+        faceImageUrl: a.volunteer.faceImageUrl,
         phone: a.volunteer.user.phone,
         trustScore: a.volunteer.user.trustScore,
         userStatus: a.volunteer.user.status,

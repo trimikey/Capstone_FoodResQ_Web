@@ -119,6 +119,15 @@ export class AuthService {
       // (soft-check phía client, BE không ép vì có thể NCC cá nhân gửi ảnh CCCD sau).
     }
 
+    if (dto.role === 'receiver' && isCharityOrg) {
+      const evidenceUrls = dto.evidenceUrls ?? [];
+      if (evidenceUrls.length < 2) {
+        throw new BadRequestException(
+          'Tổ chức cần tải lên giấy phép/giấy giới thiệu và giấy tờ người đại diện để admin xác minh.',
+        );
+      }
+    }
+
     if (dto.role === 'volunteer') {
       // Volunteer phải upload ảnh CCCD ở FE (bắt buộc) — dùng cho eKYC:
       // BE so khớp khuôn mặt giữa ảnh CCCD và selfie.
@@ -175,12 +184,13 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
+        const organizationName = isCharityOrg ? (dto.businessName ?? fullName) : null;
         const rp = await tx.receiverProfile.create({
           data: {
             userId: created.id,
             address: dto.address ?? null,
             isCharityOrg,
-            organizationName: isCharityOrg ? (dto.businessName ?? fullName) : null,
+            organizationName,
             // eKYC đã xác thực ở trên (bắt buộc với cá nhân)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
@@ -195,6 +205,23 @@ export class AuthService {
             WHERE id = ${rp.id}::uuid
           `);
         }
+        if (isCharityOrg) {
+          const evidenceUrls = dto.evidenceUrls ?? [];
+          await tx.verificationRequest.create({
+            data: {
+              userId: created.id,
+              requestType: 'charity_registration',
+              status: 'pending',
+              documents: {
+                organizationName,
+                address: dto.address ?? null,
+                phone: dto.phone ?? null,
+                evidenceUrls,
+                evidenceLabels: ['organization_license', 'representative_id'],
+              } as never,
+            },
+          });
+        }
       } else if (dto.role === 'volunteer') {
         const specialization = dto.volunteerRole;
         if (!specialization) {
@@ -204,11 +231,10 @@ export class AuthService {
         const vp = await tx.volunteerProfile.create({
           data: {
             userId: created.id,
-            // Số CCCD không bắt buộc nhập tay — admin đối soát từ ảnh CCCD.
-            idCardNumber: null,
+            idCardNumber: dto.idCardNumber ?? null,
             idCardImageUrl,
-            vehicleType: null,
-            vehiclePlate: null,
+            vehicleType: dto.vehicleType ?? null,
+            vehiclePlate: dto.vehiclePlate ?? null,
             // eKYC đã xác thực ở trên (bắt buộc với tình nguyện viên)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },

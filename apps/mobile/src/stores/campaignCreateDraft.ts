@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AssignmentRole } from '@/hooks/useCampaigns';
 import type { AddressValue } from '@/components/AddressPicker';
 
@@ -86,16 +88,33 @@ interface CampaignCreateDraftState {
   reset: () => void;
 }
 
-export const useCampaignCreateDraftStore = create<CampaignCreateDraftState>((set) => ({
-  currentStep: 0,
-  draft: createInitialCampaignDraft(),
-  setStep: (step) => set({ currentStep: step }),
-  patchDraft: (patch) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        ...patch,
+export const useCampaignCreateDraftStore = create<CampaignCreateDraftState>()(
+  persist(
+    (set) => ({
+      currentStep: 0,
+      draft: createInitialCampaignDraft(),
+      setStep: (step) => set({ currentStep: step }),
+      patchDraft: (patch) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            ...patch,
+          },
+        })),
+      reset: () => set({ currentStep: 0, draft: createInitialCampaignDraft() }),
+    }),
+    {
+      name: 'campaign-create-draft',
+      storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const d = state.draft;
+        d.scheduledDate = new Date(d.scheduledDate);
+        d.startTime = new Date(d.startTime);
+        d.endTime = new Date(d.endTime);
+        if (d.endDate) d.endDate = new Date(d.endDate);
       },
-    })),
-  reset: () => set({ currentStep: 0, draft: createInitialCampaignDraft() }),
-}));
+    },
+  ),
+);

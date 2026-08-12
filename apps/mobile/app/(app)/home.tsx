@@ -4,9 +4,11 @@ import { useAuth } from '@/hooks/useAuth';
 
 export default function HomeTab() {
   const { user } = useAuth();
-  // Provider không dùng màn tìm món của receiver → đưa về tab provider.
   if (user?.role === 'provider') {
     return <Redirect href="/(app)/provider/listings" />;
+  }
+  if (user?.role === 'volunteer') {
+    return <Redirect href="/(app)/volunteer/campaigns" />;
   }
   return <HomeScreen />;
 }

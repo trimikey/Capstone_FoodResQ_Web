@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Button, Checkbox, Text, TextInput } from 'react-native-paper';
+import apiClient from '../api/client';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { signUpBasicInfoSchema, SignUpBasicInfoInput } from '../utils/validators';
@@ -33,11 +34,15 @@ export function SignUpBasicScreen({
 }: SignUpBasicScreenProps) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
   const { error, isVisible, showError, clearError } = useErrorHandler();
 
   const {
     control,
     handleSubmit,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<SignUpBasicInfoInput>({
     resolver: zodResolver(signUpBasicInfoSchema),
@@ -49,6 +54,36 @@ export function SignUpBasicScreen({
       confirmPassword: '',
     },
   });
+
+  const handleEmailBlur = async (value: string) => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return;
+    setIsCheckingEmail(true);
+    try {
+      const { data } = await apiClient.post('/auth/check-email', { email: value });
+      if (data?.data?.exists || data?.exists) {
+        setError('email', { type: 'manual', message: 'Email này đã được đăng ký. Vui lòng dùng email khác.' });
+      }
+    } catch {
+      // silent — backend sẽ báo lỗi lại lúc submit nếu cần
+    } finally {
+      setIsCheckingEmail(false);
+    }
+  };
+
+  const handlePhoneBlur = async (value: string) => {
+    if (!/^0[35789][0-9]{8}$/.test(value)) return;
+    setIsCheckingPhone(true);
+    try {
+      const { data } = await apiClient.post('/auth/check-phone', { phone: value });
+      if (data?.data?.exists || data?.exists) {
+        setError('phone', { type: 'manual', message: 'Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.' });
+      }
+    } catch {
+      // silent
+    } finally {
+      setIsCheckingPhone(false);
+    }
+  };
 
   const onSubmit = async (data: SignUpBasicInfoInput) => {
     try {
@@ -129,18 +164,25 @@ export function SignUpBasicScreen({
             <Controller
               control={control}
               name="phone"
-              render={({ field: { onChange, value } }) => (
+              render={({ field: { onChange, onBlur, value } }) => (
                 <TextInput
                   mode="outlined"
                   label="Số điện thoại"
                   placeholder="0912345678"
                   value={value}
-                  onChangeText={onChange}
+                  onChangeText={(v) => {
+                    onChange(v);
+                    if (errors.phone?.type === 'manual') clearErrors('phone');
+                  }}
+                  onBlur={() => { onBlur(); handlePhoneBlur(value); }}
                   keyboardType="phone-pad"
                   autoComplete="tel"
                   textContentType="telephoneNumber"
                   editable={!isLoading}
                   left={<TextInput.Icon icon="phone-outline" color={COLORS.onSurfaceVariant} />}
+                  right={isCheckingPhone
+                    ? <TextInput.Icon icon={({ size, color }) => <ActivityIndicator size={size - 6} color={color} />} />
+                    : undefined}
                   style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}
@@ -155,19 +197,26 @@ export function SignUpBasicScreen({
             <Controller
               control={control}
               name="email"
-              render={({ field: { onChange, value } }) => (
+              render={({ field: { onChange, onBlur, value } }) => (
                 <TextInput
                   mode="outlined"
                   label="Địa chỉ email"
                   placeholder="user@example.com"
                   value={value}
-                  onChangeText={onChange}
+                  onChangeText={(v) => {
+                    onChange(v);
+                    if (errors.email?.type === 'manual') clearErrors('email');
+                  }}
+                  onBlur={() => { onBlur(); handleEmailBlur(value); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
                   textContentType="emailAddress"
                   editable={!isLoading}
                   left={<TextInput.Icon icon="email-outline" color={COLORS.onSurfaceVariant} />}
+                  right={isCheckingEmail
+                    ? <TextInput.Icon icon={({ size, color }) => <ActivityIndicator size={size - 6} color={color} />} />
+                    : undefined}
                   style={authStyles.input}
                   outlineColor={COLORS.outline}
                   activeOutlineColor={COLORS.primary}

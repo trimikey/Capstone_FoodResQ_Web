@@ -13,7 +13,7 @@ export interface AdminStats {
 }
 
 export interface VerificationItem {
-  type: 'provider' | 'volunteer';
+  type: 'provider' | 'volunteer' | 'charity';
   profileId: string;
   userId: string;
   fullName: string;
@@ -23,9 +23,10 @@ export interface VerificationItem {
   createdAt: string;
   // Verification extensions (provider GPKD, volunteer/shipper vehicle evidence)
   businessName?: string;
+  organizationName?: string | null;
   businessType?: string;
   taxCode?: string | null;
-  address?: string;
+  address?: string | null;
   contactPhone?: string | null;
   evidenceUrls?: string[];
   description?: string | null;
@@ -33,6 +34,10 @@ export interface VerificationItem {
   lat?: number | null;
   faceImageUrl?: string | null;
   idCardImageUrl?: string | null;
+  idCardNumber?: string | null;
+  vehicleType?: string | null;
+  vehiclePlate?: string | null;
+  specializations?: { specialization: string; isVerified: boolean }[];
 }
 
 export interface AdminReport {
@@ -64,6 +69,8 @@ export interface AdminUser {
   isCharityOrg: boolean;
   /** Provider/volunteer profile ID — needed to call /admin/verifications/{type}/{profileId} */
   profileId?: string;
+  vehicleType?: string | null;
+  vehiclePlate?: string | null;
 }
 
 export function useAdminStats() {
@@ -225,11 +232,16 @@ export interface AdminCampaign {
   volunteers: number;
 }
 
-export function useAdminCampaigns(status?: string) {
+export function useAdminCampaigns(status?: string, dateFrom?: string, dateTo?: string) {
   return useQuery({
-    queryKey: ['admin', 'campaigns', status],
-    queryFn: async () =>
-      (await api.get('/admin/campaigns', { params: status ? { status } : {} })).data.data as AdminCampaign[],
+    queryKey: ['admin', 'campaigns', status, dateFrom, dateTo],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (status) params.status = status;
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      return (await api.get('/admin/campaigns', { params })).data.data as AdminCampaign[];
+    },
   });
 }
 
@@ -256,6 +268,7 @@ export interface AdminCampaignDetail {
   status: AdminCampaign['status'];
   expectedServings: number | null;
   actualServings: number | null;
+  imageUrls: string[];
   charity: string;
   charityPhone: string | null;
   slots: Record<'chef' | 'waiter' | 'shipper', { needed: number; filled: number }>;
@@ -531,7 +544,7 @@ export function useReviewUserVerification() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: {
-      type: 'provider' | 'volunteer';
+      type: 'provider' | 'volunteer' | 'charity';
       profileId: string;
       decision: 'approved' | 'rejected';
       note?: string;

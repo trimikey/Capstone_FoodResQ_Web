@@ -2,6 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { Coords } from '../services/geolocation';
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+const API_ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, '');
+
 /**
  * Category lấy theo data thật trên backend (enum food_category có thể rộng hơn
  * enum local). Dùng union mở rộng + fallback string để không vỡ khi gặp giá trị lạ.
@@ -68,6 +71,43 @@ export interface ListingQuery {
 
 export const LISTING_PAGE_SIZE = 6;
 
+export function normalizeImageUrl(value: string): string {
+  const raw = value.trim();
+  if (!raw) return raw;
+
+  const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+  if (uploadPath) return `${API_ORIGIN}${uploadPath}`;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const imageUrl = new URL(raw);
+      const apiUrl = new URL(API_ORIGIN);
+      if (
+        (imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
+        apiUrl.hostname !== imageUrl.hostname
+      ) {
+        imageUrl.protocol = apiUrl.protocol;
+        imageUrl.hostname = apiUrl.hostname;
+        imageUrl.port = apiUrl.port;
+      }
+      return imageUrl.toString();
+    } catch {
+      return raw;
+    }
+  }
+
+  return raw;
+}
+
+export function normalizeListingImages<T extends Listing>(listing: T): T {
+  return {
+    ...listing,
+    imageUrls: Array.isArray(listing.imageUrls)
+      ? listing.imageUrls.map(normalizeImageUrl).filter(Boolean)
+      : [],
+  };
+}
+
 /**
  * Danh sách listing geospatial có phân trang rõ ràng. Endpoint: GET /listings.
  * Backend hiện trả mảng phẳng không có total → suy có trang sau từ độ dài trang hiện tại.
@@ -97,7 +137,7 @@ export function useListings({
           },
         }
       );
-      const items = res.data.data;
+      const items = res.data.data.map(normalizeListingImages);
       return {
         items,
         page,
@@ -116,7 +156,7 @@ export function useListingDetail(id: string) {
       const res = await apiClient.get<ApiResponse<ListingDetail>>(
         endpoints.listings.detail(id)
       );
-      return res.data.data;
+      return normalizeListingImages(res.data.data);
     },
     enabled: !!id,
   });

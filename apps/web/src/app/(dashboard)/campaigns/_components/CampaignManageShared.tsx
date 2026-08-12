@@ -55,10 +55,12 @@ export function RegistrationRow({
     ? `${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
     : 'Đăng ký vai trò tổng';
   const detail = hasVolunteerDetail(p) ? p.volunteer : null;
-  const phoneText = detail?.phone || 'Chưa có SĐT';
+  const phoneText = detail?.phone || null;
   const ratingText = detail?.avgRating == null ? 'Chưa có rating' : `${detail.avgRating.toFixed(1)}/5`;
   const pastText = detail ? `${detail.pastCampaignsCount} chiến dịch` : null;
   const pointsText = detail ? `${detail.dedicationPoints} điểm` : null;
+  // Ảnh mặt eKYC làm fallback nếu TNV chưa đặt avatar riêng.
+  const thumbUrl = p.avatarUrl ?? detail?.faceImageUrl ?? null;
 
   // Status từ server là nguồn chính — chỉ hiển thị nút Duyệt/Từ chối khi BE còn cho phép (status=pending).
   const serverStatus = p.status ?? null;
@@ -79,9 +81,9 @@ export function RegistrationRow({
   return (
     <div className="cm-reg-row">
       <span className="cm-reg-thumb">
-        {p.avatarUrl ? (
+        {thumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(p.avatarUrl)} alt={p.fullName} />
+          <img src={mediaUrl(thumbUrl)} alt={p.fullName} />
         ) : (
           p.fullName.charAt(0).toUpperCase()
         )}
@@ -90,7 +92,17 @@ export function RegistrationRow({
         <div className="cm-reg-headline">
           <div className="min-w-0">
             <p className="cm-reg-name truncate">{p.fullName}</p>
-            <p className="cm-reg-meta">Hạng: {p.rank}</p>
+            <p className="cm-reg-meta">
+              Hạng: {p.rank}
+              {phoneText && (
+                <>
+                  {' · '}
+                  <a href={`tel:${phoneText}`} className="text-emerald-700 hover:underline font-bold">
+                    {phoneText}
+                  </a>
+                </>
+              )}
+            </p>
           </div>
           <div className="cm-reg-badges">
             <span className={`cm-reg-role-pill ${roleClass}`}>{roleLabel}</span>
@@ -127,7 +139,13 @@ export function RegistrationRow({
             </span>
             <span>
               <b>Liên hệ</b>
-              {phoneText}
+              {phoneText ? (
+                <a href={`tel:${phoneText}`} className="text-emerald-700 hover:underline">
+                  {phoneText}
+                </a>
+              ) : (
+                'Chưa có SĐT'
+              )}
             </span>
             <span>
               <b>Uy tín</b>

@@ -54,6 +54,11 @@ export default function AppTabsLayout() {
 
   return (
     <Tabs
+      initialRouteName={
+        isVolunteer ? 'volunteer/campaigns' :
+        isProvider ? 'provider/listings' :
+        'home'
+      }
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.navActive,
@@ -142,19 +147,29 @@ export default function AppTabsLayout() {
         name="volunteer/offers"
         options={{
           href: showShipperTabs ? undefined : null,
-          title: 'Đơn cần giao',
+          title: 'Giao hàng',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="clipboard-arrow-down-outline" color={color} size={size} />
+            <MaterialCommunityIcons name="truck-outline" color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
         name="volunteer/active"
         options={{
-          href: showShipperTabs ? undefined : null,
+          href: null,
           title: 'Đang giao',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="truck-fast-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="volunteer/bulk"
+        options={{
+          href: showShipperTabs ? undefined : null,
+          title: 'Giao sỉ',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="package-variant-closed" color={color} size={size} />
           ),
         }}
       />
@@ -206,7 +221,6 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
-      <Tabs.Screen name="volunteer/bulk" options={{ href: null }} />
       <Tabs.Screen name="volunteer/scan-handoff" options={{ href: null }} />
       {/* Công thức nấu ăn — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="recipes/index" options={{ href: null }} />

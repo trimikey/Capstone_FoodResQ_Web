@@ -1,10 +1,12 @@
-import { View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppImage } from './ui/AppImage';
 import { StatusBadge, type StatusTone } from './ui/StatusBadge';
 import { SurfaceCard } from './ui/SurfaceCard';
 import { categoryLabel, quantityLabel } from '../utils/listingFormat';
 import type { ProviderListing } from '../hooks/useProviderListings';
+import type { ExtendListingMode } from './ExtendListingModal';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /** Nhãn + màu cho trạng thái tin (ListingStatus). */
@@ -35,10 +37,12 @@ export function listingStatusDisplay(status?: string): {
 interface Props {
   listing: ProviderListing;
   onPress: () => void;
+  onExtend?: (mode: ExtendListingMode) => void;
 }
 
-export function ProviderListingCard({ listing, onPress }: Props) {
+export function ProviderListingCard({ listing, onPress, onExtend }: Props) {
   const sd = listingStatusDisplay(listing.status);
+  const canExtend = listing.status === 'active' || listing.status === 'fully_reserved';
   return (
     <SurfaceCard
       onPress={onPress}
@@ -60,8 +64,32 @@ export function ProviderListingCard({ listing, onPress }: Props) {
             {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
           </Text>
         </View>
+        {canExtend && onExtend ? (
+          <View style={styles.actionRow}>
+            <ActionButton icon="clock-plus-outline" label="Gia hạn" onPress={() => onExtend('extend_time')} />
+            <ActionButton icon="plus-circle-outline" label="Thêm SL" onPress={() => onExtend('add_quantity')} />
+            <ActionButton icon="lightning-bolt-outline" label="Cả hai" onPress={() => onExtend('both')} />
+          </View>
+        ) : null}
       </View>
     </SurfaceCard>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+      <MaterialCommunityIcons name={icon} size={15} color={COLORS.primary} />
+      <Text style={styles.actionText} numberOfLines={1}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -89,4 +117,24 @@ const styles = StyleSheet.create({
     color: COLORS.onWarningContainer,
   },
   meta: { fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingTop: 2,
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  actionText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  pressed: { opacity: 0.76 },
 });

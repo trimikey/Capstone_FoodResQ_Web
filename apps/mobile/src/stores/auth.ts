@@ -209,6 +209,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         vehiclePlateImage?: CapturedImage;
         volunteerRole?: 'shipper' | 'chef' | 'waiter';
         isCharityOrg?: boolean;
+        evidenceUrls?: string[];
       };
       const registerPayload = {
         email: input.email,
@@ -225,6 +226,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         ...(extra.vehiclePlate ? { vehiclePlate: extra.vehiclePlate.trim().toUpperCase() } : {}),
         ...(extra.volunteerRole ? { volunteerRole: extra.volunteerRole } : {}),
         ...(extra.isCharityOrg != null ? { isCharityOrg: extra.isCharityOrg } : {}),
+        ...(extra.evidenceUrls?.length ? { evidenceUrls: extra.evidenceUrls } : {}),
       };
       let body: FormData | typeof registerPayload = registerPayload;
       if (extra.selfie) {

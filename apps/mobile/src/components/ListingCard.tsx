@@ -1,7 +1,7 @@
 import { Pressable, View, StyleSheet } from 'react-native';
 import { Text, Icon } from 'react-native-paper';
 import type { Listing } from '../hooks/useListings';
-import { AppImage } from './ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from './ui/AppImage';
 import { FadeInUp } from './ui/Motion';
 import { StatusBadge } from './ui/StatusBadge';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -22,7 +22,6 @@ interface Props {
 export function ListingCard({ listing, onPress, index = 0 }: Props) {
   const distance = formatDistance(listing.distanceM);
   const imageUri = listing.imageUrls?.[0];
-  const canRenderImage = imageUri != null && /^(https?:|file:|data:)/.test(imageUri);
 
   return (
     <FadeInUp delay={Math.min(index, 8) * 40} style={styles.wrap}>
@@ -32,13 +31,11 @@ export function ListingCard({ listing, onPress, index = 0 }: Props) {
         accessibilityRole="button"
       >
         <View style={styles.imageWrap}>
-          {canRenderImage ? (
-            <AppImage source={{ uri: imageUri }} style={styles.image} />
-          ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <Icon source="image-off-outline" size={32} color={COLORS.onSurfaceVariant} />
-            </View>
-          )}
+          <AppImage
+            source={imageUri}
+            fallbackSource={foodFallbackSourceForCategory(listing.category)}
+            style={styles.image}
+          />
           <View style={styles.imageShade} />
           <View style={styles.imageTopRow}>
             {distance ? (

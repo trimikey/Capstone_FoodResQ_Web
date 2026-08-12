@@ -382,22 +382,21 @@ export function SignUpRecipientScreen({
       <FadeInUp delay={120}>
         <View style={styles.quickCard}>
           <View style={styles.quickHeader}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={22} color={COLORS.secondary} />
+            <MaterialCommunityIcons name="home-map-marker" size={22} color={COLORS.secondary} />
             <View style={styles.quickCopy}>
-              <Text style={styles.quickTitle}>Dán địa chỉ nhanh</Text>
+              <Text style={styles.quickTitle}>Số nhà</Text>
               <Text style={styles.quickDescription}>
-                Dán địa chỉ đầy đủ, sau đó chọn Tỉnh/Thành phố và Phường/Xã để chuẩn hóa.
+                Nhập số nhà, tên đường hoặc tòa nhà.
               </Text>
             </View>
           </View>
           <TextInput
             mode="outlined"
-            placeholder="VD: 12 Nguyễn Huệ, Phường Sài Gòn, Thành phố Hồ Chí Minh"
+            placeholder="VD: 12 Nguyễn Huệ"
             value={quickPaste}
             onChangeText={setQuickPaste}
             editable={!isLoading}
-            multiline
-            numberOfLines={2}
+            dense
             style={[authStyles.input, styles.quickInput]}
             outlineColor={COLORS.outline}
             activeOutlineColor={COLORS.secondary}
@@ -686,9 +685,9 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   quickCard: {
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radius.lg,
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: '#ffd8d0',
     backgroundColor: '#fff7f5',
@@ -712,7 +711,7 @@ const styles = StyleSheet.create({
     color: COLORS.onSurfaceVariant,
   },
   quickInput: {
-    minHeight: 74,
+    minHeight: 48,
     backgroundColor: COLORS.surface,
   },
   sectionTitle: {

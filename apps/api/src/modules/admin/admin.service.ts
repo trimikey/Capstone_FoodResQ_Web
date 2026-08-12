@@ -40,7 +40,7 @@ interface FrequentCancellerRow {
   last_reason: string | null;
 }
 
-type ProfileType = 'provider' | 'volunteer' | 'receiver';
+type ProfileType = 'provider' | 'volunteer' | 'charity';
 
 @Injectable()
 export class AdminService {
@@ -183,9 +183,17 @@ export class AdminService {
   }
 
   /** Tất cả chiến dịch bếp ăn (mọi trạng thái) cho admin quản lý. */
-  async listCampaigns(status?: string) {
+  async listCampaigns(status?: string, dateFrom?: string, dateTo?: string) {
+    const where: Record<string, unknown> = {};
+    if (status) where.status = status;
+    if (dateFrom || dateTo) {
+      where.scheduledDate = {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo ? { lte: new Date(dateTo) } : {}),
+      };
+    }
     const rows = await this.prisma.kitchenCampaign.findMany({
-      where: status ? { status: status as never } : {},
+      where,
       orderBy: { scheduledDate: 'desc' },
       select: {
         id: true,
@@ -255,6 +263,7 @@ export class AdminService {
       status: c.status,
       expectedServings: c.expectedServings,
       actualServings: c.actualServings,
+      imageUrls: (c.imageUrls as string[]) ?? [],
       charity: c.charityReceiver.organizationName || c.charityReceiver.user.fullName,
       charityPhone: c.charityReceiver.user.phone,
       slots: {
@@ -831,14 +840,15 @@ export class AdminService {
   }
 
   private async countPendingVerifications() {
-    const [p, v] = await this.prisma.$transaction([
+    const [p, v, c] = await this.prisma.$transaction([
       this.prisma.providerProfile.count({ where: { verificationStatus: 'pending' } }),
       this.prisma.volunteerProfile.count({ where: { verificationStatus: 'pending' } }),
+      this.prisma.receiverProfile.count({ where: { isCharityOrg: true, verificationStatus: 'pending' } }),
     ]);
-    return p + v;
+    return p + v + c;
   }
 
-  /** Danh sách hồ sơ chờ duyệt (provider + volunteer) — gộp về một mảng thống nhất. */
+  /** Danh sách hồ sơ chờ duyệt (provider + volunteer + charity) — gộp về một mảng thống nhất. */
   async listVerifications() {
     const providers = await this.prisma.providerProfile.findMany({
       where: { verificationStatus: 'pending' },
@@ -886,14 +896,30 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
+    const charities = await this.prisma.receiverProfile.findMany({
+      where: { isCharityOrg: true, verificationStatus: 'pending' },
+      select: {
+        id: true,
+        organizationName: true,
+        address: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, fullName: true, phone: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
     // Lấy documents từ verification_requests mới nhất theo user.
     // Provider dùng ảnh GPKD; volunteer/shipper dùng ảnh biển số hoặc giấy tờ bổ sung.
-    const userIds = [...providers.map((p) => p.user.id), ...volunteers.map((v) => v.user.id)];
+    const userIds = [
+      ...providers.map((p) => p.user.id),
+      ...volunteers.map((v) => v.user.id),
+      ...charities.map((c) => c.user.id),
+    ];
     const verificationDocs = userIds.length
       ? await this.prisma.verificationRequest.findMany({
           where: {
             userId: { in: userIds },
-            requestType: { in: ['provider_registration', 'volunteer_chef_cert'] },
+            requestType: { in: ['provider_registration', 'volunteer_chef_cert', 'charity_registration'] },
           },
           orderBy: { submittedAt: 'desc' },
           distinct: ['userId'],
@@ -908,6 +934,8 @@ export class AdminService {
       description?: string;
       lng?: number | null;
       lat?: number | null;
+      organizationName?: string | null;
+      phone?: string | null;
     };
 
     return [
@@ -949,12 +977,35 @@ export class AdminService {
           userId: v.user.id,
           fullName: v.user.fullName,
           email: v.user.email,
-          phone: v.user.phone,
+          phone: v.user.phone ?? (docs.phone as string | null | undefined) ?? null,
           detail: `TNV · CCCD ${v.idCardNumber ?? 'chưa cập nhật'} · ${v.vehicleType ?? 'chưa rõ xe'} ${v.vehiclePlate ?? ''} · ${v.specializations.map((s) => s.specialization).join(', ') || 'chưa có chuyên môn'}`,
           evidenceUrls,
           faceImageUrl: v.faceImageUrl ?? null,
           idCardImageUrl: v.idCardImageUrl ?? null,
+          idCardNumber: v.idCardNumber ?? null,
+          vehicleType: v.vehicleType ?? null,
+          vehiclePlate: v.vehiclePlate ?? null,
+          specializations: v.specializations,
           createdAt: v.createdAt,
+        };
+      }),
+      ...charities.map((c) => {
+        const docs = (docsByUser.get(c.user.id) as EvidenceDocs | undefined) ?? {};
+        const organizationName = c.organizationName ?? docs.organizationName ?? c.user.fullName;
+        const evidenceUrls = Array.isArray(docs.evidenceUrls) ? docs.evidenceUrls : [];
+        return {
+          type: 'charity' as ProfileType,
+          profileId: c.id,
+          userId: c.user.id,
+          fullName: c.user.fullName,
+          email: c.user.email,
+          phone: c.user.phone ?? (docs.phone as string | null | undefined) ?? null,
+          detail: `Tổ chức · ${organizationName} · ${c.address ?? 'chưa cập nhật địa chỉ'}`,
+          organizationName,
+          address: c.address,
+          contactPhone: c.user.phone ?? (docs.phone as string | null | undefined) ?? null,
+          evidenceUrls,
+          createdAt: c.createdAt,
         };
       }),
     ].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
@@ -1012,6 +1063,20 @@ export class AdminService {
               }),
             ]
           : []),
+      ]);
+    } else if (type === 'charity') {
+      const profile = await this.prisma.receiverProfile.findUnique({ where: { id: profileId } });
+      if (!profile || !profile.isCharityOrg) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+      targetUserId = profile.userId;
+      await this.prisma.$transaction([
+        this.prisma.receiverProfile.update({
+          where: { id: profileId },
+          data: { verificationStatus: status, verifiedAt: status === 'approved' ? now : null, verifiedBy: adminUserId },
+        }),
+        this.prisma.user.update({
+          where: { id: profile.userId },
+          data: { status: status === 'approved' ? 'active' : 'suspended' },
+        }),
       ]);
     } else {
       throw new BadRequestException('Loại hồ sơ không được hỗ trợ.');
@@ -1082,6 +1147,8 @@ export class AdminService {
             id: true,
             faceImageUrl: true,
             idCardImageUrl: true,
+            vehicleType: true,
+            vehiclePlate: true,
             specializations: { select: { specialization: true, isVerified: true } },
           },
         },
@@ -1101,6 +1168,8 @@ export class AdminService {
       profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
       faceImageUrl: volunteerProfile?.faceImageUrl ?? receiverProfile?.faceImageUrl ?? null,
       idCardImageUrl: volunteerProfile?.idCardImageUrl ?? receiverProfile?.idCardImageUrl ?? null,
+      vehicleType: volunteerProfile?.vehicleType ?? null,
+      vehiclePlate: volunteerProfile?.vehiclePlate ?? null,
     }));
   }
 

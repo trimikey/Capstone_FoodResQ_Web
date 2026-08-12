@@ -27,3 +27,24 @@ export async function uploadImageToBackend(localUri: string, kind: UploadKind): 
   if (!url) throw new Error('Tải ảnh thất bại: phản hồi không hợp lệ.');
   return url.startsWith('http') ? url : `${ORIGIN}${url}`;
 }
+
+/**
+ * Upload ảnh minh chứng trong lúc đăng ký tài khoản, trước khi người dùng có JWT.
+ * Backend lưu vào verifications/ và trả URL dùng cho evidenceUrls của /auth/register.
+ */
+export async function uploadRegisterEvidenceToBackend(localUri: string): Promise<string> {
+  const name = localUri.split('/').pop() || 'register_evidence.jpg';
+  const ext = name.split('.').pop()?.toLowerCase();
+  const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  const form = new FormData();
+  form.append('file', { uri: localUri, name, type } as any);
+
+  const res = await apiClient.post('/uploads/register-evidence', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+  const url: string | undefined = res.data?.data?.url ?? res.data?.url;
+  if (!url) throw new Error('Tải ảnh xác minh thất bại: phản hồi không hợp lệ.');
+  return url.startsWith('http') ? url : `${ORIGIN}${url}`;
+}

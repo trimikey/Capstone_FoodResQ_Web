@@ -908,7 +908,8 @@ export class BulkRunsService implements OnModuleInit {
             rank: true,
             dedicationPoints: true,
             avgRating: true,
-            user: { select: { fullName: true, phone: true, trustScore: true } },
+            faceImageUrl: true,
+            user: { select: { fullName: true, phone: true, trustScore: true, avatarUrl: true } },
           },
         },
         stops: {

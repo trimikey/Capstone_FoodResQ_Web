@@ -187,6 +187,8 @@ export interface CampaignParticipant {
 export interface VolunteerDetail {
   fullName: string;
   avatarUrl: string | null;
+  /** Ảnh mặt chụp khi đăng ký eKYC — dùng làm avatar mặc định khi avatarUrl chưa được đặt. */
+  faceImageUrl: string | null;
   phone: string | null;
   trustScore: number;
   userStatus: string;
