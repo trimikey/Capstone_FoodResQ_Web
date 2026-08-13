@@ -214,6 +214,8 @@ export interface AdminCampaign {
   id: string;
   title: string;
   kitchenAddress: string;
+  /** Thời điểm tổ chức gửi yêu cầu tạo chiến dịch. */
+  createdAt: string;
   scheduledDate: string;
   startTime: string;
   endTime: string;
@@ -571,4 +573,88 @@ export function useCreateUser() {
     mutationFn: async (input: CreateUserInput) => (await api.post('/admin/users', input)).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin'] }),
   });
+}
+
+// ─── Danh mục thực phẩm: NHÓM → LOẠI (admin tự quản lý) ─────────────────────
+
+export interface FoodCatalogItem {
+  id: string;
+  categoryId: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+}
+
+export interface FoodCatalogCategory {
+  id: string;
+  name: string;
+  /** 'ready_to_eat' | 'raw_ingredient' | 'other' */
+  group: string;
+  description: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  itemCount: number;
+  items: FoodCatalogItem[];
+}
+
+export interface FoodCatalogResult {
+  categories: FoodCatalogCategory[];
+  totalCategories: number;
+  totalItems: number;
+}
+
+export function useFoodCatalog(search?: string) {
+  return useQuery({
+    queryKey: ['admin', 'food-catalog', search ?? ''],
+    queryFn: async () =>
+      (await api.get('/admin/food-catalog', { params: search ? { search } : {} })).data
+        .data as FoodCatalogResult,
+    staleTime: 15_000,
+  });
+}
+
+function useCatalogMutation<TVars>(fn: (v: TVars) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'food-catalog'] }),
+  });
+}
+
+export function useCreateFoodCategory() {
+  return useCatalogMutation(async (p: { name: string; group?: string; description?: string }) =>
+    (await api.post('/admin/food-categories', p)).data.data);
+}
+
+export function useUpdateFoodCategory() {
+  return useCatalogMutation(async (p: {
+    id: string; name?: string; group?: string; description?: string; isActive?: boolean;
+  }) => {
+    const { id, ...body } = p;
+    return (await api.patch(`/admin/food-categories/${id}`, body)).data.data;
+  });
+}
+
+export function useDeleteFoodCategory() {
+  return useCatalogMutation(async (id: string) =>
+    (await api.delete(`/admin/food-categories/${id}`)).data.data);
+}
+
+export function useCreateFoodCatalogItem() {
+  return useCatalogMutation(async (p: { categoryId: string; name: string; description?: string }) =>
+    (await api.post('/admin/food-catalog', p)).data.data);
+}
+
+export function useUpdateFoodCatalogItem() {
+  return useCatalogMutation(async (p: {
+    id: string; categoryId?: string; name?: string; description?: string; isActive?: boolean;
+  }) => {
+    const { id, ...body } = p;
+    return (await api.patch(`/admin/food-catalog/${id}`, body)).data.data;
+  });
+}
+
+export function useDeleteFoodCatalogItem() {
+  return useCatalogMutation(async (id: string) =>
+    (await api.delete(`/admin/food-catalog/${id}`)).data.data);
 }

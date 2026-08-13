@@ -10,6 +10,8 @@ import {
   type CreateCampaignInput,
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
+import { useCampaignDraft } from '@/hooks/useCampaignDraft';
+import { formatVnDate, vnToday, vnTomorrow } from '@/lib/vn-date';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import {
   ShiftSuggestions,
@@ -17,6 +19,7 @@ import {
   SupplySuggestions,
   MenuSuggestions,
 } from '@/components/campaigns/CreateCampaignSuggestions';
+import { balanceMenuServings } from '@/components/campaigns/create-campaign-templates';
 import type {
   ShiftTemplate,
   ScheduleTemplate,
@@ -33,8 +36,9 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
   ),
 });
 
+/** Ngày mai theo giờ VN. Xem `@/lib/vn-date` để biết vì sao không dùng toISOString(). */
 function tomorrowDateString() {
-  return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  return vnTomorrow();
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -91,12 +95,48 @@ interface CreateCampaignModalProps {
   pending: boolean;
 }
 
+/** Một dòng trong thực đơn. `servingsLocked` = người dùng đã tự gõ số suất cho món này
+ *  nên hàm chia đều phải chừa ra, không ghi đè. */
+type MenuRow = {
+  name: string;
+  type: string;
+  plannedServings?: number;
+  servingsLocked?: boolean;
+};
+
+/** Toàn bộ state được giữ lại trong bản nháp localStorage. */
+interface CampaignDraftData {
+  f: {
+    title: string;
+    description: string;
+    kitchenAddress: string;
+    scheduledDate: string;
+    endDate: string;
+    startTime: string;
+    endTime: string;
+    chefSlotsNeeded: number;
+    waiterSlotsNeeded: number;
+    shipperSlotsNeeded: number;
+    expectedServings: number;
+    lng: number;
+    lat: number;
+  };
+  menu: MenuRow[];
+  schedule: { time: string; label: string }[];
+  supplies: { name: string; quantity?: number; unit?: string }[];
+  shifts: ShiftDraft[];
+  step: 1 | 2 | 3;
+  imageUrl: string | null;
+}
+
 export default function CreateCampaignModal({
   onClose,
   onSubmit,
   pending,
 }: CreateCampaignModalProps) {
-  const [f, setF] = useState(() => ({
+  // Nháp đọc từ localStorage — khôi phục nguyên trạng form đang điền dở.
+  const draft = useCampaignDraft<CampaignDraftData>();
+  const [f, setF] = useState(() => draft.restored?.data.f ?? {
     title: '',
     description: '',
     kitchenAddress: '',
@@ -111,10 +151,12 @@ export default function CreateCampaignModal({
     expectedServings: 100,
     lng: 106.6297,
     lat: 10.8231,
-  }));
+  });
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(
+    () => draft.restored?.data.imageUrl ?? null,
+  );
   const [addressMode, setAddressMode] = useState<'profile' | 'custom'>('custom');
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [addressSearching, setAddressSearching] = useState(false);
@@ -221,13 +263,40 @@ export default function CreateCampaignModal({
 
   const upload = useUploadCampaignImage();
 
-  const [menu, setMenu] = useState<{ name: string; type: string; plannedServings?: number }[]>([]);
-  const [schedule, setSchedule] = useState<{ time: string; label: string }[]>([]);
-  const [supplies, setSupplies] = useState<{ name: string; quantity?: number; unit?: string }[]>([]);
-  const [shifts, setShifts] = useState<ShiftDraft[]>([]);
+  const [menu, setMenu] = useState<MenuRow[]>(() => draft.restored?.data.menu ?? []);
+  const [schedule, setSchedule] = useState<{ time: string; label: string }[]>(
+    () => draft.restored?.data.schedule ?? [],
+  );
+  const [supplies, setSupplies] = useState<{ name: string; quantity?: number; unit?: string }[]>(
+    () => draft.restored?.data.supplies ?? [],
+  );
+  const [shifts, setShifts] = useState<ShiftDraft[]>(() => draft.restored?.data.shifts ?? []);
   // Form dài ~8 khối; gom thành 3 bước như trang tạo tin của NCC để popup không
   // phải cuộn hàng nghìn pixel mới tới nút gửi.
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(() => draft.restored?.data.step ?? 1);
+
+  // Ghi nháp mỗi khi có thay đổi (hook tự debounce).
+  // Phụ thuộc `draft.save` chứ KHÔNG phải cả object `draft`: hook trả về object mới
+  // mỗi render, để nguyên thì effect chạy liên tục và debounce không bao giờ kịp bắn.
+  const saveDraft = draft.save;
+  useEffect(() => {
+    saveDraft({ f, menu, schedule, supplies, shifts, step, imageUrl });
+  }, [f, menu, schedule, supplies, shifts, step, imageUrl, saveDraft]);
+
+  // Handler chèn mẫu là listener DOM đăng ký một lần, không thấy state mới nhất —
+  // giữ tổng suất trong ref để nó luôn chia theo con số hiện tại.
+  const servingsRef = useRef(f.expectedServings);
+  useEffect(() => {
+    servingsRef.current = f.expectedServings;
+  }, [f.expectedServings]);
+
+  // Đổi tổng số suất của chiến dịch → chia lại cho các món chưa bị người dùng sửa tay.
+  useEffect(() => {
+    setMenu((prev) => (prev.length === 0 ? prev : balanceMenuServings(prev, f.expectedServings)));
+  }, [f.expectedServings]);
+
+  /** Tổng suất đang phân bổ cho thực đơn — để cảnh báo khi lệch với đăng ký. */
+  const menuServingsTotal = menu.reduce((s, m) => s + (m.plannedServings ?? 0), 0);
 
   // Lắng nghe dropdown gợi ý — chèn mẫu vào state tương ứng.
   useEffect(() => {
@@ -283,14 +352,12 @@ export default function CreateCampaignModal({
           if (prev.some((m) => m.name.trim().toLowerCase() === t.name.trim().toLowerCase())) {
             return prev;
           }
-          return [
-            ...prev,
-            {
-              name: t.name,
-              type: t.type,
-              plannedServings: t.plannedServings,
-            },
-          ];
+          // Thêm món xong thì chia lại tổng suất cho toàn bộ thực đơn — món mới không
+          // giữ con số ước tính lúc còn nằm trong danh sách gợi ý.
+          return balanceMenuServings(
+            [...prev, { name: t.name, type: t.type }],
+            servingsRef.current,
+          );
         });
       }
     }
@@ -379,19 +446,15 @@ export default function CreateCampaignModal({
     // Date
     if (!f.scheduledDate) next.scheduledDate = 'Chọn ngày tổ chức';
     else {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const picked = new Date(f.scheduledDate);
-      if (picked < today) next.scheduledDate = 'Ngày tổ chức phải từ hôm nay trở đi';
+      // So sánh chuỗi YYYY-MM-DD với nhau: cùng định dạng nên so trực tiếp là đúng,
+      // và tránh hoàn toàn chuyện `new Date('2026-08-12')` bị hiểu là nửa đêm UTC
+      // rồi lệch một ngày so với "hôm nay" theo giờ VN.
+      if (f.scheduledDate < vnToday()) next.scheduledDate = 'Ngày tổ chức phải từ hôm nay trở đi';
     }
     // EndDate (optional) — phải >= scheduledDate và >= hôm nay
     if (f.endDate) {
-      const end = new Date(f.endDate);
-      const start = new Date(f.scheduledDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (end < today) next.endDate = 'Ngày kết thúc không được trong quá khứ';
-      else if (f.scheduledDate && end < start)
+      if (f.endDate < vnToday()) next.endDate = 'Ngày kết thúc không được trong quá khứ';
+      else if (f.scheduledDate && f.endDate < f.scheduledDate)
         next.endDate = 'Ngày kết thúc phải từ ngày bắt đầu trở đi';
     }
     // Time
@@ -535,6 +598,8 @@ export default function CreateCampaignModal({
           })),
       });
       toast.success('Đã gửi yêu cầu. Chiến dịch sẽ hiển thị sau khi quản trị viên duyệt.');
+      // Gửi thành công thì nháp hết vai trò — giữ lại sẽ khôi phục nhầm ở lần tạo sau.
+      draft.clear();
       emitFormReset();
       onClose();
     } catch (e: unknown) {
@@ -601,6 +666,60 @@ export default function CreateCampaignModal({
       </header>
 
       <form onSubmit={submit} className="cm-create-card">
+        {/* Nháp khôi phục từ lần điền trước — nói rõ để người dùng không tưởng
+            form tự điền bậy, và cho đường thoát về form trắng. */}
+        {draft.hasRestored && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+            <span className="material-symbols-outlined text-[18px] text-amber-600">history</span>
+            <p className="min-w-0 flex-1 text-xs font-semibold text-amber-900">
+              Đã khôi phục bản nháp bạn điền dở
+              {draft.restored?.savedAt
+                ? ` lúc ${new Date(draft.restored.savedAt).toLocaleString('vi-VN')}`
+                : ''}
+              .
+            </p>
+            <button
+              type="button"
+              onClick={draft.dismissBanner}
+              className="rounded-lg px-2 py-1 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
+            >
+              Đã hiểu
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                draft.clear();
+                emitFormReset();
+                setF({
+                  title: '',
+                  description: '',
+                  kitchenAddress: '',
+                  scheduledDate: tomorrowDateString(),
+                  endDate: '',
+                  startTime: '08:00',
+                  endTime: '12:00',
+                  chefSlotsNeeded: 2,
+                  waiterSlotsNeeded: 3,
+                  shipperSlotsNeeded: 2,
+                  expectedServings: 100,
+                  lng: 106.6297,
+                  lat: 10.8231,
+                });
+                setMenu([]);
+                setSchedule([]);
+                setSupplies([]);
+                setShifts([]);
+                setImageUrl(null);
+                setStep(1);
+                toast.success('Đã xoá bản nháp.');
+              }}
+              className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+            >
+              Xoá nháp
+            </button>
+          </div>
+        )}
+
         {/* Cover giờ là banner info ngắn trên cùng form (không che, không che body) */}
         <div className="cm-create-banner">
           <div className="cm-create-banner-icon">
@@ -612,12 +731,12 @@ export default function CreateCampaignModal({
             </p>
             <p className="cm-create-banner-sub">
               {f.scheduledDate
-                ? `${new Date(f.scheduledDate).toLocaleDateString('vi-VN', {
+                ? `${formatVnDate(f.scheduledDate, {
                     weekday: 'long',
                     day: '2-digit',
                     month: '2-digit',
                     year: 'numeric',
-                  })}${f.endDate ? ` → ${new Date(f.endDate).toLocaleDateString('vi-VN')}` : ''} · ${f.startTime}–${f.endTime}`
+                  })}${f.endDate ? ` → ${formatVnDate(f.endDate)}` : ''} · ${f.startTime}–${f.endTime}`
                 : `Chưa chọn ngày · ${f.startTime}–${f.endTime}`}
               {f.kitchenAddress && ` · ${f.kitchenAddress}`}
             </p>
@@ -818,7 +937,7 @@ export default function CreateCampaignModal({
                     <input
                       type="date"
                       value={f.scheduledDate}
-                      min={new Date().toISOString().slice(0, 10)}
+                      min={vnToday()}
                       onChange={(e) => {
                         setF({ ...f, scheduledDate: e.target.value });
                         if (errors.scheduledDate) setErr('scheduledDate', undefined);
@@ -864,7 +983,7 @@ export default function CreateCampaignModal({
                     <input
                       type="date"
                       value={f.endDate}
-                      min={f.scheduledDate || new Date().toISOString().slice(0, 10)}
+                      min={f.scheduledDate || vnToday()}
                       placeholder="Bỏ trống nếu 1 ngày"
                       onChange={(e) => {
                         setF({ ...f, endDate: e.target.value });
@@ -1118,6 +1237,7 @@ export default function CreateCampaignModal({
                     <MenuSuggestions
                       supplies={supplies}
                       expectedServings={f.expectedServings}
+                      currentMenuCount={menu.length}
                     />
                   </div>
                   <div className="cm-repeat">
@@ -1153,24 +1273,37 @@ export default function CreateCampaignModal({
                           min={0}
                           value={m.plannedServings ?? ''}
                           onChange={(e) =>
+                            // Gõ tay = khoá món này lại, các món còn lại tự chia phần dư.
                             setMenu(
-                              menu.map((x, j) =>
-                                j === i
-                                  ? {
-                                      ...x,
-                                      plannedServings: e.target.value === '' ? undefined : Number(e.target.value),
-                                    }
-                                  : x,
+                              balanceMenuServings(
+                                menu.map((x, j) =>
+                                  j === i
+                                    ? {
+                                        ...x,
+                                        plannedServings:
+                                          e.target.value === '' ? undefined : Number(e.target.value),
+                                        servingsLocked: e.target.value !== '',
+                                      }
+                                    : x,
+                                ),
+                                f.expectedServings,
                               ),
                             )
                           }
                           placeholder="Suất dự kiến"
                           className="cm-input"
-                          title="Số suất dự kiến cho món này"
+                          title="Số suất dự kiến cho món này — sửa tay thì các món khác tự chia lại phần còn lại"
                         />
                         <button
                           type="button"
-                          onClick={() => setMenu(menu.filter((_, j) => j !== i))}
+                          onClick={() =>
+                            setMenu(
+                              balanceMenuServings(
+                                menu.filter((_, j) => j !== i),
+                                f.expectedServings,
+                              ),
+                            )
+                          }
                           className="cm-repeat-remove"
                           aria-label="Xoá món"
                         >
@@ -1180,11 +1313,35 @@ export default function CreateCampaignModal({
                     ))}
                     <button
                       type="button"
-                      onClick={() => setMenu([...menu, { name: '', type: 'lunch' }])}
+                      onClick={() =>
+                        setMenu(
+                          balanceMenuServings(
+                            [...menu, { name: '', type: 'lunch' }],
+                            f.expectedServings,
+                          ),
+                        )
+                      }
                       className="cm-repeat-add"
                     >
                       <span className="material-symbols-outlined text-[15px]">add</span> Thêm món
                     </button>
+
+                    {menu.length > 0 && (
+                      <p
+                        className={`mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ${
+                          menuServingsTotal === f.expectedServings
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {menuServingsTotal === f.expectedServings ? 'check_circle' : 'info'}
+                        </span>
+                        Tổng suất theo món: {menuServingsTotal}/{f.expectedServings}
+                        {menuServingsTotal !== f.expectedServings &&
+                          ` (lệch ${Math.abs(menuServingsTotal - f.expectedServings)} suất)`}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="cm-form-block">

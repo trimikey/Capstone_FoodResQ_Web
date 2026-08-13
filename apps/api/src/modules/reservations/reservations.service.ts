@@ -17,7 +17,7 @@ import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
-import { PickupVerificationType } from '@foodresq/types';
+import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import type { RateTarget } from './dto/rate-reservation.dto';
 
@@ -448,7 +448,7 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(reservation.receiver.userId, reservationId, 'successful_rescue', 2);
+    void this.applyTrustDelta(reservation.receiver.userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
 
     void this.notifications.notify(reservation.receiver.userId, {
       type: 'reservation',
@@ -526,7 +526,7 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(userId, reservationId, 'successful_rescue', 2);
+    void this.applyTrustDelta(userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
 
     return {
       reservationId: updated.id,
@@ -629,7 +629,7 @@ export class ReservationsService {
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
-      void this.applyTrustDelta(userId, reservationId, 'late_cancellation', -10);
+      void this.applyTrustDelta(userId, reservationId, TrustScoreReason.LATE_CANCELLATION, -10);
     }
 
     return { message: 'Reservation cancelled' };
@@ -1011,7 +1011,7 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
-      await this.applyTrustDelta(r.receiver.userId, r.id, 'no_show', -20);
+      await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -20);
     }
 
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.
@@ -1157,7 +1157,12 @@ export class ReservationsService {
   }
 
   /** Uỷ quyền cho TrustService dùng chung (giữ wrapper để không đổi các call-site cũ). */
-  private applyTrustDelta(userId: string, referenceId: string, reason: string, delta: number) {
+  private applyTrustDelta(
+    userId: string,
+    referenceId: string,
+    reason: TrustScoreReason,
+    delta: number,
+  ) {
     return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
   }
 }

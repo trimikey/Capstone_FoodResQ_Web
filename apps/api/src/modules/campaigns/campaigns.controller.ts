@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -17,7 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto } from './dto/campaign.dto';
 import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -279,12 +280,105 @@ export class CampaignsController {
     return this.campaignsService.advanceTask(id, user.id, dto, proofUrl);
   }
 
+  @Get('my-pickup-orders')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary: 'Shipper: đơn nguyên liệu cần đi lấy, gom từ mọi chiến dịch đang chạy',
+  })
+  myPickupOrders(@CurrentUser() user: User) {
+    return this.campaignsService.myPickupOrders(user.id);
+  }
+
+  @Get('my-pickup-history')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: lịch sử các đơn nguyên liệu đã lấy' })
+  myPickupHistory(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.campaignsService.myPickupHistory(user.id, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Post('pickup-orders/:requestId/confirm')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Shipper: xác nhận đã lấy nguyên liệu tại NCC — ảnh + số kg thực nhận',
+  })
+  async confirmIngredientPickup(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ConfirmIngredientPickupDto,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    const photoUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.confirmIngredientPickup(requestId, user.id, dto, photoUrl);
+  }
+
   @Post('requests')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Charity: gửi yêu cầu hợp tác đến provider' })
   sendProviderRequest(@CurrentUser() user: User, @Body() dto: SendProviderRequestDto) {
     return this.campaignsService.sendProviderRequest(user.id, dto);
+  }
+
+  @Post('distributions/:distributionId/complete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VOLUNTEER, UserRole.RECEIVER)
+  @ApiOperation({
+    summary:
+      'Shipper được phân công (hoặc tổ chức chủ chiến dịch) xác nhận đã phát xong một đợt',
+  })
+  completeDistribution(
+    @CurrentUser() user: User,
+    @Param('distributionId', ParseUUIDPipe) distributionId: string,
+    @Body() dto: CompleteDistributionDto,
+  ) {
+    return this.campaignsService.completeDistribution(distributionId, user.id, dto);
+  }
+
+  @Get('my-distributions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: lịch sử các đợt phát đã đi' })
+  myDistributionHistory(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.campaignsService.myDistributionHistory(user.id, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get(':id/supplier-matches')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({
+    summary:
+      'Charity: gợi ý NCC phù hợp cho chiến dịch — xếp theo khoảng cách thật từ bếp (PostGIS)',
+  })
+  suggestSuppliers(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('category') category?: string,
+  ) {
+    const parsed = radiusKm != null ? Number(radiusKm) : undefined;
+    return this.campaignsService.suggestSuppliersForCampaign(id, user.id, {
+      radiusKm: Number.isFinite(parsed) ? parsed : undefined,
+      category: category || undefined,
+    });
   }
 
   @Get('provider-requests')
@@ -433,6 +527,19 @@ export class CampaignsController {
     @Body() dto: AppendMenuItemDto,
   ) {
     return this.campaignsService.appendMenuItem(id, user.id, dto);
+  }
+
+  @Patch(':id/manage/menu-items/:index/meal')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: gán bữa (sáng/trưa/tối) cho một món trong thực đơn' })
+  setMenuItemMeal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index') index: string,
+    @CurrentUser() user: User,
+    @Body() dto: SetMenuItemMealDto,
+  ) {
+    return this.campaignsService.setMenuItemMeal(id, user.id, Number(index), dto.type);
   }
 
   @Post(':id/supply-items')

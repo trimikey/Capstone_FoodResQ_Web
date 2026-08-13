@@ -186,11 +186,14 @@ export class AdminService {
   async listCampaigns(status?: string) {
     const rows = await this.prisma.kitchenCampaign.findMany({
       where: status ? { status: status as never } : {},
-      orderBy: { scheduledDate: 'desc' },
+      // Sắp theo NGÀY GỬI YÊU CẦU mới nhất trước — admin vào là thấy ngay cái vừa tới,
+      // thay vì theo ngày tổ chức (chiến dịch xa ngày lại nổi lên đầu dù gửi đã lâu).
+      orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         title: true,
         kitchenAddress: true,
+        createdAt: true,
         scheduledDate: true,
         startTime: true,
         endTime: true,
@@ -206,10 +209,21 @@ export class AdminService {
         _count: { select: { assignments: true } },
       },
     });
-    return rows.map((c) => ({
+    // Chờ duyệt lên đầu: đây là việc admin PHẢI xử lý, không nên nằm lẫn giữa
+    // các chiến dịch đã xong. Trong mỗi nhóm vẫn giữ thứ tự mới gửi trước.
+    const sorted = [...rows].sort((a, b) => {
+      const pending = (s: string) => (s === 'draft' ? 0 : 1);
+      const byPending = pending(a.status) - pending(b.status);
+      if (byPending !== 0) return byPending;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+
+    return sorted.map((c) => ({
       id: c.id,
       title: c.title,
       kitchenAddress: c.kitchenAddress,
+      /** Thời điểm tổ chức gửi yêu cầu — admin cần biết đơn nằm chờ bao lâu rồi. */
+      createdAt: c.createdAt,
       scheduledDate: c.scheduledDate,
       startTime: c.startTime,
       endTime: c.endTime,
@@ -738,6 +752,185 @@ export class AdminService {
     });
 
     return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  }
+
+  // ── Danh mục thực phẩm (admin tự quản lý) ──────────────────────────────────
+  //
+  // Hai cấp: NHÓM (food_catalog_categories) → LOẠI (food_catalog_items).
+  // Admin tạo được cả hai, không phụ thuộc enum `food_category` cố định.
+
+  /** Toàn bộ nhóm kèm các loại bên trong — FE render một lượt, khỏi N+1 request. */
+  async listFoodCatalog(opts: { search?: string } = {}) {
+    const search = opts.search?.trim();
+    const categories = await this.prisma.foodCatalogCategory.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        items: {
+          where: {
+            deletedAt: null,
+            ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+
+    // Đang tìm kiếm thì ẩn nhóm không có loại nào khớp — hiện nhóm rỗng chỉ gây nhiễu.
+    const visible = search ? categories.filter((c) => c.items.length > 0) : categories;
+
+    return {
+      categories: visible.map((c) => ({
+        id: c.id,
+        name: c.name,
+        group: c.group,
+        description: c.description,
+        sortOrder: c.sortOrder,
+        isActive: c.isActive,
+        itemCount: c.items.length,
+        items: c.items.map((i) => ({
+          id: i.id,
+          categoryId: i.categoryId,
+          name: i.name,
+          description: i.description,
+          isActive: i.isActive,
+        })),
+      })),
+      totalCategories: visible.length,
+      totalItems: visible.reduce((sum, c) => sum + c.items.length, 0),
+    };
+  }
+
+  async createFoodCategory(
+    adminUserId: string,
+    dto: { name: string; group?: string; description?: string; sortOrder?: number },
+  ) {
+    const name = dto.name.trim();
+    const dup = await this.prisma.foodCatalogCategory.findFirst({
+      where: { deletedAt: null, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (dup) throw new ConflictException(`Nhóm "${name}" đã tồn tại.`);
+
+    return this.prisma.foodCatalogCategory.create({
+      data: {
+        name,
+        group: dto.group ?? 'other',
+        description: dto.description?.trim() || null,
+        sortOrder: dto.sortOrder ?? 0,
+        createdBy: adminUserId,
+      },
+    });
+  }
+
+  async updateFoodCategory(
+    id: string,
+    dto: { name?: string; group?: string; description?: string; sortOrder?: number; isActive?: boolean },
+  ) {
+    const cat = await this.prisma.foodCatalogCategory.findFirst({ where: { id, deletedAt: null } });
+    if (!cat) throw new NotFoundException('Không tìm thấy nhóm thực phẩm.');
+
+    const name = dto.name?.trim();
+    if (name) {
+      const dup = await this.prisma.foodCatalogCategory.findFirst({
+        where: { deletedAt: null, id: { not: id }, name: { equals: name, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (dup) throw new ConflictException(`Nhóm "${name}" đã tồn tại.`);
+    }
+
+    return this.prisma.foodCatalogCategory.update({
+      where: { id },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(dto.group !== undefined ? { group: dto.group } : {}),
+        ...(dto.description !== undefined ? { description: dto.description.trim() || null } : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+  }
+
+  /** Xoá mềm nhóm + toàn bộ loại bên trong (không để loại mồ côi). */
+  async deleteFoodCategory(id: string) {
+    const cat = await this.prisma.foodCatalogCategory.findFirst({
+      where: { id, deletedAt: null },
+      include: { _count: { select: { items: true } } },
+    });
+    if (!cat) throw new NotFoundException('Không tìm thấy nhóm thực phẩm.');
+
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.foodCatalogItem.updateMany({
+        where: { categoryId: id, deletedAt: null },
+        data: { deletedAt: now },
+      }),
+      this.prisma.foodCatalogCategory.update({ where: { id }, data: { deletedAt: now } }),
+    ]);
+    return { id, deleted: true, itemsDeleted: cat._count.items };
+  }
+
+  async createFoodCatalogItem(
+    adminUserId: string,
+    dto: { categoryId: string; name: string; description?: string },
+  ) {
+    const category = await this.prisma.foodCatalogCategory.findFirst({
+      where: { id: dto.categoryId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!category) throw new BadRequestException('Nhóm thực phẩm không tồn tại.');
+
+    const name = dto.name.trim();
+    // Trùng tên trong CÙNG nhóm là rác; khác nhóm thì hợp lệ
+    // ("Chuối" ở trái cây tươi vs "Chuối sấy" ở đồ khô).
+    const dup = await this.prisma.foodCatalogItem.findFirst({
+      where: { deletedAt: null, categoryId: dto.categoryId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (dup) throw new ConflictException(`"${name}" đã có trong nhóm ${category.name}.`);
+
+    return this.prisma.foodCatalogItem.create({
+      data: {
+        categoryId: dto.categoryId,
+        name,
+        description: dto.description?.trim() || null,
+        createdBy: adminUserId,
+      },
+    });
+  }
+
+  async updateFoodCatalogItem(
+    id: string,
+    dto: { categoryId?: string; name?: string; description?: string; isActive?: boolean },
+  ) {
+    const item = await this.prisma.foodCatalogItem.findFirst({ where: { id, deletedAt: null } });
+    if (!item) throw new NotFoundException('Không tìm thấy loại thực phẩm.');
+
+    if (dto.categoryId) {
+      const cat = await this.prisma.foodCatalogCategory.findFirst({
+        where: { id: dto.categoryId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!cat) throw new BadRequestException('Nhóm thực phẩm không tồn tại.');
+    }
+
+    return this.prisma.foodCatalogItem.update({
+      where: { id },
+      data: {
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description.trim() || null } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+  }
+
+  /** Xoá mềm — giữ lịch sử phân loại đã dùng. */
+  async deleteFoodCatalogItem(id: string) {
+    const item = await this.prisma.foodCatalogItem.findFirst({ where: { id, deletedAt: null } });
+    if (!item) throw new NotFoundException('Không tìm thấy loại thực phẩm.');
+    await this.prisma.foodCatalogItem.update({ where: { id }, data: { deletedAt: new Date() } });
+    return { id, deleted: true };
   }
 
   /** Admin đổi phân loại (category) của một tin thực phẩm. */

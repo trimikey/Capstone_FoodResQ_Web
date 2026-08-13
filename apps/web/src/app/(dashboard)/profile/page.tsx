@@ -63,6 +63,9 @@ const TRUST_REASON_LABEL: Record<string, string> = {
   manual_bonus: 'Thưởng thủ công từ quản trị viên',
   successful_rescue: 'Hoàn thành nhận thực phẩm thành công',
   high_rating_received: 'Nhận đánh giá cao từ nhà cung cấp',
+  late_pickup: 'Đến lấy hàng muộn quá 60 phút',
+  late_check_in: 'Điểm danh trễ tại chiến dịch',
+  bulk_run_cancelled_after_approval: 'Huỷ chuyến giao sỉ sau khi đã được duyệt',
   delivery_completed: 'Hoàn thành giao hàng thành công',
   campaign_completed: 'Tham gia chiến dịch từ thiện',
 };

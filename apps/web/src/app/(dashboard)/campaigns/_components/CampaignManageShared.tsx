@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CampaignParticipant, CampaignDistribution, CampaignManageParticipant } from '@/hooks/useCampaigns';
 import { mediaUrl } from '@/lib/utils';
+import { formatVnDate } from '@/lib/vn-date';
 
 export const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
@@ -51,8 +52,11 @@ export function RegistrationRow({
         : '';
 
   const shift = p.shiftId ? shifts?.find((s) => s.id === p.shiftId) : null;
+  // Ca chỉ có giờ; với chiến dịch nhiều ngày phải kèm NGÀY TRỰC, không thì không biết
+  // người này nhận buổi nào.
+  const workDayText = p.workDate ? `${formatVnDate(p.workDate)} · ` : '';
   const shiftText = shift
-    ? `${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
+    ? `${workDayText}${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
     : 'Đăng ký vai trò tổng';
   const detail = hasVolunteerDetail(p) ? p.volunteer : null;
   const phoneText = detail?.phone || 'Chưa có SĐT';

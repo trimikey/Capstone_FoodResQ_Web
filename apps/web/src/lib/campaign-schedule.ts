@@ -123,3 +123,70 @@ export function campaignStartWindow(
   }
   return { canStart: true, reason: null };
 }
+
+/**
+ * Mốc KẾT THÚC THẬT của chiến dịch (epoch ms) = ngày kết thúc + giờ kết thúc.
+ *
+ * Chiến dịch nhiều ngày lưu `endDate` riêng; ghép `endTime` vào `scheduledDate`
+ * (ngày BẮT ĐẦU) sẽ ra mốc kết thúc ngay tối hôm đầu, khiến chiến dịch 3 ngày bị
+ * gắn nhãn "Quá hạn" từ hôm đầu tiên.
+ */
+export function campaignEndAt(c: {
+  scheduledDate?: string | Date | null;
+  endDate?: string | Date | null;
+  endTime?: string | null;
+}): number {
+  if (!c.scheduledDate) return NaN;
+  return vnDateTimeToUtc(c.endDate ?? c.scheduledDate, c.endTime ?? '23:59');
+}
+
+/** Mốc BẮT ĐẦU thật (epoch ms) = ngày bắt đầu + giờ bắt đầu. */
+export function campaignStartAt(c: {
+  scheduledDate?: string | Date | null;
+  startTime?: string | null;
+}): number {
+  if (!c.scheduledDate) return NaN;
+  return vnDateTimeToUtc(c.scheduledDate, c.startTime ?? '00:00');
+}
+
+/** `2026-08-13` / Date → `13/08/2026` (giữ nguyên ngày người dùng chọn, không lệch múi giờ). */
+function dmy(v: string | Date): string {
+  const s = typeof v === 'string' ? v.slice(0, 10) : v.toISOString().slice(0, 10);
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Chuỗi hiển thị khoảng thời gian chiến dịch.
+ *
+ *   1 ngày   → "13/08/2026 · 08:00–12:00"
+ *   nhiều ngày → "13/08/2026 08:00 → 15/08/2026 12:00"
+ */
+export function formatCampaignRange(c: {
+  scheduledDate?: string | Date | null;
+  endDate?: string | Date | null;
+  startTime?: string | null;
+  endTime?: string | null;
+}): string {
+  if (!c.scheduledDate) return 'Chưa có ngày';
+  const start = dmy(c.scheduledDate);
+  const startTime = c.startTime ?? '';
+  const endTime = c.endTime ?? '';
+  const end = c.endDate ? dmy(c.endDate) : start;
+
+  if (end === start) {
+    return startTime && endTime ? `${start} · ${startTime}–${endTime}` : start;
+  }
+  return `${start} ${startTime} → ${end} ${endTime}`.replace(/\s+/g, ' ').trim();
+}
+
+/** true nếu chiến dịch kéo dài hơn một ngày. */
+export function isMultiDay(c: {
+  scheduledDate?: string | Date | null;
+  endDate?: string | Date | null;
+}): boolean {
+  if (!c.scheduledDate || !c.endDate) return false;
+  const s = typeof c.scheduledDate === 'string' ? c.scheduledDate.slice(0, 10) : c.scheduledDate.toISOString().slice(0, 10);
+  const e = typeof c.endDate === 'string' ? c.endDate.slice(0, 10) : c.endDate.toISOString().slice(0, 10);
+  return e > s;
+}

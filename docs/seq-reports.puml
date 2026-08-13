@@ -1,0 +1,101 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Reports (reports module)
+' Create report (with ownership validation + admin fan-out) · List my reports
+' NOTE: routes guarded by JwtAuthGuard; admin-side handling lives in seq-admin.puml
+'       (seq-admin-list-reports / seq-admin-resolve-report)
+'==============================================================
+
+'──────────────────── 1. Create Report ───────────────────────
+@startuml seq-report-create
+!include _seq-style.iuml
+title Create Report Sequence Diagram
+
+actor "User" as User
+participant ":ReportModal" as Screen
+participant ":ReportsController" as Ctrl
+participant ":ReportsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Admin" as Admin
+
+User -> Screen : open report form (target + reason + description)
+activate Screen
+Screen -> Ctrl : POST /reports (CreateReportDto)
+activate Ctrl
+Ctrl -> Svc : create(reporterId, dto)
+activate Svc
+
+Svc -> Svc : validateOwnership(reporterId, targetType, targetId)
+alt targetType = reservation
+  Svc -> Repo : receiverProfile.findUnique(userId)
+  Repo --> Svc : receiver | null
+  alt Not a receiver
+    Svc --> Ctrl : 403 "Chỉ người nhận mới báo cáo đơn đặt chỗ"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else receiver
+    Svc -> Repo : reservation.findFirst(id, receiverId)
+    Repo --> Svc : reservation | null
+    alt Not owner of the reservation
+      Svc --> Ctrl : 403 Forbidden
+      Ctrl --> Screen : return error
+      Screen --> User : show error message
+    end
+  end
+else targetType = listing / delivery / user / campaign
+  Svc -> Repo : findUnique(targetId) on matching table
+  Repo -> DB : SELECT food_listings / deliveries / users / kitchen_campaigns
+  DB --> Repo : row | null
+  Repo --> Svc : exists
+  alt Target does not exist
+    Svc --> Ctrl : 404 "Đối tượng báo cáo không tồn tại"
+    note right of Svc : chặn báo cáo "ma" vào id bịa
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  end
+end
+
+Svc -> Repo : report.create(reporterId, targetType, targetId, reason, description)
+Repo -> DB : INSERT reports (status = pending)
+DB --> Repo : { id, status, createdAt }
+Repo --> Svc : report
+Svc -> Notif : notifyAdmins("Khiếu nại mới — {target} / {reason}")
+note right of Svc : fire-and-forget: khiếu nại không nằm im\nchờ admin tình cờ mở trang
+Notif --> Admin : realtime notification
+Svc --> Ctrl : { id, status, createdAt, message }
+Ctrl --> Screen : return data (201)
+Screen --> User : "Đã gửi báo cáo"
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. List My Reports ─────────────────────
+@startuml seq-report-list-mine
+!include _seq-style.iuml
+title List My Reports Sequence Diagram
+
+actor "User" as User
+participant ":MyReportsScreen" as Screen
+participant ":ReportsController" as Ctrl
+participant ":ReportsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open my reports
+activate Screen
+Screen -> Ctrl : GET /reports/my
+activate Ctrl
+Ctrl -> Svc : findMine(reporterId)
+activate Svc
+Svc -> Repo : report.findMany(reporterId) order createdAt desc
+Repo -> DB : SELECT reports
+DB --> Repo : reports[]
+Svc --> Ctrl : reports[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render status of each report (pending / resolved / dismissed)
+deactivate Screen
+@enduml

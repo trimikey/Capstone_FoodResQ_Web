@@ -1,0 +1,240 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Notifications (notifications module)
+' WebSocket connect · Emit notification (internal) · Fan-out to admins ·
+' List mine · Unread count · Save device token · Mark read / read all
+' NOTE: REST routes guarded by JwtAuthGuard; the gateway authenticates
+'       the JWT itself inside handleConnection()
+'==============================================================
+
+'──────────────────── 1. WebSocket Connect ───────────────────
+@startuml seq-notification-ws-connect
+!include _seq-style.iuml
+title WebSocket Connect Sequence Diagram
+
+actor "User" as User
+participant ":Frontend\n(socket.io-client)" as FE
+participant ":NotificationsGateway" as WS
+participant ":JwtService" as Jwt
+
+User -> FE : login success
+activate FE
+FE -> WS : connect(handshake.auth.token = accessToken)
+activate WS
+WS -> WS : read token from handshake.auth OR Authorization header
+alt No token
+  WS --> FE : client.disconnect()
+  FE --> User : offline mode (poll REST only)
+else token present
+  WS -> Jwt : verify(token, JWT_SECRET)
+  activate Jwt
+  alt Invalid / expired token
+    Jwt --> WS : throw
+    deactivate Jwt
+    WS --> FE : client.disconnect()
+    FE -> FE : refresh access token then retry
+  else valid
+    Jwt --> WS : payload { sub: userId }
+    WS -> WS : client.join("user:{userId}")
+    WS --> FE : connected
+    FE --> User : realtime channel ready
+  end
+end
+deactivate WS
+deactivate FE
+@enduml
+
+'──────────────────── 2. Emit Notification (internal) ────────
+@startuml seq-notification-notify
+!include _seq-style.iuml
+title Emit Notification Sequence Diagram
+
+participant ":Caller\n(any service)" as Caller
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsGateway" as WS
+database "Database" as DB
+actor "Target User" as User
+
+Caller -> Svc : notify(userId, { type, title, body, data })
+activate Svc
+Svc -> Repo : notification.create(...)
+activate Repo
+Repo -> DB : INSERT notifications
+alt Insert fails
+  Repo --> Svc : throw
+  Svc -> Svc : swallow error, return null
+  note right of Svc : không throw — thông báo lỗi\nkhông được chặn luồng nghiệp vụ chính
+  Svc --> Caller : null
+else inserted
+  DB --> Repo : notification
+  Repo --> Svc : notification
+  deactivate Repo
+  Svc -> WS : emitToUser(userId, 'notification:new', notification)
+  WS --> User : toast / badge +1 (if online)
+  Svc --> Caller : notification
+end
+deactivate Svc
+@enduml
+
+'──────────────────── 3. Fan-out to Admins ───────────────────
+@startuml seq-notification-notify-admins
+!include _seq-style.iuml
+title Notify All Admins Sequence Diagram
+
+participant ":Caller\n(reports / campaigns)" as Caller
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsGateway" as WS
+database "Database" as DB
+
+Caller -> Svc : notifyAdmins({ type, title, body, data })
+activate Svc
+Svc -> Repo : user.findMany(role = admin, deletedAt = null)
+Repo -> DB : SELECT users WHERE role='admin'
+DB --> Repo : admins[]
+Repo --> Svc : admins[]
+loop for each admin (Promise.all)
+  Svc -> Svc : notify(admin.id, input)
+  Svc -> Repo : notification.create(...)
+  Svc -> WS : emitToUser(admin.id, 'notification:new', ...)
+end
+note right of Svc : việc cần admin xử lý không thuộc\nvề admin cụ thể nào → fan-out hết,\nai xử lý trước thì thôi
+Svc --> Caller : số admin đã nhận
+deactivate Svc
+@enduml
+
+'──────────────────── 4. Notify Campaign Owner ───────────────
+@startuml seq-notification-notify-campaign-owner
+!include _seq-style.iuml
+title Notify Campaign Owner Sequence Diagram
+
+participant ":Caller\n(dish-steps QC fail)" as Caller
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Charity Org" as Owner
+
+Caller -> Svc : notifyCampaignOwner(campaignId, input)
+activate Svc
+Svc -> Repo : kitchenCampaign.findUnique(id) include charityReceiver.user
+Repo -> DB : SELECT kitchen_campaigns JOIN receiver_profiles JOIN users
+DB --> Repo : owner | null
+Repo --> Svc : owner
+alt Campaign not found OR owner inactive / deleted
+  Svc --> Caller : 0
+else active owner
+  Svc -> Svc : notify(owner.id, input)
+  Svc --> Owner : realtime alert (QC fail, sự cố cần xử lý ngay)
+  Svc --> Caller : 1
+end
+deactivate Svc
+@enduml
+
+'──────────────────── 5. List My Notifications ───────────────
+@startuml seq-notification-list
+!include _seq-style.iuml
+title List My Notifications Sequence Diagram
+
+actor "User" as User
+participant ":NotificationBell" as Screen
+participant ":NotificationsController" as Ctrl
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open notification panel
+activate Screen
+Screen -> Ctrl : GET /notifications/my
+activate Ctrl
+Ctrl -> Svc : listMine(userId)
+activate Svc
+Svc -> Repo : notification.findMany(userId) order createdAt desc take 50
+Repo -> DB : SELECT notifications
+DB --> Repo : items[]
+Svc --> Ctrl : notifications[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render list
+
+User -> Screen : (badge) unread count
+Screen -> Ctrl : GET /notifications/unread-count
+activate Ctrl
+Ctrl -> Svc : unreadCount(userId)
+activate Svc
+Svc -> Repo : notification.count(userId, isRead = false)
+Repo -> DB : SELECT COUNT(*)
+DB --> Repo : count
+Svc --> Ctrl : { count }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : show badge
+deactivate Screen
+@enduml
+
+'──────────────────── 6. Mark Read / Read All ────────────────
+@startuml seq-notification-mark-read
+!include _seq-style.iuml
+title Mark Notification Read Sequence Diagram
+
+actor "User" as User
+participant ":NotificationBell" as Screen
+participant ":NotificationsController" as Ctrl
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+alt tap a single notification
+  User -> Screen : tap item
+  activate Screen
+  Screen -> Ctrl : PATCH /notifications/:id/read
+  activate Ctrl
+  Ctrl -> Svc : markRead(id, userId)
+  activate Svc
+  Svc -> Repo : notification.updateMany(id, userId) set isRead, readAt
+  note right of Svc : updateMany + userId trong WHERE\n→ không đọc được thông báo của người khác
+else tap "đánh dấu tất cả"
+  User -> Screen : tap mark-all
+  Screen -> Ctrl : PATCH /notifications/read-all
+  Ctrl -> Svc : markAllRead(userId)
+  Svc -> Repo : notification.updateMany(userId, isRead=false) set isRead, readAt
+end
+Repo -> DB : UPDATE notifications
+DB --> Repo : affected rows
+Svc --> Ctrl : { ok: true }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : badge refreshed
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Save Device Token (FCM) ─────────────
+@startuml seq-notification-device-token
+!include _seq-style.iuml
+title Save Device Token Sequence Diagram
+
+actor "User" as User
+participant ":MobileApp" as Screen
+participant ":NotificationsController" as Ctrl
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : grant push permission
+activate Screen
+Screen -> Screen : getToken() from Firebase Messaging
+Screen -> Ctrl : POST /notifications/device-token (token)
+activate Ctrl
+Ctrl -> Svc : saveDeviceToken(userId, token)
+activate Svc
+Svc -> Repo : user.update(fcmToken)
+Repo -> DB : UPDATE users SET fcm_token
+Svc --> Ctrl : { ok: true }
+deactivate Svc
+Ctrl --> Screen : return data (201)
+deactivate Ctrl
+Screen --> User : push notifications enabled
+deactivate Screen
+@enduml

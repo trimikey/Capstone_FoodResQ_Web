@@ -9,10 +9,10 @@
 title Search Nearby Listings Sequence Diagram
 
 actor "Receiver" as User
-participant "ListingsScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":ListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database (PostGIS)" as DB
 
 User -> Screen : open map / list (lat, lng, radius)
@@ -45,10 +45,10 @@ deactivate Screen
 title Listing Detail Sequence Diagram
 
 actor "Receiver" as User
-participant "DetailScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":DetailScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open listing
@@ -81,10 +81,10 @@ deactivate Screen
 title Create Listing Sequence Diagram
 
 actor "Provider" as User
-participant "CreateListingScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":CreateListingScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database (PostGIS)" as DB
 
 User -> Screen : fill listing form + location
@@ -125,10 +125,10 @@ deactivate Screen
 title My Listings Sequence Diagram
 
 actor "Provider" as User
-participant "ProviderScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":ProviderScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open my listings
@@ -156,10 +156,10 @@ deactivate Screen
 title Publish Listing Sequence Diagram
 
 actor "Provider" as User
-participant "ProviderScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":ProviderScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Publish
@@ -193,10 +193,10 @@ deactivate Screen
 title Cancel Listing Sequence Diagram
 
 actor "Provider" as User
-participant "ProviderScreen" as Screen
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Repo
+participant ":ProviderScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Cancel (reason?)
@@ -221,5 +221,199 @@ else owner
 end
 deactivate Svc
 deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Update Listing ──────────────────────
+@startuml seq-listing-update
+!include _seq-style.iuml
+title Update Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":EditListingScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : edit a listing
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id (UpdateListingDto)
+activate Ctrl
+Ctrl -> Svc : update(listingId, userId, dto)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+else listing.providerId != providerId
+  Svc --> Ctrl : 403 "Bạn không sở hữu tin này"
+else status not in (draft, active, fully_reserved)
+  Svc --> Ctrl : 400 "Tin đang ở trạng thái {status} — không thể chỉnh sửa"
+else editable
+  alt status = draft
+    Svc -> Svc : validate pickupEnd > pickupStart AND expiry >= pickupEnd
+    note right of Svc : bản nháp sửa được MỌI field,\nkể cả toạ độ (qua raw SQL)
+    alt Invalid time ordering
+      Svc --> Ctrl : 400 BadRequest
+    end
+  else status = active / fully_reserved
+    loop for each field in dto
+      alt field not in EDITABLE_WHEN_ACTIVE
+        Svc --> Ctrl : 400 "Không thể sửa {field} khi tin đã đăng"
+        note right of Svc : chỉ cho sửa field mềm (mô tả, ảnh,\nbảo quản, dị ứng) — người nhận đã đặt theo\nđịa điểm/giờ/số lượng cũ
+      end
+    end
+    Svc -> Svc : chỉ cho GIA HẠN, không rút ngắn\n(pickupEnd mới phải > pickupEnd cũ và ở tương lai)
+    alt Attempt to shorten the window OR set it in the past
+      Svc --> Ctrl : 400 BadRequest
+    end
+  end
+  alt quantityTotal mới < quantityRemaining
+    Svc --> Ctrl : 400 BadRequest
+    note right of Svc : giảm tổng xuống dưới số còn lại\n= số liệu vô nghĩa
+  else valid
+    Svc -> Repo : foodListing.update(whitelisted fields)
+    opt draft + coordinates changed
+      Svc -> Repo : $executeRaw UPDATE pickup_location = ST_MakePoint(lng, lat)
+    end
+    Repo -> DB : UPDATE food_listings
+    Svc --> Ctrl : updated listing
+    Ctrl --> Screen : return data (200)
+    Screen --> User : listing saved
+  end
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 8. Delete Draft ────────────────────────
+@startuml seq-listing-delete-draft
+!include _seq-style.iuml
+title Delete Draft Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : delete a draft
+activate Screen
+Screen -> Ctrl : DELETE /listings/:id
+activate Ctrl
+Ctrl -> Svc : removeDraft(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found OR already soft-deleted
+  Svc --> Ctrl : 404 NotFound
+else not the owner
+  Svc --> Ctrl : 403 Forbidden
+else status != draft
+  Svc --> Ctrl : 400 "Chỉ xoá được bản nháp — tin đã đăng hãy dùng chức năng huỷ"
+  note right of Svc : tin đã đăng có thể đã có đơn đặt →\nxoá thẳng sẽ làm mồ côi reservation
+else draft
+  Svc -> Repo : foodListing.update(deletedAt = NOW())
+  note right of Svc : soft delete (CLAUDE.md §5)
+  Repo -> DB : UPDATE food_listings SET deleted_at
+  Svc --> Ctrl : { id, message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : draft removed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 9. Duplicate Listing ───────────────────
+@startuml seq-listing-duplicate
+!include _seq-style.iuml
+title Duplicate Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : "đăng lại tin này"
+activate Screen
+Screen -> Ctrl : POST /listings/:id/duplicate
+activate Ctrl
+Ctrl -> Svc : duplicate(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo --> Svc : original | null
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+else not the owner
+  Svc --> Ctrl : 403 Forbidden
+else owner
+  Svc -> Repo : $queryRaw ST_X / ST_Y (pickup_location)
+  Repo -> DB : SELECT food_listings
+  DB --> Repo : { lng, lat }
+  Svc -> Repo : $queryRaw INSERT food_listings (copy fields,\nquantity_remaining = quantity_total, ST_MakePoint(lng, lat), status = 'draft') RETURNING id
+  note right of Svc : bản sao luôn là DRAFT —\nNCC phải rà lại giờ nhận rồi mới đăng
+  Repo -> DB : INSERT food_listings
+  DB --> Repo : { id }
+  alt Insert returned nothing
+    Svc --> Ctrl : 400 "Nhân bản tin thất bại"
+  else created
+    Svc -> Svc : findOne(newId)
+    Svc --> Ctrl : new listing (draft)
+    Ctrl --> Screen : return data (201)
+    Screen --> User : open the copy for editing
+  end
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 10. Provider Listing Stats ─────────────
+@startuml seq-listing-provider-stats
+!include _seq-style.iuml
+title Provider Listing Stats Sequence Diagram
+
+actor "Provider" as User
+participant ":ProviderDashboard" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open dashboard
+activate Screen
+Screen -> Ctrl : GET /listings/provider/stats
+activate Ctrl
+Ctrl -> Svc : getProviderStats(userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : $transaction([ count listings, count active,\ncount reservations, count completed ])
+note right of Svc : 4 count trong 1 transaction —\nsố liệu chụp cùng một thời điểm
+Repo -> DB : SELECT COUNT(*) × 4
+DB --> Repo : counts
+Repo --> Svc : totals
+Svc -> Svc : completionRate = round(completed / total × 100)
+Svc --> Ctrl : { totalListings, activeListings, totalReservations, completedReservations, completionRate }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render KPI tiles
 deactivate Screen
 @enduml

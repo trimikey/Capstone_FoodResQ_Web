@@ -1,0 +1,41 @@
+@startuml seq-admin-create-user
+title Admin Create User Sequence Diagram
+
+actor "Admin" as User
+participant ":UsersScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : create account form
+activate Screen
+Screen -> Ctrl : POST /admin/users (AdminCreateUserDto)
+activate Ctrl
+Ctrl -> Svc : adminCreateUser(dto)
+activate Svc
+
+Svc -> Repo : user.findUnique(email)
+Repo --> Svc : existing | null
+
+alt Email exists
+  Svc --> Ctrl : 409 Conflict
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else available
+  Svc -> Bcrypt : hash(password, 12)
+  group $transaction
+    Svc -> Repo : user.create(status=active)
+    Svc -> Repo : create role profile (receiver / volunteer / provider)
+    Repo -> DB : INSERT users + profile
+  end
+  Svc --> Ctrl : { id, email, role, status }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : account created
+end
+
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

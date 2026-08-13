@@ -23,11 +23,21 @@ import { useVolunteerMe } from '@/hooks/useDeliveries';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { mediaUrl, errMsg } from '@/lib/utils';
-import { findOverlapping } from '@/lib/campaign-schedule';
+import { findOverlapping, formatCampaignRange, isMultiDay } from '@/lib/campaign-schedule';
 import { AssignmentRole, UserRole } from '@foodresq/types';
 import ProviderCampaignDetail from '../ProviderCampaignDetail';
 
 const CAMPAIGN_FALLBACK = '/vn-pho.jpg';
+
+/** `2026-08-13` → `T5 13/08`. Ghim timeZone để máy múi giờ âm không lùi mất một ngày. */
+function formatDayLabel(date: string): string {
+  if (!date) return '';
+  const d = new Date(`${date.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return date;
+  const weekday = new Intl.DateTimeFormat('vi-VN', { weekday: 'short', timeZone: 'UTC' }).format(d);
+  const dm = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', timeZone: 'UTC' }).format(d);
+  return `${weekday} ${dm}`;
+}
 
 const ROLE_META: Record<string, { label: string; icon: string }> = {
   chef: { label: 'Đầu bếp', icon: 'skillet' },
@@ -105,7 +115,13 @@ export default function CampaignPublicDetailPage() {
   // Form đăng ký tình nguyện viên (mở rộng theo mockup)
   const [formRole, setFormRole] = useState<AssignmentRole | null>(null);
   const [formMotivation, setFormMotivation] = useState('');
-  const [formShiftIds, setFormShiftIds] = useState<string[]>([]);
+  /**
+   * Một "suất trực" = ca + NGÀY. Ca chỉ có giờ, chiến dịch nhiều ngày thì ca lặp lại
+   * mỗi ngày, nên chọn mỗi shiftId là không đủ để biết TNV trực buổi nào.
+   */
+  const [formSlots, setFormSlots] = useState<Array<{ shiftId: string; date: string }>>([]);
+  /** Ngày đang xem trong bảng chọn ca (chỉ dùng cho chiến dịch nhiều ngày). */
+  const [formDay, setFormDay] = useState<string | null>(null);
   const [formPhone, setFormPhone] = useState('');
   const [formConsent, setFormConsent] = useState(false);
 
@@ -125,7 +141,18 @@ export default function CampaignPublicDetailPage() {
   const roleShifts = (c?.shifts ?? []).filter(
     (s) => !effectiveRole || s.role === null || s.role === effectiveRole,
   );
-  const pickedShifts = roleShifts.filter((s) => formShiftIds.includes(s.id));
+  // Các ngày chiến dịch diễn ra — lấy từ `days` của ca đầu tiên (backend đã tính sẵn).
+  const campaignDays = roleShifts[0]?.days?.map((d) => d.date) ?? [];
+  // Ngày đang xem: mặc định ngày đầu tiên còn nhận đăng ký, không thì ngày đầu.
+  const activeDay =
+    formDay ??
+    roleShifts[0]?.days?.find((d) => !d.expired)?.date ??
+    campaignDays[0] ??
+    null;
+  // Trùng giờ chỉ xét trong CÙNG NGÀY — ca sáng 13/08 và ca sáng 14/08 không đụng nhau.
+  const pickedShifts = roleShifts.filter((s) =>
+    formSlots.some((p) => p.shiftId === s.id && p.date === activeDay),
+  );
   const isCompleted = c?.status === 'completed';
   const st = c ? (STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' }) : null;
 
@@ -172,6 +199,19 @@ export default function CampaignPublicDetailPage() {
       })
     : '';
 
+  // Chiến dịch kéo dài nhiều ngày phải hiện CẢ ngày kết thúc — chỉ hiện ngày bắt đầu
+  // thì TNV tưởng chỉ diễn ra một hôm.
+  const multiDay = c ? isMultiDay(c) : false;
+  const longEndDateFormatted =
+    c && c.endDate
+      ? new Date(c.endDate).toLocaleDateString('vi-VN', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        })
+      : '';
+
   /**
    * Gửi đăng ký. Mỗi ca là một bản ghi riêng ở backend nên phải gọi lần lượt.
    *
@@ -180,29 +220,31 @@ export default function CampaignPublicDetailPage() {
    * và lọt qua kiểm tra.
    */
   async function join(role: AssignmentRole) {
-    const targets = formShiftIds.length > 0 ? formShiftIds : [undefined];
+    const targets: Array<{ shiftId?: string; date?: string }> =
+      formSlots.length > 0 ? formSlots.map((s) => ({ shiftId: s.shiftId, date: s.date })) : [{}];
     const done: string[] = [];
     const failed: string[] = [];
 
-    for (const shiftId of targets) {
+    for (const t of targets) {
       try {
-        await apply.mutateAsync({ id, role, shiftId });
-        done.push(shiftId ?? '');
+        await apply.mutateAsync({ id, role, shiftId: t.shiftId, workDate: t.date });
+        done.push(t.shiftId ?? '');
       } catch (e) {
-        const label = roleShifts.find((s) => s.id === shiftId)?.label ?? 'ca này';
-        failed.push(`${label}: ${errMsg(e, 'thất bại')}`);
+        const label = roleShifts.find((s) => s.id === t.shiftId)?.label ?? 'ca này';
+        const when = t.date ? ` ngày ${formatDayLabel(t.date)}` : '';
+        failed.push(`${label}${when}: ${errMsg(e, 'thất bại')}`);
       }
     }
 
     if (done.length > 0) {
       toast.success(
-        formShiftIds.length > 1
-          ? `Đã gửi đăng ký ${done.length}/${targets.length} ca. Chờ tổ chức duyệt.`
+        formSlots.length > 1
+          ? `Đã gửi đăng ký ${done.length}/${targets.length} suất trực. Chờ tổ chức duyệt.`
           : `Đã gửi đăng ký vai trò ${ROLE_META[role]?.label ?? role}. Chờ tổ chức duyệt.`,
       );
       setPicking(false);
       setFormRole(null);
-      setFormShiftIds([]);
+      setFormSlots([]);
       setFormMotivation('');
       setFormConsent(false);
     }
@@ -218,7 +260,7 @@ export default function CampaignPublicDetailPage() {
     }
     // Backend từ chối đăng ký không kèm ca khi chiến dịch đã chia ca — chặn ở đây
     // để người dùng thấy lỗi ngay tại ô cần sửa thay vì nhận toast từ server.
-    if (roleShifts.length > 0 && formShiftIds.length === 0) {
+    if (roleShifts.length > 0 && formSlots.length === 0) {
       toast.error('Chọn ít nhất một ca trực bạn muốn nhận.');
       return;
     }
@@ -352,11 +394,14 @@ export default function CampaignPublicDetailPage() {
               <div className="cm-detail-hero-meta">
                 <span>
                   <span className="material-symbols-outlined text-[16px]">event</span>
-                  {longDateFormatted}
+                  {multiDay
+                    ? `${longDateFormatted} → ${longEndDateFormatted}`
+                    : longDateFormatted}
                 </span>
                 <span>
                   <span className="material-symbols-outlined text-[16px]">schedule</span>
                   {c.startTime} – {c.endTime}
+                  {multiDay && <span className="ml-1 opacity-80">mỗi ngày</span>}
                 </span>
                 <span>
                   <span className="material-symbols-outlined text-[16px]">place</span>
@@ -393,7 +438,7 @@ export default function CampaignPublicDetailPage() {
                   Thời lượng
                 </span>
                 <span className="cm-info-cell-value">{c.startTime}–{c.endTime}</span>
-                <span className="cm-info-cell-sub">{longDateFormatted}</span>
+                <span className="cm-info-cell-sub">{formatCampaignRange(c)}</span>
               </div>
               <div className="cm-info-cell">
                 <span className="cm-info-cell-label">
@@ -642,24 +687,79 @@ export default function CampaignPublicDetailPage() {
                         <label className="cm-field-label">
                           Chọn ca trực <span className="required">*</span>
                         </label>
+                        {/* Chiến dịch nhiều ngày: ca lặp lại mỗi ngày nên phải chọn
+                            trực NGÀY NÀO, không thì tổ chức không xếp được người. */}
+                        {multiDay && (
+                          <div className="mb-2 flex flex-wrap gap-1.5">
+                            {(roleShifts[0]?.days ?? []).map((d) => {
+                              const dayPicked = formSlots.filter((p) => p.date === d.date).length;
+                              const allExpired = roleShifts.every(
+                                (s) => s.days?.find((x) => x.date === d.date)?.expired !== false,
+                              );
+                              return (
+                                <button
+                                  key={d.date}
+                                  type="button"
+                                  disabled={allExpired}
+                                  onClick={() => setFormDay(d.date)}
+                                  title={allExpired ? 'Mọi ca của ngày này đã qua giờ' : undefined}
+                                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                                    activeDay === d.date
+                                      ? 'bg-[#236c2a] text-white'
+                                      : 'border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                                  } ${allExpired ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                >
+                                  {formatDayLabel(d.date)}
+                                  {dayPicked > 0 && (
+                                    <span className="ml-1 rounded-full bg-white/25 px-1.5 text-[10px]">
+                                      {dayPicked}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         <div className="grid gap-2">
                           {roleShifts.map((s) => {
-                            const full = s.slotsFilled >= s.slotsNeeded;
-                            const picked = formShiftIds.includes(s.id);
+                            // Chỗ trống tính THEO NGÀY đang xem: ca 2 chỗ của chiến dịch
+                            // 3 ngày là 2 chỗ mỗi ngày, không phải 2 chỗ cả đợt.
+                            const day = activeDay
+                              ? s.days?.find((d) => d.date === activeDay)
+                              : undefined;
+                            const filled = day?.slotsFilled ?? s.slotsFilled;
+                            const needed = day?.slotsNeeded ?? s.slotsNeeded;
+                            const full = filled >= needed;
+                            const picked = formSlots.some(
+                              (p) => p.shiftId === s.id && p.date === activeDay,
+                            );
                             // Không cho chọn ca đụng giờ ca đã tick — backend cũng chặn,
                             // báo ngay ở đây thì người dùng thấy đụng CA NÀO.
                             const clash = picked ? null : findOverlapping(s, pickedShifts);
-                            const disabled = full || !!clash;
+                            // Ca của ngày đang xem đã qua giờ → không còn buổi để có mặt.
+                            const expired = day ? day.expired : s.expired === true;
+                            const disabled = full || expired || !!clash;
                             return (
                               <button
                                 key={s.id}
                                 type="button"
                                 disabled={disabled}
                                 aria-pressed={picked}
-                                title={clash ? `Trùng giờ với "${clash.label}"` : undefined}
+                                title={
+                                  expired
+                                    ? 'Ca này của ngày đang chọn đã qua giờ'
+                                    : clash
+                                      ? `Trùng giờ với "${clash.label}"`
+                                      : undefined
+                                }
                                 onClick={() =>
-                                  setFormShiftIds((prev) =>
-                                    picked ? prev.filter((x) => x !== s.id) : [...prev, s.id],
+                                  setFormSlots((prev) =>
+                                    picked
+                                      ? prev.filter(
+                                          (p) => !(p.shiftId === s.id && p.date === activeDay),
+                                        )
+                                      : [...prev, { shiftId: s.id, date: activeDay ?? '' }],
                                   )
                                 }
                                 className={`cm-input !py-3 flex items-center justify-between gap-3 text-left ${
@@ -672,11 +772,13 @@ export default function CampaignPublicDetailPage() {
                                   </span>
                                   <span className="block text-[11px] text-neutral-500">
                                     {s.startTime}–{s.endTime} ·{' '}
-                                    {full
-                                      ? 'Đã đủ người'
-                                      : clash
-                                        ? `Trùng giờ với “${clash.label}”`
-                                        : `còn ${s.slotsNeeded - s.slotsFilled} chỗ`}
+                                    {expired
+                                      ? 'Đã qua giờ — không còn buổi nào'
+                                      : full
+                                        ? 'Đã đủ người'
+                                        : clash
+                                          ? `Trùng giờ với “${clash.label}”`
+                                          : `còn ${needed - filled} chỗ`}
                                   </span>
                                 </span>
                                 <span
@@ -691,9 +793,46 @@ export default function CampaignPublicDetailPage() {
                           })}
                         </div>
                         <p className="cm-field-hint">
-                          Chọn được nhiều ca cùng lúc, miễn là các ca không trùng giờ.
-                          {formShiftIds.length > 0 && ` Đang chọn ${formShiftIds.length} ca.`}
+                          {multiDay
+                            ? 'Chọn ngày rồi tick ca. Đăng ký được nhiều ngày, miễn là các ca trong cùng một ngày không trùng giờ.'
+                            : 'Chọn được nhiều ca cùng lúc, miễn là các ca không trùng giờ.'}
+                          {formSlots.length > 0 && ` Đang chọn ${formSlots.length} suất trực.`}
                         </p>
+
+                        {/* Tóm tắt các suất đã chọn — với nhiều ngày, chỉ nhìn tab đang
+                            mở thì không thấy hết mình đã nhận những buổi nào. */}
+                        {multiDay && formSlots.length > 0 && (
+                          <ul className="mt-2 space-y-1">
+                            {formSlots.map((p) => {
+                              const sh = roleShifts.find((x) => x.id === p.shiftId);
+                              return (
+                                <li
+                                  key={`${p.shiftId}-${p.date}`}
+                                  className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800"
+                                >
+                                  <span className="min-w-0 truncate">
+                                    {formatDayLabel(p.date)} · {sh?.label ?? 'Ca'}{' '}
+                                    {sh ? `(${sh.startTime}–${sh.endTime})` : ''}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setFormSlots((prev) =>
+                                        prev.filter(
+                                          (x) => !(x.shiftId === p.shiftId && x.date === p.date),
+                                        ),
+                                      )
+                                    }
+                                    className="shrink-0 text-emerald-700 hover:text-rose-600"
+                                    aria-label="Bỏ suất trực này"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">close</span>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
                       </div>
                     )}
 

@@ -20,7 +20,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
-import { AssignmentRole } from '@foodresq/types';
+import { AssignmentRole, FoodCategory } from '@foodresq/types';
 
 export class MenuItemDto {
   @ApiProperty({ example: 'Cơm thịt kho tàu' })
@@ -256,6 +256,14 @@ export class ApplyCampaignDto {
   @IsOptional()
   @IsUUID('4', { message: 'Ca trực không hợp lệ' })
   shiftId?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-13',
+    description: 'Ngày trực (YYYY-MM-DD). Bắt buộc khi chiến dịch diễn ra nhiều ngày.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trực phải theo định dạng YYYY-MM-DD' })
+  workDate?: string;
 }
 
 export class ReviewCampaignAssignmentDto {
@@ -367,10 +375,91 @@ export class PledgeDonationDto {
 }
 
 /** Charity gửi yêu cầu hợp tác đến provider */
+/**
+ * Chi tiết "đơn xin thực phẩm" bếp gửi NCC — lưu nguyên khối vào
+ * `campaign_provider_requests.demand_details` (JSONB).
+ *
+ * Toàn bộ field đều optional trừ `nonCommercialWaiver`: bếp phải tick cam kết dùng
+ * thực phẩm cho mục đích từ thiện phi thương mại thì mới được gửi yêu cầu. Đây là
+ * ràng buộc pháp lý, không phải tuỳ chọn giao diện — nên chốt ở BE, FE tick chỉ là
+ * lớp nhắc lại.
+ */
+export class DemandDetailsDto {
+  @ApiPropertyOptional({ enum: FoodCategory, example: FoodCategory.RAW_PROTEIN })
+  @IsOptional()
+  @IsEnum(FoodCategory, { message: 'Phân loại thực phẩm không hợp lệ' })
+  foodCategory?: FoodCategory;
+
+  @ApiPropertyOptional({ example: 'Thịt heo / Rau xanh' })
+  @IsOptional()
+  @IsString({ message: 'Tên nguyên liệu phải là chuỗi' })
+  @MaxLength(255, { message: 'Tên nguyên liệu tối đa 255 ký tự' })
+  ingredientName?: string;
+
+  @ApiPropertyOptional({ example: 30, description: 'Số kg cần' })
+  @IsOptional()
+  @IsNumber({}, { message: 'Số lượng phải là số' })
+  @Min(0.1, { message: 'Số lượng tối thiểu 0.1 kg' })
+  @Max(10000, { message: 'Số lượng tối đa 10.000 kg' })
+  @Type(() => Number)
+  quantityKg?: number;
+
+  @ApiPropertyOptional({ example: 100, description: 'Số suất ăn dự kiến nấu được' })
+  @IsOptional()
+  @IsInt({ message: 'Số suất dự kiến phải là số nguyên' })
+  @Min(1, { message: 'Số suất dự kiến tối thiểu 1' })
+  @Max(100000, { message: 'Số suất dự kiến tối đa 100.000' })
+  @Type(() => Number)
+  expectedServings?: number;
+
+  @ApiPropertyOptional({ example: '16:00', description: 'Giờ bắt đầu cần nhận tại bếp (HH:mm)' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Giờ bắt đầu phải theo định dạng HH:mm' })
+  neededFrom?: string;
+
+  @ApiPropertyOptional({ example: '17:00', description: 'Giờ kết thúc cần nhận tại bếp (HH:mm)' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Giờ kết thúc phải theo định dạng HH:mm' })
+  neededTo?: string;
+
+  @ApiPropertyOptional({ example: 5, description: 'Bán kính tìm NCC (km)' })
+  @IsOptional()
+  @IsNumber({}, { message: 'Bán kính phải là số' })
+  @Min(0.5, { message: 'Bán kính tối thiểu 0.5 km' })
+  @Max(50, { message: 'Bán kính tối đa 50 km' })
+  @Type(() => Number)
+  radiusKm?: number;
+
+  @ApiPropertyOptional({ description: 'Bắt buộc NCC có giấy chứng nhận ATVSTP' })
+  @IsOptional()
+  @IsBoolean({ message: 'Tiêu chí ATVSTP phải là true/false' })
+  requireAtvstpCert?: boolean;
+
+  @ApiPropertyOptional({ description: 'Bắt buộc vận chuyển chuỗi lạnh (< 5°C)' })
+  @IsOptional()
+  @IsBoolean({ message: 'Tiêu chí chuỗi lạnh phải là true/false' })
+  requireColdChain?: boolean;
+
+  @ApiPropertyOptional({ description: 'Bắt buộc shipper chụp ảnh QC nguyên liệu lúc nhận' })
+  @IsOptional()
+  @IsBoolean({ message: 'Tiêu chí ảnh QC phải là true/false' })
+  requireQcPhoto?: boolean;
+
+  @ApiProperty({ description: 'Cam kết dùng thực phẩm cho mục đích từ thiện phi thương mại' })
+  @IsBoolean({ message: 'Cam kết phi thương mại phải là true/false' })
+  nonCommercialWaiver!: boolean;
+}
+
 export class SendProviderRequestDto {
   @ApiProperty()
   @IsUUID('4', { message: 'ID nhà cung cấp không hợp lệ' })
   providerId!: string;
+
+  @ApiPropertyOptional({ type: DemandDetailsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DemandDetailsDto)
+  demandDetails?: DemandDetailsDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -559,6 +648,37 @@ export class ConfirmCampaignTransportReceiptDto {
   receiptPhotoUrl?: string;
 }
 
+/** Một điểm phát trong đợt — địa chỉ để shipper điều hướng tới. */
+export class DistributionPointDto {
+  @ApiProperty({ example: 'Cổng trường tiểu học A' })
+  @IsString({ message: 'Tên điểm phát phải là chuỗi' })
+  @MinLength(1, { message: 'Tên điểm phát không được để trống' })
+  @MaxLength(255, { message: 'Tên điểm phát tối đa 255 ký tự' })
+  label!: string;
+
+  @ApiProperty({ example: '12 Phan Văn Trị, Phường 7, Gò Vấp' })
+  @IsString({ message: 'Địa chỉ phải là chuỗi' })
+  @MinLength(1, { message: 'Địa chỉ điểm phát không được để trống' })
+  @MaxLength(500, { message: 'Địa chỉ tối đa 500 ký tự' })
+  address!: string;
+
+  @ApiPropertyOptional({ example: 106.6297 })
+  @IsOptional()
+  @IsNumber({}, { message: 'Kinh độ phải là số' })
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({ example: 10.8231 })
+  @IsOptional()
+  @IsNumber({}, { message: 'Vĩ độ phải là số' })
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+  lat?: number;
+}
+
 export class CreateDistributionDto {
   @ApiPropertyOptional({
     description:
@@ -567,6 +687,26 @@ export class CreateDistributionDto {
   @IsOptional()
   @IsUUID('4', { message: 'Người phụ trách không hợp lệ' })
   servedByVolunteerId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Danh sách shipper được phân công đi phát đợt này. Mỗi người phải là TNV đã duyệt của '
+      + 'chiến dịch VÀ có vai trò shipper. Tất cả đều nhận thông báo đi giao.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Danh sách người phụ trách phải là mảng' })
+  @ArrayMaxSize(20, { message: 'Tối đa 20 người phụ trách một đợt' })
+  @IsUUID('4', { each: true, message: 'ID người phụ trách không hợp lệ' })
+  assigneeVolunteerIds?: string[];
+
+  @ApiPropertyOptional({ type: [DistributionPointDto], description: 'Các điểm phát của đợt' })
+  @IsOptional()
+  @IsArray({ message: 'Danh sách điểm phát phải là mảng' })
+  @ArrayMaxSize(20, { message: 'Tối đa 20 điểm phát một đợt' })
+  @ValidateNested({ each: true })
+  @Type(() => DistributionPointDto)
+  points?: DistributionPointDto[];
 
   @ApiProperty({ example: 150, description: 'Số suất đã phát' })
   @IsInt({ message: 'Số suất phải là số nguyên' })
@@ -604,6 +744,49 @@ export class CreateDistributionDto {
 }
 
 // ─── Manage: Thêm/sửa ca trực ───────────────────────────────────────────────
+export class CompleteDistributionDto {
+  @ApiPropertyOptional({ example: 45, description: 'Số suất THỰC PHÁT — bỏ trống = đúng kế hoạch' })
+  @IsOptional()
+  @IsInt({ message: 'Số suất thực phát phải là số nguyên' })
+  @Min(0, { message: 'Số suất thực phát không được âm' })
+  @Max(100000)
+  @Type(() => Number)
+  actualServings?: number;
+
+  @ApiPropertyOptional({ example: 45, description: 'Số người thực nhận' })
+  @IsOptional()
+  @IsInt({ message: 'Số người nhận phải là số nguyên' })
+  @Min(0, { message: 'Số người nhận không được âm' })
+  @Max(100000)
+  @Type(() => Number)
+  actualPeopleServed?: number;
+
+  @ApiPropertyOptional({ description: 'Ghi chú lúc chốt đợt phát' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
+  note?: string;
+}
+
+/**
+ * Shipper xác nhận đã LẤY nguyên liệu tại NCC cho một đơn của chiến dịch.
+ * Ảnh đi kèm dạng multipart (field `photo`) nên không khai ở đây.
+ */
+export class ConfirmIngredientPickupDto {
+  @ApiProperty({ example: 28.5, description: 'Số kg THỰC NHẬN tại nhà cung cấp' })
+  @IsNumber({}, { message: 'Số kg thực nhận phải là số' })
+  @Min(0, { message: 'Số kg thực nhận không được âm' })
+  @Max(10000, { message: 'Số kg thực nhận tối đa 10.000' })
+  @Type(() => Number)
+  receivedKg!: number;
+
+  @ApiPropertyOptional({ description: 'Ghi chú (vd: NCC chỉ còn 25kg, thiếu 5kg rau)' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
+  note?: string;
+}
+
 export class CreateShiftDto {
   @ApiProperty({ example: 'Ca sáng - Sơ chế' })
   @IsString({ message: 'Tên ca phải là chuỗi' })
@@ -684,6 +867,12 @@ export class AppendMenuItemDto {
   @Max(10000)
   @Type(() => Number)
   plannedServings?: number;
+}
+
+export class SetMenuItemMealDto {
+  @ApiProperty({ example: 'lunch', enum: ['breakfast', 'lunch', 'dinner'] })
+  @IsIn(['breakfast', 'lunch', 'dinner'], { message: 'Bữa phải là breakfast/lunch/dinner' })
+  type!: string;
 }
 
 export class AppendSupplyItemDto {
