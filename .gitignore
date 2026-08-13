@@ -21,3 +21,8 @@ apps/mobile/UI_UX_TASTE_GUIDE.md
 
 # Claude Code dev-server config — local only, không commit lên repo
 .claude/launch.json
+
+# Repo dùng pnpm. package-lock.json lọt vào là do lỡ chạy `npm install`, và nó khiến
+# Vercel nhận nhầm package manager rồi chạy npm trên workspace pnpm.
+package-lock.json
+yarn.lock
