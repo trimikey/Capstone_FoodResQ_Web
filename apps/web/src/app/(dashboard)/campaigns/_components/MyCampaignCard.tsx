@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 import ChangeRequestModal from './ChangeRequestModal';
+import { formatCampaignRange } from '@/lib/campaign-schedule';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; chip: string }> = {
   draft: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
@@ -97,7 +98,7 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
       <div className="flex flex-wrap gap-3 text-xs text-neutral-500">
         <span className="inline-flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">event</span>
-          {new Date(c.scheduledDate).toLocaleDateString('vi-VN')} · {c.startTime}–{c.endTime}
+          {formatCampaignRange(c)}
         </span>
         <span className="inline-flex items-center gap-1 truncate flex-1 min-w-0">
           <span className="material-symbols-outlined text-[14px]">place</span>

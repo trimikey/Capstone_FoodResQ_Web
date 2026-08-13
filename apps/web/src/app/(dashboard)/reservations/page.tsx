@@ -11,6 +11,7 @@ import { useMe } from '@/hooks/useProfile';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
+import Pagination from '@/components/shared/Pagination';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -369,47 +370,9 @@ export default function ReservationsPage() {
         </div>
 
         {/* Phân trang */}
-        {!isLoading && !isError && totalPages > 1 && (
-          <div className={`flex items-center justify-center gap-2 pt-2 ${isPlaceholderData ? 'opacity-60' : ''}`}>
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              aria-label="Trang trước"
-              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            >
-              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-            </button>
-
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                // Chỉ hiện trang đầu, trang cuối và lân cận trang hiện tại — tránh tràn khi nhiều trang
-                .filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
-                .map((n, idx, arr) => (
-                  <span key={n} className="flex items-center gap-1">
-                    {idx > 0 && arr[idx - 1] !== n - 1 && <span className="text-neutral-400 px-1">…</span>}
-                    <button
-                      onClick={() => setPage(n)}
-                      aria-current={n === page ? 'page' : undefined}
-                      className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
-                        n === page
-                          ? 'bg-emerald-700 text-white elevation-2'
-                          : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  </span>
-                ))}
-            </div>
-
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              aria-label="Trang sau"
-              className="w-10 h-10 rounded-full border border-neutral-200 bg-white flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            >
-              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-            </button>
+        {!isLoading && !isError && (
+          <div className={isPlaceholderData ? 'opacity-60' : ''}>
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} unit="đơn" />
           </div>
         )}
       </div>

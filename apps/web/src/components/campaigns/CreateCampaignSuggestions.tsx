@@ -589,18 +589,21 @@ function SuggestionPanel({
 export function MenuSuggestions({
   supplies,
   expectedServings,
+  currentMenuCount = 0,
 }: {
   /** Danh sách vật phẩm user đã nhập — dùng để match gợi ý món ăn. */
   supplies: Array<{ name: string }>;
   expectedServings: number;
+  /** Số món đã có trong thực đơn — để ước tính suất mỗi món sau khi thêm. */
+  currentMenuCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
   const { inserted, track, trackAll } = useInsertedTracker();
 
   const matched = useMemo(
-    () => buildMatchedMenuTemplates(supplies, expectedServings),
-    [supplies, expectedServings],
+    () => buildMatchedMenuTemplates(supplies, expectedServings, currentMenuCount),
+    [supplies, expectedServings, currentMenuCount],
   );
 
   // Nếu chưa nhập vật phẩm → không cho mở, hiển thị nút disabled kèm gợi ý.
@@ -637,7 +640,7 @@ export function MenuSuggestions({
         <SuggestionPanel
           tone="teal"
           title="Mẫu món ăn phù hợp với vật phẩm của bạn"
-          subtitle={`Dựa trên ${supplies.length} vật phẩm đã nhập — suất mỗi món ước tính ~30% tổng ${expectedServings} suất.`}
+          subtitle={`Dựa trên ${supplies.length} vật phẩm đã nhập — ${expectedServings} suất của chiến dịch sẽ được chia đều cho các món trong thực đơn.`}
           remainingCount={remaining}
           onInsertAll={() => {
             const pending = matched.filter((m) => !inserted.has(m.id));

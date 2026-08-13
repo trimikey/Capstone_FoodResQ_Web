@@ -16,9 +16,9 @@ const ADMIN_NAV = [
   { href: '/admin/donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
   { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
   { href: '/admin/food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
+  { href: '/admin/catalog', label: 'Danh mục thực phẩm', icon: 'category' },
   { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
   { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
-  { href: '/admin/monitor', label: 'Giám sát hệ thống', icon: 'monitoring' },
 ];
 
 /**

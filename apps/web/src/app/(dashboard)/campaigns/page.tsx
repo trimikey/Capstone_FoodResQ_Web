@@ -29,6 +29,7 @@ import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
 import type { Section } from './_components/CharitySidebar';
 import { useAuthStore } from '@/stores/auth.store';
+import Pagination from '@/components/shared/Pagination';
 
 const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
@@ -913,6 +914,9 @@ function StatsSection({
 // MINE — Gom 3 trang (đang chạy / chờ duyệt / đã kết thúc) thành 1 trang duy nhất
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Số chiến dịch mỗi trang ở tab "Chiến dịch của tôi". */
+const MINE_PER_PAGE = 8;
+
 type MineTab = 'all' | 'running' | 'pending' | 'finished';
 
 const MINE_TABS: Array<{ key: MineTab; label: string; icon: string }> = [
@@ -932,8 +936,24 @@ function MineTabbedSection({
   onJumpTo: (s: Section) => void;
 }) {
   const [tab, setTab] = useState<MineTab>('all');
+  // Phân trang phía client: danh sách chiến dịch của một tổ chức là hữu hạn và đã
+  // nằm sẵn trong cache, cắt trang tại chỗ thì đổi trang tức thì, không gọi lại API.
+  const [minePage, setMinePage] = useState(1);
 
   // Gom 3 nhóm: active (đang chạy), drafts (campaign chờ admin duyệt), finished
+  /** Cắt danh sách theo trang đang xem. */
+  function pageSlice<T>(list: T[]): T[] {
+    return list.slice((minePage - 1) * MINE_PER_PAGE, minePage * MINE_PER_PAGE);
+  }
+  function totalPagesOf(list: unknown[]): number {
+    return Math.max(1, Math.ceil(list.length / MINE_PER_PAGE));
+  }
+
+  // Đổi tab thì về trang 1 — ở lại trang 5 của tab cũ sẽ ra danh sách trống.
+  useEffect(() => {
+    setMinePage(1);
+  }, [tab]);
+
   const running = stats.active;
   const pendingCampaigns = stats.drafts;
   const finished = stats.finished;
@@ -1042,11 +1062,21 @@ function MineTabbedSection({
               action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
             />
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {(tab === 'running' ? running : finished).map((c) => (
-                <MyCampaignCard key={c.id} c={c} />
-              ))}
-            </div>
+            <>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {pageSlice(tab === 'running' ? running : finished).map((c) => (
+                  <MyCampaignCard key={c.id} c={c} />
+                ))}
+              </div>
+              <Pagination
+                page={minePage}
+                totalPages={totalPagesOf(tab === 'running' ? running : finished)}
+                onChange={setMinePage}
+                total={(tab === 'running' ? running : finished).length}
+                perPage={MINE_PER_PAGE}
+                unit="chiến dịch"
+              />
+            </>
           )}
         </>
       )}
@@ -1062,11 +1092,21 @@ function MineTabbedSection({
               action={{ label: 'Tạo chiến dịch đầu tiên', onClick: onCreate, icon: 'add' }}
             />
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {[...running, ...pendingCampaigns, ...finished].map((c) => (
-                <MyCampaignCard key={c.id} c={c} />
-              ))}
-            </div>
+            <>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {pageSlice([...running, ...pendingCampaigns, ...finished]).map((c) => (
+                  <MyCampaignCard key={c.id} c={c} />
+                ))}
+              </div>
+              <Pagination
+                page={minePage}
+                totalPages={totalPagesOf([...running, ...pendingCampaigns, ...finished])}
+                onChange={setMinePage}
+                total={running.length + pendingCampaigns.length + finished.length}
+                perPage={MINE_PER_PAGE}
+                unit="chiến dịch"
+              />
+            </>
           )}
         </>
       )}

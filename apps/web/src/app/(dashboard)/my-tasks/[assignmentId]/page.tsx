@@ -16,6 +16,7 @@ import {
   type SafetyLog,
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
+import ShipperTaskView from './ShipperTaskView';
 import { errMsg, mediaUrl } from '@/lib/utils';
 
 const STEP_ICONS: Record<number, string> = {
@@ -68,7 +69,7 @@ export default function MyTaskDetailPage() {
   const params = useParams<{ assignmentId: string }>();
   const router = useRouter();
   const { data: me } = useMe();
-  const { data: detail, isLoading } = useMyTaskDetail(params.assignmentId);
+  const { data: detail, isLoading, refetch } = useMyTaskDetail(params.assignmentId);
   const tick = useTickDishStep();
   const advance = useAdvanceTask();
   const flagFail = useFlagStepQualityFail();
@@ -113,11 +114,12 @@ export default function MyTaskDetailPage() {
     );
   }
 
-  const { assignment, campaign, dishes, cookingTeam, safetyLogs } = detail;
+  const { assignment, campaign, dishes = [], cookingTeam = [], safetyLogs = [], delivery } = detail;
   const statusMeta = STATUS_META[assignment.status] ?? { label: assignment.status, chip: 'cm-chip cm-chip--ink' };
+  const isShipper = assignment.role === 'shipper';
+  const isChef = assignment.role === 'chef';
 
   const notCheckedIn = !['checked_in', 'in_progress', 'completed'].includes(assignment.status);
-  const isChef = assignment.role === 'chef';
   const canAct = !notCheckedIn && assignment.status !== 'completed';
 
   async function handleCheckIn() {
@@ -214,6 +216,31 @@ export default function MyTaskDetailPage() {
         <span className="material-symbols-outlined text-[14px]">chevron_right</span>
         <span className="font-semibold text-neutral-700">{campaign.title}</span>
       </div>
+
+      {/* Shipper có quy trình khác hẳn bếp: không có 4 khâu nấu, mà là chuỗi việc
+          giao nhận theo giờ. Tách hẳn view riêng cho khỏi nhồi hai luồng vào một chỗ. */}
+      {isShipper && (
+        <>
+          <header className="cm-card mb-4 p-5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
+              {ROLE_LABEL[assignment.role]}
+              {assignment.shift?.label ? ` · ${assignment.shift.label}` : ''}
+            </p>
+            <h1 className="mt-1 text-xl font-extrabold text-neutral-900 md:text-2xl">
+              {campaign.title}
+            </h1>
+            <p className="mt-1 flex items-center gap-1 text-sm text-neutral-500">
+              <span className="material-symbols-outlined text-[16px]">place</span>
+              {campaign.kitchenAddress}
+            </p>
+            <span className={`${statusMeta.chip} mt-3 inline-flex`}>{statusMeta.label}</span>
+          </header>
+          <ShipperTaskView detail={detail} onCheckedIn={() => void refetch()} />
+        </>
+      )}
+
+      {!isShipper && (
+      <>
 
       {/* Header */}
       <header className="cm-card p-5 md:p-6">
@@ -634,6 +661,8 @@ export default function MyTaskDetailPage() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

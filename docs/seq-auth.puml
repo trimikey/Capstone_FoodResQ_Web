@@ -9,12 +9,12 @@
 title Register Sequence Diagram (all roles)
 
 actor "User" as User
-participant "RegisterScreen" as Screen
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "JwtService" as Jwt
-participant "PrismaService" as Repo
+participant ":RegisterScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":JwtService" as Jwt
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : submit register form
@@ -81,12 +81,12 @@ deactivate Screen
 title Login Sequence Diagram
 
 actor "User" as User
-participant "LoginScreen" as Screen
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "JwtService" as Jwt
-participant "PrismaService" as Repo
+participant ":LoginScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":JwtService" as Jwt
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : submit login form
@@ -135,12 +135,12 @@ deactivate Screen
 title Login with Google (Firebase) Sequence Diagram
 
 actor "User" as User
-participant "LoginScreen" as Screen
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "FirebaseAdminService" as FB
-participant "JwtService" as Jwt
-participant "PrismaService" as Repo
+participant ":LoginScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":FirebaseAdminService" as FB
+participant ":JwtService" as Jwt
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : sign in with Google
@@ -196,11 +196,11 @@ deactivate Screen
 title Refresh Token Sequence Diagram
 
 actor "Client App" as User
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "JwtService" as Jwt
-participant "PrismaService" as Repo
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":JwtService" as Jwt
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Ctrl : POST /auth/refresh (refreshToken)
@@ -238,10 +238,10 @@ deactivate Ctrl
 title Logout Sequence Diagram
 
 actor "User" as User
-participant "AuthController" as Ctrl
-participant "JwtAuthGuard" as Guard
-participant "AuthService" as Svc
-participant "PrismaService" as Repo
+participant ":AuthController" as Ctrl
+participant ":JwtAuthGuard" as Guard
+participant ":AuthService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Ctrl : POST /auth/logout (Bearer token)
@@ -258,4 +258,220 @@ Svc --> Ctrl : void
 deactivate Svc
 Ctrl --> User : return data (200)
 deactivate Ctrl
+@enduml
+
+'──────────────────── 6. Login with Google ───────────────────
+@startuml seq-auth-google
+!include _seq-style.iuml
+title Login with Google Sequence Diagram
+
+actor "User" as User
+participant ":LoginScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":OAuth2Client\n(Google)" as Google
+participant ":bcrypt" as Bcrypt
+participant ":JwtService" as Jwt
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap "Đăng nhập với Google"
+activate Screen
+Screen -> Screen : Google Sign-In → idToken
+Screen -> Ctrl : POST /auth/google (idToken)
+activate Ctrl
+Ctrl -> Svc : loginWithGoogle(idToken, deviceInfo, ipAddress)
+activate Svc
+alt GOOGLE_CLIENT_ID not configured
+  Svc --> Ctrl : 503 "Google login chưa được cấu hình"
+else configured
+  Svc -> Google : verifyIdToken(idToken, audience = clientId)
+  activate Google
+  alt Invalid token / verification throws
+    Google --> Svc : throw
+    Svc --> Ctrl : 401 "Google token không hợp lệ"
+  else payload.email_verified = false
+    Svc --> Ctrl : 401 "Email Google chưa được xác minh"
+  else no email in payload
+    Svc --> Ctrl : 401 "Không lấy được email từ Google"
+  else valid payload
+    Google --> Svc : { email, name, picture }
+    deactivate Google
+    Svc -> Repo : user.findUnique(email)
+    Repo -> DB : SELECT users
+    DB --> Repo : user | null
+    Repo --> Svc : user
+    alt No account yet
+      Svc -> Bcrypt : hash(random 32 bytes, 12)
+      note right of Svc : tài khoản social không dùng mật khẩu —\nsinh ngẫu nhiên để thoả ràng buộc NOT NULL
+      group $transaction
+        Svc -> Repo : user.create(role = receiver, status = active, avatarUrl)
+        Svc -> Repo : receiverProfile.create(userId)
+        Repo -> DB : INSERT users + receiver_profiles
+      end
+      note right of Svc : chưa có khuôn mặt → FaceEnrollmentGate\nchặn ở lần vào dashboard đầu tiên
+    else user.status = banned
+      Svc --> Ctrl : 401 "Tài khoản đã bị khóa"
+    end
+    Svc -> Svc : issueTokens(user, deviceInfo, ipAddress)
+    Svc -> Jwt : sign(access 15m) + sign(refresh 30d)
+    Svc -> Bcrypt : hash(refreshToken)
+    Svc -> Repo : refreshToken.create(tokenHash, deviceInfo, ipAddress, expiresAt)
+    Repo -> DB : INSERT refresh_tokens
+    Svc --> Ctrl : { accessToken, refreshToken, user }
+    Ctrl --> Screen : return data (201)
+    Screen --> User : logged in
+  end
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Forgot Password ─────────────────────
+@startuml seq-auth-forgot-password
+!include _seq-style.iuml
+title Forgot Password Sequence Diagram
+
+actor "User" as User
+participant ":ForgotPasswordScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":PrismaService" as Repo
+participant ":Redis" as Redis
+participant ":MailService" as Mail
+database "Database" as DB
+
+User -> Screen : enter email
+activate Screen
+Screen -> Ctrl : POST /auth/forgot-password (email)
+activate Ctrl
+note right of Ctrl : @Throttle — tối đa 10 req/phút trên /auth/*
+Ctrl -> Svc : forgotPassword(dto)
+activate Svc
+Svc -> Repo : user.findUnique(email, deletedAt = null)
+Repo -> DB : SELECT users
+DB --> Repo : user | null
+Repo --> Svc : user
+alt Not found OR status = banned
+  Svc --> Ctrl : { message } (giống hệt trường hợp thành công)
+  note right of Svc : KHÔNG tiết lộ email có tồn tại hay không —\nchống dò danh sách người dùng
+else eligible account
+  Svc -> Svc : token = randomBytes(32).base64url\ntokenHash = hash(token)
+  Svc -> Redis : SETEX reset:{tokenHash} TTL { userId }
+  note right of Svc : chỉ lưu HASH của token —\nlộ Redis cũng không đặt lại được mật khẩu
+  Svc -> Mail : sendPasswordResetEmail(email, fullName, token)
+  Mail --> User : email chứa link kèm token gốc
+  Svc --> Ctrl : { message }
+end
+Ctrl --> Screen : return data (201)
+deactivate Svc
+deactivate Ctrl
+Screen --> User : "nếu email tồn tại, chúng tôi đã gửi hướng dẫn"
+deactivate Screen
+@enduml
+
+'──────────────────── 8. Reset Password ──────────────────────
+@startuml seq-auth-reset-password
+!include _seq-style.iuml
+title Reset Password Sequence Diagram
+
+actor "User" as User
+participant ":ResetPasswordScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":Redis" as Redis
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open reset link, enter new password
+activate Screen
+Screen -> Ctrl : POST /auth/reset-password (token, password)
+activate Ctrl
+Ctrl -> Svc : resetPassword(dto)
+activate Svc
+Svc -> Svc : tokenHash = hash(token)
+Svc -> Redis : GET reset:{tokenHash}
+Redis --> Svc : payload | null
+alt Key missing / payload unparseable / no userId
+  Svc -> Redis : DEL reset:{tokenHash}
+  Svc --> Ctrl : 400 "Mã đặt lại không hợp lệ hoặc đã hết hạn"
+  Ctrl --> Screen : return error
+  Screen --> User : ask for a new reset link
+else valid payload
+  Svc -> Repo : user.findUnique(userId, deletedAt = null)
+  Repo --> Svc : user | null
+  alt Not found OR banned
+    Svc -> Redis : DEL reset:{tokenHash}
+    Svc --> Ctrl : 400 "Mã đặt lại không hợp lệ hoặc đã hết hạn"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else eligible
+    Svc -> Bcrypt : hash(newPassword, 12)
+    group $transaction
+      Svc -> Repo : user.update(passwordHash)
+      Svc -> Repo : refreshToken.updateMany(userId, isRevoked = false → true)
+      note right of Svc : thu hồi mọi phiên — nếu tài khoản bị chiếm,\nđổi mật khẩu phải đá kẻ tấn công ra
+      Repo -> DB : UPDATE users / refresh_tokens
+    end
+    Svc -> Redis : DEL reset:{tokenHash}
+    note right of Svc : token dùng một lần
+    Svc --> Ctrl : { message }
+    Ctrl --> Screen : return data (201)
+    Screen --> User : "Đặt lại thành công — đăng nhập lại"
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 9. Check Email / Phone ─────────────────
+@startuml seq-auth-check-availability
+!include _seq-style.iuml
+title Check Email or Phone Availability Sequence Diagram
+
+actor "User" as User
+participant ":RegisterScreen" as Screen
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : type email / phone (field blur)
+activate Screen
+alt email field
+  Screen -> Ctrl : POST /auth/check-email (email)
+  activate Ctrl
+  Ctrl -> Svc : checkEmailExists(email)
+  activate Svc
+  Svc -> Svc : regex test email format
+  alt Malformed
+    Svc --> Ctrl : { exists: false }
+    note right of Svc : không query DB với input rác
+  else well-formed
+    Svc -> Repo : user.findUnique(email.toLowerCase()) select id
+  end
+else phone field
+  Screen -> Ctrl : POST /auth/check-phone (phone)
+  Ctrl -> Svc : checkPhoneExists(phone)
+  Svc -> Svc : regex /^0[35789][0-9]{8}$/ (số VN)
+  alt Malformed
+    Svc --> Ctrl : { exists: false }
+  else well-formed
+    Svc -> Repo : user.findUnique(phone) select id
+  end
+end
+Repo -> DB : SELECT users
+DB --> Repo : row | null
+Repo --> Svc : user
+Svc --> Ctrl : { exists: boolean }
+deactivate Svc
+Ctrl --> Screen : return data (201)
+deactivate Ctrl
+Screen --> User : inline validation hint
+deactivate Screen
 @enduml

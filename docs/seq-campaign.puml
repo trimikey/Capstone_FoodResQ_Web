@@ -10,11 +10,11 @@
 title Create Kitchen Campaign Sequence Diagram
 
 actor "Charity" as User
-participant "CampaignFormScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":CampaignFormScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database (PostGIS)" as DB
 
 User -> Screen : submit campaign request
@@ -52,10 +52,10 @@ deactivate Screen
 title List Open Campaigns Sequence Diagram
 
 actor "Volunteer" as User
-participant "CampaignsScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignsScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open campaigns
@@ -81,10 +81,10 @@ deactivate Screen
 title Campaign Detail Sequence Diagram
 
 actor "Guest / Volunteer" as User
-participant "CampaignDetailScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open campaign detail
@@ -117,10 +117,10 @@ deactivate Screen
 title Apply to Campaign Sequence Diagram
 
 actor "Volunteer" as User
-participant "CampaignDetailScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : apply for a role (chef/waiter/shipper)
@@ -159,10 +159,10 @@ deactivate Screen
 title Start Campaign Sequence Diagram
 
 actor "Charity" as User
-participant "MyCampaignScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":MyCampaignScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Start
@@ -196,10 +196,10 @@ deactivate Screen
 title Cancel Campaign Sequence Diagram
 
 actor "Charity" as User
-participant "MyCampaignScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":MyCampaignScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Cancel
@@ -232,10 +232,10 @@ deactivate Screen
 title Complete Campaign Sequence Diagram
 
 actor "Charity" as User
-participant "MyCampaignScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":MyCampaignScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : end campaign + enter actual servings
@@ -268,11 +268,11 @@ deactivate Screen
 title Advance Campaign Task Sequence Diagram
 
 actor "Volunteer" as User
-participant "MyTaskScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Repo
+participant ":MyTaskScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : advance task (+ proof photo)
@@ -321,11 +321,11 @@ deactivate Screen
 title Pledge Donation Sequence Diagram
 
 actor "Provider" as User
-participant "CampaignDetailScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : pledge ingredients (item, quantity)
@@ -361,11 +361,11 @@ deactivate Screen
 title Confirm Donation Sequence Diagram
 
 actor "Charity" as User
-participant "MyCampaignScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":MyCampaignScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : confirm received
@@ -399,12 +399,12 @@ deactivate Screen
 title Submit Campaign Change Request Sequence Diagram
 
 actor "Charity" as User
-participant "MyCampaignScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "SystemConfigService" as Cfg
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":MyCampaignScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : request changes (date/location/slots)
@@ -441,10 +441,10 @@ deactivate Screen
 title Add Campaign Experience Sequence Diagram
 
 actor "Volunteer" as User
-participant "CampaignDetailScreen" as Screen
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : share experience (content, rating, photos)

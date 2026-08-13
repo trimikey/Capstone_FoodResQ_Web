@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { TrustScoreReason } from '@foodresq/types';
 import { randomBytes } from 'crypto';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -832,7 +833,7 @@ export class BulkRunsService implements OnModuleInit {
       void this.trust.applyDelta(
         shipperUserId,
         -BULK_CANCEL_PENALTY,
-        'bulk_run_cancelled_after_approval',
+        TrustScoreReason.BULK_RUN_CANCELLED_AFTER_APPROVAL,
         'bulk_run',
         runId,
       );

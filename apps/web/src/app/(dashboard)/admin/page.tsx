@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
+import { vnTomorrow } from '@/lib/vn-date';
 import {
   useAdminOverview,
   useVerifications,
@@ -43,6 +44,7 @@ import { useListings } from '@/hooks/useListings';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
+import FoodCatalogTab from './_components/FoodCatalogTab';
 
 const HCM_CENTER = { lng: 106.6297, lat: 10.8231 };
 const AdminMap = dynamic(() => import('@/components/map/ListingsMap'), {
@@ -75,7 +77,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 const MONTH_TARGET_KG = 2000; // mục tiêu cộng đồng theo tháng (hằng số cấu hình)
 const fmtKg = (n: number) => `${n.toLocaleString('vi-VN')} kg`;
 
-type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'reports' | 'monitor' | 'users' | 'settings';
+type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'catalog' | 'reports' | 'users' | 'settings';
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
@@ -85,7 +87,7 @@ export default function AdminPage() {
 
 /** Trang admin với tab khởi tạo từ URL — dùng cho `/admin/[tab]`. */
 export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
-  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'reports', 'monitor', 'users', 'settings']);
+  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'catalog', 'reports', 'users', 'settings']);
   const tab: Tab =
     initialTab && VALID_TABS.has(initialTab as Tab) ? (initialTab as Tab) : 'dashboard';
 
@@ -98,8 +100,8 @@ export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
         {tab === 'donations' && <DonationsTab />}
         {tab === 'campaigns' && <CampaignsAdminTab />}
         {tab === 'food' && <FoodAdminTab />}
+        {tab === 'catalog' && <FoodCatalogTab />}
         {tab === 'reports' && <ReportsTab />}
-        {tab === 'monitor' && <MonitorTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
@@ -170,67 +172,48 @@ function DashboardTab() {
             <div className="flex-1 min-h-[200px] flex items-center justify-center text-sm text-neutral-400">Chưa có dữ liệu cứu trợ hoàn tất</div>
           ) : (
             <>
-              <div className="relative flex-1 min-h-[200px] w-full border-b border-neutral-100 mt-4">
-                {/* Grid lines */}
-                <div className="absolute top-0 w-full border-b border-neutral-100" />
-                <div className="absolute top-1/4 w-full border-b border-neutral-100" />
-                <div className="absolute top-2/4 w-full border-b border-neutral-100" />
-                <div className="absolute top-3/4 w-full border-b border-neutral-100" />
-                
-                {/* SVG Area Chart */}
-                <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <defs>
-                    <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#059669" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#059669" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  
-                  <polygon 
-                    points={`0,100 ${data.trend.map((t, i) => {
-                      const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                      const y = 100 - Math.max(0, (t.kg / maxTrend) * 90); // 90 to leave top margin
-                      return `${x},${y}`;
-                    }).join(' ')} 100,100`} 
-                    fill="url(#area-gradient)" 
+              {/* Biểu đồ CỘT: mỗi tháng là một khối độc lập, so sánh cao thấp giữa các
+                  tháng dễ hơn đường nối — số liệu ở đây rời rạc theo tháng chứ không
+                  liên tục nên cột đúng bản chất hơn. */}
+              <div className="relative flex-1 min-h-[220px] w-full mt-4">
+                {/* Lưới ngang */}
+                {[0, 25, 50, 75, 100].map((p) => (
+                  <div
+                    key={p}
+                    className="absolute w-full border-b border-neutral-100"
+                    style={{ top: `${p}%` }}
                   />
-                  
-                  <polyline 
-                    points={data.trend.map((t, i) => {
-                      const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                      const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                      return `${x},${y}`;
-                    }).join(' ')} 
-                    fill="none" 
-                    stroke="#059669" 
-                    strokeWidth="2.5" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                  />
-                  
-                  {data.trend.map((t, i) => {
-                    const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                    const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                    return <circle key={i} cx={x} cy={y} r="2.5" fill="#fff" stroke="#059669" strokeWidth="1.5" />;
-                  })}
-                </svg>
-                
-                {/* Tooltips Overlay */}
-                {data.trend.map((t, i) => {
-                  const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                  const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                  return (
-                    <div key={i} className="absolute w-8 h-8 -ml-4 -mt-4 flex justify-center group cursor-pointer z-10" style={{ left: `${x}%`, top: `${y}%` }}>
-                      <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900 text-white text-[10px] py-1 px-2 rounded-md font-bold whitespace-nowrap shadow-lg">
-                        Thg {Number(t.ym.split('-')[1])} · {fmtKg(t.kg)}
+                ))}
+
+                <div className="absolute inset-0 flex items-end justify-between gap-2 px-1">
+                  {data.trend.map((t) => {
+                    // Tháng có số liệu nhưng quá nhỏ vẫn để cao tối thiểu 2% cho thấy được;
+                    // tháng bằng 0 thì để 0 để phân biệt rõ "không có" với "rất ít".
+                    const ratio = maxTrend > 0 ? t.kg / maxTrend : 0;
+                    const heightPct = t.kg > 0 ? Math.max(2, ratio * 92) : 0;
+                    return (
+                      <div
+                        key={t.ym}
+                        className="group relative flex flex-1 flex-col items-center justify-end"
+                        style={{ height: '100%' }}
+                      >
+                        <div className="absolute bottom-full mb-2 hidden whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[10px] font-bold text-white shadow-lg group-hover:block">
+                          Thg {Number(t.ym.split('-')[1])} · {fmtKg(t.kg)}
+                        </div>
+                        <div
+                          className="w-full max-w-[52px] rounded-t-lg bg-gradient-to-t from-emerald-600 to-emerald-400 transition-all group-hover:from-emerald-700 group-hover:to-emerald-500"
+                          style={{ height: `${heightPct}%` }}
+                        />
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex justify-between mt-3 text-xs font-medium text-neutral-500">
+              <div className="mt-3 flex justify-between gap-2 px-1 text-xs font-medium text-neutral-500">
                 {data.trend.map((t) => (
-                  <span key={t.ym} className="text-center w-8 -ml-4 first:ml-0 last:mr-0">Thg {Number(t.ym.split('-')[1])}</span>
+                  <span key={t.ym} className="flex-1 text-center">
+                    Thg {Number(t.ym.split('-')[1])}
+                  </span>
                 ))}
               </div>
             </>
@@ -518,19 +501,30 @@ const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
 
+/** "3 giờ trước", "2 ngày trước"… — admin cần biết đơn nằm chờ bao lâu rồi. */
+function formatRequestedAt(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return new Date(iso).toLocaleString('vi-VN');
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return 'vừa xong';
+  if (mins < 60) return `${mins} phút trước`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} ngày trước`;
+  return new Date(iso).toLocaleDateString('vi-VN');
+}
+
 function CampaignsAdminTab() {
   const [status, setStatus] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const { data, isLoading } = useAdminCampaigns(
-    status || undefined,
-    dateFrom || undefined,
-    dateTo || undefined,
-  );
+  const { data, isLoading } = useAdminCampaigns(status || undefined);
   const setCampaignStatus = useSetCampaignStatus();
-  const paged = usePaged(data ?? [], 8, status + dateFrom + dateTo);
+  const paged = usePaged(data ?? [], 8, status);
+  // BE đã xếp đơn chờ duyệt lên đầu và mới gửi trước, nên phần tử [0] chính là đơn
+  // mới nhất cần xét duyệt.
+  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'draft');
 
   async function changeStatus(id: string, st: AdminCampaign['status']) {
     try {
@@ -557,54 +551,46 @@ function CampaignsAdminTab() {
         </button>
       </div>
 
-      {/* Yêu cầu thay đổi chờ duyệt */}
-      <ChangeRequestsPanel />
-
-      {/* Bộ lọc */}
-      <div className="flex flex-col gap-3">
-        {/* Lọc trạng thái */}
-        <div className="flex flex-wrap gap-2">
-          {[{ v: '', l: 'Tất cả' }, ...CAMPAIGN_STATUS_OPTS.map((s) => ({ v: s, l: CAMPAIGN_STATUS_META[s].label }))].map((opt) => (
+      {/* Đơn chờ duyệt mới nhất — việc admin phải xử lý trước tiên */}
+      {pendingCampaigns.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="material-symbols-outlined text-[22px] text-amber-600">pending_actions</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold text-amber-900">
+              {pendingCampaigns.length} chiến dịch đang chờ duyệt
+            </p>
+            <p className="mt-0.5 truncate text-xs text-amber-800">
+              Mới nhất: <b>{pendingCampaigns[0].title}</b> — {pendingCampaigns[0].charity} · gửi{' '}
+              {formatRequestedAt(pendingCampaigns[0].createdAt)}
+            </p>
+          </div>
+          {status !== 'draft' && (
             <button
-              key={opt.v}
-              onClick={() => setStatus(opt.v)}
-              className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
-                status === opt.v ? 'bg-[#166534] text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-              }`}
+              onClick={() => setStatus('draft')}
+              className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
             >
-              {opt.l}
-            </button>
-          ))}
-        </div>
-
-        {/* Lọc ngày */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="material-symbols-outlined text-[18px] text-neutral-400">calendar_month</span>
-          <span className="text-xs font-semibold text-neutral-500">Ngày diễn ra:</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-          />
-          <span className="text-xs text-neutral-400">—</span>
-          <input
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-          />
-          {(dateFrom || dateTo) && (
-            <button
-              onClick={() => { setDateFrom(''); setDateTo(''); }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-600 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[14px]">close</span>
-              Xoá lọc
+              Chỉ xem đơn chờ duyệt
             </button>
           )}
         </div>
+      )}
+
+      {/* Yêu cầu thay đổi chờ duyệt */}
+      <ChangeRequestsPanel />
+
+      {/* Lọc trạng thái */}
+      <div className="flex flex-wrap gap-2">
+        {[{ v: '', l: 'Tất cả' }, ...CAMPAIGN_STATUS_OPTS.map((s) => ({ v: s, l: CAMPAIGN_STATUS_META[s].label }))].map((opt) => (
+          <button
+            key={opt.v}
+            onClick={() => setStatus(opt.v)}
+            className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
+              status === opt.v ? 'bg-[#166534] text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+            }`}
+          >
+            {opt.l}
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
@@ -612,85 +598,102 @@ function CampaignsAdminTab() {
       ) : !data || data.length === 0 ? (
         <Empty icon="soup_kitchen" text="Không có chiến dịch nào" />
       ) : (
-        <div className="space-y-2">
-          {paged.slice.map((c) => {
-            const st = CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, cls: 'bg-neutral-100 text-neutral-600' };
-            return (
-              <div key={c.id} className="bg-white border border-neutral-150 rounded-2xl p-4 shadow-sm hover:shadow transition-shadow">
-                {/* Header: icon + title/address + status badge + detail btn */}
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#f0fdf4] flex items-center justify-center text-emerald-700 shrink-0">
-                    <span className="material-symbols-outlined text-[20px]">soup_kitchen</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-bold text-neutral-900 leading-snug">{c.title}</p>
-                        <p className="text-[11px] text-neutral-500 mt-0.5 truncate">{c.kitchenAddress}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
+        <div className="bg-white border border-neutral-150 rounded-3xl shadow-sm overflow-hidden p-2">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm mt-2 min-w-[760px]">
+              <thead className="text-neutral-500 font-semibold text-[13px]">
+                <tr>
+                  <th className="px-6 py-4 w-[28%]">Chiến dịch</th>
+                  <th className="px-6 py-4">Tổ chức</th>
+                  <th className="px-6 py-4">Ngày yêu cầu</th>
+                  <th className="px-6 py-4">Lịch</th>
+                  <th className="px-6 py-4">Nhân lực</th>
+                  <th className="px-6 py-4">Trạng thái</th>
+                  <th className="px-6 py-4">Đổi trạng thái</th>
+                  <th className="px-6 py-4 text-right">Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100/50">
+                {paged.slice.map((c) => {
+                  const st = CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, cls: 'bg-neutral-100 text-neutral-600' };
+                  return (
+                    <tr key={c.id} className="hover:bg-neutral-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#f0fdf4] flex items-center justify-center text-emerald-700 shrink-0">
+                            <span className="material-symbols-outlined text-[20px]">soup_kitchen</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-neutral-900 truncate">{c.title}</p>
+                            <p className="text-[11px] text-neutral-500 mt-0.5 truncate">{c.kitchenAddress}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-neutral-700 truncate max-w-[160px]">{c.charity}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <p className="text-neutral-700">
+                          {new Date(c.createdAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">{formatRequestedAt(c.createdAt)}</p>
+                      </td>
+                      <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">
+                        {new Date(c.scheduledDate).toLocaleDateString('vi-VN')}<br />
+                        <span className="text-[11px] text-neutral-400">{c.startTime}–{c.endTime}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="bg-neutral-100 px-3 py-1.5 rounded-full text-xs font-bold text-neutral-700">{c.slotsFilled}/{c.slotsNeeded}</span>
+                        <span className="text-[11px] text-neutral-400 ml-2">{c.volunteers} TNV</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {c.status === 'draft' ? (
+                          // Yêu cầu chờ duyệt → nút Duyệt (mở) / Từ chối (huỷ) cho rõ, ép cùng kích thước
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => changeStatus(c.id, 'open')}
+                              disabled={setCampaignStatus.isPending}
+                              className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() => changeStatus(c.id, 'cancelled')}
+                              disabled={setCampaignStatus.isPending}
+                              className="w-[88px] h-8 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                            >
+                              Từ chối
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            value={c.status}
+                            disabled={setCampaignStatus.isPending}
+                            onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
+                            className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                          >
+                            {CAMPAIGN_STATUS_OPTS.filter((s) => s !== 'draft').map((s) => (
+                              <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => setDetailId(c.id)}
                           title="Xem danh sách tình nguyện viên"
-                          className="w-8 h-8 rounded-full border border-neutral-200 inline-flex items-center justify-center text-neutral-500 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                          className="w-9 h-9 rounded-full border border-neutral-200 inline-flex items-center justify-center text-neutral-500 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
                         >
                           <span className="material-symbols-outlined text-[18px]">groups</span>
                         </button>
-                      </div>
-                    </div>
-                    {/* Meta row: org + date + slots */}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">business</span>
-                        {c.charity}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">event</span>
-                        {new Date(c.scheduledDate).toLocaleDateString('vi-VN')} · {c.startTime}–{c.endTime}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">group</span>
-                        {c.slotsFilled}/{c.slotsNeeded} vị trí · {c.volunteers} TNV
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {/* Action row */}
-                <div className="mt-3 pt-3 border-t border-neutral-100 flex items-center justify-end gap-2">
-                  {c.status === 'draft' ? (
-                    <>
-                      <button
-                        onClick={() => changeStatus(c.id, 'open')}
-                        disabled={setCampaignStatus.isPending}
-                        className="px-5 h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50"
-                      >
-                        Duyệt
-                      </button>
-                      <button
-                        onClick={() => changeStatus(c.id, 'cancelled')}
-                        disabled={setCampaignStatus.isPending}
-                        className="px-5 h-8 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50"
-                      >
-                        Từ chối
-                      </button>
-                    </>
-                  ) : (
-                    <select
-                      value={c.status}
-                      disabled={setCampaignStatus.isPending}
-                      onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
-                      className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-                    >
-                      {CAMPAIGN_STATUS_OPTS.filter((s) => s !== 'draft').map((s) => (
-                        <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <Pagination page={paged.page} totalPages={paged.totalPages} total={paged.total} perPage={paged.perPage} onChange={paged.setPage} />
         </div>
       )}
@@ -973,10 +976,9 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {/* Header cố định */}
-        <div className="bg-[#166534] px-6 py-5 text-white flex items-start justify-between gap-3 shrink-0">
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-2xl my-8 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-[#166534] px-6 py-5 text-white flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-extrabold text-lg truncate">{c?.title ?? 'Chi tiết chiến dịch'}</p>
             {c && <p className="text-xs text-emerald-100 mt-0.5">{c.charity}{c.charityPhone ? ` · ${c.charityPhone}` : ''}</p>}
@@ -991,117 +993,87 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
           </div>
         </div>
 
-        {/* Body cuộn */}
-        <div className="overflow-y-auto flex-1">
-          {isLoading || !c ? (
-            <div className="p-6"><Skeleton /></div>
-          ) : (
-            <div className="p-6 space-y-5">
-              {/* Ảnh chiến dịch */}
-              {c.imageUrls.length > 0 && (
-                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-neutral-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={mediaUrl(c.imageUrls[0])} alt={c.title} className="w-full h-full object-cover" />
-                  {c.imageUrls.length > 1 && (
-                    <span className="absolute bottom-2 right-2 bg-black/50 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
-                      +{c.imageUrls.length - 1} ảnh
-                    </span>
-                  )}
-                </div>
-              )}
+        {isLoading || !c ? (
+          <div className="p-6"><Skeleton /></div>
+        ) : (
+          <div className="p-6 space-y-5">
+            {/* Tổng quan */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <DetailStat icon="event" label="Ngày" value={new Date(c.scheduledDate).toLocaleDateString('vi-VN')} />
+              <DetailStat icon="schedule" label="Giờ" value={`${c.startTime}–${c.endTime}`} />
+              <DetailStat icon="restaurant" label="Suất dự kiến" value={c.expectedServings != null ? String(c.expectedServings) : '—'} />
+              <DetailStat icon="flag" label="Trạng thái" value={CAMPAIGN_STATUS_META[c.status]?.label ?? c.status} />
+            </div>
+            <p className="text-sm text-neutral-600 flex items-start gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-emerald-600 mt-0.5">place</span>{c.kitchenAddress}
+            </p>
+            {c.description && <p className="text-sm text-neutral-500 bg-neutral-50 rounded-xl p-3">{c.description}</p>}
 
-              {/* Tổng quan */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <DetailStat icon="event" label="Ngày" value={new Date(c.scheduledDate).toLocaleDateString('vi-VN')} />
-                <DetailStat icon="schedule" label="Giờ" value={`${c.startTime}–${c.endTime}`} />
-                <DetailStat icon="restaurant" label="Suất dự kiến" value={c.expectedServings != null ? String(c.expectedServings) : '—'} />
-                <DetailStat icon="flag" label="Trạng thái" value={CAMPAIGN_STATUS_META[c.status]?.label ?? c.status} />
-              </div>
-              <p className="text-sm text-neutral-600 flex items-start gap-1.5">
-                <span className="material-symbols-outlined text-[16px] text-emerald-600 mt-0.5">place</span>{c.kitchenAddress}
-              </p>
-              {c.description && <p className="text-sm text-neutral-500 bg-neutral-50 rounded-xl p-3">{c.description}</p>}
+            {/* Slots theo vai trò */}
+            <div className="grid grid-cols-3 gap-3">
+              {(['chef', 'waiter', 'shipper'] as const).map((r) => {
+                const rm = ROLE_META_ADMIN[r];
+                const s = c.slots[r];
+                return (
+                  <div key={r} className="border border-neutral-150 rounded-2xl p-3 text-center">
+                    <span className={`material-symbols-outlined text-[20px] ${rm.cls} rounded-lg p-1`}>{rm.icon}</span>
+                    <p className="text-xs font-bold text-neutral-700 mt-1.5">{rm.label}</p>
+                    <p className="text-sm font-extrabold text-neutral-900">{s.filled}/{s.needed}</p>
+                  </div>
+                );
+              })}
+            </div>
 
-              {/* Slots theo vai trò */}
-              <div>
-                <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide mb-2">Nhân lực tình nguyện</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['chef', 'waiter', 'shipper'] as const).map((r) => {
-                    const rm = ROLE_META_ADMIN[r];
-                    const s = c.slots[r];
-                    const pct = s.needed > 0 ? Math.min(100, Math.round((s.filled / s.needed) * 100)) : 0;
-                    const barCls = s.needed === 0 ? 'bg-neutral-200' : s.filled >= s.needed ? 'bg-emerald-500' : s.filled > 0 ? 'bg-amber-400' : 'bg-neutral-200';
-                    const textCls = s.needed === 0 ? 'text-neutral-400' : s.filled >= s.needed ? 'text-emerald-700' : 'text-neutral-900';
+            {/* Danh sách TNV */}
+            <div>
+              <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">groups</span>
+                Tình nguyện viên ({c.assignments.length})
+              </h4>
+
+              {/* Gán TNV mới */}
+              <AssignSection campaignId={c.id} />
+
+              {c.assignments.length === 0 ? (
+                <p className="text-sm text-neutral-400 text-center py-8 bg-neutral-50 rounded-2xl">Chưa có tình nguyện viên</p>
+              ) : (
+                <div className="space-y-2">
+                  {c.assignments.map((a) => {
+                    const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
+                    const st = ASSIGN_STATUS_META[a.status] ?? { label: a.status, cls: 'bg-neutral-100 text-neutral-600' };
                     return (
-                      <div key={r} className="border border-neutral-150 rounded-2xl p-3">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <span className={`material-symbols-outlined text-[18px] ${rm.cls} rounded-md p-0.5`}>{rm.icon}</span>
-                          <p className="text-xs font-bold text-neutral-700">{rm.label}</p>
+                      <div key={a.id} className="flex items-center gap-3 border border-neutral-150 rounded-2xl p-3">
+                        <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
+                          {a.fullName.charAt(0).toUpperCase()}
                         </div>
-                        <p className={`text-base font-extrabold ${textCls}`}>
-                          {s.filled} <span className="text-[11px] font-normal text-neutral-400">/ {s.needed}</span>
-                        </p>
-                        <p className="text-[10px] text-neutral-400 mb-1.5">đã tuyển / cần</p>
-                        <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${barCls}`} style={{ width: `${pct}%` }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-sm text-neutral-900 truncate">{a.fullName}</p>
+                          <p className="text-[11px] text-neutral-500">
+                            {a.phone ?? 'Không có SĐT'}
+                            {a.checkInTime && ` · điểm danh ${new Date(a.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`}
+                            {a.pointsAwarded != null && ` · +${a.pointsAwarded}đ`}
+                          </p>
                         </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 shrink-0 ${rm.cls}`}>
+                          <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
+                        </span>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
+                        <button
+                          onClick={() => removeAssignment(a.id)}
+                          disabled={unassign.isPending}
+                          title="Gỡ phân công"
+                          className="w-7 h-7 rounded-full text-neutral-400 hover:bg-rose-50 hover:text-rose-600 inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">close</span>
+                        </button>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Danh sách TNV */}
-              <div>
-                <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-emerald-600">groups</span>
-                  Tình nguyện viên ({c.assignments.length})
-                </h4>
-
-                {/* Gán TNV mới */}
-                <AssignSection campaignId={c.id} />
-
-                {c.assignments.length === 0 ? (
-                  <p className="text-sm text-neutral-400 text-center py-8 bg-neutral-50 rounded-2xl">Chưa có tình nguyện viên</p>
-                ) : (
-                  <div className="space-y-2">
-                    {c.assignments.map((a) => {
-                      const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
-                      const st = ASSIGN_STATUS_META[a.status] ?? { label: a.status, cls: 'bg-neutral-100 text-neutral-600' };
-                      return (
-                        <div key={a.id} className="flex items-center gap-3 border border-neutral-150 rounded-2xl p-3">
-                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
-                            {a.fullName.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-bold text-sm text-neutral-900 truncate">{a.fullName}</p>
-                            <p className="text-[11px] text-neutral-500">
-                              {a.phone ?? 'Không có SĐT'}
-                              {a.checkInTime && ` · điểm danh ${new Date(a.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`}
-                              {a.pointsAwarded != null && ` · +${a.pointsAwarded}đ`}
-                            </p>
-                          </div>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 shrink-0 ${rm.cls}`}>
-                            <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
-                          </span>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
-                          <button
-                            onClick={() => removeAssignment(a.id)}
-                            disabled={unassign.isPending}
-                            title="Gỡ phân công"
-                            className="w-7 h-7 rounded-full text-neutral-400 hover:bg-rose-50 hover:text-rose-600 inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-50"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">close</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {editing && c && <CampaignFormModal mode="edit" campaign={c} onClose={() => setEditing(false)} />}
@@ -1187,7 +1159,7 @@ function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit
     title: campaign?.title ?? '',
     description: campaign?.description ?? '',
     kitchenAddress: campaign?.kitchenAddress ?? '',
-    scheduledDate: campaign ? campaign.scheduledDate.slice(0, 10) : new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    scheduledDate: campaign ? campaign.scheduledDate.slice(0, 10) : vnTomorrow(),
     startTime: (campaign?.startTime ?? '08:00').slice(0, 5),
     endTime: (campaign?.endTime ?? '12:00').slice(0, 5),
     chefSlotsNeeded: campaign?.slots.chef.needed ?? 2,
@@ -1285,26 +1257,6 @@ const ACCOUNT_META: Record<string, { label: string; cls: string }> = {
   pending_verification: { label: 'Chờ duyệt', cls: 'badge-neutral' },
 };
 
-function verificationTypeLabel(type: VerificationItem['type']) {
-  if (type === 'provider') return 'Cửa hàng (NCC)';
-  if (type === 'charity') return 'Tổ chức';
-  return 'Tình nguyện viên';
-}
-
-function verificationBadgeClass(type: VerificationItem['type']) {
-  if (type === 'provider') return 'bg-[#a7f3d0] text-emerald-900';
-  if (type === 'charity') return 'bg-sky-100 text-sky-900';
-  return 'bg-[#fef08a] text-[#713f12]';
-}
-
-function evidenceLabel(type: VerificationItem['type'], index: number) {
-  if (type === 'provider' && index === 0) return 'GPKD / ĐKKD';
-  if (type === 'charity' && index === 0) return 'Giấy phép';
-  if (type === 'charity' && index === 1) return 'Người đại diện';
-  if (type === 'volunteer') return 'Biển số';
-  return `Ảnh ${index + 1}`;
-}
-
 function VerifyTab() {
   const { data: pending, isLoading: pendingLoading } = useVerifications();
   const { data: vols, isLoading: volsLoading } = useVolunteersManage();
@@ -1387,9 +1339,9 @@ function VerifyTab() {
         </div>
       </div>
       <div>
-        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Duyệt hồ sơ đăng ký mới</h2>
+        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Duyệt hồ sơ NCC/TNV mới</h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Xét duyệt hồ sơ nhà cung cấp, tổ chức và tình nguyện viên vừa đăng ký. Sau khi duyệt, tài khoản được kích hoạt đúng vai trò.
+          Xét duyệt hồ sơ nhà cung cấp và tình nguyện viên vừa đăng ký. Sau khi duyệt, tài khoản được kích hoạt để đăng tin/nhận task.
         </p>
       </div>
 
@@ -1452,8 +1404,12 @@ function VerifyTab() {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-3 flex-wrap">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${verificationBadgeClass(v.type)}`}>
-                                {verificationTypeLabel(v.type)}
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                v.type === 'provider'
+                                  ? 'bg-[#a7f3d0] text-emerald-900'
+                                  : 'bg-[#fef08a] text-[#713f12]'
+                              }`}>
+                                {v.type === 'provider' ? '🏪 Cửa hàng (NCC)' : '🤝 Tình nguyện viên'}
                               </span>
                               <h3 className="font-bold text-neutral-900 truncate">{v.fullName}</h3>
                               {v.type === 'provider' && v.taxCode && (
@@ -1498,7 +1454,9 @@ function VerifyTab() {
                                 )}
                                 {v.evidenceUrls && v.evidenceUrls.length > 0 && (
                                   <div className="flex gap-2 items-start">
-                                    <span className="text-xs text-neutral-500 mt-1">Ảnh giấy tờ:</span>
+                                    <span className="text-xs text-neutral-500 mt-1">
+                                      {v.type === 'provider' ? 'Ảnh GPKD:' : 'Ảnh biển số:'}
+                                    </span>
                                     <div className="flex gap-2 flex-wrap">
                                       {v.evidenceUrls.map((u: string, i: number) => (
                                         <a
@@ -1508,18 +1466,13 @@ function VerifyTab() {
                                           target="_blank"
                                           rel="noreferrer"
                                           className="relative w-16 h-16 rounded-lg overflow-hidden border border-neutral-200 hover:opacity-90"
-                                          title={evidenceLabel(v.type, i)}
+                                          title={v.type === 'provider' && i === 0 ? 'GPKD / ĐKKD' : `Ảnh ${i + 1}`}
                                         >
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={mediaUrl(u)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
                                           {v.type === 'provider' && i === 0 && (
                                             <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-emerald-700 text-white text-center py-0.5">
                                               GPKD
-                                            </span>
-                                          )}
-                                          {v.type === 'charity' && i < 2 && (
-                                            <span className="absolute bottom-0 left-0 right-0 text-[9px] bg-sky-700 text-white text-center py-0.5">
-                                              {i === 0 ? 'Giấy phép' : 'Đại diện'}
                                             </span>
                                           )}
                                         </a>
@@ -1585,9 +1538,13 @@ function VerifyTab() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   <span
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${verificationBadgeClass(detail.type)}`}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
+                      detail.type === 'provider'
+                        ? 'bg-[#a7f3d0] text-emerald-900'
+                        : 'bg-[#fef08a] text-[#713f12]'
+                    }`}
                   >
-                    {verificationTypeLabel(detail.type)}
+                    {detail.type === 'provider' ? 'Nhà cung cấp' : 'Tình nguyện viên'}
                   </span>
                   {detail.type === 'provider' && detail.businessType && (
                     <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] font-semibold">
@@ -1676,29 +1633,7 @@ function VerifyTab() {
                 </section>
               )}
 
-              {detail.type === 'charity' && (
-                <section>
-                  <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin tổ chức</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
-                    <div className="sm:col-span-2">
-                      <p className="text-[11px] text-neutral-500">Tên tổ chức</p>
-                      <p className="font-bold text-neutral-900">{detail.organizationName || detail.fullName}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-neutral-500">Liên hệ</p>
-                      <p className="font-semibold text-neutral-900">{detail.contactPhone || detail.phone || '—'}</p>
-                    </div>
-                    {detail.address && (
-                      <div className="sm:col-span-2">
-                        <p className="text-[11px] text-neutral-500">Địa chỉ</p>
-                        <p className="font-semibold text-neutral-900">{detail.address}</p>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* Bằng chứng — ảnh GPKD / giấy tờ tổ chức / biển số */}
+              {/* Bằng chứng — ảnh GPKD / mặt tiền / biển số */}
               {(detail.type === 'provider' || (detail.evidenceUrls && detail.evidenceUrls.length > 0)) && (
                 <section>
                   <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">
@@ -1726,11 +1661,6 @@ function VerifyTab() {
                           {detail.type === 'provider' && i === 0 && (
                             <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">
                               GPKD / ĐKKD
-                            </span>
-                          )}
-                          {detail.type === 'charity' && i < 2 && (
-                            <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-sky-700 text-white text-center py-1 font-bold">
-                              {i === 0 ? 'Giấy phép' : 'Người đại diện'}
                             </span>
                           )}
                           {detail.type === 'volunteer' && (
@@ -2011,16 +1941,8 @@ function ReportsTab() {
 }
 
 // ----------------------------------------------------------------------
-// MONITOR & USERS & SETTINGS
+// USERS & SETTINGS
 // ----------------------------------------------------------------------
-function MonitorTab() {
-  return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Giám sát hệ thống</h2>
-      <Empty icon="monitoring" text="Module giám sát đang được phát triển." />
-    </div>
-  );
-}
 
 const USER_ROLE_BADGE: Record<string, { label: string; cls: string }> = {
   admin: { label: 'Quản trị', cls: 'badge-violet' },
@@ -2292,7 +2214,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-5 max-h-[78vh] overflow-y-auto">
+        <div className="p-6 space-y-5 max-h-[62vh] overflow-y-auto">
           {/* Thông tin liên hệ */}
           <section>
             <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin liên hệ</h3>
@@ -2315,13 +2237,13 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
           {/* Ảnh khuôn mặt/CCCD đã đăng ký eKYC — bắt buộc kiểm tra trước khi duyệt/xử lý tài khoản (receiver/volunteer) */}
           {(u.faceImageUrl || u.idCardImageUrl) && (
             <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {u.faceImageUrl && (
                   <button
                     type="button"
                     onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
-                    className="relative h-32 rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
                     title="Bấm để phóng to"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
@@ -2333,7 +2255,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
                   <button
                     type="button"
                     onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
-                    className="relative h-32 rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
                     title="Bấm để phóng to"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
@@ -2344,7 +2266,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
               </div>
             </section>
           )}
-          {!u.isCharityOrg && !u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
+          {!u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
             <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
               <strong>Chưa đăng ký khuôn mặt (eKYC).</strong> Tài khoản này chưa hoàn tất xác minh khuôn mặt bắt buộc.
             </div>
@@ -2427,124 +2349,23 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
             </section>
           )}
 
-          {verif?.type === 'charity' && (
+          {/* TNV chờ duyệt: chuyên môn / phương tiện */}
+          {verif?.type === 'volunteer' && (
             <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin tổ chức</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
-                <div className="sm:col-span-2">
-                  <p className="text-[11px] text-neutral-500">Tên tổ chức</p>
-                  <p className="font-bold text-neutral-900">{verif.organizationName || u.fullName}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-neutral-500">Liên hệ</p>
-                  <p className="font-semibold text-neutral-900">{verif.contactPhone || verif.phone || u.phone || '—'}</p>
-                </div>
-                {verif.address && (
-                  <div className="sm:col-span-2">
-                    <p className="text-[11px] text-neutral-500">Địa chỉ</p>
-                    <p className="font-semibold text-neutral-900">{verif.address}</p>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {verif?.type === 'charity' && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Giấy tờ tổ chức ({verif.evidenceUrls?.length ?? 0} ảnh)</h3>
-              {!verif.evidenceUrls || verif.evidenceUrls.length === 0 ? (
-                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
-                  <strong>Không có ảnh giấy tờ.</strong> Cân nhắc từ chối vì không đủ điều kiện xác minh tổ chức.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {verif.evidenceUrls.map((eu: string, i: number) => (
-                    <button
-                      type="button"
-                      key={eu}
-                      onClick={() => setZoomedImg(mediaUrl(eu))}
-                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group"
-                      title="Bấm để phóng to"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
-                      <img src={mediaUrl(eu)} alt={`charity-evidence-${i + 1}`} className="w-full h-full object-cover" />
-                      <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">#{i + 1}</span>
-                      {i < 2 && (
-                        <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-sky-700 text-white text-center py-1 font-bold">
-                          {i === 0 ? 'Giấy phép' : 'Người đại diện'}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* TNV chờ duyệt: chuyên môn + phương tiện */}
-          {(verif?.type === 'volunteer' || u.role === 'volunteer') && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Chuyên môn &amp; phương tiện</h3>
-              <div className="bg-neutral-50 rounded-2xl p-4 space-y-3">
-                {/* Vai trò đăng ký */}
-                <div>
-                  <p className="text-[11px] text-neutral-500 mb-1.5">Vai trò đăng ký</p>
-                  {u.specializations.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {u.specializations.map((s) => {
-                        const rm = ROLE_META_ADMIN[s.specialization] ?? { label: s.specialization, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
-                        return (
-                          <span key={s.specialization} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${rm.cls}`}>
-                            <span className="material-symbols-outlined text-[14px]">{rm.icon}</span>
-                            {rm.label}
-                            {s.isVerified && <span className="material-symbols-outlined text-[13px]">verified</span>}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-neutral-400 italic">Chưa đăng ký chuyên môn</p>
-                  )}
-                </div>
-                {/* Phương tiện (shipper) */}
-                {((verif?.vehicleType ?? u.vehicleType) || (verif?.vehiclePlate ?? u.vehiclePlate)) && (
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-neutral-200">
-                    <div>
-                      <p className="text-[11px] text-neutral-500">Loại xe</p>
-                      <p className="font-semibold text-neutral-900 capitalize">{verif?.vehicleType ?? u.vehicleType ?? '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-neutral-500">Biển số xe</p>
-                      <p className="font-mono font-bold text-neutral-900 tracking-wider">{verif?.vehiclePlate ?? u.vehiclePlate ?? '—'}</p>
-                    </div>
-                  </div>
-                )}
-                {/* CCCD number nếu có */}
-                {verif?.idCardNumber && (
-                  <div className="pt-2 border-t border-neutral-200">
-                    <p className="text-[11px] text-neutral-500">Số CCCD</p>
-                    <p className="font-mono font-semibold text-neutral-900">{verif.idCardNumber}</p>
-                  </div>
-                )}
-              </div>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Mô tả năng lực</h3>
+              <div className="bg-neutral-50 rounded-2xl p-4 text-sm text-neutral-800">{verif.detail}</div>
             </section>
           )}
 
           {/* Ghi chú kèm kết quả duyệt */}
           {verif && (
             <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Ghi chú xét duyệt (tuỳ chọn, sẽ gửi kèm kết quả)</h3>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Ghi chú cho NCC/TNV (tuỳ chọn, sẽ gửi kèm kết quả)</h3>
               <textarea
                 rows={3}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder={
-                  verif.type === 'provider'
-                    ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.'
-                    : verif.type === 'charity'
-                      ? 'Ví dụ: Giấy giới thiệu rõ, thông tin tổ chức khớp. OK duyệt.'
-                      : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'
-                }
+                placeholder={verif.type === 'provider' ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.' : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'}
                 className="w-full px-4 py-3 bg-white border-2 border-neutral-200 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-neutral-400 resize-none"
               />
             </section>
