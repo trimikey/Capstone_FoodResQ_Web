@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -22,6 +23,9 @@ import {
   type DeliveryHistoryItem,
   type TaskOffer,
 } from '@/hooks/useDeliveries';
+import { useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
+import PickupOrderCard from '@/components/deliveries/PickupOrderCard';
+import ConfirmPickupModal from '@/components/deliveries/ConfirmPickupModal';
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
@@ -82,11 +86,13 @@ function getLocation(): Promise<{ lng: number; lat: number }> {
 
 
 export default function DeliveriesPage() {
+  const router = useRouter();
   const { data: me, isLoading: meLoading } = useVolunteerMe();
   const { data: active } = useActiveDelivery();
   const { data: offers } = useMyOffers(!active); // chỉ poll offers khi chưa có đơn đang giao
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
+  const { data: pickupData } = useMyPickupOrders(!!me?.isShipper);
   const setAvailability = useSetAvailability();
   const acceptOffer = useAcceptOffer();
   const rejectOffer = useRejectOffer();
@@ -102,6 +108,12 @@ export default function DeliveriesPage() {
   // watchPosition tự bắn khi tài xế di chuyển; throttle gửi mạng tối đa 1 lần / 10s.
   // liveLoc: vị trí GPS tức thì (không throttle) để marker shipper trên bản đồ tự di chuyển.
   const [liveLoc, setLiveLoc] = useState<{ lng: number; lat: number } | null>(null);
+  /** Đơn nguyên liệu đang mở hộp thoại xác nhận đã lấy. */
+  const [pickingUp, setPickingUp] = useState<MyPickupOrder | null>(null);
+  const pickupOrders = pickupData ?? [];
+  const pendingPickups = pickupOrders.filter(
+    (o) => !o.pickup && o.delivery?.status !== 'delivered',
+  );
   const activeId = active?.id;
   useEffect(() => {
     if (!activeId || typeof navigator === 'undefined' || !navigator.geolocation) return;
@@ -247,6 +259,18 @@ export default function DeliveriesPage() {
           onClose={() => setQrScanOpen(false)}
         />
       )}
+      {pickingUp && (
+        <ConfirmPickupModal
+          order={pickingUp}
+          onClose={() => setPickingUp(null)}
+          // Chốt xong thì đơn rời khỏi danh sách "chờ lấy" — đưa thẳng sang lịch sử
+          // để shipper thấy biên nhận vừa ghi, thay vì đứng trước một chỗ trống.
+          onDone={() => {
+            setPickingUp(null);
+            router.push('/deliveries/history?tab=pickups');
+          }}
+        />
+      )}
       <div className="max-w-5xl mx-auto px-6 md:px-12 py-10 space-y-8">
         {/* Header + availability toggle */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -369,6 +393,44 @@ export default function DeliveriesPage() {
                 </p>
               </div>
             </div>
+
+            {/* Cảnh báo pickup time — chỉ hiện khi có thông tin giờ lấy hàng (campaign transport) */}
+            {active.source === 'campaign_transport' && active.campaignTransport && (
+              <div className="mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <span className="material-symbols-outlined text-amber-600 text-[20px] mt-0.5 shrink-0">schedule</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-amber-800">
+                    Thông tin lấy hàng từ nhà cung cấp
+                  </p>
+                  {active.campaignTransport.pickupStartTime && (
+                    <p className="text-sm font-extrabold text-amber-900 mt-1">
+                      ⏰ Đến lấy:{' '}
+                      <span className="bg-amber-200 px-2 py-0.5 rounded-lg">
+                        {active.campaignTransport.pickupStartTime}
+                        {active.campaignTransport.pickupEndTime
+                          ? ` – ${active.campaignTransport.pickupEndTime}`
+                          : ''}
+                      </span>
+                    </p>
+                  )}
+                  {active.campaignTransport.providerName && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      Nhà cung cấp: <span className="font-semibold">{active.campaignTransport.providerName}</span>
+                    </p>
+                  )}
+                  {active.campaignTransport.providerAddress && (
+                    <p className="text-xs text-amber-700">
+                      Địa chỉ: {active.campaignTransport.providerAddress}
+                    </p>
+                  )}
+                  {active.status !== 'qc_completed' && active.status !== 'in_transit' && (
+                    <p className="text-[11px] text-amber-600 mt-2 italic">
+                      ⚠️ Đến muộn từ 60 phút trở lên sẽ bị trừ 10 điểm trust.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Steps */}
             <div className="p-6">
@@ -683,6 +745,32 @@ export default function DeliveriesPage() {
                   </div>
                 </div>
               ))}
+          </div>
+        )}
+
+        {/* ĐƠN LẤY NGUYÊN LIỆU CHIẾN DỊCH
+            Không phải bản ghi `deliveries` nên không nằm trong luồng nhận/giao ở trên,
+            nhưng vẫn là "đơn phải đi lấy" của shipper — gom về đây để quản lý một chỗ. */}
+        {me?.isShipper && pendingPickups.length > 0 && (
+          <div className="space-y-4 mt-8">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">inventory</span>
+                Đơn lấy nguyên liệu
+              </h2>
+              <Link
+                href="/deliveries/history?tab=pickups"
+                className="text-sm font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+              >
+                Đơn đã lấy
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {pendingPickups.map((o) => (
+                <PickupOrderCard key={o.id} order={o} onConfirm={setPickingUp} />
+              ))}
+            </div>
           </div>
         )}
 

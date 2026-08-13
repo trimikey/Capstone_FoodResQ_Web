@@ -1,0 +1,122 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: ESG (esg module)
+' Platform ESG overview (public) · Provider ESG summary · Provider CSR report
+' NOTE: CO2_PER_KG = 2.5 kg CO2e avoided per kg of food rescued (FAO/WRI estimate)
+'==============================================================
+
+'──────────────────── 1. Platform ESG (public) ───────────────
+@startuml seq-esg-platform
+!include _seq-style.iuml
+title Platform ESG Overview Sequence Diagram
+
+actor "Guest / User" as User
+participant ":LandingPage" as Screen
+participant ":EsgController" as Ctrl
+participant ":EsgService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open landing page
+activate Screen
+Screen -> Ctrl : GET /esg/platform
+activate Ctrl
+Ctrl -> Svc : getPlatformEsg()
+activate Svc
+Svc -> Repo : $queryRaw SUM(quantity × weight_per_unit_kg) FILTER (status = completed)
+Svc -> Repo : $queryRaw COUNT(provider_profiles) / COUNT(volunteer_profiles)
+Repo -> DB : SELECT aggregates
+DB --> Repo : { kg, completed, providers, volunteers }
+Repo --> Svc : rows
+Svc -> Svc : co2SavedKg = round(kg × 2.5, 1)
+Svc --> Ctrl : { kgRescued, co2SavedKg, mealsServed, providers, volunteers }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render impact counters
+deactivate Screen
+@enduml
+
+'──────────────────── 2. Provider ESG Summary ────────────────
+@startuml seq-esg-provider
+!include _seq-style.iuml
+title Provider ESG Summary Sequence Diagram
+
+actor "Provider" as User
+participant ":ImpactScreen" as Screen
+participant ":EsgController" as Ctrl
+participant ":EsgService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open impact dashboard
+activate Screen
+Screen -> Ctrl : GET /esg/provider/me
+activate Ctrl
+Ctrl -> Svc : getProviderEsg(userId)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) select id, businessName
+Repo --> Svc : provider | null
+alt Provider profile not found
+  Svc --> Ctrl : 404 "Không tìm thấy hồ sơ cửa hàng"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : $queryRaw kg / completed / distinct receivers (status = completed)
+  Svc -> Repo : $queryRaw total & active listings (deleted_at IS NULL)
+  Repo -> DB : SELECT food_listings LEFT JOIN reservations
+  DB --> Repo : aggregates
+  Svc -> Svc : co2SavedKg = round(kg × 2.5, 1)
+  Svc --> Ctrl : { businessName, kgRescued, co2SavedKg, mealsServed, peopleHelped, totalListings, activeListings }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render KPI cards
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Provider CSR Report ─────────────────
+@startuml seq-esg-provider-report
+!include _seq-style.iuml
+title Provider CSR Report Sequence Diagram
+
+actor "Provider" as User
+participant ":CsrReportScreen" as Screen
+participant ":EsgController" as Ctrl
+participant ":EsgService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open CSR report (choose range in months)
+activate Screen
+Screen -> Ctrl : GET /esg/provider/me/report?months=6
+activate Ctrl
+Ctrl -> Svc : getProviderReport(userId, months)
+activate Svc
+Svc -> Svc : months = clamp(trunc(months) or 6, 1, 24)
+note right of Svc : chặn client xin chuỗi thời gian vô hạn
+Svc -> Repo : providerProfile.findUnique(userId)
+Repo --> Svc : provider | null
+alt Provider profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : $queryRaw monthly series (generate_series LEFT JOIN completed reservations)
+  note right of Svc : mốc thời gian quy về LÚC GIAO XONG\n(scanned_at / pickup_proof_at / updated_at),\ngiờ Asia/Ho_Chi_Minh — tháng rỗng vẫn là điểm 0
+  Svc -> Repo : $queryRaw kg & meals GROUP BY category
+  Svc -> Repo : $queryRaw COUNT(*) GROUP BY reservation status (fulfillment quality)
+  Svc -> Repo : $queryRaw top 5 listings ORDER BY meals DESC, kg DESC
+  Repo -> DB : SELECT reservations JOIN food_listings (4 aggregate queries)
+  DB --> Repo : monthlyRows, categoryRows, fulfillmentRows, topListingRows
+  Repo --> Svc : rows
+  Svc -> Svc : getProviderEsg(userId) for the summary block
+  Svc -> Svc : monthly[i].co2 = round(kg × 2.5, 1)
+  Svc --> Ctrl : { ...summary, rangeMonths, co2PerKg, monthly, byCategory, fulfillment, topListings }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render charts + export CSR report
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

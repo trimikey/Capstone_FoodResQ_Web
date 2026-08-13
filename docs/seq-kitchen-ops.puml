@@ -10,10 +10,10 @@
 title Create Campaign Shift Sequence Diagram
 
 actor "Charity" as User
-participant "KitchenOpsScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":KitchenOpsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : add shift (label, role, time, slots)
@@ -47,10 +47,10 @@ deactivate Screen
 title Apply to Shift Sequence Diagram
 
 actor "Volunteer" as User
-participant "CampaignDetailScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignDetailScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : apply to a shift
@@ -88,10 +88,10 @@ deactivate Screen
 title List Campaign Shifts Sequence Diagram
 
 actor "User" as User
-participant "CampaignDetailScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":CampaignDetailScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open shifts tab
@@ -117,10 +117,10 @@ deactivate Screen
 title Add Menu Item Sequence Diagram
 
 actor "Charity" as User
-participant "KitchenOpsScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":KitchenOpsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : add dish (recipe or custom)
@@ -160,12 +160,12 @@ deactivate Screen
 title Add Kitchen Safety Log Sequence Diagram
 
 actor "Chef" as User
-participant "KitchenOpsScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":KitchenOpsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : log safety check (+ photo)
@@ -207,11 +207,11 @@ deactivate Screen
 title Record Meal Distribution Sequence Diagram
 
 actor "Waiter" as User
-participant "KitchenOpsScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Repo
+participant ":KitchenOpsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Repo
 database "Database (PostGIS)" as DB
 
 User -> Screen : record a serving round (+ photo, location)
@@ -254,10 +254,10 @@ deactivate Screen
 title Distribution Summary Sequence Diagram
 
 actor "Charity" as User
-participant "KitchenOpsScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":KitchenOpsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open distribution dashboard
@@ -283,10 +283,10 @@ deactivate Screen
 title Add Meal Feedback Sequence Diagram
 
 actor "Beneficiary" as User
-participant "FeedbackScreen" as Screen
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "PrismaService" as Repo
+participant ":FeedbackScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : rate the meal (satisfaction, comment)

@@ -9,12 +9,12 @@
 !include _seq-style.iuml
 title Shipper Offer Broadcast Sequence Diagram
 
-participant "notification-push\n(BullMQ Worker)" as Worker
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":notification-push\n(BullMQ Worker)" as Worker
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 queue "notification-push" as Q
-participant "NotificationsGateway\n(WebSocket)" as WS
+participant ":NotificationsGateway\n(WebSocket)" as WS
 
 Worker -> Svc : broadcastToNearbyShippers(deliveryId, pickupLng, pickupLat)
 activate Svc
@@ -46,10 +46,10 @@ deactivate Svc
 title Accept Delivery Offer Sequence Diagram
 
 actor "Shipper" as User
-participant "OffersScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":OffersScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Accept
@@ -96,10 +96,10 @@ deactivate Screen
 title Reject Delivery Offer Sequence Diagram
 
 actor "Shipper" as User
-participant "OffersScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":OffersScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : tap Reject (reason?)
@@ -133,11 +133,11 @@ deactivate Screen
 title Update Delivery Status Sequence Diagram
 
 actor "Shipper" as User
-participant "ActiveTaskScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Repo
+participant ":ActiveTaskScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : advance status (+ photo?)
@@ -185,10 +185,10 @@ deactivate Screen
 title Cancel Assignment Sequence Diagram
 
 actor "Shipper" as User
-participant "ActiveTaskScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":ActiveTaskScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : cancel before pickup (reason?)
@@ -226,10 +226,10 @@ deactivate Screen
 title Fail Delivery Sequence Diagram
 
 actor "Shipper" as User
-participant "ActiveTaskScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":ActiveTaskScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : report failed (reason required)
@@ -272,10 +272,10 @@ deactivate Screen
 title Track Delivery (Receiver) Sequence Diagram
 
 actor "Receiver" as User
-participant "TrackScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":TrackScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open tracking map
@@ -312,10 +312,10 @@ deactivate Screen
 title Get Pending Offers & Active Task Sequence Diagram
 
 actor "Shipper" as User
-participant "ShipperHomeScreen" as Screen
-participant "DeliveriesController" as Ctrl
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Repo
+participant ":ShipperHomeScreen" as Screen
+participant ":DeliveriesController" as Ctrl
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open shipper home

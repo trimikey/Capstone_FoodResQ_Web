@@ -14,6 +14,10 @@ import {
   ReviewCampaignChangeDto,
   ReviewAssignmentDto,
   UpdateListingCategoryDto,
+  CreateFoodCatalogItemDto,
+  UpdateFoodCatalogItemDto,
+  CreateFoodCategoryDto,
+  UpdateFoodCategoryDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -200,6 +204,52 @@ export class AdminController {
   @ApiOperation({ summary: 'Admin: đổi phân loại của một tin thực phẩm' })
   updateListingCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateListingCategoryDto) {
     return this.adminService.updateListingCategory(id, dto.category);
+  }
+
+  // ── Danh mục thực phẩm ──────────────────────────────────────────────────────
+  @Get('food-catalog')
+  @ApiOperation({ summary: 'Admin: danh mục thực phẩm chi tiết (lọc ?category&search)' })
+  foodCatalog(@Query('search') search?: string) {
+    return this.adminService.listFoodCatalog({ search });
+  }
+
+  @Post('food-categories')
+  @ApiOperation({ summary: 'Admin: tạo nhóm thực phẩm mới' })
+  createFoodCategory(@CurrentUser() user: User, @Body() dto: CreateFoodCategoryDto) {
+    return this.adminService.createFoodCategory(user.id, dto);
+  }
+
+  @Patch('food-categories/:id')
+  @ApiOperation({ summary: 'Admin: sửa nhóm thực phẩm' })
+  updateFoodCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFoodCategoryDto) {
+    return this.adminService.updateFoodCategory(id, dto);
+  }
+
+  @Delete('food-categories/:id')
+  @ApiOperation({ summary: 'Admin: xoá nhóm thực phẩm (kèm mọi loại bên trong)' })
+  deleteFoodCategory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deleteFoodCategory(id);
+  }
+
+  @Post('food-catalog')
+  @ApiOperation({ summary: 'Admin: thêm một mục vào danh mục thực phẩm' })
+  createFoodCatalogItem(@CurrentUser() user: User, @Body() dto: CreateFoodCatalogItemDto) {
+    return this.adminService.createFoodCatalogItem(user.id, dto);
+  }
+
+  @Patch('food-catalog/:id')
+  @ApiOperation({ summary: 'Admin: sửa một mục trong danh mục thực phẩm' })
+  updateFoodCatalogItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateFoodCatalogItemDto,
+  ) {
+    return this.adminService.updateFoodCatalogItem(id, dto);
+  }
+
+  @Delete('food-catalog/:id')
+  @ApiOperation({ summary: 'Admin: xoá (mềm) một mục trong danh mục thực phẩm' })
+  deleteFoodCatalogItem(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deleteFoodCatalogItem(id);
   }
 
   @Get('campaign-change-requests')

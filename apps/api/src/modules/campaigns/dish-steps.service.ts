@@ -101,7 +101,7 @@ export class DishStepsService {
       where: {
         campaignId,
         volunteerId: volunteer.id,
-        role: { in: ['chef', 'waiter'] },
+        role: { in: ['chef', 'waiter', 'shipper'] },
         status: { in: ['assigned', 'checked_in', 'in_progress'] },
       },
       select: { id: true, role: true, status: true },

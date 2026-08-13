@@ -11,6 +11,7 @@ import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
 import { ReviewRequestModal } from './_components/ReviewRequestModal';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
+import Pagination from '@/components/shared/Pagination';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -474,37 +475,9 @@ export default function ProviderOrdersPage() {
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && !isError && (
-            <div className="border-t border-neutral-100 px-4 md:px-5 py-4 flex justify-center items-center gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors bg-white"
-              >
-                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-              </button>
-              <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-10 h-10 rounded-full text-sm font-medium transition-colors ${
-                      p === page
-                        ? 'bg-[#236c2a] text-white'
-                        : 'text-neutral-600 hover:bg-neutral-100 bg-white border border-neutral-200'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors bg-white"
-              >
-                <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-              </button>
+          {!isError && (
+            <div className="border-t border-neutral-100 px-4 md:px-5 py-4">
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} unit="đơn" />
             </div>
           )}
         </section>

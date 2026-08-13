@@ -186,6 +186,12 @@ enum TrustScoreReason {
   successful_rescue
   high_rating_received
   manual_bonus
+  /// Shipper đến điểm lấy hàng muộn ≥ 60 phút so với giờ hẹn.
+  late_pickup
+  /// Shipper huỷ chuyến giao sỉ SAU khi nhà cung cấp đã duyệt (kho đã bị giữ).
+  bulk_run_cancelled_after_approval
+  /// TNV điểm danh trễ quá thời gian ân hạn tại chiến dịch bếp ăn.
+  late_check_in
 
   @@map("trust_score_reason")
 }
@@ -675,6 +681,11 @@ model CampaignProviderRequest {
   pickupEndTime   String?   @map("pickup_end_time") @db.VarChar(8)
   /// Nếu true → sau accept, BE tạo delivery record + tìm shipper gần nhất.
   needsTransport  Boolean   @default(false) @map("needs_transport")
+  /// Chi tiết đơn yêu cầu nguyên liệu do bếp khai (loại thực phẩm, số kg, khung giờ
+  /// cần nhận, bán kính tìm, tiêu chuẩn ATVSTP bắt buộc, cam kết phi thương mại).
+  /// Để JSONB thay vì tách cột: bộ tiêu chí này còn thay đổi theo nghiệp vụ, thêm/bớt
+  /// field không phải migrate lại. Shape xem `DemandDetailsDto`.
+  demandDetails   Json?     @map("demand_details")
   reviewedAt   DateTime?                @map("reviewed_at") @db.Timestamptz(6)
   reviewedNote String?                  @map("reviewed_note") @db.VarChar(255)
   createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -685,6 +696,7 @@ model CampaignProviderRequest {
   provider ProviderProfile @relation(fields: [providerId], references: [id])
   transport CampaignTransport?
   delivery  Delivery? @relation("DeliveryForProviderRequest")
+  ingredientPickup CampaignIngredientPickup?
 
   @@unique([campaignId, providerId])
   @@index([campaignId])
@@ -722,6 +734,39 @@ model CampaignTransport {
   @@map("campaign_transports")
 }
 
+/// Biên nhận TNV (shipper) ĐÃ LẤY nguyên liệu tại NCC cho một đơn của chiến dịch.
+///
+/// Đơn `needsTransport = true` đi qua luồng /deliveries (đã có ảnh QC lúc `qc_completed`).
+/// Đơn `needsTransport = false` — bếp tự cử shipper đi lấy — trước đây KHÔNG có bằng chứng
+/// nào: TNV bấm "hoàn thành ca" là xong, không biết lấy đủ số kg đã đặt hay không.
+/// Bảng này là bằng chứng cho luồng đó: ảnh nguyên liệu + số kg THỰC NHẬN.
+///
+/// 1 đơn = 1 biên nhận (unique providerRequestId) — hàng lấy một lần từ một NCC.
+model CampaignIngredientPickup {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  providerRequestId String   @unique @map("provider_request_id") @db.Uuid
+  /// Denormalize để truy vấn theo chiến dịch không phải join ngược.
+  campaignId        String   @map("campaign_id") @db.Uuid
+  /// Assignment của shipper trong chiến dịch (nguồn của ràng buộc "phải điểm danh trước").
+  assignmentId      String   @map("assignment_id") @db.Uuid
+  volunteerId       String   @map("volunteer_id") @db.Uuid
+  /// Số kg bếp ĐẶT lúc gửi đơn — chụp lại tại thời điểm xác nhận vì `demandDetails`
+  /// có thể bị sửa sau, còn biên nhận thì phải bất biến.
+  requestedKg       Decimal? @map("requested_kg") @db.Decimal(10, 2)
+  /// Số kg shipper THỰC NHẬN tại NCC.
+  receivedKg        Decimal  @map("received_kg") @db.Decimal(10, 2)
+  /// Ảnh nguyên liệu đã lấy — bắt buộc, đây là bằng chứng chính.
+  photoUrl          String   @map("photo_url")
+  note              String?  @db.VarChar(500)
+  confirmedAt       DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(6)
+
+  providerRequest CampaignProviderRequest @relation(fields: [providerRequestId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([volunteerId])
+  @@map("campaign_ingredient_pickups")
+}
+
 enum CampaignRequestStatus {
   pending
   accepted
@@ -738,6 +783,10 @@ model CampaignVolunteerAssignment {
   role                 AssignmentRole
   status               AssignmentStatus                       @default(assigned)
   checkInTime          DateTime?                              @map("check_in_time") @db.Timestamptz
+  /// Số phút điểm danh TRỄ so với giờ phải có mặt (giờ ca trực, hoặc giờ bắt đầu
+  /// chiến dịch nếu không có ca). null = chưa điểm danh; 0 = đúng giờ.
+  /// Trễ quá thời gian ân hạn thì bị trừ uy tín và đánh dấu ở mọi nơi hiển thị.
+  checkInLateMinutes   Int?                                   @map("check_in_late_minutes")
   checkInLocation      Unsupported("geography(Point, 4326)")? @map("check_in_location")
   checkOutTime         DateTime?                              @map("check_out_time") @db.Timestamptz
   ingredientProofUrl   String?                                @map("ingredient_proof_url")
@@ -753,11 +802,17 @@ model CampaignVolunteerAssignment {
 
   shiftId String? @map("shift_id") @db.Uuid
 
+  /// NGÀY TRỰC cụ thể. Ca (`CampaignShift`) chỉ có giờ, không có ngày — với chiến dịch
+  /// nhiều ngày thì ca lặp lại mỗi ngày, nên nếu không ghi ngày ở đây tổ chức không biết
+  /// ai trực buổi nào. NULL = dữ liệu cũ, hiểu là `campaign.scheduledDate`.
+  workDate DateTime? @map("work_date") @db.Date
+
   campaign  KitchenCampaign  @relation(fields: [campaignId], references: [id])
   volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
   shift     CampaignShift?   @relation(fields: [shiftId], references: [id])
 
-  @@unique([shiftId, volunteerId, role])
+  // workDate nằm trong khoá: cùng một ca, TNV được nhận nhiều ngày khác nhau.
+  @@unique([shiftId, volunteerId, role, workDate])
   @@index([campaignId, volunteerId, role])
   @@index([campaignId])
   @@index([volunteerId])
@@ -1181,7 +1236,32 @@ model KitchenSafetyLog {
 model MealDistribution {
   id                  String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   campaignId          String                                 @map("campaign_id") @db.Uuid
+  /// TNV đứng tên chính cho đợt phát (giữ FK để báo cáo cũ không vỡ).
+  /// Khi phân công nhiều shipper thì đây là người đầu tiên trong `assigneeIds`.
   servedByVolunteerId String                                 @map("served_by_volunteer_id") @db.Uuid
+  /// Danh sách volunteer_profiles.id của TẤT CẢ shipper được phân công đi phát đợt này.
+  /// JSONB array<uuid>. Null/rỗng = chỉ có một người là `servedByVolunteerId`.
+  assigneeIds         Json?                                  @map("assignee_ids")
+  /// Các điểm phát của đợt: JSONB array<{ label, address, lng?, lat? }>.
+  /// Để JSONB thay vì bảng riêng cho nhất quán với `demand_details` — bộ field này
+  /// còn thay đổi và không cần truy vấn không gian trên từng điểm.
+  points              Json?
+  /// NULL = mới lên kế hoạch (đã điều shipper, chưa đi phát).
+  /// Có giá trị = shipper/tổ chức đã xác nhận phát xong.
+  /// Thống kê "đã phát" của chiến dịch CHỈ tính các đợt đã xác nhận, nếu không số
+  /// liệu bị đội lên ngay lúc lập kế hoạch.
+  completedAt         DateTime?                              @map("completed_at") @db.Timestamptz
+  /// volunteer_profiles.id của người bấm xác nhận. Không khai relation để khỏi thêm
+  /// khoá ngoại thứ hai lên VolunteerProfile — chỉ cần lưu vết ai xác nhận.
+  completedByVolunteerId String?                             @map("completed_by_volunteer_id") @db.Uuid
+  /// Số suất shipper BÁO CÁO đã phát thực tế (khác `servingsServed` là số tổ chức
+  /// lên kế hoạch). Thống kê ưu tiên con số này khi có — kế hoạch và thực tế lệch
+  /// nhau là chuyện thường (mưa, ít người tới, hàng hỏng).
+  actualServings      Int?                                   @map("actual_servings")
+  /// Số người thực nhận do shipper báo.
+  actualPeopleServed  Int?                                   @map("actual_people_served")
+  /// Ghi chú của shipper lúc chốt đợt phát (vd "còn dư 5 suất, đã gửi lại bếp").
+  completionNote      String?                                @map("completion_note")
   roundLabel          String?                                @map("round_label") @db.VarChar(100)
   servingsServed      Int                                    @default(0) @map("servings_served")
   peopleServed        Int                                    @default(0) @map("people_served")
@@ -1300,6 +1380,56 @@ model CampaignDishStep {
   @@index([status])
   @@index([scheduledTime])
   @@map("campaign_dish_steps")
+}
+
+/**
+ * Danh mục thực phẩm do admin tự quản lý.
+ *
+ * `food_category` (enum) chỉ có 9 nhóm lớn cố định — quá thô để mô tả thứ thực tế
+ * nhận được. Bảng này là lớp CHI TIẾT bên dưới mỗi nhóm, admin thêm/sửa được mà
+ * không cần đổi enum hay migrate:
+ *   canned_packaged → "Đồ hộp móp méo", "Đồ hộp cận date"
+ *   cooked_meal     → "Cơm gà còn dư", "Cháo dinh dưỡng"
+ *   fresh_fruit     → "Chuối", "Nho"
+ */
+/// Nhóm thực phẩm do admin tự tạo (vd "Đồ hộp / đóng gói", "Trái cây tươi").
+model FoodCatalogCategory {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String    @db.VarChar(120)
+  /// 'ready_to_eat' | 'raw_ingredient' | 'other' — nhóm lớn để xếp thứ tự hiển thị.
+  /// Để chuỗi thay vì enum Postgres: đây là cách gom nhóm cho UI, còn thay đổi theo
+  /// nghiệp vụ, không đáng tạo thêm một enum type phải migrate mỗi lần sửa.
+  group       String    @default("other") @db.VarChar(20)
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  items FoodCatalogItem[]
+
+  @@map("food_catalog_categories")
+}
+
+/// Một loại thực phẩm cụ thể nằm trong một nhóm (vd "Đồ hộp móp méo").
+model FoodCatalogItem {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  categoryId  String    @map("category_id") @db.Uuid
+  name        String    @db.VarChar(255)
+  description String?
+  /// Tắt thay vì xoá khi một loại không còn dùng nhưng vẫn cần giữ lịch sử.
+  isActive    Boolean   @default(true) @map("is_active")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  category FoodCatalogCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("food_catalog_items")
 }
 
 model BeneficiaryFeedback {

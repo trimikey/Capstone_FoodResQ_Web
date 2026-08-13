@@ -10,9 +10,10 @@ import { WeeklyScheduleController } from './weekly-schedule.controller';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { StorageModule } from '@/common/storage/storage.module';
 import { DeliveriesModule } from '@/modules/deliveries/deliveries.module';
+import { TrustModule } from '@/modules/trust/trust.module';
 
 @Module({
-  imports: [NotificationsModule, StorageModule, DeliveriesModule],
+  imports: [NotificationsModule, StorageModule, DeliveriesModule, TrustModule],
   controllers: [CampaignsController, KitchenOpsController, DishStepsController, WeeklyScheduleController],
   providers: [CampaignsService, CampaignsCron, KitchenOpsService, DishStepsService],
 })

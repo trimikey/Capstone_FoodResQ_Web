@@ -14,12 +14,12 @@ skinparam sequence {
 }
 
 actor "Receiver" as User
-participant "ReservationScreen" as Screen
-participant "ReservationsController" as Ctrl
-participant "ReservationsService" as Svc
-participant "SystemConfigService" as Cfg
-participant "Redlock" as Lock
-participant "PrismaService" as Repo
+participant ":ReservationScreen" as Screen
+participant ":ReservationsController" as Ctrl
+participant ":ReservationsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":Redlock" as Lock
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open Reserve form

@@ -9,6 +9,7 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
+import { TrustScoreReason } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
@@ -535,6 +536,34 @@ export class DeliveriesService {
       updateData.qcPhotoUrl = proofUrl;
       updateData.qcPhotoAt = new Date();
     }
+
+    // ── Late pickup penalty: trừ trust nếu lấy muộn ≥ 60 phút (campaign transport) ──
+    if (newStatus === 'qc_completed' && !delivery.reservation && delivery.providerRequestId) {
+      const request = await this.prisma.campaignProviderRequest.findUnique({
+        where: { id: delivery.providerRequestId },
+        select: { pickupStartTime: true, campaignId: true },
+      });
+      if (request?.pickupStartTime) {
+        const [h, m] = request.pickupStartTime.split(':').map(Number);
+        const nowVN = new Date(Date.now() + 7 * 3600_000);
+        // pickupStartTime hôm nay theo giờ VN
+        const deadline = new Date(nowVN);
+        deadline.setUTCHours(h - 7 + (h < 7 ? 24 : 0), m, 0, 0);
+        // Nếu deadline đã qua (pickupStart < giờ hiện tại → deadline < nowVN → muộn)
+        const lateMinutes = Math.max(0, (nowVN.getTime() - deadline.getTime()) / 60_000);
+        const LATE_THRESHOLD_MIN = 60;
+        if (lateMinutes >= LATE_THRESHOLD_MIN) {
+          void this.trust.applyDelta(
+            volunteer.userId,
+            -10,
+            TrustScoreReason.LATE_PICKUP,
+            'delivery',
+            deliveryId,
+          );
+        }
+      }
+    }
+
     if (newStatus === 'delivered') {
       if (!delivery.reservation) {
         if (!proofUrl) {
@@ -547,6 +576,22 @@ export class DeliveriesService {
           const result = await tx.delivery.update({ where: { id: deliveryId }, data: updateData });
           await tx.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } });
           await this.syncCampaignTransport(tx, deliveryId, 'delivered');
+
+          // Hoàn thành assignment của shipper trong chiến dịch
+          const [request] = await tx.$queryRaw<{ campaign_id: string }[]>`
+            SELECT campaign_id FROM campaign_provider_requests WHERE id = ${delivery.providerRequestId}::uuid
+          `;
+          if (request) {
+            await tx.campaignVolunteerAssignment.updateMany({
+              where: {
+                campaignId: request.campaign_id,
+                volunteerId: volunteer.id,
+                role: 'shipper',
+                status: { in: ['assigned', 'checked_in', 'in_progress'] },
+              },
+              data: { status: 'completed', pointsAwarded: 10 },
+            });
+          }
           return result;
         });
         void this.notifyCampaignTransport(deliveryId, 'delivered');
@@ -601,7 +646,7 @@ export class DeliveriesService {
       void this.trust.applyDelta(
         delivery.reservation.receiver.userId,
         2,
-        'successful_rescue',
+        TrustScoreReason.SUCCESSFUL_RESCUE,
         'reservation',
         delivery.reservation.id,
       );

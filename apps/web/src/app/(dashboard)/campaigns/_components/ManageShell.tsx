@@ -11,6 +11,7 @@ import {
   useCompleteCampaign,
   useCancelCampaign,
   type CampaignManageParticipant,
+  type DistributionPoint,
 } from '@/hooks/useCampaigns';
 import { campaignStartWindow } from '@/lib/campaign-schedule';
 import { errMsg, mediaUrl } from '@/lib/utils';
@@ -77,6 +78,11 @@ type CampaignData = {
   status: string;
   organizationName?: string | null;
   imageUrls?: string[];
+  /** Nhân sự đã tuyển so với ngưỡng tối thiểu do admin cấu hình. */
+  staffing?: { filled: number; needed: number; percent: number; minPercent: number };
+  /** Toạ độ bếp — mốc mở bản đồ khi ghim điểm phát. Null nếu chiến dịch chưa ghim vị trí. */
+  kitchenLng?: number | null;
+  kitchenLat?: number | null;
   participants?: CampaignManageParticipant[];
   distributions?: Array<{
     id: string;
@@ -84,8 +90,15 @@ type CampaignData = {
     servingsServed: number;
     peopleServed: number;
     leftoverServings: number;
+    /** TNV đứng tên chính — người đầu tiên trong `assignees`. */
     servedBy: string;
+    /** Toàn bộ shipper được phân công đi phát đợt này (rỗng với đợt tạo trước đây). */
+    assignees: Array<{ volunteerId: string; fullName: string }>;
+    /** Điểm phát kèm địa chỉ để shipper điều hướng tới. */
+    points: DistributionPoint[];
     distributedAt: string;
+    /** null = mới lên kế hoạch (chưa vào thống kê). Có giá trị = đã phát xong. */
+    completedAt: string | null;
     note?: string | null;
     photoUrl?: string | null;
     feedback?: unknown[];
@@ -285,12 +298,37 @@ export function ManageShell({
               <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
               {statusMeta.label}
             </span>
+            {/* Tiến độ tuyển TNV — hiện ngay cạnh nút để tổ chức biết còn thiếu bao
+                nhiêu người mới chạy được, thay vì bấm rồi mới ăn lỗi. */}
+            {c.status === 'open' && c.staffing && c.staffing.needed > 0 && c.staffing.minPercent > 0 && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-md ${
+                  c.staffing.percent >= c.staffing.minPercent
+                    ? 'bg-emerald-100/90 text-emerald-800'
+                    : 'bg-amber-100/90 text-amber-800'
+                }`}
+                title={`Cần tuyển tối thiểu ${c.staffing.minPercent}% để bắt đầu`}
+              >
+                <span className="material-symbols-outlined text-[14px]">group</span>
+                {c.staffing.filled}/{c.staffing.needed} TNV · {c.staffing.percent}%
+                <span className="opacity-70">(cần ≥{c.staffing.minPercent}%)</span>
+              </span>
+            )}
             {c.status === 'open' && (() => {
               // Cùng luật với backend: mở được từ 12h trước mốc bắt đầu (giờ VN)
               // để kịp các ca chuẩn bị rạng sáng.
               const win = campaignStartWindow(c);
-              const canStart = win.canStart;
-              const hint = win.canStart ? '' : win.message;
+              // Ngoài cửa sổ thời gian, còn phải tuyển đủ tỉ lệ TNV tối thiểu.
+              // Kiểm ở FE để nút giải thích được lý do TRƯỚC khi bấm; BE vẫn chặn lại.
+              const st = c.staffing;
+              const understaffed =
+                !!st && st.minPercent > 0 && st.needed > 0 && st.percent < st.minPercent;
+              const canStart = win.canStart && !understaffed;
+              const hint = !win.canStart
+                ? win.message
+                : understaffed
+                  ? `Mới tuyển ${st!.filled}/${st!.needed} TNV (${st!.percent}%) — cần tối thiểu ${st!.minPercent}%`
+                  : '';
               return (
                 <button
                   type="button"
@@ -304,9 +342,11 @@ export function ManageShell({
                     ? 'Đang bắt đầu...'
                     : canStart
                       ? 'Bắt đầu'
-                      : win.reason === 'too_early'
-                        ? 'Chưa tới giờ'
-                        : 'Quá ngày'}
+                      : understaffed
+                        ? `Thiếu TNV (${st!.percent}%)`
+                        : win.reason === 'too_early'
+                          ? 'Chưa tới giờ'
+                          : 'Quá ngày'}
                 </button>
               );
             })()}

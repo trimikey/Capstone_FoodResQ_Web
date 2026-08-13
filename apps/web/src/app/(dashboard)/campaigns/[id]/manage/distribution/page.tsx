@@ -20,14 +20,16 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 export default function DistributionPage() {
   const { campaign: c } = useManageContext();
 
-  // Chỉ TNV ĐÃ DUYỆT mới được đứng tên phụ trách đợt phát (backend kiểm lại).
+  // Chỉ SHIPPER đã duyệt mới được phân công đi phát tận điểm — đây là danh sách để
+  // điều người đi giao, nên đầu bếp/phục vụ không thuộc về đây (backend cũng chỉ nhận
+  // vai trò shipper cho `assigneeVolunteerIds`).
   // Khử trùng theo volunteerId: một người nhận NHIỀU CA sẽ có nhiều bản ghi phân công,
   // để nguyên thì danh sách hiện trùng tên và React báo lỗi key trùng.
   const APPROVED = ['assigned', 'checked_in', 'in_progress', 'completed'];
-  const approvedVolunteers = [
+  const approvedShippers = [
     ...new Map(
       (c.participants ?? [])
-        .filter((p) => APPROVED.includes(p.status))
+        .filter((p) => p.role === 'shipper' && APPROVED.includes(p.status))
         .map((p) => [
           p.volunteerId,
           { volunteerId: p.volunteerId, fullName: p.fullName, role: p.role },
@@ -46,6 +48,8 @@ export default function DistributionPage() {
       : null;
   const [filter, setFilter] = useState<FilterKey>('all');
   const [createOpen, setCreateOpen] = useState(false);
+  /** Đợt đang mở xem đủ danh sách điểm phát (chỉ một đợt tại một thời điểm). */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Phase highlight theo status.
   const playbookHighlight: CampaignPhaseKey | null =
@@ -83,11 +87,12 @@ export default function DistributionPage() {
         return dt.getTime() === today.getTime();
       });
     }
+    // Đã xong / đang chờ bám theo `completedAt` cho khớp cột trạng thái trong bảng.
     if (filter === 'done') {
-      return list.filter((d) => d.feedback && d.feedback.length > 0);
+      return list.filter((d) => d.completedAt != null);
     }
     // 'pending'
-    return list.filter((d) => !d.feedback || d.feedback.length === 0);
+    return list.filter((d) => d.completedAt == null);
   }, [filter, list, today]);
 
   // Xuất CSV danh sách đợt phát (download file local — không cần backend).
@@ -238,7 +243,9 @@ export default function DistributionPage() {
                 </thead>
                 <tbody>
                   {filteredList.map((d) => {
-                    const distStatus = d.feedback && d.feedback.length > 0 ? 'done' : 'pending';
+                    // Trạng thái theo `completedAt` — trước đây suy từ "có feedback chưa",
+                    // nên đợt phát xong mà chưa ai góp ý vẫn bị coi là đang chờ.
+                    const distStatus = d.completedAt ? 'done' : 'pending';
                     const initials = d.servedBy.split(' ').map((w: string) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
                     return (
                       <tr key={d.id}>
@@ -249,6 +256,47 @@ export default function DistributionPage() {
                             </span>
                             <p className="cm-dist-table-name">{d.roundLabel || `Đợt #${d.id.slice(0, 6)}`}</p>
                           </div>
+                          {/* Điểm phát — mặc định thu gọn 1 dòng, bấm mới xem đủ địa chỉ.
+                              Địa chỉ Nominatim rất dài, để nguyên thì cột phình ra
+                              đẩy hỏng cả bảng. */}
+                          {d.points?.length > 0 && (
+                            <div className="mt-1.5 pl-7">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}
+                                aria-expanded={expandedId === d.id}
+                                className="inline-flex max-w-full items-center gap-1 rounded-md text-[11px] text-emerald-700 hover:text-emerald-800"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">place</span>
+                                <span className="font-semibold">
+                                  {d.points.length} điểm phát
+                                </span>
+                                <span
+                                  className={`material-symbols-outlined text-[13px] transition-transform ${
+                                    expandedId === d.id ? 'rotate-180' : ''
+                                  }`}
+                                >
+                                  expand_more
+                                </span>
+                              </button>
+                              {expandedId === d.id && (
+                                <ul className="mt-1 space-y-1">
+                                  {d.points.map((pt, i) => (
+                                    <li
+                                      key={`${d.id}-pt-${i}`}
+                                      className="text-[11px] leading-snug text-neutral-500"
+                                    >
+                                      <span className="font-semibold text-neutral-700">
+                                        {i + 1}. {pt.label}
+                                      </span>
+                                      <br />
+                                      {pt.address}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <p className="cm-dist-table-time">
@@ -265,9 +313,18 @@ export default function DistributionPage() {
                             <span className="cm-dist-table-avatar">{initials}</span>
                             <span className="text-xs font-bold text-neutral-700">{d.servedBy}</span>
                           </div>
+                          {/* Đợt phân công nhiều shipper: liệt kê những người còn lại */}
+                          {d.assignees?.length > 1 && (
+                            <p className="mt-1 pl-8 text-[11px] text-neutral-500">
+                              + {d.assignees.length - 1} shipper khác:{' '}
+                              {d.assignees.slice(1).map((a) => a.fullName).join(', ')}
+                            </p>
+                          )}
                         </td>
                         <td>
-                          <span className={`cm-dist-status ${distStatus === 'done' ? 'cm-dist-status--done' : 'cm-dist-status--pending'}`}>
+                          {/* whitespace-nowrap: chip 2 chữ "Đang chờ" bị ngắt dòng làm
+                              lệch chiều cao cả hàng. */}
+                          <span className={`cm-dist-status whitespace-nowrap ${distStatus === 'done' ? 'cm-dist-status--done' : 'cm-dist-status--pending'}`}>
                             {distStatus === 'done' ? 'Đã xong' : 'Đang chờ'}
                           </span>
                         </td>
@@ -374,8 +431,13 @@ export default function DistributionPage() {
         <CreateDistributionModal
           campaignId={c.id}
           onClose={() => setCreateOpen(false)}
-          volunteers={approvedVolunteers}
+          volunteers={approvedShippers}
           remainingServings={remainingServings}
+          kitchenCoords={
+            c.kitchenLng != null && c.kitchenLat != null
+              ? { lng: c.kitchenLng, lat: c.kitchenLat }
+              : null
+          }
         />
       )}
     </>

@@ -143,7 +143,7 @@ export default function WeeklySchedulePage() {
                     </p>
                   ) : (
                     day.campaigns.map((c) => (
-                      <PersonalCampaignChip key={c.id} campaign={c} />
+                      <ScheduleChip key={c.id} campaign={c} isPersonal={isPersonal} />
                     ))
                   )}
                 </div>
@@ -156,14 +156,38 @@ export default function WeeklySchedulePage() {
   );
 }
 
-/** Card cho lịch TNV: hiển thị ca trực + role */
-function PersonalCampaignChip({ campaign }: { campaign: { id: string; campaignId: string; title: string; status: string; role?: string; shift?: { label: string; startTime: string; endTime: string } | null } }) {
+/**
+ * Ô lịch cho cả hai chế độ xem. Điểm đến khác nhau vì hai nhánh của
+ * `getWeeklySchedule` trả về shape khác nhau:
+ *  - TNV  (isPersonal): `id` = assignment UUID, `campaignId` = campaign UUID
+ *          → mở trang chi tiết chiến dịch công khai.
+ *  - Tổ chức          : `id` = campaign UUID, KHÔNG có `campaignId`
+ *          → mở trang quản lý chiến dịch của tổ chức.
+ *
+ * Trước đây cả hai đều trỏ tới `/campaigns/{campaignId}/manage/overview`:
+ * route `overview` không tồn tại (chỉ có `manage`, `manage/menu`, `manage/status`…)
+ * nên TNV bấm vào là 404, còn nhánh tổ chức thì `campaignId` undefined
+ * → `/campaigns/undefined/manage/overview`. Ngoài ra `manage` là khu vực của tổ
+ * chức sở hữu (BE `assertOwner`), TNV vào cũng chỉ nhận 403.
+ */
+function ScheduleChip({
+  campaign,
+  isPersonal,
+}: {
+  campaign: { id: string; campaignId?: string; title: string; status: string; role?: string; shift?: { label: string; startTime: string; endTime: string } | null };
+  isPersonal: boolean;
+}) {
   const statusMeta = STATUS_COLOR[campaign.status] ?? { label: campaign.status, cls: 'bg-neutral-100 text-neutral-600 border-neutral-200' };
   const roleMeta = campaign.role ? (ROLE_COLOR[campaign.role] ?? { label: campaign.role, cls: 'bg-neutral-100 text-neutral-600 border-neutral-200' }) : null;
 
+  const href = isPersonal
+    ? `/campaigns/${campaign.campaignId ?? campaign.id}`
+    : `/campaigns/${campaign.id}/manage`;
+
   return (
     <Link
-      href={`/campaigns/${campaign.campaignId}/manage/overview`}
+      href={href}
+      title={isPersonal ? 'Xem chi tiết chiến dịch' : 'Mở trang quản lý chiến dịch'}
       className="block p-2 rounded-xl border bg-white hover:border-emerald-300 hover:shadow-sm transition-all text-left"
     >
       {campaign.shift && (

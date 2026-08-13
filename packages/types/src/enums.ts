@@ -213,6 +213,12 @@ export enum TrustScoreReason {
   SUCCESSFUL_RESCUE = 'successful_rescue',
   HIGH_RATING_RECEIVED = 'high_rating_received',
   MANUAL_BONUS = 'manual_bonus',
+  /** Shipper đến điểm lấy hàng muộn ≥ 60 phút so với giờ hẹn. */
+  LATE_PICKUP = 'late_pickup',
+  /** Shipper huỷ chuyến giao sỉ SAU khi nhà cung cấp đã duyệt (kho đã bị giữ). */
+  BULK_RUN_CANCELLED_AFTER_APPROVAL = 'bulk_run_cancelled_after_approval',
+  /** TNV điểm danh trễ quá thời gian ân hạn tại chiến dịch bếp ăn. */
+  LATE_CHECK_IN = 'late_check_in',
 }
 
 export enum OfferStatus {
