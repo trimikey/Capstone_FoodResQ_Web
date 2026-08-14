@@ -8,7 +8,8 @@ import {
   useStartCampaign,
 } from '@/hooks/useCampaigns';
 import { RegistrationRow } from '../../../_components/CampaignManageShared';
-import { useManageContext, isSameUtcDay, daysUntilUtc } from '../../../_components/ManageShell';
+import { useManageContext } from '../../../_components/ManageShell';
+import { campaignStartWindow } from '@/lib/campaign-schedule';
 import { errMsg } from '@/lib/utils';
 import CampaignPlaybook, {
   type CampaignPhaseKey,
@@ -23,14 +24,12 @@ export default function RegistrationsPage() {
   const review = useReviewAssignment();
   const startCampaign = useStartCampaign();
 
+  // Cùng luật với backend: mở được từ 12h trước mốc bắt đầu (giờ VN).
+  const startWindow = campaignStartWindow(c);
+
   async function onStart() {
-    if (!isSameUtcDay(c.scheduledDate)) {
-      const days = daysUntilUtc(c.scheduledDate);
-      toast.error(
-        days > 0
-          ? `Chiến dịch dự kiến diễn ra vào ngày ${new Date(c.scheduledDate!).toLocaleDateString('vi-VN')} — còn ${days} ngày nữa. Không thể bắt đầu sớm.`
-          : 'Chiến dịch đã qua ngày dự kiến — không thể bắt đầu. Hãy huỷ nếu không thể tổ chức.',
-      );
+    if (!startWindow.canStart) {
+      toast.error(startWindow.message);
       return;
     }
     try {
@@ -193,23 +192,23 @@ export default function RegistrationsPage() {
               <button
                 type="button"
                 onClick={onStart}
-                disabled={c.status !== 'open' || !isSameUtcDay(c.scheduledDate) || startCampaign.isPending}
+                disabled={c.status !== 'open' || !startWindow.canStart || startCampaign.isPending}
                 title={
                   c.status !== 'open'
                     ? 'Chỉ bắt đầu khi chiến dịch đang ở trạng thái "Đang tuyển"'
-                    : !isSameUtcDay(c.scheduledDate)
-                      ? `Chỉ có thể bắt đầu vào đúng ngày diễn ra`
-                      : ''
+                    : startWindow.canStart
+                      ? ''
+                      : startWindow.message
                 }
                 className="cm-manage-cta-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
                 {startCampaign.isPending
                   ? 'Đang bắt đầu...'
-                  : isSameUtcDay(c.scheduledDate)
+                  : startWindow.canStart
                     ? 'Bắt đầu đợt mới'
-                    : daysUntilUtc(c.scheduledDate) > 0
-                      ? `Bắt đầu sau ${daysUntilUtc(c.scheduledDate)} ngày`
+                    : startWindow.reason === 'too_early'
+                      ? 'Chưa tới giờ'
                       : 'Quá ngày'}
               </button>
             </div>

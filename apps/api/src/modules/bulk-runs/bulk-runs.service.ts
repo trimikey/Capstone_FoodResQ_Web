@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { TrustScoreReason } from '@foodresq/types';
 import { randomBytes } from 'crypto';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -832,7 +833,7 @@ export class BulkRunsService implements OnModuleInit {
       void this.trust.applyDelta(
         shipperUserId,
         -BULK_CANCEL_PENALTY,
-        'bulk_run_cancelled_after_approval',
+        TrustScoreReason.BULK_RUN_CANCELLED_AFTER_APPROVAL,
         'bulk_run',
         runId,
       );
@@ -879,7 +880,7 @@ export class BulkRunsService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
       take: 15,
       include: {
-        listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+        listing: { select: { title: true, pickupAddress: true, imageUrls: true, quantityUnit: true } },
         provider: { select: { businessName: true, contactPhone: true } },
         stops: {
           orderBy: { orderIndex: 'asc' },
@@ -901,7 +902,7 @@ export class BulkRunsService implements OnModuleInit {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       take: 30,
       include: {
-        listing: { select: { title: true, pickupAddress: true } },
+        listing: { select: { title: true, pickupAddress: true, quantityUnit: true } },
         shipper: {
           select: {
             id: true,

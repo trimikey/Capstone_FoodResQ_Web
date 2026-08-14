@@ -17,7 +17,7 @@ import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
-import { PickupVerificationType } from '@foodresq/types';
+import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import type { RateTarget } from './dto/rate-reservation.dto';
 
@@ -38,6 +38,24 @@ export class ReservationsService {
     private trust: TrustService,
     @InjectQueue('notification-push') private notifQueue: Queue,
   ) {}
+
+  /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
+  private minuteOfDayVN(d: Date): number {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).formatToParts(d);
+    const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+    const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+    return h * 60 + m;
+  }
+
+  /** 420 → "07:00" */
+  private formatMinute(min: number): string {
+    return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  }
 
   /** Định dạng giờ VN (HH:mm dd/MM) cho thông báo lỗi hiển thị tới người dùng. */
   private formatVN(d: Date): string {
@@ -106,11 +124,14 @@ export class ReservationsService {
           pickup_start_time: Date;
           pickup_end_time: Date;
           expiry_time: Date;
+          daily_start_minute: number | null;
+          daily_end_minute: number | null;
         }[]
       >(
         Prisma.sql`
           SELECT id, quantity_remaining, status, max_per_reservation,
-                 pickup_start_time, pickup_end_time, expiry_time
+                 pickup_start_time, pickup_end_time, expiry_time,
+                 daily_start_minute, daily_end_minute
           FROM food_listings
           WHERE id = ${dto.listingId}::uuid AND deleted_at IS NULL
         `,
@@ -134,6 +155,19 @@ export class ReservationsService {
         throw new BadRequestException(
           'Đã quá giờ nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
         );
+      }
+
+      // Khung giờ MỞ CỬA TRONG NGÀY (vd 07:00–21:00). Khác với mốc bắt đầu/hạn lấy ở
+      // trên: tin kéo dài nhiều ngày vẫn phải đóng nhận ngoài giờ cửa hàng làm việc,
+      // nếu không người nhận đặt lúc 3h sáng rồi không ai giao được.
+      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
+      if (dayStart != null && dayEnd != null) {
+        const nowMinute = this.minuteOfDayVN(nowTs);
+        if (nowMinute < dayStart || nowMinute >= dayEnd) {
+          throw new BadRequestException(
+            `Ngoài giờ nhận hàng của cửa hàng (${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}). Vui lòng quay lại trong khung giờ này.`,
+          );
+        }
       }
 
       if (listingRow.quantity_remaining < dto.quantity) {
@@ -318,9 +352,16 @@ export class ReservationsService {
       throw new ForbiddenException('Chỉ nhà cung cấp của tin này mới quét được mã QR.');
     }
 
+    const verificationImageUrl =
+      reservation.receiver.faceImageUrl ?? reservation.receiver.idCardImageUrl;
+    const verificationImageAvailable = !!verificationImageUrl;
+
     // Lần quét đầu (confirmed → picked_up) mới đổi trạng thái + thông báo; quét lại thì idempotent.
     let status: string = reservation.status;
-    if (reservation.status === 'confirmed') {
+    // Nếu DB có URL ảnh đăng ký, chuyển trạng thái để provider đối chiếu trực tiếp.
+    // FE sẽ chỉ cho confirm sau khi ảnh load thành công; storage có thể là local /uploads
+    // hoặc object storage nên không fs.stat() tại đây.
+    if (reservation.status === 'confirmed' && verificationImageAvailable) {
       const updated = await this.prisma.reservation.update({
         where: { id: reservation.id },
         data: {
@@ -353,6 +394,7 @@ export class ReservationsService {
         idCardImageUrl: reservation.receiver.idCardImageUrl,
         idCardNumber: reservation.receiver.idCardNumber,
         enrolled: reservation.receiver.faceDescriptor !== null,
+        verificationImageAvailable,
       },
     };
   }
@@ -384,6 +426,11 @@ export class ReservationsService {
 
     // Lưu lại ảnh đăng ký đã dùng để đối chiếu làm bằng chứng bàn giao
     const proofUrl = reservation.receiver.faceImageUrl ?? reservation.receiver.idCardImageUrl ?? null;
+    if (!proofUrl) {
+      throw new BadRequestException(
+        'Ảnh khuôn mặt xác minh không còn khả dụng. Yêu cầu người nhận cập nhật lại selfie trước khi giao.',
+      );
+    }
     const verificationType: PickupVerificationType | null = reservation.receiver.faceImageUrl
       ? PickupVerificationType.FACE
       : reservation.receiver.idCardImageUrl
@@ -401,7 +448,7 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(reservation.receiver.userId, reservationId, 'successful_rescue', 2);
+    void this.applyTrustDelta(reservation.receiver.userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
 
     void this.notifications.notify(reservation.receiver.userId, {
       type: 'reservation',
@@ -479,7 +526,7 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(userId, reservationId, 'successful_rescue', 2);
+    void this.applyTrustDelta(userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
 
     return {
       reservationId: updated.id,
@@ -582,7 +629,7 @@ export class ReservationsService {
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
-      void this.applyTrustDelta(userId, reservationId, 'late_cancellation', -10);
+      void this.applyTrustDelta(userId, reservationId, TrustScoreReason.LATE_CANCELLATION, -10);
     }
 
     return { message: 'Reservation cancelled' };
@@ -964,7 +1011,7 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
-      await this.applyTrustDelta(r.receiver.userId, r.id, 'no_show', -20);
+      await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -20);
     }
 
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.
@@ -1110,7 +1157,12 @@ export class ReservationsService {
   }
 
   /** Uỷ quyền cho TrustService dùng chung (giữ wrapper để không đổi các call-site cũ). */
-  private applyTrustDelta(userId: string, referenceId: string, reason: string, delta: number) {
+  private applyTrustDelta(
+    userId: string,
+    referenceId: string,
+    reason: TrustScoreReason,
+    delta: number,
+  ) {
     return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
   }
 }

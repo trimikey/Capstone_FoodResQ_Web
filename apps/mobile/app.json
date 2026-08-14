@@ -36,13 +36,14 @@
       [
         "expo-image-picker",
         {
+          "cameraPermission": "FoodResQ cần camera để chụp ảnh xác minh và ảnh món ăn.",
           "photosPermission": "FoodResQ cần truy cập thư viện ảnh để bạn chọn ảnh đại diện."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "FoodResQ cần camera để quét mã QR nhận hàng."
+          "cameraPermission": "FoodResQ cần camera để chụp ảnh món ăn, xác minh và quét mã QR nhận hàng."
         }
       ],
       [

@@ -5,9 +5,10 @@ import { toast } from 'sonner';
 import { useMyReservations, useRateReservation } from '@/hooks/useReservation';
 import { useCreateReport } from '@/hooks/useReports';
 import { useMe } from '@/hooks/useProfile';
-import { UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { ReportReason, ReportTargetType } from '@foodresq/types';
+import Pagination from '@/components/shared/Pagination';
 
 // Shape trả về từ GET /reservations/my (đã mở rộng ở BE)
 interface ResHistory {
@@ -298,7 +299,7 @@ export default function HistoryPage() {
                     <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 ring-1 ring-neutral-150">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={t.listing.imageUrls[0] || fallbackImage(t.listing.category)}
+                        src={mediaUrl(t.listing.imageUrls[0] || fallbackImage(t.listing.category))}
                         alt={t.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -371,41 +372,9 @@ export default function HistoryPage() {
             })}
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-2 mt-10">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(p => p - 1)}
-                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-              </button>
-              
-              <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
-                  <button
-                    key={pageNum}
-                    onClick={() => setPage(pageNum)}
-                    className={`w-10 h-10 rounded-full text-sm font-bold transition-colors ${
-                      page === pageNum 
-                        ? 'bg-emerald-600 text-white' 
-                        : 'text-neutral-600 hover:bg-neutral-100'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                className="w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-              </button>
-            </div>
-          )}
+          <div className="mt-10">
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} unit="đơn" />
+          </div>
         </div>
       </div>
 
@@ -508,7 +477,7 @@ export default function HistoryPage() {
               <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
                 <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
                   <img
-                    src={viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category)}
+                    src={mediaUrl(viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category))}
                     alt={viewingItem.listing.title}
                     className="w-full h-full object-cover"
                   />

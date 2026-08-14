@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,10 +9,10 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, TextInput, Button, Chip } from 'react-native-paper';
+import { Text, TextInput, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import {
@@ -29,11 +29,19 @@ import {
 } from '@/hooks/useProviderListings';
 import { getCurrentCoords, type Coords } from '@/services/geolocation';
 import {
+  captureAndUploadListingImage,
   pickAndUploadListingImages,
   ImagePickCancelledError,
 } from '@/services/listingImageUpload';
 import { CATEGORY_LABELS, UNIT_LABELS } from '@/utils/listingFormat';
+import { buildValidationMessage } from '@/utils/listingValidation';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
+import {
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { AddressPicker } from '@/components/AddressPicker';
@@ -41,6 +49,7 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 const UNIT_KEYS = Object.keys(UNIT_LABELS);
+const DISCRETE_UNITS = ['portion', 'item', 'box'];
 
 function fmtDateTime(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -81,32 +90,42 @@ export default function CreateListingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const isEdit = !!editId;
   const editingIsPublished = !!editingListing && editingListing.status !== 'draft';
+
+  const categorySheetRef = useRef<BottomSheetModal>(null);
+  const [pendingCategories, setPendingCategories] = useState<string[]>([]);
+  const unitSheetRef = useRef<BottomSheetModal>(null);
+  const renderCategoryBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
   const titleText = isEdit
     ? editingIsPublished
       ? 'Sửa thông tin phụ'
       : 'Sửa tin nháp'
     : 'Đăng tin mới';
 
-  // mặc định: bắt đầu = +1h, kết thúc = +3h, hạn dùng = +5h
-  const now = new Date();
   const {
     control,
     handleSubmit,
     watch,
     setValue,
     reset,
+    trigger,
     formState: { errors },
   } = useForm<CreateListingFormInput>({
     resolver: zodResolver(createListingSchema),
     defaultValues: {
       title: '',
-      category: '',
+      categories: [] as string[],
+      categoryOtherLabel: '',
       quantityTotal: undefined as unknown as number,
       quantityUnit: 'portion',
       maxPerReservation: 1,
-      pickupStartTime: new Date(now.getTime() + 1 * 3600_000),
-      pickupEndTime: new Date(now.getTime() + 3 * 3600_000),
-      expiryTime: new Date(now.getTime() + 5 * 3600_000),
+      pickupStartTime: undefined,
+      pickupEndTime: undefined,
+      expiryTime: undefined,
       pickupAddress: '',
       description: '',
       weightPerUnitKg: undefined,
@@ -123,7 +142,8 @@ export default function CreateListingScreen() {
     if (!editingListing) return;
     reset({
       title: editingListing.title ?? '',
-      category: editingListing.category ?? '',
+      categories: editingListing.category ? [editingListing.category] : [],
+      categoryOtherLabel: '',
       quantityTotal: Number(editingListing.quantityTotal ?? editingListing.quantityRemaining) || 1,
       quantityUnit: editingListing.quantityUnit ?? 'portion',
       maxPerReservation: editingListing.maxPerReservation ?? 1,
@@ -144,17 +164,31 @@ export default function CreateListingScreen() {
     return <Redirect href="/(app)/home" />;
   }
 
-  const category = watch('category');
+  const categories = watch('categories');
+  const categoryOtherLabel = watch('categoryOtherLabel');
   const quantityUnit = watch('quantityUnit');
   const pickupAddress = watch('pickupAddress');
   const pickupStart = watch('pickupStartTime');
   const pickupEnd = watch('pickupEndTime');
   const expiry = watch('expiryTime');
 
+  const openCategorySheet = () => {
+    setPendingCategories(categories ?? []);
+    categorySheetRef.current?.present();
+  };
+  const confirmCategories = () => {
+    setValue('categories', pendingCategories, { shouldValidate: true });
+    categorySheetRef.current?.dismiss();
+  };
+  const selectUnit = (u: string) => {
+    setValue('quantityUnit', u, { shouldValidate: true });
+    unitSheetRef.current?.dismiss();
+  };
+
   const handlePickImages = async () => {
     try {
       setUploading(true);
-      const urls = await pickAndUploadListingImages(5);
+      const urls = await pickAndUploadListingImages(5 - imageUrls.length);
       setImageUrls((prev) => [...prev, ...urls].slice(0, 5));
       Popup.show({ type: 'success', text1: `Đã tải ${urls.length} ảnh` });
     } catch (err) {
@@ -165,8 +199,35 @@ export default function CreateListingScreen() {
     }
   };
 
+  const handleCaptureImage = async () => {
+    try {
+      setUploading(true);
+      const url = await captureAndUploadListingImage();
+      setImageUrls((prev) => [...prev, url].slice(0, 5));
+      Popup.show({ type: 'success', text1: 'Đã chụp và tải ảnh' });
+    } catch (err) {
+      if (err instanceof ImagePickCancelledError) return;
+      Popup.show({
+        type: 'error',
+        text1: 'Không chụp được ảnh',
+        text2: getErrorMessage(err),
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const removeImage = (url: string) => {
     setImageUrls((prev) => prev.filter((item) => item !== url));
+  };
+
+  const onInvalid = (errs: FieldErrors<CreateListingFormInput>) => {
+    Popup.show({
+      type: 'error',
+      text1: 'Vui lòng kiểm tra lại thông tin',
+      text2: buildValidationMessage(errs) || 'Có trường chưa hợp lệ, hãy xem chi tiết bên dưới.',
+      duration: 0,
+    });
   };
 
   const onSubmit = async (form: CreateListingFormInput) => {
@@ -184,15 +245,23 @@ export default function CreateListingScreen() {
       });
       return;
     }
+    if (!editingIsPublished && (!form.pickupStartTime || !form.pickupEndTime || !form.expiryTime)) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chưa chọn đủ thời gian',
+        text2: 'Vui lòng chọn giờ bắt đầu, giờ kết thúc và hạn sử dụng.',
+      });
+      return;
+    }
     const fullPayload: CreateListingInput = {
       title: form.title,
-      category: form.category,
+      category: form.categories[0],
       quantityTotal: form.quantityTotal,
       quantityUnit: form.quantityUnit,
       maxPerReservation: form.maxPerReservation,
-      pickupStartTime: form.pickupStartTime.toISOString(),
-      pickupEndTime: form.pickupEndTime.toISOString(),
-      expiryTime: form.expiryTime.toISOString(),
+      pickupStartTime: form.pickupStartTime!.toISOString(),
+      pickupEndTime: form.pickupEndTime!.toISOString(),
+      expiryTime: form.expiryTime!.toISOString(),
       pickupAddress: form.pickupAddress,
       lat: coords.lat,
       lng: coords.lng,
@@ -282,21 +351,34 @@ export default function CreateListingScreen() {
                 </View>
               ))}
               {imageUrls.length < 5 ? (
-                <Pressable
-                  style={[styles.addImage, uploading && styles.controlDisabled]}
-                  onPress={handlePickImages}
-                  disabled={uploading}
-                  accessibilityRole="button"
-                  accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Thêm ảnh món ăn'}
-                  accessibilityState={{ disabled: uploading }}
-                >
-                  <MaterialCommunityIcons
-                    name={uploading ? 'progress-upload' : 'camera-plus-outline'}
-                    size={26}
-                    color={COLORS.primary}
-                  />
-                  <Text style={styles.addImageText}>{uploading ? 'Đang tải' : 'Thêm ảnh'}</Text>
-                </Pressable>
+                <>
+                  <Pressable
+                    style={[styles.addImage, uploading && styles.controlDisabled]}
+                    onPress={handleCaptureImage}
+                    disabled={uploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Chụp ảnh món ăn'}
+                    accessibilityState={{ disabled: uploading, busy: uploading }}
+                  >
+                    <MaterialCommunityIcons
+                      name={uploading ? 'progress-upload' : 'camera-outline'}
+                      size={26}
+                      color={COLORS.primary}
+                    />
+                    <Text style={styles.addImageText}>{uploading ? 'Đang tải' : 'Chụp ảnh'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.addImage, uploading && styles.controlDisabled]}
+                    onPress={handlePickImages}
+                    disabled={uploading}
+                    accessibilityRole="button"
+                    accessibilityLabel={uploading ? 'Đang tải ảnh món ăn' : 'Chọn ảnh món ăn từ thư viện'}
+                    accessibilityState={{ disabled: uploading, busy: uploading }}
+                  >
+                    <MaterialCommunityIcons name="image-multiple-outline" size={26} color={COLORS.primary} />
+                    <Text style={styles.addImageText}>Thư viện</Text>
+                  </Pressable>
+                </>
               ) : null}
             </View>
           </Section>
@@ -310,193 +392,265 @@ export default function CreateListingScreen() {
             </View>
           ) : null}
 
-          <Section icon="food-apple-outline" title="Thông tin thực phẩm">
-            <Field label="Tiêu đề *" error={errors.title?.message}>
-              <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
-                <TextInput
-                  mode="outlined"
-                  label="Tên món hoặc loại thực phẩm"
-                  placeholder="VD: Cơm hộp cuối ngày"
-                  value={value}
-                  onChangeText={onChange}
-                  outlineColor={COLORS.outline}
-                  activeOutlineColor={COLORS.primary}
-                  style={styles.input}
-                  dense
-                  error={!!errors.title}
-                  disabled={editingIsPublished}
-                />
-              )} />
-            </Field>
+          {!editingIsPublished ? (
+            <Section icon="food-apple-outline" title="Thông tin thực phẩm">
+              <Field label="Tiêu đề *" error={errors.title?.message}>
+                <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Tên món hoặc loại thực phẩm"
+                    placeholder="VD: Cơm hộp cuối ngày"
+                    value={value}
+                    onChangeText={onChange}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    dense
+                    error={!!errors.title}
+                  />
+                )} />
+              </Field>
 
-            <Field label="Loại thực phẩm *" error={errors.category?.message}>
-              <View style={styles.chips}>
-                {CATEGORY_KEYS.map((k) => {
-                  const selected = category === k;
-                  return (
-                    <Chip
-                      key={k}
-                      selected={selected}
-                      showSelectedCheck
-                      onPress={() => !editingIsPublished && setValue('category', k, { shouldValidate: true })}
-                      disabled={editingIsPublished}
-                      selectedColor={selected ? COLORS.primary : COLORS.onSurface}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                      textStyle={[styles.chipText, selected && styles.chipTextSelected]}
-                    >
-                      {CATEGORY_LABELS[k]}
-                    </Chip>
-                  );
-                })}
-              </View>
-            </Field>
-          </Section>
-
-          <Section icon="scale-balance" title="Số lượng">
-            <View style={[styles.rowFields, compactLayout && styles.rowFieldsStacked]}>
-              <View style={styles.rowField}>
-                <Field
-                  label="Số lượng *"
-                  helper="Nhập tổng số phần có thể chia sẻ."
-                  error={errors.quantityTotal?.message}
+              <Field
+                label="Loại thực phẩm *"
+                error={errors.categories?.message ?? (errors as Record<string, { message?: string }>)['categories']?.message}
+              >
+                <Pressable
+                  onPress={openCategorySheet}
+                  style={[styles.categoryBtn, !!(errors.categories) && styles.categoryBtnError]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    categories && categories.length > 0
+                      ? `Loại thực phẩm đã chọn: ${categories.map((k) => CATEGORY_LABELS[k]).join(', ')}`
+                      : 'Chọn loại thực phẩm'
+                  }
                 >
-                  <Controller control={control} name="quantityTotal" render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      mode="outlined"
-                      label="Tổng số lượng"
-                      keyboardType="numeric"
-                      placeholder="VD: 20"
-                      value={value ? String(value) : ''}
-                      onChangeText={onChange}
-                      outlineColor={COLORS.outline}
-                      activeOutlineColor={COLORS.primary}
-                      style={styles.input}
-                      dense
-                      error={!!errors.quantityTotal}
-                      disabled={editingIsPublished}
-                    />
-                  )} />
-                </Field>
-              </View>
-              <View style={styles.rowField}>
-                <Field label="Đơn vị *">
-                  <View style={styles.chips}>
-                    {UNIT_KEYS.map((u) => {
-                      const selected = quantityUnit === u;
-                      return (
-                        <Chip
-                          key={u}
-                          selected={selected}
-                          compact={false}
-                          onPress={() => !editingIsPublished && setValue('quantityUnit', u, { shouldValidate: true })}
-                          disabled={editingIsPublished}
-                          selectedColor={selected ? COLORS.primary : COLORS.onSurface}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          textStyle={[styles.chipText, selected && styles.chipTextSelected]}
-                        >
-                          {UNIT_LABELS[u]}
-                        </Chip>
-                      );
-                    })}
+                  <View style={styles.categoryBtnIcon}>
+                    <MaterialCommunityIcons name="food-apple-outline" size={18} color={COLORS.primary} />
                   </View>
+                  <Text
+                    style={[
+                      styles.categoryBtnText,
+                      (!categories || categories.length === 0) && styles.categoryBtnPlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {categories && categories.length > 0
+                      ? categories.map((k) => CATEGORY_LABELS[k]).join(', ')
+                      : 'Loại thực phẩm'}
+                  </Text>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
+                </Pressable>
+              </Field>
+
+              {categories?.includes('other') ? (
+                <Field
+                  label="Mô tả loại thực phẩm *"
+                  helper="Nhập tên loại thực phẩm cụ thể, ví dụ: bánh cuốn, chè đậu."
+                  error={errors.categoryOtherLabel?.message}
+                >
+                  <Controller
+                    control={control}
+                    name="categoryOtherLabel"
+                    render={({ field: { onChange, value } }) => (
+                      <TextInput
+                        mode="outlined"
+                        label="Loại thực phẩm khác"
+                        placeholder="VD: bánh cuốn, chè đậu xanh"
+                        value={value ?? ''}
+                        onChangeText={onChange}
+                        outlineColor={COLORS.outline}
+                        activeOutlineColor={COLORS.primary}
+                        style={styles.input}
+                        dense
+                        error={!!errors.categoryOtherLabel}
+                        maxLength={100}
+                      />
+                    )}
+                  />
                 </Field>
-              </View>
-            </View>
+              ) : null}
+            </Section>
+          ) : null}
 
-            <Field
-              label="Tối đa mỗi lượt đặt *"
-              helper="Giới hạn 1-10 để nhiều người cùng nhận được."
-              error={errors.maxPerReservation?.message}
-            >
-              <Controller control={control} name="maxPerReservation" render={({ field: { onChange, value } }) => (
-                <TextInput
-                  mode="outlined"
-                  label="Số phần tối đa"
-                  keyboardType="numeric"
-                  value={value ? String(value) : ''}
-                  onChangeText={onChange}
-                  outlineColor={COLORS.outline}
-                  activeOutlineColor={COLORS.primary}
-                  style={styles.input}
-                  dense
-                  error={!!errors.maxPerReservation}
-                  disabled={editingIsPublished}
-                />
-              )} />
-            </Field>
-
-            <Field label="Khối lượng mỗi phần (tuỳ chọn)" helper="Dùng kg, ví dụ 0.35 nếu biết rõ.">
-              <Controller control={control} name="weightPerUnitKg" render={({ field: { onChange, value } }) => (
-                <TextInput
-                  mode="outlined"
-                  label="Kg mỗi phần"
-                  keyboardType="numeric"
-                  placeholder="VD: 0.35"
-                  value={value ? String(value) : ''}
-                  onChangeText={onChange}
-                  outlineColor={COLORS.outline}
-                  activeOutlineColor={COLORS.primary}
-                  style={styles.input}
-                  dense
-                  disabled={editingIsPublished}
-                />
-              )} />
-            </Field>
-          </Section>
-
-          <Section
-            icon="clock-outline"
-            title="Thời gian nhận"
-            helper="Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
-          >
-            <Field label="Giờ bắt đầu lấy *">
-              <DateButton
-                label="Bắt đầu"
-                value={pickupStart}
-                onPress={() => openDateTimePicker(pickupStart, (d) => setValue('pickupStartTime', d, { shouldValidate: true }))}
-                disabled={editingIsPublished}
-              />
-            </Field>
-            <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
-              <DateButton
-                label="Kết thúc"
-                value={pickupEnd}
-                onPress={() => openDateTimePicker(pickupEnd, (d) => setValue('pickupEndTime', d, { shouldValidate: true }))}
-                disabled={editingIsPublished}
-              />
-            </Field>
-            <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
-              <DateButton
-                label="Hạn dùng"
-                value={expiry}
-                onPress={() => openDateTimePicker(expiry, (d) => setValue('expiryTime', d, { shouldValidate: true }))}
-                disabled={editingIsPublished}
-              />
-            </Field>
-          </Section>
-
-          <Section
-            icon="map-marker-radius-outline"
-            title="Địa chỉ lấy hàng"
-            helper="Chọn gợi ý địa chỉ để hệ thống lưu đúng toạ độ."
-          >
-            <Field label="Địa chỉ lấy hàng *">
-              <AddressPicker
-                initialCoords={coords}
-                value={
-                  pickupAddress && coords
-                    ? { address: pickupAddress, lat: coords.lat, lng: coords.lng }
-                    : null
+          {!editingIsPublished ? (
+            <Section icon="scale-balance" title="Số lượng">
+              <Field
+                label="Số lượng *"
+                helper={
+                  DISCRETE_UNITS.includes(quantityUnit)
+                    ? 'Số nguyên (phần/cái/hộp không tính lẻ).'
+                    : 'Cho phép số thập phân, ví dụ 2.5 kg.'
                 }
-                onChange={({ address, lat, lng }) => {
-                  if (editingIsPublished) return;
-                  setValue('pickupAddress', address, { shouldValidate: true });
-                  setCoords({ lat, lng });
-                }}
-                error={errors.pickupAddress?.message}
-              />
-            </Field>
-          </Section>
+                error={errors.quantityTotal?.message}
+              >
+                <Controller control={control} name="quantityTotal" render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Tổng số lượng"
+                    keyboardType="numeric"
+                    placeholder="VD: 20"
+                    value={value ? String(value) : ''}
+                    onChangeText={onChange}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    dense
+                    error={!!errors.quantityTotal}
+                  />
+                )} />
+              </Field>
+
+              <Field label="Đơn vị *">
+                <Pressable
+                  onPress={() => unitSheetRef.current?.present()}
+                  style={styles.categoryBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Đơn vị: ${UNIT_LABELS[quantityUnit] ?? 'Chọn đơn vị'}`}
+                >
+                  <View style={styles.categoryBtnIcon}>
+                    <MaterialCommunityIcons name="scale-balance" size={18} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.categoryBtnText}>{UNIT_LABELS[quantityUnit] ?? 'Chọn đơn vị'}</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
+                </Pressable>
+              </Field>
+
+              <Field
+                label="Tối đa mỗi lượt đặt *"
+                helper="1–10, không vượt quá tổng số lượng."
+                error={errors.maxPerReservation?.message}
+              >
+                <Controller control={control} name="maxPerReservation" render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Số phần tối đa"
+                    keyboardType="numeric"
+                    value={value ? String(value) : ''}
+                    onChangeText={onChange}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    dense
+                    error={!!errors.maxPerReservation}
+                  />
+                )} />
+              </Field>
+
+              <Field label="Khối lượng mỗi phần (tuỳ chọn)" helper="Dùng kg, ví dụ 0.35 nếu biết rõ.">
+                <Controller control={control} name="weightPerUnitKg" render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Kg mỗi phần"
+                    keyboardType="numeric"
+                    placeholder="VD: 0.35"
+                    value={value ? String(value) : ''}
+                    onChangeText={onChange}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    dense
+                  />
+                )} />
+              </Field>
+            </Section>
+          ) : null}
+
+          {!editingIsPublished ? (
+            <Section
+              icon="clock-outline"
+              title="Thời gian nhận"
+              helper="Giờ bắt đầu phải cách hiện tại ít nhất 30 phút. Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
+            >
+              <Field label="Giờ bắt đầu lấy *" error={errors.pickupStartTime?.message}>
+                <DateButton
+                  label="Bắt đầu"
+                  value={pickupStart}
+                  onPress={() => openDateTimePicker(pickupStart ?? new Date(), (d) => {
+                    setValue('pickupStartTime', d, { shouldValidate: true });
+                    if (pickupEnd) trigger('pickupEndTime');
+                  })}
+                  hasError={!!errors.pickupStartTime}
+                />
+                <Pressable
+                  onPress={() => {
+                    setValue('pickupStartTime', new Date(), { shouldValidate: true });
+                    if (pickupEnd) trigger('pickupEndTime');
+                  }}
+                  style={styles.nowBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dùng thời điểm hiện tại"
+                >
+                  <MaterialCommunityIcons name="clock-fast" size={13} color={COLORS.primary} />
+                  <Text style={styles.nowBtnText}>Hiện tại</Text>
+                </Pressable>
+              </Field>
+              <Field label="Giờ kết thúc lấy *" error={errors.pickupEndTime?.message}>
+                <DateButton
+                  label="Kết thúc"
+                  value={pickupEnd}
+                  onPress={() => openDateTimePicker(pickupEnd ?? new Date(), (d) => {
+                    setValue('pickupEndTime', d, { shouldValidate: true });
+                    if (expiry) trigger('expiryTime');
+                  })}
+                  hasError={!!errors.pickupEndTime}
+                />
+                <Pressable
+                  onPress={() => {
+                    setValue('pickupEndTime', new Date(), { shouldValidate: true });
+                    if (expiry) trigger('expiryTime');
+                  }}
+                  style={styles.nowBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dùng thời điểm hiện tại"
+                >
+                  <MaterialCommunityIcons name="clock-fast" size={13} color={COLORS.primary} />
+                  <Text style={styles.nowBtnText}>Hiện tại</Text>
+                </Pressable>
+              </Field>
+              <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
+                <DateButton
+                  label="Hạn dùng"
+                  value={expiry}
+                  onPress={() => openDateTimePicker(expiry ?? new Date(), (d) => setValue('expiryTime', d, { shouldValidate: true }))}
+                  hasError={!!errors.expiryTime}
+                />
+                <Pressable
+                  onPress={() => setValue('expiryTime', new Date(), { shouldValidate: true })}
+                  style={styles.nowBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dùng thời điểm hiện tại"
+                >
+                  <MaterialCommunityIcons name="clock-fast" size={13} color={COLORS.primary} />
+                  <Text style={styles.nowBtnText}>Hiện tại</Text>
+                </Pressable>
+              </Field>
+            </Section>
+          ) : null}
+
+          {!editingIsPublished ? (
+            <Section
+              icon="map-marker-radius-outline"
+              title="Địa chỉ lấy hàng"
+              helper="Chọn gợi ý địa chỉ để hệ thống lưu đúng toạ độ."
+            >
+              <Field label="Địa chỉ lấy hàng *">
+                <AddressPicker
+                  initialCoords={coords}
+                  value={
+                    pickupAddress && coords
+                      ? { address: pickupAddress, lat: coords.lat, lng: coords.lng }
+                      : null
+                  }
+                  onChange={({ address, lat, lng }) => {
+                    setValue('pickupAddress', address, { shouldValidate: true });
+                    setCoords({ lat, lng });
+                  }}
+                  error={errors.pickupAddress?.message}
+                />
+              </Field>
+            </Section>
+          ) : null}
 
           <Section icon="shield-check-outline" title="Ghi chú an toàn">
             <Field label="Mô tả (tuỳ chọn)" helper="Ghi tình trạng món, cách đóng gói hoặc thời điểm nấu.">
@@ -548,7 +702,7 @@ export default function CreateListingScreen() {
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <Button
             mode="contained"
-            onPress={handleSubmit(onSubmit)}
+            onPress={handleSubmit(onSubmit, onInvalid)}
             loading={submitting}
             disabled={submitting || uploading}
             buttonColor={COLORS.primary}
@@ -565,6 +719,90 @@ export default function CreateListingScreen() {
           </Text>
         </View>
       </KeyboardAvoidingView>
+
+      <BottomSheetModal
+        ref={categorySheetRef}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={renderCategoryBackdrop}
+        handleIndicatorStyle={{ backgroundColor: COLORS.outline }}
+      >
+        <BottomSheetScrollView contentContainerStyle={styles.categorySheet}>
+          <Text style={styles.categorySheetTitle}>Chọn loại thực phẩm</Text>
+          <Text style={styles.categorySheetSub}>Chọn một hoặc nhiều loại phù hợp.</Text>
+          {CATEGORY_KEYS.map((k) => {
+            const selected = pendingCategories.includes(k);
+            return (
+              <Pressable
+                key={k}
+                onPress={() =>
+                  setPendingCategories((prev) =>
+                    prev.includes(k) ? prev.filter((c) => c !== k) : [...prev, k]
+                  )
+                }
+                style={styles.categoryItem}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={CATEGORY_LABELS[k]}
+              >
+                <MaterialCommunityIcons
+                  name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                  size={22}
+                  color={selected ? COLORS.primary : COLORS.onSurfaceVariant}
+                />
+                <Text style={[styles.categoryItemText, selected && styles.categoryItemSelected]}>
+                  {CATEGORY_LABELS[k]}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Button
+            mode="contained"
+            onPress={confirmCategories}
+            buttonColor={COLORS.primary}
+            style={styles.categoryConfirmBtn}
+            contentStyle={{ minHeight: 48 }}
+            labelStyle={{ fontSize: 15, fontWeight: '800' }}
+            disabled={pendingCategories.length === 0}
+          >
+            Xác nhận
+          </Button>
+        </BottomSheetScrollView>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={unitSheetRef}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={renderCategoryBackdrop}
+        handleIndicatorStyle={{ backgroundColor: COLORS.outline }}
+      >
+        <BottomSheetScrollView contentContainerStyle={styles.categorySheet}>
+          <Text style={styles.categorySheetTitle}>Chọn đơn vị</Text>
+          {UNIT_KEYS.map((u) => {
+            const selected = quantityUnit === u;
+            return (
+              <Pressable
+                key={u}
+                onPress={() => selectUnit(u)}
+                style={styles.categoryItem}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={UNIT_LABELS[u]}
+              >
+                <MaterialCommunityIcons
+                  name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+                  size={22}
+                  color={selected ? COLORS.primary : COLORS.onSurfaceVariant}
+                />
+                <Text style={[styles.categoryItemText, selected && styles.categoryItemSelected]}>
+                  {UNIT_LABELS[u]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </BottomSheetScrollView>
+      </BottomSheetModal>
     </SafeAreaView>
   );
 }
@@ -622,28 +860,36 @@ function DateButton({
   value,
   onPress,
   disabled,
+  hasError,
 }: {
   label: string;
-  value: Date;
+  value: Date | undefined;
   onPress: () => void;
   disabled?: boolean;
+  hasError?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={[styles.dateBtn, disabled && styles.controlDisabled]}
+      style={[styles.dateBtn, disabled && styles.controlDisabled, hasError && styles.dateBtnError]}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={`Chọn ${label.toLowerCase()}: ${fmtDateTime(value)}`}
+      accessibilityLabel={value ? `Chọn ${label.toLowerCase()}: ${fmtDateTime(value)}` : `Chọn ${label.toLowerCase()}`}
       accessibilityState={{ disabled }}
     >
       <View style={styles.dateIcon}>
-        <MaterialCommunityIcons name="calendar-clock" size={19} color={COLORS.primary} />
+        <MaterialCommunityIcons
+          name="calendar-clock"
+          size={19}
+          color={value ? COLORS.primary : COLORS.onSurfaceVariant}
+        />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.dateLabel}>{label}</Text>
-        <Text style={styles.dateText}>{fmtDateTime(value)}</Text>
+        <Text style={[styles.dateText, !value && styles.datePlaceholder]}>
+          {value ? fmtDateTime(value) : 'Chọn thời gian'}
+        </Text>
       </View>
       <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
     </Pressable>
@@ -721,7 +967,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addImage: {
-    width: 118,
+    width: 104,
     height: 82,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -754,8 +1000,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dateBtnError: { borderColor: COLORS.error },
   dateLabel: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
   dateText: { marginTop: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '700' },
+  datePlaceholder: { color: COLORS.onSurfaceVariant, fontWeight: '400' },
+  nowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingVertical: 3,
+  },
+  nowBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '700' },
   footer: {
     borderTopWidth: 1,
     borderTopColor: COLORS.outline,
@@ -767,4 +1023,41 @@ const styles = StyleSheet.create({
   submitContent: { minHeight: 50 },
   submitLabel: { fontSize: 16, fontWeight: '800' },
   footerHint: { marginTop: 7, fontSize: 12, lineHeight: 16, color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  categoryBtn: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  categoryBtnError: { borderColor: COLORS.error },
+  categoryBtnIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBtnText: { flex: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '600' },
+  categoryBtnPlaceholder: { color: COLORS.onSurfaceVariant, fontWeight: '400' },
+  categorySheet: { paddingHorizontal: 20, paddingBottom: 32 },
+  categorySheetTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface, marginBottom: 4 },
+  categorySheetSub: { fontSize: 13, color: COLORS.onSurfaceVariant, marginBottom: 12 },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outline,
+  },
+  categoryItemText: { fontSize: 15, color: COLORS.onSurface, flex: 1 },
+  categoryItemSelected: { color: COLORS.primary, fontWeight: '700' },
+  categoryConfirmBtn: { marginTop: 20, borderRadius: radius.md },
 });

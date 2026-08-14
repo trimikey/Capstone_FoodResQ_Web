@@ -1,0 +1,320 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Users (users module)
+' Get profile+stats · Update profile · Trust history ·
+' Face enrollment status · Enroll face (eKYC) ·
+' List providers · Provider listings
+' NOTE: all routes guarded by JwtAuthGuard + RolesGuard,
+'       except @Public() ones (providers, providers/:id/listings)
+'==============================================================
+
+'──────────────────── 1. Get My Profile ──────────────────────
+@startuml seq-user-get-me
+!include _seq-style.iuml
+title Get My Profile Sequence Diagram
+
+actor "User" as User
+participant ":ProfileScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open profile
+activate Screen
+Screen -> Ctrl : GET /users/me
+activate Ctrl
+Ctrl -> Svc : getMe(userId)
+activate Svc
+Svc -> Repo : user.findUnique(id) select profile fields
+Repo -> DB : SELECT users
+DB --> Repo : user | null
+Repo --> Svc : user
+alt User not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Svc : getMeStats(userId, role)
+  alt role = receiver
+    Svc -> Repo : $queryRaw aggregate reservations (kg, completed, cancelled, providers)
+    Svc -> Repo : $queryRaw receiver_profiles (isCharityOrg, address, ST_X/ST_Y location)
+  else role = provider
+    Svc -> Repo : $queryRaw aggregate listings + reservations (kg rescued, receivers helped)
+    Svc -> Repo : $queryRaw provider_profiles (businessName, verification, ST_X/ST_Y location)
+  else role = volunteer
+    Svc -> Repo : $queryRaw deliveries completed / in progress / campaigns joined
+    Svc -> Repo : volunteerProfile.findUnique include specializations (rank, points)
+  else role = admin
+    Svc -> Svc : stats = { kind: admin }
+  end
+  Repo -> DB : SELECT aggregates + role profile
+  DB --> Repo : rows
+  Svc --> Ctrl : { ...user, stats, volunteer, receiver, provider }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render profile & impact stats
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. Update My Profile ───────────────────
+@startuml seq-user-update-me
+!include _seq-style.iuml
+title Update My Profile Sequence Diagram
+
+actor "User" as User
+participant ":ProfileScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : edit name / phone / avatar / address / pin location
+activate Screen
+Screen -> Ctrl : PATCH /users/me (UpdateMeDto)
+activate Ctrl
+Ctrl -> Svc : updateMe(userId, dto)
+activate Svc
+Svc -> Repo : user.update(fullName, phone, avatarUrl)
+Repo -> DB : UPDATE users
+alt Phone already used (P2002)
+  Repo --> Svc : PrismaClientKnownRequestError
+  Svc --> Ctrl : 400 "Số điện thoại đã được sử dụng"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else updated
+  opt dto.address OR (lng & lat) provided
+    alt role = provider
+      Svc -> Repo : $executeRaw UPDATE provider_profiles SET address, location = ST_MakePoint(lng, lat)
+    else role = receiver
+      Svc -> Repo : $executeRaw UPDATE receiver_profiles SET address, location = ST_MakePoint(lng, lat)
+    end
+    Repo -> DB : UPDATE role profile (geography)
+  end
+  Svc --> Ctrl : updated user
+  Ctrl --> Screen : return data (200)
+  Screen --> User : profile saved
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Trust Score History ─────────────────
+@startuml seq-user-trust-history
+!include _seq-style.iuml
+title Trust Score History Sequence Diagram
+
+actor "User" as User
+participant ":TrustScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open trust score page
+activate Screen
+Screen -> Ctrl : GET /users/me/trust-history
+activate Ctrl
+Ctrl -> Svc : getTrustHistory(userId, limit=30)
+activate Svc
+Svc -> Repo : user.findUnique(id) select trustScore, status
+Repo --> Svc : current | null
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : trustScoreHistory.findMany(userId) order createdAt desc take 30
+  Repo -> DB : SELECT trust_score_history
+  DB --> Repo : items[]
+  Svc -> Svc : rescuesNeeded = ceil((60 - score + 1) / 2)
+  note right of Svc : mỗi đơn hoàn tất = +2 điểm\nRESTRICT_THRESHOLD = 60
+  Svc --> Ctrl : { score, status, items, recommendation }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render history + recovery hint
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. Face Enrollment Status ──────────────
+@startuml seq-user-face-status
+!include _seq-style.iuml
+title Face Enrollment Status Sequence Diagram
+
+actor "Receiver / Volunteer" as User
+participant ":FaceEnrollmentGate" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : enter dashboard
+activate Screen
+Screen -> Ctrl : GET /users/me/face-enrollment
+activate Ctrl
+Ctrl -> Svc : getFaceEnrollmentStatus(userId)
+activate Svc
+Svc -> Repo : user.findUnique(id) select role
+Repo --> Svc : role
+alt role = volunteer
+  Svc -> Repo : volunteerProfile.findUnique(userId) select face fields
+else role = receiver
+  Svc -> Repo : receiverProfile.findUnique(userId) select face fields
+end
+Repo -> DB : SELECT volunteer_profiles / receiver_profiles
+DB --> Repo : profile | null
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc --> Ctrl : { enrolled: faceDescriptor != null, faceImageUrl, idCardImageUrl }
+  Ctrl --> Screen : return data (200)
+  alt enrolled = false
+    Screen --> User : block app & open enrollment modal
+  else enrolled = true
+    Screen --> User : continue to dashboard
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 5. Enroll Face (eKYC) ──────────────────
+@startuml seq-user-enroll-face
+!include _seq-style.iuml
+title Enroll Face (eKYC) Sequence Diagram
+
+actor "Receiver / Volunteer" as User
+participant ":FaceEnrollmentModal\n(Camera)" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":FaceMatchService" as Face
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : capture selfie and/or ID card photo
+activate Screen
+Screen -> Ctrl : POST /users/me/face-enrollment (multipart: selfie?, idCard?)
+activate Ctrl
+Ctrl -> Ctrl : validate MIME (jpeg/png) + size ≤ 5MB + at least one file
+alt No file OR wrong MIME OR > 5MB
+  Ctrl --> Screen : 400 BadRequest
+  Screen --> User : show error message
+else valid files
+  Ctrl -> Svc : enrollFace(userId, idCard?, selfie?)
+  activate Svc
+  Svc -> Repo : user.findUnique(id) select role
+  Repo --> Svc : role
+  alt role not in (receiver, volunteer)
+    Svc --> Ctrl : 400 "Vai trò này không cần đăng ký khuôn mặt"
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else eligible role
+    opt selfie provided
+      Svc -> Face : getFaceDescriptor(selfie)
+      Face --> Svc : selfieDescriptor | null
+    end
+    opt idCard provided
+      Svc -> Face : getFaceDescriptor(idCard)
+      Face --> Svc : idCardDescriptor | null
+    end
+    alt No face detected in a photo
+      Svc --> Ctrl : 400 "Không nhận diện được khuôn mặt"
+      Ctrl --> Screen : return error
+      Screen --> User : retake photo
+    else face(s) detected
+      opt both photos provided
+        Svc -> Face : compare(selfieDescriptor, idCardDescriptor)
+        Face --> Svc : { matched, distance }
+        alt not matched
+          Svc --> Ctrl : 400 "Selfie không khớp với ảnh CCCD"
+          Ctrl --> Screen : return error
+          Screen --> User : show error message
+        end
+      end
+      Svc -> Storage : saveImage(idCard, 'id-cards') / saveImage(selfie, 'faces')
+      Storage --> Svc : idCardUrl, faceUrl
+      alt role = volunteer
+        Svc -> Repo : volunteerProfile.update(faceDescriptor, faceImageUrl, idCardImageUrl)
+      else role = receiver
+        Svc -> Repo : receiverProfile.update(faceDescriptor, faceImageUrl, idCardImageUrl)
+      end
+      note right of Svc : ưu tiên descriptor từ selfie\n(chất lượng hơn ảnh in trên thẻ)
+      Repo -> DB : UPDATE profile SET face_descriptor
+      Svc --> Ctrl : { enrolled: true, enrolledWith, matchDistance }
+      Ctrl --> Screen : return data (201)
+      Screen --> User : enrollment done — unlock reserve / go available
+    end
+  end
+  deactivate Svc
+end
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 6. List Providers (public) ─────────────
+@startuml seq-user-list-providers
+!include _seq-style.iuml
+title List Providers Sequence Diagram
+
+actor "Charity" as User
+participant ":ProvidersScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open providers directory
+activate Screen
+Screen -> Ctrl : GET /users/providers
+activate Ctrl
+Ctrl -> Svc : getProviders()
+activate Svc
+Svc -> Repo : $queryRaw users JOIN provider_profiles LEFT JOIN food_listings
+note right of Svc : chỉ provider approved + active,\nHAVING COUNT(active listings) > 0
+Repo -> DB : SELECT ... GROUP BY ... ORDER BY MIN(pickup_end_time)
+DB --> Repo : rows[]
+Svc -> Svc : map rows → { providerProfile, activeListingsCount }
+Svc --> Ctrl : providers[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render provider cards
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Provider Listings (public) ──────────
+@startuml seq-user-provider-listings
+!include _seq-style.iuml
+title Provider Listings Sequence Diagram
+
+actor "Charity" as User
+participant ":ProviderDetailScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open a provider
+activate Screen
+Screen -> Ctrl : GET /users/providers/:providerProfileId/listings
+activate Ctrl
+Ctrl -> Svc : getProviderListings(providerProfileId)
+activate Svc
+Svc -> Repo : $queryRaw food_listings WHERE provider_id, status=active, deleted_at IS NULL, pickup_end_time > NOW()
+Repo -> DB : SELECT food_listings ORDER BY pickup_end_time
+DB --> Repo : rows[]
+Svc --> Ctrl : listings[]
+Ctrl --> Screen : return data (200)
+Screen --> User : render what the provider has now
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

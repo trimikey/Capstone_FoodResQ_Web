@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { mediaUrl } from '@/lib/utils';
 import { useProviders, useProviderListings, type ProviderSummary, type ProviderListing } from '@/hooks/useProviders';
 import {
   useConfirmCampaignTransportReceipt,
@@ -10,7 +11,7 @@ import {
 } from '@/hooks/useCampaigns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { mediaUrl } from '@/lib/utils';
+import IngressRequestPanel from './IngressRequestPanel';
 
 interface ProposalForm {
   businessName: string;
@@ -217,6 +218,11 @@ export default function SuppliersSection({ campaigns = [] }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Đơn yêu cầu nguyên liệu — luồng chính: khai nhu cầu trước, hệ thống gợi ý NCC */}
+      <div className="mb-4">
+        <IngressRequestPanel campaigns={campaigns} />
+      </div>
+
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-bold text-gray-800">Danh sách nhà cung cấp</h3>

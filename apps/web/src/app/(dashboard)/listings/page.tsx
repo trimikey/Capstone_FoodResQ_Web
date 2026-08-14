@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useListings } from '@/hooks/useListings';
+import { searchAddress, type AddressSuggestion } from '@/lib/geocode';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
 import ListingCard, { type ListingItem } from '@/components/listings/ListingCard';
 import { useSearchParams } from 'next/navigation';
@@ -31,25 +32,15 @@ function ListingsPageContent() {
   const searchParams = useSearchParams();
   const queryParam = searchParams ? searchParams.get('q') || '' : '';
   const [search, setSearch] = useState(queryParam);
-  const [debouncedSearch, setDebouncedSearch] = useState(queryParam);
 
   useEffect(() => {
     setSearch(queryParam);
   }, [queryParam]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search.trim());
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [search]);
-
   const [category, setCategory] = useState<FoodCategory | ''>('');
   const [distanceFilter, setDistanceFilter] = useState<number>(5); // Default 5km
   const [timeFilter, setTimeFilter] = useState<'all' | 'soon' | 'today'>('all');
   const [activePill, setActivePill] = useState<string | null>(null);
-  const [autoExpandedRadius, setAutoExpandedRadius] = useState(false);
   // Dropdown bộ lọc: bấm để mở, bấm ra ngoài/chọn để đóng (không dùng hover để khỏi tự đóng)
   const [openMenu, setOpenMenu] = useState<'distance' | 'category' | 'time' | null>(null);
 
@@ -62,18 +53,39 @@ function ListingsPageContent() {
     lng: DEFAULT_LNG,
   });
   const [locStatus, setLocStatus] = useState<'default' | 'locating' | 'gps' | 'denied'>('default');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualQuery, setManualQuery] = useState('');
+  const [manualSuggestions, setManualSuggestions] = useState<AddressSuggestion[]>([]);
+  const [manualSearching, setManualSearching] = useState(false);
+  const [manualLocationLabel, setManualLocationLabel] = useState<string | null>(null);
+  const [geoBlockedReason, setGeoBlockedReason] = useState<'insecure' | 'denied' | 'unsupported' | null>(null);
+
+  const isGeoSecureContext = () => {
+    if (typeof window === 'undefined') return true;
+    return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  };
 
   // Xin GPS (gọi lúc mở trang + khi bấm "Định vị lại")
   const locate = useCallback(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocStatus('denied');
+      setGeoBlockedReason('unsupported');
+      setManualOpen(true);
+      return;
+    }
+    if (!isGeoSecureContext()) {
+      setLocStatus('denied');
+      setGeoBlockedReason('insecure');
+      setManualOpen(true);
       return;
     }
     setLocStatus('locating');
+    setGeoBlockedReason(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setLocStatus('gps');
+        setManualLocationLabel(null);
       },
       () => setLocStatus('denied'), // từ chối/không lấy được → giữ tâm HCM
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
@@ -84,19 +96,58 @@ function ListingsPageContent() {
     locate();
   }, [locate]);
 
-  const listingParams = useMemo(
-    () => ({
-      lat: userLoc.lat,
-      lng: userLoc.lng,
-      radiusKm: distanceFilter,
-      search: debouncedSearch || undefined,
-      category: (category as FoodCategory) || undefined,
-      limit: 100,
-    }),
-    [userLoc.lat, userLoc.lng, distanceFilter, debouncedSearch, category],
-  );
+  useEffect(() => {
+    if (!manualOpen) return;
+    const query = manualQuery.trim();
+    if (query.length < 3) {
+      setManualSuggestions([]);
+      setManualSearching(false);
+      return;
+    }
 
-  const { data: apiListings, isLoading, isError, refetch } = useListings(listingParams);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setManualSearching(true);
+      const results = await searchAddress(query, controller.signal);
+      setManualSuggestions(results);
+      setManualSearching(false);
+    }, 500);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [manualOpen, manualQuery]);
+
+  const applyManualLocation = (suggestion: AddressSuggestion) => {
+    setUserLoc({ lat: suggestion.lat, lng: suggestion.lng });
+    setLocStatus('gps');
+    setManualLocationLabel(suggestion.displayName);
+    setManualOpen(false);
+    setManualQuery(suggestion.displayName);
+    setManualSuggestions([]);
+    setGeoBlockedReason(null);
+  };
+
+  const locationStatusText = useMemo(() => {
+    if (manualLocationLabel) return `Đang hiển thị quanh: ${manualLocationLabel}`;
+    if (locStatus === 'gps') return 'Đang hiển thị thực phẩm quanh vị trí GPS của bạn';
+    if (locStatus === 'locating') return 'Đang xác định vị trí…';
+    if (geoBlockedReason === 'insecure') {
+      return 'Chrome chặn định vị trên địa chỉ LAN không HTTPS. Hãy chọn vị trí thủ công hoặc mở bằng localhost.';
+    }
+    if (locStatus === 'denied') return 'Chưa cấp quyền vị trí — đang dùng trung tâm TP.HCM.';
+    return 'Trung tâm TP.HCM';
+  }, [geoBlockedReason, locStatus, manualLocationLabel]);
+
+  const { data: apiListings, isLoading, isError, refetch } = useListings({
+    lat: userLoc.lat,
+    lng: userLoc.lng,
+    radiusKm: distanceFilter,
+    search: search.trim() || undefined,
+    category: (category as FoodCategory) || undefined,
+    limit: 100, // tải nhiều điểm để bản đồ hiển thị đủ khi zoom ra
+  });
 
   // Luôn dùng dữ liệu thật từ API. search/category đã được lọc phía BE (PostGIS);
   // chỉ lọc thêm activePill (chip nhanh) phía client cho tức thời.
@@ -117,37 +168,13 @@ function ListingsPageContent() {
     return list;
   }, [apiListings, activePill, timeFilter]);
 
-  useEffect(() => {
-    if (
-      locStatus === 'gps' &&
-      !isLoading &&
-      !isError &&
-      !autoExpandedRadius &&
-      distanceFilter === 5 &&
-      !debouncedSearch &&
-      !category &&
-      !activePill &&
-      listings.length < 3
-    ) {
-      setAutoExpandedRadius(true);
-      setDistanceFilter(20);
-    }
-  }, [
-    locStatus,
-    isLoading,
-    isError,
-    autoExpandedRadius,
-    distanceFilter,
-    debouncedSearch,
-    category,
-    activePill,
-    listings.length,
-  ]);
-
   // If search or categories change, auto-select first pin of the filtered list
   useEffect(() => {
-    const firstId = listings[0]?.id ?? null;
-    setSelectedPinId((current) => (current === firstId ? current : firstId));
+    if (listings.length > 0) {
+      setSelectedPinId(listings[0].id);
+    } else {
+      setSelectedPinId(null);
+    }
   }, [listings]);
 
   const handlePillClick = (pillName: string) => {
@@ -186,12 +213,23 @@ function ListingsPageContent() {
                 </span>
                 {locStatus === 'locating' ? 'Đang định vị…' : 'Định vị lại'}
               </button>
+              <button
+                onClick={() => setManualOpen((open) => !open)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm ${manualOpen
+                  ? 'border-[#236c2a] text-[#236c2a] bg-[#eef7ee]'
+                  : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
+                  }`}
+                title="Chọn vị trí tìm kiếm thủ công"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit_location_alt</span>
+                Chọn vị trí
+              </button>
 
             </div>
           </div>
 
           {/* Trạng thái định vị */}
-          <div className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
+          <div title={locationStatusText} className={`flex items-center gap-1.5 text-xs font-semibold -mt-3 ${locStatus === 'gps' ? 'text-emerald-700' : locStatus === 'denied' ? 'text-amber-600' : 'text-neutral-400'
             }`}>
             <span className="material-symbols-outlined text-[14px]">
               {locStatus === 'gps' ? 'location_on' : locStatus === 'denied' ? 'location_off' : 'location_searching'}
@@ -205,10 +243,65 @@ function ListingsPageContent() {
                   : 'Trung tâm TP.HCM'}
           </div>
 
-          {autoExpandedRadius && locStatus === 'gps' && distanceFilter === 20 && (
-            <div className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-              <span className="material-symbols-outlined text-[18px]">travel_explore</span>
-              <span>Quanh vị trí của bạn có ít món, hệ thống đã mở rộng bán kính lên 20km.</span>
+          {manualLocationLabel && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 -mt-2">
+              Đang tìm thực phẩm quanh vị trí đã chọn: {manualLocationLabel}
+            </div>
+          )}
+
+          {geoBlockedReason === 'insecure' && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 -mt-2">
+              Chrome không cho web trên địa chỉ LAN chưa HTTPS dùng GPS. Mở bằng localhost trên máy này, hoặc chọn vị trí thủ công bên dưới.
+            </div>
+          )}
+
+          {manualOpen && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm space-y-3 -mt-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-neutral-900">Chọn vị trí tìm kiếm</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">Nhập địa chỉ rồi chọn một gợi ý để tìm thực phẩm quanh khu vực đó.</p>
+                </div>
+                <button
+                  onClick={() => setManualOpen(false)}
+                  className="text-neutral-400 hover:text-neutral-700"
+                  title="Đóng"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">
+                  location_on
+                </span>
+                <input
+                  type="text"
+                  value={manualQuery}
+                  onChange={(e) => setManualQuery(e.target.value)}
+                  placeholder="VD: Vinhomes Grand Park, Thủ Đức"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:border-[#236c2a] focus:ring-1 focus:ring-[#236c2a]"
+                />
+              </div>
+              {(manualSearching || manualSuggestions.length > 0) && (
+                <div className="rounded-xl border border-neutral-200 overflow-hidden">
+                  {manualSearching && (
+                    <div className="px-3 py-2 text-xs text-neutral-500 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      Đang tìm địa chỉ...
+                    </div>
+                  )}
+                  {manualSuggestions.map((item) => (
+                    <button
+                      key={`${item.lat}:${item.lng}:${item.displayName}`}
+                      onClick={() => applyManualLocation(item)}
+                      className="w-full text-left px-3 py-2.5 text-xs text-neutral-700 hover:bg-[#eef7ee] border-t border-neutral-100 flex items-start gap-2"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-[#236c2a] mt-0.5">place</span>
+                      <span className="line-clamp-2">{item.displayName}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -255,7 +348,7 @@ function ListingsPageContent() {
                   {[2, 5, 10, 20, 50].map((d) => (
                     <button
                       key={d}
-                      onClick={() => { setDistanceFilter(d); setAutoExpandedRadius(true); setOpenMenu(null); }}
+                      onClick={() => { setDistanceFilter(d); setOpenMenu(null); }}
                       className={`w-full text-left px-5 py-2 hover:bg-[#efe8d8] text-[13px] font-medium transition-colors ${distanceFilter === d ? 'text-[#236c2a] bg-[#efe8d8]/50' : 'text-neutral-700 hover:text-[#236c2a]'}`}
                     >
                       Trong vòng {d}km
@@ -375,8 +468,6 @@ function ListingsPageContent() {
                     setSearch('');
                     setCategory('');
                     setActivePill(null);
-                    setDistanceFilter(20);
-                    setAutoExpandedRadius(true);
                   }}
                   className="px-6 py-2.5 bg-[#efe8d8] hover:bg-[#e6dcc5] text-[#236c2a] transition-colors rounded-full text-sm font-medium"
                 >

@@ -16,7 +16,6 @@ import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
-import { AppBackground } from '@/components/ui/AppBackground';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
@@ -133,16 +132,13 @@ export default function ProfileTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <AppBackground>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
-          }
-        >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
+        }
+      >
         <View style={styles.hero}>
-          <View pointerEvents="none" style={styles.heroGlow} />
-          <View pointerEvents="none" style={styles.heroRibbon} />
           {avatarUrl ? (
             <AppImage source={{ uri: avatarUrl }} style={styles.avatarImg} />
           ) : (
@@ -177,12 +173,12 @@ export default function ProfileTab() {
           <>
             {/* Điểm uy tín */}
             {typeof trustScore === 'number' ? (
-              <SurfaceCard tone="mint" style={styles.trustCard}>
+              <SurfaceCard style={styles.trustCard}>
                 <View style={styles.trustRow}>
                   <View style={styles.trustIcon}>
                     <MaterialCommunityIcons name="shield-check" size={22} color={COLORS.primary} />
                   </View>
-                  <View style={styles.trustCopy}>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.trustLabel}>Điểm uy tín</Text>
                     <Text style={styles.trustHint}>Dùng cho xác minh, nhận món và giao hàng</Text>
                   </View>
@@ -193,7 +189,7 @@ export default function ProfileTab() {
 
             {/* Thống kê đóng góp */}
             {profile?.stats ? (
-              <SurfaceCard tone="coral" style={styles.card}>
+              <SurfaceCard style={styles.card}>
                 <Text style={styles.cardTitle}>Thống kê</Text>
                 <View style={styles.statsGrid}>
                   <Stat
@@ -257,7 +253,7 @@ export default function ProfileTab() {
                       color={COLORS.primary}
                     />
                   </View>
-                  <View style={styles.faceCopy}>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
                     <Text style={styles.faceStatus}>
                       {faceEnrollment.isLoading
@@ -272,7 +268,7 @@ export default function ProfileTab() {
                 </View>
                 <Text style={styles.faceHint}>
                   {faceEnrolled
-                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng.'
+                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng. Có thể cập nhật selfie nếu ảnh cũ không còn hiển thị.'
                     : 'Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.'}
                 </Text>
                 {faceFeedback ? (
@@ -299,8 +295,7 @@ export default function ProfileTab() {
                     </Text>
                   </View>
                 ) : null}
-                {!faceEnrolled ? (
-                  <View style={styles.faceActions}>
+                <View style={styles.faceActions}>
                     <Button
                       mode="contained"
                       icon="camera"
@@ -310,7 +305,7 @@ export default function ProfileTab() {
                       onPress={() => handleEnrollFace('camera')}
                       style={styles.faceButton}
                     >
-                      {faceBusy ? 'Đang cập nhật...' : 'Đăng ký selfie'}
+                      {faceBusy ? 'Đang cập nhật...' : faceEnrolled ? 'Cập nhật selfie' : 'Đăng ký selfie'}
                     </Button>
                     <Button
                       mode="text"
@@ -321,8 +316,7 @@ export default function ProfileTab() {
                     >
                       Chọn ảnh
                     </Button>
-                  </View>
-                ) : null}
+                </View>
               </SurfaceCard>
             ) : null}
 
@@ -396,8 +390,7 @@ export default function ProfileTab() {
             Đăng xuất
           </Button>
         </SurfaceCard>
-        </ScrollView>
-      </AppBackground>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -414,45 +407,21 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      <Text style={styles.rowLabel} numberOfLines={2}>{label}</Text>
+      <Text style={styles.rowValue} numberOfLines={3}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.section,
-  },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.section },
   hero: {
     alignItems: 'center',
     gap: 4,
-    borderRadius: 28,
+    borderRadius: 30,
     padding: spacing.xxl,
     backgroundColor: COLORS.primaryStrong,
-    overflow: 'hidden',
-  },
-  heroGlow: {
-    position: 'absolute',
-    top: -44,
-    right: -36,
-    width: 144,
-    height: 144,
-    borderRadius: 999,
-    backgroundColor: 'rgba(232,111,61,0.26)',
-  },
-  heroRibbon: {
-    position: 'absolute',
-    left: -24,
-    bottom: -26,
-    width: 148,
-    height: 62,
-    borderRadius: 999,
-    backgroundColor: 'rgba(223,242,228,0.16)',
-    transform: [{ rotate: '14deg' }],
   },
   avatarImg: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: COLORS.surface },
   avatarFallback: { backgroundColor: COLORS.surface },
@@ -466,14 +435,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginTop: spacing.lg,
   },
-  cardTitle: { fontSize: 16, fontWeight: '900', color: COLORS.ink, marginBottom: spacing.md },
+  cardTitle: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface, marginBottom: spacing.md },
   trustCard: { marginTop: spacing.lg, padding: spacing.lg },
-  trustRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
+  trustRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   trustIcon: {
     width: 42,
     height: 42,
@@ -482,74 +446,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.primaryContainer,
   },
-  trustCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: spacing.sm,
-  },
-  trustLabel: { fontSize: 15, lineHeight: 20, fontWeight: '900', color: COLORS.onSurface },
-  trustHint: { marginTop: 2, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
-  trustValue: {
-    minWidth: 56,
-    textAlign: 'right',
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '900',
-    color: COLORS.primary,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: spacing.sm,
-    rowGap: spacing.sm,
-  },
+  trustLabel: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface },
+  trustHint: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  trustValue: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   statItem: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    minHeight: 68,
+    width: '48%',
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
     borderRadius: radius.lg,
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: COLORS.surfaceContainerLow,
   },
-  statValue: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: COLORS.onSurface, textAlign: 'center' },
-  statLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: COLORS.onSurfaceVariant,
-    marginTop: 3,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
+  statValue: { fontSize: 20, fontWeight: '900', color: COLORS.onSurface },
+  statLabel: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2, fontWeight: '700' },
   row: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    minHeight: 48,
-    paddingVertical: spacing.md,
+    gap: 8,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.outlineVariant,
   },
-  rowLabel: {
-    width: '38%',
-    paddingRight: spacing.sm,
-    fontSize: 14,
-    lineHeight: 19,
-    color: COLORS.onSurfaceVariant,
-  },
-  rowValue: {
-    flex: 1,
-    minWidth: 0,
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 19,
-    color: COLORS.onSurface,
-    fontWeight: '600',
-    textAlign: 'right',
-  },
+  rowLabel: { flex: 1, fontSize: 14, color: COLORS.onSurfaceVariant },
+  rowValue: { flex: 1.5, fontSize: 14, color: COLORS.onSurface, fontWeight: '600', textAlign: 'right' },
   faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  faceCopy: { flex: 1, minWidth: 0 },
   faceIcon: {
     width: 42,
     height: 42,

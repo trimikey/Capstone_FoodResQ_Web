@@ -27,7 +27,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess } from '@/services/haptics';
-import { getCurrentCoords, getLocationLabel, isLegacyTestLocation } from '@/services/geolocation';
+import { getCurrentCoords, getLocationLabel } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -113,13 +113,17 @@ export default function VolunteerOffersScreen() {
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
-  const updateLocation = useUpdateLocation();
+  const {
+    mutateAsync: updateLocationAsync,
+    isPending: isUpdatingLocation,
+  } = useUpdateLocation();
   const [actingId, setActingId] = useState<string | null>(null);
   const [resolvedAddress, setResolvedAddress] = useState<{ key: string; value: string } | null>(null);
   const [deferredIds, setDeferredIds] = useState<string[]>([]);
   const [facePromptVisible, setFacePromptVisible] = useState(false);
   const [renderNow, setRenderNow] = useState(() => Date.now());
   const lastPromptedIdRef = useRef<string | null>(null);
+  const syncedDeviceLocationRef = useRef(false);
   const needsFaceEnrollment = faceEnrollment.data?.enrolled === false;
   const handleOfferExpired = useCallback(() => {
     setRenderNow(Date.now());
@@ -145,12 +149,8 @@ export default function VolunteerOffersScreen() {
     [activeOffer?.id, offers]
   );
   const rawCurrentLocation = volunteer?.currentLocation ?? null;
-  const hasLegacyTestLocation =
-    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng)
-      ? isLegacyTestLocation({ lat: rawCurrentLocation.lat, lng: rawCurrentLocation.lng })
-      : false;
   const currentLocation =
-    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng) && !hasLegacyTestLocation
+    rawCurrentLocation && isFiniteCoord(rawCurrentLocation.lat) && isFiniteCoord(rawCurrentLocation.lng)
       ? rawCurrentLocation
       : null;
   const currentLat = currentLocation?.lat;
@@ -214,16 +214,25 @@ export default function VolunteerOffersScreen() {
   }, [currentLocation, currentLocationKey, currentLocationLabel]);
 
   useEffect(() => {
-    if (!volunteer?.isAvailable || !hasLegacyTestLocation || updateLocation.isPending) return;
+    if (!volunteer?.isAvailable) {
+      syncedDeviceLocationRef.current = false;
+      return;
+    }
+    if (syncedDeviceLocationRef.current || isUpdatingLocation) return;
+    syncedDeviceLocationRef.current = true;
     let active = true;
     getCurrentCoords().then(({ coords }) => {
-      if (!active || !coords || isLegacyTestLocation(coords)) return;
-      void updateLocation.mutateAsync({ lng: coords.lng, lat: coords.lat });
+      if (!active) return;
+      if (!coords) {
+        syncedDeviceLocationRef.current = false;
+        return;
+      }
+      void updateLocationAsync({ lng: coords.lng, lat: coords.lat });
     });
     return () => {
       active = false;
     };
-  }, [hasLegacyTestLocation, updateLocation, volunteer?.isAvailable]);
+  }, [isUpdatingLocation, updateLocationAsync, volunteer?.isAvailable]);
 
   useEffect(() => {
     if (!activeOffer || activeOffer.id === lastPromptedIdRef.current || actingId) return;

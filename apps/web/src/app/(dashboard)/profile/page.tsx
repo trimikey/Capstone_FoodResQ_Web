@@ -64,12 +64,45 @@ const TRUST_REASON_LABEL: Record<string, string> = {
   manual_bonus: 'Thưởng thủ công từ quản trị viên',
   successful_rescue: 'Hoàn thành nhận thực phẩm thành công',
   high_rating_received: 'Nhận đánh giá cao từ nhà cung cấp',
+  late_pickup: 'Đến lấy hàng muộn quá 60 phút',
+  late_check_in: 'Điểm danh trễ tại chiến dịch',
+  bulk_run_cancelled_after_approval: 'Huỷ chuyến giao sỉ sau khi đã được duyệt',
   delivery_completed: 'Hoàn thành giao hàng thành công',
   campaign_completed: 'Tham gia chiến dịch từ thiện',
 };
 
 function getHttpStatus(error: unknown): number | undefined {
   return (error as { response?: { status?: number } } | null)?.response?.status;
+}
+
+function ContactRow({
+  icon,
+  iconBg,
+  iconColor,
+  label,
+  value,
+  truncate = false,
+  capitalize = false,
+}: {
+  icon: string;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  value: string;
+  truncate?: boolean;
+  capitalize?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center shrink-0`}>
+        <span className={`material-symbols-outlined ${iconColor} text-[20px]`}>{icon}</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-0.5">{label}</p>
+        <p className={`text-sm font-bold text-neutral-800${truncate ? ' truncate' : ''}${capitalize ? ' capitalize' : ''}`}>{value}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function ProfilePage() {
@@ -344,7 +377,7 @@ export default function ProfilePage() {
             <div className="relative shrink-0">
               <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white/30 overflow-hidden bg-white/10 shadow-2xl shadow-black/20">
                 {me.avatarUrl ? (
-                  <img src={imgUrl(me.avatarUrl) ?? ''} alt={me.fullName} className="w-full h-full object-cover" />
+                  <img src={imgUrl(me.avatarUrl) ?? undefined} alt={me.fullName} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-emerald-600/40">
                     <span className="text-5xl md:text-6xl font-extrabold text-white">
@@ -575,45 +608,21 @@ export default function ProfilePage() {
             <div className="bg-white rounded-3xl border-l-4 border-l-teal-500 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
               <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-4">Thông tin liên hệ</h3>
               <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-teal-600 text-[20px]">mail</span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Email</p>
-                    <p className="text-sm font-bold text-neutral-800 truncate">{me.email}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-teal-600 text-[20px]">call</span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Số điện thoại</p>
-                    <p className="text-sm font-bold text-neutral-800">{me.phone ?? 'Chưa cập nhật'}</p>
-                  </div>
-                </div>
+                <ContactRow icon="mail" iconBg="bg-teal-50" iconColor="text-teal-600" label="Email" value={me.email} truncate />
+                <ContactRow icon="call" iconBg="bg-teal-50" iconColor="text-teal-600" label="Số điện thoại" value={me.phone ?? 'Chưa cập nhật'} truncate />
                 {me.provider && (
                   <>
                     {me.provider.businessType && (
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-amber-600 text-[20px]">store</span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Loại hình</p>
-                          <p className="text-sm font-bold text-neutral-800 capitalize">{me.provider.businessType}</p>
-                        </div>
-                      </div>
+                      <ContactRow icon="store" iconBg="bg-amber-50" iconColor="text-amber-600" label="Loại hình" value={me.provider.businessType} truncate capitalize />
                     )}
                     {me.provider.avgRating != null && (
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
                           <span className="material-symbols-outlined text-amber-500 text-[20px]">star</span>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Đánh giá trung bình</p>
-                          <div className="flex items-center gap-1">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-0.5">Đánh giá trung bình</p>
+                          <div className="flex items-center gap-1.5">
                             <span className="text-sm font-bold text-neutral-800">{Number(me.provider.avgRating).toFixed(1)}</span>
                             <span className="flex">
                               {[1,2,3,4,5].map((star) => (
@@ -630,9 +639,9 @@ export default function ProfilePage() {
                       <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
                         <span className="material-symbols-outlined text-emerald-600 text-[20px]">place</span>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Địa chỉ cửa hàng</p>
-                        <p className="text-sm font-bold text-neutral-800 leading-relaxed">{me.provider?.address?.trim() || 'Chưa cập nhật địa chỉ'}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-0.5">Địa chỉ cửa hàng</p>
+                        <p className="text-sm font-bold text-neutral-800 leading-relaxed break-words">{me.provider?.address?.trim() || 'Chưa cập nhật địa chỉ'}</p>
                       </div>
                     </div>
                     {me.provider.isVerified && (

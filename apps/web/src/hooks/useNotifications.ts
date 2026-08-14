@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -76,32 +76,61 @@ export function useMarkRead() {
   });
 }
 
+/**
+ * Socket thông báo DÙNG CHUNG cho cả trang, đếm số nơi đang dùng.
+ *
+ * Một trang có thể mount nhiều <NotificationBell/> cùng lúc (khu admin có header
+ * mobile + header desktop, cả hai đều nằm trong DOM và chỉ ẩn bằng CSS; trang bếp
+ * có PublicHeader lẫn chuông ở sidebar). Nếu mỗi lần mount lại mở một socket riêng
+ * thì server đẩy 1 sự kiện mà người dùng thấy 2–3 toast trùng nhau.
+ */
+let sharedSocket: Socket | null = null;
+let sharedSocketToken: string | null = null;
+let socketRefCount = 0;
+
 /** Kết nối WebSocket khi đã đăng nhập; nhận `notification:new` → toast + refresh badge. */
 export function useNotificationSocket() {
   const accessToken = useAuthStore((s) => s.accessToken);
+  // useQueryClient trả về cùng một instance từ context nên để trong deps cũng
+  // không làm effect chạy lại; dùng thẳng trong closure của listener là đủ.
   const qc = useQueryClient();
-  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
-    const socket = io(socketUrl(), {
-      auth: { token: accessToken },
-      transports: ['websocket'],
-      reconnection: true,
-    });
-    socketRef.current = socket;
 
-    socket.on('notification:new', (n: AppNotification) => {
-      toast(n.title, { description: n.body });
-      void qc.invalidateQueries({ queryKey: ['notifications'] });
-      const campaignId = notificationCampaignId(n);
-      if (campaignId) refreshCampaignQueries(qc, campaignId);
-    });
+    // Token đổi (đăng xuất rồi đăng nhập tài khoản khác) → dựng lại socket.
+    if (sharedSocket && sharedSocketToken !== accessToken) {
+      sharedSocket.disconnect();
+      sharedSocket = null;
+      sharedSocketToken = null;
+    }
+
+    if (!sharedSocket) {
+      sharedSocket = io(socketUrl(), {
+        auth: { token: accessToken },
+        transports: ['websocket'],
+        reconnection: true,
+      });
+      sharedSocketToken = accessToken;
+      sharedSocket.on('notification:new', (n: AppNotification) => {
+        toast(n.title, { description: n.body });
+        void qc.invalidateQueries({ queryKey: ['notifications'] });
+        const campaignId = notificationCampaignId(n);
+        if (campaignId) refreshCampaignQueries(qc, campaignId);
+      });
+    }
+    socketRefCount += 1;
 
     return () => {
-      socket.off('notification:new');
-      socket.disconnect();
-      socketRef.current = null;
+      socketRefCount -= 1;
+      // Chỉ đóng khi nơi dùng CUỐI CÙNG unmount — nếu đóng ngay từ nơi đầu tiên
+      // thì điều hướng giữa các trang cùng có chuông sẽ ngắt kết nối của trang kia.
+      if (socketRefCount <= 0) {
+        socketRefCount = 0;
+        sharedSocket?.disconnect();
+        sharedSocket = null;
+        sharedSocketToken = null;
+      }
     };
   }, [accessToken, qc]);
 }

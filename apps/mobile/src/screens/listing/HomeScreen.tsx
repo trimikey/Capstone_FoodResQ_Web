@@ -7,7 +7,6 @@ import { useRouter } from 'expo-router';
 import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useMyProfile } from '@/hooks/useProfile';
 import { useListings, type FoodCategory, type Listing } from '@/hooks/useListings';
 import {
   getCurrentCoords,
@@ -26,34 +25,14 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const HOME_LISTING_PAGE_SIZE = 18;
 
-function toCoords(lat?: number | null, lng?: number | null): Coords | null {
-  if (
-    typeof lat === 'number' &&
-    typeof lng === 'number' &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng)
-  ) {
-    return { lat, lng };
-  }
-  return null;
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { user, updateUser } = useAuth();
-  const { data: profile, refetch: refetchProfile } = useMyProfile(user?.role === 'receiver');
+  const { user } = useAuth();
   const sheetRef = useRef<BottomSheet>(null);
   const listRef = useRef<ElementRef<typeof FlashList<Listing>>>(null);
-  const receiver = profile?.receiver ?? user?.receiver;
-  const receiverCoords = useMemo(
-    () => toCoords(receiver?.lat, receiver?.lng),
-    [receiver?.lat, receiver?.lng],
-  );
-  const receiverAddress = user?.role === 'receiver' ? receiver?.address?.trim() : '';
-
-  // Chỉ fetch theo điểm giao receiver hoặc GPS thật, không dùng toạ độ test/fallback.
-  const [coords, setCoords] = useState<Coords | null>(receiverCoords);
+  // Tìm kiếm luôn dựa trên GPS hiện tại của thiết bị, không dùng vị trí đã lưu trong hồ sơ.
+  const [coords, setCoords] = useState<Coords | null>(null);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
 
   const [searchInput, setSearchInput] = useState('');
@@ -61,12 +40,11 @@ export default function HomeScreen() {
   const [category, setCategory] = useState<FoodCategory | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [page, setPage] = useState(1);
-  const effectiveCoords = receiverCoords ?? coords;
+  const effectiveCoords = coords;
   const gridColumns = width >= 390 ? 3 : 2;
 
-  // Lấy vị trí 1 lần khi mount cho các role không có điểm mặc định.
+  // Lấy vị trí thật mỗi lần màn hình được mount.
   useEffect(() => {
-    if (receiverCoords) return;
     let active = true;
     getCurrentCoords().then(({ coords, isFallback }) => {
       if (!active) return;
@@ -77,7 +55,7 @@ export default function HomeScreen() {
     return () => {
       active = false;
     };
-  }, [receiverCoords]);
+  }, []);
 
   // Debounce search ~400ms
   useEffect(() => {
@@ -99,34 +77,14 @@ export default function HomeScreen() {
   const items = useMemo(() => data?.items ?? [], [data]);
   const hasNextPage = data?.hasNextPage ?? false;
   const hasFilters = searchInput.trim().length > 0 || category != null;
-  const locationLabel = receiverAddress || (effectiveCoords ? getLocationLabel(effectiveCoords, isFallbackLocation) : 'Đang lấy vị trí hiện tại');
+  const locationLabel = effectiveCoords
+    ? getLocationLabel(effectiveCoords, isFallbackLocation)
+    : isFallbackLocation
+      ? 'Không lấy được GPS thật'
+      : 'Đang lấy vị trí hiện tại';
   const showSkeleton = (isLoading || (!effectiveCoords && !isFallbackLocation)) && items.length === 0;
 
   const refreshLocation = async () => {
-    if (user?.role === 'receiver') {
-      const refreshed = await refetchProfile();
-      const nextProfile = refreshed.data;
-      const nextReceiver = nextProfile?.receiver ?? receiver;
-      const nextCoords = toCoords(nextReceiver?.lat, nextReceiver?.lng);
-
-      if (nextProfile) {
-        updateUser({
-          name: nextProfile.fullName ?? nextProfile.name ?? user.name,
-          phone: nextProfile.phone ?? null,
-          avatarUrl: nextProfile.avatarUrl ?? null,
-          receiver: nextProfile.receiver ?? null,
-          provider: nextProfile.provider ?? null,
-        });
-      }
-
-      if (nextCoords) {
-        setIsFallbackLocation(false);
-        setPage(1);
-        await refetch();
-        return;
-      }
-    }
-
     const result = await getCurrentCoords();
     if (!result.coords) {
       setIsFallbackLocation(true);

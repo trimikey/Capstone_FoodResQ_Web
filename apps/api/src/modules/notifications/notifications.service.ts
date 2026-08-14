@@ -35,6 +35,58 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Gửi cùng một thông báo cho MỌI quản trị viên đang hoạt động.
+   *
+   * Việc cần admin xử lý (chiến dịch chờ duyệt, khiếu nại mới, hồ sơ chờ xác minh…)
+   * không thuộc về một admin cụ thể nào, nên fan-out cho tất cả rồi ai xử lý trước
+   * thì thôi. Không throw để không chặn luồng nghiệp vụ chính.
+   *
+   * @returns số admin đã nhận
+   */
+  async notifyAdmins(input: NotifyInput): Promise<number> {
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { role: 'admin', deletedAt: null },
+        select: { id: true },
+      });
+      await Promise.all(admins.map((a) => this.notify(a.id, input)));
+      return admins.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Gửi thông báo cho user đứng đầu hồ sơ của tổ chức (charity) s� hữu chiến dịch.
+   * Dùng cho sự cố cần org xử lý ngay: QC fail, món không đảm bảo chất lượng…
+   *
+   * Trả về số user đã nhận (0 = campaign không tìm thấy / org không có user active).
+   */
+  async notifyCampaignOwner(
+    campaignId: string,
+    input: NotifyInput,
+  ): Promise<number> {
+    try {
+      const campaign = await this.prisma.kitchenCampaign.findUnique({
+        where: { id: campaignId },
+        select: {
+          charityReceiver: {
+            select: {
+              user: { select: { id: true, status: true, deletedAt: true } },
+            },
+          },
+        },
+      });
+      const owner = campaign?.charityReceiver?.user;
+      if (!owner || owner.status !== 'active' || owner.deletedAt) return 0;
+      await this.notify(owner.id, input);
+      return 1;
+    } catch {
+      return 0;
+    }
+  }
+
   async listMine(userId: string) {
     return this.prisma.notification.findMany({
       where: { userId },

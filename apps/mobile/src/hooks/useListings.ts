@@ -35,6 +35,9 @@ export interface Listing {
   weightPerUnitKg: number | null;
   pickupStartTime: string; // ISO
   pickupEndTime: string; // ISO
+  /** Giờ mở/đóng nhận hàng trong ngày — phút từ 00:00 giờ VN; null = không giới hạn */
+  dailyStartMinute?: number | null;
+  dailyEndMinute?: number | null;
   expiryTime?: string; // ISO
   pickupAddress: string;
   storageConditions?: string | null;

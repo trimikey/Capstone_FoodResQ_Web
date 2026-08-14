@@ -13,10 +13,10 @@
 title Admin Dashboard Overview Sequence Diagram
 
 actor "Admin" as User
-participant "AdminDashboard" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":AdminDashboard" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open dashboard
@@ -44,10 +44,10 @@ deactivate Screen
 title List Pending Verifications Sequence Diagram
 
 actor "Admin" as User
-participant "VerificationScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":VerificationScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open verifications
@@ -75,11 +75,11 @@ deactivate Screen
 title Review Verification Sequence Diagram
 
 actor "Admin" as User
-participant "VerificationScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":VerificationScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : approve / reject a profile
@@ -120,10 +120,10 @@ deactivate Screen
 title List Reports Sequence Diagram
 
 actor "Admin" as User
-participant "ReportsScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":ReportsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open reports (filter by status)
@@ -149,10 +149,10 @@ deactivate Screen
 title Resolve Report Sequence Diagram
 
 actor "Admin" as User
-participant "ReportsScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":ReportsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : resolve / dismiss report
@@ -186,10 +186,10 @@ deactivate Screen
 title List Users Sequence Diagram
 
 actor "Admin" as User
-participant "UsersScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":UsersScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open users (role, search)
@@ -216,11 +216,11 @@ deactivate Screen
   title Admin Create User Sequence Diagram
 
   actor "Admin" as User
-  participant "UsersScreen" as Screen
-  participant "AdminController" as Ctrl
-  participant "AdminService" as Svc
-  participant "bcrypt" as Bcrypt
-  participant "PrismaService" as Repo
+  participant ":UsersScreen" as Screen
+  participant ":AdminController" as Ctrl
+  participant ":AdminService" as Svc
+  participant ":bcrypt" as Bcrypt
+  participant ":PrismaService" as Repo
   database "Database" as DB
 
   User -> Screen : create account form
@@ -257,10 +257,10 @@ deactivate Screen
 title Set User Status Sequence Diagram
 
 actor "Admin" as User
-participant "UsersScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":UsersScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : change account status (active/suspended/banned)
@@ -300,11 +300,11 @@ deactivate Screen
 title Admin Assign Volunteer Sequence Diagram
 
 actor "Admin" as User
-participant "CampaignManageScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":CampaignManageScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : assign volunteer to role
@@ -343,11 +343,11 @@ deactivate Screen
 title Review Volunteer Application Sequence Diagram
 
 actor "Admin" as User
-participant "AssignmentsScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":AssignmentsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : approve / reject application
@@ -396,11 +396,11 @@ deactivate Screen
 title Review Campaign Change Request Sequence Diagram
 
 actor "Admin" as User
-participant "ChangeRequestScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":ChangeRequestScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database (PostGIS)" as DB
 
 User -> Screen : approve / reject change request
@@ -450,11 +450,11 @@ deactivate Screen
 title Set Campaign Status Sequence Diagram
 
 actor "Admin" as User
-participant "CampaignManageScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
-participant "NotificationsService" as Notif
+participant ":CampaignManageScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
 database "Database" as DB
 
 User -> Screen : change campaign status (approve draft -> open, etc.)
@@ -488,10 +488,10 @@ deactivate Screen
 title Update Listing Category Sequence Diagram
 
 actor "Admin" as User
-participant "FoodListingsScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "PrismaService" as Repo
+participant ":FoodListingsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : reclassify a listing
@@ -524,11 +524,11 @@ deactivate Screen
 title System Config Sequence Diagram
 
 actor "Admin" as User
-participant "ConfigScreen" as Screen
-participant "AdminController" as Ctrl
-participant "AdminService" as Svc
-participant "SystemConfigService" as Cfg
-participant "PrismaService" as Repo
+participant ":ConfigScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open settings

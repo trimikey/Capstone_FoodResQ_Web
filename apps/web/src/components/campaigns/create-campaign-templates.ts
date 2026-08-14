@@ -148,9 +148,52 @@ export const MENU_TEMPLATES: MenuTemplate[] = [
   { id: 'menu-ca-kho', name: 'Cá kho tộ', type: 'dinner', requires: ['cá'] },
   { id: 'menu-ga-luoc', name: 'Gà luộc lá chanh', type: 'dinner', requires: ['gà'] },
   { id: 'menu-thit-nuong', name: 'Thịt nướng', type: 'dinner', requires: ['thịt'] },
+
+  // ── Món rau (chỉ cần rau — bếp từ thiện luôn cần món rau ăn kèm)
+  { id: 'menu-rau-luoc', name: 'Rau luộc chấm kho quẹt', type: 'lunch', requires: ['rau'] },
+  { id: 'menu-rau-xao-toi', name: 'Rau xào tỏi', type: 'lunch', requires: ['rau'] },
+  { id: 'menu-canh-rau-tap-tang', name: 'Canh rau tập tàng', type: 'lunch', requires: ['rau'] },
+  { id: 'menu-do-xao-thap-cam', name: 'Đồ xào thập cẩm', type: 'dinner', requires: ['rau'] },
+
+  // ── Cơm kết hợp rau (combo hay gặp nhất: gạo + rau + đạm)
+  { id: 'menu-com-chien-rau', name: 'Cơm chiên rau củ', type: 'lunch', requires: ['gạo', 'rau'] },
+  {
+    id: 'menu-com-thit-xao-rau',
+    name: 'Cơm thịt xào rau củ',
+    type: 'lunch',
+    requires: ['gạo', 'thịt', 'rau'],
+  },
+  {
+    id: 'menu-com-ga-xao-rau',
+    name: 'Cơm gà xào rau củ',
+    type: 'lunch',
+    requires: ['gạo', 'gà', 'rau'],
+  },
+  { id: 'menu-com-chien-trung', name: 'Cơm chiên trứng', type: 'lunch', requires: ['gạo', 'trứng'] },
+  {
+    id: 'menu-com-ca-chien',
+    name: 'Cơm cá chiên sả nghệ',
+    type: 'lunch',
+    requires: ['gạo', 'cá'],
+  },
+
+  // ── Món mặn bổ sung
+  { id: 'menu-thit-kho-tieu', name: 'Thịt kho tiêu', type: 'lunch', requires: ['thịt'] },
+  { id: 'menu-thit-xao-sa-ot', name: 'Thịt xào sả ớt', type: 'dinner', requires: ['thịt'] },
+  { id: 'menu-ga-kho-gung', name: 'Gà kho gừng', type: 'dinner', requires: ['gà'] },
+  { id: 'menu-ca-chien', name: 'Cá chiên sả nghệ', type: 'lunch', requires: ['cá'] },
+  { id: 'menu-trung-luoc', name: 'Trứng luộc', type: 'breakfast', requires: ['trứng'] },
+  { id: 'menu-trung-xao-rau', name: 'Trứng xào rau củ', type: 'lunch', requires: ['trứng', 'rau'] },
+
+  // ── Canh bổ sung
+  { id: 'menu-canh-bi-thit', name: 'Canh bí đao nấu thịt', type: 'lunch', requires: ['rau', 'thịt'] },
+  { id: 'menu-canh-ga-rau', name: 'Canh gà nấu rau củ', type: 'dinner', requires: ['rau', 'gà'] },
 ];
 
 export const SHIFT_TEMPLATES: ShiftTemplate[] = [
+  // ── Lấy nguyên liệu (trước giờ sơ chế — đi chợ/nhận hàng tài trợ rồi chở về bếp)
+  { id: 'shift-supply-run', label: 'Lấy nguyên liệu sáng', role: 'shipper', startTime: '04:30', endTime: '06:00', slotsNeeded: 2 },
+  { id: 'shift-supply-receive', label: 'Nhận & kiểm nguyên liệu tại bếp', role: 'chef', startTime: '05:30', endTime: '06:30', slotsNeeded: 2 },
   // ── Sơ chế
   { id: 'shift-prep-morning', label: 'Ca sáng — Sơ chế', role: 'chef', startTime: '06:00', endTime: '08:00', slotsNeeded: 4 },
   { id: 'shift-prep-midday', label: 'Ca trưa — Sơ chế', role: 'chef', startTime: '09:00', endTime: '11:00', slotsNeeded: 3 },
@@ -242,32 +285,111 @@ export function buildScaledTemplates(servings: number) {
 }
 
 /**
+ * Từ đồng nghĩa cho từng nguyên liệu chuẩn mà `MENU_TEMPLATES.requires` dùng tới.
+ * Cho phép người dùng gõ tự do ("Cá basa", "Rau muống") vẫn nhận đúng nguyên liệu.
+ */
+const INGREDIENT_ALIASES: Record<string, string[]> = {
+  'gạo': ['gạo', 'nếp', 'tấm'],
+  'gà': ['gà'],
+  'thịt': ['thịt', 'heo', 'bò', 'sườn', 'nạc', 'ba chỉ'],
+  'trứng': ['trứng'],
+  'cá': ['cá', 'basa', 'diêu hồng', 'nục', 'ngừ', 'hồi', 'phi lê'],
+  'rau': ['rau', 'củ', 'cải', 'bí', 'bầu', 'mướp', 'muống', 'mồng tơi', 'cà rốt', 'khoai', 'giá'],
+};
+
+/** Trứng gà/vịt/cút là TRỨNG, không phải thịt gia cầm. */
+const EGG_BIRD_WORDS = new Set(['gà', 'vịt', 'cút']);
+
+/**
+ * Nhận diện nguyên liệu có trong tên một vật phẩm.
+ *
+ * So khớp theo TỪ chứ không phải chuỗi con. Trước đây hàm này nối hết tên vật phẩm
+ * rồi `includes(keyword)`, nên "Rau củ **cá**c loại" chứa chuỗi "cá" → hệ thống tưởng
+ * có cá và gợi ý "Cơm cá kho", "Cháo cá" dù người dùng không hề nhập cá.
+ */
+export function detectIngredients(name: string): Set<string> {
+  const tokens = name
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+  // "Trứng gà" → bỏ chữ "gà" đứng ngay sau "trứng" để không bị hiểu là thịt gà.
+  const cleaned: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (i > 0 && tokens[i - 1] === 'trứng' && EGG_BIRD_WORDS.has(tokens[i])) continue;
+    cleaned.push(tokens[i]);
+  }
+
+  // Đệm khoảng trắng hai đầu để `includes(' từ ')` khớp trọn từ, kể cả cụm 2 chữ
+  // như "mồng tơi", "cà rốt".
+  const padded = ` ${cleaned.join(' ')} `;
+  const found = new Set<string>();
+  for (const [ingredient, aliases] of Object.entries(INGREDIENT_ALIASES)) {
+    if (aliases.some((a) => padded.includes(` ${a} `))) found.add(ingredient);
+  }
+  return found;
+}
+
+/**
  * Lọc menu templates dựa trên vật phẩm đã nhập.
  *
- * Mỗi món có mảng `requires` (keywords). Món được chọn khi TẤT CẢ keyword
- * xuất hiện trong tên vật phẩm đã nhập (lowercase, partial match).
+ * Mỗi món có mảng `requires`. Món được gợi ý khi TẤT CẢ nguyên liệu nó cần đều
+ * được nhận diện trong danh sách vật phẩm (khớp theo từ — xem `detectIngredients`).
  *
- * Ví dụ: user nhập "Gạo sạch", "Thịt heo", "Trứng gà", "Rau củ"
- * → match: "Cơm thịt kho trứng", "Cháo thịt bằm", "Canh rau mồng tơi", v.v.
+ * Ví dụ: nhập "Gạo sạch", "Rau củ các loại", "Thịt heo / bò"
+ * → gợi ý cơm/cháo/canh dùng gạo, rau, thịt — KHÔNG gợi ý món cá.
  *
  * Trả về mảng rỗng nếu supplies rỗng → UI sẽ hiển thị empty state.
  */
 export function buildMatchedMenuTemplates(
   supplies: Array<{ name: string }>,
   servings: number,
+  /** Số món ĐANG có trong thực đơn — để ước tính suất mà món này sẽ nhận nếu thêm vào. */
+  currentMenuCount = 0,
 ): MenuTemplate[] {
   if (!supplies || supplies.length === 0) return [];
-  const supplyText = supplies
-    .map((s) => s.name.toLowerCase())
-    .join(' | ');
-  const matched = MENU_TEMPLATES.filter((m) =>
-    m.requires.every((kw) => supplyText.includes(kw.toLowerCase())),
-  );
-  // Phân bổ suất: mỗi món match ~30% tổng servings / số món match (còn lại 70%
-  // thuộc về ca trực / khác). Min 5 suất/món để tránh 0.
+  const available = new Set<string>();
+  for (const s of supplies) {
+    for (const ing of detectIngredients(s.name ?? '')) available.add(ing);
+  }
+  const matched = MENU_TEMPLATES.filter((m) => m.requires.every((kw) => available.has(kw)));
+
+  // Suất hiển thị trên thẻ gợi ý = phần món này nhận được nếu bấm thêm ngay bây giờ,
+  // tức tổng suất chiến dịch chia đều cho (số món hiện có + 1).
+  //
+  // Trước đây chia cho SỐ MÓN ĐƯỢC GỢI Ý (`matched.length`) rồi kẹp sàn 5 suất — với
+  // 100 suất và 13 gợi ý thì ra 2,3 suất/món, sàn đẩy lên đúng 5 cho mọi món, nên con
+  // số chẳng liên quan gì tới quy mô chiến dịch đã đăng ký.
   const safeServings = Math.max(1, Math.floor(servings || 1));
-  const perDish = matched.length
-    ? Math.max(5, Math.round((safeServings * 0.3) / matched.length))
-    : 0;
-  return matched.map((m) => ({ ...m, plannedServings: perDish }));
+  const shareIfAdded = Math.max(1, Math.round(safeServings / (currentMenuCount + 1)));
+  return matched.map((m) => ({ ...m, plannedServings: shareIfAdded }));
+}
+
+/**
+ * Chia đều tổng số suất của chiến dịch cho các món trong thực đơn.
+ *
+ * Món người dùng đã tự gõ số (`servingsLocked`) được giữ nguyên; phần còn lại chia đều
+ * cho các món tự động. Phần dư được rải cho những món đầu để TỔNG khớp đúng
+ * `totalServings`, không bị thiếu/thừa vài suất do làm tròn.
+ */
+export function balanceMenuServings<
+  T extends { plannedServings?: number; servingsLocked?: boolean },
+>(rows: T[], totalServings: number): T[] {
+  const total = Math.max(0, Math.floor(totalServings || 0));
+  const isLocked = (r: T) => r.servingsLocked === true && r.plannedServings != null;
+
+  const lockedSum = rows.filter(isLocked).reduce((s, r) => s + (r.plannedServings ?? 0), 0);
+  const autoCount = rows.filter((r) => !isLocked(r)).length;
+  if (autoCount === 0) return rows;
+
+  const remaining = Math.max(0, total - lockedSum);
+  const base = Math.floor(remaining / autoCount);
+  let extra = remaining - base * autoCount;
+
+  return rows.map((r) => {
+    if (isLocked(r)) return r;
+    const bonus = extra > 0 ? 1 : 0;
+    if (extra > 0) extra -= 1;
+    return { ...r, plannedServings: base + bonus };
+  });
 }

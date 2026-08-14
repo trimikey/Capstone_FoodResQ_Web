@@ -15,6 +15,7 @@ export interface ScanResult {
     idCardImageUrl: string | null;
     idCardNumber: string | null;
     enrolled: boolean;
+    verificationImageAvailable: boolean;
   };
 }
 

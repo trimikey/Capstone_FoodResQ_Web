@@ -27,7 +27,9 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
-import { type Section } from './_components/CharitySidebar';
+import type { Section } from './_components/CharitySidebar';
+import { useAuthStore } from '@/stores/auth.store';
+import Pagination from '@/components/shared/Pagination';
 
 const ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
@@ -115,6 +117,7 @@ function CampaignsPageInner() {
       t === 'overview' ||
       t === 'mine' ||
       t === 'tasks' ||
+      t === 'schedule' ||
       t === 'browse' ||
       t === 'suppliers' ||
       t === 'providers'
@@ -135,10 +138,21 @@ function CampaignsPageInner() {
 
   const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
 
-  const allCampaigns = data ?? [];
+  const allCampaigns = useMemo(() => data ?? [], [data]);
+
+  // Ô tìm kiếm nằm ở thanh trên của MỌI tab nên phải tìm trên cả chiến dịch công khai
+  // lẫn chiến dịch của chính tổ chức (bản nháp/đã kết thúc không nằm trong danh sách
+  // công khai — trước đây gõ tên chúng thì không ra kết quả nào).
+  const searchPool = useMemo(() => {
+    const byId = new Map(allCampaigns.map((c) => [c.id, c]));
+    for (const c of myCampaigns ?? []) byId.set(c.id, c);
+    return [...byId.values()];
+  }, [allCampaigns, myCampaigns]);
+
+  const searching = search.trim().length > 0;
 
   const filteredCampaigns = useMemo(() => {
-    return allCampaigns.filter((c) => {
+    return (searching ? searchPool : allCampaigns).filter((c) => {
       if (filter !== 'all' && c.status !== filter) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
@@ -151,7 +165,7 @@ function CampaignsPageInner() {
       }
       return true;
     });
-  }, [allCampaigns, filter, search]);
+  }, [allCampaigns, searchPool, searching, filter, search]);
 
   // === Aggregate stats for greeting / KPI ===
   const stats = useMemo(() => {
@@ -251,8 +265,29 @@ function CampaignsPageInner() {
             </label>
           </div>
 
+          {/* Đang gõ tìm kiếm → hiện KẾT QUẢ, bất kể đang ở tab nào.
+              Trước đây ô tìm kiếm nằm ở mọi tab nhưng chỉ tab "Khám phá" dùng tới
+              filteredCampaigns, nên ở Tổng quan gõ vào không có gì xảy ra. */}
+          {searching && (
+            <SearchResultsSection
+              query={search}
+              isLoading={isLoading}
+              filtered={filteredCampaigns}
+              filter={filter}
+              setFilter={setFilter}
+              isVolunteer={isVolunteer}
+              isProvider={isProvider}
+              isCharity={isCharity}
+              isAccountActive={isAccountActive}
+              myRoles={myRoles}
+              onApply={handleApply}
+              applying={apply.isPending}
+              onClear={() => setSearch('')}
+            />
+          )}
+
           {/* ═════ OVERVIEW (default) ═════ */}
-          {section === 'overview' && (
+          {!searching && section === 'overview' && (
             <OverviewDashboard
               isCharity={isCharity}
               isVolunteer={isVolunteer}
@@ -269,7 +304,7 @@ function CampaignsPageInner() {
           )}
 
           {/* ═════ MINE — Gom 3 trang (đang chạy / chờ duyệt / đã kết thúc) thành 1 ═════ */}
-          {section === 'mine' && isCharity && (
+          {!searching && section === 'mine' && isCharity && (
             <MineTabbedSection
               stats={stats}
               onCreate={() => setShowForm(true)}
@@ -278,12 +313,12 @@ function CampaignsPageInner() {
           )}
 
           {/* ═════ TASKS (volunteer) ═════ */}
-          {section === 'tasks' && isVolunteer && (
+          {!searching && section === 'tasks' && isVolunteer && (
             <TasksSection myTasks={myTasks ?? []} />
           )}
 
           {/* ═════ BROWSE (community) ═════ */}
-          {section === 'browse' && (
+          {!searching && section === 'browse' && (
             <BrowseSection
               isLoading={isLoading}
               filtered={filteredCampaigns}
@@ -299,16 +334,16 @@ function CampaignsPageInner() {
               applying={apply.isPending}
             />
           )}
-          {section === 'suppliers' && isCharity && (
+          {!searching && section === 'suppliers' && isCharity && (
             <SuppliersSection campaigns={stats.active} />
           )}
-          {section === 'providers' && isProvider && (
+          {!searching && section === 'providers' && isProvider && (
             <ProviderSection />
           )}
-          {section === 'orders' && isCharity && (
+          {!searching && section === 'orders' && isCharity && (
             <EmbeddedTab source="reservations" title="Đơn nhận của tôi" />
           )}
-          {section === 'history' && isCharity && (
+          {!searching && section === 'history' && isCharity && (
             <EmbeddedTab source="history" title="Lịch sử đơn hàng" />
           )}
         </main>
@@ -879,6 +914,9 @@ function StatsSection({
 // MINE — Gom 3 trang (đang chạy / chờ duyệt / đã kết thúc) thành 1 trang duy nhất
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Số chiến dịch mỗi trang ở tab "Chiến dịch của tôi". */
+const MINE_PER_PAGE = 8;
+
 type MineTab = 'all' | 'running' | 'pending' | 'finished';
 
 const MINE_TABS: Array<{ key: MineTab; label: string; icon: string }> = [
@@ -898,8 +936,24 @@ function MineTabbedSection({
   onJumpTo: (s: Section) => void;
 }) {
   const [tab, setTab] = useState<MineTab>('all');
+  // Phân trang phía client: danh sách chiến dịch của một tổ chức là hữu hạn và đã
+  // nằm sẵn trong cache, cắt trang tại chỗ thì đổi trang tức thì, không gọi lại API.
+  const [minePage, setMinePage] = useState(1);
 
   // Gom 3 nhóm: active (đang chạy), drafts (campaign chờ admin duyệt), finished
+  /** Cắt danh sách theo trang đang xem. */
+  function pageSlice<T>(list: T[]): T[] {
+    return list.slice((minePage - 1) * MINE_PER_PAGE, minePage * MINE_PER_PAGE);
+  }
+  function totalPagesOf(list: unknown[]): number {
+    return Math.max(1, Math.ceil(list.length / MINE_PER_PAGE));
+  }
+
+  // Đổi tab thì về trang 1 — ở lại trang 5 của tab cũ sẽ ra danh sách trống.
+  useEffect(() => {
+    setMinePage(1);
+  }, [tab]);
+
   const running = stats.active;
   const pendingCampaigns = stats.drafts;
   const finished = stats.finished;
@@ -1008,11 +1062,21 @@ function MineTabbedSection({
               action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
             />
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {(tab === 'running' ? running : finished).map((c) => (
-                <MyCampaignCard key={c.id} c={c} />
-              ))}
-            </div>
+            <>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {pageSlice(tab === 'running' ? running : finished).map((c) => (
+                  <MyCampaignCard key={c.id} c={c} />
+                ))}
+              </div>
+              <Pagination
+                page={minePage}
+                totalPages={totalPagesOf(tab === 'running' ? running : finished)}
+                onChange={setMinePage}
+                total={(tab === 'running' ? running : finished).length}
+                perPage={MINE_PER_PAGE}
+                unit="chiến dịch"
+              />
+            </>
           )}
         </>
       )}
@@ -1028,11 +1092,21 @@ function MineTabbedSection({
               action={{ label: 'Tạo chiến dịch đầu tiên', onClick: onCreate, icon: 'add' }}
             />
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {[...running, ...pendingCampaigns, ...finished].map((c) => (
-                <MyCampaignCard key={c.id} c={c} />
-              ))}
-            </div>
+            <>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {pageSlice([...running, ...pendingCampaigns, ...finished]).map((c) => (
+                  <MyCampaignCard key={c.id} c={c} />
+                ))}
+              </div>
+              <Pagination
+                page={minePage}
+                totalPages={totalPagesOf([...running, ...pendingCampaigns, ...finished])}
+                onChange={setMinePage}
+                total={running.length + pendingCampaigns.length + finished.length}
+                perPage={MINE_PER_PAGE}
+                unit="chiến dịch"
+              />
+            </>
           )}
         </>
       )}
@@ -1223,6 +1297,110 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Kết quả tìm kiếm — hiện đè lên tab đang mở khi ô tìm kiếm có nội dung.
+ *
+ * Ô tìm kiếm nằm ở thanh trên của mọi tab, nên nếu chỉ tab "Khám phá" phản ứng thì
+ * ở các tab khác người dùng gõ mà không thấy gì xảy ra. Ở đây tìm trên cả chiến dịch
+ * công khai lẫn chiến dịch của chính tổ chức.
+ */
+function SearchResultsSection({
+  query,
+  isLoading,
+  filtered,
+  filter,
+  setFilter,
+  isVolunteer,
+  isProvider,
+  isAccountActive,
+  myRoles,
+  onApply,
+  applying,
+  onClear,
+}: {
+  query: string;
+  isLoading: boolean;
+  filtered: Campaign[];
+  filter: string;
+  setFilter: (s: string) => void;
+  isVolunteer: boolean;
+  isProvider: boolean;
+  isCharity: boolean;
+  isAccountActive: boolean;
+  myRoles: string[];
+  onApply: (id: string, role: AssignmentRole) => void;
+  applying: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <section>
+      <div className="cm-section-head">
+        <h2 className="cm-section-title">
+          <span className="material-symbols-outlined text-emerald-600">search</span>
+          Kết quả cho “{query.trim()}”
+        </h2>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold text-neutral-500">{filtered.length} kết quả</span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs font-bold text-emerald-700 hover:underline inline-flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[14px]">close</span>
+            Xoá tìm kiếm
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        {(Object.keys(STATUS_META) as Array<keyof typeof STATUS_META>).map((k) => {
+          const meta = STATUS_META[k];
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              aria-pressed={filter === k}
+              className="cm-filter-chip inline-flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[14px]">{meta.icon}</span>
+              {meta.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading ? (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-48 skeleton rounded-2xl" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon="search_off"
+          title="Không tìm thấy chiến dịch nào"
+          description={`Không có chiến dịch nào khớp với “${query.trim()}”. Thử từ khoá khác hoặc bỏ bộ lọc trạng thái.`}
+        />
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {filtered.map((c) => (
+            <CampaignCard
+              key={c.id}
+              c={c}
+              myRoles={isVolunteer ? myRoles : []}
+              onApply={onApply}
+              applying={applying}
+              isProvider={isProvider}
+              disabled={!isAccountActive}
+            />
+          ))}
         </div>
       )}
     </section>

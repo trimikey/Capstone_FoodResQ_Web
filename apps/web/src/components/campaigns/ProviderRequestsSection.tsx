@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { useProviderRequests, useReviewProviderRequest, type ProviderRequestItem } from '@/hooks/useCampaigns';
+import { FOOD_CATEGORY_LABEL, type FoodCategory } from '@foodresq/types';
+import {
+  useProviderRequests,
+  useReviewProviderRequest,
+  type DemandDetails,
+  type ProviderRequestItem,
+} from '@/hooks/useCampaigns';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   pending:   { label: 'Chờ duyệt', cls: 'bg-amber-100 text-amber-700 border border-amber-200' },
@@ -163,6 +169,9 @@ function RequestCard({
         </div>
       </div>
 
+      {/* Chi tiết nhu cầu nguyên liệu bếp khai */}
+      {req.demandDetails && !compact && <DemandDetailsCard d={req.demandDetails} />}
+
       {/* Lời nhắn */}
       {req.message && !compact && (
         <div className="bg-amber-50 rounded-lg px-3 py-2 text-sm text-neutral-700 border-l-2 border-amber-300">
@@ -205,6 +214,81 @@ function RequestCard({
       {/* Compact: reviewed note */}
       {compact && req.reviewedNote && (
         <p className="text-xs text-neutral-500 italic">Ghi chú: {req.reviewedNote}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bảng nhu cầu nguyên liệu bếp khai lúc gửi đơn — NCC đọc để biết cần chuẩn bị gì
+ * trước khi bấm đồng ý.
+ */
+function DemandDetailsCard({ d }: { d: DemandDetails }) {
+  const standards = [
+    d.requireAtvstpCert ? 'Có giấy chứng nhận ATVSTP' : null,
+    d.requireColdChain ? 'Vận chuyển chuỗi lạnh (< 5°C)' : null,
+    d.requireQcPhoto ? 'Shipper chụp ảnh QC lúc nhận' : null,
+  ].filter((s): s is string => s !== null);
+
+  const rows = [
+    d.foodCategory
+      ? { icon: 'category', label: 'Phân loại', value: FOOD_CATEGORY_LABEL[d.foodCategory as FoodCategory] ?? d.foodCategory }
+      : null,
+    d.ingredientName ? { icon: 'grocery', label: 'Nguyên liệu', value: d.ingredientName } : null,
+    d.quantityKg != null ? { icon: 'scale', label: 'Số lượng cần', value: `${d.quantityKg} kg` } : null,
+    d.expectedServings != null
+      ? { icon: 'restaurant', label: 'Số suất dự kiến', value: `${d.expectedServings} suất` }
+      : null,
+    d.neededFrom || d.neededTo
+      ? {
+          icon: 'schedule',
+          label: 'Cần có mặt tại bếp',
+          value: `${d.neededFrom ?? '—'} → ${d.neededTo ?? '—'}`,
+        }
+      : null,
+  ].filter((r): r is { icon: string; label: string; value: string } => r !== null);
+
+  if (rows.length === 0 && standards.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+        Nhu cầu nguyên liệu của bếp
+      </p>
+
+      {rows.length > 0 && (
+        <div className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-start gap-1.5">
+              <span className="material-symbols-outlined mt-0.5 text-[14px] text-emerald-600">{r.icon}</span>
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase text-neutral-400">{r.label}</span>
+                <p className="text-sm font-semibold text-neutral-800 break-words">{r.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {standards.length > 0 && (
+        <div className="mt-2 border-t border-emerald-200/70 pt-2">
+          <p className="text-[10px] uppercase text-neutral-400">Tiêu chuẩn bếp yêu cầu</p>
+          <ul className="mt-1 space-y-0.5">
+            {standards.map((s) => (
+              <li key={s} className="flex items-start gap-1.5 text-xs text-neutral-700">
+                <span className="material-symbols-outlined text-[13px] text-emerald-600">check_small</span>
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {d.waiverAcceptedAt && (
+        <p className="mt-2 text-[11px] text-neutral-500">
+          Bếp đã cam kết dùng phi thương mại lúc{' '}
+          {new Date(d.waiverAcceptedAt).toLocaleString('vi-VN')}.
+        </p>
       )}
     </div>
   );

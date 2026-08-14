@@ -12,6 +12,7 @@ import {
   type SubmitCampaignChangeInput,
 } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
+import { vnToday } from '@/lib/vn-date';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string }> = {
   draft: { label: 'Chờ duyệt' },
@@ -164,7 +165,7 @@ export default function ChangeRequestModal({ c, onClose }: { c: Campaign; onClos
     <Modal
       onClose={onClose}
       align="top"
-      className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 elevation-3 overflow-hidden"
+      className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg elevation-3 overflow-hidden"
     >
       <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -203,7 +204,7 @@ export default function ChangeRequestModal({ c, onClose }: { c: Campaign; onClos
                 <input
                   type="date"
                   value={f.scheduledDate}
-                  min={new Date().toISOString().slice(0, 10)}
+                  min={vnToday()}
                   onChange={(e) => {
                     setF({ ...f, scheduledDate: e.target.value });
                     if (errors.scheduledDate) setErr('scheduledDate', undefined);

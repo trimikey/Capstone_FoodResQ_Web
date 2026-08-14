@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useManageContext } from '../../../_components/ManageShell';
 import AddSupplyModal from '../../../_components/AddSupplyModal';
+import { useSetMenuItemMeal } from '@/hooks/useCampaigns';
+import { errMsg } from '@/lib/utils';
 
 type MealTab = 'breakfast' | 'lunch' | 'dinner';
 const MEAL_TABS: Array<{ key: MealTab; label: string; icon: string }> = [
@@ -19,6 +21,18 @@ export default function MenuPage() {
   const [meal, setMeal] = useState<MealTab>('lunch');
   const [addSupplyOpen, setAddSupplyOpen] = useState(false);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+  const setMealMutation = useSetMenuItemMeal();
+
+  async function assignMeal(index: number, type: string) {
+    if (!type || !c) return;
+    try {
+      await setMealMutation.mutateAsync({ campaignId: c.id, index, type });
+      const label = MEAL_TABS.find((t) => t.key === type)?.label ?? type;
+      toast.success(`Đã chuyển món sang ${label.toLowerCase()}.`);
+    } catch (e) {
+      toast.error(errMsg(e, 'Không gán được bữa cho món này'));
+    }
+  }
 
   function toggleTag(tag: string) {
     setActiveTags((prev) => {
@@ -42,19 +56,28 @@ export default function MenuPage() {
     }
   }
 
-  // Lọc món theo bữa (nếu type trùng) — nếu không có type thì hiện tất cả khi tab "all"
+  // Lọc món theo bữa. Món có `type` NGOÀI 3 bữa (dữ liệu cũ, hoặc nhập từ nguồn khác
+  // với type kiểu 'main'/'soup') trước đây bị bỏ im lặng — thực đơn có món mà giao diện
+  // báo "chưa có món nào". Gom chúng vào nhóm riêng để không mất món nào.
   const allItems = c?.menuItems ?? [];
   const itemsByMeal = useMemo(() => {
-    const map: Record<MealTab, typeof allItems> = { breakfast: [], lunch: [], dinner: [] };
-    for (const it of allItems) {
+    // Giữ kèm vị trí trong mảng gốc: API gán bữa định danh món theo index, không có id.
+    type Entry = (typeof allItems)[number] & { index: number };
+    const map: Record<MealTab, Entry[]> = { breakfast: [], lunch: [], dinner: [] };
+    const other: Entry[] = [];
+    allItems.forEach((it, index) => {
+      const entry = { ...it, index };
       if (it.type === 'breakfast' || it.type === 'lunch' || it.type === 'dinner') {
-        map[it.type as MealTab].push(it);
+        map[it.type as MealTab].push(entry);
+      } else {
+        other.push(entry);
       }
-    }
-    return map;
+    });
+    return { ...map, other };
   }, [allItems]);
 
   const items = itemsByMeal[meal];
+  const unassigned = itemsByMeal.other;
 
   // Vật phẩm cần chuẩn bị — lấy từ c.supplyItems (hỗ trợ cả string[] và object[])
   const supplies = useMemo(() => {
@@ -134,7 +157,9 @@ export default function MenuPage() {
             {items.length === 0 ? (
               <div className="cm-mini-empty">
                 <span className="material-symbols-outlined">restaurant</span>
-                Chưa có món nào cho bữa này trong chiến dịch.
+                {unassigned.length > 0
+                  ? 'Chưa có món nào gắn vào bữa này — xem mục “Chưa phân bữa” bên dưới.'
+                  : 'Chưa có món nào cho bữa này trong chiến dịch.'}
               </div>
             ) : (
               <ul className="cm-menu-meal">
@@ -162,6 +187,56 @@ export default function MenuPage() {
                   );
                 })}
               </ul>
+            )}
+
+            {/* Món không thuộc 3 bữa — vẫn phải thấy được, nếu không thì thực đơn
+                có món mà giao diện báo trống và người dùng tưởng mất dữ liệu. */}
+            {unassigned.length > 0 && (
+              <div className="mt-4 border-t border-neutral-100 pt-4">
+                <p className="text-xs font-bold text-neutral-700 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-amber-600">label_off</span>
+                  Chưa phân bữa ({unassigned.length})
+                </p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  Chọn bữa cho từng món để chúng hiện ở đúng tab bên trên.
+                </p>
+                <ul className="cm-menu-meal mt-2">
+                  {unassigned.map((it) => (
+                    <li key={`other-${it.index}`} className="cm-menu-meal-item">
+                      <span className="cm-menu-meal-icon">
+                        <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="cm-menu-meal-name">{it.name || 'Món chưa có tên'}</p>
+                        {it.type && (
+                          <div className="cm-menu-meal-tags">
+                            <span className="cm-nutri-chip">{it.type}</span>
+                          </div>
+                        )}
+                      </div>
+                      {it.plannedServings != null && it.plannedServings > 0 && (
+                        <span className="cm-menu-meal-cal">{it.plannedServings} suất</span>
+                      )}
+                      <select
+                        value=""
+                        disabled={setMealMutation.isPending}
+                        onChange={(e) => void assignMeal(it.index, e.target.value)}
+                        className="ml-2 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-bold text-neutral-600 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 disabled:opacity-50"
+                        aria-label={`Chọn bữa cho ${it.name || 'món này'}`}
+                      >
+                        <option value="" disabled>
+                          Chọn bữa
+                        </option>
+                        {MEAL_TABS.map((t) => (
+                          <option key={t.key} value={t.key}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         </section>

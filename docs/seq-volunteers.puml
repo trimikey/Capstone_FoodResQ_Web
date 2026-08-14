@@ -1,0 +1,137 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Volunteers (volunteers module)
+' Get volunteer profile · Toggle availability · Update GPS location
+' NOTE: all routes guarded by JwtAuthGuard + RolesGuard(@Roles VOLUNTEER)
+'==============================================================
+
+'──────────────────── 1. Get Volunteer Profile ───────────────
+@startuml seq-volunteer-me
+!include _seq-style.iuml
+title Get Volunteer Profile Sequence Diagram
+
+actor "Volunteer" as User
+participant ":ShipperHomeScreen" as Screen
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open volunteer home
+activate Screen
+Screen -> Ctrl : GET /volunteers/me
+activate Ctrl
+Ctrl -> Svc : getMe(userId)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) include specializations
+Repo -> DB : SELECT volunteer_profiles JOIN volunteer_specializations
+DB --> Repo : volunteer | null
+Repo --> Svc : volunteer
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : $queryRaw ST_X / ST_Y (current_location)
+  Repo -> DB : SELECT current_location
+  DB --> Repo : { lng, lat }
+  Svc -> Svc : isShipper = specializations has (shipper && isVerified)
+  Svc --> Ctrl : { isAvailable, rank, dedicationPoints, isShipper, currentLocation }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render availability toggle & stats
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. Toggle Availability ─────────────────
+@startuml seq-volunteer-availability
+!include _seq-style.iuml
+title Toggle Shipper Availability Sequence Diagram
+
+actor "Volunteer" as User
+participant ":ShipperHomeScreen\n(GPS)" as Screen
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : toggle "sẵn sàng nhận đơn"
+activate Screen
+Screen -> Screen : read current GPS (lng, lat)
+Screen -> Ctrl : PATCH /volunteers/me/availability (isAvailable, lng, lat)
+activate Ctrl
+Ctrl -> Svc : setAvailability(userId, dto)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Repo --> Svc : volunteer | null
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else isAvailable = true AND (lng OR lat missing)
+  Svc --> Ctrl : 400 "Vị trí là bắt buộc khi bật sẵn sàng"
+  Ctrl --> Screen : return error
+  Screen --> User : ask for location permission
+else isAvailable = true AND faceDescriptor = null
+  Svc --> Ctrl : 400 FACE_NOT_ENROLLED
+  note right of Svc : eKYC bắt buộc trước khi nhận nhiệm vụ\n(tài khoản social login chưa có khuôn mặt gốc)
+  Ctrl --> Screen : return error
+  Screen --> User : open face enrollment modal
+else allowed
+  alt coordinates provided
+    Svc -> Repo : $executeRaw UPDATE current_location = ST_MakePoint(lng, lat), is_available, location_updated_at
+  else no coordinates (turning off)
+    Svc -> Repo : volunteerProfile.update(isAvailable)
+  end
+  Repo -> DB : UPDATE volunteer_profiles
+  Svc --> Ctrl : { isAvailable, message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : status updated — now eligible for delivery offers
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Update Live Location ────────────────
+@startuml seq-volunteer-location
+!include _seq-style.iuml
+title Update Shipper Live Location Sequence Diagram
+
+actor "Volunteer" as User
+participant ":ActiveTaskScreen\n(GPS)" as Screen
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsGateway\n(Socket.IO)" as WS
+database "Database (PostGIS)" as DB
+actor "Receiver" as Receiver
+
+User -> Screen : moving (GPS watcher ticks)
+activate Screen
+Screen -> Ctrl : PATCH /volunteers/me/location (lng, lat)
+activate Ctrl
+Ctrl -> Svc : updateLocation(userId, lng, lat)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) select id
+Repo --> Svc : volunteer | null
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+else found
+  Svc -> Repo : $executeRaw UPDATE current_location = ST_MakePoint(lng, lat), location_updated_at = NOW()
+  Repo -> DB : UPDATE volunteer_profiles
+  Svc -> Repo : delivery.findFirst(shipperId, status in assigned/heading/qc/in_transit)
+  Repo --> Svc : activeDelivery | null
+  opt has active delivery
+    Svc -> WS : emitToUser(receiverUserId, 'delivery:location', { reservationId, lng, lat })
+    WS --> Receiver : live marker moves on tracking map
+  end
+  Svc --> Ctrl : { ok: true }
+  Ctrl --> Screen : return data (200)
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml

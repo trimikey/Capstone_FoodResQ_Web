@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CampaignsService } from './campaigns.service';
+import { DishStepsService } from './dish-steps.service';
 import { logCronError } from '@/common/utils/cron-error';
 
 /** Tác vụ định kỳ cho vòng đời chiến dịch bếp ăn. */
@@ -8,7 +9,10 @@ import { logCronError } from '@/common/utils/cron-error';
 export class CampaignsCron {
   private readonly logger = new Logger(CampaignsCron.name);
 
-  constructor(private campaigns: CampaignsService) {}
+  constructor(
+    private campaigns: CampaignsService,
+    private dishSteps: DishStepsService,
+  ) {}
 
   // Nửa đêm hằng ngày: tự huỷ các chiến dịch 'open' đã qua endDate + endTime
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -51,6 +55,20 @@ export class CampaignsCron {
       if (n > 0) this.logger.log(`Nudged ${n} volunteer assignment(s)`);
     } catch (e) {
       logCronError(this.logger, 'nudgeUpcomingTasks', e);
+    }
+  }
+
+  /**
+   * Mỗi 30 giây: mở khoá các khâu (step) đủ điều kiện.
+   * Điều kiện: đến `scheduled_time` (giờ VN) VÀ khâu trước cùng món đã `done`.
+   */
+  @Cron(CronExpression.EVERY_30_SECONDS)
+  async handleAutoOpenDishSteps() {
+    try {
+      const n = await this.dishSteps.autoOpenAvailableSteps();
+      if (n > 0) this.logger.log(`Auto-opened ${n} dish step(s)`);
+    } catch (e) {
+      logCronError(this.logger, 'autoOpenAvailableSteps', e);
     }
   }
 }

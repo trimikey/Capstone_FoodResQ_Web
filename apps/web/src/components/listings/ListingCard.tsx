@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { usePickupWindow } from '@/hooks/usePickupWindow';
 import { QuantityUnit } from '@foodresq/types';
 
 export interface ListingItem {
@@ -47,9 +48,14 @@ function formatDistance(m: number): string {
 }
 
 export default function ListingCard({ listing }: Props) {
-  const pickupEnd = new Date(listing.pickupEndTime);
-  const isExpiringSoon = pickupEnd.getTime() - Date.now() < 2 * 60 * 60 * 1000;
+  // Trạng thái khung giờ tự cập nhật — người dùng đang xem danh sách lúc cửa hàng
+  // đóng nhận thì thẻ phải đổi ngay, không để họ bấm vào rồi mới biết.
+  const { notYetOpen, closed, minutesLeft } = usePickupWindow(
+    listing.pickupStartTime,
+    listing.pickupEndTime,
+  );
   const isEmpty = listing.quantityRemaining === 0;
+  const isExpiringSoon = minutesLeft != null && minutesLeft < 120;
 
   // Custom fallback images for mock display
   const fallbackImage = listing.category === 'bakery'
@@ -86,8 +92,17 @@ export default function ListingCard({ listing }: Props) {
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
 
+        {/* Ngoài khung giờ nhận → làm mờ ảnh + nói rõ lý do, tránh bấm vào vô ích */}
+        {(notYetOpen || closed) && (
+          <div className="absolute inset-0 bg-neutral-900/55 flex items-center justify-center px-3 z-10">
+            <span className="bg-white/95 text-neutral-800 px-3 py-1.5 rounded-full text-[11px] font-bold text-center">
+              {notYetOpen ? 'Chưa tới giờ nhận hàng' : 'Đã đóng nhận hàng'}
+            </span>
+          </div>
+        )}
+
         {/* Expiry / Status badges */}
-        {isExpiringSoon && !isEmpty ? (
+        {closed || notYetOpen ? null : isExpiringSoon && !isEmpty ? (
           <div className="absolute top-3 left-3 bg-rose-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-full font-headline-md tracking-wider text-[10px] font-bold shadow-sm uppercase">
             Sắp hết hạn
           </div>

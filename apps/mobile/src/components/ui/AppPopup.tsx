@@ -138,7 +138,7 @@ export function AppPopupHost() {
             </Text>
           ) : null}
           {text2 ? (
-            <Text variant="bodyMedium" style={styles.message}>
+            <Text variant="bodyMedium" style={[styles.message, text2.includes('\n') && styles.messageList]}>
               {text2}
             </Text>
           ) : null}
@@ -191,6 +191,7 @@ const styles = StyleSheet.create({
   content: { alignItems: 'center', paddingTop: 12 },
   title: { textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   message: { textAlign: 'center', color: COLORS.onSurfaceVariant, marginTop: spacing.sm },
+  messageList: { textAlign: 'left', alignSelf: 'stretch' },
   okLabel: { fontWeight: '700' },
   toastWrap: { bottom: 78 },
   toast: { borderRadius: radius.md },

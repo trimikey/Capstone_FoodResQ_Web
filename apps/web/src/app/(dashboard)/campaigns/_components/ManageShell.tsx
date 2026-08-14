@@ -10,8 +10,10 @@ import {
   useStartCampaign,
   useCompleteCampaign,
   useCancelCampaign,
-  type CampaignParticipant,
+  type CampaignManageParticipant,
+  type DistributionPoint,
 } from '@/hooks/useCampaigns';
+import { campaignStartWindow } from '@/lib/campaign-schedule';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import { Modal } from '@/components/shared/Modal';
 
@@ -76,15 +78,27 @@ type CampaignData = {
   status: string;
   organizationName?: string | null;
   imageUrls?: string[];
-  participants?: CampaignParticipant[];
+  /** Nhân sự đã tuyển so với ngưỡng tối thiểu do admin cấu hình. */
+  staffing?: { filled: number; needed: number; percent: number; minPercent: number };
+  /** Toạ độ bếp — mốc mở bản đồ khi ghim điểm phát. Null nếu chiến dịch chưa ghim vị trí. */
+  kitchenLng?: number | null;
+  kitchenLat?: number | null;
+  participants?: CampaignManageParticipant[];
   distributions?: Array<{
     id: string;
     roundLabel?: string | null;
     servingsServed: number;
     peopleServed: number;
     leftoverServings: number;
+    /** TNV đứng tên chính — người đầu tiên trong `assignees`. */
     servedBy: string;
+    /** Toàn bộ shipper được phân công đi phát đợt này (rỗng với đợt tạo trước đây). */
+    assignees: Array<{ volunteerId: string; fullName: string }>;
+    /** Điểm phát kèm địa chỉ để shipper điều hướng tới. */
+    points: DistributionPoint[];
     distributedAt: string;
+    /** null = mới lên kế hoạch (chưa vào thống kê). Có giá trị = đã phát xong. */
+    completedAt: string | null;
     note?: string | null;
     photoUrl?: string | null;
     feedback?: unknown[];
@@ -269,7 +283,14 @@ export function ManageShell({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={heroImage} alt={c.title} />
           )}
-          <Link href={`/campaigns/${c.id}`} className="cm-manage-hero-back" aria-label="Quay lại">
+          {/* Về danh sách chiến dịch của tổ chức, KHÔNG về trang chi tiết công khai
+              của chính chiến dịch đang mở — đó là đi tới, không phải quay lại. */}
+          <Link
+            href="/campaigns?tab=mine"
+            className="cm-manage-hero-back"
+            aria-label="Quay lại danh sách chiến dịch"
+            title="Quay lại danh sách chiến dịch"
+          >
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </Link>
           <div className="cm-manage-hero-actions">
@@ -277,15 +298,37 @@ export function ManageShell({
               <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
               {statusMeta.label}
             </span>
+            {/* Tiến độ tuyển TNV — hiện ngay cạnh nút để tổ chức biết còn thiếu bao
+                nhiêu người mới chạy được, thay vì bấm rồi mới ăn lỗi. */}
+            {c.status === 'open' && c.staffing && c.staffing.needed > 0 && c.staffing.minPercent > 0 && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-md ${
+                  c.staffing.percent >= c.staffing.minPercent
+                    ? 'bg-emerald-100/90 text-emerald-800'
+                    : 'bg-amber-100/90 text-amber-800'
+                }`}
+                title={`Cần tuyển tối thiểu ${c.staffing.minPercent}% để bắt đầu`}
+              >
+                <span className="material-symbols-outlined text-[14px]">group</span>
+                {c.staffing.filled}/{c.staffing.needed} TNV · {c.staffing.percent}%
+                <span className="opacity-70">(cần ≥{c.staffing.minPercent}%)</span>
+              </span>
+            )}
             {c.status === 'open' && (() => {
-              const canStart = isSameUtcDay(c.scheduledDate);
-              const days = daysUntilUtc(c.scheduledDate);
-              const hint =
-                days > 0
-                  ? `Còn ${days} ngày nữa mới tới ngày diễn ra`
-                  : days < 0
-                    ? `Đã qua ngày dự kiến ${Math.abs(days)} ngày — không thể bắt đầu`
-                    : '';
+              // Cùng luật với backend: mở được từ 12h trước mốc bắt đầu (giờ VN)
+              // để kịp các ca chuẩn bị rạng sáng.
+              const win = campaignStartWindow(c);
+              // Ngoài cửa sổ thời gian, còn phải tuyển đủ tỉ lệ TNV tối thiểu.
+              // Kiểm ở FE để nút giải thích được lý do TRƯỚC khi bấm; BE vẫn chặn lại.
+              const st = c.staffing;
+              const understaffed =
+                !!st && st.minPercent > 0 && st.needed > 0 && st.percent < st.minPercent;
+              const canStart = win.canStart && !understaffed;
+              const hint = !win.canStart
+                ? win.message
+                : understaffed
+                  ? `Mới tuyển ${st!.filled}/${st!.needed} TNV (${st!.percent}%) — cần tối thiểu ${st!.minPercent}%`
+                  : '';
               return (
                 <button
                   type="button"
@@ -299,9 +342,11 @@ export function ManageShell({
                     ? 'Đang bắt đầu...'
                     : canStart
                       ? 'Bắt đầu'
-                      : days > 0
-                        ? `Bắt đầu sau ${days} ngày`
-                        : 'Quá ngày'}
+                      : understaffed
+                        ? `Thiếu TNV (${st!.percent}%)`
+                        : win.reason === 'too_early'
+                          ? 'Chưa tới giờ'
+                          : 'Quá ngày'}
                 </button>
               );
             })()}

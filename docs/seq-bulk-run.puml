@@ -1,0 +1,661 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Bulk Runs (bulk-runs module)
+' Giao sỉ nhiều điểm: request → approve/reject → pickup (QR per stop)
+' → add/update/remove stop → serve → complete/cancel → cron cleanup
+' Constants: BULK_MIN_QTY=2 · REQUEST_EXPIRY_HOURS=24 ·
+'            PICKUP_DEADLINE_HOURS=4 · RUN_COMPLETION_HOURS=8 ·
+'            BULK_CANCEL_PENALTY=10
+'==============================================================
+
+'──────────────────── 1. Request Bulk Run ────────────────────
+@startuml seq-bulk-request
+!include _seq-style.iuml
+title Request Bulk Run Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : request N portions from a listing
+activate Screen
+Screen -> Ctrl : POST /bulk-runs (RequestBulkRunDto)
+activate Ctrl
+Ctrl -> Svc : request(shipperUserId, dto)
+activate Svc
+
+Svc -> Svc : resolveVerifiedShipper(userId)
+Svc -> Repo : volunteerProfile.findUnique(userId) include specializations
+Repo --> Svc : volunteer | null
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+else no verified "shipper" specialization
+  Svc --> Ctrl : 403 "Chỉ TNV giao hàng đã xác minh mới nhận giao sỉ"
+  note right of Svc : số lượng lớn → đòi hỏi tin cậy
+else verified shipper
+  alt dto.quantity < BULK_MIN_QTY (2)
+    Svc --> Ctrl : 400 "Giao sỉ chỉ áp dụng từ 2 phần trở lên"
+  else quantity ok
+    Svc -> Repo : bulkRun.findFirst(shipperId, status in requested/approved/picked_up)
+    Svc -> Repo : delivery.findFirst(shipperId, status in assigned…in_transit)
+    Repo --> Svc : activeRun, activeDelivery
+    alt Already has an active run OR an active single delivery
+      Svc --> Ctrl : 400 "Bạn đang có chuyến chưa hoàn tất"
+      note right of Svc : 1 shipper = 1 nhiệm vụ tại một thời điểm
+    else free
+      Svc -> Repo : foodListing.findFirst(id, deletedAt = null)
+      Repo -> DB : SELECT food_listings
+      DB --> Repo : listing | null
+      Repo --> Svc : listing
+      alt Not found / status != active / past pickupEndTime / quantityRemaining < quantity
+        Svc --> Ctrl : 404 / 400 error
+      else available
+        Svc -> Repo : bulkRun.create(status = requested)
+        Repo -> DB : INSERT bulk_runs
+        DB --> Repo : run
+        Svc -> Notif : notify(provider, "Yêu cầu giao sỉ mới")
+        Notif --> Provider : realtime notification
+        Svc --> Ctrl : run
+        Ctrl --> Screen : return data (201)
+        Screen --> User : waiting for provider approval (deadline +24h)
+      end
+    end
+  end
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 2. Provider Approves ───────────────────
+@startuml seq-bulk-approve
+!include _seq-style.iuml
+title Approve Bulk Run Sequence Diagram
+
+actor "Provider" as User
+participant ":BulkRequestsScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":Redlock\n(Redis)" as Lock
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Shipper" as Shipper
+
+User -> Screen : approve a bulk request
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/approve
+activate Ctrl
+Ctrl -> Svc : approve(runId, providerUserId)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId)
+Svc -> Repo : bulkRun.findUnique(id) include listing, shipper
+Repo --> Svc : provider, run
+alt Run not found
+  Svc --> Ctrl : 404 NotFound
+else run.providerId != provider.id
+  Svc --> Ctrl : 403 Forbidden
+else status != requested
+  Svc --> Ctrl : 400 "Yêu cầu đã được xử lý"
+else valid
+  Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
+  activate Lock
+  note right of Lock : dùng CHUNG khoá với luồng đặt lẻ —\ntránh trừ kho đụng độ
+  alt Lock not acquired
+    Lock --> Svc : throw
+    Svc --> Ctrl : 400 "Tin đang có người thao tác"
+  else acquired
+    Lock --> Svc : lock
+    deactivate Lock
+    Svc -> Repo : $queryRaw SELECT quantity_remaining, status, pickup_end_time
+    Repo -> DB : SELECT food_listings
+    DB --> Repo : row
+    alt status != active OR past pickup_end_time OR quantity_remaining < run.quantity
+      Svc --> Ctrl : 400 error (hãy từ chối hoặc chờ khách lẻ huỷ)
+    else enough stock
+      group $transaction
+        Svc -> Repo : $executeRaw quantity_remaining -= run.quantity (→ fully_reserved khi về 0)
+        Svc -> Repo : bulkRun.update(status = approved, approvedAt = NOW())
+        Repo -> DB : UPDATE food_listings / bulk_runs
+      end
+    end
+    Svc -> Lock : release()  <<finally>>
+  end
+  Svc -> Notif : notify(shipper, "Yêu cầu giao sỉ được duyệt")
+  Notif --> Shipper : realtime notification
+  Svc --> Ctrl : { id, status: approved }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : approved — shipper must pick up within 4h
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 3. Provider Rejects ────────────────────
+@startuml seq-bulk-reject
+!include _seq-style.iuml
+title Reject Bulk Run Sequence Diagram
+
+actor "Provider" as User
+participant ":BulkRequestsScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Shipper" as Shipper
+
+User -> Screen : reject with a reason
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/reject (reason?)
+activate Ctrl
+Ctrl -> Svc : reject(runId, providerUserId, reason)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId)
+Svc -> Repo : bulkRun.findUnique(id) include listing, shipper
+Repo --> Svc : provider, run
+alt Not found OR not the owner OR status != requested
+  Svc --> Ctrl : 404 / 403 / 400 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else valid
+  Svc -> Repo : bulkRun.update(status = rejected, rejectReason)
+  note right of Svc : chưa duyệt nên kho CHƯA bị trừ → không cần hoàn
+  Repo -> DB : UPDATE bulk_runs
+  Svc -> Notif : notify(shipper, "Yêu cầu giao sỉ bị từ chối")
+  Notif --> Shipper : realtime notification
+  Svc --> Ctrl : { id, status: rejected }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : request rejected
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 4. Shipper Picks Up (QR per stop) ──────
+@startuml seq-bulk-pickup
+!include _seq-style.iuml
+title Bulk Run Pickup Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen\n(Camera)" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+
+User -> Screen : arrive at the store, take QC photo
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/pickup (multipart qcPhoto?)
+activate Ctrl
+opt qcPhoto provided
+  Ctrl -> Svc : saveProofPhoto(photo)
+  Svc -> Storage : saveImage(photo, 'bulk-proofs')
+  Storage --> Svc : qcPhotoUrl
+end
+Ctrl -> Svc : pickup(runId, shipperUserId, qcPhotoUrl)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+alt Run not found OR not the assigned shipper
+  Svc --> Ctrl : 404 / 403 error
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else status != approved
+  Svc --> Ctrl : 400 "Chuyến chưa được duyệt hoặc đã lấy hàng rồi"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else approved
+  Svc -> Repo : bulkRunStop.findMany(runId) order orderIndex
+  Repo --> Svc : stops[]
+  Svc -> Svc : getBulkPlaceholderReceiverId()  (lazy upsert system receiver)
+  note right of Svc : mỗi điểm phát = 1 reservation ghi sổ,\nqrExpiresAt = +24h (dài hơn 30' của đơn lẻ\nvì phải chạy nhiều điểm)
+  group $transaction
+    Svc -> Repo : bulkRun.update(status = picked_up, pickedUpAt, qcPhotoUrl?)
+    loop for each stop
+      Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt, status = confirmed)
+    end
+    Repo -> DB : UPDATE bulk_runs / INSERT reservations
+  end
+  Svc -> Notif : notify(shipper, "Đã lấy hàng & tạo {n} mã QR")
+  Svc --> Ctrl : { id, status: picked_up, stopCount }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : QR list per stop — must finish within 8h
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 5. Add Distribution Stop ───────────────
+@startuml seq-bulk-add-stop
+!include _seq-style.iuml
+title Add Distribution Stop Sequence Diagram
+
+actor "Shipper / Provider" as User
+participant ":BulkRunMapScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : pin a stop on the map (label, address, plannedQty)
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/stops (AddStopDto)
+activate Ctrl
+Ctrl -> Svc : addStop(runId, userId, dto)
+activate Svc
+Svc -> Repo : bulkRun.findUnique(id) include shipper, provider, _count.stops
+Repo --> Svc : run | null
+alt Run not found
+  Svc --> Ctrl : 404 NotFound
+else caller is neither the run's shipper nor its provider
+  Svc --> Ctrl : 403 Forbidden
+else status not in (requested, approved, picked_up)
+  Svc --> Ctrl : 400 "Chuyến đã kết thúc"
+else status = picked_up AND caller = provider
+  Svc --> Ctrl : 403 "TNV đang trên tuyến — chỉ họ mới thêm điểm"
+  note right of Svc : hàng đã rời cửa hàng → tuyến thuộc quyền shipper
+else allowed
+  opt plannedQty provided
+    Svc -> Svc : assertPlannedWithinQuota(runId, run.quantity, plannedQty)
+    Svc -> Repo : bulkRunStop.aggregate(SUM plannedQty)
+    Repo --> Svc : used
+    alt used + plannedQty > run.quantity
+      Svc --> Ctrl : 400 "Điểm này tối đa {quantity - used} phần"
+      note right of Svc : chặn kế hoạch phát nhiều hơn hàng thực có
+    end
+  end
+  Svc -> Repo : bulkRunStop.create(label, address, plannedQty, createdBy, orderIndex)
+  Svc -> Repo : $executeRaw UPDATE location = ST_MakePoint(lng, lat)
+  Repo -> DB : INSERT bulk_run_stops + UPDATE geography
+  alt run.status = picked_up
+    Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt = +24h)
+    Repo -> DB : INSERT reservations
+    Svc --> Ctrl : { ...stop, coords, reservationId, qrToken, qrExpiresAt }
+    note right of Svc : ghim sau khi lấy hàng → phát mã QR ngay
+  else not picked up yet
+    Svc --> Ctrl : { ...stop, coords, reservationId: undefined }
+  end
+  Ctrl --> Screen : return data (201)
+  Screen --> User : stop added to the route
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 6. Update / Remove Stop ────────────────
+@startuml seq-bulk-edit-stop
+!include _seq-style.iuml
+title Update or Remove Distribution Stop Sequence Diagram
+
+actor "Shipper / Provider" as User
+participant ":BulkRunMapScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : edit or delete a stop
+activate Screen
+alt edit
+  Screen -> Ctrl : PATCH /bulk-runs/:id/stops/:stopId (UpdateStopDto)
+else delete
+  Screen -> Ctrl : DELETE /bulk-runs/:id/stops/:stopId
+end
+activate Ctrl
+Ctrl -> Svc : updateStop / removeStop(runId, stopId, userId, dto?)
+activate Svc
+
+Svc -> Svc : stopForEdit(runId, stopId, userId)
+Svc -> Repo : bulkRun.findUnique(id) include shipper, provider
+Repo --> Svc : run | null
+alt Run not found
+  Svc --> Ctrl : 404 NotFound
+else caller not shipper nor provider
+  Svc --> Ctrl : 403 Forbidden
+else run finished
+  Svc --> Ctrl : 400 "Chuyến đã kết thúc"
+else picked_up AND caller = provider
+  Svc --> Ctrl : 403 "chỉ shipper mới điều chỉnh khi đang trên tuyến"
+else allowed
+  Svc -> Repo : $queryRaw stop LEFT JOIN reservations ON r.bulk_run_stop_id = s.id
+  note right of Svc : quan hệ nằm ở reservations.bulk_run_stop_id\n(cột bulk_run_stops.reservation_id là di sản, luôn NULL)
+  Repo -> DB : SELECT bulk_run_stops LEFT JOIN reservations
+  DB --> Repo : stop | null
+  alt Stop not in this run
+    Svc --> Ctrl : 404 NotFound
+  else stop.served_qty > 0
+    Svc --> Ctrl : 400 "Điểm đã phát hàng — không sửa/xoá được"
+    note right of Svc : số liệu đã vào thống kê
+  else editable
+    alt update
+      alt only one of lng/lat sent
+        Svc --> Ctrl : 400 "Đổi vị trí phải gửi đủ cả lng và lat"
+      else
+        opt plannedQty provided
+          Svc -> Svc : assertPlannedWithinQuota(..., excludeStopId = stopId)
+        end
+        Svc -> Repo : bulkRunStop.update(label, address, plannedQty, note)
+        opt coordinates provided
+          Svc -> Repo : $executeRaw UPDATE location = ST_MakePoint(lng, lat)
+        end
+        Repo -> DB : UPDATE bulk_run_stops
+        Svc --> Ctrl : { id, message }
+      end
+    else remove
+      group $transaction
+        opt stop has a reservation
+          Svc -> Repo : reservation.update(status = cancelled, cancellationReason)
+          note right of Svc : không hoàn kho ở đây — kho trừ theo cả chuyến\nlúc duyệt, phần dư hoàn khi kết thúc
+        end
+        Svc -> Repo : bulkRunStop.delete(stopId)
+        Repo -> DB : UPDATE reservations / DELETE bulk_run_stops
+      end
+      Svc --> Ctrl : { id, message }
+    end
+    Ctrl --> Screen : return data (200)
+    Screen --> User : route updated
+  end
+end
+Ctrl --> Screen : return error (on any failure)
+Screen --> User : show error message
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 7. Serve Portions at a Stop ────────────
+@startuml seq-bulk-serve
+!include _seq-style.iuml
+title Serve Portions at Stop Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen\n(Camera)" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : log N portions served at this stop (+ photo)
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/stops/:stopId/serve (ServeStopDto, photo?)
+activate Ctrl
+opt photo provided
+  Ctrl -> Svc : saveProofPhoto(photo)
+  Svc -> Storage : saveImage(photo, 'bulk-proofs')
+  Storage --> Svc : photoUrl
+end
+Ctrl -> Svc : serve(runId, shipperUserId, stopId, dto, photoUrl)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+alt Not found / not the assigned shipper
+  Svc --> Ctrl : 404 / 403 error
+else status != picked_up
+  Svc --> Ctrl : 400 "Chỉ ghi nhận phát hàng sau khi đã lấy hàng"
+else picked_up
+  Svc -> Repo : $queryRaw stop LEFT JOIN reservations
+  Repo --> Svc : stop | null
+  alt Stop not in this run
+    Svc --> Ctrl : 404 NotFound
+  else stop has no reservation (added before pickup)
+    Svc --> Ctrl : 400 "Điểm phát này chưa có mã QR"
+  else servable
+    Svc -> Repo : $executeRaw UPDATE bulk_runs SET quantity_distributed += servedQty\nWHERE status='picked_up' AND quantity_distributed + servedQty <= quantity
+    note right of Svc : cộng dồn CÓ ĐIỀU KIỆN trong 1 câu SQL (atomic)\n→ chặn race bấm 2 lần / 2 thiết bị
+    Repo -> DB : UPDATE bulk_runs
+    DB --> Repo : affectedRows
+    alt affectedRows = 0 (would exceed quota)
+      Svc -> Repo : bulkRun.findUnique(id) select quantity, quantityDistributed
+      Svc --> Ctrl : 400 "Chỉ còn {remaining} phần chưa phát"
+    else counted
+      group $transaction
+        Svc -> Repo : bulkRunStop.update(servedQty += n, servedAt, note?, photoUrl?)
+        Svc -> Repo : reservation.update(status = picked_up)
+        Repo -> DB : UPDATE bulk_run_stops / reservations
+      end
+      alt quantityDistributed >= run.quantity
+        Svc -> Svc : finalize(runId)   <<auto-complete>>
+        note right of Svc : phát đủ thì tự hoàn tất,\nkhông bắt shipper bấm thêm
+      else still has portions left
+        Svc --> Ctrl : { id, status: picked_up, quantityDistributed }
+      end
+    end
+  end
+end
+Ctrl --> Screen : return data (201) / error
+Screen --> User : stop marked served
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 8. Complete Bulk Run ───────────────────
+@startuml seq-bulk-complete
+!include _seq-style.iuml
+title Complete Bulk Run Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : finish the run
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/complete
+activate Ctrl
+Ctrl -> Svc : complete(runId, shipperUserId)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+alt status != picked_up
+  Svc --> Ctrl : 400 "Chỉ hoàn tất được chuyến đã lấy hàng"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else picked_up
+  Svc -> Svc : finalize(runId)
+  Svc -> Repo : bulkRun.updateMany(id, status = picked_up → completed, completedAt)
+  note right of Svc : idempotent claim — chỉ 1 lời gọi thắng,\nchặn cộng điểm đôi khi auto-complete\nđụng nút bấm tay
+  Repo --> Svc : claimed.count
+  alt claimed.count = 0 (already completed)
+    Svc -> Repo : bulkRun.findUnique(id)
+    Svc --> Ctrl : current state (no double reward)
+  else claimed
+    Svc -> Repo : bulkRun.findUnique(id) include listing, shipper, provider, stops
+    Repo --> Svc : run
+    Svc -> Svc : leftover = quantity − quantityDistributed\nstopsServed = stops with servedQty > 0\npoints = 5 + stopsServed × 2
+    group $transaction
+      opt leftover > 0
+        Svc -> Repo : restockSql(listingId, leftover) — LEAST(total, remaining + leftover), fully_reserved → active
+      end
+      Svc -> Repo : volunteerProfile.update(dedicationPoints += points)
+      Svc -> Repo : dedicationPointsHistory.create(bulk_distribution_completed)
+      loop for each unserved stop with a reservation
+        Svc -> Repo : reservation.update(status = completed)
+      end
+      Repo -> DB : UPDATE food_listings / volunteer_profiles / reservations + INSERT history
+    end
+    Svc -> Notif : notify(provider, "Chuyến giao sỉ hoàn tất — {d}/{q} phần tại {n} điểm")
+    Notif --> Provider : realtime notification
+    Svc --> Ctrl : { id, status: completed, quantityDistributed, leftover, pointsAwarded }
+    Ctrl --> Screen : return data (201)
+    Screen --> User : run completed, +{points} dedication points
+  end
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 9. Cancel Bulk Run ─────────────────────
+@startuml seq-bulk-cancel
+!include _seq-style.iuml
+title Cancel Bulk Run Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+participant ":TrustService" as Trust
+participant ":NotificationsService" as Notif
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : cancel the run
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancel(runId, shipperUserId)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+alt status = picked_up
+  Svc --> Ctrl : 400 "Đã lấy hàng — hãy hoàn tất chuyến"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else status not in (requested, approved)
+  Svc --> Ctrl : 400 "Chuyến này không còn huỷ được"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else cancellable
+  Svc -> Svc : wasApproved = (status = approved)
+  group $transaction
+    Svc -> Repo : bulkRun.update(status = cancelled)
+    opt wasApproved
+      Svc -> Repo : restockSql(listingId, run.quantity)
+      note right of Svc : đã duyệt = kho đã trừ → hoàn lại toàn bộ
+    end
+    Repo -> DB : UPDATE bulk_runs / food_listings
+  end
+  alt wasApproved
+    Svc -> Trust : applyDelta(shipper, −10, BULK_RUN_CANCELLED_AFTER_APPROVAL)
+    note right of Svc : NCC đã giữ hàng & từ chối khách khác\n→ phạt như huỷ trễ. Còn 'requested' thì không phạt.
+  end
+  Svc -> Notif : notify(provider, "Chuyến giao sỉ đã bị huỷ")
+  Notif --> Provider : realtime notification
+  Svc --> Ctrl : { id, status: cancelled }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : run cancelled
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 10. List Runs (both sides) ─────────────
+@startuml seq-bulk-list
+!include _seq-style.iuml
+title List Bulk Runs Sequence Diagram
+
+actor "Shipper / Provider" as User
+participant ":BulkRunListScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open bulk run list
+activate Screen
+alt shipper side
+  Screen -> Ctrl : GET /bulk-runs/my
+  activate Ctrl
+  Ctrl -> Svc : myRuns(shipperUserId)
+  activate Svc
+  Svc -> Repo : volunteerProfile.findUnique(userId)
+  Svc -> Repo : bulkRun.findMany(shipperId) take 15 include listing, provider, stops.reservation
+else provider side
+  Screen -> Ctrl : GET /bulk-runs/provider
+  Ctrl -> Svc : providerRuns(providerUserId)
+  Svc -> Repo : providerProfile.findUnique(userId)
+  Svc -> Repo : bulkRun.findMany(providerId) take 30 include listing, shipper, stops.reservation
+end
+Repo -> DB : SELECT bulk_runs JOIN …
+DB --> Repo : runs[]
+Repo --> Svc : runs
+
+Svc -> Svc : hydrateRuns(runs)
+Svc -> Repo : $queryRaw ST_X/ST_Y of bulk_run_stops (stop coords)
+Svc -> Repo : $queryRaw ST_X/ST_Y of food_listings.pickup_location
+Repo --> Svc : coords maps
+Svc -> Svc : deadlineAt = createdAt+24h / approvedAt+4h / pickedUpAt+8h theo status
+note right of Svc : hạn TUYỆT ĐỐI theo mốc vào giai đoạn —\nkhông dựa updatedAt (thao tác lặt vặt sẽ gia hạn vô hạn)
+
+opt provider side
+  loop for each distinct shipper
+    Svc -> Repo : count completed runs / delivered orders / failed orders
+  end
+  Svc -> Svc : attach shipperStats (căn cứ để NCC duyệt)
+end
+Svc --> Ctrl : runs[] hydrated
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render runs + countdown + QR per stop
+deactivate Screen
+@enduml
+
+'──────────────────── 11. Cron — Expire Stalled Runs ─────────
+@startuml seq-bulk-cron-expire
+!include _seq-style.iuml
+title Expire Stalled Bulk Runs Sequence Diagram
+
+participant ":Cron Scheduler" as Cron
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+Cron -> Svc : expireStalled()
+activate Svc
+
+group 1. requested > 24h — chưa trừ kho nên không cần hoàn
+  Svc -> Repo : bulkRun.updateMany(status = requested, createdAt < now − 24h) → cancelled
+  Repo -> DB : UPDATE bulk_runs
+  DB --> Repo : count
+end
+
+group 2. approved > 4h chưa lấy hàng — kho đang bị giữ
+  Svc -> Repo : bulkRun.findMany(status = approved, approvedAt < now − 4h) take 50
+  Repo --> Svc : runs[]
+  loop for each run
+    group $transaction
+      Svc -> Repo : bulkRun.update(status = cancelled, rejectReason)
+      Svc -> Repo : restockSql(listingId, quantity)  — hoàn TOÀN BỘ
+      Repo -> DB : UPDATE bulk_runs / food_listings
+    end
+  end
+end
+
+group 3. picked_up > 8h chưa phát xong — đóng chuyến
+  Svc -> Repo : bulkRun.findMany(status = picked_up, pickedUpAt < now − 8h) take 50
+  Repo --> Svc : runs[]
+  loop for each run
+    group $transaction
+      Svc -> Repo : bulkRun.update(status = completed, completedAt, rejectReason)
+      opt leftover > 0
+        Svc -> Repo : restockSql(listingId, leftover)
+      end
+      Repo -> DB : UPDATE bulk_runs / food_listings
+    end
+  end
+end
+note right of Svc : mọi hạn đều tính từ mốc vào giai đoạn\n(createdAt / approvedAt / pickedUpAt),\nkhông dùng updatedAt
+
+Svc --> Cron : số bản ghi đã xử lý
+deactivate Svc
+@enduml

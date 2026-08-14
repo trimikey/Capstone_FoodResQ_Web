@@ -18,6 +18,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { StorageService } from '@/common/storage/storage.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { OcrService } from '@/common/ocr/ocr.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -45,6 +46,10 @@ function normalizeVehiclePlate(value?: string): string | null {
   return plate || null;
 }
 
+function coerceBoolean(value: unknown): boolean {
+  return value === true || value === 'true';
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -55,6 +60,7 @@ export class AuthService {
     private faceMatch: FaceMatchService,
     private storage: StorageService,
     private ocr: OcrService,
+    private notifications: NotificationsService,
     @Inject('REDIS_CLIENT') private redis: Redis,
   ) {}
 
@@ -64,6 +70,7 @@ export class AuthService {
     idCard?: Express.Multer.File,
     vehiclePlateImage?: Express.Multer.File,
   ) {
+    const isCharityOrg = coerceBoolean(dto.isCharityOrg);
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
 
@@ -76,7 +83,7 @@ export class AuthService {
     // khuôn mặt hợp lệ TRƯỚC khi tạo tài khoản — không có/không nhận diện được
     // thì đăng ký THẤT BẠI (không tạo user). Tổ chức từ thiện & NCC không cần.
     const needsFace =
-      (dto.role === 'receiver' && !dto.isCharityOrg) || dto.role === 'volunteer';
+      (dto.role === 'receiver' && !isCharityOrg) || dto.role === 'volunteer';
     let faceDescriptor: number[] | null = null;
     let faceImageUrl: string | null = null;
     let idCardImageUrl: string | null = null;
@@ -147,6 +154,12 @@ export class AuthService {
       faceImageUrl = await this.storage.saveImage(selfie!, 'faces');
     }
 
+    // Trạng thái ban đầu: NCC/TNV cần admin duyệt hồ sơ (GPKD/CCCD) → pending_verification.
+    // Người nhận cá nhân đã eKYC khớp khuôn mặt ngay trong request này nên kích hoạt luôn;
+    // chỉ tổ chức từ thiện (isCharityOrg, không bắt buộc selfie) mới cần admin xác minh thủ công.
+    const initialStatus: 'active' | 'pending_verification' =
+      dto.role === 'receiver' && !isCharityOrg ? 'active' : 'pending_verification';
+
     // Tạo user + profile theo role trong 1 transaction — các flow sau
     // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
     const user = await this.prisma.$transaction(async (tx) => {
@@ -157,7 +170,7 @@ export class AuthService {
           fullName,
           role: dto.role,
           phone: dto.phone,
-          status: 'pending_verification',
+          status: initialStatus,
         },
       });
 
@@ -166,8 +179,8 @@ export class AuthService {
           data: {
             userId: created.id,
             address: dto.address ?? null,
-            isCharityOrg: dto.isCharityOrg ?? false,
-            organizationName: dto.isCharityOrg ? (dto.businessName ?? fullName) : null,
+            isCharityOrg,
+            organizationName: isCharityOrg ? (dto.businessName ?? fullName) : null,
             // eKYC đã xác thực ở trên (bắt buộc với cá nhân)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
@@ -268,6 +281,19 @@ export class AuthService {
 
       return created;
     });
+
+    // Hồ sơ chờ xác minh nằm im tới khi có admin tình cờ mở trang duyệt — báo ngay
+    // sau khi transaction commit (báo bên trong transaction thì rollback vẫn gửi nhầm).
+    if (user.role === 'provider' || user.role === 'volunteer') {
+      void this.notifications.notifyAdmins({
+        type: 'verification',
+        title: 'Hồ sơ mới chờ xác minh',
+        body: `${user.fullName} vừa đăng ký tài khoản ${
+          user.role === 'provider' ? 'nhà cung cấp' : 'tình nguyện viên'
+        } và đang chờ duyệt hồ sơ.`,
+        data: { userId: user.id, role: user.role },
+      });
+    }
 
     return this.issueTokens(user);
   }

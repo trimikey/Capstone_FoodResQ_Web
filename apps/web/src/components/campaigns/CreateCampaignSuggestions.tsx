@@ -68,7 +68,13 @@ function useInsertedTracker() {
       ids.forEach((id) => next.add(id));
       return next;
     });
-  return { inserted, track, trackAll };
+  const untrack = (id: string) =>
+    setInserted((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  return { inserted, track, trackAll, untrack };
 }
 
 function fireInsert(
@@ -77,6 +83,16 @@ function fireInsert(
 ) {
   window.dispatchEvent(
     new CustomEvent('cm:insert-template', { detail: { kind, payload } }),
+  );
+}
+
+/** Gỡ một mẫu đã chèn — form lắng nghe và xoá dòng tương ứng. */
+function fireRemove(
+  kind: 'shift' | 'schedule' | 'supply' | 'menu',
+  payload: unknown,
+) {
+  window.dispatchEvent(
+    new CustomEvent('cm:remove-template', { detail: { kind, payload } }),
   );
 }
 
@@ -102,7 +118,7 @@ export function ShiftSuggestions({
 }: BaseSuggestionsProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
-  const { inserted, track, trackAll } = useInsertedTracker();
+  const { inserted, track, trackAll, untrack } = useInsertedTracker();
 
   const shifts = useMemo(
     () => buildScaledTemplates(expectedServings).shifts,
@@ -149,9 +165,14 @@ export function ShiftSuggestions({
                   key={s.id}
                   shift={s}
                   used={used}
-                  onInsert={() => {
-                    fireInsert('shift', s);
-                    track(s.id);
+                  onToggle={() => {
+                    if (used) {
+                      fireRemove('shift', s);
+                      untrack(s.id);
+                    } else {
+                      fireInsert('shift', s);
+                      track(s.id);
+                    }
                   }}
                 />
               );
@@ -166,21 +187,24 @@ export function ShiftSuggestions({
 function ShiftRow({
   shift,
   used,
-  onInsert,
+  onToggle,
 }: {
   shift: ShiftTemplate;
   used: boolean;
-  onInsert: () => void;
+  onToggle: () => void;
 }) {
   return (
     <li>
+      {/* Bấm lại để GỠ: trước đây chèn xong là nút bị disable, chọn nhầm một mẫu
+          thì phải cuộn xuống danh sách ca để xoá tay. */}
       <button
         type="button"
-        disabled={used}
-        onClick={onInsert}
-        className={`w-full text-left rounded-xl border px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
+        onClick={onToggle}
+        aria-pressed={used}
+        title={used ? 'Bấm để bỏ ca này' : 'Bấm để thêm ca này'}
+        className={`group w-full text-left rounded-xl border px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
           used
-            ? 'border-emerald-200 bg-emerald-50 opacity-60 cursor-default'
+            ? 'border-emerald-300 bg-emerald-50 hover:border-rose-300 hover:bg-rose-50/60'
             : 'border-neutral-200 hover:border-emerald-300 hover:bg-emerald-50/40'
         }`}
       >
@@ -194,7 +218,11 @@ function ShiftRow({
           </p>
         </div>
         <RoleBadge role={shift.role} />
-        <span className="material-symbols-outlined text-[18px] text-emerald-600">
+        <span
+          className={`material-symbols-outlined text-[18px] ${
+            used ? 'text-emerald-600 group-hover:text-rose-600' : 'text-emerald-600'
+          }`}
+        >
           {used ? 'check_circle' : 'add_circle'}
         </span>
       </button>
@@ -561,18 +589,21 @@ function SuggestionPanel({
 export function MenuSuggestions({
   supplies,
   expectedServings,
+  currentMenuCount = 0,
 }: {
   /** Danh sách vật phẩm user đã nhập — dùng để match gợi ý món ăn. */
   supplies: Array<{ name: string }>;
   expectedServings: number;
+  /** Số món đã có trong thực đơn — để ước tính suất mỗi món sau khi thêm. */
+  currentMenuCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
   const { inserted, track, trackAll } = useInsertedTracker();
 
   const matched = useMemo(
-    () => buildMatchedMenuTemplates(supplies, expectedServings),
-    [supplies, expectedServings],
+    () => buildMatchedMenuTemplates(supplies, expectedServings, currentMenuCount),
+    [supplies, expectedServings, currentMenuCount],
   );
 
   // Nếu chưa nhập vật phẩm → không cho mở, hiển thị nút disabled kèm gợi ý.
@@ -609,7 +640,7 @@ export function MenuSuggestions({
         <SuggestionPanel
           tone="teal"
           title="Mẫu món ăn phù hợp với vật phẩm của bạn"
-          subtitle={`Dựa trên ${supplies.length} vật phẩm đã nhập — suất mỗi món ước tính ~30% tổng ${expectedServings} suất.`}
+          subtitle={`Dựa trên ${supplies.length} vật phẩm đã nhập — ${expectedServings} suất của chiến dịch sẽ được chia đều cho các món trong thực đơn.`}
           remainingCount={remaining}
           onInsertAll={() => {
             const pending = matched.filter((m) => !inserted.has(m.id));

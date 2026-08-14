@@ -1,9 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { type MyTask } from '@/hooks/useCampaigns';
+import { toast } from 'sonner';
+import { useCompleteDistribution, type MyTask } from '@/hooks/useCampaigns';
+import { formatCampaignRange } from '@/lib/campaign-schedule';
+import { errMsg } from '@/lib/utils';
 import { ROLE_META } from './RoleBadge';
-import { CampaignTaskAction, TASK_NEXT } from './CampaignTaskAction';
+import { TASK_NEXT } from './CampaignTaskAction';
 
 const TASK_STATUS_META: Record<string, { label: string; chip: string }> = {
   pending: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
@@ -24,8 +27,15 @@ function taskStartDate(t: MyTask): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * Mốc kết thúc lấy theo NGÀY KẾT THÚC, không phải ngày bắt đầu.
+ *
+ * Trước đây hàm này ghép `endTime` vào `scheduledDate`, nên chiến dịch kéo dài
+ * nhiều ngày bị coi là hết hạn ngay tối hôm đầu và thẻ việc hiện "Quá hạn" suốt
+ * những ngày còn lại dù TNV vẫn đang làm.
+ */
 function taskEndDate(t: MyTask): Date | null {
-  const datePart = t.campaign.scheduledDate?.slice(0, 10);
+  const datePart = (t.campaign.endDate ?? t.campaign.scheduledDate)?.slice(0, 10);
   if (!datePart) return null;
   const timePart = (t.campaign.endTime ?? '23:59').slice(0, 5);
   const date = new Date(`${datePart}T${timePart}:00Z`);
@@ -58,18 +68,12 @@ function urgencyOf(t: MyTask, now: Date): {
   return { kind: 'normal', isCompleted };
 }
 
-const TASK_STEPS = [
-  { key: 'assigned', label: 'Nhận việc' },
-  { key: 'checked_in', label: 'Điểm danh' },
-  { key: 'in_progress', label: 'Đang làm' },
-  { key: 'completed', label: 'Hoàn thành' },
-];
-
 export default function CampaignTaskCard({ t }: { t: MyTask }) {
   const rm = ROLE_META[t.role];
   const status = TASK_STATUS_META[t.status] ?? { label: t.status, chip: 'cm-chip cm-chip--ink' };
-  const stepIdx = TASK_STEPS.findIndex((step) => step.key === t.status);
   const next = TASK_NEXT[t.status]?.(t.role) ?? null;
+  const distributions = t.distributions ?? [];
+  const completeDist = useCompleteDistribution();
   const campaignRunning = t.campaign.status === 'in_progress';
   const urgency = urgencyOf(t, new Date());
   const cardClass = urgency.kind === 'overdue'
@@ -114,7 +118,7 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
       <div className="flex flex-wrap gap-3 mt-2 text-xs text-neutral-500">
         <span className="inline-flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">event</span>
-          {new Date(t.campaign.scheduledDate).toLocaleDateString('vi-VN')} · {t.campaign.startTime}–{t.campaign.endTime}
+          {formatCampaignRange(t.campaign)}
         </span>
         <span className="inline-flex items-center gap-1 truncate flex-1 min-w-0">
           <span className="material-symbols-outlined text-[14px]">place</span>
@@ -127,19 +131,92 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
           <span className="material-symbols-outlined text-[15px]">visibility</span>
           Xem chi tiết chiến dịch
         </Link>
-        {(t.role === 'chef' || t.role === 'waiter') && (
-          <Link href={`/kitchen/${t.campaign.id}`} className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100">
-            <span className="material-symbols-outlined text-[15px]">soup_kitchen</span>
-            {t.role === 'chef' ? 'Không gian làm việc bếp' : 'Ghi phân phát'}
+        {/* MỌI vai trò đều có màn nhiệm vụ riêng: bếp có 4 khâu/món, shipper có
+            danh sách chuyến & đợt phát theo giờ. Trước đây shipper không có lối vào
+            nên chỉ còn một nút đổi trạng thái chung chung ở cuối thẻ. */}
+        {!['pending', 'rejected'].includes(t.status) && (
+          <Link
+            href={`/my-tasks/${t.id}`}
+            className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100"
+          >
+            <span className="material-symbols-outlined text-[15px]">
+              {t.role === 'shipper' ? 'local_shipping' : 'soup_kitchen'}
+            </span>
+            Vào nhiệm vụ →
           </Link>
         )}
       </div>
 
-      <div className="flex items-center gap-1 mt-3">
-        {TASK_STEPS.map((step, index) => (
-          <div key={step.key} className={`flex-1 h-1.5 rounded-full ${index <= stepIdx ? 'bg-emerald-500' : 'bg-neutral-200'}`} title={step.label} />
-        ))}
-      </div>
+      {/* Đợt phát tổ chức giao cho shipper này — kèm địa chỉ để đi luôn.
+          Đây là nơi shipper quản lý việc phát tận điểm; /deliveries chỉ quản lý các
+          đơn `deliveries` (chở hàng), không có dữ liệu của đợt phát. */}
+      {distributions.length > 0 && (
+        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
+            <span className="material-symbols-outlined text-[15px]">takeout_dining</span>
+            Bạn được giao {distributions.length} đợt phát
+          </p>
+          <ul className="mt-2 space-y-2">
+            {distributions.map((d) => (
+              <li key={d.id} className="rounded-lg bg-white/80 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold text-neutral-800">
+                    {d.roundLabel || 'Đợt phát'} · {d.servingsServed} suất
+                  </p>
+                  {d.completedAt && (
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                      Đã phát xong
+                    </span>
+                  )}
+                </div>
+                {d.points.length > 0 ? (
+                  <ul className="mt-1 space-y-1">
+                    {d.points.map((pt, i) => (
+                      <li key={`${d.id}-p-${i}`} className="flex items-start gap-1 text-[11px] text-neutral-600">
+                        <span className="material-symbols-outlined text-[13px] text-emerald-600">place</span>
+                        <span className="min-w-0">
+                          <span className="font-semibold">{pt.label}</span>
+                          <br />
+                          <span className="text-neutral-500">{pt.address}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-[11px] italic text-amber-700">
+                    Chưa có địa chỉ điểm phát — liên hệ tổ chức để nhận.
+                  </p>
+                )}
+                {d.note && <p className="mt-1 text-[11px] text-neutral-500">Ghi chú: {d.note}</p>}
+                {!d.completedAt && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await completeDist.mutateAsync({
+                          distributionId: d.id,
+                          campaignId: t.campaign.id,
+                        });
+                        toast.success('Đã xác nhận phát xong đợt này.');
+                      } catch (err) {
+                        toast.error(errMsg(err, 'Xác nhận thất bại'));
+                      }
+                    }}
+                    disabled={completeDist.isPending}
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">task_alt</span>
+                    {completeDist.isPending ? 'Đang lưu…' : 'Xác nhận đã phát xong'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] text-emerald-700">
+            Số suất chỉ được tính vào thống kê chiến dịch sau khi bạn xác nhận.
+          </p>
+        </div>
+      )}
 
       {t.status === 'pending' ? (
         <p className="text-[11px] text-honey-700 mt-3 flex items-center gap-1 font-semibold">
@@ -161,7 +238,15 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
           <span className="material-symbols-outlined text-[14px]">schedule</span>
           Chờ tổ chức bắt đầu chiến dịch
         </p>
-      ) : next ? <CampaignTaskAction t={t} /> : null}
+      ) : next ? (
+        /* Nút đổi trạng thái rời rạc ("Điểm danh tại bếp" / "Bắt đầu làm việc") đã
+           chuyển vào màn nhiệm vụ, nơi nó đứng cạnh việc cụ thể nên mới có nghĩa.
+           Ở thẻ tóm tắt chỉ nhắc còn việc đang chờ. */
+        <p className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-honey-700">
+          <span className="material-symbols-outlined text-[14px]">pending_actions</span>
+          Còn việc cần xử lý — bấm “Vào nhiệm vụ”
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -15,6 +15,83 @@ export class UpdateListingCategoryDto {
   category!: FoodCategory;
 }
 
+export class CreateFoodCategoryDto {
+  @ApiProperty({ example: 'Đồ hộp / đóng gói' })
+  @IsString({ message: 'Tên nhóm phải là chuỗi' })
+  @MinLength(2, { message: 'Tên nhóm tối thiểu 2 ký tự' })
+  @MaxLength(120, { message: 'Tên nhóm tối đa 120 ký tự' })
+  name!: string;
+
+  @ApiPropertyOptional({ enum: ['ready_to_eat', 'raw_ingredient', 'other'] })
+  @IsOptional()
+  @IsIn(['ready_to_eat', 'raw_ingredient', 'other'], { message: 'Nhóm lớn không hợp lệ' })
+  group?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: 'Mô tả phải là chuỗi' })
+  @MaxLength(500, { message: 'Mô tả tối đa 500 ký tự' })
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Thứ tự hiển thị, nhỏ hơn lên trước' })
+  @IsOptional()
+  @IsInt({ message: 'Thứ tự phải là số nguyên' })
+  @Min(0)
+  @Max(999)
+  @Type(() => Number)
+  sortOrder?: number;
+}
+
+export class UpdateFoodCategoryDto extends CreateFoodCategoryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean({ message: 'Trạng thái phải là true/false' })
+  isActive?: boolean;
+}
+
+export class CreateFoodCatalogItemDto {
+  @ApiProperty({ description: 'Nhóm mà loại thực phẩm này thuộc về' })
+  @IsUUID('4', { message: 'ID nhóm không hợp lệ' })
+  categoryId!: string;
+
+  @ApiProperty({ example: 'Đồ hộp móp méo' })
+  @IsString({ message: 'Tên loại phải là chuỗi' })
+  @MinLength(2, { message: 'Tên loại tối thiểu 2 ký tự' })
+  @MaxLength(255, { message: 'Tên loại tối đa 255 ký tự' })
+  name!: string;
+
+  @ApiPropertyOptional({ description: 'Ghi chú khi tiếp nhận' })
+  @IsOptional()
+  @IsString({ message: 'Mô tả phải là chuỗi' })
+  @MaxLength(500, { message: 'Mô tả tối đa 500 ký tự' })
+  description?: string;
+}
+
+export class UpdateFoodCatalogItemDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID('4', { message: 'ID nhóm không hợp lệ' })
+  categoryId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: 'Tên loại phải là chuỗi' })
+  @MinLength(2, { message: 'Tên loại tối thiểu 2 ký tự' })
+  @MaxLength(255, { message: 'Tên loại tối đa 255 ký tự' })
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: 'Mô tả phải là chuỗi' })
+  @MaxLength(500, { message: 'Mô tả tối đa 500 ký tự' })
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean({ message: 'Trạng thái phải là true/false' })
+  isActive?: boolean;
+}
+
 export class ReviewCampaignChangeDto {
   @ApiProperty({ enum: ['approve', 'reject'], description: 'Duyệt hay từ chối yêu cầu thay đổi' })
   @IsIn(['approve', 'reject'])

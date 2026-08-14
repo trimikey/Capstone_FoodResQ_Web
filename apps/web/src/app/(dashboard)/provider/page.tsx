@@ -9,13 +9,15 @@ import {
   usePublishListing,
   useCancelListing,
   useDuplicateListing,
+  useDeleteDraftListing,
   useProviderStats,
   type ProviderListing,
 } from '@/hooks/useProviderListings';
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
-import { useProviderEsg } from '@/hooks/useEsg';
-import { UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
+import { minuteToHHmm } from '@/lib/listing-form';
+import { Modal } from '@/components/shared/Modal';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
 import ProviderHeaderCard from '@/components/provider/ProviderHeaderCard';
 import PendingRequestsBanner from '@/components/provider/PendingRequestsBanner';
@@ -34,12 +36,12 @@ type StatusFilter = 'all' | 'open' | 'draft' | 'closed';
 export default function ProviderDashboardPage() {
   const router = useRouter();
   const { data, isLoading } = useProviderListings();
-  const { data: esg } = useProviderEsg();
   const { data: me } = useMe();
   const { data: stats } = useProviderStats();
   const publishListing = usePublishListing();
   const cancelListing = useCancelListing();
   const duplicateListing = useDuplicateListing();
+  const deleteDraft = useDeleteDraftListing();
 
   const providerProfile = me?.provider ?? null;
   const providerVerified = providerProfile?.verificationStatus === 'approved';
@@ -47,6 +49,7 @@ export default function ProviderDashboardPage() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open');
   const [extendTarget, setExtendTarget] = useState<{ listing: ProviderListing; mode: 'extend_time' | 'add_quantity' | 'both' } | null>(null);
+  const [deletingDraft, setDeletingDraft] = useState<ProviderListing | null>(null);
 
   const listings = (data?.items ?? []) as ProviderListing[];
   const filteredListings = listings.filter((l) => {
@@ -72,6 +75,16 @@ export default function ProviderDashboardPage() {
   async function handleCancel(id: string) {
     try { await cancelListing.mutateAsync({ id }); toast.info('Đã huỷ tin'); }
     catch { toast.error('Huỷ thất bại'); }
+  }
+
+  async function handleDeleteDraft(id: string) {
+    try {
+      await deleteDraft.mutateAsync(id);
+      toast.success('Đã xoá bản nháp');
+      setDeletingDraft(null);
+    } catch (e) {
+      toast.error(errMsg(e, 'Xoá bản nháp thất bại'));
+    }
   }
 
   async function handleDuplicate(id: string) {
@@ -138,14 +151,6 @@ export default function ProviderDashboardPage() {
             </>
           }
         />
-
-        {/* Metric Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <MetricCard icon="eco" label="Thực phẩm đã cứu" value={`${esg?.kgRescued ?? 0}`} unit="kg" tone="sage" />
-          <MetricCard icon="cloud_done" label="CO₂ giảm thiểu" value={`${esg?.co2SavedKg ?? 0}`} unit="tấn" tone="sky" />
-          <MetricCard icon="restaurant" label="Suất ăn chia sẻ" value={`${esg?.mealsServed ?? 0}`} unit="suất" tone="amber" />
-          <MetricCard icon="volunteer_activism" label="Người được giúp" value={`${esg?.peopleHelped ?? 0}`} unit="người" tone="emerald" />
-        </section>
 
         {/* Main Dashboard Split Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -274,6 +279,7 @@ export default function ProviderDashboardPage() {
                       onPublish={() => handlePublish(listing.id)}
                       onCancel={() => handleCancel(listing.id)}
                       onDuplicate={() => handleDuplicate(listing.id)}
+                      onDeleteDraft={() => setDeletingDraft(listing)}
                       onExtend={(mode) => setExtendTarget({ listing, mode })}
                       onOpen={() => router.push(`/listings/${listing.id}`)}
                     />
@@ -304,46 +310,49 @@ export default function ProviderDashboardPage() {
             defaultMode={extendTarget.mode}
           />
         )}
+
+        {/* Xoá nháp là thao tác không hoàn tác được → hỏi lại trước khi gọi API */}
+        {deletingDraft && (
+          <Modal
+            onClose={() => setDeletingDraft(null)}
+            closeOnBackdrop={!deleteDraft.isPending}
+            className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined">delete</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-lg text-neutral-900">Xoá bản nháp?</h3>
+                <p className="text-sm text-neutral-500 truncate">{deletingDraft.title}</p>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-600 mt-4 leading-relaxed">
+              Bản nháp này chưa từng được đăng nên chưa ai đặt. Xoá xong sẽ không khôi phục lại được.
+            </p>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setDeletingDraft(null)}
+                disabled={deleteDraft.isPending}
+                className="flex-1 py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
+              >
+                Giữ lại
+              </button>
+              <button
+                onClick={() => void handleDeleteDraft(deletingDraft.id)}
+                disabled={deleteDraft.isPending}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+              >
+                {deleteDraft.isPending ? 'Đang xoá…' : 'Xoá nháp'}
+              </button>
+            </div>
+          </Modal>
+        )}
       </div>
     </div>
   );
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  unit,
-  tone,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  unit: string;
-  tone: 'sage' | 'amber' | 'sky' | 'emerald';
-}) {
-  const tones = {
-    sage: { bg: 'bg-[#efe8d8]', text: 'text-[#236c2a]' },
-    amber: { bg: 'bg-amber-100', text: 'text-amber-700' },
-    sky: { bg: 'bg-sky-100', text: 'text-sky-700' },
-    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  } as const;
-  const t = tones[tone];
-  return (
-    <div className="bg-white p-4 md:p-5 rounded-2xl border border-neutral-150 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex justify-between items-start mb-3">
-        <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} flex items-center justify-center`}>
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
-        </div>
-      </div>
-      <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">{label}</p>
-      <p className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1 tabular-nums">
-        {value}
-        <span className="text-xs font-medium text-neutral-500 ml-1">{unit}</span>
-      </p>
-    </div>
-  );
-}
 
 function ActivityItem({
   icon,
@@ -382,6 +391,7 @@ function PostingItem({
   onPublish,
   onCancel,
   onDuplicate,
+  onDeleteDraft,
   onExtend,
   onOpen,
 }: {
@@ -389,6 +399,7 @@ function PostingItem({
   onPublish: () => void;
   onCancel: () => void;
   onDuplicate: () => void;
+  onDeleteDraft: () => void;
   onExtend: (mode: 'extend_time' | 'add_quantity' | 'both') => void;
   onOpen: () => void;
 }) {
@@ -416,7 +427,7 @@ function PostingItem({
       <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 flex items-center justify-center overflow-hidden">
         {listing.imageUrls[0] ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={listing.imageUrls[0]} alt={listing.title} className="w-full h-full object-cover" />
+          <img src={mediaUrl(listing.imageUrls[0])} alt={listing.title} className="w-full h-full object-cover" />
         ) : (
           <span className="material-symbols-outlined text-[24px] text-neutral-300">bakery_dining</span>
         )}
@@ -437,8 +448,20 @@ function PostingItem({
               isExpiringSoon ? 'text-amber-600 font-semibold' : 'text-neutral-500'
             }`}
           >
+            {/* Ghi rõ "đến hết" + ngày: chỉ hiện mỗi giờ thì NCC tưởng đó là giờ mở cửa. */}
             <span className="material-symbols-outlined text-[14px]">schedule</span>{' '}
-            {new Date(listing.pickupEndTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            Đến hết{' '}
+            {new Date(listing.pickupEndTime).toLocaleString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              day: '2-digit',
+              month: '2-digit',
+            })}
+            {listing.dailyStartMinute != null && listing.dailyEndMinute != null && (
+              <span className="text-neutral-400">
+                {' '}· mở {minuteToHHmm(listing.dailyStartMinute)}–{minuteToHHmm(listing.dailyEndMinute)}
+              </span>
+            )}
           </div>
         </div>
         {isExtendable && (
@@ -484,13 +507,23 @@ function PostingItem({
         onKeyDown={(e) => e.stopPropagation()}
       >
         {listing.status === 'draft' ? (
-          <button
-            onClick={onPublish}
-            className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
-            title="Đăng"
-          >
-            <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
-          </button>
+          <>
+            <button
+              onClick={onPublish}
+              className="p-2 text-[#236c2a] hover:bg-emerald-50 rounded-lg transition-colors"
+              title="Đăng"
+            >
+              <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+            </button>
+            {/* Nháp chưa từng đăng nên xoá hẳn được — khác tin đã đăng chỉ huỷ để giữ lịch sử */}
+            <button
+              onClick={onDeleteDraft}
+              className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+              title="Xoá bản nháp"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+            </button>
+          </>
         ) : ['completed', 'expired', 'cancelled'].includes(listing.status) ? (
           <button
             onClick={onDuplicate}

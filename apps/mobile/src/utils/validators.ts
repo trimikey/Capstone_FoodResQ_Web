@@ -177,41 +177,100 @@ export type UpdateProfileFormInput = z.infer<typeof updateProfileSchema>;
  * Tạo tin thực phẩm (provider) — khớp CreateListingDto backend.
  * Các field thời gian dùng Date (từ datetimepicker), convert ISO khi submit.
  */
+
+const VALID_CATEGORY_KEYS = [
+  'cooked_meal', 'bakery', 'fresh_fruit', 'beverage',
+  'vegetables', 'raw_protein', 'dry_goods', 'canned_packaged', 'other',
+] as const;
+
+/** Đơn vị đếm rời rạc — quantityTotal phải là số nguyên. */
+const DISCRETE_UNITS = ['portion', 'item', 'box'] as const;
+
 const optionalPositive = z.preprocess(
   (v) => (v === '' || v == null ? undefined : Number(v)),
   z.number().positive('Phải là số dương').optional()
 );
 
-export const createListingSchema = z
-  .object({
-    title: z.string().min(1, 'Nhập tiêu đề').max(255, 'Tối đa 255 ký tự'),
-    category: z.string().min(1, 'Chọn loại thực phẩm'),
-    quantityTotal: z.coerce.number().positive('Số lượng phải lớn hơn 0'),
-    quantityUnit: z.string().min(1, 'Chọn đơn vị'),
-    maxPerReservation: z.coerce
-      .number()
-      .int('Phải là số nguyên')
-      .min(1, 'Tối thiểu 1')
-      .max(10, 'Tối đa 10'),
-    pickupStartTime: z.date(),
-    pickupEndTime: z.date(),
-    expiryTime: z.date(),
-    pickupAddress: z.string().min(1, 'Nhập địa chỉ lấy hàng'),
-    description: z.string().optional(),
-    weightPerUnitKg: optionalPositive,
-    storageConditions: z.string().optional(),
-    allergenNotes: z.string().optional(),
-  })
-  .refine((d) => d.pickupEndTime > d.pickupStartTime, {
-    message: 'Giờ kết thúc phải sau giờ bắt đầu',
-    path: ['pickupEndTime'],
-  })
-  .refine((d) => d.expiryTime >= d.pickupEndTime, {
-    message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi',
-    path: ['expiryTime'],
-  });
+/**
+ * Factory nhận `now` để unit test kiểm soát thời gian.
+ * Trong production dùng `createListingSchema` (export bên dưới).
+ */
+export function makeCreateListingSchema(now: Date = new Date()) {
+  return z
+    .object({
+      title: z.string().min(1, 'Nhập tiêu đề').max(255, 'Tối đa 255 ký tự'),
+      categories: z
+        .array(z.string().min(1))
+        .min(1, 'Chọn ít nhất 1 loại thực phẩm')
+        .refine(
+          (arr) => arr.every((k) => (VALID_CATEGORY_KEYS as readonly string[]).includes(k)),
+          { message: 'Loại thực phẩm không hợp lệ' }
+        ),
+      categoryOtherLabel: z.string().max(100, 'Tối đa 100 ký tự').optional(),
+      quantityTotal: z.coerce
+        .number()
+        .positive('Số lượng phải lớn hơn 0')
+        .max(10000, 'Tối đa 10 000'),
+      quantityUnit: z.string().min(1, 'Chọn đơn vị'),
+      maxPerReservation: z.coerce
+        .number()
+        .int('Phải là số nguyên')
+        .min(1, 'Tối thiểu 1')
+        .max(10, 'Tối đa 10'),
+      pickupStartTime: z.date().optional(),
+      pickupEndTime: z.date().optional(),
+      expiryTime: z.date().optional(),
+      pickupAddress: z.string().min(1, 'Nhập địa chỉ lấy hàng'),
+      description: z.string().optional(),
+      weightPerUnitKg: optionalPositive,
+      storageConditions: z.string().optional(),
+      allergenNotes: z.string().optional(),
+    })
+    .refine(
+      (d) => {
+        if (!d.categories.includes('other')) return true;
+        const label = d.categoryOtherLabel?.trim() ?? '';
+        return label.length >= 3;
+      },
+      { message: 'Nhập mô tả loại thực phẩm (ít nhất 3 ký tự)', path: ['categoryOtherLabel'] }
+    )
+    .refine(
+      (d) => {
+        if (!d.categoryOtherLabel) return true;
+        return /\p{L}/u.test(d.categoryOtherLabel);
+      },
+      { message: 'Tên thực phẩm phải chứa chữ cái', path: ['categoryOtherLabel'] }
+    )
+    .refine(
+      (d) => d.maxPerReservation <= d.quantityTotal,
+      { message: 'Số phần tối đa/lượt không được lớn hơn tổng số lượng', path: ['maxPerReservation'] }
+    )
+    .refine(
+      (d) => {
+        if ((DISCRETE_UNITS as readonly string[]).includes(d.quantityUnit)) {
+          return Number.isInteger(d.quantityTotal);
+        }
+        return true;
+      },
+      { message: 'Số lượng phải là số nguyên cho đơn vị phần/cái/hộp', path: ['quantityTotal'] }
+    )
+    .refine(
+      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() + 30 * 60_000,
+      { message: 'Giờ bắt đầu phải ít nhất 30 phút từ bây giờ', path: ['pickupStartTime'] }
+    )
+    .refine(
+      (d) => !d.pickupEndTime || !d.pickupStartTime || d.pickupEndTime > d.pickupStartTime,
+      { message: 'Giờ kết thúc phải sau giờ bắt đầu', path: ['pickupEndTime'] }
+    )
+    .refine(
+      (d) => !d.expiryTime || !d.pickupEndTime || d.expiryTime >= d.pickupEndTime,
+      { message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi', path: ['expiryTime'] }
+    );
+}
 
-export type CreateListingFormInput = z.infer<typeof createListingSchema>;
+export const createListingSchema = makeCreateListingSchema();
+
+export type CreateListingFormInput = z.infer<ReturnType<typeof makeCreateListingSchema>>;
 
 /**
  * Thông tin cơ sở khi đăng ký provider (gửi kèm register).

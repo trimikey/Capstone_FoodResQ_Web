@@ -14,6 +14,7 @@ function socketUrl(): string {
 // ── Types (khớp shape BE trả về) ────────────────────────────────────────────
 interface ListingBrief {
   title: string;
+  category?: string;
   pickupAddress: string;
   imageUrls: string[] | null;
 }
@@ -82,10 +83,18 @@ export interface DeliveryHistoryItem extends DeliverySourceFields {
   failedReason: string | null;
   createdAt: string;
   coords: DeliveryCoords | null;
+  // Mốc thời gian + ảnh minh chứng cho phần "Chi tiết" — BE đã trả sẵn trong
+  // GET /deliveries/my/history (findMany trả toàn bộ cột của bảng deliveries).
+  assignedAt: string | null;
+  /** Luôn null với đơn lẻ: BE chỉ ghi mốc lấy hàng vào `qcPhotoAt`. */
+  pickedUpAt: string | null;
+  qcPhotoUrl: string | null;
+  qcPhotoAt: string | null;
+  deliveryProofAt: string | null;
   reservation: {
     quantity: number;
     listing: ListingBrief;
-    receiver: { user: { fullName: string } } | null;
+    receiver: { address?: string | null; user: { fullName: string } } | null;
   } | null;
 }
 

@@ -22,11 +22,11 @@ title Đăng ký tài khoản (Register)
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(Web/Mobile)" as FE
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Web/Mobile)" as FE
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
 
 User -> FE : Điền form đăng ký
@@ -94,11 +94,11 @@ title Đăng nhập (Login)
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(Web/Mobile)" as FE
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Web/Mobile)" as FE
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Nhập email + mật khẩu
@@ -146,11 +146,11 @@ title Đăng nhập bằng Google (Firebase)
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(Web/Mobile)" as FE
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "Firebase Admin" as FB
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Web/Mobile)" as FE
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":Firebase Admin" as FB
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Bấm "Đăng nhập với Google"
@@ -202,11 +202,11 @@ title Làm mới Access Token (Refresh + Rotation)
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(axios interceptor)" as FE
-participant "AuthController" as Ctrl
-participant "AuthService" as Svc
-participant "bcrypt" as Bcrypt
-participant "PrismaService" as Prisma
+participant ":Frontend\n(axios interceptor)" as FE
+participant ":AuthController" as Ctrl
+participant ":AuthService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : (access token hết hạn 401)
@@ -252,12 +252,12 @@ title Đặt chỗ thực phẩm (Create Reservation)
 autonumber
 
 actor "Receiver" as User
-participant "Frontend\n(Web/Mobile)" as FE
-participant "ReservationsController" as Ctrl
-participant "ReservationsService" as Svc
-participant "SystemConfig" as Cfg
-participant "Redlock\n(Redis)" as Lock
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Web/Mobile)" as FE
+participant ":ReservationsController" as Ctrl
+participant ":ReservationsService" as Svc
+participant ":SystemConfig" as Cfg
+participant ":Redlock\n(Redis)" as Lock
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
 queue "BullMQ\n(notification-push)" as MQ
 
@@ -346,14 +346,14 @@ title Quét mã QR lấy hàng (Provider scan)
 autonumber
 
 actor "Provider" as User
-participant "Frontend\n(QR Scanner)" as FE
-participant "ReservationsController" as Ctrl
-participant "ReservationsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend\n(QR Scanner)" as FE
+participant ":ReservationsController" as Ctrl
+participant ":ReservationsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
-participant "NotificationsService" as Notif
-participant "NotificationsGateway\n(WebSocket)" as WS
-participant "PushService\n(FCM)" as Push
+participant ":NotificationsService" as Notif
+participant ":NotificationsGateway\n(WebSocket)" as WS
+participant ":PushService\n(FCM)" as Push
 
 User -> FE : Quét QR của Receiver
 FE -> Ctrl : POST /reservations/scan { qrToken }
@@ -410,12 +410,12 @@ title Xác thực khuôn mặt & hoàn tất nhận hàng
 autonumber
 
 actor "Receiver" as User
-participant "Frontend\n(Camera)" as FE
-participant "ReservationsController" as Ctrl
-participant "ReservationsService" as Svc
-participant "FaceMatchService" as Face
-participant "StorageService" as Store
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Camera)" as FE
+participant ":ReservationsController" as Ctrl
+participant ":ReservationsService" as Svc
+participant ":FaceMatchService" as Face
+participant ":StorageService" as Store
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Chụp ảnh xác thực
@@ -469,10 +469,10 @@ title Hủy đặt chỗ (Cancel Reservation)
 autonumber
 
 actor "Receiver" as User
-participant "Frontend" as FE
-participant "ReservationsController" as Ctrl
-participant "ReservationsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":ReservationsController" as Ctrl
+participant ":ReservationsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Bấm "Hủy đơn"
@@ -522,9 +522,9 @@ FE --> User : "Đã hủy đơn"
 title Cập nhật điểm uy tín (applyTrustDelta)
 autonumber
 
-participant "ReservationsService" as Svc
-participant "SystemConfig" as Cfg
-participant "PrismaService" as Prisma
+participant ":ReservationsService" as Svc
+participant ":SystemConfig" as Cfg
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 [-> Svc : applyTrustDelta(userId, reason, delta)
@@ -561,13 +561,13 @@ title Phân công shipper (Broadcast + Accept race)
 autonumber
 
 queue "BullMQ" as MQ
-participant "DeliveriesService" as Svc
-participant "PrismaService" as Prisma
+participant ":DeliveriesService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
-participant "PushService\n(FCM)" as Push
+participant ":PushService\n(FCM)" as Push
 actor "Shipper" as Shipper
-participant "Frontend" as FE
-participant "DeliveriesController" as Ctrl
+participant ":Frontend" as FE
+participant ":DeliveriesController" as Ctrl
 
 == Broadcast tới tối đa 5 shipper gần nhất ==
 MQ -> Svc : broadcastToNearbyShippers(deliveryId, pickupLng, pickupLat)
@@ -636,12 +636,12 @@ title Shipper cập nhật vị trí real-time (Live Tracking)
 autonumber
 
 actor "Shipper" as Shipper
-participant "Frontend\n(GPS)" as FE
-participant "VolunteersController" as Ctrl
-participant "VolunteersService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend\n(GPS)" as FE
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
-participant "NotificationsGateway\n(WebSocket)" as WS
+participant ":NotificationsGateway\n(WebSocket)" as WS
 actor "Receiver" as Receiver
 
 Shipper -> FE : (GPS thay đổi)
@@ -676,10 +676,10 @@ title Provider tạo tin đăng thực phẩm
 autonumber
 
 actor "Provider" as User
-participant "Frontend" as FE
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
 
 User -> FE : Điền form tin đăng
@@ -720,10 +720,10 @@ title Tìm kiếm thực phẩm gần đây (PostGIS ST_DWithin)
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(Map)" as FE
-participant "ListingsController" as Ctrl
-participant "ListingsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Map)" as FE
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
 
 User -> FE : Mở bản đồ / tìm kiếm
@@ -758,12 +758,12 @@ title Tạo chiến dịch bếp ăn từ thiện (Kitchen Campaign)
 autonumber
 
 actor "Charity Org" as User
-participant "Frontend" as FE
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
-participant "NotificationsService" as Notif
+participant ":NotificationsService" as Notif
 
 User -> FE : Tạo chiến dịch
 FE -> Ctrl : POST /campaigns (CreateCampaignDto)
@@ -803,10 +803,10 @@ title Volunteer ứng tuyển chiến dịch (chef/waiter/shipper)
 autonumber
 
 actor "Volunteer" as User
-participant "Frontend" as FE
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Bấm "Ứng tuyển" (chọn role)
@@ -865,11 +865,11 @@ title Volunteer tiến trình nhiệm vụ + cộng điểm cống hiến
 autonumber
 
 actor "Volunteer" as User
-participant "Frontend\n(Camera)" as FE
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Camera)" as FE
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Bấm "Tiến trình" (+ ảnh minh chứng)
@@ -928,12 +928,12 @@ title Provider quyên góp & Charity xác nhận
 autonumber
 
 actor "Provider" as Prov
-participant "Frontend" as FE
-participant "CampaignsController" as Ctrl
-participant "CampaignsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
-participant "NotificationsService" as Notif
+participant ":NotificationsService" as Notif
 actor "Charity Org" as Charity
 
 == Cam kết quyên góp ==
@@ -988,13 +988,13 @@ title Đầu bếp ghi nhật ký an toàn thực phẩm (HACCP-lite)
 autonumber
 
 actor "Chef" as User
-participant "Frontend\n(Camera)" as FE
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Camera)" as FE
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
-participant "NotificationsService" as Notif
+participant ":NotificationsService" as Notif
 
 User -> FE : Nhập kết quả kiểm tra (+ ảnh)
 FE -> Ctrl : POST /campaigns/:id/safety-logs (dto, photo?)
@@ -1035,11 +1035,11 @@ title Waiter phân phát suất ăn + ghi nhận phản hồi
 autonumber
 
 actor "Waiter" as User
-participant "Frontend\n(Camera/GPS)" as FE
-participant "KitchenOpsController" as Ctrl
-participant "KitchenOpsService" as Svc
-participant "StorageService" as Store
-participant "PrismaService" as Prisma
+participant ":Frontend\n(Camera/GPS)" as FE
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":StorageService" as Store
+participant ":PrismaService" as Prisma
 database "PostgreSQL\n(+PostGIS)" as DB
 
 User -> FE : Nhập số suất + người nhận (+ ảnh, vị trí)
@@ -1087,10 +1087,10 @@ title Tạo công thức nấu ăn (Recipe + Ingredients)
 autonumber
 
 actor "Chef / Admin" as User
-participant "Frontend" as FE
-participant "RecipesController" as Ctrl
-participant "RecipesService" as Svc
-participant "PrismaService" as Prisma
+participant ":Frontend" as FE
+participant ":RecipesController" as Ctrl
+participant ":RecipesService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 User -> FE : Điền công thức + nguyên liệu
@@ -1132,13 +1132,13 @@ end note
 title Gửi thông báo hợp nhất (DB + WebSocket + FCM)
 autonumber
 
-participant "Caller\n(any service)" as Caller
-participant "NotificationsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Caller\n(any service)" as Caller
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
-participant "NotificationsGateway\n(Socket.IO)" as WS
-participant "PushService" as Push
-participant "Firebase FCM" as FCM
+participant ":NotificationsGateway\n(Socket.IO)" as WS
+participant ":PushService" as Push
+participant ":Firebase FCM" as FCM
 actor "Thiết bị người dùng" as Dev
 
 Caller -> Svc : notify(userId, { type, title, body, data })
@@ -1177,9 +1177,9 @@ title Kết nối WebSocket + xác thực JWT
 autonumber
 
 actor "Người dùng" as User
-participant "Frontend\n(socket.io-client)" as FE
-participant "NotificationsGateway" as GW
-participant "JWT" as JWT
+participant ":Frontend\n(socket.io-client)" as FE
+participant ":NotificationsGateway" as GW
+participant ":JWT" as JWT
 
 User -> FE : Đăng nhập thành công
 FE -> GW : connect (auth.token / Authorization header)
@@ -1212,9 +1212,9 @@ end note
 title Cron: xử lý đơn quá hạn (no-show, phạt điểm)
 autonumber
 
-participant "Cron Scheduler" as Cron
-participant "ReservationsService" as Svc
-participant "PrismaService" as Prisma
+participant ":Cron Scheduler" as Cron
+participant ":ReservationsService" as Svc
+participant ":PrismaService" as Prisma
 database "PostgreSQL" as DB
 
 Cron -> Svc : expireNoShows()

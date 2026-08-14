@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { TrustScoreReason } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 
@@ -13,10 +14,16 @@ export class TrustService {
     private systemConfig: SystemConfigService,
   ) {}
 
+  /**
+   * `reason` PHẢI là giá trị của enum `trust_score_reason` trong DB. Trước đây tham số
+   * này khai `string` rồi ép `as never` khi ghi, nên chuỗi sai (vd 'late_pickup' khi
+   * enum chưa có) lọt qua compile và chỉ nổ lúc chạy thật bằng
+   * PrismaClientValidationError. Ràng buộc kiểu ở đây để `tsc` bắt được từ sớm.
+   */
   async applyDelta(
     userId: string,
     delta: number,
-    reason: string,
+    reason: TrustScoreReason,
     referenceType: string,
     referenceId: string,
   ) {
@@ -42,7 +49,7 @@ export class TrustService {
         data: {
           userId,
           delta,
-          reason: reason as never,
+          reason,
           referenceType,
           referenceId,
           scoreBefore: user.trustScore,

@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
+import { vnTomorrow } from '@/lib/vn-date';
 import {
   useAdminOverview,
   useVerifications,
@@ -12,7 +13,6 @@ import {
   useResolveReport,
   useAdminUsers,
   useSetUserStatus,
-  useReviewUserVerification,
   useRecentReservations,
   useAdminConfigs,
   useSetConfig,
@@ -44,6 +44,7 @@ import { useListings } from '@/hooks/useListings';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import { FoodCategory, FoodGroup, FOOD_CATEGORY_LABEL, FOOD_GROUP_LABEL, FOOD_GROUP_CATEGORIES } from '@foodresq/types';
+import FoodCatalogTab from './_components/FoodCatalogTab';
 
 const HCM_CENTER = { lng: 106.6297, lat: 10.8231 };
 const AdminMap = dynamic(() => import('@/components/map/ListingsMap'), {
@@ -76,7 +77,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 const MONTH_TARGET_KG = 2000; // mục tiêu cộng đồng theo tháng (hằng số cấu hình)
 const fmtKg = (n: number) => `${n.toLocaleString('vi-VN')} kg`;
 
-type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'reports' | 'monitor' | 'users' | 'settings';
+type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'catalog' | 'reports' | 'users' | 'settings';
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
@@ -86,7 +87,7 @@ export default function AdminPage() {
 
 /** Trang admin với tab khởi tạo từ URL — dùng cho `/admin/[tab]`. */
 export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
-  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'reports', 'monitor', 'users', 'settings']);
+  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'catalog', 'reports', 'users', 'settings']);
   const tab: Tab =
     initialTab && VALID_TABS.has(initialTab as Tab) ? (initialTab as Tab) : 'dashboard';
 
@@ -99,8 +100,8 @@ export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
         {tab === 'donations' && <DonationsTab />}
         {tab === 'campaigns' && <CampaignsAdminTab />}
         {tab === 'food' && <FoodAdminTab />}
+        {tab === 'catalog' && <FoodCatalogTab />}
         {tab === 'reports' && <ReportsTab />}
-        {tab === 'monitor' && <MonitorTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
@@ -156,7 +157,7 @@ function DashboardTab() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard icon="eco" tone="emerald" label="Thực phẩm đã cứu trợ" value={fmtKg(data.kgRescued)} />
         <StatCard icon="group" tone="honey" label="Người dùng" value={data.users.toLocaleString('vi-VN')} sub={`${data.providers} cửa hàng · ${data.volunteers} TNV`} />
-        <StatCard icon="cloud" tone="emerald" label="CO₂ tránh được" value={`${data.co2SavedKg.toLocaleString('vi-VN')} kg`} sub={`${data.mealsServed} bữa ăn đã trao`} />
+        <StatCard icon="restaurant" tone="emerald" label="Bữa ăn đã trao" value={`${data.mealsServed.toLocaleString('vi-VN')} suất`} />
         <StatCard icon="warning" tone={data.pendingReports > 0 ? 'rose' : 'neutral'} label="Khiếu nại chờ xử lý" value={`${data.pendingReports} mục`} />
       </div>
 
@@ -171,67 +172,48 @@ function DashboardTab() {
             <div className="flex-1 min-h-[200px] flex items-center justify-center text-sm text-neutral-400">Chưa có dữ liệu cứu trợ hoàn tất</div>
           ) : (
             <>
-              <div className="relative flex-1 min-h-[200px] w-full border-b border-neutral-100 mt-4">
-                {/* Grid lines */}
-                <div className="absolute top-0 w-full border-b border-neutral-100" />
-                <div className="absolute top-1/4 w-full border-b border-neutral-100" />
-                <div className="absolute top-2/4 w-full border-b border-neutral-100" />
-                <div className="absolute top-3/4 w-full border-b border-neutral-100" />
-                
-                {/* SVG Area Chart */}
-                <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <defs>
-                    <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#059669" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#059669" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  
-                  <polygon 
-                    points={`0,100 ${data.trend.map((t, i) => {
-                      const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                      const y = 100 - Math.max(0, (t.kg / maxTrend) * 90); // 90 to leave top margin
-                      return `${x},${y}`;
-                    }).join(' ')} 100,100`} 
-                    fill="url(#area-gradient)" 
+              {/* Biểu đồ CỘT: mỗi tháng là một khối độc lập, so sánh cao thấp giữa các
+                  tháng dễ hơn đường nối — số liệu ở đây rời rạc theo tháng chứ không
+                  liên tục nên cột đúng bản chất hơn. */}
+              <div className="relative flex-1 min-h-[220px] w-full mt-4">
+                {/* Lưới ngang */}
+                {[0, 25, 50, 75, 100].map((p) => (
+                  <div
+                    key={p}
+                    className="absolute w-full border-b border-neutral-100"
+                    style={{ top: `${p}%` }}
                   />
-                  
-                  <polyline 
-                    points={data.trend.map((t, i) => {
-                      const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                      const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                      return `${x},${y}`;
-                    }).join(' ')} 
-                    fill="none" 
-                    stroke="#059669" 
-                    strokeWidth="2.5" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                  />
-                  
-                  {data.trend.map((t, i) => {
-                    const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                    const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                    return <circle key={i} cx={x} cy={y} r="2.5" fill="#fff" stroke="#059669" strokeWidth="1.5" />;
-                  })}
-                </svg>
-                
-                {/* Tooltips Overlay */}
-                {data.trend.map((t, i) => {
-                  const x = data.trend.length > 1 ? (i / (data.trend.length - 1)) * 100 : 50;
-                  const y = 100 - Math.max(0, (t.kg / maxTrend) * 90);
-                  return (
-                    <div key={i} className="absolute w-8 h-8 -ml-4 -mt-4 flex justify-center group cursor-pointer z-10" style={{ left: `${x}%`, top: `${y}%` }}>
-                      <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900 text-white text-[10px] py-1 px-2 rounded-md font-bold whitespace-nowrap shadow-lg">
-                        Thg {Number(t.ym.split('-')[1])} · {fmtKg(t.kg)}
+                ))}
+
+                <div className="absolute inset-0 flex items-end justify-between gap-2 px-1">
+                  {data.trend.map((t) => {
+                    // Tháng có số liệu nhưng quá nhỏ vẫn để cao tối thiểu 2% cho thấy được;
+                    // tháng bằng 0 thì để 0 để phân biệt rõ "không có" với "rất ít".
+                    const ratio = maxTrend > 0 ? t.kg / maxTrend : 0;
+                    const heightPct = t.kg > 0 ? Math.max(2, ratio * 92) : 0;
+                    return (
+                      <div
+                        key={t.ym}
+                        className="group relative flex flex-1 flex-col items-center justify-end"
+                        style={{ height: '100%' }}
+                      >
+                        <div className="absolute bottom-full mb-2 hidden whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[10px] font-bold text-white shadow-lg group-hover:block">
+                          Thg {Number(t.ym.split('-')[1])} · {fmtKg(t.kg)}
+                        </div>
+                        <div
+                          className="w-full max-w-[52px] rounded-t-lg bg-gradient-to-t from-emerald-600 to-emerald-400 transition-all group-hover:from-emerald-700 group-hover:to-emerald-500"
+                          style={{ height: `${heightPct}%` }}
+                        />
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex justify-between mt-3 text-xs font-medium text-neutral-500">
+              <div className="mt-3 flex justify-between gap-2 px-1 text-xs font-medium text-neutral-500">
                 {data.trend.map((t) => (
-                  <span key={t.ym} className="text-center w-8 -ml-4 first:ml-0 last:mr-0">Thg {Number(t.ym.split('-')[1])}</span>
+                  <span key={t.ym} className="flex-1 text-center">
+                    Thg {Number(t.ym.split('-')[1])}
+                  </span>
                 ))}
               </div>
             </>
@@ -519,6 +501,20 @@ const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
 
+/** "3 giờ trước", "2 ngày trước"… — admin cần biết đơn nằm chờ bao lâu rồi. */
+function formatRequestedAt(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return new Date(iso).toLocaleString('vi-VN');
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return 'vừa xong';
+  if (mins < 60) return `${mins} phút trước`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} ngày trước`;
+  return new Date(iso).toLocaleDateString('vi-VN');
+}
+
 function CampaignsAdminTab() {
   const [status, setStatus] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -526,6 +522,9 @@ function CampaignsAdminTab() {
   const { data, isLoading } = useAdminCampaigns(status || undefined);
   const setCampaignStatus = useSetCampaignStatus();
   const paged = usePaged(data ?? [], 8, status);
+  // BE đã xếp đơn chờ duyệt lên đầu và mới gửi trước, nên phần tử [0] chính là đơn
+  // mới nhất cần xét duyệt.
+  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'draft');
 
   async function changeStatus(id: string, st: AdminCampaign['status']) {
     try {
@@ -551,6 +550,30 @@ function CampaignsAdminTab() {
           <span className="material-symbols-outlined text-[20px]">add</span> Tạo chiến dịch
         </button>
       </div>
+
+      {/* Đơn chờ duyệt mới nhất — việc admin phải xử lý trước tiên */}
+      {pendingCampaigns.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="material-symbols-outlined text-[22px] text-amber-600">pending_actions</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold text-amber-900">
+              {pendingCampaigns.length} chiến dịch đang chờ duyệt
+            </p>
+            <p className="mt-0.5 truncate text-xs text-amber-800">
+              Mới nhất: <b>{pendingCampaigns[0].title}</b> — {pendingCampaigns[0].charity} · gửi{' '}
+              {formatRequestedAt(pendingCampaigns[0].createdAt)}
+            </p>
+          </div>
+          {status !== 'draft' && (
+            <button
+              onClick={() => setStatus('draft')}
+              className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+            >
+              Chỉ xem đơn chờ duyệt
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Yêu cầu thay đổi chờ duyệt */}
       <ChangeRequestsPanel />
@@ -580,8 +603,9 @@ function CampaignsAdminTab() {
             <table className="w-full text-left text-sm mt-2 min-w-[760px]">
               <thead className="text-neutral-500 font-semibold text-[13px]">
                 <tr>
-                  <th className="px-6 py-4 w-[30%]">Chiến dịch</th>
+                  <th className="px-6 py-4 w-[28%]">Chiến dịch</th>
                   <th className="px-6 py-4">Tổ chức</th>
+                  <th className="px-6 py-4">Ngày yêu cầu</th>
                   <th className="px-6 py-4">Lịch</th>
                   <th className="px-6 py-4">Nhân lực</th>
                   <th className="px-6 py-4">Trạng thái</th>
@@ -606,6 +630,12 @@ function CampaignsAdminTab() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-neutral-700 truncate max-w-[160px]">{c.charity}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <p className="text-neutral-700">
+                          {new Date(c.createdAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">{formatRequestedAt(c.createdAt)}</p>
+                      </td>
                       <td className="px-6 py-4 text-neutral-600 whitespace-nowrap">
                         {new Date(c.scheduledDate).toLocaleDateString('vi-VN')}<br />
                         <span className="text-[11px] text-neutral-400">{c.startTime}–{c.endTime}</span>
@@ -1129,7 +1159,7 @@ function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit
     title: campaign?.title ?? '',
     description: campaign?.description ?? '',
     kitchenAddress: campaign?.kitchenAddress ?? '',
-    scheduledDate: campaign ? campaign.scheduledDate.slice(0, 10) : new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    scheduledDate: campaign ? campaign.scheduledDate.slice(0, 10) : vnTomorrow(),
     startTime: (campaign?.startTime ?? '08:00').slice(0, 5),
     endTime: (campaign?.endTime ?? '12:00').slice(0, 5),
     chefSlotsNeeded: campaign?.slots.chef.needed ?? 2,
@@ -1911,16 +1941,8 @@ function ReportsTab() {
 }
 
 // ----------------------------------------------------------------------
-// MONITOR & USERS & SETTINGS
+// USERS & SETTINGS
 // ----------------------------------------------------------------------
-function MonitorTab() {
-  return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Giám sát hệ thống</h2>
-      <Empty icon="monitoring" text="Module giám sát đang được phát triển." />
-    </div>
-  );
-}
 
 const USER_ROLE_BADGE: Record<string, { label: string; cls: string }> = {
   admin: { label: 'Quản trị', cls: 'badge-violet' },
@@ -1949,22 +1971,11 @@ function UsersTab() {
   const { data, isLoading } = useAdminUsers(undefined, q || undefined);
   const { data: ov } = useAdminOverview();
   const setStatus = useSetUserStatus();
-  const reviewUser = useReviewUserVerification();
 
   async function act(id: string, status: 'active' | 'banned') {
     try {
       await setStatus.mutateAsync({ id, status });
       toast.success(status === 'banned' ? 'Đã khoá tài khoản' : 'Đã cập nhật tài khoản');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
-      toast.error(msg);
-    }
-  }
-
-  async function reviewUserProfile(type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') {
-    try {
-      await reviewUser.mutateAsync({ type, profileId, decision });
-      toast.success(decision === 'approved' ? 'Đã duyệt hồ sơ' : 'Đã từ chối hồ sơ');
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thất bại';
       toast.error(msg);
@@ -2043,7 +2054,7 @@ function UsersTab() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {paged.slice.map((u) => (
-                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} reviewProfile={reviewUserProfile} />
+                  <UserRow key={u.id} u={u} onAct={act} onDetail={() => setDetailUser(u)} pending={setStatus.isPending} />
                 ))}
               </tbody>
             </table>
@@ -2071,14 +2082,12 @@ function trustToFive(score: number): number {
   return Math.round((score / 20) * 10) / 10;
 }
 
-function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean; reviewProfile?: (type: 'provider' | 'volunteer', profileId: string, decision: 'approved' | 'rejected') => void }) {
+function UserRow({ u, onAct, onDetail, pending }: { u: AdminUser; onAct: (id: string, s: 'active' | 'banned') => void; onDetail: () => void; pending: boolean }) {
   const [menu, setMenu] = useState(false);
   const role = u.isCharityOrg ? { label: 'Tổ chức từ thiện', cls: 'badge-violet' } : (USER_ROLE_BADGE[u.role] ?? { label: u.role, cls: 'badge-neutral' });
   const st = USER_STATUS_META[u.status] ?? { label: u.status, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const five = trustToFive(u.trustScore);
   const goodScore = five >= 3;
-  const verificationType = u.role === 'provider' || u.role === 'volunteer' ? u.role : undefined;
-  const canApprove = !!verificationType && u.status === 'pending_verification' && !!u.profileId && !!reviewProfile;
 
   return (
     <tr className="hover:bg-neutral-50/50 transition-colors">
@@ -2111,7 +2120,8 @@ function UserRow({ u, onAct, onDetail, pending, reviewProfile }: { u: AdminUser;
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
           {u.role !== 'admin' && u.status === 'pending_verification' && (
-            <button onClick={() => canApprove ? reviewProfile(verificationType!, u.profileId!, 'approved') : onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
+            // Luôn mở modal chi tiết để admin xem hồ sơ/ảnh khuôn mặt/bằng chứng trước khi duyệt — không duyệt ngay từ danh sách.
+            <button onClick={onDetail} disabled={pending} className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50">Xét duyệt</button>
           )}
           {u.role !== 'admin' && u.status === 'banned' && (
             <button onClick={() => onAct(u.id, 'active')} disabled={pending} className="px-4 py-1.5 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50">Khôi phục</button>
@@ -2224,24 +2234,43 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
             </div>
           </section>
 
-          <section>
-            <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Khuôn mặt đã đăng ký</h3>
-            {faceSrc ? (
-              <button
-                type="button"
-                onClick={() => setZoomedImg(faceSrc)}
-                className="relative h-28 w-28 overflow-hidden rounded-xl border border-neutral-200 hover:opacity-90"
-                title="Bấm để phóng to"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
-                <img src={faceSrc} alt="Ảnh khuôn mặt đã đăng ký" className="h-full w-full object-cover" />
-              </button>
-            ) : (
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">
-                Chưa đăng ký khuôn mặt.
+          {/* Ảnh khuôn mặt/CCCD đã đăng ký eKYC — bắt buộc kiểm tra trước khi duyệt/xử lý tài khoản (receiver/volunteer) */}
+          {(u.faceImageUrl || u.idCardImageUrl) && (
+            <section>
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {u.faceImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    title="Bấm để phóng to"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                    <img src={mediaUrl(u.faceImageUrl)} alt="Ảnh khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">Ảnh selfie</span>
+                  </button>
+                )}
+                {u.idCardImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
+                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90"
+                    title="Bấm để phóng to"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- dynamic upload URL */}
+                    <img src={mediaUrl(u.idCardImageUrl)} alt="Ảnh CCCD đã đăng ký" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-neutral-800 text-white text-center py-1 font-bold">CCCD</span>
+                  </button>
+                )}
               </div>
-            )}
-          </section>
+            </section>
+          )}
+          {!u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+              <strong>Chưa đăng ký khuôn mặt (eKYC).</strong> Tài khoản này chưa hoàn tất xác minh khuôn mặt bắt buộc.
+            </div>
+          )}
 
           {/* Provider chờ duyệt: thông tin doanh nghiệp */}
           {verif?.type === 'provider' && (
@@ -2362,6 +2391,17 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
               <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm shadow-sm">
                 Khôi phục tài khoản
               </button>
+            ) : u.status === 'pending_verification' ? (
+              // Không có hồ sơ verification (NCC/TNV) đi kèm — vd người nhận tổ chức từ thiện —
+              // vẫn cần một hành động Duyệt/Từ chối tường minh, không để admin bí lối.
+              <>
+                <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="px-5 py-2.5 bg-neutral-100 text-neutral-700 hover:bg-neutral-200 rounded-full font-bold text-sm">
+                  Từ chối
+                </button>
+                <button onClick={() => { onAct(u.id, 'active'); onClose(); }} className="px-5 py-2.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-full font-bold text-sm shadow-sm">
+                  Duyệt tài khoản
+                </button>
+              </>
             ) : (
               <button onClick={() => { onAct(u.id, 'banned'); onClose(); }} className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full font-bold text-sm">
                 Khoá tài khoản
