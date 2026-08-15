@@ -40,19 +40,23 @@ function socketUrl(): string {
   return base.replace(/\/api\/v1\/?$/, '');
 }
 
-export function useNotifications() {
+export function useNotifications(enabled = true) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
     queryKey: ['notifications', 'my'],
     queryFn: async () => (await api.get('/notifications/my')).data.data as AppNotification[],
     staleTime: 30_000,
+    enabled: enabled && !!accessToken,
   });
 }
 
-export function useUnreadCount() {
+export function useUnreadCount(enabled = true) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
     queryKey: ['notifications', 'unread'],
     queryFn: async () => (await api.get('/notifications/unread-count')).data.data as { count: number },
     staleTime: 30_000,
+    enabled: enabled && !!accessToken,
   });
 }
 

@@ -18,7 +18,6 @@ import {
   DEFAULT_UNITS,
   type ListingForm,
 } from '@/lib/listing-form';
-import { mediaUrl } from '@/lib/utils';
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,

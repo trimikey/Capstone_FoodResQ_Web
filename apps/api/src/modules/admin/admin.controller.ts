@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import {
@@ -41,7 +52,10 @@ export class AdminController {
   }
 
   @Get('overview')
-  @ApiOperation({ summary: 'Admin: tổng quan dashboard (kg, CO2, danh mục, xu hướng, quyên góp)' })
+  @ApiOperation({
+    summary:
+      'Admin: tổng quan dashboard (kg, CO2, danh mục, xu hướng, quyên góp)',
+  })
   overview() {
     return this.adminService.getOverview();
   }
@@ -60,7 +74,12 @@ export class AdminController {
     @CurrentUser() user: User,
     @Body() dto: ReviewVerificationDto,
   ) {
-    return this.adminService.reviewVerification(type as 'provider' | 'volunteer', id, user.id, dto);
+    return this.adminService.reviewVerification(
+      type as 'provider' | 'volunteer',
+      id,
+      user.id,
+      dto,
+    );
   }
 
   @Get('reports')
@@ -110,7 +129,9 @@ export class AdminController {
   }
 
   @Get('charities')
-  @ApiOperation({ summary: 'Admin: danh sách tổ chức/người nhận (chọn chủ chiến dịch)' })
+  @ApiOperation({
+    summary: 'Admin: danh sách tổ chức/người nhận (chọn chủ chiến dịch)',
+  })
   charities() {
     return this.adminService.listCharities();
   }
@@ -141,7 +162,10 @@ export class AdminController {
 
   @Patch('campaigns/:id')
   @ApiOperation({ summary: 'Admin: sửa chiến dịch' })
-  updateCampaign(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUpdateCampaignDto) {
+  updateCampaign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminUpdateCampaignDto,
+  ) {
     return this.adminService.adminUpdateCampaign(id, dto);
   }
 
@@ -157,8 +181,16 @@ export class AdminController {
 
   @Post('campaigns/:id/assign')
   @ApiOperation({ summary: 'Admin: gán TNV vào chiến dịch' })
-  assignVolunteer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignVolunteerDto) {
-    return this.adminService.adminAssignVolunteer(id, dto.volunteerId, dto.role, dto.override ?? false);
+  assignVolunteer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignVolunteerDto,
+  ) {
+    return this.adminService.adminAssignVolunteer(
+      id,
+      dto.volunteerId,
+      dto.role,
+      dto.override ?? false,
+    );
   }
 
   @Delete('assignments/:id')
@@ -180,11 +212,19 @@ export class AdminController {
     @CurrentUser() user: User,
     @Body() dto: ReviewAssignmentDto,
   ) {
-    return this.adminService.reviewAssignment(id, dto.decision, user.id, dto.note);
+    return this.adminService.reviewAssignment(
+      id,
+      dto.decision,
+      user.id,
+      dto.note,
+    );
   }
 
   @Get('food-listings')
-  @ApiOperation({ summary: 'Admin: danh sách tin thực phẩm (lọc ?group&category&status&search, phân trang)' })
+  @ApiOperation({
+    summary:
+      'Admin: danh sách tin thực phẩm (lọc ?group&category&status&search, phân trang)',
+  })
   foodListings(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -196,44 +236,63 @@ export class AdminController {
     return this.adminService.listFoodListings({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-      status, category, group, search,
+      status,
+      category,
+      group,
+      search,
     });
   }
 
   @Patch('food-listings/:id/category')
   @ApiOperation({ summary: 'Admin: đổi phân loại của một tin thực phẩm' })
-  updateListingCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateListingCategoryDto) {
+  updateListingCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateListingCategoryDto,
+  ) {
     return this.adminService.updateListingCategory(id, dto.category);
   }
 
   // ── Danh mục thực phẩm ──────────────────────────────────────────────────────
   @Get('food-catalog')
-  @ApiOperation({ summary: 'Admin: danh mục thực phẩm chi tiết (lọc ?category&search)' })
+  @ApiOperation({
+    summary: 'Admin: danh mục thực phẩm chi tiết (lọc ?category&search)',
+  })
   foodCatalog(@Query('search') search?: string) {
     return this.adminService.listFoodCatalog({ search });
   }
 
   @Post('food-categories')
   @ApiOperation({ summary: 'Admin: tạo nhóm thực phẩm mới' })
-  createFoodCategory(@CurrentUser() user: User, @Body() dto: CreateFoodCategoryDto) {
+  createFoodCategory(
+    @CurrentUser() user: User,
+    @Body() dto: CreateFoodCategoryDto,
+  ) {
     return this.adminService.createFoodCategory(user.id, dto);
   }
 
   @Patch('food-categories/:id')
   @ApiOperation({ summary: 'Admin: sửa nhóm thực phẩm' })
-  updateFoodCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFoodCategoryDto) {
+  updateFoodCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateFoodCategoryDto,
+  ) {
     return this.adminService.updateFoodCategory(id, dto);
   }
 
   @Delete('food-categories/:id')
-  @ApiOperation({ summary: 'Admin: xoá nhóm thực phẩm (kèm mọi loại bên trong)' })
+  @ApiOperation({
+    summary: 'Admin: xoá nhóm thực phẩm (kèm mọi loại bên trong)',
+  })
   deleteFoodCategory(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.deleteFoodCategory(id);
   }
 
   @Post('food-catalog')
   @ApiOperation({ summary: 'Admin: thêm một mục vào danh mục thực phẩm' })
-  createFoodCatalogItem(@CurrentUser() user: User, @Body() dto: CreateFoodCatalogItemDto) {
+  createFoodCatalogItem(
+    @CurrentUser() user: User,
+    @Body() dto: CreateFoodCatalogItemDto,
+  ) {
     return this.adminService.createFoodCatalogItem(user.id, dto);
   }
 
@@ -247,13 +306,17 @@ export class AdminController {
   }
 
   @Delete('food-catalog/:id')
-  @ApiOperation({ summary: 'Admin: xoá (mềm) một mục trong danh mục thực phẩm' })
+  @ApiOperation({
+    summary: 'Admin: xoá (mềm) một mục trong danh mục thực phẩm',
+  })
   deleteFoodCatalogItem(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.deleteFoodCatalogItem(id);
   }
 
   @Get('campaign-change-requests')
-  @ApiOperation({ summary: 'Admin: danh sách yêu cầu thay đổi chiến dịch (?status=pending)' })
+  @ApiOperation({
+    summary: 'Admin: danh sách yêu cầu thay đổi chiến dịch (?status=pending)',
+  })
   campaignChangeRequests(@Query('status') status?: string) {
     return this.adminService.listCampaignChangeRequests(status);
   }
@@ -265,7 +328,12 @@ export class AdminController {
     @CurrentUser() user: User,
     @Body() dto: ReviewCampaignChangeDto,
   ) {
-    return this.adminService.reviewCampaignChangeRequest(id, dto.decision, dto.reviewNote, user.id);
+    return this.adminService.reviewCampaignChangeRequest(
+      id,
+      dto.decision,
+      dto.reviewNote,
+      user.id,
+    );
   }
 
   @Get('configs')
@@ -276,7 +344,11 @@ export class AdminController {
 
   @Patch('configs/:key')
   @ApiOperation({ summary: 'Admin: cập nhật một cấu hình hệ thống' })
-  setConfig(@Param('key') key: string, @Body() dto: SetConfigDto, @CurrentUser() user: User) {
+  setConfig(
+    @Param('key') key: string,
+    @Body() dto: SetConfigDto,
+    @CurrentUser() user: User,
+  ) {
     return this.adminService.setConfig(key, dto.value, user.id);
   }
 

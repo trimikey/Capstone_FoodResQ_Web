@@ -559,7 +559,7 @@ function OrderCard({
         <div className="flex-1 min-w-0 flex items-start gap-3">
           <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt={item.listing.title} className="w-full h-full object-cover" />
+            <img src={mediaUrl(image)} alt={item.listing.title} className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-800 text-sm truncate">{item.listing.title}</p>

@@ -92,6 +92,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   card: {
+    height: 246,
     backgroundColor: COLORS.surface,
     borderRadius: radius.xl,
     overflow: 'hidden',
@@ -103,10 +104,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.992 }],
     opacity: 0.94,
   },
-  imageWrap: {
-    height: 114,
-    backgroundColor: COLORS.outlineVariant,
-  },
+  imageWrap: { height: 112, backgroundColor: COLORS.outlineVariant },
   image: { width: '100%', height: '100%' },
   imagePlaceholder: {
     backgroundColor: COLORS.outlineVariant,
@@ -153,10 +151,27 @@ const styles = StyleSheet.create({
   },
   quantityValue: { color: COLORS.primaryStrong, fontSize: 11, fontWeight: '900' },
   quantityLabel: { marginTop: 0, color: COLORS.onSurfaceVariant, fontSize: 9, fontWeight: '700' },
-  content: { paddingHorizontal: spacing.sm, paddingVertical: 10, gap: 6 },
-  categoryLine: { alignSelf: 'flex-start', maxWidth: '100%' },
-  title: { fontSize: 13, fontWeight: '900', color: COLORS.ink, lineHeight: 17 },
-  metaGrid: { gap: 3 },
+  content: {
+    height: 134,
+    paddingHorizontal: spacing.sm,
+    paddingTop: 9,
+    paddingBottom: 9,
+    gap: 5,
+  },
+  categoryLine: {
+    height: 22,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    justifyContent: 'center',
+  },
+  title: {
+    height: 36,
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.ink,
+    lineHeight: 18,
+  },
+  metaGrid: { height: 42, gap: 3, justifyContent: 'flex-end' },
   metaItem: {
     minHeight: 18,
     flexDirection: 'row',

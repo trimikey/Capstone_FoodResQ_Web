@@ -1,4 +1,3 @@
-
 import {
   IsNumber,
   IsOptional,
@@ -38,7 +37,6 @@ export class UpdateMeDto {
   })
   avatarUrl?: string;
 
-
   // ── Địa chỉ + vị trí (provider: vị trí cửa hàng · receiver: điểm giao) ────
 
   @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Q1, TP.HCM' })
@@ -61,6 +59,5 @@ export class UpdateMeDto {
   @Min(-90)
   @Max(90)
   @Type(() => Number)
-
   lat?: number;
 }

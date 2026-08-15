@@ -1,5 +1,13 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { BulkRunsService, BULK_MIN_QTY, BULK_CANCEL_PENALTY } from './bulk-runs.service';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  BulkRunsService,
+  BULK_MIN_QTY,
+  BULK_CANCEL_PENALTY,
+} from './bulk-runs.service';
 
 /**
  * Trọng tâm: các nhánh CHẶN của luồng giao sỉ. Đây là chỗ dễ vỡ nhất vì một chuyến
@@ -10,8 +18,12 @@ describe('BulkRunsService', () => {
     volunteerProfile: { findUnique: jest.fn() },
     providerProfile: { findUnique: jest.fn() },
     bulkRun: {
-      findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(),
-      create: jest.fn(), update: jest.fn(), updateMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
     },
     bulkRunStop: { update: jest.fn(), delete: jest.fn(), aggregate: jest.fn() },
     delivery: { findFirst: jest.fn() },
@@ -54,10 +66,10 @@ describe('BulkRunsService', () => {
     prisma.bulkRunStop.aggregate.mockResolvedValue({ _sum: { plannedQty: 0 } });
     service = new BulkRunsService(
       prisma as never,
-      {} as never,           // redlock
-      {} as never,           // storage
+      {} as never, // redlock
+      {} as never, // storage
       notifications as never,
-      {} as never,           // systemConfig
+      {} as never, // systemConfig
       trust as never,
     );
   });
@@ -70,7 +82,9 @@ describe('BulkRunsService', () => {
         specializations: [{ specialization: 'chef', isVerified: true }],
       });
 
-      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(prisma.bulkRun.create).not.toHaveBeenCalled();
     });
 
@@ -84,14 +98,18 @@ describe('BulkRunsService', () => {
     it('chặn khi đang có chuyến giao sỉ chưa hoàn tất', async () => {
       prisma.bulkRun.findFirst.mockResolvedValue({ id: 'run-dang-chay' });
 
-      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(prisma.bulkRun.create).not.toHaveBeenCalled();
     });
 
     it('chặn khi đang giao một đơn lẻ (guard chéo)', async () => {
       prisma.delivery.findFirst.mockResolvedValue({ id: 'delivery-dang-giao' });
 
-      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(prisma.bulkRun.create).not.toHaveBeenCalled();
     });
 
@@ -101,20 +119,29 @@ describe('BulkRunsService', () => {
         pickupEndTime: new Date(Date.now() - 1000),
       });
 
-      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.request('user-1', dto)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(prisma.bulkRun.create).not.toHaveBeenCalled();
     });
 
     it('chặn khi kho không còn đủ số lượng yêu cầu', async () => {
-      prisma.foodListing.findFirst.mockResolvedValue({ ...okListing, quantityRemaining: 5 });
+      prisma.foodListing.findFirst.mockResolvedValue({
+        ...okListing,
+        quantityRemaining: 5,
+      });
 
-      await expect(service.request('user-1', { ...dto, quantity: 10 }))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.request('user-1', { ...dto, quantity: 10 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRun.create).not.toHaveBeenCalled();
     });
 
     it('tạo yêu cầu và báo cho nhà cung cấp khi hợp lệ', async () => {
-      prisma.bulkRun.create.mockResolvedValue({ id: 'run-1', status: 'requested' });
+      prisma.bulkRun.create.mockResolvedValue({
+        id: 'run-1',
+        status: 'requested',
+      });
 
       const run = await service.request('user-1', dto);
 
@@ -151,12 +178,15 @@ describe('BulkRunsService', () => {
 
     beforeEach(() => {
       prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1' });
-      prisma.bulkRun.findUnique.mockReset().mockResolvedValue({ ...runShape, status: 'approved' });
+      prisma.bulkRun.findUnique
+        .mockReset()
+        .mockResolvedValue({ ...runShape, status: 'approved' });
     });
 
     it('KHÔNG phạt khi huỷ lúc còn chờ duyệt — chưa ai bị ảnh hưởng', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue({
-        ...runShape, status: 'requested',
+        ...runShape,
+        status: 'requested',
       });
 
       await service.cancel('run-1', 'shipper-user-1');
@@ -178,11 +208,13 @@ describe('BulkRunsService', () => {
 
     it('không cho huỷ sau khi đã lấy hàng', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue({
-        ...runShape, status: 'picked_up',
+        ...runShape,
+        status: 'picked_up',
       });
 
-      await expect(service.cancel('run-1', 'shipper-user-1'))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.cancel('run-1', 'shipper-user-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(trust.applyDelta).not.toHaveBeenCalled();
     });
   });
@@ -228,7 +260,9 @@ describe('BulkRunsService', () => {
 
     it('đã duyệt mà không đến lấy → huỷ và hoàn TOÀN BỘ kho đang giữ', async () => {
       prisma.bulkRun.findMany
-        .mockResolvedValueOnce([{ id: 'run-1', listingId: 'listing-1', quantity: 20 }])
+        .mockResolvedValueOnce([
+          { id: 'run-1', listingId: 'listing-1', quantity: 20 },
+        ])
         .mockResolvedValueOnce([]);
 
       await service.expireStalled();
@@ -242,11 +276,14 @@ describe('BulkRunsService', () => {
     });
 
     it('đã lấy hàng quá hạn → đóng chuyến, chỉ hoàn phần CHƯA phát', async () => {
-      prisma.bulkRun.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          { id: 'run-2', listingId: 'listing-2', quantity: 20, quantityDistributed: 12 },
-        ]);
+      prisma.bulkRun.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          id: 'run-2',
+          listingId: 'listing-2',
+          quantity: 20,
+          quantityDistributed: 12,
+        },
+      ]);
 
       await service.expireStalled();
 
@@ -271,25 +308,33 @@ describe('BulkRunsService', () => {
     it('chặn người ngoài chuyến', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
 
-      await expect(service.updateStop('run-1', 'stop-1', 'nguoi-la', { label: 'X' }))
-        .rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.updateStop('run-1', 'stop-1', 'nguoi-la', { label: 'X' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
     });
 
     it('chặn khi chuyến đã kết thúc', async () => {
-      prisma.bulkRun.findUnique.mockResolvedValue({ ...runOwned, status: 'completed' });
+      prisma.bulkRun.findUnique.mockResolvedValue({
+        ...runOwned,
+        status: 'completed',
+      });
 
-      await expect(service.updateStop('run-1', 'stop-1', 'shipper-user-1', { label: 'X' }))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.updateStop('run-1', 'stop-1', 'shipper-user-1', { label: 'X' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
     });
 
     it('chặn sửa điểm đã phát hàng', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 3, reservation_id: null }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 3, reservation_id: null },
+      ]);
 
-      await expect(service.updateStop('run-1', 'stop-1', 'shipper-user-1', { label: 'X' }))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.updateStop('run-1', 'stop-1', 'shipper-user-1', { label: 'X' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
     });
 
@@ -297,24 +342,37 @@ describe('BulkRunsService', () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
       prisma.$queryRaw.mockResolvedValue([]);
 
-      await expect(service.updateStop('run-1', 'stop-la', 'shipper-user-1', { label: 'X' }))
-        .rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.updateStop('run-1', 'stop-la', 'shipper-user-1', {
+          label: 'X',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('đòi đủ cả lng và lat khi đổi vị trí', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 0, reservation_id: null }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 0, reservation_id: null },
+      ]);
 
-      await expect(service.updateStop('run-1', 'stop-1', 'shipper-user-1', { lng: 106.7 }))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.updateStop('run-1', 'stop-1', 'shipper-user-1', { lng: 106.7 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
     });
 
     it('cho nhà cung cấp sửa điểm chưa phát KHI CHƯA lấy hàng', async () => {
-      prisma.bulkRun.findUnique.mockResolvedValue({ ...runOwned, status: 'approved' });
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 0, reservation_id: null }]);
+      prisma.bulkRun.findUnique.mockResolvedValue({
+        ...runOwned,
+        status: 'approved',
+      });
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 0, reservation_id: null },
+      ]);
 
-      await service.updateStop('run-1', 'stop-1', 'provider-user-1', { label: '  KTX khu B  ' });
+      await service.updateStop('run-1', 'stop-1', 'provider-user-1', {
+        label: '  KTX khu B  ',
+      });
 
       expect(prisma.bulkRunStop.update).toHaveBeenCalledWith({
         where: { id: 'stop-1' },
@@ -326,47 +384,71 @@ describe('BulkRunsService', () => {
       // Hàng đã rời cửa hàng → tuyến thuộc quyền shipper; NCC đổi điểm lúc này sẽ
       // khiến người đang chạy ngoài đường bị đổi đích giữa chừng.
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned); // status: picked_up
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 0, reservation_id: null }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 0, reservation_id: null },
+      ]);
 
-      await expect(service.updateStop('run-1', 'stop-1', 'provider-user-1', { label: 'X' }))
-        .rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.updateStop('run-1', 'stop-1', 'provider-user-1', {
+          label: 'X',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
 
-      await service.updateStop('run-1', 'stop-1', 'shipper-user-1', { label: 'X' });
+      await service.updateStop('run-1', 'stop-1', 'shipper-user-1', {
+        label: 'X',
+      });
       expect(prisma.bulkRunStop.update).toHaveBeenCalled();
     });
 
     it('chặn tổng số phần dự kiến vượt số phần của chuyến', async () => {
-      prisma.bulkRun.findUnique.mockResolvedValue({ ...runOwned, quantity: 10 });
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-2', served_qty: 0, reservation_id: null }]);
+      prisma.bulkRun.findUnique.mockResolvedValue({
+        ...runOwned,
+        quantity: 10,
+      });
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-2', served_qty: 0, reservation_id: null },
+      ]);
       // Các điểm khác đã dự kiến 5 phần → điểm này chỉ còn tối đa 5
-      prisma.bulkRunStop.aggregate.mockResolvedValue({ _sum: { plannedQty: 5 } });
+      prisma.bulkRunStop.aggregate.mockResolvedValue({
+        _sum: { plannedQty: 5 },
+      });
 
-      await expect(service.updateStop('run-1', 'stop-2', 'shipper-user-1', { plannedQty: 10 }))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.updateStop('run-1', 'stop-2', 'shipper-user-1', {
+          plannedQty: 10,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
     });
 
     it('gỡ điểm kèm huỷ reservation ghi sổ, KHÔNG hoàn kho', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 0, reservation_id: 'res-1' }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 0, reservation_id: 'res-1' },
+      ]);
 
       await service.removeStop('run-1', 'stop-1', 'shipper-user-1');
 
       expect(prisma.reservation.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'res-1' } }),
       );
-      expect(prisma.bulkRunStop.delete).toHaveBeenCalledWith({ where: { id: 'stop-1' } });
+      expect(prisma.bulkRunStop.delete).toHaveBeenCalledWith({
+        where: { id: 'stop-1' },
+      });
       // Kho đã trừ theo cả chuyến lúc duyệt — hoàn ở đây sẽ cộng khống
       expect(prisma.$executeRaw).not.toHaveBeenCalled();
     });
 
     it('chặn gỡ điểm đã phát hàng', async () => {
       prisma.bulkRun.findUnique.mockResolvedValue(runOwned);
-      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-1', served_qty: 2, reservation_id: null }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'stop-1', served_qty: 2, reservation_id: null },
+      ]);
 
-      await expect(service.removeStop('run-1', 'stop-1', 'shipper-user-1'))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.removeStop('run-1', 'stop-1', 'shipper-user-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.delete).not.toHaveBeenCalled();
     });
   });

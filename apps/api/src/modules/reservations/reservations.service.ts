@@ -21,7 +21,7 @@ import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import type { RateTarget } from './dto/rate-reservation.dto';
 
-const LOCK_TTL_MS = 10_000;   // 10s window để acquire lock và complete transaction
+const LOCK_TTL_MS = 10_000; // 10s window để acquire lock và complete transaction
 
 @Injectable()
 export class ReservationsService {
@@ -73,7 +73,8 @@ export class ReservationsService {
     const receiver = await this.prisma.receiverProfile.findUnique({
       where: { userId: receiverUserId },
     });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    if (!receiver)
+      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     // 1b. eKYC bắt buộc với cá nhân: tài khoản social login (Google) bỏ qua bước
     // selfie lúc đăng ký → chặn tại đây, FE sẽ bật modal đăng ký khuôn mặt.
@@ -84,7 +85,9 @@ export class ReservationsService {
     }
 
     // 2. Check daily limit (đọc cấu hình live từ system_configs)
-    const maxPerDay = await this.systemConfig.getNumber('MAX_RESERVATIONS_PER_DAY');
+    const maxPerDay = await this.systemConfig.getNumber(
+      'MAX_RESERVATIONS_PER_DAY',
+    );
     if (receiver.reservationsToday >= maxPerDay) {
       throw new BadRequestException(
         `Bạn đã đạt giới hạn ${maxPerDay} lượt đặt chỗ trong ngày. Vui lòng quay lại vào ngày mai.`,
@@ -94,7 +97,9 @@ export class ReservationsService {
     // 2b. Yêu cầu giao tận nơi → phải có địa chỉ + toạ độ trong hồ sơ,
     // nếu không delivery sẽ không có điểm giao (shipper không điều hướng được).
     if (dto.requestDelivery) {
-      const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
+      const [loc] = await this.prisma.$queryRaw<
+        { has_location: boolean }[]
+      >(Prisma.sql`
         SELECT (location IS NOT NULL) AS has_location
         FROM receiver_profiles WHERE id = ${receiver.id}::uuid
       `);
@@ -110,7 +115,9 @@ export class ReservationsService {
     const lock = await this.redlock
       .acquire([lockKey], LOCK_TTL_MS)
       .catch(() => {
-        throw new ConflictException('Có người đang đặt món này. Vui lòng thử lại sau vài giây.');
+        throw new ConflictException(
+          'Có người đang đặt món này. Vui lòng thử lại sau vài giây.',
+        );
       });
 
     try {
@@ -137,7 +144,8 @@ export class ReservationsService {
         `,
       );
 
-      if (!listingRow) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+      if (!listingRow)
+        throw new NotFoundException('Không tìm thấy tin thực phẩm.');
       if (listingRow.status !== 'active') {
         throw new BadRequestException('Tin thực phẩm này không còn nhận đặt.');
       }
@@ -151,7 +159,10 @@ export class ReservationsService {
           `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
         );
       }
-      if (nowTs > listingRow.pickup_end_time || nowTs > listingRow.expiry_time) {
+      if (
+        nowTs > listingRow.pickup_end_time ||
+        nowTs > listingRow.expiry_time
+      ) {
         throw new BadRequestException(
           'Đã quá giờ nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
         );
@@ -160,7 +171,8 @@ export class ReservationsService {
       // Khung giờ MỞ CỬA TRONG NGÀY (vd 07:00–21:00). Khác với mốc bắt đầu/hạn lấy ở
       // trên: tin kéo dài nhiều ngày vẫn phải đóng nhận ngoài giờ cửa hàng làm việc,
       // nếu không người nhận đặt lúc 3h sáng rồi không ai giao được.
-      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
+      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } =
+        listingRow;
       if (dayStart != null && dayEnd != null) {
         const nowMinute = this.minuteOfDayVN(nowTs);
         if (nowMinute < dayStart || nowMinute >= dayEnd) {
@@ -189,11 +201,15 @@ export class ReservationsService {
         },
       });
       if (activeExisting) {
-        throw new ConflictException('Bạn đang có một đơn đặt chỗ chưa hoàn tất cho mặt hàng này. Vui lòng hoàn tất hoặc huỷ đơn cũ trước.');
+        throw new ConflictException(
+          'Bạn đang có một đơn đặt chỗ chưa hoàn tất cho mặt hàng này. Vui lòng hoàn tất hoặc huỷ đơn cũ trước.',
+        );
       }
 
       // 6. Atomic transaction: decrement quantity + create reservation
-      const qrValidMinutes = await this.systemConfig.getNumber('QR_VALIDITY_MINUTES');
+      const qrValidMinutes = await this.systemConfig.getNumber(
+        'QR_VALIDITY_MINUTES',
+      );
       const qrExpiresAt = new Date(Date.now() + qrValidMinutes * 60 * 1000);
 
       const reservation = await this.prisma.$transaction(async (tx) => {
@@ -211,7 +227,9 @@ export class ReservationsService {
         `);
 
         // Create reservation with crypto QR token
-        const [newReservation] = await tx.$queryRaw<{ id: string; qr_token: string }[]>(
+        const [newReservation] = await tx.$queryRaw<
+          { id: string; qr_token: string }[]
+        >(
           Prisma.sql`
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
@@ -244,19 +262,22 @@ export class ReservationsService {
         // Fire-and-forget nhưng PHẢI log: trước đây lỗi ở đây (Redis down, cột DB
         // thiếu…) biến mất im lặng — người dùng vẫn thấy "đặt chỗ thành công" và
         // màn theo dõi quay vòng "đang tìm TNV" dù chưa từng có ai được mời.
-        void this.createDeliveryAsync(reservation.id, dto.listingId).catch((err: unknown) => {
-          this.logger.error(
-            `Không khởi tạo được chuyến giao cho đơn ${reservation.id}: ${err instanceof Error ? err.message : String(err)}`,
-            err instanceof Error ? err.stack : undefined,
-          );
-        });
+        void this.createDeliveryAsync(reservation.id, dto.listingId).catch(
+          (err: unknown) => {
+            this.logger.error(
+              `Không khởi tạo được chuyến giao cho đơn ${reservation.id}: ${err instanceof Error ? err.message : String(err)}`,
+              err instanceof Error ? err.stack : undefined,
+            );
+          },
+        );
       }
 
       return {
         reservationId: reservation?.id,
         qrToken: reservation?.qr_token,
         qrExpiresAt,
-        message: 'Đặt chỗ thành công! Trình mã QR cho nhà cung cấp để nhận hàng.',
+        message:
+          'Đặt chỗ thành công! Trình mã QR cho nhà cung cấp để nhận hàng.',
       };
     } finally {
       await lock.release();
@@ -296,7 +317,11 @@ export class ReservationsService {
     if (listing) {
       await this.notifQueue.add(
         'shipper-broadcast',
-        { deliveryId: delivery.id, pickupLng: listing.lng, pickupLat: listing.lat },
+        {
+          deliveryId: delivery.id,
+          pickupLng: listing.lng,
+          pickupLat: listing.lat,
+        },
         { delay: 0, removeOnComplete: true, attempts: 3 },
       );
     } else {
@@ -311,7 +336,9 @@ export class ReservationsService {
     const reservation = await this.prisma.reservation.findUnique({
       where: { qrToken },
       include: {
-        listing: { select: { providerId: true, title: true, quantityUnit: true } },
+        listing: {
+          select: { providerId: true, title: true, quantityUnit: true },
+        },
         receiver: {
           select: {
             userId: true,
@@ -338,10 +365,14 @@ export class ReservationsService {
     if (reservation.status === 'confirmed') {
       if (new Date() > reservation.qrExpiresAt) {
         await this.expire(reservation.id); // Auto-expire
-        throw new BadRequestException('Mã QR đã hết hạn. Vui lòng tạo lại đặt chỗ.');
+        throw new BadRequestException(
+          'Mã QR đã hết hạn. Vui lòng tạo lại đặt chỗ.',
+        );
       }
     } else if (reservation.status !== 'picked_up') {
-      throw new BadRequestException('Đơn này không còn ở trạng thái chờ lấy hàng (có thể đã hoàn tất hoặc đã huỷ).');
+      throw new BadRequestException(
+        'Đơn này không còn ở trạng thái chờ lấy hàng (có thể đã hoàn tất hoặc đã huỷ).',
+      );
     }
 
     // Verify scanner is the provider for this listing
@@ -349,7 +380,9 @@ export class ReservationsService {
       where: { userId: scannerUserId },
     });
     if (!provider || reservation.listing.providerId !== provider.id) {
-      throw new ForbiddenException('Chỉ nhà cung cấp của tin này mới quét được mã QR.');
+      throw new ForbiddenException(
+        'Chỉ nhà cung cấp của tin này mới quét được mã QR.',
+      );
     }
 
     const verificationImageUrl =
@@ -385,7 +418,10 @@ export class ReservationsService {
       id: reservation.id,
       status,
       quantity: reservation.quantity,
-      listing: { title: reservation.listing.title, quantityUnit: reservation.listing.quantityUnit },
+      listing: {
+        title: reservation.listing.title,
+        quantityUnit: reservation.listing.quantityUnit,
+      },
       receiver: {
         fullName: reservation.receiver.user.fullName,
         phone: reservation.receiver.user.phone,
@@ -408,30 +444,41 @@ export class ReservationsService {
       where: { id: reservationId },
       include: {
         listing: { select: { providerId: true, title: true } },
-        receiver: { select: { userId: true, faceImageUrl: true, idCardImageUrl: true } },
+        receiver: {
+          select: { userId: true, faceImageUrl: true, idCardImageUrl: true },
+        },
       },
     });
 
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
     if (reservation.status !== 'picked_up') {
-      throw new BadRequestException('Đơn chưa được quét QR hoặc đã hoàn tất trước đó.');
+      throw new BadRequestException(
+        'Đơn chưa được quét QR hoặc đã hoàn tất trước đó.',
+      );
     }
 
     const provider = await this.prisma.providerProfile.findUnique({
       where: { userId: scannerUserId },
     });
     if (!provider || reservation.listing.providerId !== provider.id) {
-      throw new ForbiddenException('Chỉ nhà cung cấp của đơn này mới xác nhận được.');
+      throw new ForbiddenException(
+        'Chỉ nhà cung cấp của đơn này mới xác nhận được.',
+      );
     }
 
     // Lưu lại ảnh đăng ký đã dùng để đối chiếu làm bằng chứng bàn giao
-    const proofUrl = reservation.receiver.faceImageUrl ?? reservation.receiver.idCardImageUrl ?? null;
+    const proofUrl =
+      reservation.receiver.faceImageUrl ??
+      reservation.receiver.idCardImageUrl ??
+      null;
     if (!proofUrl) {
       throw new BadRequestException(
         'Ảnh khuôn mặt xác minh không còn khả dụng. Yêu cầu người nhận cập nhật lại selfie trước khi giao.',
       );
     }
-    const verificationType: PickupVerificationType | null = reservation.receiver.faceImageUrl
+    const verificationType: PickupVerificationType | null = reservation.receiver
+      .faceImageUrl
       ? PickupVerificationType.FACE
       : reservation.receiver.idCardImageUrl
         ? PickupVerificationType.ID_CARD
@@ -448,7 +495,12 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(reservation.receiver.userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
+    void this.applyTrustDelta(
+      reservation.receiver.userId,
+      reservationId,
+      TrustScoreReason.SUCCESSFUL_RESCUE,
+      2,
+    );
 
     void this.notifications.notify(reservation.receiver.userId, {
       type: 'reservation',
@@ -477,7 +529,8 @@ export class ReservationsService {
       include: { receiver: true },
     });
 
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
     if (reservation.receiver.userId !== userId) {
       throw new ForbiddenException('Chỉ chủ đơn mới được gửi ảnh xác minh.');
     }
@@ -488,7 +541,9 @@ export class ReservationsService {
     }
 
     // 1. Phải có khuôn mặt đã đăng ký để đối chiếu
-    const enrolledDescriptor = reservation.receiver.faceDescriptor as number[] | null;
+    const enrolledDescriptor = reservation.receiver.faceDescriptor as
+      | number[]
+      | null;
     if (!enrolledDescriptor) {
       throw new BadRequestException(
         'FACE_NOT_ENROLLED: You must enroll your face (ID card + selfie) before pickup verification',
@@ -526,7 +581,12 @@ export class ReservationsService {
     });
 
     // Hoàn tất rescue thành công → +2 trust score (CLAUDE.md §9)
-    void this.applyTrustDelta(userId, reservationId, TrustScoreReason.SUCCESSFUL_RESCUE, 2);
+    void this.applyTrustDelta(
+      userId,
+      reservationId,
+      TrustScoreReason.SUCCESSFUL_RESCUE,
+      2,
+    );
 
     return {
       reservationId: updated.id,
@@ -545,19 +605,30 @@ export class ReservationsService {
         receiver: true,
         listing: { select: { pickupEndTime: true, title: true } },
         delivery: {
-          select: { id: true, status: true, shipperId: true, shipper: { select: { userId: true } } },
+          select: {
+            id: true,
+            status: true,
+            shipperId: true,
+            shipper: { select: { userId: true } },
+          },
         },
       },
     });
 
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
     if (reservation.receiver.userId !== userId) throw new ForbiddenException();
     if (!['confirmed'].includes(reservation.status)) {
-      throw new BadRequestException('Chỉ huỷ được đơn đang ở trạng thái đã xác nhận.');
+      throw new BadRequestException(
+        'Chỉ huỷ được đơn đang ở trạng thái đã xác nhận.',
+      );
     }
 
     // Đơn giao hàng: shipper ĐÃ lấy hàng thì không huỷ được nữa (hàng đã rời bếp)
-    if (reservation.delivery && ['qc_completed', 'in_transit'].includes(reservation.delivery.status)) {
+    if (
+      reservation.delivery &&
+      ['qc_completed', 'in_transit'].includes(reservation.delivery.status)
+    ) {
       throw new BadRequestException(
         'Tình nguyện viên đã lấy hàng và đang trên đường giao — không thể huỷ lúc này.',
       );
@@ -629,7 +700,12 @@ export class ReservationsService {
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
-      void this.applyTrustDelta(userId, reservationId, TrustScoreReason.LATE_CANCELLATION, -10);
+      void this.applyTrustDelta(
+        userId,
+        reservationId,
+        TrustScoreReason.LATE_CANCELLATION,
+        -10,
+      );
     }
 
     return { message: 'Reservation cancelled' };
@@ -639,9 +715,16 @@ export class ReservationsService {
    *  Chỉ cho phép khi đơn ở 'confirmed' và provider là chủ listing.
    *  Hoàn quantity + daily count, đóng delivery (nếu có), không broadcast lại shipper.
    */
-  async providerCancel(reservationId: string, providerUserId: string, reason?: string) {
-    const provider = await this.prisma.providerProfile.findUnique({ where: { userId: providerUserId } });
-    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+  async providerCancel(
+    reservationId: string,
+    providerUserId: string,
+    reason?: string,
+  ) {
+    const provider = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+    });
+    if (!provider)
+      throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
 
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
@@ -649,11 +732,17 @@ export class ReservationsService {
         listing: { select: { providerId: true, title: true } },
         receiver: { select: { userId: true } },
         delivery: {
-          select: { id: true, status: true, shipperId: true, shipper: { select: { userId: true } } },
+          select: {
+            id: true,
+            status: true,
+            shipperId: true,
+            shipper: { select: { userId: true } },
+          },
         },
       },
     });
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
     if (reservation.listing.providerId !== provider.id) {
       throw new ForbiddenException('Bạn không phải chủ tin đăng của đơn này.');
     }
@@ -669,7 +758,9 @@ export class ReservationsService {
         data: {
           status: 'cancelled',
           cancelledAt: new Date(),
-          cancellationReason: reason ? `[Provider] ${reason}` : '[Provider] Đơn bị nhà cung cấp huỷ.',
+          cancellationReason: reason
+            ? `[Provider] ${reason}`
+            : '[Provider] Đơn bị nhà cung cấp huỷ.',
         },
       }),
       // Hoàn số lượng cho listing (LEAST để không vượt total)
@@ -746,66 +837,76 @@ export class ReservationsService {
     limit = 20,
     group?: 'active' | 'history',
   ) {
-    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId },
+    });
+    if (!receiver)
+      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     // Lọc theo tab NGAY TẠI DB. Trước đây FE tải 20 đơn mới nhất rồi tự lọc, nên
     // đơn đang xử lý nằm ngoài 20 đơn đó thì biến mất khỏi giao diện.
     const active = [...ReservationsService.ACTIVE_STATUSES];
     const statusFilter =
-      group === 'active' ? { in: active }
-      : group === 'history' ? { notIn: active }
-      : undefined;
+      group === 'active'
+        ? { in: active }
+        : group === 'history'
+          ? { notIn: active }
+          : undefined;
 
     const [items, total, activeCount, historyCount, completedAgg, noShowCount] =
       await this.prisma.$transaction([
-      this.prisma.reservation.findMany({
-        where: {
-          receiverId: receiver.id,
-          ...(statusFilter ? { status: statusFilter as never } : {}),
-        },
-        include: {
-          listing: {
-            select: {
-              title: true,
-              pickupAddress: true,
-              imageUrls: true,
-              category: true,
-              quantityUnit: true,
-              weightPerUnitKg: true,
-              // FE cần để cảnh báo huỷ trễ (< 30 phút trước giờ kết thúc nhận → -10 điểm)
-              pickupEndTime: true,
-              provider: { select: { id: true, businessName: true, userId: true } },
+        this.prisma.reservation.findMany({
+          where: {
+            receiverId: receiver.id,
+            ...(statusFilter ? { status: statusFilter as never } : {}),
+          },
+          include: {
+            listing: {
+              select: {
+                title: true,
+                pickupAddress: true,
+                imageUrls: true,
+                category: true,
+                quantityUnit: true,
+                weightPerUnitKg: true,
+                // FE cần để cảnh báo huỷ trễ (< 30 phút trước giờ kết thúc nhận → -10 điểm)
+                pickupEndTime: true,
+                provider: {
+                  select: { id: true, businessName: true, userId: true },
+                },
+              },
             },
           },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.reservation.count({
-        where: {
-          receiverId: receiver.id,
-          ...(statusFilter ? { status: statusFilter as never } : {}),
-        },
-      }),
-      // Đếm THEO TOÀN BỘ đơn, không theo trang — để nhãn tab luôn đúng dù đang ở trang mấy
-      this.prisma.reservation.count({
-        where: { receiverId: receiver.id, status: { in: active as never } },
-      }),
-      this.prisma.reservation.count({
-        where: { receiverId: receiver.id, status: { notIn: active as never } },
-      }),
-      // Thống kê cho FE: tổng đơn đã nhận + tổng số phần đã cứu + số lần không đến
-      this.prisma.reservation.aggregate({
-        where: { receiverId: receiver.id, status: 'completed' },
-        _count: true,
-        _sum: { quantity: true },
-      }),
-      this.prisma.reservation.count({
-        where: { receiverId: receiver.id, status: 'no_show' },
-      }),
-    ]);
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.reservation.count({
+          where: {
+            receiverId: receiver.id,
+            ...(statusFilter ? { status: statusFilter as never } : {}),
+          },
+        }),
+        // Đếm THEO TOÀN BỘ đơn, không theo trang — để nhãn tab luôn đúng dù đang ở trang mấy
+        this.prisma.reservation.count({
+          where: { receiverId: receiver.id, status: { in: active as never } },
+        }),
+        this.prisma.reservation.count({
+          where: {
+            receiverId: receiver.id,
+            status: { notIn: active as never },
+          },
+        }),
+        // Thống kê cho FE: tổng đơn đã nhận + tổng số phần đã cứu + số lần không đến
+        this.prisma.reservation.aggregate({
+          where: { receiverId: receiver.id, status: 'completed' },
+          _count: true,
+          _sum: { quantity: true },
+        }),
+        this.prisma.reservation.count({
+          where: { receiverId: receiver.id, status: 'no_show' },
+        }),
+      ]);
 
     // Ratings là quan hệ đa hình (referenceType/referenceId) — query riêng rồi gắn cờ ratedScore
     const ratings = await this.prisma.rating.findMany({
@@ -816,7 +917,9 @@ export class ReservationsService {
       },
       select: { referenceId: true, score: true },
     });
-    const ratingByRes = new Map(ratings.map((rt) => [rt.referenceId, rt.score]));
+    const ratingByRes = new Map(
+      ratings.map((rt) => [rt.referenceId, rt.score]),
+    );
 
     const itemsWithRating = items.map((r) => ({
       ...r,
@@ -841,8 +944,11 @@ export class ReservationsService {
 
   /** Provider: xem các đơn đặt trên listings do mình đăng. */
   async findProviderReservations(providerUserId: string, page = 1, limit = 20) {
-    const provider = await this.prisma.providerProfile.findUnique({ where: { userId: providerUserId } });
-    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+    const provider = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+    });
+    if (!provider)
+      throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
 
     // Loại các reservation ghi sổ của GIAO SỈ: chúng gắn với một điểm phát trên tuyến,
     // người nhận là tài khoản hệ thống, và NCC đã bàn giao cả lô cho shipper từ trước —
@@ -856,7 +962,9 @@ export class ReservationsService {
           receiver: {
             select: {
               id: true,
-              user: { select: { fullName: true, phone: true, avatarUrl: true } },
+              user: {
+                select: { fullName: true, phone: true, avatarUrl: true },
+              },
             },
           },
           listing: {
@@ -896,24 +1004,34 @@ export class ReservationsService {
     comment?: string,
     target: RateTarget = 'provider',
   ) {
-    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId },
+    });
+    if (!receiver)
+      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, receiverId: receiver.id },
       include: {
-        listing: { select: { provider: { select: { id: true, userId: true } } } },
-        delivery: { select: { shipperId: true, shipper: { select: { userId: true } } } },
+        listing: {
+          select: { provider: { select: { id: true, userId: true } } },
+        },
+        delivery: {
+          select: { shipperId: true, shipper: { select: { userId: true } } },
+        },
       },
     });
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
     if (reservation.status !== 'completed') {
       throw new BadRequestException('Chỉ đánh giá được đơn đã hoàn tất.');
     }
 
     // Chỉ đánh giá được shipper nếu đơn thực sự có người giao — đơn tự đến lấy thì không.
     if (target === 'shipper' && !reservation.delivery?.shipperId) {
-      throw new BadRequestException('Đơn này không có tình nguyện viên giao hàng để đánh giá.');
+      throw new BadRequestException(
+        'Đơn này không có tình nguyện viên giao hàng để đánh giá.',
+      );
     }
 
     const rateeUserId =
@@ -958,7 +1076,12 @@ export class ReservationsService {
       });
     }
 
-    return { id: rating.id, score: rating.score, target, message: 'Cảm ơn bạn đã đánh giá!' };
+    return {
+      id: rating.id,
+      score: rating.score,
+      target,
+      message: 'Cảm ơn bạn đã đánh giá!',
+    };
   }
 
   /**
@@ -983,10 +1106,7 @@ export class ReservationsService {
       where: {
         status: 'confirmed',
         qrExpiresAt: { lt: now },
-        OR: [
-          { delivery: { is: null } },
-          { delivery: { status: 'cancelled' } },
-        ],
+        OR: [{ delivery: { is: null } }, { delivery: { status: 'cancelled' } }],
       },
       include: { receiver: { select: { id: true, userId: true } } },
       take: 200,
@@ -1011,7 +1131,12 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
-      await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -20);
+      await this.applyTrustDelta(
+        r.receiver.userId,
+        r.id,
+        TrustScoreReason.NO_SHOW,
+        -20,
+      );
     }
 
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.
@@ -1036,10 +1161,16 @@ export class ReservationsService {
         // Chỉ đóng delivery khi nó còn đang tìm shipper — đơn đã 'failed' thì giữ
         // nguyên lý do thất bại gốc thay vì ghi đè.
         ...(r.delivery!.status === 'pending_assignment'
-          ? [this.prisma.delivery.update({
-              where: { id: r.delivery!.id },
-              data: { status: 'failed', failedReason: 'Không tìm được tình nguyện viên giao hàng trong thời gian hiệu lực.' },
-            })]
+          ? [
+              this.prisma.delivery.update({
+                where: { id: r.delivery!.id },
+                data: {
+                  status: 'failed',
+                  failedReason:
+                    'Không tìm được tình nguyện viên giao hàng trong thời gian hiệu lực.',
+                },
+              }),
+            ]
           : []),
         this.prisma.$executeRaw(Prisma.sql`
           UPDATE food_listings
@@ -1069,8 +1200,11 @@ export class ReservationsService {
   }
 
   async findOne(id: string, userId: string) {
-    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId },
+    });
+    if (!receiver)
+      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     const reservation = await this.prisma.reservation.findFirst({
       where: { id, receiverId: receiver.id },
@@ -1107,7 +1241,8 @@ export class ReservationsService {
       },
     });
 
-    if (!reservation) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    if (!reservation)
+      throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
 
     // Rating là quan hệ đa hình (referenceType/referenceId) nên không include được —
     // query riêng để FE biết đã đánh giá chưa mà không hỏi lại. Một đơn có thể có hai
@@ -1121,10 +1256,11 @@ export class ReservationsService {
 
     return {
       ...reservation,
-      ratedScore: ratings.find((r) => r.rateeId === providerUserId)?.score ?? null,
+      ratedScore:
+        ratings.find((r) => r.rateeId === providerUserId)?.score ?? null,
       ratedShipperScore:
         shipperUserId != null
-          ? ratings.find((r) => r.rateeId === shipperUserId)?.score ?? null
+          ? (ratings.find((r) => r.rateeId === shipperUserId)?.score ?? null)
           : null,
     };
   }
@@ -1163,6 +1299,12 @@ export class ReservationsService {
     reason: TrustScoreReason,
     delta: number,
   ) {
-    return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
+    return this.trust.applyDelta(
+      userId,
+      delta,
+      reason,
+      'reservation',
+      referenceId,
+    );
   }
 }

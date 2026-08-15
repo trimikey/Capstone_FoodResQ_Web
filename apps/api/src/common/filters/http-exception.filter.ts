@@ -27,13 +27,18 @@ function fieldLabel(field: string): string {
 function translateValidationMessage(input: string): string {
   const message = input.trim();
   const forbidden = /^property ([\w.]+) should not exist$/.exec(message);
-  if (forbidden) return `${fieldLabel(forbidden[1])} không được hỗ trợ ở thao tác này.`;
+  if (forbidden)
+    return `${fieldLabel(forbidden[1])} không được hỗ trợ ở thao tác này.`;
 
-  const minLength = /^(\w+) must be longer than or equal to (\d+) characters$/.exec(message);
-  if (minLength) return `${fieldLabel(minLength[1])} phải có ít nhất ${minLength[2]} ký tự.`;
+  const minLength =
+    /^(\w+) must be longer than or equal to (\d+) characters$/.exec(message);
+  if (minLength)
+    return `${fieldLabel(minLength[1])} phải có ít nhất ${minLength[2]} ký tự.`;
 
-  const maxLength = /^(\w+) must be shorter than or equal to (\d+) characters$/.exec(message);
-  if (maxLength) return `${fieldLabel(maxLength[1])} không được vượt quá ${maxLength[2]} ký tự.`;
+  const maxLength =
+    /^(\w+) must be shorter than or equal to (\d+) characters$/.exec(message);
+  if (maxLength)
+    return `${fieldLabel(maxLength[1])} không được vượt quá ${maxLength[2]} ký tự.`;
 
   const isString = /^(\w+) must be a string$/.exec(message);
   if (isString) return `${fieldLabel(isString[1])} phải là chuỗi ký tự.`;
@@ -44,10 +49,15 @@ function translateValidationMessage(input: string): string {
   if (message === 'Phone must be a valid Vietnamese mobile number') {
     return 'Số điện thoại không hợp lệ. Vui lòng nhập số di động Việt Nam.';
   }
-  if (message === 'Password must contain at least one uppercase letter and one number') {
+  if (
+    message ===
+    'Password must contain at least one uppercase letter and one number'
+  ) {
     return 'Mật khẩu phải có ít nhất một chữ hoa và một chữ số.';
   }
-  if (message === 'avatarUrl must be an http(s) URL or an uploaded /uploads path') {
+  if (
+    message === 'avatarUrl must be an http(s) URL or an uploaded /uploads path'
+  ) {
     return 'Ảnh đại diện phải là URL hợp lệ hoặc ảnh đã tải lên hệ thống.';
   }
   if (message === 'Only JPEG, PNG or WebP images are allowed') {
@@ -85,9 +95,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       status = exception.getStatus();
       const body = exception.getResponse();
       if (typeof body === 'object' && body !== null && 'message' in body) {
-        const rawMessage = (body as { message: unknown }).message;
+        const rawMessage = body.message;
         message = Array.isArray(rawMessage)
-          ? rawMessage.map((item) => translateValidationMessage(String(item))).join(', ')
+          ? rawMessage
+              .map((item) => translateValidationMessage(String(item)))
+              .join(', ')
           : translateValidationMessage(String(rawMessage));
       } else {
         message = translateValidationMessage(String(body));

@@ -12,7 +12,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { StorageService } from '@/common/storage/storage.service';
 
@@ -35,7 +42,10 @@ export class UploadsController {
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload 1 ảnh (listing/avatar/verification) → trả về URL phục vụ qua /uploads.' })
+  @ApiOperation({
+    summary:
+      'Upload 1 ảnh (listing/avatar/verification) → trả về URL phục vụ qua /uploads.',
+  })
   @ApiQuery({ name: 'kind', enum: Object.keys(FOLDER_BY_KIND), required: true })
   @ApiBody({
     schema: {
@@ -58,7 +68,9 @@ export class UploadsController {
   ) {
     const folder = FOLDER_BY_KIND[kind];
     if (!folder) {
-      throw new BadRequestException(`kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`);
+      throw new BadRequestException(
+        `kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`,
+      );
     }
     const url = await this.storage.saveImage(file, folder);
     return { url };
@@ -73,7 +85,9 @@ export class UploadsController {
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload ảnh minh chứng lúc đăng ký NCC (không cần đăng nhập).' })
+  @ApiOperation({
+    summary: 'Upload ảnh minh chứng lúc đăng ký NCC (không cần đăng nhập).',
+  })
   @ApiBody({
     schema: {
       type: 'object',

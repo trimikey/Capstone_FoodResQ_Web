@@ -1,0 +1,11 @@
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+
+node_modules/
+node_modules.stale-*/
+
+android/
+ios/

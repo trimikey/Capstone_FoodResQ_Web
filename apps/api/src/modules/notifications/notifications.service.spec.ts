@@ -13,7 +13,9 @@ describe('NotificationsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma.notification.create.mockImplementation(({ data }) => Promise.resolve({ id: 'n-1', ...data }));
+    prisma.notification.create.mockImplementation(({ data }) =>
+      Promise.resolve({ id: 'n-1', ...data }),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsService,
@@ -24,10 +26,17 @@ describe('NotificationsService', () => {
     service = moduleRef.get(NotificationsService);
   });
 
-  const input = { type: 'campaign', title: 'Yêu cầu mới', body: 'Có việc cần duyệt' };
+  const input = {
+    type: 'campaign',
+    title: 'Yêu cầu mới',
+    body: 'Có việc cần duyệt',
+  };
 
   it('notifyAdmins gửi cho MỌI admin đang hoạt động', async () => {
-    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1' }, { id: 'admin-2' }]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'admin-1' },
+      { id: 'admin-2' },
+    ]);
 
     await expect(service.notifyAdmins(input)).resolves.toBe(2);
 
@@ -37,8 +46,16 @@ describe('NotificationsService', () => {
     });
     expect(prisma.notification.create).toHaveBeenCalledTimes(2);
     // Mỗi admin phải nhận được cả bản ghi DB lẫn sự kiện real-time
-    expect(gateway.emitToUser).toHaveBeenCalledWith('admin-1', 'notification:new', expect.anything());
-    expect(gateway.emitToUser).toHaveBeenCalledWith('admin-2', 'notification:new', expect.anything());
+    expect(gateway.emitToUser).toHaveBeenCalledWith(
+      'admin-1',
+      'notification:new',
+      expect.anything(),
+    );
+    expect(gateway.emitToUser).toHaveBeenCalledWith(
+      'admin-2',
+      'notification:new',
+      expect.anything(),
+    );
   });
 
   it('không có admin nào → 0, không nổ', async () => {

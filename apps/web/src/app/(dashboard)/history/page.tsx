@@ -299,7 +299,7 @@ export default function HistoryPage() {
                     <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 ring-1 ring-neutral-150">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={mediaUrl(t.listing.imageUrls[0] || fallbackImage(t.listing.category))}
+                        src={t.listing.imageUrls[0] ? mediaUrl(t.listing.imageUrls[0]) : fallbackImage(t.listing.category)}
                         alt={t.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -477,7 +477,7 @@ export default function HistoryPage() {
               <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
                 <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
                   <img
-                    src={mediaUrl(viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category))}
+                    src={viewingItem.listing.imageUrls[0] ? mediaUrl(viewingItem.listing.imageUrls[0]) : fallbackImage(viewingItem.listing.category)}
                     alt={viewingItem.listing.title}
                     className="w-full h-full object-cover"
                   />

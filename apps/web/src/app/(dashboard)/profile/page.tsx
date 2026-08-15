@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { UserX } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe, useTrustHistory, type Me } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useUploadImage } from '@/hooks/useUploadImage';
 import { reverseGeocode } from '@/lib/geocode';
+import { mediaUrl } from '@/lib/utils';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
 
@@ -17,11 +19,9 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
   loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse" />,
 });
 
-// Ảnh lưu ở /uploads trên API server → ghép với origin (bỏ đuôi /api/v1)
-const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 function imgUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  return path.startsWith('http') ? path : `${API_ORIGIN}${path}`;
+  return mediaUrl(path) || null;
 }
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
@@ -135,7 +135,8 @@ export default function ProfilePage() {
 
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole && !isUsingFallbackProfile);
-  const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
+  const hasFaceEnrollment = !!faceEnrollment?.enrolled;
+  const faceImage = imgUrl(faceEnrollment?.faceImageUrl ?? faceEnrollment?.idCardImageUrl);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
@@ -661,11 +662,17 @@ export default function ProfilePage() {
             {isFaceRole && (
               <div className="bg-white rounded-3xl border-l-4 border-l-emerald-600 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
-                {faceImage ? (
+                {hasFaceEnrollment ? (
                   <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
-                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                      <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                    </div>
+                    {faceImage ? (
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                         <span className="material-symbols-outlined text-[18px]">verified_user</span>
@@ -676,7 +683,7 @@ export default function ProfilePage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-2xl p-3">
-                    <span className="material-symbols-outlined text-amber-600 text-[24px]">no_accounts</span>
+                    <UserX className="h-6 w-6 shrink-0 text-amber-600" aria-hidden="true" />
                     <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
                   </div>
                 )}
@@ -941,11 +948,17 @@ export default function ProfilePage() {
               {isFaceRole && (
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
-                  {faceImage ? (
+                  {hasFaceEnrollment ? (
                     <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
-                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                      </div>
+                      {faceImage ? (
+                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                          <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                           <span className="material-symbols-outlined text-[18px]">verified_user</span>
@@ -956,7 +969,7 @@ export default function ProfilePage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
-                      <span className="material-symbols-outlined text-amber-600">no_accounts</span>
+                      <UserX className="h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
                       <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
                     </div>
                   )}

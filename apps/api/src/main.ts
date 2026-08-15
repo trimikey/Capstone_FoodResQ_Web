@@ -10,7 +10,9 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { corsOriginDelegate } from './common/utils/cors-origins';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
 
   // Security — cho phép FE (origin khác) load ảnh proof từ /uploads
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

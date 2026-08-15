@@ -1,4 +1,4 @@
-  import {
+import {
   Controller,
   Get,
   Post,
@@ -10,7 +10,12 @@
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
@@ -72,7 +77,8 @@ export class ListingsController {
   @Roles(UserRole.PROVIDER)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Provider: Sửa tin — draft sửa mọi field, tin đã đăng chỉ sửa thông tin phụ (mô tả, ảnh, bảo quản, dị ứng).',
+    summary:
+      'Provider: Sửa tin — draft sửa mọi field, tin đã đăng chỉ sửa thông tin phụ (mô tả, ảnh, bảo quản, dị ứng).',
   })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -126,11 +132,10 @@ export class ListingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.PROVIDER)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Provider: Duplicate an existing listing as new draft' })
-  duplicate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-  ) {
+  @ApiOperation({
+    summary: 'Provider: Duplicate an existing listing as new draft',
+  })
+  duplicate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.listingsService.duplicate(id, user.id);
   }
 }

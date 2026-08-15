@@ -72,7 +72,9 @@ export class UsersService {
         select: {
           rank: true,
           dedicationPoints: true,
-          specializations: { select: { specialization: true, isVerified: true } },
+          specializations: {
+            select: { specialization: true, isVerified: true },
+          },
         },
       });
       if (vp) {
@@ -190,7 +192,9 @@ export class UsersService {
         data: {
           ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
           ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
-          ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl || null } : {}),
+          ...(dto.avatarUrl !== undefined
+            ? { avatarUrl: dto.avatarUrl || null }
+            : {}),
         },
         select: {
           id: true,
@@ -205,19 +209,31 @@ export class UsersService {
       });
 
       const hasLocationUpdate =
-        dto.address !== undefined || dto.lng !== undefined || dto.lat !== undefined;
+        dto.address !== undefined ||
+        dto.lng !== undefined ||
+        dto.lat !== undefined;
       if (hasLocationUpdate) {
         if (user.role !== 'provider' && user.role !== 'receiver') {
-          throw new BadRequestException('Vai trò hiện tại không hỗ trợ cập nhật địa chỉ.');
+          throw new BadRequestException(
+            'Vai trò hiện tại không hỗ trợ cập nhật địa chỉ.',
+          );
         }
-        if ((dto.lng !== undefined || dto.lat !== undefined) && (dto.lng === undefined || dto.lat === undefined)) {
-          throw new BadRequestException('Cần cung cấp đầy đủ cả kinh độ và vĩ độ.');
+        if (
+          (dto.lng !== undefined || dto.lat !== undefined) &&
+          (dto.lng === undefined || dto.lat === undefined)
+        ) {
+          throw new BadRequestException(
+            'Cần cung cấp đầy đủ cả kinh độ và vĩ độ.',
+          );
         }
 
         const address = dto.address?.trim();
         if (user.role === 'provider') {
           if (address !== undefined) {
-            await this.prisma.providerProfile.update({ where: { userId }, data: { address } });
+            await this.prisma.providerProfile.update({
+              where: { userId },
+              data: { address },
+            });
           }
           if (dto.lng !== undefined && dto.lat !== undefined) {
             await this.prisma.$executeRaw(Prisma.sql`
@@ -228,7 +244,10 @@ export class UsersService {
           }
         } else {
           if (address !== undefined) {
-            await this.prisma.receiverProfile.update({ where: { userId }, data: { address } });
+            await this.prisma.receiverProfile.update({
+              where: { userId },
+              data: { address },
+            });
           }
           if (dto.lng !== undefined && dto.lat !== undefined) {
             await this.prisma.$executeRaw(Prisma.sql`
@@ -242,7 +261,10 @@ export class UsersService {
 
       return user;
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
         throw new BadRequestException('Số điện thoại đã được sử dụng.');
       }
       throw e;
@@ -370,7 +392,13 @@ export class UsersService {
       select: { id: true },
     });
     if (!receiver) {
-      return { kind: 'receiver', kgSaved: 0, completedCount: 0, cancelledCount: 0, providersHelped: 0 };
+      return {
+        kind: 'receiver',
+        kgSaved: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        providersHelped: 0,
+      };
     }
 
     const [row] = await this.prisma.$queryRaw<
@@ -431,7 +459,9 @@ export class UsersService {
     // Khuyến nghị phục hồi: +2 mỗi đơn hoàn tất → cần bao nhiêu đơn để thoát suspended
     const RESTRICT_THRESHOLD = 60;
     const pointsNeeded =
-      current.trustScore < RESTRICT_THRESHOLD ? RESTRICT_THRESHOLD - current.trustScore + 1 : 0;
+      current.trustScore < RESTRICT_THRESHOLD
+        ? RESTRICT_THRESHOLD - current.trustScore + 1
+        : 0;
     const rescuesNeeded = pointsNeeded > 0 ? Math.ceil(pointsNeeded / 2) : 0;
 
     return {
@@ -448,22 +478,39 @@ export class UsersService {
   }
 
   async getFaceEnrollmentStatus(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
 
     if (user?.role === 'volunteer') {
       const v = await this.prisma.volunteerProfile.findUnique({
         where: { userId },
-        select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
+        select: {
+          faceImageUrl: true,
+          faceDescriptor: true,
+          idCardImageUrl: true,
+        },
       });
-      if (!v) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-      return { enrolled: v.faceDescriptor !== null, faceImageUrl: v.faceImageUrl, idCardImageUrl: v.idCardImageUrl };
+      if (!v)
+        throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+      return {
+        enrolled: v.faceDescriptor !== null,
+        faceImageUrl: v.faceImageUrl,
+        idCardImageUrl: v.idCardImageUrl,
+      };
     }
 
     const receiver = await this.prisma.receiverProfile.findUnique({
       where: { userId },
-      select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
+      select: {
+        faceImageUrl: true,
+        faceDescriptor: true,
+        idCardImageUrl: true,
+      },
     });
-    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    if (!receiver)
+      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     return {
       enrolled: receiver.faceDescriptor !== null,
@@ -483,11 +530,16 @@ export class UsersService {
     selfiePhoto?: Express.Multer.File,
   ) {
     if (!idCardPhoto && !selfiePhoto) {
-      throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
+      throw new BadRequestException(
+        'Cần ít nhất một ảnh selfie hoặc ảnh CCCD.',
+      );
     }
 
     // Chỉ người nhận & tình nguyện viên cần đăng ký khuôn mặt
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
     if (user?.role !== 'receiver' && user?.role !== 'volunteer') {
       throw new BadRequestException('Vai trò này không cần đăng ký khuôn mặt.');
     }
@@ -525,8 +577,12 @@ export class UsersService {
     }
 
     const [idCardUrl, faceUrl] = await Promise.all([
-      idCardPhoto ? this.storage.saveImage(idCardPhoto, 'id-cards') : Promise.resolve(null),
-      selfiePhoto ? this.storage.saveImage(selfiePhoto, 'faces') : Promise.resolve(null),
+      idCardPhoto
+        ? this.storage.saveImage(idCardPhoto, 'id-cards')
+        : Promise.resolve(null),
+      selfiePhoto
+        ? this.storage.saveImage(selfiePhoto, 'faces')
+        : Promise.resolve(null),
     ]);
 
     // Ưu tiên descriptor từ selfie (chất lượng tốt hơn chân dung in trên thẻ)
@@ -536,9 +592,15 @@ export class UsersService {
       faceDescriptor: selfieDescriptor ?? idCardDescriptor!,
     };
     if (user.role === 'volunteer') {
-      await this.prisma.volunteerProfile.update({ where: { userId }, data: faceData });
+      await this.prisma.volunteerProfile.update({
+        where: { userId },
+        data: faceData,
+      });
     } else {
-      await this.prisma.receiverProfile.update({ where: { userId }, data: faceData });
+      await this.prisma.receiverProfile.update({
+        where: { userId },
+        data: faceData,
+      });
     }
 
     return {
@@ -655,7 +717,8 @@ export class UsersService {
       pickupEndTime: r.pickup_end_time.toISOString(),
       pickupAddress: r.pickup_address,
       status: r.status,
-      weightPerUnitKg: r.weight_per_unit_kg != null ? Number(r.weight_per_unit_kg) : null,
+      weightPerUnitKg:
+        r.weight_per_unit_kg != null ? Number(r.weight_per_unit_kg) : null,
     }));
   }
 }

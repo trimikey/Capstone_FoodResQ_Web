@@ -11,7 +11,13 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -33,7 +39,9 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'Lấy hồ sơ + thống kê của người dùng đang đăng nhập' })
+  @ApiOperation({
+    summary: 'Lấy hồ sơ + thống kê của người dùng đang đăng nhập',
+  })
   getMe(@CurrentUser() user: User) {
     return this.usersService.getMe(user.id);
   }
@@ -47,7 +55,9 @@ export class UsersController {
 
   @Get('providers/:providerProfileId/listings')
   @Public()
-  @ApiOperation({ summary: 'Chi tiết tin đăng của một NCC — biết đang có gì để request' })
+  @ApiOperation({
+    summary: 'Chi tiết tin đăng của một NCC — biết đang có gì để request',
+  })
   getProviderListings(@Param('providerProfileId') id: string) {
     return this.usersService.getProviderListings(id);
   }
@@ -66,7 +76,9 @@ export class UsersController {
 
   @Get('me/face-enrollment')
   @Roles(UserRole.RECEIVER, UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Receiver/Volunteer: Trạng thái đăng ký khuôn mặt (eKYC)' })
+  @ApiOperation({
+    summary: 'Receiver/Volunteer: Trạng thái đăng ký khuôn mặt (eKYC)',
+  })
   getFaceEnrollment(@CurrentUser() user: User) {
     return this.usersService.getFaceEnrollmentStatus(user.id);
   }
@@ -101,7 +113,9 @@ export class UsersController {
     const idCard = files.idCard?.[0];
     const selfie = files.selfie?.[0];
     if (!idCard && !selfie) {
-      throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
+      throw new BadRequestException(
+        'Cần ít nhất một ảnh selfie hoặc ảnh CCCD.',
+      );
     }
     for (const file of [idCard, selfie]) {
       if (!file) continue;

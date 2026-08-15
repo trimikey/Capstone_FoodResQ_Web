@@ -43,6 +43,12 @@ export default function ListingDetailScreen({ id }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState('');
   const [requestDelivery, setRequestDelivery] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   if (isLoading) {
     return (
@@ -70,11 +76,6 @@ export default function ListingDetailScreen({ id }: Props) {
 
   // Chỉ đặt được TRONG khung giờ nhận hàng — backend cũng chặn, nhưng nếu ở đây không
   // khoá thì người dùng bấm xong mới nhận lỗi. Tick để khoá đúng lúc cửa hàng đóng.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
   const notYetOpen = nowMs < new Date(listing.pickupStartTime).getTime();
   // Khung giờ MỞ CỬA trong ngày (vd 07:00–21:00), tính theo giờ VN cho khớp backend.
   // Khác với hạn lấy: tin kéo dài nhiều ngày vẫn phải đóng ngoài giờ làm việc.

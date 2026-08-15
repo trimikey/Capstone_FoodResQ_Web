@@ -44,7 +44,10 @@ export class CreateListingDto {
   @IsEnum(QuantityUnit)
   quantityUnit!: QuantityUnit;
 
-  @ApiPropertyOptional({ example: 0.5, description: 'kg per unit — dùng để tính ESG' })
+  @ApiPropertyOptional({
+    example: 0.5,
+    description: 'kg per unit — dùng để tính ESG',
+  })
   @IsOptional()
   @IsNumber()
   @IsPositive()
@@ -101,7 +104,10 @@ export class CreateListingDto {
 
   // Khung giờ mở cửa TRONG NGÀY, phút từ 00:00 giờ VN. Cặp đi cùng nhau: gửi cả hai
   // hoặc không gửi cái nào (tin không giới hạn giờ trong ngày).
-  @ApiPropertyOptional({ example: 420, description: 'Giờ mở nhận trong ngày (phút từ 00:00, 7:00 → 420)' })
+  @ApiPropertyOptional({
+    example: 420,
+    description: 'Giờ mở nhận trong ngày (phút từ 00:00, 7:00 → 420)',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -109,7 +115,10 @@ export class CreateListingDto {
   @Type(() => Number)
   dailyStartMinute?: number;
 
-  @ApiPropertyOptional({ example: 1260, description: 'Giờ đóng nhận trong ngày (phút từ 00:00, 21:00 → 1260)' })
+  @ApiPropertyOptional({
+    example: 1260,
+    description: 'Giờ đóng nhận trong ngày (phút từ 00:00, 21:00 → 1260)',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -119,13 +128,19 @@ export class CreateListingDto {
 
   // BẮT BUỘC ít nhất 1 ảnh: người nhận không có cách nào đánh giá thực phẩm trước khi
   // tới lấy, và tin không ảnh gần như không có lượt đặt.
-  @ApiProperty({ example: ['https://...'], description: 'Ít nhất 1 ảnh thực phẩm' })
+  @ApiProperty({
+    example: ['https://...'],
+    description: 'Ít nhất 1 ảnh thực phẩm',
+  })
   @IsArray()
   @ArrayNotEmpty({ message: 'Tin đăng phải có ít nhất 1 ảnh thực phẩm.' })
   @IsString({ each: true })
   imageUrls!: string[];
 
-  @ApiPropertyOptional({ example: false, description: 'Túi bất ngờ (kiểu Too Good To Go)' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Túi bất ngờ (kiểu Too Good To Go)',
+  })
   @IsOptional()
   @IsBoolean()
   isSurpriseBag?: boolean;

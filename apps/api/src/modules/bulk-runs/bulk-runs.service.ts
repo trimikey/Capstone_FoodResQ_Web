@@ -14,7 +14,12 @@ import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { TrustService } from '@/modules/trust/trust.service';
-import { RequestBulkRunDto, AddStopDto, UpdateStopDto, ServeStopDto } from './dto/bulk-run.dto';
+import {
+  RequestBulkRunDto,
+  AddStopDto,
+  UpdateStopDto,
+  ServeStopDto,
+} from './dto/bulk-run.dto';
 
 // UUID cố định cho placeholder receiver — hệ thống tự tạo user/receiver profile khi app khởi động.
 const BULK_PLACEHOLDER_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -27,13 +32,18 @@ export const BULK_MIN_QTY = 2;
 // trong khi hàng vẫn nằm im và kho vẫn bị giữ.
 export const REQUEST_EXPIRY_HOURS = 24; // NCC phải duyệt/từ chối trong 24h
 export const PICKUP_DEADLINE_HOURS = 4; // đã duyệt → phải đến lấy hàng (kho đang bị giữ)
-export const RUN_COMPLETION_HOURS = 8;  // đã lấy hàng → phải phát xong
+export const RUN_COMPLETION_HOURS = 8; // đã lấy hàng → phải phát xong
 // Huỷ chuyến SAU KHI NCC đã duyệt → phạt uy tín (bằng mức huỷ trễ của đơn lẻ).
 // Huỷ khi còn chờ duyệt thì không phạt vì chưa gây thiệt hại cho ai.
 export const BULK_CANCEL_PENALTY = 10;
 
 const ACTIVE_RUN_STATUSES = ['requested', 'approved', 'picked_up'] as const;
-const ACTIVE_DELIVERY_STATUSES = ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] as const;
+const ACTIVE_DELIVERY_STATUSES = [
+  'assigned',
+  'heading_to_provider',
+  'qc_completed',
+  'in_transit',
+] as const;
 
 @Injectable()
 export class BulkRunsService implements OnModuleInit {
@@ -115,10 +125,15 @@ export class BulkRunsService implements OnModuleInit {
         specializations: { select: { specialization: true, isVerified: true } },
       },
     });
-    if (!vp) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-    const ok = vp.specializations.some((s) => s.specialization === 'shipper' && s.isVerified);
+    if (!vp)
+      throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    const ok = vp.specializations.some(
+      (s) => s.specialization === 'shipper' && s.isVerified,
+    );
     if (!ok) {
-      throw new ForbiddenException('Chỉ tình nguyện viên giao hàng đã được xác minh mới nhận giao sỉ.');
+      throw new ForbiddenException(
+        'Chỉ tình nguyện viên giao hàng đã được xác minh mới nhận giao sỉ.',
+      );
     }
     return vp;
   }
@@ -146,8 +161,11 @@ export class BulkRunsService implements OnModuleInit {
 
   /** Toạ độ các điểm phát (geography → raw SQL) theo danh sách run. */
   private async getStopCoords(runIds: string[]) {
-    if (runIds.length === 0) return new Map<string, { lng: number; lat: number }>();
-    const rows = await this.prisma.$queryRaw<{ id: string; lng: number | null; lat: number | null }[]>(
+    if (runIds.length === 0)
+      return new Map<string, { lng: number; lat: number }>();
+    const rows = await this.prisma.$queryRaw<
+      { id: string; lng: number | null; lat: number | null }[]
+    >(
       Prisma.sql`
         SELECT id, ST_X(location::geometry) AS lng, ST_Y(location::geometry) AS lat
         FROM bulk_run_stops
@@ -171,10 +189,14 @@ export class BulkRunsService implements OnModuleInit {
     approvedAt: Date | null;
     pickedUpAt: Date | null;
   }): Date | null {
-    const h = (base: Date, hours: number) => new Date(base.getTime() + hours * 3600 * 1000);
-    if (run.status === 'requested') return h(run.createdAt, REQUEST_EXPIRY_HOURS);
-    if (run.status === 'approved' && run.approvedAt) return h(run.approvedAt, PICKUP_DEADLINE_HOURS);
-    if (run.status === 'picked_up' && run.pickedUpAt) return h(run.pickedUpAt, RUN_COMPLETION_HOURS);
+    const h = (base: Date, hours: number) =>
+      new Date(base.getTime() + hours * 3600 * 1000);
+    if (run.status === 'requested')
+      return h(run.createdAt, REQUEST_EXPIRY_HOURS);
+    if (run.status === 'approved' && run.approvedAt)
+      return h(run.approvedAt, PICKUP_DEADLINE_HOURS);
+    if (run.status === 'picked_up' && run.pickedUpAt)
+      return h(run.pickedUpAt, RUN_COMPLETION_HOURS);
     return null;
   }
 
@@ -193,7 +215,9 @@ export class BulkRunsService implements OnModuleInit {
     const stopCoords = await this.getStopCoords(runs.map((r) => r.id));
     const listingIds = [...new Set(runs.map((r) => r.listingId))];
     const pickupRows = listingIds.length
-      ? await this.prisma.$queryRaw<{ id: string; lng: number | null; lat: number | null }[]>(Prisma.sql`
+      ? await this.prisma.$queryRaw<
+          { id: string; lng: number | null; lat: number | null }[]
+        >(Prisma.sql`
           SELECT id, ST_X(pickup_location::geometry) AS lng, ST_Y(pickup_location::geometry) AS lat
           FROM food_listings WHERE id IN (${Prisma.join(listingIds.map((i) => Prisma.sql`${i}::uuid`))})
         `)
@@ -219,21 +243,34 @@ export class BulkRunsService implements OnModuleInit {
     const shipper = await this.resolveVerifiedShipper(shipperUserId);
 
     if (dto.quantity < BULK_MIN_QTY) {
-      throw new BadRequestException(`Giao sỉ chỉ áp dụng từ ${BULK_MIN_QTY} phần trở lên.`);
+      throw new BadRequestException(
+        `Giao sỉ chỉ áp dụng từ ${BULK_MIN_QTY} phần trở lên.`,
+      );
     }
 
     // 1 shipper chỉ 1 chuyến sỉ đang chạy — và không được kẹt đơn giao lẻ
     const activeRun = await this.prisma.bulkRun.findFirst({
-      where: { shipperId: shipper.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      where: {
+        shipperId: shipper.id,
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
       select: { id: true },
     });
-    if (activeRun) throw new BadRequestException('Bạn đang có một chuyến giao sỉ chưa hoàn tất.');
+    if (activeRun)
+      throw new BadRequestException(
+        'Bạn đang có một chuyến giao sỉ chưa hoàn tất.',
+      );
     const activeDelivery = await this.prisma.delivery.findFirst({
-      where: { shipperId: shipper.id, status: { in: [...ACTIVE_DELIVERY_STATUSES] } },
+      where: {
+        shipperId: shipper.id,
+        status: { in: [...ACTIVE_DELIVERY_STATUSES] },
+      },
       select: { id: true },
     });
     if (activeDelivery) {
-      throw new BadRequestException('Bạn đang giao một đơn lẻ — hoàn tất trước khi nhận chuyến giao sỉ.');
+      throw new BadRequestException(
+        'Bạn đang giao một đơn lẻ — hoàn tất trước khi nhận chuyến giao sỉ.',
+      );
     }
 
     const listing = await this.prisma.foodListing.findFirst({
@@ -249,10 +286,14 @@ export class BulkRunsService implements OnModuleInit {
       },
     });
     if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
-    if (listing.status !== 'active') throw new BadRequestException('Tin này không còn nhận đặt.');
-    if (new Date() > listing.pickupEndTime) throw new BadRequestException('Tin này đã quá giờ nhận hàng.');
+    if (listing.status !== 'active')
+      throw new BadRequestException('Tin này không còn nhận đặt.');
+    if (new Date() > listing.pickupEndTime)
+      throw new BadRequestException('Tin này đã quá giờ nhận hàng.');
     if (Number(listing.quantityRemaining) < dto.quantity) {
-      throw new BadRequestException(`Chỉ còn ${Number(listing.quantityRemaining)} phần — không đủ số lượng yêu cầu.`);
+      throw new BadRequestException(
+        `Chỉ còn ${Number(listing.quantityRemaining)} phần — không đủ số lượng yêu cầu.`,
+      );
     }
 
     const run = await this.prisma.bulkRun.create({
@@ -288,14 +329,18 @@ export class BulkRunsService implements OnModuleInit {
     if (!run) throw new NotFoundException('Không tìm thấy yêu cầu giao sỉ.');
     if (run.providerId !== provider.id) throw new ForbiddenException();
     if (run.status !== 'requested') {
-      throw new BadRequestException('Yêu cầu này đã được xử lý hoặc không còn hiệu lực.');
+      throw new BadRequestException(
+        'Yêu cầu này đã được xử lý hoặc không còn hiệu lực.',
+      );
     }
 
     // Khoá listing như luồng reservation để không đụng độ khách đặt lẻ cùng lúc
     const lock = await this.redlock
       .acquire([`lock:reservation:${run.listingId}`], 10_000)
       .catch(() => {
-        throw new BadRequestException('Tin đang có người thao tác. Vui lòng thử lại sau vài giây.');
+        throw new BadRequestException(
+          'Tin đang có người thao tác. Vui lòng thử lại sau vài giây.',
+        );
       });
     try {
       const [row] = await this.prisma.$queryRaw<
@@ -304,10 +349,14 @@ export class BulkRunsService implements OnModuleInit {
         Prisma.sql`SELECT quantity_remaining, status, pickup_end_time FROM food_listings WHERE id = ${run.listingId}::uuid AND deleted_at IS NULL`,
       );
       if (!row || row.status !== 'active') {
-        throw new BadRequestException('Tin không còn hiệu lực để duyệt giao sỉ.');
+        throw new BadRequestException(
+          'Tin không còn hiệu lực để duyệt giao sỉ.',
+        );
       }
       if (new Date() > row.pickup_end_time) {
-        throw new BadRequestException('Tin đã quá giờ nhận hàng — không duyệt được nữa.');
+        throw new BadRequestException(
+          'Tin đã quá giờ nhận hàng — không duyệt được nữa.',
+        );
       }
       if (Number(row.quantity_remaining) < run.quantity) {
         throw new BadRequestException(
@@ -347,12 +396,17 @@ export class BulkRunsService implements OnModuleInit {
     const provider = await this.resolveProvider(providerUserId);
     const run = await this.prisma.bulkRun.findUnique({
       where: { id: runId },
-      include: { listing: { select: { title: true } }, shipper: { select: { userId: true } } },
+      include: {
+        listing: { select: { title: true } },
+        shipper: { select: { userId: true } },
+      },
     });
     if (!run) throw new NotFoundException('Không tìm thấy yêu cầu giao sỉ.');
     if (run.providerId !== provider.id) throw new ForbiddenException();
     if (run.status !== 'requested') {
-      throw new BadRequestException('Yêu cầu này đã được xử lý hoặc không còn hiệu lực.');
+      throw new BadRequestException(
+        'Yêu cầu này đã được xử lý hoặc không còn hiệu lực.',
+      );
     }
 
     await this.prisma.bulkRun.update({
@@ -374,7 +428,9 @@ export class BulkRunsService implements OnModuleInit {
   async pickup(runId: string, shipperUserId: string, qcPhotoUrl?: string) {
     const run = await this.ownedRun(runId, shipperUserId);
     if (run.status !== 'approved') {
-      throw new BadRequestException('Chuyến chưa được duyệt hoặc đã lấy hàng rồi.');
+      throw new BadRequestException(
+        'Chuyến chưa được duyệt hoặc đã lấy hàng rồi.',
+      );
     }
 
     // QR có hiệu lực 24 giờ cho bulk run (dài hơn bình thường 30 phút vì có nhiều điểm phát)
@@ -392,27 +448,33 @@ export class BulkRunsService implements OnModuleInit {
     const receiverId = await this.getBulkPlaceholderReceiverId();
 
     // 1 reservation mỗi stop — QR code để shipper quét tại mỗi điểm phát
-    const reservationOps: Prisma.PrismaPromise<unknown>[] = stops.map((stop) => {
-      const token = this.makeQrToken(runId, stop.id);
-      const qty = stop.plannedQty ?? 1;
-      return this.prisma.reservation.create({
-        data: {
-          listingId: run.listingId,
-          receiverId,
-          bulkRunStopId: stop.id,
-          quantity: qty,
-          status: 'confirmed',
-          qrToken: token,
-          qrExpiresAt,
-          receiverNotes: `Bulk Run: ${stop.label}`,
-        },
-      });
-    });
+    const reservationOps: Prisma.PrismaPromise<unknown>[] = stops.map(
+      (stop) => {
+        const token = this.makeQrToken(runId, stop.id);
+        const qty = stop.plannedQty ?? 1;
+        return this.prisma.reservation.create({
+          data: {
+            listingId: run.listingId,
+            receiverId,
+            bulkRunStopId: stop.id,
+            quantity: qty,
+            status: 'confirmed',
+            qrToken: token,
+            qrExpiresAt,
+            receiverNotes: `Bulk Run: ${stop.label}`,
+          },
+        });
+      },
+    );
 
     await this.prisma.$transaction([
       this.prisma.bulkRun.update({
         where: { id: runId },
-        data: { status: 'picked_up', pickedUpAt: new Date(), ...(qcPhotoUrl ? { qcPhotoUrl } : {}) },
+        data: {
+          status: 'picked_up',
+          pickedUpAt: new Date(),
+          ...(qcPhotoUrl ? { qcPhotoUrl } : {}),
+        },
       }),
       ...reservationOps,
     ]);
@@ -445,10 +507,21 @@ export class BulkRunsService implements OnModuleInit {
     if (!run) throw new NotFoundException('Không tìm thấy chuyến giao sỉ.');
 
     const createdBy =
-      run.shipper.userId === userId ? 'shipper' : run.provider.userId === userId ? 'provider' : null;
-    if (!createdBy) throw new ForbiddenException('Chỉ nhà cung cấp hoặc shipper của chuyến này mới thêm được điểm phát.');
-    if (!(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)) {
-      throw new BadRequestException('Chuyến đã kết thúc — không thêm được điểm phát.');
+      run.shipper.userId === userId
+        ? 'shipper'
+        : run.provider.userId === userId
+          ? 'provider'
+          : null;
+    if (!createdBy)
+      throw new ForbiddenException(
+        'Chỉ nhà cung cấp hoặc shipper của chuyến này mới thêm được điểm phát.',
+      );
+    if (
+      !(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)
+    ) {
+      throw new BadRequestException(
+        'Chuyến đã kết thúc — không thêm được điểm phát.',
+      );
     }
     // Hàng đã rời cửa hàng → tuyến thuộc quyền shipper, NCC không ghim thêm được nữa.
     if (run.status === 'picked_up' && createdBy === 'provider') {
@@ -527,7 +600,11 @@ export class BulkRunsService implements OnModuleInit {
       WHERE id = ${stop.id}::uuid
     `);
 
-    return { ...stop, coords: { lng: dto.lng, lat: dto.lat }, reservationId: undefined };
+    return {
+      ...stop,
+      coords: { lng: dto.lng, lat: dto.lat },
+      reservationId: undefined,
+    };
   }
 
   /**
@@ -546,10 +623,16 @@ export class BulkRunsService implements OnModuleInit {
     const isShipper = run.shipper.userId === userId;
     const isProvider = run.provider.userId === userId;
     if (!isShipper && !isProvider) {
-      throw new ForbiddenException('Chỉ nhà cung cấp hoặc shipper của chuyến này mới sửa được điểm phát.');
+      throw new ForbiddenException(
+        'Chỉ nhà cung cấp hoặc shipper của chuyến này mới sửa được điểm phát.',
+      );
     }
-    if (!(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)) {
-      throw new BadRequestException('Chuyến đã kết thúc — không sửa được điểm phát.');
+    if (
+      !(['requested', 'approved', 'picked_up'] as string[]).includes(run.status)
+    ) {
+      throw new BadRequestException(
+        'Chuyến đã kết thúc — không sửa được điểm phát.',
+      );
     }
     // Hàng đã rời cửa hàng → tuyến đường thuộc quyền shipper. NCC đổi điểm lúc này
     // sẽ khiến shipper đang chạy ngoài đường bị đổi đích giữa chừng.
@@ -569,10 +652,13 @@ export class BulkRunsService implements OnModuleInit {
       LEFT JOIN reservations r ON r.bulk_run_stop_id = s.id
       WHERE s.id = ${stopId}::uuid AND s.run_id = ${runId}::uuid
     `);
-    if (!stop) throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
+    if (!stop)
+      throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
     // Đã phát rồi thì số liệu đã đi vào thống kê — sửa/xoá sẽ làm sai sổ sách
     if (stop.served_qty > 0) {
-      throw new BadRequestException('Điểm này đã phát hàng — không sửa hoặc xoá được nữa.');
+      throw new BadRequestException(
+        'Điểm này đã phát hàng — không sửa hoặc xoá được nữa.',
+      );
     }
     return { stop, run };
   }
@@ -589,7 +675,10 @@ export class BulkRunsService implements OnModuleInit {
     excludeStopId?: string,
   ) {
     const agg = await this.prisma.bulkRunStop.aggregate({
-      where: { runId, ...(excludeStopId ? { id: { not: excludeStopId } } : {}) },
+      where: {
+        runId,
+        ...(excludeStopId ? { id: { not: excludeStopId } } : {}),
+      },
       _sum: { plannedQty: true },
     });
     const used = Number(agg._sum.plannedQty ?? 0);
@@ -601,21 +690,33 @@ export class BulkRunsService implements OnModuleInit {
   }
 
   /** Sửa điểm phát (nhãn / địa chỉ / toạ độ / số phần dự kiến). */
-  async updateStop(runId: string, stopId: string, userId: string, dto: UpdateStopDto) {
+  async updateStop(
+    runId: string,
+    stopId: string,
+    userId: string,
+    dto: UpdateStopDto,
+  ) {
     const { run } = await this.stopForEdit(runId, stopId, userId);
 
     if ((dto.lng == null) !== (dto.lat == null)) {
       throw new BadRequestException('Đổi vị trí phải gửi đủ cả lng và lat.');
     }
     if (dto.plannedQty != null) {
-      await this.assertPlannedWithinQuota(runId, run.quantity, dto.plannedQty, stopId);
+      await this.assertPlannedWithinQuota(
+        runId,
+        run.quantity,
+        dto.plannedQty,
+        stopId,
+      );
     }
 
     await this.prisma.bulkRunStop.update({
       where: { id: stopId },
       data: {
         ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
-        ...(dto.address !== undefined ? { address: dto.address.trim() || null } : {}),
+        ...(dto.address !== undefined
+          ? { address: dto.address.trim() || null }
+          : {}),
         ...(dto.plannedQty !== undefined ? { plannedQty: dto.plannedQty } : {}),
         ...(dto.note !== undefined ? { note: dto.note.trim() || null } : {}),
       },
@@ -641,14 +742,16 @@ export class BulkRunsService implements OnModuleInit {
     // và phần dư được trả lại khi kết thúc chuyến.
     await this.prisma.$transaction([
       ...(stop.reservation_id
-        ? [this.prisma.reservation.update({
-            where: { id: stop.reservation_id },
-            data: {
-              status: 'cancelled',
-              cancelledAt: new Date(),
-              cancellationReason: 'Điểm phát đã bị gỡ khỏi chuyến giao sỉ.',
-            },
-          })]
+        ? [
+            this.prisma.reservation.update({
+              where: { id: stop.reservation_id },
+              data: {
+                status: 'cancelled',
+                cancelledAt: new Date(),
+                cancellationReason: 'Điểm phát đã bị gỡ khỏi chuyến giao sỉ.',
+              },
+            }),
+          ]
         : []),
       this.prisma.bulkRunStop.delete({ where: { id: stopId } }),
     ]);
@@ -658,15 +761,25 @@ export class BulkRunsService implements OnModuleInit {
 
   /** Ghi nhận đã phát N phần tại một điểm; phát đủ thì tự hoàn tất chuyến.
    *  Đồng thời chuyển reservation tương ứng → picked_up. */
-  async serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl?: string) {
+  async serve(
+    runId: string,
+    shipperUserId: string,
+    stopId: string,
+    dto: ServeStopDto,
+    photoUrl?: string,
+  ) {
     const run = await this.ownedRun(runId, shipperUserId);
     if (run.status !== 'picked_up') {
-      throw new BadRequestException('Chỉ ghi nhận phát hàng sau khi đã lấy hàng.');
+      throw new BadRequestException(
+        'Chỉ ghi nhận phát hàng sau khi đã lấy hàng.',
+      );
     }
     // Quan hệ stop ↔ reservation nằm ở `reservations.bulk_run_stop_id` (phía Reservation
     // giữ khoá ngoại). Cột `bulk_run_stops.reservation_id` là di sản, KHÔNG nơi nào ghi —
     // đọc nó luôn ra NULL và chặn nhầm mọi điểm phát hợp lệ.
-    const [stop] = await this.prisma.$queryRaw<{ id: string; reservation_id: string | null }[]>(
+    const [stop] = await this.prisma.$queryRaw<
+      { id: string; reservation_id: string | null }[]
+    >(
       Prisma.sql`
         SELECT s.id, r.id AS reservation_id
         FROM bulk_run_stops s
@@ -674,9 +787,12 @@ export class BulkRunsService implements OnModuleInit {
         WHERE s.id = ${stopId}::uuid AND s.run_id = ${runId}::uuid
       `,
     );
-    if (!stop) throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
+    if (!stop)
+      throw new NotFoundException('Không tìm thấy điểm phát trong chuyến này.');
     if (!stop.reservation_id) {
-      throw new BadRequestException('Điểm phát này chưa có mã QR — hãy thêm điểm phát sau khi lấy hàng.');
+      throw new BadRequestException(
+        'Điểm phát này chưa có mã QR — hãy thêm điểm phát sau khi lấy hàng.',
+      );
     }
 
     // Cộng dồn CÓ ĐIỀU KIỆN trong 1 câu SQL (atomic) — chặn race khi bấm nhanh
@@ -694,7 +810,9 @@ export class BulkRunsService implements OnModuleInit {
         select: { quantity: true, quantityDistributed: true },
       });
       const remaining = fresh ? fresh.quantity - fresh.quantityDistributed : 0;
-      throw new BadRequestException(`Chỉ còn ${remaining} phần chưa phát — không thể ghi ${dto.servedQty} phần.`);
+      throw new BadRequestException(
+        `Chỉ còn ${remaining} phần chưa phát — không thể ghi ${dto.servedQty} phần.`,
+      );
     }
 
     const ops: Prisma.PrismaPromise<unknown>[] = [
@@ -745,7 +863,11 @@ export class BulkRunsService implements OnModuleInit {
         where: { id: runId },
         select: { status: true, quantityDistributed: true },
       });
-      return { id: runId, status: current?.status ?? 'completed', quantityDistributed: current?.quantityDistributed ?? 0 };
+      return {
+        id: runId,
+        status: current?.status ?? 'completed',
+        quantityDistributed: current?.quantityDistributed ?? 0,
+      };
     }
 
     const run = await this.prisma.bulkRun.findUnique({
@@ -771,12 +893,13 @@ export class BulkRunsService implements OnModuleInit {
       .filter((s) => s.servedQty === 0 && s.reservationId)
       .map((s) => s.reservationId!);
 
-    const reservationOps: Prisma.PrismaPromise<unknown>[] = remainingReservations.map((rid: string) =>
-      this.prisma.reservation.update({
-        where: { id: rid },
-        data: { status: 'completed' },
-      }),
-    );
+    const reservationOps: Prisma.PrismaPromise<unknown>[] =
+      remainingReservations.map((rid: string) =>
+        this.prisma.reservation.update({
+          where: { id: rid },
+          data: { status: 'completed' },
+        }),
+      );
 
     await this.prisma.$transaction([
       ...(leftover > 0 ? [this.restockSql(run.listingId, leftover)] : []),
@@ -805,13 +928,21 @@ export class BulkRunsService implements OnModuleInit {
       data: { bulkRunId: runId, status: 'completed' },
     });
 
-    return { id: runId, status: 'completed', quantityDistributed: run.quantityDistributed, leftover, pointsAwarded: points };
+    return {
+      id: runId,
+      status: 'completed',
+      quantityDistributed: run.quantityDistributed,
+      leftover,
+      pointsAwarded: points,
+    };
   }
 
   async cancel(runId: string, shipperUserId: string) {
     const run = await this.ownedRun(runId, shipperUserId);
     if (run.status === 'picked_up') {
-      throw new BadRequestException('Đã lấy hàng — hãy hoàn tất chuyến, phần chưa phát sẽ được hoàn về tin.');
+      throw new BadRequestException(
+        'Đã lấy hàng — hãy hoàn tất chuyến, phần chưa phát sẽ được hoàn về tin.',
+      );
     }
     if (run.status !== 'requested' && run.status !== 'approved') {
       throw new BadRequestException('Chuyến này không còn huỷ được.');
@@ -820,7 +951,10 @@ export class BulkRunsService implements OnModuleInit {
     const wasApproved = run.status === 'approved';
 
     await this.prisma.$transaction([
-      this.prisma.bulkRun.update({ where: { id: runId }, data: { status: 'cancelled' } }),
+      this.prisma.bulkRun.update({
+        where: { id: runId },
+        data: { status: 'cancelled' },
+      }),
       // Đã duyệt (kho đã trừ) thì hoàn lại toàn bộ
       ...(wasApproved ? [this.restockSql(run.listingId, run.quantity)] : []),
     ]);
@@ -841,7 +975,10 @@ export class BulkRunsService implements OnModuleInit {
 
     const full = await this.prisma.bulkRun.findUnique({
       where: { id: runId },
-      include: { provider: { select: { userId: true } }, listing: { select: { title: true } } },
+      include: {
+        provider: { select: { userId: true } },
+        listing: { select: { title: true } },
+      },
     });
     if (full) {
       void this.notifications.notify(full.provider.userId, {
@@ -860,7 +997,8 @@ export class BulkRunsService implements OnModuleInit {
       where: { userId: shipperUserId },
       select: { id: true },
     });
-    if (!shipper) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    if (!shipper)
+      throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
     const run = await this.prisma.bulkRun.findUnique({ where: { id: runId } });
     if (!run) throw new NotFoundException('Không tìm thấy chuyến giao sỉ.');
     if (run.shipperId !== shipper.id) throw new ForbiddenException();
@@ -873,20 +1011,33 @@ export class BulkRunsService implements OnModuleInit {
       where: { userId: shipperUserId },
       select: { id: true },
     });
-    if (!shipper) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    if (!shipper)
+      throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
     const runs = await this.prisma.bulkRun.findMany({
       where: { shipperId: shipper.id },
       orderBy: { createdAt: 'desc' },
       take: 15,
       include: {
-        listing: { select: { title: true, pickupAddress: true, imageUrls: true, quantityUnit: true } },
+        listing: {
+          select: {
+            title: true,
+            pickupAddress: true,
+            imageUrls: true,
+            quantityUnit: true,
+          },
+        },
         provider: { select: { businessName: true, contactPhone: true } },
         stops: {
           orderBy: { orderIndex: 'asc' },
           include: {
             reservation: {
-              select: { id: true, qrToken: true, status: true, qrExpiresAt: true },
+              select: {
+                id: true,
+                qrToken: true,
+                status: true,
+                qrExpiresAt: true,
+              },
             },
           },
         },
@@ -902,7 +1053,9 @@ export class BulkRunsService implements OnModuleInit {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       take: 30,
       include: {
-        listing: { select: { title: true, pickupAddress: true, quantityUnit: true } },
+        listing: {
+          select: { title: true, pickupAddress: true, quantityUnit: true },
+        },
         shipper: {
           select: {
             id: true,
@@ -916,7 +1069,12 @@ export class BulkRunsService implements OnModuleInit {
           orderBy: { orderIndex: 'asc' },
           include: {
             reservation: {
-              select: { id: true, qrToken: true, status: true, qrExpiresAt: true },
+              select: {
+                id: true,
+                qrToken: true,
+                status: true,
+                qrExpiresAt: true,
+              },
             },
           },
         },
@@ -928,15 +1086,25 @@ export class BulkRunsService implements OnModuleInit {
     // Thành tích của từng shipper để NCC có căn cứ duyệt — đếm riêng vì `_count` của
     // Prisma không lọc theo trạng thái được.
     const shipperIds = [...new Set(runs.map((r) => r.shipperId))];
-    const stats = new Map<string, { completedRuns: number; deliveredOrders: number; failedOrders: number }>();
+    const stats = new Map<
+      string,
+      { completedRuns: number; deliveredOrders: number; failedOrders: number }
+    >();
     if (shipperIds.length > 0) {
       const perShipper = await Promise.all(
         shipperIds.map(async (id) => {
-          const [completedRuns, deliveredOrders, failedOrders] = await Promise.all([
-            this.prisma.bulkRun.count({ where: { shipperId: id, status: 'completed' } }),
-            this.prisma.delivery.count({ where: { shipperId: id, status: 'delivered' } }),
-            this.prisma.delivery.count({ where: { shipperId: id, status: 'failed' } }),
-          ]);
+          const [completedRuns, deliveredOrders, failedOrders] =
+            await Promise.all([
+              this.prisma.bulkRun.count({
+                where: { shipperId: id, status: 'completed' },
+              }),
+              this.prisma.delivery.count({
+                where: { shipperId: id, status: 'delivered' },
+              }),
+              this.prisma.delivery.count({
+                where: { shipperId: id, status: 'failed' },
+              }),
+            ]);
           return { id, completedRuns, deliveredOrders, failedOrders };
         }),
       );
@@ -1004,7 +1172,12 @@ export class BulkRunsService implements OnModuleInit {
         status: 'picked_up',
         pickedUpAt: { lt: new Date(now - RUN_COMPLETION_HOURS * 3600 * 1000) },
       },
-      select: { id: true, listingId: true, quantity: true, quantityDistributed: true },
+      select: {
+        id: true,
+        listingId: true,
+        quantity: true,
+        quantityDistributed: true,
+      },
       take: 50,
     });
     for (const r of overdue) {

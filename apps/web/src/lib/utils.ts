@@ -10,10 +10,45 @@ export function cn(...inputs: ClassValue[]) {
 // CHỈ prefix đường dẫn /uploads — ảnh tĩnh của web (/banh-mi.png trong public/) và
 // URL http(s) giữ nguyên, nếu prefix bừa sẽ 404 vì API không serve chúng.
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
+
+function apiOriginForBrowser(): string {
+  if (typeof window === 'undefined') return API_ORIGIN;
+
+  try {
+    const apiUrl = new URL(API_ORIGIN);
+    const pageHost = window.location.hostname;
+    const apiIsLocalhost = apiUrl.hostname === 'localhost' || apiUrl.hostname === '127.0.0.1';
+    const pageIsLocalhost = pageHost === 'localhost' || pageHost === '127.0.0.1';
+
+    // Khi mở web bằng IP LAN trên điện thoại/máy khác, localhost trong NEXT_PUBLIC_API_URL
+    // sẽ trỏ về thiết bị đó. Giữ nguyên port API, chỉ đổi hostname theo trang hiện tại.
+    if (apiIsLocalhost && !pageIsLocalhost) {
+      apiUrl.hostname = pageHost;
+      return apiUrl.origin;
+    }
+  } catch {
+    return API_ORIGIN;
+  }
+
+  return API_ORIGIN;
+}
+
 export function mediaUrl(path: string): string {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
+  const value = path.trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
+  const origin = apiOriginForBrowser();
+  if (value.startsWith('/api/v1/uploads')) {
+    return `${origin}${value.replace(/^\/api\/v1/, '')}`;
+  }
+  if (value.startsWith('api/v1/uploads')) {
+    return `${origin}/${value.replace(/^api\/v1\//, '')}`;
+  }
+  if (value.startsWith('/uploads')) return `${origin}${value}`;
+  if (value.startsWith('uploads/')) return `${origin}/${value}`;
+  return value;
 }
 
 // Link điều hướng Google Maps tới một toạ độ

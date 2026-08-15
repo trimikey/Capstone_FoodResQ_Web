@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { $Enums } from '@prisma/client';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
@@ -39,7 +44,7 @@ export class ReportsService {
         reporterId,
         targetType: dto.targetType as $Enums.ReportTargetType,
         targetId: dto.targetId,
-        reason: dto.reason as $Enums.ReportReason,
+        reason: dto.reason,
         description: dto.description ?? null,
       },
       select: { id: true, status: true, createdAt: true },
@@ -53,10 +58,17 @@ export class ReportsService {
       body: `Có báo cáo mới về ${TARGET_VN[dto.targetType] ?? dto.targetType} — lý do: ${
         REASON_VN[dto.reason] ?? dto.reason
       }.`,
-      data: { reportId: report.id, targetType: dto.targetType, targetId: dto.targetId },
+      data: {
+        reportId: report.id,
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+      },
     });
 
-    return { ...report, message: 'Đã gửi báo cáo. Đội ngũ quản trị sẽ xem xét.' };
+    return {
+      ...report,
+      message: 'Đã gửi báo cáo. Đội ngũ quản trị sẽ xem xét.',
+    };
   }
 
   /**
@@ -73,31 +85,51 @@ export class ReportsService {
     targetId: string,
   ): Promise<void> {
     if (targetType === 'reservation') {
-      const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId: reporterId } });
+      const receiver = await this.prisma.receiverProfile.findUnique({
+        where: { userId: reporterId },
+      });
       if (!receiver) {
-        throw new ForbiddenException('Chỉ người nhận mới có thể báo cáo đơn đặt chỗ.');
+        throw new ForbiddenException(
+          'Chỉ người nhận mới có thể báo cáo đơn đặt chỗ.',
+        );
       }
       const reservation = await this.prisma.reservation.findFirst({
         where: { id: targetId, receiverId: receiver.id },
         select: { id: true },
       });
       if (!reservation) {
-        throw new ForbiddenException('Bạn không có quyền báo cáo đơn đặt chỗ này.');
+        throw new ForbiddenException(
+          'Bạn không có quyền báo cáo đơn đặt chỗ này.',
+        );
       }
     }
     // Mọi target type khác: chỉ cần kiểm tra tồn tại để tránh báo cáo ma
     let exists: { id: string } | null = null;
     if (targetType === 'listing') {
-      exists = await this.prisma.foodListing.findUnique({ where: { id: targetId }, select: { id: true } });
+      exists = await this.prisma.foodListing.findUnique({
+        where: { id: targetId },
+        select: { id: true },
+      });
     } else if (targetType === 'delivery') {
-      exists = await this.prisma.delivery.findUnique({ where: { id: targetId }, select: { id: true } });
+      exists = await this.prisma.delivery.findUnique({
+        where: { id: targetId },
+        select: { id: true },
+      });
     } else if (targetType === 'user') {
-      exists = await this.prisma.user.findUnique({ where: { id: targetId }, select: { id: true } });
+      exists = await this.prisma.user.findUnique({
+        where: { id: targetId },
+        select: { id: true },
+      });
     } else if (targetType === 'campaign') {
-      exists = await this.prisma.kitchenCampaign.findUnique({ where: { id: targetId }, select: { id: true } });
+      exists = await this.prisma.kitchenCampaign.findUnique({
+        where: { id: targetId },
+        select: { id: true },
+      });
     }
     if (!exists) {
-      throw new NotFoundException('Đối tượng báo cáo không tồn tại hoặc đã bị xoá.');
+      throw new NotFoundException(
+        'Đối tượng báo cáo không tồn tại hoặc đã bị xoá.',
+      );
     }
   }
 

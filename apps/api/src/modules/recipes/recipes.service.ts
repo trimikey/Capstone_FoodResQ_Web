@@ -29,14 +29,18 @@ export class RecipesService {
     if (!user) throw new NotFoundException('Không tìm thấy người dùng.');
     if (user.role === 'admin') return;
     if (user.role !== 'volunteer') {
-      throw new ForbiddenException('Chỉ đầu bếp hoặc quản trị viên mới được thêm công thức.');
+      throw new ForbiddenException(
+        'Chỉ đầu bếp hoặc quản trị viên mới được thêm công thức.',
+      );
     }
     const chef = await this.prisma.volunteerSpecializationEntry.findFirst({
       where: { volunteer: { userId }, specialization: 'chef' },
       select: { id: true },
     });
     if (!chef) {
-      throw new ForbiddenException('Bạn cần có chuyên môn "Đầu bếp" để đóng góp công thức.');
+      throw new ForbiddenException(
+        'Bạn cần có chuyên môn "Đầu bếp" để đóng góp công thức.',
+      );
     }
   }
 
@@ -72,7 +76,13 @@ export class RecipesService {
   }
 
   /** Danh sách công thức công khai (có tìm kiếm theo tên), phân trang. */
-  async list(query: { search?: string; mine?: boolean; userId?: string; page?: number; limit?: number }) {
+  async list(query: {
+    search?: string;
+    mine?: boolean;
+    userId?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(query.limit ?? 20, 50);
 
@@ -132,7 +142,9 @@ export class RecipesService {
     if (!recipe) throw new NotFoundException('Không tìm thấy công thức.');
     return {
       ...recipe,
-      imageUrls: Array.isArray(recipe.imageUrls) ? (recipe.imageUrls as string[]) : [],
+      imageUrls: Array.isArray(recipe.imageUrls)
+        ? (recipe.imageUrls as string[])
+        : [],
     };
   }
 
@@ -144,9 +156,14 @@ export class RecipesService {
     });
     if (!recipe) throw new NotFoundException('Không tìm thấy công thức.');
     if (recipe.createdByUserId === userId) return recipe;
-    const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
     if (me?.role !== 'admin') {
-      throw new ForbiddenException('Chỉ tác giả hoặc quản trị viên mới sửa được công thức này.');
+      throw new ForbiddenException(
+        'Chỉ tác giả hoặc quản trị viên mới sửa được công thức này.',
+      );
     }
     return recipe;
   }
@@ -192,7 +209,10 @@ export class RecipesService {
 
   async remove(id: string, userId: string) {
     await this.assertOwnerOrAdmin(id, userId);
-    await this.prisma.recipe.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.prisma.recipe.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     return { id, deleted: true };
   }
 

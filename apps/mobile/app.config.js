@@ -22,7 +22,7 @@ module.exports = ({ config }) => {
     android: {
       ...expo.android,
       googleServicesFile:
-        process.env.GOOGLE_SERVICES_JSON ?? expo.android?.googleServicesFile,
+        process.env.GOOGLE_SERVICES_JSON ?? existingLocalFile(expo.android?.googleServicesFile),
     },
     ios: {
       ...iosConfig,

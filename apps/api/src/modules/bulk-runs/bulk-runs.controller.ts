@@ -15,7 +15,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { BulkRunsService } from './bulk-runs.service';
 import {
   RequestBulkRunDto,
@@ -50,21 +55,28 @@ export class BulkRunsController {
 
   @Post()
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: yêu cầu giao sỉ (≥10 phần) từ một listing' })
+  @ApiOperation({
+    summary: 'Shipper: yêu cầu giao sỉ (≥10 phần) từ một listing',
+  })
   request(@CurrentUser() user: User, @Body() dto: RequestBulkRunDto) {
     return this.bulkRuns.request(user.id, dto);
   }
 
   @Get('my')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: các chuyến giao sỉ của tôi (active + lịch sử gần nhất)' })
+  @ApiOperation({
+    summary: 'Shipper: các chuyến giao sỉ của tôi (active + lịch sử gần nhất)',
+  })
   my(@CurrentUser() user: User) {
     return this.bulkRuns.myRuns(user.id);
   }
 
   @Get('provider')
   @Roles(UserRole.PROVIDER)
-  @ApiOperation({ summary: 'Provider: yêu cầu giao sỉ trên các tin của tôi (chờ duyệt lên đầu)' })
+  @ApiOperation({
+    summary:
+      'Provider: yêu cầu giao sỉ trên các tin của tôi (chờ duyệt lên đầu)',
+  })
   provider(@CurrentUser() user: User) {
     return this.bulkRuns.providerRuns(user.id);
   }
@@ -91,7 +103,9 @@ export class BulkRunsController {
   @Roles(UserRole.VOLUNTEER)
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data', 'application/json')
-  @ApiOperation({ summary: 'Shipper: xác nhận đã lấy hàng (kèm ảnh bàn giao tuỳ chọn)' })
+  @ApiOperation({
+    summary: 'Shipper: xác nhận đã lấy hàng (kèm ảnh bàn giao tuỳ chọn)',
+  })
   async pickup(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -103,7 +117,9 @@ export class BulkRunsController {
 
   @Post(':id/stops')
   @Roles(UserRole.VOLUNTEER, UserRole.PROVIDER)
-  @ApiOperation({ summary: 'Ghim điểm phát (NCC chủ tin hoặc shipper của chuyến)' })
+  @ApiOperation({
+    summary: 'Ghim điểm phát (NCC chủ tin hoặc shipper của chuyến)',
+  })
   addStop(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -114,7 +130,10 @@ export class BulkRunsController {
 
   @Patch(':id/stops/:stopId')
   @Roles(UserRole.VOLUNTEER, UserRole.PROVIDER)
-  @ApiOperation({ summary: 'Sửa điểm phát chưa phát hàng (NCC chủ tin hoặc shipper của chuyến)' })
+  @ApiOperation({
+    summary:
+      'Sửa điểm phát chưa phát hàng (NCC chủ tin hoặc shipper của chuyến)',
+  })
   updateStop(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('stopId', ParseUUIDPipe) stopId: string,
@@ -139,7 +158,10 @@ export class BulkRunsController {
   @Roles(UserRole.VOLUNTEER)
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data', 'application/json')
-  @ApiOperation({ summary: 'Shipper: ghi nhận đã phát N phần tại điểm (kèm ảnh tuỳ chọn); đủ số phần thì tự hoàn tất' })
+  @ApiOperation({
+    summary:
+      'Shipper: ghi nhận đã phát N phần tại điểm (kèm ảnh tuỳ chọn); đủ số phần thì tự hoàn tất',
+  })
   async serve(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('stopId', ParseUUIDPipe) stopId: string,
@@ -153,14 +175,18 @@ export class BulkRunsController {
 
   @Post(':id/complete')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: kết thúc chuyến — phần chưa phát hoàn về tin' })
+  @ApiOperation({
+    summary: 'Shipper: kết thúc chuyến — phần chưa phát hoàn về tin',
+  })
   complete(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.bulkRuns.complete(id, user.id);
   }
 
   @Post(':id/cancel')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: huỷ yêu cầu/chuyến (chỉ trước khi lấy hàng)' })
+  @ApiOperation({
+    summary: 'Shipper: huỷ yêu cầu/chuyến (chỉ trước khi lấy hàng)',
+  })
   cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.bulkRuns.cancel(id, user.id);
   }

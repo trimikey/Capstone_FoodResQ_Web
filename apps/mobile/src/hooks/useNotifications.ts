@@ -196,14 +196,16 @@ export function useNotificationSocket() {
 
       socket = io(SOCKET_URL, {
         auth: { token },
-        transports: ['websocket'],
+        transports: ['polling', 'websocket'],
+        upgrade: true,
+        timeout: 10000,
         reconnection: true,
       });
       socketRef.current = socket;
 
       if (__DEV__) {
         socket.on('connect', () => console.log('[notif-ws] connected', socket?.id));
-        socket.on('connect_error', (e) => console.log('[notif-ws] connect_error', e.message));
+        socket.on('connect_error', (e) => console.log('[notif-ws] connect_error', e.message, SOCKET_URL));
         socket.on('disconnect', (r) => console.log('[notif-ws] disconnect', r));
       }
 

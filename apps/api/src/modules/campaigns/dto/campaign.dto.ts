@@ -32,14 +32,19 @@ export class MenuItemDto {
   @IsString({ message: 'Loại món phải là chuỗi' })
   @MaxLength(60, { message: 'Loại món tối đa 60 ký tự' })
   type!: string;
-  @ApiPropertyOptional({ example: 150, description: 'Số suất dự kiến cho món này' })
+  @ApiPropertyOptional({
+    example: 150,
+    description: 'Số suất dự kiến cho món này',
+  })
   @IsOptional()
   @IsInt({ message: 'Số suất dự kiến phải là số nguyên' })
   @Min(0, { message: 'Số suất dự kiến không được âm' })
   @Max(10000, { message: 'Số suất dự kiến tối đa 10.000' })
   @Type(() => Number)
   plannedServings?: number;
-  @ApiPropertyOptional({ description: 'ID công thức trong thư viện (bỏ trống nếu món tự do)' })
+  @ApiPropertyOptional({
+    description: 'ID công thức trong thư viện (bỏ trống nếu món tự do)',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'ID công thức không hợp lệ' })
   recipeId?: string;
@@ -84,15 +89,24 @@ export class ShiftInputDto {
   @MinLength(2, { message: 'Tên ca tối thiểu 2 ký tự' })
   @MaxLength(100, { message: 'Tên ca tối đa 100 ký tự' })
   label!: string;
-  @ApiPropertyOptional({ enum: AssignmentRole, description: 'Ca dành cho vai trò nào (bỏ trống = chung)' })
+  @ApiPropertyOptional({
+    enum: AssignmentRole,
+    description: 'Ca dành cho vai trò nào (bỏ trống = chung)',
+  })
   @IsOptional()
-  @IsEnum(AssignmentRole, { message: 'Vai trò ca không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)' })
+  @IsEnum(AssignmentRole, {
+    message: 'Vai trò ca không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)',
+  })
   role?: AssignmentRole;
   @ApiProperty({ example: '06:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 06:00)' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 06:00)',
+  })
   startTime!: string;
   @ApiProperty({ example: '10:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 10:00)' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 10:00)',
+  })
   endTime!: string;
   @ApiProperty({ example: 4 })
   @IsInt({ message: 'Số người cần phải là số nguyên' })
@@ -149,11 +163,15 @@ export class CreateCampaignDto {
   endDate?: string;
 
   @ApiProperty({ example: '08:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 08:00)' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 08:00)',
+  })
   startTime!: string;
 
   @ApiProperty({ example: '12:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 12:00)' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 12:00)',
+  })
   endTime!: string;
 
   @ApiPropertyOptional({ example: 3 })
@@ -188,14 +206,20 @@ export class CreateCampaignDto {
   @Type(() => Number)
   expectedServings?: number;
 
-  @ApiPropertyOptional({ example: ['/uploads/campaigns/abc.jpg'], description: 'Ảnh chiến dịch (URL trả về từ /campaigns/upload-image)' })
+  @ApiPropertyOptional({
+    example: ['/uploads/campaigns/abc.jpg'],
+    description: 'Ảnh chiến dịch (URL trả về từ /campaigns/upload-image)',
+  })
   @IsOptional()
   @IsArray({ message: 'Danh sách ảnh phải là mảng' })
   @ArrayMaxSize(10, { message: 'Tối đa 10 ảnh' })
   @IsString({ each: true, message: 'Mỗi URL ảnh phải là chuỗi' })
   imageUrls?: string[];
 
-  @ApiPropertyOptional({ type: [MenuItemDto], description: 'Thực đơn trong ngày' })
+  @ApiPropertyOptional({
+    type: [MenuItemDto],
+    description: 'Thực đơn trong ngày',
+  })
   @IsOptional()
   @IsArray({ message: 'Thực đơn phải là mảng' })
   @ArrayMaxSize(20, { message: 'Thực đơn tối đa 20 món' })
@@ -203,7 +227,10 @@ export class CreateCampaignDto {
   @Type(() => MenuItemDto)
   menuItems?: MenuItemDto[];
 
-  @ApiPropertyOptional({ type: [ScheduleItemDto], description: 'Lịch trình hoạt động' })
+  @ApiPropertyOptional({
+    type: [ScheduleItemDto],
+    description: 'Lịch trình hoạt động',
+  })
   @IsOptional()
   @IsArray({ message: 'Lịch trình phải là mảng' })
   @ArrayMaxSize(20, { message: 'Lịch trình tối đa 20 mốc' })
@@ -212,10 +239,14 @@ export class CreateCampaignDto {
   scheduleItems?: ScheduleItemDto[];
 
   @ApiPropertyOptional({
-    description: 'Vật phẩm cần thiết — chấp nhận string[] (vd: "Gạo sạch") hoặc object[] đầy đủ {name, quantity?, unit?}',
+    description:
+      'Vật phẩm cần thiết — chấp nhận string[] (vd: "Gạo sạch") hoặc object[] đầy đủ {name, quantity?, unit?}',
     examples: [
       { value: ['Gạo sạch', 'Dầu ăn'], summary: 'Dạng string ngắn' },
-      { value: [{ name: 'Gạo sạch', quantity: 10, unit: 'kg' }], summary: 'Dạng object đầy đủ' },
+      {
+        value: [{ name: 'Gạo sạch', quantity: 10, unit: 'kg' }],
+        summary: 'Dạng object đầy đủ',
+      },
     ],
   })
   @IsOptional()
@@ -238,7 +269,10 @@ export class CreateCampaignDto {
   @Type(() => SupplyItemDto)
   supplyItems?: SupplyItemDto[];
 
-  @ApiPropertyOptional({ type: [ShiftInputDto], description: 'Ca trực cho tình nguyện viên (tạo trước cùng chiến dịch)' })
+  @ApiPropertyOptional({
+    type: [ShiftInputDto],
+    description: 'Ca trực cho tình nguyện viên (tạo trước cùng chiến dịch)',
+  })
   @IsOptional()
   @IsArray({ message: 'Ca trực phải là mảng' })
   @ArrayMaxSize(10, { message: 'Tối đa 10 ca trực' })
@@ -249,30 +283,44 @@ export class CreateCampaignDto {
 
 export class ApplyCampaignDto {
   @ApiProperty({ enum: AssignmentRole })
-  @IsEnum(AssignmentRole, { message: 'Vai trò không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)' })
+  @IsEnum(AssignmentRole, {
+    message: 'Vai trò không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)',
+  })
   role!: AssignmentRole;
 
-  @ApiPropertyOptional({ description: 'Ca trực mong muốn; charity duyệt trước khi phân công chính thức' })
+  @ApiPropertyOptional({
+    description:
+      'Ca trực mong muốn; charity duyệt trước khi phân công chính thức',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ca trực không hợp lệ' })
   shiftId?: string;
 
   @ApiPropertyOptional({
     example: '2026-08-13',
-    description: 'Ngày trực (YYYY-MM-DD). Bắt buộc khi chiến dịch diễn ra nhiều ngày.',
+    description:
+      'Ngày trực (YYYY-MM-DD). Bắt buộc khi chiến dịch diễn ra nhiều ngày.',
   })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trực phải theo định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Ngày trực phải theo định dạng YYYY-MM-DD',
+  })
   workDate?: string;
 }
 
 export class ReviewCampaignAssignmentDto {
-  @ApiPropertyOptional({ enum: ['approved', 'rejected'], description: 'Mobile charity action: duyệt hoặc từ chối đăng ký TNV' })
+  @ApiPropertyOptional({
+    enum: ['approved', 'rejected'],
+    description: 'Mobile charity action: duyệt hoặc từ chối đăng ký TNV',
+  })
   @IsOptional()
   @IsIn(['approved', 'rejected'])
   action?: 'approved' | 'rejected';
 
-  @ApiPropertyOptional({ enum: ['approve', 'reject'], description: 'Alias tương thích với admin/web' })
+  @ApiPropertyOptional({
+    enum: ['approve', 'reject'],
+    description: 'Alias tương thích với admin/web',
+  })
   @IsOptional()
   @IsIn(['approve', 'reject'])
   decision?: 'approve' | 'reject';
@@ -285,17 +333,29 @@ export class ReviewCampaignAssignmentDto {
 }
 
 export class AdvanceCampaignTaskDto {
-  @ApiPropertyOptional({ example: 106.6297, description: 'Kinh độ GPS tại thời điểm điểm danh' })
+  @ApiPropertyOptional({
+    example: 106.6297,
+    description: 'Kinh độ GPS tại thời điểm điểm danh',
+  })
   @IsOptional()
-  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Kinh độ phải là số' })
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: 'Kinh độ phải là số' },
+  )
   @Min(-180, { message: 'Kinh độ tối thiểu -180' })
   @Max(180, { message: 'Kinh độ tối đa 180' })
   @Type(() => Number)
   lng?: number;
 
-  @ApiPropertyOptional({ example: 10.8231, description: 'Vĩ độ GPS tại thời điểm điểm danh' })
+  @ApiPropertyOptional({
+    example: 10.8231,
+    description: 'Vĩ độ GPS tại thời điểm điểm danh',
+  })
   @IsOptional()
-  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Vĩ độ phải là số' })
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: 'Vĩ độ phải là số' },
+  )
   @Min(-90, { message: 'Vĩ độ tối thiểu -90' })
   @Max(90, { message: 'Vĩ độ tối đa 90' })
   @Type(() => Number)
@@ -303,13 +363,19 @@ export class AdvanceCampaignTaskDto {
 }
 
 export class AddExperienceDto {
-  @ApiProperty({ example: 'Một buổi sáng thật ý nghĩa, được nấu và trao tận tay những suất cơm ấm...' })
+  @ApiProperty({
+    example:
+      'Một buổi sáng thật ý nghĩa, được nấu và trao tận tay những suất cơm ấm...',
+  })
   @IsString({ message: 'Cảm nhận phải là chuỗi' })
   @MinLength(5, { message: 'Cảm nhận tối thiểu 5 ký tự' })
   @MaxLength(2000, { message: 'Cảm nhận tối đa 2000 ký tự' })
   content!: string;
 
-  @ApiPropertyOptional({ example: 5, description: 'Chấm điểm trải nghiệm 1-5 (tuỳ chọn)' })
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'Chấm điểm trải nghiệm 1-5 (tuỳ chọn)',
+  })
   @IsOptional()
   @IsInt({ message: 'Điểm đánh giá phải là số nguyên' })
   @Min(1, { message: 'Điểm đánh giá tối thiểu 1' })
@@ -317,7 +383,10 @@ export class AddExperienceDto {
   @Type(() => Number)
   rating?: number;
 
-  @ApiPropertyOptional({ type: [String], description: 'URL ảnh đã upload kèm cảm nhận' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'URL ảnh đã upload kèm cảm nhận',
+  })
   @IsOptional()
   @IsArray({ message: 'Danh sách ảnh phải là mảng' })
   @IsString({ each: true, message: 'Mỗi URL ảnh phải là chuỗi' })
@@ -335,14 +404,17 @@ export class CompleteCampaignDto {
   /** Bắt buộc khi kết thúc sớm (chưa tới endDate / scheduledDate). Gửi 'EARLY_END' để xác nhận. */
   @ApiPropertyOptional({
     enum: ['EARLY_END'],
-    description: 'Xác nhận chủ động kết thúc sớm (chỉ khi campaign chưa tới ngày kết thúc).',
+    description:
+      'Xác nhận chủ động kết thúc sớm (chỉ khi campaign chưa tới ngày kết thúc).',
   })
   @IsOptional()
   @IsIn(['EARLY_END'], { message: 'Giá trị xác nhận không hợp lệ.' })
   earlyEndConfirmation?: 'EARLY_END';
 
   /** Lý do kết thúc sớm (bắt buộc kèm earlyEndConfirmation). */
-  @ApiPropertyOptional({ example: 'Thiếu nguyên liệu đột xuất, không thể tiếp tục' })
+  @ApiPropertyOptional({
+    example: 'Thiếu nguyên liệu đột xuất, không thể tiếp tục',
+  })
   @IsOptional()
   @IsString({ message: 'Lý do phải là chuỗi' })
   @MinLength(5, { message: 'Lý do tối thiểu 5 ký tự' })
@@ -356,13 +428,22 @@ export class PledgeDonationDto {
   @MinLength(1, { message: 'Tên vật phẩm không được để trống' })
   @MaxLength(255, { message: 'Tên vật phẩm tối đa 255 ký tự' })
   itemName!: string;
-  @ApiProperty({ example: 20, description: 'Số lượng provider cam kết theo đơn vị của vật phẩm mục tiêu' })
-  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Số lượng phải là số' })
+  @ApiProperty({
+    example: 20,
+    description: 'Số lượng provider cam kết theo đơn vị của vật phẩm mục tiêu',
+  })
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: 'Số lượng phải là số' },
+  )
   @Min(0.01, { message: 'Số lượng phải lớn hơn 0' })
   @Max(100000, { message: 'Số lượng tối đa 100.000' })
   @Type(() => Number)
   quantity!: number;
-  @ApiPropertyOptional({ example: 'kg', description: 'Đơn vị hiển thị; phải khớp đơn vị mục tiêu nếu gửi lên' })
+  @ApiPropertyOptional({
+    example: 'kg',
+    description: 'Đơn vị hiển thị; phải khớp đơn vị mục tiêu nếu gửi lên',
+  })
   @IsOptional()
   @IsString({ message: 'Đơn vị phải là chuỗi' })
   @MaxLength(20, { message: 'Đơn vị tối đa 20 ký tự' })
@@ -385,7 +466,10 @@ export class PledgeDonationDto {
  * lớp nhắc lại.
  */
 export class DemandDetailsDto {
-  @ApiPropertyOptional({ enum: FoodCategory, example: FoodCategory.RAW_PROTEIN })
+  @ApiPropertyOptional({
+    enum: FoodCategory,
+    example: FoodCategory.RAW_PROTEIN,
+  })
   @IsOptional()
   @IsEnum(FoodCategory, { message: 'Phân loại thực phẩm không hợp lệ' })
   foodCategory?: FoodCategory;
@@ -404,7 +488,10 @@ export class DemandDetailsDto {
   @Type(() => Number)
   quantityKg?: number;
 
-  @ApiPropertyOptional({ example: 100, description: 'Số suất ăn dự kiến nấu được' })
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Số suất ăn dự kiến nấu được',
+  })
   @IsOptional()
   @IsInt({ message: 'Số suất dự kiến phải là số nguyên' })
   @Min(1, { message: 'Số suất dự kiến tối thiểu 1' })
@@ -412,14 +499,24 @@ export class DemandDetailsDto {
   @Type(() => Number)
   expectedServings?: number;
 
-  @ApiPropertyOptional({ example: '16:00', description: 'Giờ bắt đầu cần nhận tại bếp (HH:mm)' })
+  @ApiPropertyOptional({
+    example: '16:00',
+    description: 'Giờ bắt đầu cần nhận tại bếp (HH:mm)',
+  })
   @IsOptional()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Giờ bắt đầu phải theo định dạng HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'Giờ bắt đầu phải theo định dạng HH:mm',
+  })
   neededFrom?: string;
 
-  @ApiPropertyOptional({ example: '17:00', description: 'Giờ kết thúc cần nhận tại bếp (HH:mm)' })
+  @ApiPropertyOptional({
+    example: '17:00',
+    description: 'Giờ kết thúc cần nhận tại bếp (HH:mm)',
+  })
   @IsOptional()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Giờ kết thúc phải theo định dạng HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'Giờ kết thúc phải theo định dạng HH:mm',
+  })
   neededTo?: string;
 
   @ApiPropertyOptional({ example: 5, description: 'Bán kính tìm NCC (km)' })
@@ -430,22 +527,30 @@ export class DemandDetailsDto {
   @Type(() => Number)
   radiusKm?: number;
 
-  @ApiPropertyOptional({ description: 'Bắt buộc NCC có giấy chứng nhận ATVSTP' })
+  @ApiPropertyOptional({
+    description: 'Bắt buộc NCC có giấy chứng nhận ATVSTP',
+  })
   @IsOptional()
   @IsBoolean({ message: 'Tiêu chí ATVSTP phải là true/false' })
   requireAtvstpCert?: boolean;
 
-  @ApiPropertyOptional({ description: 'Bắt buộc vận chuyển chuỗi lạnh (< 5°C)' })
+  @ApiPropertyOptional({
+    description: 'Bắt buộc vận chuyển chuỗi lạnh (< 5°C)',
+  })
   @IsOptional()
   @IsBoolean({ message: 'Tiêu chí chuỗi lạnh phải là true/false' })
   requireColdChain?: boolean;
 
-  @ApiPropertyOptional({ description: 'Bắt buộc shipper chụp ảnh QC nguyên liệu lúc nhận' })
+  @ApiPropertyOptional({
+    description: 'Bắt buộc shipper chụp ảnh QC nguyên liệu lúc nhận',
+  })
   @IsOptional()
   @IsBoolean({ message: 'Tiêu chí ảnh QC phải là true/false' })
   requireQcPhoto?: boolean;
 
-  @ApiProperty({ description: 'Cam kết dùng thực phẩm cho mục đích từ thiện phi thương mại' })
+  @ApiProperty({
+    description: 'Cam kết dùng thực phẩm cho mục đích từ thiện phi thương mại',
+  })
   @IsBoolean({ message: 'Cam kết phi thương mại phải là true/false' })
   nonCommercialWaiver!: boolean;
 }
@@ -539,12 +644,15 @@ export class SubmitProviderProposalDto {
 export class SubmitCampaignChangeDto {
   @ApiPropertyOptional({ example: '2026-07-01' })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày phải đúng định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Ngày phải đúng định dạng YYYY-MM-DD',
+  })
   scheduledDate?: string;
 
   @ApiPropertyOptional({
     example: '2026-06-21',
-    description: 'Ngày kết thúc dự kiến (>= scheduledDate). Bỏ trống nếu chỉ tổ chức 1 ngày.',
+    description:
+      'Ngày kết thúc dự kiến (>= scheduledDate). Bỏ trống nếu chỉ tổ chức 1 ngày.',
   })
   @IsOptional()
   @IsDateString({}, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
@@ -552,12 +660,16 @@ export class SubmitCampaignChangeDto {
 
   @ApiPropertyOptional({ example: '08:00' })
   @IsOptional()
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ bắt đầu phải đúng định dạng HH:mm',
+  })
   startTime?: string;
 
   @ApiPropertyOptional({ example: '12:00' })
   @IsOptional()
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ kết thúc phải đúng định dạng HH:mm',
+  })
   endTime?: string;
 
   @ApiPropertyOptional({ example: '210 Lê Quang Định, Bình Thạnh' })
@@ -607,7 +719,10 @@ export class SubmitCampaignChangeDto {
   @Type(() => Number)
   shipperSlotsNeeded?: number;
 
-  @ApiPropertyOptional({ example: 'Đổi giờ vì bếp bận buổi sáng', description: 'Lý do thay đổi' })
+  @ApiPropertyOptional({
+    example: 'Đổi giờ vì bếp bận buổi sáng',
+    description: 'Lý do thay đổi',
+  })
   @IsOptional()
   @IsString({ message: 'Lý do phải là chuỗi' })
   @MaxLength(500, { message: 'Lý do tối đa 500 ký tự' })
@@ -618,7 +733,9 @@ export class SubmitCampaignChangeDto {
 export class ReviewAssignmentDto {
   @ApiProperty({ enum: ['approved', 'rejected'], example: 'approved' })
   @IsString()
-  @IsIn(['approved', 'rejected'], { message: 'action chỉ chấp nhận approved | rejected' })
+  @IsIn(['approved', 'rejected'], {
+    message: 'action chỉ chấp nhận approved | rejected',
+  })
   action!: 'approved' | 'rejected';
 
   @ApiPropertyOptional({ example: 'Cảm ơn bạn đã đăng ký!' })
@@ -627,7 +744,10 @@ export class ReviewAssignmentDto {
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
   note?: string;
 
-  @ApiPropertyOptional({ example: '8f4f9f23-4d0b-43e7-8d64-9a0f3d399427', description: 'Bắt buộc khi duyệt campaign có ca trực' })
+  @ApiPropertyOptional({
+    example: '8f4f9f23-4d0b-43e7-8d64-9a0f3d399427',
+    description: 'Bắt buộc khi duyệt campaign có ca trực',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ca trực không hợp lệ' })
   shiftId?: string;
@@ -690,8 +810,8 @@ export class CreateDistributionDto {
 
   @ApiPropertyOptional({
     description:
-      'Danh sách shipper được phân công đi phát đợt này. Mỗi người phải là TNV đã duyệt của '
-      + 'chiến dịch VÀ có vai trò shipper. Tất cả đều nhận thông báo đi giao.',
+      'Danh sách shipper được phân công đi phát đợt này. Mỗi người phải là TNV đã duyệt của ' +
+      'chiến dịch VÀ có vai trò shipper. Tất cả đều nhận thông báo đi giao.',
     type: [String],
   })
   @IsOptional()
@@ -700,7 +820,10 @@ export class CreateDistributionDto {
   @IsUUID('4', { each: true, message: 'ID người phụ trách không hợp lệ' })
   assigneeVolunteerIds?: string[];
 
-  @ApiPropertyOptional({ type: [DistributionPointDto], description: 'Các điểm phát của đợt' })
+  @ApiPropertyOptional({
+    type: [DistributionPointDto],
+    description: 'Các điểm phát của đợt',
+  })
   @IsOptional()
   @IsArray({ message: 'Danh sách điểm phát phải là mảng' })
   @ArrayMaxSize(20, { message: 'Tối đa 20 điểm phát một đợt' })
@@ -715,7 +838,10 @@ export class CreateDistributionDto {
   @Type(() => Number)
   servingsServed!: number;
 
-  @ApiProperty({ example: 150, description: 'Số người nhận (mỗi người ít nhất 1 suất)' })
+  @ApiProperty({
+    example: 150,
+    description: 'Số người nhận (mỗi người ít nhất 1 suất)',
+  })
   @IsInt({ message: 'Số người phải là số nguyên' })
   @Min(1, { message: 'Số người nhận phải ít nhất 1' })
   @Max(100000, { message: 'Số người tối đa 100.000' })
@@ -745,7 +871,10 @@ export class CreateDistributionDto {
 
 // ─── Manage: Thêm/sửa ca trực ───────────────────────────────────────────────
 export class CompleteDistributionDto {
-  @ApiPropertyOptional({ example: 45, description: 'Số suất THỰC PHÁT — bỏ trống = đúng kế hoạch' })
+  @ApiPropertyOptional({
+    example: 45,
+    description: 'Số suất THỰC PHÁT — bỏ trống = đúng kế hoạch',
+  })
   @IsOptional()
   @IsInt({ message: 'Số suất thực phát phải là số nguyên' })
   @Min(0, { message: 'Số suất thực phát không được âm' })
@@ -773,14 +902,19 @@ export class CompleteDistributionDto {
  * Ảnh đi kèm dạng multipart (field `photo`) nên không khai ở đây.
  */
 export class ConfirmIngredientPickupDto {
-  @ApiProperty({ example: 28.5, description: 'Số kg THỰC NHẬN tại nhà cung cấp' })
+  @ApiProperty({
+    example: 28.5,
+    description: 'Số kg THỰC NHẬN tại nhà cung cấp',
+  })
   @IsNumber({}, { message: 'Số kg thực nhận phải là số' })
   @Min(0, { message: 'Số kg thực nhận không được âm' })
   @Max(10000, { message: 'Số kg thực nhận tối đa 10.000' })
   @Type(() => Number)
   receivedKg!: number;
 
-  @ApiPropertyOptional({ description: 'Ghi chú (vd: NCC chỉ còn 25kg, thiếu 5kg rau)' })
+  @ApiPropertyOptional({
+    description: 'Ghi chú (vd: NCC chỉ còn 25kg, thiếu 5kg rau)',
+  })
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi' })
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
@@ -800,11 +934,15 @@ export class CreateShiftDto {
   role?: AssignmentRole;
 
   @ApiProperty({ example: '06:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ bắt đầu phải đúng định dạng HH:mm',
+  })
   startTime!: string;
 
   @ApiProperty({ example: '10:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    message: 'Giờ kết thúc phải đúng định dạng HH:mm',
+  })
   endTime!: string;
 
   @ApiProperty({ example: 4 })
@@ -871,7 +1009,9 @@ export class AppendMenuItemDto {
 
 export class SetMenuItemMealDto {
   @ApiProperty({ example: 'lunch', enum: ['breakfast', 'lunch', 'dinner'] })
-  @IsIn(['breakfast', 'lunch', 'dinner'], { message: 'Bữa phải là breakfast/lunch/dinner' })
+  @IsIn(['breakfast', 'lunch', 'dinner'], {
+    message: 'Bữa phải là breakfast/lunch/dinner',
+  })
   type!: string;
 }
 
@@ -908,7 +1048,9 @@ export class AppendSupplyItemDto {
 export class ReviewProviderRequestDto {
   @ApiProperty({ enum: ['accept', 'reject'], example: 'accept' })
   @IsString()
-  @IsIn(['accept', 'reject'], { message: 'action chỉ chấp nhận accept | reject' })
+  @IsIn(['accept', 'reject'], {
+    message: 'action chỉ chấp nhận accept | reject',
+  })
   action!: 'accept' | 'reject';
 
   @ApiPropertyOptional({ example: 'Rất tiếp, kho đang thiếu hàng.' })
@@ -920,7 +1062,8 @@ export class ReviewProviderRequestDto {
   /** Provider chọn giờ TNV đến lấy (HH:mm). Bỏ trống = lấy theo campaign.startTime. */
   @ApiPropertyOptional({
     example: '09:00',
-    description: 'Giờ TNV đến lấy hàng (HH:mm). Bỏ trống → mặc định theo campaign.',
+    description:
+      'Giờ TNV đến lấy hàng (HH:mm). Bỏ trống → mặc định theo campaign.',
   })
   @IsOptional()
   @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ lấy phải đúng định dạng HH:mm' })

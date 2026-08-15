@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { DecodedIdToken, getAuth } from 'firebase-admin/auth';
@@ -14,14 +19,18 @@ export class FirebaseAdminService implements OnModuleInit {
     const projectId = this.config.get<string>('FIREBASE_PROJECT_ID');
     const clientEmail = this.config.get<string>('FIREBASE_CLIENT_EMAIL');
     // Store the key on one .env line with literal \n, then restore real newlines.
-    const privateKey = this.config.get<string>('FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n');
+    const privateKey = this.config
+      .get<string>('FIREBASE_PRIVATE_KEY')
+      ?.replace(/\\n/g, '\n');
 
     if (!projectId || !clientEmail || !privateKey) return;
 
     try {
       this.app =
         getApps()[0] ??
-        initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+        initializeApp({
+          credential: cert({ projectId, clientEmail, privateKey }),
+        });
     } catch (error) {
       this.app = null;
       this.logger.warn(
@@ -34,7 +43,9 @@ export class FirebaseAdminService implements OnModuleInit {
 
   async verifyIdToken(idToken: string): Promise<DecodedIdToken> {
     if (!this.app) {
-      throw new ServiceUnavailableException('Firebase is not configured on the server');
+      throw new ServiceUnavailableException(
+        'Firebase is not configured on the server',
+      );
     }
     return getAuth(this.app).verifyIdToken(idToken);
   }

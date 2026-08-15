@@ -15,7 +15,10 @@ describe('EsgService', () => {
         EsgService,
         {
           provide: PrismaService,
-          useValue: { $queryRaw: queryRaw, providerProfile: { findUnique: findProvider } },
+          useValue: {
+            $queryRaw: queryRaw,
+            providerProfile: { findUnique: findProvider },
+          },
         },
       ],
     }).compile();
@@ -49,7 +52,10 @@ describe('EsgService', () => {
   describe('getProviderReport', () => {
     /** 6 lần $queryRaw theo đúng thứ tự service gọi: 4 khối báo cáo rồi tới getProviderEsg. */
     function mockReportQueries(monthly: unknown[]) {
-      findProvider.mockResolvedValue({ id: 'prov-1', businessName: 'Bếp Test' });
+      findProvider.mockResolvedValue({
+        id: 'prov-1',
+        businessName: 'Bếp Test',
+      });
       queryRaw
         .mockResolvedValueOnce(monthly)
         .mockResolvedValueOnce([{ category: 'bakery', kg: 0.96, meals: 5n }])
@@ -96,7 +102,10 @@ describe('EsgService', () => {
       [12, 12],
     ])('kẹp months=%p về %p', async (input, expected) => {
       mockReportQueries([]);
-      const r = await service.getProviderReport('user-1', input as number | undefined);
+      const r = await service.getProviderReport(
+        'user-1',
+        input as number | undefined,
+      );
       expect(r.rangeMonths).toBe(expected);
     });
 

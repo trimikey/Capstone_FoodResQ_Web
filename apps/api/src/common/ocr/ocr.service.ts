@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +30,10 @@ function normalizePlate(value: string): string {
 
 @Injectable()
 export class OcrService {
-  async assertIdCardMatches(file: Express.Multer.File, expectedIdCardNumber: string) {
+  async assertIdCardMatches(
+    file: Express.Multer.File,
+    expectedIdCardNumber: string,
+  ) {
     const text = await this.readImageText(file, 'eng', '0123456789');
     const expected = normalizeDigits(expectedIdCardNumber);
     const digitRuns = text.match(/\d[\d\s.-]{8,}\d/g) ?? [];
@@ -34,7 +41,12 @@ export class OcrService {
       .map(normalizeDigits)
       .filter((candidate) => candidate.length >= 9 && candidate.length <= 15);
 
-    if (!candidates.some((candidate) => candidate.includes(expected) || expected.includes(candidate))) {
+    if (
+      !candidates.some(
+        (candidate) =>
+          candidate.includes(expected) || expected.includes(candidate),
+      )
+    ) {
       throw new BadRequestException(
         'OCR không đọc được số CCCD khớp với thông tin đã nhập. Vui lòng chụp lại CCCD rõ số.',
       );
@@ -46,7 +58,9 @@ export class OcrService {
    * Trả về null nếu không đọc được (không throw) — phục vụ luồng đăng ký
    * FE không còn nhập tay số CCCD nữa, BE chỉ lưu nếu OCR trích được.
    */
-  async extractIdCardNumber(file: Express.Multer.File): Promise<{ idCardNumber: string } | null> {
+  async extractIdCardNumber(
+    file: Express.Multer.File,
+  ): Promise<{ idCardNumber: string } | null> {
     const text = await this.readImageText(file, 'eng', '0123456789');
     const digitRuns = text.match(/\d[\d\s.-]{8,}\d/g) ?? [];
     const candidates = digitRuns
@@ -59,15 +73,27 @@ export class OcrService {
     return ninePlus ? { idCardNumber: ninePlus } : null;
   }
 
-  async assertVehiclePlateMatches(file: Express.Multer.File, expectedVehiclePlate: string) {
-    const text = await this.readImageText(file, 'eng', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+  async assertVehiclePlateMatches(
+    file: Express.Multer.File,
+    expectedVehiclePlate: string,
+  ) {
+    const text = await this.readImageText(
+      file,
+      'eng',
+      '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    );
     const expected = normalizePlate(expectedVehiclePlate);
     const rawTokens = text.match(/[0-9A-ZĐ][0-9A-ZĐ\s.-]{4,}[0-9A-ZĐ]/gi) ?? [];
     const candidates = rawTokens
       .map(normalizePlate)
       .filter((candidate) => candidate.length >= 6 && candidate.length <= 12);
 
-    if (!candidates.some((candidate) => candidate.includes(expected) || expected.includes(candidate))) {
+    if (
+      !candidates.some(
+        (candidate) =>
+          candidate.includes(expected) || expected.includes(candidate),
+      )
+    ) {
       throw new BadRequestException(
         'OCR không đọc được biển số xe khớp với thông tin đã nhập. Vui lòng chụp lại biển số rõ nét.',
       );
@@ -80,7 +106,8 @@ export class OcrService {
     charWhitelist: string,
   ): Promise<string> {
     const ext = EXT_BY_MIME[file.mimetype];
-    if (!ext) throw new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP.');
+    if (!ext)
+      throw new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP.');
 
     const dir = await mkdtemp(join(tmpdir(), 'foodresq-ocr-'));
     const imagePath = join(dir, `input.${ext}`);
@@ -108,7 +135,9 @@ export class OcrService {
           'Máy chủ chưa cài Tesseract OCR nên chưa thể xác minh giấy tờ tự động.',
         );
       }
-      throw new BadRequestException('Không OCR được ảnh giấy tờ. Vui lòng chụp lại ảnh rõ nét hơn.');
+      throw new BadRequestException(
+        'Không OCR được ảnh giấy tờ. Vui lòng chụp lại ảnh rõ nét hơn.',
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

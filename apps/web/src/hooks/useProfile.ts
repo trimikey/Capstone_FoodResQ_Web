@@ -101,12 +101,13 @@ async function updateMe(input: UpdateMeInput): Promise<Me> {
 
 export function useMe(enabled = true) {
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const accessToken = useAuthStore((s) => s.accessToken);
   // Cache theo userId — mỗi user có entry riêng → tránh hiển thị profile user cũ khi đăng nhập user mới
   return useQuery({
     queryKey: ['users', 'me', userId],
     queryFn: fetchMe,
     staleTime: 30_000,
-    enabled: enabled && !!userId,
+    enabled: enabled && !!userId && !!accessToken,
   });
 }
 

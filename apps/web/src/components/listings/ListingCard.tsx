@@ -90,6 +90,11 @@ export default function ListingCard({ listing }: Props) {
           src={imageUrl}
           alt={listing.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          onError={(event) => {
+            const img = event.currentTarget;
+            if (img.src.endsWith(fallbackImage)) return;
+            img.src = fallbackImage;
+          }}
         />
 
         {/* Ngoài khung giờ nhận → làm mờ ảnh + nói rõ lý do, tránh bấm vào vô ích */}

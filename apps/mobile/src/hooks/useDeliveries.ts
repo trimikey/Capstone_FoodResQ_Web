@@ -64,7 +64,13 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
     (async () => {
       const token = (await AsyncStorage.getItem('accessToken')) || accessToken;
       if (cancelled) return;
-      socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
+      socket = io(SOCKET_URL, {
+        auth: { token },
+        transports: ['polling', 'websocket'],
+        upgrade: true,
+        timeout: 10000,
+        reconnection: true,
+      });
       socket.on('delivery:location', (p: { reservationId: string; lng: number; lat: number }) => {
         if (p.reservationId !== reservationId) return;
         qc.setQueryData<DeliveryTracking>(['delivery-tracking', reservationId], (prev) =>
@@ -369,7 +375,13 @@ export function useDeliveryOfferSocket(enabled = true) {
     (async () => {
       const token = (await AsyncStorage.getItem('accessToken')) || accessToken;
       if (cancelled) return;
-      socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
+      socket = io(SOCKET_URL, {
+        auth: { token },
+        transports: ['polling', 'websocket'],
+        upgrade: true,
+        timeout: 10000,
+        reconnection: true,
+      });
       socket.on('delivery:offer', () => {
         void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
       });
