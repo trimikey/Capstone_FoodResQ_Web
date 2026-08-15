@@ -5,6 +5,7 @@ import { mediaUrl } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useCreateListing, type CreateListingInput } from '@/hooks/useProviderListings';
 import { useMe } from '@/hooks/useProfile';
@@ -63,6 +64,7 @@ export default function ProviderCreateListingPage() {
   const providerHasLocation = !!(providerProfile && providerProfile.lng != null && providerProfile.lat != null);
 
   const [step, setStep] = useState<Step>(1);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [form, setForm] = useState<ListingForm>(() => buildForm(providerProfile));
   const [preview, setPreview] = useState(false);
 
@@ -225,9 +227,9 @@ export default function ProviderCreateListingPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto px-4 sm:px-0 space-y-6">
       {/* Header */}
-      <header className="flex items-start justify-between gap-4 flex-wrap">
+      <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-neutral-800">Đăng tin thực phẩm mới</h1>
           <p className="text-sm text-neutral-500 font-normal">
@@ -237,7 +239,7 @@ export default function ProviderCreateListingPage() {
         <button
           type="button"
           onClick={() => setPreview((v) => !v)}
-          className="px-4 py-2 bg-white border border-neutral-200 text-neutral-700 rounded-full text-sm font-medium hover:bg-neutral-50 transition-colors inline-flex items-center gap-1.5 shadow-sm"
+          className="min-h-11 w-full sm:w-auto justify-center px-4 py-2 bg-white border border-neutral-200 text-neutral-700 rounded-full text-sm font-medium hover:bg-neutral-50 transition-colors inline-flex items-center gap-1.5 shadow-sm"
         >
           <span className="material-symbols-outlined text-base">
             {preview ? 'edit' : 'visibility'}
@@ -247,8 +249,8 @@ export default function ProviderCreateListingPage() {
       </header>
 
       {/* Stepper */}
-      <div className="bg-white rounded-2xl px-5 py-4 shadow-sm">
-        <div className="flex items-center gap-3">
+      <div className="bg-white rounded-2xl px-4 sm:px-5 py-4 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 sm:gap-3">
           {[
             { num: 1, label: 'Thông tin', icon: 'inventory_2' },
             { num: 2, label: 'Số lượng & Thời gian', icon: 'schedule' },
@@ -301,6 +303,21 @@ export default function ProviderCreateListingPage() {
       >
         {/* Main panel */}
         <div className="space-y-6">
+          <div className="overflow-hidden">
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={step}
+              custom={direction}
+              variants={{
+                enter: (d: number) => ({ opacity: 0, x: d * 60 }),
+                center: { opacity: 1, x: 0 },
+                exit: (d: number) => ({ opacity: 0, x: -d * 60 }),
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+            >
           {/* STEP 1: Thông tin */}
           {step === 1 && (
           <section className="bg-white rounded-2xl p-6 shadow-sm">
@@ -361,7 +378,7 @@ export default function ProviderCreateListingPage() {
                   </div>
                 </Field>
 
-                <Field label="Mô tả" hint="Tuỳ chọn. Thông tin giúp bếp ăn / TNV chuẩn bị tốt hơn.">
+                <Field label="Mô tả" hint="Nếu có. Thông tin giúp bếp ăn / TNV chuẩn bị tốt hơn.">
                   <textarea
                     value={form.description}
                     onChange={(e) => set('description', e.target.value)}
@@ -392,7 +409,7 @@ export default function ProviderCreateListingPage() {
               </p>
             </header>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="Tổng số lượng" required>
                 <input
                   type="number"
@@ -513,7 +530,7 @@ export default function ProviderCreateListingPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <Field label="Bảo quản" hint="VD: Giữ lạnh / Giữ nóng / Đông lạnh">
                 <input
                   value={form.storageConditions}
@@ -634,23 +651,26 @@ export default function ProviderCreateListingPage() {
             </Field>
           </section>
           )}
+            </motion.div>
+          </AnimatePresence>
+          </div>
 
           {/* Action footer */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+          <div className="sticky bottom-[5.25rem] md:bottom-4 z-30 bg-white rounded-2xl p-4 sm:p-5 shadow-lg sm:shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-5 py-2.5 text-sm font-medium text-neutral-600 hover:text-neutral-800 transition-colors"
+              className="min-h-11 px-5 py-2.5 text-sm font-medium text-neutral-600 hover:text-neutral-800 transition-colors order-2 sm:order-none"
             >
               Huỷ
             </button>
 
-            <div className="flex items-center gap-3">
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-3 w-full sm:w-auto">
               {step > 1 && (
                 <button
                   type="button"
-                  onClick={() => setStep((s) => (s - 1) as Step)}
-                  className="px-5 py-2.5 border border-neutral-200 text-neutral-700 rounded-xl text-sm font-medium hover:bg-neutral-50 transition-colors inline-flex items-center gap-1"
+                  onClick={() => { setDirection(-1); setStep((s) => (s - 1) as Step); }}
+                  className="min-h-11 px-4 sm:px-5 py-2.5 border border-neutral-200 text-neutral-700 rounded-xl text-sm font-medium hover:bg-neutral-50 transition-colors inline-flex items-center justify-center gap-1"
                 >
                   <span className="material-symbols-outlined text-base">arrow_back</span>
                   Quay lại
@@ -660,8 +680,8 @@ export default function ProviderCreateListingPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (step === 1 && validations.step1) return setStep(2);
-                    if (step === 2 && validations.step2) return setStep(3);
+                    if (step === 1 && validations.step1) { setDirection(1); setStep(2); return; }
+                    if (step === 2 && validations.step2) { setDirection(1); setStep(3); return; }
 
                     // Liệt kê thiếu sót THEO ĐÚNG BƯỚC đang đứng. Trước đây luôn kiểm
                     // các trường của bước 2, nên kẹt ở bước 1 sẽ hiện "Thiếu:" trống trơn.
@@ -685,7 +705,7 @@ export default function ProviderCreateListingPage() {
                         : 'Vui lòng kiểm tra lại thông tin trước khi tiếp tục.',
                     );
                   }}
-                  className="px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium inline-flex items-center gap-1 transition-colors"
+                  className="min-h-11 px-4 sm:px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium inline-flex items-center justify-center gap-1 transition-colors"
                 >
                   Tiếp tục
                   <span className="material-symbols-outlined text-base">arrow_forward</span>
@@ -695,7 +715,7 @@ export default function ProviderCreateListingPage() {
                 <button
                   type="submit"
                   disabled={isAnyPending}
-                  className="px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2 transition-colors"
+                  className="col-span-2 sm:col-span-1 min-h-11 px-4 sm:px-6 py-2.5 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-sm font-medium disabled:opacity-50 inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   <span className="material-symbols-outlined text-base">save</span>
                   {createListing.isPending ? 'Đang lưu...' : 'Tạo tin (Nháp)'}

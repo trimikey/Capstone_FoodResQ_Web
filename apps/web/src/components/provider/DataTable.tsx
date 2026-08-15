@@ -26,6 +26,8 @@ interface Props<T> {
   onRowClick?: (row: T) => void;
   /** Compact row height for order-style lists. */
   dense?: boolean;
+  /** Optional mobile-first card renderer. Falls back to a horizontal table when omitted. */
+  mobileCard?: (row: T, index: number) => ReactNode;
 }
 
 export default function DataTable<T>({
@@ -37,10 +39,41 @@ export default function DataTable<T>({
   skeletonRows = 5,
   onRowClick,
   dense = false,
+  mobileCard,
 }: Props<T>) {
   return (
     <div className="bg-white border border-neutral-150 rounded-3xl shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
+      {mobileCard && (
+        <div className="md:hidden divide-y divide-neutral-100">
+          {loading ? (
+            Array.from({ length: skeletonRows }, (_, i) => (
+              <div key={`mobile-sk-${i}`} className="p-4">
+                <div className="h-24 skeleton" />
+              </div>
+            ))
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-10 text-center">
+              {empty ?? (
+                <div className="flex flex-col items-center gap-2 text-neutral-450">
+                  <span className="material-symbols-outlined text-[40px] text-neutral-250">inbox</span>
+                  <p className="text-sm font-bold">ChÆ°a cÃ³ dá»¯ liá»‡u</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            rows.map((row, idx) => (
+              <div
+                key={rowKey(row, idx)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={onRowClick ? 'cursor-pointer' : undefined}
+              >
+                {mobileCard(row, idx)}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      <div className={`${mobileCard ? 'hidden md:block' : ''} overflow-x-auto`}>
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-neutral-50/60 border-b border-neutral-150">

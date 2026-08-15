@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, FAB, Button, Menu } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -70,13 +70,24 @@ export default function ProviderListingsScreen() {
     return sortListings(all.filter((l) => f.match(l.status)), sort);
   }, [all, filter, sort]);
 
+  const isPending = !!user && user.status !== 'active';
+
+  // Khi đang chờ xác minh: poll mỗi 10 giây — đảm bảo màn hình tự chuyển
+  // ngay khi admin duyệt, dù socket chậm hay bị miss.
+  const initializeRef = useRef(initialize);
+  initializeRef.current = initialize;
+  useEffect(() => {
+    if (!isPending) return;
+    const id = setInterval(() => { void initializeRef.current(); }, 10_000);
+    return () => clearInterval(id);
+  }, [isPending]);
+
   // Receiver lỡ vào route provider → đưa về trang chủ.
   if (user && user.role !== 'provider') {
     return <Redirect href="/(app)/home" />;
   }
 
   // Provider chưa được admin xác minh → màn "Chờ xác minh", chưa cho đăng tin.
-  const isPending = !!user && user.status !== 'active';
   if (isPending) {
     const onRecheck = async () => {
       try {

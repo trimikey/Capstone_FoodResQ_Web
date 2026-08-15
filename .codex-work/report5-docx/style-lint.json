@@ -1,0 +1,170 @@
+{
+  "input": "D:\\Capstone_FoodResQ_Web\\outputs\\report5-docx\\FoodResQ_Report5_Test_Documentation.docx",
+  "fonts_by_char_count": {
+    "Times New Roman": 7117
+  },
+  "direct_run_formatting_runs": 242,
+  "direct_paragraph_formatting_paragraphs": 260,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 10,
+      "text": "CAPSTONE PROJECT REPORT",
+      "style": "normal"
+    },
+    {
+      "para_index": 11,
+      "text": "Report 5 - Software Test Documentation",
+      "style": "normal"
+    },
+    {
+      "para_index": 22,
+      "text": "Table of Contents",
+      "style": "normal"
+    },
+    {
+      "para_index": 30,
+      "text": "Features & Functions to Be Tested",
+      "style": "normal"
+    },
+    {
+      "para_index": 57,
+      "text": "Features Not Tested",
+      "style": "normal"
+    },
+    {
+      "para_index": 64,
+      "text": "In-charge: Backend, Web, and Mobile Developers",
+      "style": "normal"
+    },
+    {
+      "para_index": 71,
+      "text": "In-charge: Developers + QA (Quality Assurance)",
+      "style": "normal"
+    },
+    {
+      "para_index": 75,
+      "text": "Delivery assignment <-> Socket.IO notification <-> volunteer availability",
+      "style": "normal"
+    },
+    {
+      "para_index": 80,
+      "text": "In-charge: QA team",
+      "style": "normal"
+    },
+    {
+      "para_index": 81,
+      "text": "Focus: End-to-end receiver, provider, volunteer, and admin flows",
+      "style": "normal"
+    },
+    {
+      "para_index": 96,
+      "text": "Objective: Verify all functions match requirements and business rules",
+      "style": "normal"
+    },
+    {
+      "para_index": 98,
+      "text": "Completion Criteria: All critical test cases passed, no major defects left",
+      "style": "normal"
+    },
+    {
+      "para_index": 100,
+      "text": "Objective: Ensure connected modules function correctly",
+      "style": "normal"
+    },
+    {
+      "para_index": 134,
+      "text": "Date",
+      "style": "normal"
+    },
+    {
+      "para_index": 135,
+      "text": "A*\nM, D",
+      "style": "normal"
+    },
+    {
+      "para_index": 136,
+      "text": "In charge",
+      "style": "normal"
+    },
+    {
+      "para_index": 137,
+      "text": "Change Description",
+      "style": "normal"
+    },
+    {
+      "para_index": 190,
+      "text": "Type of Tests",
+      "style": "normal"
+    },
+    {
+      "para_index": 191,
+      "text": "Test Level",
+      "style": "normal"
+    },
+    {
+      "para_index": 192,
+      "text": "Test Level",
+      "style": "normal"
+    }
+  ],
+  "examples": {
+    "direct_run_formatting": [
+      {
+        "para_index": 10,
+        "run_text": "CAPSTONE PROJECT REPORT",
+        "style": "normal"
+      },
+      {
+        "para_index": 11,
+        "run_text": "Report 5 - Software Test Documentation",
+        "style": "normal"
+      },
+      {
+        "para_index": 21,
+        "run_text": "- Ho Chi Minh City, August 2026 -",
+        "style": "normal"
+      },
+      {
+        "para_index": 22,
+        "run_text": "Table of Contents",
+        "style": "normal"
+      },
+      {
+        "para_index": 24,
+        "run_text": "I. Record of Changes",
+        "style": "Heading 1"
+      }
+    ],
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 21,
+        "text": "- Ho Chi Minh City, August 2026 -",
+        "style": "normal"
+      },
+      {
+        "para_index": 22,
+        "text": "Table of Contents",
+        "style": "normal"
+      },
+      {
+        "para_index": 30,
+        "text": "Features & Functions to Be Tested",
+        "style": "normal"
+      },
+      {
+        "para_index": 31,
+        "text": "Authentication, Registration, and Role-based Access",
+        "style": "normal"
+      },
+      {
+        "para_index": 32,
+        "text": "Login, Register, Logout, Password Recovery",
+        "style": "normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

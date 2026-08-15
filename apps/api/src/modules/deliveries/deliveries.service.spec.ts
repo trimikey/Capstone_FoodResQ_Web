@@ -22,7 +22,7 @@ describe('DeliveriesService', () => {
     volunteerProfile: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     shipperTaskOffer: { findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
-    delivery: { findUnique: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+    delivery: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     bulkRun: { findFirst: jest.fn() },
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
@@ -39,6 +39,7 @@ describe('DeliveriesService', () => {
     jest.clearAllMocks();
     prisma.$queryRaw.mockResolvedValue([]);
     prisma.shipperTaskOffer.findMany.mockResolvedValue([]);
+    prisma.delivery.findMany.mockResolvedValue([]);
     prisma.volunteerProfile.findMany.mockResolvedValue([]);
     service = new DeliveriesService(
       prisma as never,

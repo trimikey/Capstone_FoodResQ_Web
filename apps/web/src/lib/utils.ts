@@ -12,7 +12,20 @@ export function cn(...inputs: ClassValue[]) {
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
-  if (path.startsWith('http')) return path;
+  if (path.startsWith('http')) {
+    try {
+      const url = new URL(path);
+      if (
+        (url.hostname === '10.0.2.2' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
+        url.pathname.startsWith('/uploads/')
+      ) {
+        return `${API_ORIGIN}${url.pathname}${url.search}`;
+      }
+    } catch {
+      return path;
+    }
+    return path;
+  }
   return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
 }
 

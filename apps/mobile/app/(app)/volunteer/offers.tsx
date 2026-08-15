@@ -965,7 +965,7 @@ const OffersEmptyState = memo(function OffersEmptyState({
       <View style={styles.reasonCard}>
         <Text style={styles.emptyTitle}>Chưa có đơn cần giao</Text>
         <Text style={styles.emptyText}>
-          Màn này chỉ hiện lời mời giao hàng đã được backend tạo cho shipper.
+          Lời mời giao hàng sẽ tự hiện khi có đơn phù hợp gần vị trí của bạn.
         </Text>
         <View style={styles.checkList}>
           <CheckRow text="Đang bật trạng thái nhận đơn." />

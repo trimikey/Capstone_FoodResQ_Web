@@ -197,6 +197,8 @@ export default function CharityCampaignDetailScreen() {
   const [selectedReviewShiftId, setSelectedReviewShiftId] = useState('');
   const [receiptTransportId, setReceiptTransportId] = useState<string | null>(null);
   const [receiptNote, setReceiptNote] = useState('');
+  const [receiptDonationId, setReceiptDonationId] = useState<string | null>(null);
+  const [donationReceiptNote, setDonationReceiptNote] = useState('');
 
   const Header = (
     <View style={styles.header}>
@@ -319,7 +321,13 @@ export default function CharityCampaignDetailScreen() {
 
   const handleConfirmDonation = async (donationId: string) => {
     try {
-      await confirmMut.mutateAsync({ donationId, campaignId: c.id });
+      await confirmMut.mutateAsync({
+        donationId,
+        campaignId: c.id,
+        note: donationReceiptNote.trim() || undefined,
+      });
+      setReceiptDonationId(null);
+      setDonationReceiptNote('');
       Popup.show({ type: 'success', text1: 'Đã xác nhận nhận nguyên liệu' });
     } catch (err) {
       Popup.show({ type: 'error', text1: 'Xác nhận thất bại', text2: getErrorMessage(err) });
@@ -757,7 +765,7 @@ export default function CharityCampaignDetailScreen() {
                       textColor={COLORS.primary}
                       loading={confirmMut.isPending}
                       disabled={confirmMut.isPending}
-                      onPress={() => handleConfirmDonation(d.id)}
+                      onPress={() => setReceiptDonationId(d.id)}
                     >
                       Đã nhận
                     </Button>
@@ -811,6 +819,58 @@ export default function CharityCampaignDetailScreen() {
       </View>
 
       <Portal>
+        <Dialog
+          visible={!!receiptDonationId}
+          onDismiss={() => {
+            if (!confirmMut.isPending) {
+              setReceiptDonationId(null);
+              setDonationReceiptNote('');
+            }
+          }}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>Xác nhận nhận nguyên liệu</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.muted}>
+              Ghi chú giúp provider và tổ chức đối chiếu số lượng, chất lượng thực nhận.
+            </Text>
+            <TextInput
+              mode="outlined"
+              label="Ghi chú nhận hàng"
+              placeholder="Ví dụ: nhận đủ, rau còn tươi, đóng gói sạch..."
+              multiline
+              numberOfLines={3}
+              value={donationReceiptNote}
+              onChangeText={setDonationReceiptNote}
+              disabled={confirmMut.isPending}
+              outlineColor={COLORS.outline}
+              activeOutlineColor={COLORS.primary}
+              style={{ backgroundColor: COLORS.surface, marginTop: 12 }}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setReceiptDonationId(null);
+                setDonationReceiptNote('');
+              }}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={confirmMut.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              onPress={() => receiptDonationId && handleConfirmDonation(receiptDonationId)}
+              loading={confirmMut.isPending}
+              disabled={confirmMut.isPending || !receiptDonationId}
+            >
+              Xác nhận
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
         <Dialog visible={completeVisible} onDismiss={() => !completeMut.isPending && setCompleteVisible(false)} style={styles.dialog}>
           <Dialog.Title style={styles.dialogTitle}>Kết thúc chiến dịch</Dialog.Title>
           <Dialog.Content>

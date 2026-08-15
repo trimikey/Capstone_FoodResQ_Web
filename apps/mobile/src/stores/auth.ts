@@ -43,6 +43,15 @@ function normalizeUser(raw: ApiUser): User {
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+    promise
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timeout));
+  });
+}
+
 export interface AuthState {
   // State
   user: User | null;
@@ -65,7 +74,7 @@ export interface AuthState {
   updateUser: (partial: Partial<User>) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   // Initial state
   user: null,
   accessToken: null,
@@ -273,41 +282,39 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   // Logout
   logout: async () => {
+    const accessToken = get().accessToken;
+
+    // Logout phải là thao tác local-first: chuyển màn ngay, không chờ API/Google.
+    set({
+      user: null,
+      accessToken: null,
+      refreshToken: null,
+      isLoading: false,
+      error: null,
+    });
+
     try {
-      set({ isLoading: true });
-
-      // Call logout endpoint (optional)
-      try {
-        await apiClient.post(endpoints.auth.logout);
-      } catch (error) {
-        // Logout endpoint có thể fail (vd 401 do token đã hết hạn) — vẫn xoá token local bình thường.
-        // Dùng debug để không kích hoạt LogBox overlay vì đây là trường hợp mong đợi.
-        if (__DEV__) console.debug('Logout endpoint bỏ qua được:', error);
-      }
-
-      // Đăng xuất + thu hồi quyền Firebase/Google để lần sau đăng nhập như người mới
-      try {
-        await signOutFirebase();
-      } catch (error) {
-        if (__DEV__) console.debug('signOutFirebase bỏ qua được:', error);
-      }
-
-      // Clear stored tokens
-      await AsyncStorage.removeItem('accessToken');
-      await AsyncStorage.removeItem('refreshToken');
-
-      set({
-        user: null,
-        accessToken: null,
-        refreshToken: null,
-        isLoading: false,
-        error: null,
-      });
+      await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Logout failed';
-      set({ error: message, isLoading: false });
+      if (__DEV__) console.debug('Xoá token local khi logout thất bại:', error);
     }
+
+    void Promise.allSettled([
+      accessToken
+        ? withTimeout(
+            apiClient.post(endpoints.auth.logout, undefined, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }),
+            3_000,
+          )
+        : Promise.resolve(),
+      withTimeout(signOutFirebase(), 3_000),
+    ]).then((results) => {
+      if (!__DEV__) return;
+      results.forEach((result) => {
+        if (result.status === 'rejected') console.debug('Dọn logout nền bỏ qua được:', result.reason);
+      });
+    });
   },
 
   // Restore token from storage (used on app startup)

@@ -293,6 +293,14 @@ export default function ListingDetailPage({ params }: Props) {
                 <span className="material-symbols-outlined text-[18px] text-primary shrink-0">place</span>
                 <span className="font-body-md text-sm">{listing.pickupAddress}</span>
               </div>
+              {listing.category && (
+                <div className="pt-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                    <span className="material-symbols-outlined text-[14px]">category</span>
+                    {CATEGORIES[listing.category] ?? listing.category}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Description */}
@@ -311,7 +319,7 @@ export default function ListingDetailPage({ params }: Props) {
                 <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">thermostat</span>
                 <div>
                   <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Bảo quản</p>
-                  <p className="font-label-sm text-xs text-on-surface font-semibold">{listing.storageConditions || '—'}</p>
+                  <p className="font-label-sm text-xs text-on-surface font-semibold">{listing.storageConditions || 'Không yêu cầu đặc biệt'}</p>
                 </div>
               </div>
 
@@ -531,7 +539,7 @@ export default function ListingDetailPage({ params }: Props) {
                         '/banh-mi-ngot-thap-cam.png', '/com-ga-hoi-an.png', '/food_salad.png', 
                         '/banh-mi-lua-mach-tuoi.png', '/food_bread.png', '/food_lunchbox.png'
                       ].includes(item.imageUrls[0]))
-                        ? item.imageUrls[0]
+                        ? mediaUrl(item.imageUrls[0])
                         : fallbackImage(item.category)
                     }
                     alt={item.title}

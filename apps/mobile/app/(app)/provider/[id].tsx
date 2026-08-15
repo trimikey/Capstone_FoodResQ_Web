@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Text,
   Button,
-  Portal,
-  Dialog,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
@@ -14,7 +12,6 @@ import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
 import { listingStatusDisplay } from '@/components/ProviderListingCard';
 import { ImageCarousel } from '@/components/ImageCarousel';
-import { foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import {
   categoryLabel,
   quantityLabel,
@@ -49,10 +46,10 @@ export default function ProviderListingDetailScreen() {
   };
 
   const handleCancel = async () => {
-    setConfirmCancel(false);
     try {
       setBusy(true);
       await cancel.mutateAsync({ id });
+      setConfirmCancel(false);
       Popup.show({ type: 'success', text1: 'Đã huỷ tin' });
       refetch();
     } catch (err) {
@@ -143,19 +140,113 @@ export default function ProviderListingDetailScreen() {
         </>
       )}
 
-      <Portal>
-        <Dialog visible={confirmCancel} onDismiss={() => setConfirmCancel(false)}>
-          <Dialog.Title>Huỷ tin này?</Dialog.Title>
-          <Dialog.Content>
-            <Text>Tin sẽ chuyển sang trạng thái &quot;Đã huỷ&quot; và không còn hiển thị.</Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setConfirmCancel(false)}>Đóng</Button>
-            <Button textColor={COLORS.error} onPress={handleCancel}>Huỷ tin</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <CancelListingConfirmModal
+        visible={confirmCancel}
+        listingTitle={listing?.title}
+        busy={busy}
+        onDismiss={() => setConfirmCancel(false)}
+        onConfirm={handleCancel}
+      />
     </SafeAreaView>
+  );
+}
+
+function CancelListingConfirmModal({
+  visible,
+  listingTitle,
+  busy,
+  onDismiss,
+  onConfirm,
+}: {
+  visible: boolean;
+  listingTitle?: string;
+  busy: boolean;
+  onDismiss: () => void;
+  onConfirm: () => void;
+}) {
+  const close = () => {
+    if (!busy) onDismiss();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={close}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={close}>
+        <Pressable
+          style={styles.cancelCard}
+          accessibilityRole="alert"
+          accessibilityLabel="Xác nhận hủy tin"
+        >
+          <View style={styles.cancelHandle} />
+
+          <View style={styles.cancelHeader}>
+            <View style={styles.cancelIconWrap}>
+              <MaterialCommunityIcons name="archive-cancel-outline" size={28} color={COLORS.error} />
+            </View>
+            <View style={styles.cancelHeaderCopy}>
+              <Text style={styles.cancelEyebrow}>Xác nhận thay đổi trạng thái</Text>
+              <Text style={styles.cancelTitle}>Hủy tin này?</Text>
+            </View>
+          </View>
+
+          {listingTitle ? (
+            <Text style={styles.cancelListingTitle} numberOfLines={2}>
+              {listingTitle}
+            </Text>
+          ) : null}
+
+          <View style={styles.cancelImpactBox}>
+            <ImpactRow icon="eye-off-outline" text="Tin sẽ chuyển sang trạng thái Đã hủy và không còn hiển thị công khai." />
+            <ImpactRow icon="calendar-remove-outline" text="Người nhận sẽ không thể tạo lượt đặt mới từ tin này." />
+          </View>
+
+          <View style={styles.cancelActions}>
+            <Button
+              mode="contained-tonal"
+              onPress={close}
+              disabled={busy}
+              textColor={COLORS.onSurface}
+              buttonColor={COLORS.surfaceContainerLow}
+              style={styles.cancelSecondaryBtn}
+              labelStyle={styles.cancelSecondaryLabel}
+            >
+              Giữ tin
+            </Button>
+            <Button
+              mode="contained"
+              icon="close-circle-outline"
+              loading={busy}
+              disabled={busy}
+              onPress={onConfirm}
+              buttonColor={COLORS.error}
+              textColor={COLORS.onPrimary}
+              style={styles.cancelPrimaryBtn}
+              labelStyle={styles.cancelPrimaryLabel}
+            >
+              Hủy tin
+            </Button>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function ImpactRow({ icon, text }: { icon: string; text: string }) {
+  return (
+    <View style={styles.impactRow}>
+      <MaterialCommunityIcons
+        name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
+        size={18}
+        color={COLORS.error}
+      />
+      <Text style={styles.impactText}>{text}</Text>
+    </View>
   );
 }
 
@@ -196,4 +287,100 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: COLORS.outline, backgroundColor: COLORS.surface,
   },
   actionBtn: { flex: 1, borderRadius: 12 },
+  modalBackdrop: {
+    flex: 1,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(18, 28, 42, 0.46)',
+  },
+  cancelCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 18,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    shadowColor: '#172033',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.18,
+    shadowRadius: 32,
+    elevation: 16,
+  },
+  cancelHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.outline,
+    marginBottom: 18,
+  },
+  cancelHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  cancelIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.errorContainer,
+  },
+  cancelHeaderCopy: { flex: 1 },
+  cancelEyebrow: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    letterSpacing: 0,
+    color: COLORS.error,
+    textTransform: 'uppercase',
+  },
+  cancelTitle: {
+    marginTop: 2,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '800',
+    letterSpacing: 0,
+    color: COLORS.onSurface,
+  },
+  cancelListingTitle: {
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: COLORS.surfaceContainerLow,
+    color: COLORS.onSurface,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  cancelImpactBox: {
+    marginTop: 14,
+    padding: 14,
+    gap: 12,
+    borderRadius: 18,
+    backgroundColor: COLORS.errorContainer,
+  },
+  impactRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  impactText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: COLORS.onErrorContainer,
+  },
+  cancelActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelSecondaryBtn: { flex: 1, borderRadius: 14 },
+  cancelPrimaryBtn: { flex: 1, borderRadius: 14 },
+  cancelSecondaryLabel: { fontSize: 14, fontWeight: '800' },
+  cancelPrimaryLabel: { fontSize: 14, fontWeight: '800' },
 });

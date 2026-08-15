@@ -7,13 +7,15 @@ describe('NotificationsService', () => {
   let service: NotificationsService;
   const prisma = {
     notification: { create: jest.fn() },
-    user: { findMany: jest.fn() },
+    user: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   };
   const gateway = { emitToUser: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma.notification.create.mockImplementation(({ data }) => Promise.resolve({ id: 'n-1', ...data }));
+    prisma.user.findUnique.mockResolvedValue({ fcmToken: null });
+    prisma.user.update.mockResolvedValue({});
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsService,

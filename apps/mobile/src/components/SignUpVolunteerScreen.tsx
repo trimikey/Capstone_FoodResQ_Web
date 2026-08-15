@@ -316,7 +316,7 @@ export function SignUpVolunteerScreen({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.selfieTitle}>Chụp mặt trước CCCD</Text>
                       <Text style={styles.selfieSub} numberOfLines={2}>
-                        Ảnh cần rõ chân dung và số CCCD để backend so khớp với selfie.
+                        Ảnh cần rõ chân dung và số CCCD để đối chiếu với ảnh selfie.
                       </Text>
                     </View>
                   </View>
@@ -354,7 +354,7 @@ export function SignUpVolunteerScreen({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.selfieTitle}>Chụp ảnh khuôn mặt</Text>
                       <Text style={styles.selfieSub} numberOfLines={2}>
-                        Ảnh này được gửi kèm hồ sơ để backend nhận diện khuôn mặt trước khi tạo tài khoản.
+                        Ảnh selfie giúp FoodResQ xác minh khuôn mặt của bạn trước khi tạo tài khoản.
                       </Text>
                     </View>
                   </View>

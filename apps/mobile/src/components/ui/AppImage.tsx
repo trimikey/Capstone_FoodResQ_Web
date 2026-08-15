@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Image, type ImageProps } from 'expo-image';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
-const API_ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, '');
+import { API_ORIGIN } from '../../api/client';
 
 const STATIC_IMAGE_BY_PATH: Record<string, number> = {
   '/com-ga-hoi-an.png': require('../../../assets/food-fallbacks/com-ga-hoi-an.png'),
@@ -44,7 +42,7 @@ function rewriteLocalhostUrl(value: string): string {
     const imageUrl = new URL(value);
     const apiUrl = new URL(API_ORIGIN);
     if (
-      (imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
+      (imageUrl.hostname === '10.0.2.2' || imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
       apiUrl.hostname !== imageUrl.hostname
     ) {
       imageUrl.protocol = apiUrl.protocol;

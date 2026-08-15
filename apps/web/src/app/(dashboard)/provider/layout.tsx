@@ -41,6 +41,17 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     }
   }, [user]);
 
+  // Sidebar layout cần chiếm đúng 100vh — block outer page scroll và để
+  // vùng nội dung (.overflow-y-auto bên trong) tự scroll riêng.
+  useEffect(() => {
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   if (!mounted || !user) return null;
 
   const handleLogout = () => {
@@ -57,7 +68,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4 border-b border-neutral-100">
         <div className="flex items-center gap-1">
           <Link
             href="/"
@@ -66,7 +77,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
           >
             <span className="material-symbols-outlined text-[#236c2a]">arrow_back</span>
           </Link>
-          <button onClick={() => setMobileMenuOpen(true)} className="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+          <button onClick={() => setMobileMenuOpen(true)} className="min-h-11 min-w-11 p-2 hover:bg-neutral-100 rounded-lg transition-colors">
             <span className="material-symbols-outlined text-[#236c2a]">menu</span>
           </button>
         </div>
@@ -74,7 +85,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-8 w-auto object-contain" />
         </div>
-        <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full bg-[#236c2a] overflow-hidden flex items-center justify-center shrink-0">
           {user.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={mediaUrl(user.avatarUrl)} alt={user.fullName} className="w-full h-full object-cover" />
@@ -88,7 +99,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       {mobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-[100]">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-72 bg-white shadow-2xl flex flex-col">
+          <aside className="absolute left-0 top-0 h-full w-[min(20rem,88vw)] bg-white shadow-2xl flex flex-col">
             <div className="flex items-center gap-3 px-5 py-5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-10 w-auto object-contain" />
@@ -158,7 +169,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       </aside>
 
       {/* Main Content - nền xanh nhạt */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#f0f7f3]">
+      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen lg:min-h-0 lg:h-[calc(100vh-104px)] lg:overflow-hidden flex flex-col bg-[#f0f7f3]">
         {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
         <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <Link
@@ -175,7 +186,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </header>
 
         {/* Main Content */}
-        <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
+        <div className="flex-grow p-3 sm:p-4 lg:p-6 overflow-y-auto lg:flex lg:flex-col lg:min-h-0">
           {children}
         </div>
       </div>

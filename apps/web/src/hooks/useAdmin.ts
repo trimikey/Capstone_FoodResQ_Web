@@ -69,6 +69,11 @@ export interface AdminUser {
   isCharityOrg: boolean;
   /** Provider/volunteer profile ID — needed to call /admin/verifications/{type}/{profileId} */
   profileId?: string;
+  businessName?: string | null;
+  contactPhone?: string | null;
+  providerVerificationStatus?: 'pending' | 'under_review' | 'approved' | 'rejected' | string | null;
+  providerIsVerified?: boolean | null;
+  providerAvgRating?: number | null;
   vehicleType?: string | null;
   vehiclePlate?: string | null;
 }

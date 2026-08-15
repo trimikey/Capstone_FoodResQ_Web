@@ -180,7 +180,7 @@ export default function ProviderOrdersPage() {
 
   return (
     <div className="flex-1 min-w-0 bg-[#FAFBF9]">
-      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
+      <div className="max-w-6xl mx-auto px-0 sm:px-4 md:px-8 lg:px-10 py-4 sm:py-6 md:py-10 space-y-5 sm:space-y-6">
         {/* Header — đồng bộ với các trang provider khác */}
         <ProviderHeaderCard
           eyebrow="Lịch sử"
@@ -363,7 +363,7 @@ export default function ProviderOrdersPage() {
                       setFilter(f.key);
                       setPage(1);
                     }}
-                    className={`relative px-5 py-4 text-sm font-medium transition-colors whitespace-nowrap ${
+                    className={`relative min-h-11 px-4 sm:px-5 py-3 sm:py-4 text-sm font-medium transition-colors whitespace-nowrap ${
                       active ? 'text-[#236c2a]' : 'text-neutral-500 hover:text-neutral-700'
                     }`}
                   >
@@ -585,16 +585,16 @@ function OrderCard({
           <span className={`self-start md:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
             {meta.label}
           </span>
-          <div className="flex gap-1.5 mt-auto">
+          <div className="grid grid-cols-2 min-[420px]:flex gap-2 min-[420px]:gap-1.5 mt-auto">
             <button
-              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
               title="Xem chi tiết"
             >
               <span className="material-symbols-outlined text-[14px]">visibility</span>
               Chi tiết
             </button>
             {meta.group === 'pending' && (
-              <button className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
+              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
                 Duyệt
               </button>
@@ -602,7 +602,7 @@ function OrderCard({
             {meta.group === 'confirmed' && (
               <Link
                 href="/provider/scan"
-                className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors"
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">qr_code_scanner</span>
                 Quét QR
@@ -612,14 +612,14 @@ function OrderCard({
               <button
                 onClick={onCancelRequest}
                 title="Huỷ đơn này (không phạt điểm người nhận)"
-                className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
+                className="min-h-10 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">block</span>
                 Huỷ đơn
               </button>
             )}
             {meta.group === 'cancelled' && (
-              <button className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
+              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
                 <span className="material-symbols-outlined text-[14px]">refresh</span>
                 Đăng lại
               </button>

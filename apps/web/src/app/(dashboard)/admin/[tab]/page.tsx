@@ -1,4 +1,4 @@
-import { AdminShell } from '../page';
+import { AdminShell } from '../_components/AdminShell';
 
 /**
  * Route động cho các tab con của admin — khớp với các mục trong sidebar

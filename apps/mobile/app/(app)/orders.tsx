@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, ScrollView, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Text, Button } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMyReservations, type MyReservation } from '@/hooks/useReservations';
+import { normalizeImageUrl } from '@/hooks/useListings';
 import { MyReservationCard } from '@/components/MyReservationCard';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
@@ -32,11 +34,43 @@ const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[
  * Đơn của tôi (Receiver) — các đơn đã đặt, lọc theo trạng thái.
  * Tap đơn → chi tiết (QR pickup nếu đang chờ lấy).
  */
+const PAGE_SIZE = 20;
+
+function normalizeItems(raw: MyReservation[]): MyReservation[] {
+  return raw.map((r) => ({
+    ...r,
+    listing: {
+      ...r.listing,
+      imageUrls: Array.isArray(r.listing.imageUrls)
+        ? r.listing.imageUrls.map(normalizeImageUrl).filter(Boolean)
+        : r.listing.imageUrls,
+    },
+  }));
+}
+
 export default function OrdersTab() {
-  const { data, isLoading, isError, refetch, isRefetching } = useMyReservations();
+  const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, refetch, isRefetching, isFetching } = useMyReservations(page, PAGE_SIZE);
   const [filter, setFilter] = useState<FilterKey>('all');
 
-  const all = useMemo(() => data ?? [], [data]);
+  const pageItems = useMemo(() => normalizeItems(data?.items ?? []), [data]);
+  const [accumulated, setAccumulated] = useState<MyReservation[]>([]);
+
+  const all = useMemo(() => {
+    if (page === 1) return pageItems;
+    const ids = new Set(pageItems.map((r) => r.id));
+    return [...accumulated.filter((r) => !ids.has(r.id)), ...pageItems];
+  }, [page, pageItems, accumulated]);
+
+  const total = data?.total ?? 0;
+  const canLoadMore = all.length < total;
+
+  const handleLoadMore = () => {
+    setAccumulated(all);
+    setPage((p) => p + 1);
+  };
+
   const items = useMemo(() => {
     const f = FILTERS.find((x) => x.key === filter)!;
     return all.filter((r) => f.match(r.status));
@@ -57,7 +91,7 @@ export default function OrdersTab() {
           <SectionHeader
             title="Theo dõi đơn đã đặt"
             subtitle="Mã QR, trạng thái lấy hàng và giao hàng nằm trong từng đơn."
-            action={<Text style={styles.summaryCount}>{all.length}</Text>}
+            action={<Text style={styles.summaryCount}>{total > 0 ? total : all.length}</Text>}
           />
         </SurfaceCard>
       </View>
@@ -86,6 +120,7 @@ export default function OrdersTab() {
       <FlashList
         data={items}
         keyExtractor={(item: MyReservation) => item.id}
+        estimatedItemSize={180}
         renderItem={({ item }: { item: MyReservation }) => (
           <MyReservationCard
             reservation={item}
@@ -94,8 +129,25 @@ export default function OrdersTab() {
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
+        ListFooterComponent={
+          canLoadMore ? (
+            <Button
+              mode="outlined"
+              onPress={handleLoadMore}
+              loading={isFetching && !isRefetching}
+              textColor={COLORS.primary}
+              style={styles.moreBtn}
+            >
+              Xem thêm
+            </Button>
+          ) : null
+        }
         refreshing={isRefetching}
-        onRefresh={() => refetch()}
+        onRefresh={() => {
+          setPage(1);
+          setAccumulated([]);
+          void queryClient.invalidateQueries({ queryKey: ['reservations'] });
+        }}
       />
     </AppScreen>
   );
@@ -109,4 +161,5 @@ const styles = StyleSheet.create({
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
+  moreBtn: { borderRadius: 12, borderColor: COLORS.primary, marginTop: 8, marginHorizontal: 20 },
 });

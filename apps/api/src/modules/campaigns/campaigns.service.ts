@@ -79,6 +79,18 @@ interface DonationForProgress {
   status: string;
 }
 
+interface DonationDemandDetails {
+  ingredientName?: string;
+  quantityKg?: number;
+  expectedServings?: number;
+  neededFrom?: string;
+  neededTo?: string;
+  requireAtvstpCert?: boolean;
+  requireColdChain?: boolean;
+  requireQcPhoto?: boolean;
+  nonCommercialWaiver?: boolean;
+}
+
 @Injectable()
 export class CampaignsService {
   constructor(
@@ -296,6 +308,82 @@ export class CampaignsService {
       ...campaign,
       supplyProgress: this.buildSupplyProgress(campaign.supplyItems, campaign.donations ?? []),
     };
+  }
+
+  private ensureCampaignCanReceiveFood(campaign: { status: string; scheduledDate: Date; endDate: Date | null; endTime: string }) {
+    if (!['open', 'in_progress'].includes(campaign.status)) {
+      throw new BadRequestException('Chiến dịch này không còn nhận quyên góp.');
+    }
+    const endAt = this.vnDateTimeToUtc(campaign.endDate ?? campaign.scheduledDate, campaign.endTime);
+    if (Date.now() > endAt) {
+      throw new BadRequestException('Chiến dịch đã quá thời gian nhận nguyên liệu.');
+    }
+  }
+
+  private resolveTargetByName(supplyItems: unknown, itemName: string): SupplyTarget | null {
+    const key = this.normalizeSupplyKey(itemName);
+    return this.parseSupplyTargets(supplyItems).find((target) => target.key === key) ?? null;
+  }
+
+  private async createDonationFromAcceptedRequest(
+    tx: Prisma.TransactionClient,
+    input: {
+      campaignId: string;
+      providerId: string;
+      providerName: string;
+      requestId: string;
+      note?: string;
+      campaign: { supplyItems: unknown; donations: DonationForProgress[] };
+      demandDetails: DonationDemandDetails | null;
+    },
+  ) {
+    const details = input.demandDetails;
+    if (!details?.ingredientName || details.quantityKg == null) return null;
+
+    const target = this.resolveTargetByName(input.campaign.supplyItems, details.ingredientName);
+    const itemName = target?.name ?? details.ingredientName.trim();
+    const unit = target?.unit ?? 'kg';
+    const quantity = this.roundQuantity(Number(details.quantityKg));
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+    if (target) {
+      const progress = this.buildSupplyProgress(input.campaign.supplyItems, input.campaign.donations);
+      const itemProgress = progress.find((p) => this.normalizeSupplyKey(p.name) === target.key);
+      const remaining = itemProgress?.remainingQuantity ?? target.targetQuantity;
+      if (quantity > remaining) {
+        throw new BadRequestException(
+          `Yêu cầu chỉ còn thiếu ${remaining} ${target.unit} ${target.name}; provider không thể chấp nhận góp vượt số còn thiếu.`,
+        );
+      }
+    }
+
+    const duplicate = await tx.campaignDonation.findFirst({
+      where: {
+        campaignId: input.campaignId,
+        providerId: input.providerId,
+        itemName,
+        status: 'pledged',
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        `${input.providerName} đã có một cam kết "${itemName}" đang chờ tổ chức xác nhận.`,
+      );
+    }
+
+    return tx.campaignDonation.create({
+      data: {
+        campaignId: input.campaignId,
+        providerId: input.providerId,
+        itemName,
+        quantity: `${quantity} ${unit}`,
+        note: input.note?.trim()
+          ? `${input.note.trim()} | Tạo từ request ${input.requestId}`
+          : `Tạo từ request ${input.requestId}`,
+        status: 'pledged',
+      },
+    });
   }
 
   /**
@@ -2592,22 +2680,32 @@ export class CampaignsService {
 
   /** Nhà cung cấp quyên góp nguyên liệu cho chiến dịch (đang tuyển/đang diễn ra). */
   async pledgeDonation(campaignId: string, providerUserId: string, dto: { itemName: string; quantity: number; unit?: string; note?: string }) {
-    const provider = await this.prisma.providerProfile.findUnique({ where: { userId: providerUserId } });
+    const provider = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+      select: {
+        id: true,
+        businessName: true,
+        verificationStatus: true,
+        isVerified: true,
+        user: { select: { status: true } },
+      },
+    });
     if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+    if (provider.user.status !== 'active' || provider.verificationStatus !== 'approved' || !provider.isVerified) {
+      throw new ForbiddenException('Nhà cung cấp cần được duyệt và đang hoạt động trước khi quyên góp.');
+    }
 
     const campaign = await this.prisma.kitchenCampaign.findUnique({
       where: { id: campaignId },
       include: {
         charityReceiver: { select: { userId: true } },
         donations: {
-          select: { itemName: true, quantity: true, status: true },
+          select: { itemName: true, quantity: true, status: true, providerId: true },
         },
       },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
-    if (!['open', 'in_progress'].includes(campaign.status)) {
-      throw new BadRequestException('Chiến dịch này không còn nhận quyên góp.');
-    }
+    this.ensureCampaignCanReceiveFood(campaign);
     const targets = this.parseSupplyTargets(campaign.supplyItems);
     if (targets.length === 0) {
       throw new BadRequestException('Chiến dịch chưa có mục tiêu nguyên liệu định lượng để nhận quyên góp.');
@@ -2631,6 +2729,14 @@ export class CampaignsService {
           : `${target.name} đã đạt đủ mục tiêu nguyên liệu.`,
       );
     }
+    const duplicate = campaign.donations.find(
+      (d) => d.providerId === provider.id && d.status === 'pledged' && this.normalizeSupplyKey(d.itemName) === target.key,
+    );
+    if (duplicate) {
+      throw new BadRequestException(
+        `Bạn đã có cam kết ${target.name} đang chờ tổ chức xác nhận. Hãy chờ xác nhận trước khi gửi thêm.`,
+      );
+    }
 
     const donation = await this.prisma.campaignDonation.create({
       data: {
@@ -2647,20 +2753,24 @@ export class CampaignsService {
     void this.notifications.notify(campaign.charityReceiver.userId, {
       type: 'campaign',
       title: 'Có quyên góp nguyên liệu mới',
-      body: `"${provider.businessName}" muốn góp ${quantity} ${target.unit} ${target.name} cho chiến dịch "${campaign.title}".`,
-      data: { campaignId, donationId: donation.id },
+      body:
+        `${provider.businessName} đã hứa góp ${quantity} ${target.unit} ${target.name} `
+        + `cho chiến dịch "${campaign.title}". Còn thiếu sau cam kết: `
+        + `${this.roundQuantity(Math.max(0, remaining - quantity))} ${target.unit}. `
+        + 'Vui lòng xác nhận khi đã nhận hàng.',
+      data: { campaignId, donationId: donation.id, status: 'pledged', itemName: target.name, quantity, unit: target.unit },
     });
 
     return this.findOne(campaignId);
   }
 
   /** Tổ chức xác nhận đã nhận nguyên liệu quyên góp (pledged → received). */
-  async confirmDonation(donationId: string, charityUserId: string) {
+  async confirmDonation(donationId: string, charityUserId: string, dto: { note?: string } = {}) {
     const donation = await this.prisma.campaignDonation.findUnique({
       where: { id: donationId },
       include: {
-        campaign: { select: { charityReceiverId: true, title: true } },
-        provider: { select: { userId: true } },
+        campaign: { select: { id: true, charityReceiverId: true, title: true } },
+        provider: { select: { userId: true, businessName: true } },
       },
     });
     if (!donation) throw new NotFoundException('Không tìm thấy khoản quyên góp.');
@@ -2673,16 +2783,24 @@ export class CampaignsService {
       throw new BadRequestException('Khoản quyên góp này đã được xử lý.');
     }
 
+    const note = dto.note?.trim();
     await this.prisma.campaignDonation.update({
       where: { id: donationId },
-      data: { status: 'received', receivedAt: new Date() },
+      data: {
+        status: 'received',
+        receivedAt: new Date(),
+        note: note ? [donation.note, `Xác nhận nhận hàng: ${note}`].filter(Boolean).join('\n') : donation.note,
+      },
     });
 
     void this.notifications.notify(donation.provider.userId, {
       type: 'campaign',
       title: 'Quyên góp đã được nhận',
-      body: `Tổ chức đã xác nhận nhận "${donation.itemName}" cho chiến dịch "${donation.campaign.title}". Cảm ơn bạn!`,
-      data: { donationId },
+      body:
+        `Tổ chức đã xác nhận nhận ${donation.quantity ?? ''} ${donation.itemName} `
+        + `cho chiến dịch "${donation.campaign.title}".`
+        + (note ? ` Ghi chú: ${note}` : ' Cảm ơn bạn!'),
+      data: { campaignId: donation.campaign.id, donationId, status: 'received' },
     });
 
     return { id: donationId, status: 'received' };
@@ -3056,9 +3174,19 @@ export class CampaignsService {
   ) {
     const profile = await this.prisma.providerProfile.findUnique({
       where: { userId: providerUserId },
-      select: { id: true, businessName: true, address: true },
+      select: {
+        id: true,
+        businessName: true,
+        address: true,
+        verificationStatus: true,
+        isVerified: true,
+        user: { select: { status: true } },
+      },
     });
     if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ provider.');
+    if (profile.user.status !== 'active' || profile.verificationStatus !== 'approved' || !profile.isVerified) {
+      throw new ForbiddenException('Nhà cung cấp cần được duyệt và đang hoạt động trước khi phản hồi yêu cầu.');
+    }
 
     const request = await this.prisma.campaignProviderRequest.findUnique({
       where: { id: requestId },
@@ -3083,9 +3211,13 @@ export class CampaignsService {
       scheduledDate: Date;
       startTime: string;
       endTime: string;
+      status: string;
+      endDate: Date | null;
       kitchenAddress: string;
       kitchenLng: number;
       kitchenLat: number;
+      supplyItems: unknown;
+      donations: DonationForProgress[];
     } | null = null;
     if (action === 'accept') {
       const c = await this.prisma.kitchenCampaign.findUnique({
@@ -3094,9 +3226,13 @@ export class CampaignsService {
           id: true,
           title: true,
           scheduledDate: true,
+          endDate: true,
           startTime: true,
           endTime: true,
+          status: true,
           kitchenAddress: true,
+          supplyItems: true,
+          donations: { select: { itemName: true, quantity: true, status: true } },
         },
       });
       const [kitchenCoords] = await this.prisma.$queryRaw<{ lng: number | null; lat: number | null }[]>(
@@ -3109,6 +3245,7 @@ export class CampaignsService {
         `,
       );
       if (!c) throw new NotFoundException('Không tìm thấy chiến dịch của yêu cầu này.');
+      this.ensureCampaignCanReceiveFood(c);
       if ((opts?.needsTransport ?? true) && (kitchenCoords?.lng == null || kitchenCoords.lat == null)) {
         throw new BadRequestException('Chiến dịch chưa có tọa độ bếp nhận hàng hợp lệ.');
       }
@@ -3137,7 +3274,7 @@ export class CampaignsService {
       pickupCoords = { lng: Number(providerCoords.lng), lat: Number(providerCoords.lat) };
     }
 
-    const { updated, transport } = await this.prisma.$transaction(async (tx) => {
+    const { updated, transport, donation } = await this.prisma.$transaction(async (tx) => {
       const requestUpdate = await tx.campaignProviderRequest.updateMany({
         where: { id: requestId, status: 'pending' },
         data: {
@@ -3158,10 +3295,21 @@ export class CampaignsService {
         where: { id: requestId },
         include: { receiver: { include: { user: { select: { fullName: true } } } } },
       });
+      const donation = action === 'accept'
+        ? await this.createDonationFromAcceptedRequest(tx, {
+            campaignId: request.campaignId,
+            providerId: profile.id,
+            providerName: profile.businessName,
+            requestId,
+            note,
+            campaign: campaignSnapshot!,
+            demandDetails: (request.demandDetails as DonationDemandDetails | null) ?? null,
+          })
+        : null;
       const transport = needsTransport
         ? await this.createTransportForRequest(tx, requestId, campaignSnapshot!, pickupCoords!)
         : null;
-      return { updated, transport };
+      return { updated, transport, donation };
     });
     const transportId = transport?.id ?? null;
 
@@ -3190,13 +3338,20 @@ export class CampaignsService {
       let title: string;
       if (action === 'reject') {
         title = 'Nhà cung cấp từ chối hợp tác';
-        body = `Nhà cung cấp đã từ chối. Lý do: ${note ?? 'Không có'}`;
+        body = `${profile.businessName} đã từ chối yêu cầu hợp tác cho chiến dịch "${campaignSnapshot?.title ?? 'chiến dịch'}". Lý do: ${note ?? 'Không có'}`;
       } else if (opts?.needsTransport ?? true) {
         title = 'Nhà cung cấp đã chấp nhận — hệ thống tìm TNV giao hàng';
-        body = `${profile.businessName ?? 'Nhà cung cấp'} đã đồng ý. TNV đến lấy lúc ${pickupTimeStr}${pickupEndStr ? `–${pickupEndStr}` : ''} ngày ${pickupDateStr}. Hệ thống đang tìm tình nguyện viên giao hàng.`;
+        body =
+          `${profile.businessName ?? 'Nhà cung cấp'} đã đồng ý`
+          + (donation ? ` và cam kết ${donation.quantity ?? ''} ${donation.itemName}` : '')
+          + `. TNV đến lấy lúc ${pickupTimeStr}${pickupEndStr ? `–${pickupEndStr}` : ''} ngày ${pickupDateStr}. `
+          + 'Hệ thống đang tìm tình nguyện viên giao hàng.';
       } else {
         title = 'Nhà cung cấp đã chấp nhận — TNV của bạn đến lấy';
-        body = `${profile.businessName ?? 'Nhà cung cấp'} đã đồng ý. TNV của bạn đến lấy lúc ${pickupTimeStr}${pickupEndStr ? `–${pickupEndStr}` : ''} ngày ${pickupDateStr}.`;
+        body =
+          `${profile.businessName ?? 'Nhà cung cấp'} đã đồng ý`
+          + (donation ? ` và cam kết ${donation.quantity ?? ''} ${donation.itemName}` : '')
+          + `. TNV của bạn đến lấy lúc ${pickupTimeStr}${pickupEndStr ? `–${pickupEndStr}` : ''} ngày ${pickupDateStr}.`;
       }
 
       await this.notifications.notify(receiverUser.userId, {
@@ -3207,6 +3362,7 @@ export class CampaignsService {
           requestId,
           providerRequestId: requestId,
           transportId,
+          donationId: donation?.id ?? null,
           campaignId: campaignSnapshot?.id,
           action,
           pickupDate: pickupDateStr,

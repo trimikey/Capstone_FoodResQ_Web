@@ -2,15 +2,14 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient, { ApiResponse, endpoints } from '../api/client';
+import apiClient, { API_ORIGIN, ApiResponse, endpoints } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { getCurrentCoords } from '../services/geolocation';
 import type { CapturedImage } from '../services/faceCapture';
 import { useNetworkStatus } from './useNetworkStatus';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 /** Origin cho WebSocket — bỏ prefix /api/v1 (gateway gắn ở gốc). */
-const SOCKET_URL = API_URL.replace(/\/api\/v\d+\/?$/, '');
+const SOCKET_URL = API_ORIGIN;
 
 export type DeliveryStatus =
   | 'pending_assignment'
@@ -175,6 +174,8 @@ export interface DeliveryHistoryItem extends DeliverySourceFields {
   distanceKm: number | null;
   deliveredAt: string | null;
   failedReason: string | null;
+  qcPhotoUrl?: string | null;
+  deliveryProofUrl?: string | null;
   coords: DeliveryCoords | null;
   reservation: {
     quantity: number;
@@ -231,13 +232,16 @@ export function useActiveDelivery(enabled = true) {
 }
 
 /** Lịch sử giao hàng (đã giao / thất bại), phân trang server-side. */
-export function useDeliveryHistory(page = 1, limit = 20) {
+export function useDeliveryHistory(page = 1, limit = 20, fromDate?: Date | null, toDate?: Date | null) {
   return useQuery({
-    queryKey: ['deliveries', 'history', page, limit],
+    queryKey: ['deliveries', 'history', page, limit, fromDate?.toISOString() ?? null, toDate?.toISOString() ?? null],
     queryFn: async () => {
+      const params: Record<string, unknown> = { page, limit };
+      if (fromDate) params.fromDate = fromDate.toISOString().split('T')[0];
+      if (toDate) params.toDate = toDate.toISOString().split('T')[0];
       const res = await apiClient.get<ApiResponse<Paginated<DeliveryHistoryItem>>>(
         endpoints.deliveries.myHistory,
-        { params: { page, limit } }
+        { params }
       );
       return res.data.data;
     },

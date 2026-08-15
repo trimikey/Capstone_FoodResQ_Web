@@ -102,16 +102,17 @@ function normalizeReservationListingImages<T extends MyReservation | Reservation
   };
 }
 
-/** Danh sách đơn của tôi. GET /reservations/my (phân trang, lấy gộp 50). */
-export function useMyReservations() {
+/** Danh sách đơn của tôi. GET /reservations/my (phân trang). */
+export function useMyReservations(page = 1, limit = 20) {
   return useQuery({
-    queryKey: ['reservations'],
+    queryKey: ['reservations', page, limit],
+    staleTime: 30_000,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Paginated<MyReservation>>>(
         endpoints.reservations.list,
-        { params: { page: 1, limit: 50 } }
+        { params: { page, limit } }
       );
-      return res.data.data.items.map(normalizeReservationListingImages);
+      return res.data.data;
     },
   });
 }

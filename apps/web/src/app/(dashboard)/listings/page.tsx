@@ -41,6 +41,7 @@ function ListingsPageContent() {
   const [distanceFilter, setDistanceFilter] = useState<number>(5); // Default 5km
   const [timeFilter, setTimeFilter] = useState<'all' | 'soon' | 'today'>('all');
   const [activePill, setActivePill] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'list' | 'map'>('list');
   // Dropdown bộ lọc: bấm để mở, bấm ra ngoài/chọn để đóng (không dùng hover để khỏi tự đóng)
   const [openMenu, setOpenMenu] = useState<'distance' | 'category' | 'time' | null>(null);
 
@@ -186,23 +187,23 @@ function ListingsPageContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-104px)] overflow-hidden bg-[#fcf9f2]">
+    <div className="flex-1 flex flex-col lg:flex-row min-h-[calc(100dvh-8rem)] lg:h-[calc(100vh-104px)] overflow-visible lg:overflow-hidden bg-[#fcf9f2]">
       {/* Left side: Listings Panel */}
-      <div className="w-full lg:w-[45%] xl:w-[40%] flex flex-col border-r border-neutral-200 bg-[#fcf9f2] h-full overflow-y-auto">
-        <div className="p-6 space-y-6">
+      <div className={`${mobileView === 'map' ? 'hidden lg:flex' : 'flex'} w-full lg:w-[45%] xl:w-[40%] flex-col border-r border-neutral-200 bg-[#fcf9f2] lg:h-full lg:overflow-y-auto`}>
+        <div className="px-4 py-5 sm:p-6 space-y-5 sm:space-y-6">
           {/* Header */}
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h2 className="font-headline-md text-3xl text-neutral-900 font-bold">Thực phẩm mới đăng</h2>
               <p className="font-body-md text-sm text-neutral-500 mt-1">
                 Bán kính {distanceFilter}km • {listings.length} kết quả tìm thấy
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1 sm:mx-0 sm:px-0">
               <button
                 onClick={locate}
                 disabled={locStatus === 'locating'}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm disabled:opacity-60 ${locStatus === 'gps'
+                className={`shrink-0 min-h-10 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm disabled:opacity-60 ${locStatus === 'gps'
                   ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
                   : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
                   }`}
@@ -215,7 +216,7 @@ function ListingsPageContent() {
               </button>
               <button
                 onClick={() => setManualOpen((open) => !open)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm ${manualOpen
+                className={`shrink-0 min-h-10 flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-colors border shadow-sm ${manualOpen
                   ? 'border-[#236c2a] text-[#236c2a] bg-[#eef7ee]'
                   : 'border-neutral-200 text-neutral-600 bg-white hover:text-neutral-900'
                   }`}
@@ -328,8 +329,8 @@ function ListingsPageContent() {
           </div>
 
           {/* Filter Row: Distance, Category, Time */}
-          <div className="flex flex-wrap gap-3 items-center text-[13px]">
-            <span className="text-neutral-500 font-medium flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+          <div className="flex gap-2 sm:gap-3 items-center text-[13px] overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+            <span className="text-neutral-500 font-medium flex items-center gap-1.5 uppercase tracking-wider text-[11px] shrink-0">
               <span className="material-symbols-outlined text-[16px]">filter_list</span>
               Bộ lọc:
             </span>
@@ -338,7 +339,7 @@ function ListingsPageContent() {
             <div className="relative">
               <button
                 onClick={() => setOpenMenu(openMenu === 'distance' ? null : 'distance')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+                className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
                 Khoảng cách: {distanceFilter}km
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
@@ -362,7 +363,7 @@ function ListingsPageContent() {
             <div className="relative">
               <button
                 onClick={() => setOpenMenu(openMenu === 'category' ? null : 'category')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+                className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
                 Danh mục: {category ? CATEGORIES.find(c => c.value === category)?.label : 'Tất cả'}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
@@ -386,7 +387,7 @@ function ListingsPageContent() {
             <div className="relative">
               <button
                 onClick={() => setOpenMenu(openMenu === 'time' ? null : 'time')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all"
+                className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
                 Thời gian nhận{timeFilter === 'soon' ? ': Sắp hết hạn' : ''}
                 <span className="material-symbols-outlined text-sm text-neutral-400">keyboard_arrow_down</span>
@@ -417,6 +418,23 @@ function ListingsPageContent() {
                 {pill}
               </button>
             ))}
+          </div>
+
+          <div className="lg:hidden grid grid-cols-2 gap-2 rounded-2xl border border-neutral-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setMobileView('list')}
+              className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'list' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
+            >
+              Danh sÃ¡ch
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileView('map')}
+              className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'map' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
+            >
+              Báº£n Ä‘á»“
+            </button>
           </div>
 
           {/* Listings List */}
@@ -480,7 +498,7 @@ function ListingsPageContent() {
       </div>
 
       {/* Right side: bản đồ thật (Leaflet + OpenStreetMap) */}
-      <div className="hidden lg:block flex-1 relative">
+      <div className={`${mobileView === 'map' ? 'block' : 'hidden'} lg:block flex-1 relative min-h-[calc(100dvh-8rem)] lg:min-h-0`}>
         <ListingsMap
           listings={listings}
           center={userLoc}
@@ -499,6 +517,15 @@ function ListingsPageContent() {
                   ? 'Chưa có quyền vị trí — đang dùng TP.HCM'
                   : 'Trung tâm TP.HCM'}
           </p>
+        </div>
+        <div className="lg:hidden absolute left-4 right-4 bottom-4 z-[1000] rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-lg">
+          <button
+            type="button"
+            onClick={() => setMobileView('list')}
+            className="w-full min-h-11 rounded-xl bg-[#236c2a] text-white text-sm font-bold"
+          >
+            Xem {listings.length} káº¿t quáº£
+          </button>
         </div>
       </div>
     </div>

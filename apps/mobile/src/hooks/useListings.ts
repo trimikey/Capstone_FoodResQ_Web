@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import apiClient, { ApiResponse, endpoints } from '../api/client';
+import apiClient, { API_ORIGIN, ApiResponse, endpoints } from '../api/client';
 import type { Coords } from '../services/geolocation';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
-const API_ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, '');
 
 /**
  * Category lấy theo data thật trên backend (enum food_category có thể rộng hơn
@@ -83,7 +80,7 @@ export function normalizeImageUrl(value: string): string {
       const imageUrl = new URL(raw);
       const apiUrl = new URL(API_ORIGIN);
       if (
-        (imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
+        (imageUrl.hostname === '10.0.2.2' || imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
         apiUrl.hostname !== imageUrl.hostname
       ) {
         imageUrl.protocol = apiUrl.protocol;

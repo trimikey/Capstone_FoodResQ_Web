@@ -192,19 +192,32 @@ export class DeliveriesService {
    * đó tiếp tục đứng đầu hàng đợi của mọi đơn kế tiếp và chặn shipper thật.
    *
    * TỪ CHỐI TƯỜNG MINH KHÔNG BỊ TẮT — đó là phản hồi hợp lệ.
+   *
+   * NGOẠI LỆ: shipper vừa hoàn thành đơn trong 60 giây qua không bị tắt — offer
+   * có thể đến trong cửa sổ chuyển tiếp ngắn và không phản ánh "bỏ qua cố tình".
    */
   private async goOfflineAfterLapse(shipperIds: string[]) {
     const ids = [...new Set(shipperIds)];
     if (ids.length === 0) return;
 
+    // Exempt shippers who completed a delivery within the last 60 seconds.
+    const graceCutoff = new Date(Date.now() - 60_000);
+    const recentlyCompleted = await this.prisma.delivery.findMany({
+      where: { shipperId: { in: ids }, status: 'delivered', deliveredAt: { gte: graceCutoff } },
+      select: { shipperId: true },
+    });
+    const exemptIds = new Set(recentlyCompleted.map((d) => d.shipperId).filter(Boolean) as string[]);
+    const idsToProcess = ids.filter((id) => !exemptIds.has(id));
+    if (idsToProcess.length === 0) return;
+
     const affected = await this.prisma.volunteerProfile.updateMany({
-      where: { id: { in: ids }, isAvailable: true },
+      where: { id: { in: idsToProcess }, isAvailable: true },
       data: { isAvailable: false },
     });
     if (affected.count === 0) return;
 
     const shippers = await this.prisma.volunteerProfile.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: idsToProcess } },
       select: { id: true, userId: true },
     });
     for (const s of shippers) {

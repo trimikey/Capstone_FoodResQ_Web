@@ -374,6 +374,14 @@ export class PledgeDonationDto {
   note?: string;
 }
 
+export class ConfirmDonationDto {
+  @ApiPropertyOptional({ description: 'Ghi chú khi xác nhận nhận hàng, ví dụ đủ số lượng hoặc chất lượng thực tế' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
+  note?: string;
+}
+
 /** Charity gửi yêu cầu hợp tác đến provider */
 /**
  * Chi tiết "đơn xin thực phẩm" bếp gửi NCC — lưu nguyên khối vào

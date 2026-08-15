@@ -28,7 +28,6 @@ import {
   AuthCard,
   AuthField,
   AuthHeader,
-  AuthIntro,
   AuthScaffold,
   ProgressDots,
   authStyles,
@@ -324,13 +323,6 @@ export function SignUpRecipientScreen({
 
       <ProgressDots total={2} active={1} label="Bước 2: Hồ sơ nhận thực phẩm" />
 
-      <AuthIntro
-        icon="account-heart-outline"
-        eyebrow="Người nhận"
-        title={recipientType === 'charity' ? 'Thông tin tổ chức' : 'Thông tin cá nhân'}
-        description="FoodResQ dùng thông tin này để xác minh hồ sơ và chuẩn hóa điểm nhận hỗ trợ."
-      />
-
       <FadeInUp delay={80}>
         <AuthCard>
           <AuthField label="Loại hồ sơ">
@@ -380,33 +372,22 @@ export function SignUpRecipientScreen({
       </FadeInUp>
 
       <FadeInUp delay={120}>
-        <View style={styles.quickCard}>
-          <View style={styles.quickHeader}>
-            <MaterialCommunityIcons name="home-map-marker" size={22} color={COLORS.secondary} />
-            <View style={styles.quickCopy}>
-              <Text style={styles.quickTitle}>Số nhà</Text>
-              <Text style={styles.quickDescription}>
-                Nhập số nhà, tên đường hoặc tòa nhà.
-              </Text>
-            </View>
-          </View>
-          <TextInput
-            mode="outlined"
-            placeholder="VD: 12 Nguyễn Huệ"
-            value={quickPaste}
-            onChangeText={setQuickPaste}
-            editable={!isLoading}
-            dense
-            style={[authStyles.input, styles.quickInput]}
-            outlineColor={COLORS.outline}
-            activeOutlineColor={COLORS.secondary}
-            right={<TextInput.Icon icon="auto-fix" onPress={applyQuickPaste} forceTextInputFocus={false} />}
-          />
-        </View>
-      </FadeInUp>
-
-      <FadeInUp delay={160}>
         <AuthCard>
+          <AuthField label="Số nhà">
+            <TextInput
+              mode="outlined"
+              placeholder="VD: 12 Nguyễn Huệ hoặc Toà nhà S1.01"
+              value={quickPaste}
+              onChangeText={setQuickPaste}
+              editable={!isLoading}
+              dense
+              style={authStyles.input}
+              outlineColor={COLORS.outline}
+              activeOutlineColor={COLORS.secondary}
+              left={<TextInput.Icon icon="home-map-marker" color={COLORS.onSurfaceVariant} />}
+              right={<TextInput.Icon icon="auto-fix" onPress={applyQuickPaste} forceTextInputFocus={false} />}
+            />
+          </AuthField>
           <Text style={styles.sectionTitle}>Địa chỉ</Text>
           <Pressable
             onPress={pinCurrentLocation}
@@ -470,7 +451,7 @@ export function SignUpRecipientScreen({
               }}
               editable={!isLoading}
               multiline
-              numberOfLines={3}
+              numberOfLines={2}
               style={[authStyles.input, authStyles.multilineInput]}
               outlineColor={COLORS.outline}
               activeOutlineColor={COLORS.primary}
@@ -683,36 +664,6 @@ const styles = StyleSheet.create({
   },
   typeLabelSelected: {
     color: COLORS.primary,
-  },
-  quickCard: {
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#ffd8d0',
-    backgroundColor: '#fff7f5',
-  },
-  quickHeader: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  quickCopy: {
-    flex: 1,
-  },
-  quickTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: COLORS.onSurface,
-  },
-  quickDescription: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 18,
-    color: COLORS.onSurfaceVariant,
-  },
-  quickInput: {
-    minHeight: 48,
-    backgroundColor: COLORS.surface,
   },
   sectionTitle: {
     fontSize: 18,

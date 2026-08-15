@@ -1,8 +1,4 @@
-import apiClient from '../api/client';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
-/** Origin để dựng URL ảnh tuyệt đối — ảnh serve ở /uploads (ngoài prefix /api/v1). */
-const ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, '');
+import apiClient, { API_ORIGIN } from '../api/client';
 
 export type UploadKind = 'listing' | 'avatar';
 
@@ -25,7 +21,7 @@ export async function uploadImageToBackend(localUri: string, kind: UploadKind): 
 
   const url: string | undefined = res.data?.data?.url ?? res.data?.url;
   if (!url) throw new Error('Tải ảnh thất bại: phản hồi không hợp lệ.');
-  return url.startsWith('http') ? url : `${ORIGIN}${url}`;
+  return url.startsWith('http') ? url : `${API_ORIGIN}${url}`;
 }
 
 /**
@@ -46,5 +42,5 @@ export async function uploadRegisterEvidenceToBackend(localUri: string): Promise
 
   const url: string | undefined = res.data?.data?.url ?? res.data?.url;
   if (!url) throw new Error('Tải ảnh xác minh thất bại: phản hồi không hợp lệ.');
-  return url.startsWith('http') ? url : `${ORIGIN}${url}`;
+  return url.startsWith('http') ? url : `${API_ORIGIN}${url}`;
 }

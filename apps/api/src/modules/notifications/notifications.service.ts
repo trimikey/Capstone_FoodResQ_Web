@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { getApps } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 interface NotifyInput {
   type: string;
@@ -16,19 +18,52 @@ export class NotificationsService {
     private gateway: NotificationsGateway,
   ) {}
 
-  /** Tạo thông báo (lưu DB) + đẩy real-time qua WebSocket. Không throw để không chặn flow chính. */
+  /** Tạo thông báo (lưu DB) + đẩy real-time qua WebSocket + FCM push nếu có token. Không throw để không chặn flow chính. */
   async notify(userId: string, input: NotifyInput) {
     try {
-      const notif = await this.prisma.notification.create({
-        data: {
-          userId,
-          type: input.type,
-          title: input.title,
-          body: input.body,
-          data: (input.data ?? {}) as never,
-        },
-      });
+      const [notif, userRow] = await Promise.all([
+        this.prisma.notification.create({
+          data: {
+            userId,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            data: (input.data ?? {}) as never,
+          },
+        }),
+        this.prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } }),
+      ]);
+
       this.gateway.emitToUser(userId, 'notification:new', notif);
+
+      // FCM push — chỉ gửi khi Firebase đã khởi tạo và user có token
+      const fcmToken = userRow?.fcmToken;
+      if (fcmToken) {
+        const apps = getApps();
+        if (apps.length > 0) {
+          try {
+            await getMessaging(apps[0]).send({
+              token: fcmToken,
+              notification: { title: input.title, body: input.body },
+              data: Object.fromEntries(
+                Object.entries(input.data ?? {}).map(([k, v]) => [k, String(v)]),
+              ),
+              android: { priority: 'high' },
+              apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+            });
+          } catch (e: any) {
+            // Token hết hạn / bị thu hồi → xoá để không thử lại
+            const code: string = e?.errorInfo?.code ?? '';
+            if (
+              code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token'
+            ) {
+              await this.prisma.user.update({ where: { id: userId }, data: { fcmToken: null } }).catch(() => null);
+            }
+          }
+        }
+      }
+
       return notif;
     } catch {
       return null;

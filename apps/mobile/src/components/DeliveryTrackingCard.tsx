@@ -3,10 +3,13 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useDeliveryTracking, type DeliveryStatus } from '@/hooks/useDeliveries';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { AppImage } from '@/components/ui/AppImage';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 interface Props {
   reservationId: string;
+  /** avatarUrl từ ReservationDetail (tracking endpoint không trả avatar). */
+  shipperAvatarUrl?: string | null;
 }
 
 /** Các bước hiển thị theo thứ tự (pending_assignment gộp vào "chờ tài xế" trước bước 1). */
@@ -25,7 +28,7 @@ function formatKm(km: unknown): string | null {
 }
 
 /** Thẻ theo dõi giao hàng tận nơi: timeline trạng thái + thông tin shipper + khoảng cách. */
-export function DeliveryTrackingCard({ reservationId }: Props) {
+export function DeliveryTrackingCard({ reservationId, shipperAvatarUrl }: Props) {
   const { data, isLoading, isError } = useDeliveryTracking(reservationId);
 
   if (isLoading) {
@@ -96,23 +99,36 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
       )}
 
       {data.shipper ? (
-        <View style={styles.shipperRow}>
-          <View style={styles.avatar}>
-            <MaterialCommunityIcons name="account" size={22} color={COLORS.onSurfaceVariant} />
+        <View style={styles.shipperSection}>
+          <View style={styles.shipperRow}>
+            {shipperAvatarUrl ? (
+              <AppImage source={{ uri: shipperAvatarUrl }} style={styles.avatarImg} />
+            ) : (
+              <View style={styles.avatar}>
+                <MaterialCommunityIcons name="account" size={26} color={COLORS.onSurfaceVariant} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shipperName}>{data.shipper.name}</Text>
+              <View style={styles.shipperMeta}>
+                <MaterialCommunityIcons name="check-decagram" size={13} color={COLORS.teal} />
+                <Text style={styles.shipperRole}>Tài xế · Đã xác minh</Text>
+              </View>
+              {data.shipper.phone ? (
+                <Text style={styles.shipperPhone}>{data.shipper.phone}</Text>
+              ) : null}
+            </View>
+            {data.shipper.phone ? (
+              <Pressable
+                onPress={() => Linking.openURL(`tel:${data.shipper!.phone}`)}
+                hitSlop={8}
+                style={styles.callBtn}
+              >
+                <MaterialCommunityIcons name="phone" size={18} color={COLORS.blue} />
+                <Text style={styles.callBtnText}>Gọi</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.shipperName}>{data.shipper.name}</Text>
-            <Text style={styles.muted}>Tài xế giao hàng</Text>
-          </View>
-          {data.shipper.phone ? (
-            <Pressable
-              onPress={() => Linking.openURL(`tel:${data.shipper!.phone}`)}
-              hitSlop={8}
-              style={styles.callBtn}
-            >
-              <MaterialCommunityIcons name="phone" size={20} color={COLORS.blue} />
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
     </View>
@@ -165,8 +181,14 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 14, color: COLORS.onSurface, paddingBottom: 14, fontWeight: '600' },
   stepLabelActive: { fontWeight: '900', color: COLORS.teal },
   stepLabelTodo: { color: COLORS.onSurfaceVariant },
-  shipperRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: COLORS.outline },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  shipperSection: { marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: COLORS.outlineVariant },
+  shipperRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 52, height: 52, borderRadius: 26 },
   shipperName: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
-  callBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.blueContainer },
+  shipperMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  shipperRole: { fontSize: 12, color: COLORS.teal, fontWeight: '700' },
+  shipperPhone: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 4, fontWeight: '600' },
+  callBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: COLORS.blueContainer },
+  callBtnText: { fontSize: 13, fontWeight: '800', color: COLORS.blue },
 });

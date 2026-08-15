@@ -35,6 +35,7 @@ export interface Campaign {
     note?: string | null;
     status: string;
     provider: { businessName: string };
+    receivedAt?: string | null;
   }[];
   supplyProgress?: SupplyProgressItem[];
 }
@@ -512,7 +513,11 @@ export function usePledgeDonation() {
 export function useConfirmDonation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (donationId: string) => (await api.patch(`/campaigns/donations/${donationId}/confirm`)).data.data,
+    mutationFn: async (p: string | { donationId: string; note?: string }) => {
+      const donationId = typeof p === 'string' ? p : p.donationId;
+      const body = typeof p === 'string' ? {} : { note: p.note };
+      return (await api.patch(`/campaigns/donations/${donationId}/confirm`, body)).data.data;
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }

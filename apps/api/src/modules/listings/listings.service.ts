@@ -12,6 +12,27 @@ import { QueryListingDto } from './dto/query-listing.dto';
 
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
+const LOCAL_UPLOAD_HOSTS = new Set(['10.0.2.2', 'localhost', '127.0.0.1']);
+
+function normalizeListingImageUrls(imageUrls: string[] | undefined): string[] {
+  return (imageUrls ?? [])
+    .map((value) => {
+      const raw = value.trim();
+      if (!raw) return '';
+      const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+      if (uploadPath) return uploadPath;
+      if (!/^https?:\/\//i.test(raw)) return raw;
+      try {
+        const url = new URL(raw);
+        return LOCAL_UPLOAD_HOSTS.has(url.hostname) && url.pathname.startsWith('/uploads/')
+          ? `${url.pathname}${url.search}`
+          : raw;
+      } catch {
+        return raw;
+      }
+    })
+    .filter(Boolean);
+}
 
 /** Field được phép sửa khi tin đã đăng (active/fully_reserved) — tránh đổi địa điểm/số lượng khi người nhận đã đặt. */
 const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
@@ -75,6 +96,7 @@ export class ListingsService {
 
   async create(userId: string, dto: CreateListingDto) {
     const providerId = await this.resolveProviderId(userId);
+    const imageUrls = normalizeListingImageUrls(dto.imageUrls);
 
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
       throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
@@ -114,7 +136,7 @@ export class ListingsService {
         ${dto.dailyStartMinute ?? null}, ${dto.dailyEndMinute ?? null},
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
-        ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
+        ${dto.maxPerReservation}, ${JSON.stringify(imageUrls)}::jsonb,
         ${dto.isSurpriseBag ?? false}, 'draft'::listing_status, NOW(), NOW()
       )
       RETURNING id
@@ -468,7 +490,7 @@ export class ListingsService {
     if (dto.storageConditions !== undefined) data.storageConditions = dto.storageConditions ?? null;
     if (dto.allergenNotes !== undefined) data.allergenNotes = dto.allergenNotes ?? null;
     if (dto.maxPerReservation !== undefined) data.maxPerReservation = dto.maxPerReservation;
-    if (dto.imageUrls !== undefined) data.imageUrls = dto.imageUrls as never;
+    if (dto.imageUrls !== undefined) data.imageUrls = normalizeListingImageUrls(dto.imageUrls) as never;
     if (dto.isSurpriseBag !== undefined) data.isSurpriseBag = dto.isSurpriseBag;
 
     await this.prisma.$transaction(async (tx) => {
@@ -537,7 +559,7 @@ export class ListingsService {
         ${original.storageConditions},
         ${original.allergenNotes},
         ${original.maxPerReservation},
-        ${JSON.stringify(original.imageUrls ?? [])}::jsonb,
+        ${JSON.stringify(normalizeListingImageUrls((original.imageUrls as string[]) ?? []))}::jsonb,
         ${original.isSurpriseBag},
         'draft'::listing_status,
         NOW(),

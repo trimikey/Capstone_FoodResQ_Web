@@ -568,9 +568,10 @@ export function useCompleteCampaign() {
 export function useConfirmDonation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ donationId }: { donationId: string; campaignId: string }) => {
+    mutationFn: async ({ donationId, note }: { donationId: string; campaignId: string; note?: string }) => {
       const res = await apiClient.patch<ApiResponse<{ id: string; status: string }>>(
-        endpoints.campaigns.confirmDonation(donationId)
+        endpoints.campaigns.confirmDonation(donationId),
+        note ? { note } : {}
       );
       return res.data.data;
     },

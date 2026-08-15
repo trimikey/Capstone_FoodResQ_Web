@@ -18,18 +18,32 @@ ALTER TABLE reservations
 COMMENT ON COLUMN reservations.bulk_run_stop_id IS
   'Bulk run stop this reservation belongs to. Null for normal individual reservations.';
 
--- 3. FK constraints
-ALTER TABLE bulk_run_stops
-  ADD CONSTRAINT fk_bulk_run_stops_reservation
-  FOREIGN KEY (reservation_id)
-  REFERENCES reservations(id)
-  ON DELETE SET NULL;
+-- 3. FK constraints (idempotent via DO block)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_bulk_run_stops_reservation'
+  ) THEN
+    ALTER TABLE bulk_run_stops
+      ADD CONSTRAINT fk_bulk_run_stops_reservation
+      FOREIGN KEY (reservation_id)
+      REFERENCES reservations(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
 
-ALTER TABLE reservations
-  ADD CONSTRAINT fk_reservations_bulk_run_stop
-  FOREIGN KEY (bulk_run_stop_id)
-  REFERENCES bulk_run_stops(id)
-  ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_reservations_bulk_run_stop'
+  ) THEN
+    ALTER TABLE reservations
+      ADD CONSTRAINT fk_reservations_bulk_run_stop
+      FOREIGN KEY (bulk_run_stop_id)
+      REFERENCES bulk_run_stops(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- 4. Indexes for fast lookups
 CREATE INDEX IF NOT EXISTS idx_reservations_bulk_run_stop
@@ -38,13 +52,13 @@ CREATE INDEX IF NOT EXISTS idx_reservations_bulk_run_stop
 
 -- 5. Create placeholder user + receiver for bulk run (system account)
 -- ID: 00000000-0000-0000-0000-000000000001
--- Uses raw SQL to bypass passwordHash requirement
 DO $$
 BEGIN
-  INSERT INTO users (id, email, full_name, role, created_at, updated_at)
+  INSERT INTO users (id, email, password_hash, full_name, role, created_at, updated_at)
   VALUES (
     '00000000-0000-0000-0000-000000000001',
     'bulk-run@foodresq.internal',
+    '$2b$12$SYSTEM.ACCOUNT.NOT.FOR.LOGIN.PLACEHOLDER.HASH.VALUE',
     'Hệ thống — Giao sỉ (Bulk)',
     'receiver',
     NOW(),

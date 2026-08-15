@@ -1346,7 +1346,16 @@ export class AdminService {
           },
         },
         receiverProfile: { select: { isCharityOrg: true, faceImageUrl: true, idCardImageUrl: true } },
-        providerProfile: { select: { id: true } },
+        providerProfile: {
+          select: {
+            id: true,
+            businessName: true,
+            contactPhone: true,
+            verificationStatus: true,
+            isVerified: true,
+            avgRating: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -1359,6 +1368,11 @@ export class AdminService {
       specializations: volunteerProfile?.specializations ?? [],
       isCharityOrg: receiverProfile?.isCharityOrg ?? false,
       profileId: providerProfile?.id ?? volunteerProfile?.id ?? undefined,
+      businessName: providerProfile?.businessName ?? null,
+      contactPhone: providerProfile?.contactPhone ?? null,
+      providerVerificationStatus: providerProfile?.verificationStatus ?? null,
+      providerIsVerified: providerProfile?.isVerified ?? null,
+      providerAvgRating: providerProfile?.avgRating != null ? Number(providerProfile.avgRating) : null,
       faceImageUrl: volunteerProfile?.faceImageUrl ?? receiverProfile?.faceImageUrl ?? null,
       idCardImageUrl: volunteerProfile?.idCardImageUrl ?? receiverProfile?.idCardImageUrl ?? null,
       vehicleType: volunteerProfile?.vehicleType ?? null,
@@ -1414,17 +1428,26 @@ export class AdminService {
     if (!user) throw new NotFoundException('Không tìm thấy người dùng.');
     if (user.role === 'admin') throw new BadRequestException('Không thể đổi trạng thái tài khoản admin');
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id }, data: { status: dto.status } }),
-      ...(dto.status === 'banned'
-        ? [
-            this.prisma.refreshToken.updateMany({
-              where: { userId: id, isRevoked: false },
-              data: { isRevoked: true, revokedAt: new Date() },
-            }),
-          ]
-        : []),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { status: dto.status } });
+      if (user.role === 'provider') {
+        await tx.providerProfile.updateMany({
+          where: { userId: id },
+          data: {
+            verificationStatus: dto.status === 'active' ? 'approved' : 'rejected',
+            isVerified: dto.status === 'active',
+            verifiedAt: dto.status === 'active' ? new Date() : null,
+            verifiedBy: adminUserId,
+          },
+        });
+      }
+      if (dto.status === 'banned') {
+        await tx.refreshToken.updateMany({
+          where: { userId: id, isRevoked: false },
+          data: { isRevoked: true, revokedAt: new Date() },
+        });
+      }
+    });
     await this.audit(adminUserId, `user_${dto.status}`, 'user', id, {});
     return { message: 'Đã cập nhật trạng thái tài khoản' };
   }

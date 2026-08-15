@@ -249,7 +249,7 @@ export function SignUpVerificationScreen({
         eyebrow="Xác minh"
         title={needsReceiverSelfie ? 'Quét gương mặt' : 'Tải lên tài liệu cần thiết'}
         description={needsReceiverSelfie
-          ? 'Ảnh selfie được gửi kèm hồ sơ để backend nhận diện khuôn mặt trước khi tạo tài khoản.'
+          ? 'Ảnh selfie giúp FoodResQ xác minh khuôn mặt của bạn trước khi tạo tài khoản.'
           : 'Các tài liệu giúp FoodResQ xác minh hồ sơ trước khi mở đầy đủ tính năng cho tài khoản.'}
       />
 
@@ -259,7 +259,7 @@ export function SignUpVerificationScreen({
             <View style={styles.selfieBox}>
               {selfie ? (
                 <View style={styles.selfiePreviewWrap}>
-                  <AppImage source={{ uri: selfie.uri }} style={styles.selfiePreview} contentFit="cover" />
+                  <AppImage source={{ uri: selfie.uri }} style={styles.selfiePreview} contentFit="contain" />
                 </View>
               ) : null}
               <View style={styles.selfieText}>
@@ -273,7 +273,7 @@ export function SignUpVerificationScreen({
                     {selfie ? 'Đã có ảnh selfie' : 'Chụp ảnh khuôn mặt'}
                   </Text>
                   <Text style={styles.selfieSub} numberOfLines={2}>
-                    {selfie ? selfie.name : 'Chụp rõ mặt, đủ sáng, không che mắt/mũi/miệng.'}
+                    {selfie ? 'Ảnh đã sẵn sàng để gửi.' : 'Chụp rõ mặt, đủ sáng, không che mắt/mũi/miệng.'}
                   </Text>
                 </View>
               </View>
@@ -472,7 +472,7 @@ function CharityDocumentWizard({
 
         {uploaded ? (
           <View style={styles.documentPreviewWrap}>
-            <AppImage source={{ uri: uploaded.uri }} style={styles.documentPreview} contentFit="cover" />
+            <AppImage source={{ uri: uploaded.uri }} style={styles.documentPreview} contentFit="contain" />
           </View>
         ) : (
           <View style={styles.documentEmpty}>
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.outline,
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#111',
   },
   selfiePreview: {
     width: '100%',
@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.outline,
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#111',
   },
   documentPreview: {
     width: '100%',

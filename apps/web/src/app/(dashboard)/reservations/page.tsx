@@ -140,9 +140,9 @@ export default function ReservationsPage() {
 
   return (
     <div className="min-h-screen bg-mesh-brand pb-24">
-      <div className="max-w-3xl mx-auto px-6 md:px-12 py-10 space-y-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-brand-gradient flex items-center justify-center elevation-brand shrink-0">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 md:px-12 py-6 md:py-10 space-y-6">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-brand-gradient flex items-center justify-center elevation-brand shrink-0">
             <span className="material-symbols-outlined text-white text-[28px]">receipt_long</span>
           </div>
           <div>
@@ -153,10 +153,10 @@ export default function ReservationsPage() {
 
         {/* Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-fit elevation-1">
+          <div className="grid grid-cols-2 gap-1 bg-white border border-neutral-150 rounded-2xl p-1 w-full sm:w-fit elevation-1">
             <button
               onClick={() => switchTab('active')}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              className={`px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
@@ -164,7 +164,7 @@ export default function ReservationsPage() {
             </button>
             <button
               onClick={() => switchTab('history')}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              className={`px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
@@ -235,20 +235,20 @@ export default function ReservationsPage() {
                 {/* dải màu trạng thái */}
                 <div className={`w-1.5 shrink-0 ${meta.accent}`} />
                 <div className="flex-1 min-w-0">
-                <div className="p-5 flex gap-4 items-center">
-                  <div className="w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
+                <div className="p-4 sm:p-5 flex flex-col min-[390px]:flex-row gap-4 min-[390px]:items-center">
+                  <div className="w-full min-[390px]:w-20 h-36 min-[390px]:h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={mediaUrl(r.listing.imageUrls?.[0] || fallbackImg(r.listing.category))} alt={r.listing.title} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                       <div className="min-w-0">
                         <a href={`/reservations/${r.id}`} className="font-bold text-neutral-900 truncate hover:text-emerald-700 transition-colors">
                           {r.listing.title}
                         </a>
                         <p className="text-xs text-neutral-500 mt-0.5">{r.listing.provider.businessName}</p>
                       </div>
-                      <span className={`badge ${meta.badge} shrink-0`}>
+                      <span className={`badge ${meta.badge} self-start shrink-0`}>
                         <span className="material-symbols-outlined text-[14px]">{meta.icon}</span>{meta.label}
                       </span>
                     </div>
@@ -270,7 +270,7 @@ export default function ReservationsPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="border-t border-neutral-100 px-5 py-3 flex items-center justify-between gap-3">
+                <div className="border-t border-neutral-100 px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <a
                     href={`/reservations/${r.id}`}
                     className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900 transition-colors"
@@ -279,12 +279,12 @@ export default function ReservationsPage() {
                     Xem chi tiết đơn
                   </a>
 
-                  <div className="flex items-center gap-3">
+                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3">
                     {/* confirmed: QR toggle */}
                     {r.status === 'confirmed' && qrValid && (
                       <button
                         onClick={() => setExpandedQR(expandedQR === r.id ? null : r.id)}
-                        className="flex items-center gap-2 text-sky-600 font-bold text-sm hover:text-sky-800 transition-colors"
+                        className="min-h-10 flex items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-sky-600 font-bold text-sm hover:text-sky-800 transition-colors"
                       >
                         <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
                         {expandedQR === r.id ? 'Ẩn QR' : 'Xem QR'}
@@ -295,7 +295,7 @@ export default function ReservationsPage() {
                     {r.status === 'confirmed' && (
                       <button
                         onClick={() => setConfirmCancel(r.id)}
-                        className="flex items-center gap-1.5 text-rose-500 font-bold text-sm hover:text-rose-700 transition-colors"
+                        className="min-h-10 flex items-center justify-center gap-1.5 rounded-xl border border-rose-100 bg-rose-50 px-3 text-rose-500 font-bold text-sm hover:text-rose-700 transition-colors"
                       >
                         <span className="material-symbols-outlined text-[18px]">cancel</span>
                         Hủy đơn
