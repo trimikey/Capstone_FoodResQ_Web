@@ -71,7 +71,8 @@ COPY --from=builder /repo/packages/types/package.json ./packages/types/package.j
 COPY --from=builder /repo/packages/types/dist ./packages/types/dist
 
 # Re-create @foodresq/types symlink pointing to local ./packages/types
-RUN node -e "
+RUN <<'SCRIPT'
+node -e "
   const fs = require('fs'), path = require('path');
   const nm = process.cwd() + '/node_modules/@foodresq';
   if (!fs.existsSync(nm)) fs.mkdirSync(nm, { recursive: true });
@@ -80,6 +81,7 @@ RUN node -e "
     fs.symlinkSync(tgt, nm+'/types');
   }
 "
+SCRIPT
 
 # Workspace layout phải giữ nguyên vì node_modules/@foodresq/types là symlink
 # tương đối trỏ về ../../packages/types
