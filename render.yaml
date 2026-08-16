@@ -2,8 +2,11 @@ services:
   - type: web
     name: foodresq-api
     runtime: docker
-    rootDir: apps/api
-    dockerfilePath: ./Dockerfile
+    # Build context = root monorepo (Dockerfile cần lockfile + packages/*).
+    # KHÔNG set rootDir: apps/api — sẽ làm context co lại còn apps/api và
+    # mọi COPY từ root (pnpm-workspace.yaml, packages/) sẽ "not found".
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
     plan: starter            # Free tier — $7/mo nếu cần always-on, free sleep 15min nếu không traffic
     region: singapore        # Gần VN
     branch: master
