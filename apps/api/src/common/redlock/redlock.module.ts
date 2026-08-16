@@ -9,7 +9,25 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: (config: ConfigService) => {
-        return new Redis(config.getOrThrow<string>('REDIS_URL'));
+        const url = config.getOrThrow<string>('REDIS_URL');
+        const redis = new Redis(url, {
+          maxRetriesPerRequest: null,
+          retryStrategy: (times) => {
+            if (times > 100) return null; // stop after 100 retries
+            return Math.min(times * 200, 2000);
+          },
+          reconnectOnError: (err) => {
+            const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
+            return targetErrors.some((e) => err.message.includes(e));
+          },
+        });
+        redis.on('error', (err) => {
+          console.error('[Redis] Connection error:', err.message);
+        });
+        redis.on('ready', () => {
+          console.log('[Redis] Connected successfully');
+        });
+        return redis;
       },
       inject: [ConfigService],
     },
@@ -21,6 +39,7 @@ import Redis from 'ioredis';
           retryCount: 3,
           retryDelay: 200,
           retryJitter: 100,
+          automaticExtensionThreshold: 500,
         });
       },
       inject: ['REDIS_CLIENT'],

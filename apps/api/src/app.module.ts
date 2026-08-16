@@ -28,10 +28,22 @@ import { BulkRunsModule } from './modules/bulk-runs/bulk-runs.module';
     ScheduleModule.forRoot(),
 
     // BullMQ — connect to Redis via env
+    // connectionRetryHandler: retry vô hạn với exponential backoff khi Redis bị down
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        connection: { url: config.getOrThrow<string>('REDIS_URL') },
+        connection: {
+          url: config.getOrThrow<string>('REDIS_URL'),
+          maxRetriesPerRequest: null,
+          retryStrategy: (times) => {
+            if (times > 100) return null; // stop after 100 retries (~5 min)
+            return Math.min(times * 200, 2000); // max 2s delay
+          },
+          reconnectOnError: (err) => {
+            const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT', 'Connection is closed'];
+            return targetErrors.some((e) => err.message.includes(e));
+          },
+        },
       }),
       inject: [ConfigService],
     }),
