@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: foodresq-api
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    plan: starter            # Free tier — $7/mo nếu cần always-on, free sleep 15min nếu không traffic
+    region: singapore        # Gần VN
+    branch: master
+    autoDeploy: true
+    healthCheckPath: /api/docs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false         # paste tay (có password)
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: REDIS_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://capstone-food-res-q-web-web.vercel.app,http://localhost:3000
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        value: leductri12321@gmail.com
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        value: FoodResQ <trildse180473@fpt.edu.vn>
+      - key: FIREBASE_PROJECT_ID
+        value: foodresq-53ae8
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@foodresq-53ae8.iam.gserviceaccount.com
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
