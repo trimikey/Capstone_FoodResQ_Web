@@ -1,0 +1,17 @@
+﻿Empty PUBLIC methods: 8
+=== class-cron.puml / Campaign & Bulk Run Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-cron.puml / Order Lifecycle Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-delivery.puml / Shipper Offer / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-delivery.puml / Track & Performance / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-kitchen-ops.puml / Shifts & Menu / DishStepsService (1) ===
+  +ensureStepsForMenuItem(campaignId: string, menuItemId: string, scheduledTimes: string[]): Promise<CampaignDishStep[]>
+=== class-listing.puml / Create Listing / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-users.puml / Profile / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-users.puml / Volunteer Availability / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void

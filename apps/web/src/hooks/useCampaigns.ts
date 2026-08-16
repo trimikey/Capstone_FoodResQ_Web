@@ -1239,6 +1239,28 @@ export interface MyPickupOrder extends PickupOrder {
   checkedIn: boolean;
 }
 
+/** Ràng buộc form tạo chiến dịch — lấy từ system_configs để FE không hardcode. */
+export interface CampaignCreateConstraints {
+  /** Chiến dịch ≥ 2 ngày phải tạo trước bấy nhiêu ngày. 0 = không ràng buộc. */
+  multiDayLeadDays: number;
+  /** Ngày bắt đầu sớm nhất cho chiến dịch dài ngày (YYYY-MM-DD, tính sẵn theo giờ VN). */
+  multiDayEarliestStartDate: string;
+  minFillPercent: number;
+  changeLockDays: number;
+}
+
+export function useCampaignCreateConstraints(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'create-constraints'],
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/create-constraints');
+      return data.data as CampaignCreateConstraints;
+    },
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** Shipper: đơn nguyên liệu cần đi lấy, gom từ mọi chiến dịch đang chạy. */
 export function useMyPickupOrders(enabled = true) {
   return useQuery({

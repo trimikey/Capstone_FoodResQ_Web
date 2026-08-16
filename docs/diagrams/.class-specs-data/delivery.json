@@ -1,0 +1,88 @@
+{
+  "class-delivery.puml": {
+    "Deliveries": {
+      "explanation": "Offers go SEQUENTIALLY, one shipper at a time, ride-hailing style: the closest verified, available shipper within 5 km receives a 15-second offer. Acceptance assigns the delivery; rejection immediately moves to the next; letting an offer lapse sets the shipper's is_available = false - because nobody is actually at the device, leaving them available would block the queue for every later order. Status chain: assigned -> heading_to_provider -> qc_completed (with photo) -> in_transit -> delivered. The last step MANDATORILY scans the receiver's QR token as proof the food reached the right person; only then is the reservation completed and trust/dedication points awarded. Shippers push GPS coordinates during the trip; receivers watch the order in real time. NotificationsGateway forwards each location into the dedicated socket room of each side, so the map updates without polling REST. The shipper cancels, or the system marks a delivery failed. Marking failed restores the listing stock and tells the receiver to re-order. NO trust penalty is applied when the cause is 'no shipper accepted in time' - the receiver did nothing wrong.",
+      "classes": {
+        "DeliveriesController": {
+          "description": "Shipper-side offer endpoints.",
+          "methods": {
+            "+getMyOffers(user: User): Promise<Offer[]>": "Returns all live offers addressed to the authenticated shipper.",
+            "+accept(id: string, user: User): Promise<AcceptResult>": "Shipper accepts the offer; assigns the delivery and sets status=assigned.",
+            "+reject(id: string, user: User, dto: RejectOfferDto): Promise<Message>": "Shipper rejects; service moves immediately to the next-nearest shipper.",
+            "+getMyActive(user: User): Promise<ActiveDelivery>": "Returns the shipper's currently active delivery, if any.",
+            "+updateStatus(id: string, user: User, dto: UpdateDeliveryStatusDto, photo: File): Promise<StatusResult>": "Advances the delivery status; optionally stores a QC or completion photo.",
+            "+track(reservationId: string, user: User): Promise<TrackingInfo>": "Receiver-side tracking info for an active reservation.",
+            "+getMyStats(user: User): Promise<ShipperStats>": "Aggregate shipper performance: completed count, on-time rate, average rating.",
+            "+getMyHistory(user: User, page: number, limit: number): Promise<PagedHistory>": "Paginated history of past deliveries.",
+            "+myRatings(user: User, page: number, limit: number): Promise<PagedRatings>": "Paginated list of ratings received.",
+            "+cancel(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>": "Shipper cancels their accepted assignment; the next shipper is offered.",
+            "+fail(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>": "Marks a delivery as failed (e.g. unreachable address); restores stock.",
+            "+receiverCancel(id: string, user: User): Promise<StopResult>": "Receiver-initiated stop; restores stock and frees the shipper."
+          }
+        },
+        "DeliveriesService": {
+          "description": "Sequential offer broadcasting with lapse handling.",
+          "methods": {
+            "+broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>": "Finds the next-nearest single available verified shipper and creates one offer with a 15s expiry.",
+            "+acceptOffer(deliveryId: string, shipperUserId: string): Promise<AcceptResult>": "Asserts no active delivery, marks the offer accepted, sets the delivery to assigned, broadcasts the assignment.",
+            "+rejectOffer(deliveryId: string, shipperUserId: string, reason: string): Promise<Message>": "Marks the offer rejected and immediately offers the next shipper.",
+            "+getMyPendingOffers(shipperUserId: string): Promise<Offer[]>": "Lists non-expired offers addressed to the shipper.",
+            "-offerNextNearestShipper(deliveryId: string, lng: number, lat: number): Promise<void>": "Internal helper used by cancel and fail to keep the queue moving.",
+            "-goOfflineAfterLapse(shipperIds: string[]): Promise<void>": "Sets is_available = false on shippers whose offers have lapsed.",
+            "+getMyActiveDelivery(shipperUserId: string): Promise<ActiveDelivery>": "Returns the in-progress delivery assigned to the shipper.",
+            "+updateStatus(deliveryId: string, shipperUserId: string, dto: UpdateDeliveryStatusDto): Promise<StatusResult>": "Validates transition, stores proof photo if provided, broadcasts to receiver and partner notifications.",
+            "+saveProofPhoto(photo: File): Promise<string>": "Delegates to StorageService.",
+            "-syncCampaignTransport(deliveryId: string, status: string): Promise<void>": "If the delivery is part of a campaign transport, mirrors the status into CampaignTransport.",
+            "+getTrackingForReceiver(reservationId: string, receiverUserId: string): Promise<TrackingInfo>": "Asserts visibility, returns the latest shipper GPS plus the delivery status.",
+            "+getMyStats(shipperUserId: string): Promise<ShipperStats>": "Aggregates the shipper's completion counts and rating distribution.",
+            "+getMyDeliveryHistory(shipperUserId: string, opts: PageOpts): Promise<PagedHistory>": "Lists past deliveries for the shipper.",
+            "+getMyRatings(shipperUserId: string, page: number, limit: number): Promise<PagedRatings>": "Lists ratings received by the shipper.",
+            "-getDeliveryCoords(ids: string[]): Promise<CoordMap>": "Bulk-fetch pickup/drop coordinates for history rendering.",
+            "-getCampaignTransportSummaries(ids: string[]): Promise<SummaryMap>": "Bulk-fetch CampaignTransport summaries for deliveries linked to a campaign.",
+            "+cancelAssignment(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>": "Frees the shipper, then offers the next-nearest candidate.",
+            "+failDelivery(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>": "Marks failed, restores stock, notifies receiver to re-order.",
+            "+cancelDeliverySearchByReceiver(deliveryId: string, userId: string): Promise<StopResult>": "Receiver stops waiting; service cancels and restores stock."
+          }
+        },
+        "NotificationsGateway": {
+          "description": "Socket.IO gateway that authenticates each connection with the JWT and emits events into per-user rooms.",
+          "methods": {
+            "+handleConnection(client: Socket): void": "Verifies the handshake JWT, joins the user:{userId} room, sets up disconnect cleanup.",
+            "+emitToUser(userId: string, event: string, data: unknown): void": "Emits the event into the user:{userId} room only."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "TrustService": {
+          "description": "Trust-score writer: applies a signed delta with a reason, persists a trust_score_history row, and re-evaluates the restricted / banned thresholds (60 / 30).",
+          "methods": {
+            "+applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>": "Adjusts users.trust_score, writes a history row, applies restricted/banned status when thresholds are crossed."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        }
+      }
+    }
+  }
+}

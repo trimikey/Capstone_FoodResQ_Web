@@ -1,0 +1,321 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Users & Volunteers (5)
+' 05. View Profile & Trust Score · 06. Update Profile · 07. Face eKYC ·
+' 08. Volunteer Availability · 09. Live Location Tracking
+'==============================================================
+
+'──────────────────── 05. View Profile & Trust Score ─────────
+@startuml seq-user-profile
+title View Profile Sequence Diagram
+
+actor "User" as User
+participant ":ProfileScreen" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open the profile page
+activate Screen
+Screen -> Ctrl : GET /users/me
+activate Ctrl
+Ctrl -> Svc : getMe(userId)
+activate Svc
+Svc -> Repo : user.findUnique(id) select base profile fields
+Repo -> DB : SELECT users
+DB --> Repo : user | null
+Repo --> Svc : user
+alt User not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Svc : getMeStats(userId, role)
+  alt role = receiver
+    Svc -> Repo : $queryRaw kg rescued / completed / cancelled / providers helped
+    Svc -> Repo : $queryRaw receiver_profiles + ST_X/ST_Y(location)
+  else role = provider
+    Svc -> Repo : $queryRaw listings / completed orders / receivers helped / kg rescued
+    Svc -> Repo : $queryRaw provider_profiles + ST_X/ST_Y(location)
+  else role = volunteer
+    Svc -> Repo : $queryRaw deliveries completed / in progress / campaigns joined
+    Svc -> Repo : volunteerProfile.findUnique include specializations (rank, points)
+  else role = admin
+    Svc -> Svc : stats = { kind: admin }
+  end
+  Repo -> DB : SELECT aggregates + role profile
+  DB --> Repo : rows
+  Repo --> Svc : stats, role profile
+  Svc --> Ctrl : { user, stats, receiver | provider | volunteer }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render profile and impact stats
+end
+deactivate Svc
+deactivate Ctrl
+
+User -> Screen : open trust score history
+Screen -> Ctrl : GET /users/me/trust-history
+activate Ctrl
+Ctrl -> Svc : getTrustHistory(userId, limit = 30)
+activate Svc
+Svc -> Repo : user.findUnique(id) select trustScore, status
+Repo --> Svc : current | null
+alt User not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : trustScoreHistory.findMany(userId) order createdAt desc take 30
+  Repo -> DB : SELECT trust_score_history
+  DB --> Repo : items[]
+  Repo --> Svc : items
+  Svc -> Svc : rescuesNeeded = ceil((60 − score + 1) / 2)
+  Svc --> Ctrl : { score, status, items, recommendation }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render the history and the recovery hint
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 06. Update Profile ─────────────────────
+@startuml seq-user-update-profile
+title Update Profile Sequence Diagram
+
+actor "User" as User
+participant ":ProfileScreen\n(Map)" as Screen
+participant ":UploadsController" as Upload
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : edit name / phone / avatar / address, pin the location
+activate Screen
+opt a new avatar was chosen
+  Screen -> Upload : POST /uploads/image?kind=avatar (multipart)
+  activate Upload
+  Upload -> Storage : saveImage(file, 'avatars')
+  activate Storage
+  Storage --> Upload : "/uploads/avatars/{uuid}.{ext}"
+  deactivate Storage
+  Upload --> Screen : { url }
+  deactivate Upload
+end
+Screen -> Ctrl : PATCH /users/me (UpdateMeDto)
+activate Ctrl
+Ctrl -> Svc : updateMe(userId, dto)
+activate Svc
+Svc -> Repo : user.update(fullName, phone, avatarUrl)
+Repo -> DB : UPDATE users
+alt Phone already in use (P2002)
+  DB --> Repo : unique violation
+  Repo --> Svc : PrismaClientKnownRequestError
+  Svc --> Ctrl : 400 "Phone number is already in use"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else updated
+  DB --> Repo : user
+  Repo --> Svc : user
+  opt address or (lng, lat) provided
+    alt role = provider
+      Svc -> Repo : $executeRaw UPDATE provider_profiles SET address,\nlocation = ST_SetSRID(ST_MakePoint(lng, lat), 4326)
+    else role = receiver
+      Svc -> Repo : $executeRaw UPDATE receiver_profiles SET address,\nlocation = ST_SetSRID(ST_MakePoint(lng, lat), 4326)
+    else other roles
+      Svc -> Svc : no role profile carries an address — skip
+    end
+    Repo -> DB : UPDATE role profile (geography)
+  end
+  Svc --> Ctrl : updated user
+  Ctrl --> Screen : return data (200)
+  Screen --> User : profile saved
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 07. Face eKYC ──────────────────────────
+@startuml seq-user-face-ekyc
+title Face Enrollment (eKYC) Sequence Diagram
+
+actor "Receiver / Volunteer" as User
+participant ":FaceEnrollmentGate\n(Camera)" as Screen
+participant ":UsersController" as Ctrl
+participant ":UsersService" as Svc
+participant ":FaceMatchService" as Face
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : enter the dashboard
+activate Screen
+Screen -> Ctrl : GET /users/me/face-enrollment
+activate Ctrl
+Ctrl -> Svc : getFaceEnrollmentStatus(userId)
+activate Svc
+Svc -> Repo : receiverProfile | volunteerProfile.findUnique(userId)
+Repo -> DB : SELECT profile
+DB --> Repo : profile | null
+Svc --> Ctrl : { enrolled: faceDescriptor != null, faceImageUrl }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+alt enrolled = true
+  Screen --> User : continue into the dashboard
+else enrolled = false
+  Screen --> User : block the app, open the enrollment modal
+
+  User -> Screen : capture a selfie and/or an ID card photo
+  Screen -> Ctrl : POST /users/me/face-enrollment (multipart selfie?, idCard?)
+  activate Ctrl
+  Ctrl -> Ctrl : validate MIME (jpeg/png), size <= 5MB, at least one file
+  alt Wrong format / too large / no file
+    Ctrl --> Screen : 400 BadRequest
+    Screen --> User : show error message
+  else valid
+    Ctrl -> Svc : enrollFace(userId, idCard?, selfie?)
+    activate Svc
+    Svc -> Repo : user.findUnique(id) select role
+    Repo --> Svc : role
+    alt role is not receiver / volunteer
+      Svc --> Ctrl : 400 "This role does not require face enrollment"
+    else eligible
+      Svc -> Face : getFaceDescriptor(selfie) / getFaceDescriptor(idCard)
+      activate Face
+      Face --> Svc : descriptor | null
+      deactivate Face
+      alt No face detected
+        Svc --> Ctrl : 400 "Retake the photo in better light"
+      else face detected
+        opt both photos supplied
+          Svc -> Face : compare(selfieDescriptor, idCardDescriptor)
+          Face --> Svc : { matched, distance }
+          alt not matched
+            Svc --> Ctrl : 400 "Selfie does not match the ID card photo"
+          end
+        end
+        Svc -> Storage : saveImage(selfie, 'faces') · saveImage(idCard, 'id-cards')
+        Storage --> Svc : faceUrl, idCardUrl
+        Svc -> Repo : profile.update(faceDescriptor, faceImageUrl, idCardImageUrl)
+        Repo -> DB : UPDATE receiver_profiles | volunteer_profiles
+        Svc --> Ctrl : { enrolled: true, enrolledWith, matchDistance }
+      end
+    end
+    deactivate Svc
+    Ctrl --> Screen : return data (201) / error
+    Screen --> User : reserving and going available are unlocked
+  end
+  deactivate Ctrl
+end
+deactivate Screen
+@enduml
+
+'──────────────────── 08. Volunteer Availability ─────────────
+@startuml seq-volunteer-availability
+title Shipper Availability Sequence Diagram
+
+actor "Volunteer" as User
+participant ":ShipperHomeScreen\n(GPS)" as Screen
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : open the volunteer home screen
+activate Screen
+Screen -> Ctrl : GET /volunteers/me
+activate Ctrl
+Ctrl -> Svc : getMe(userId)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) include specializations
+Svc -> Repo : $queryRaw ST_X / ST_Y (current_location)
+Repo -> DB : SELECT volunteer_profiles
+DB --> Repo : volunteer | null
+Repo --> Svc : volunteer, coords
+Svc -> Svc : isShipper = has a VERIFIED shipper specialization
+Svc --> Ctrl : { isAvailable, rank, dedicationPoints, isShipper, currentLocation }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the availability toggle
+
+User -> Screen : switch availability on
+Screen -> Screen : read the current GPS position (lng, lat)
+Screen -> Ctrl : PATCH /volunteers/me/availability (isAvailable, lng, lat)
+activate Ctrl
+Ctrl -> Svc : setAvailability(userId, dto)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId)
+Repo --> Svc : volunteer | null
+alt Volunteer profile not found
+  Svc --> Ctrl : 404 NotFound
+else switching on without coordinates
+  Svc --> Ctrl : 400 "Location is required to go available"
+else switching on while faceDescriptor is null
+  Svc --> Ctrl : 400 FACE_NOT_ENROLLED
+else allowed
+  Svc -> Repo : $executeRaw UPDATE current_location = ST_MakePoint(lng, lat),\nis_available, location_updated_at
+  Repo -> DB : UPDATE volunteer_profiles
+  Svc --> Ctrl : { isAvailable, message }
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : now eligible to receive delivery offers (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 09. Live Location Tracking ─────────────
+@startuml seq-volunteer-location
+title Shipper Live Location Sequence Diagram
+
+actor "Volunteer" as User
+participant ":ActiveTaskScreen\n(GPS watcher)" as Screen
+participant ":VolunteersController" as Ctrl
+participant ":VolunteersService" as Svc
+participant ":PrismaService" as Repo
+participant ":NotificationsGateway" as WS
+database "Database (PostGIS)" as DB
+actor "Receiver" as Receiver
+
+User -> Screen : start a delivery, the GPS watcher begins
+activate Screen
+loop every position change while the task is running
+  Screen -> Ctrl : PATCH /volunteers/me/location (lng, lat)
+  activate Ctrl
+  Ctrl -> Svc : updateLocation(userId, lng, lat)
+  activate Svc
+  Svc -> Repo : volunteerProfile.findUnique(userId) select id
+  Repo -> DB : SELECT volunteer_profiles
+  DB --> Repo : volunteer | null
+  Repo --> Svc : volunteer
+  alt Volunteer profile not found
+    Svc --> Ctrl : 404 NotFound
+    Ctrl --> Screen : return error
+    Screen --> User : show error message
+  else found
+    Svc -> Repo : $executeRaw UPDATE current_location = ST_SetSRID(ST_MakePoint(lng, lat), 4326),\nlocation_updated_at = NOW()
+    Repo -> DB : UPDATE volunteer_profiles (geography)
+    Svc -> Repo : delivery.findFirst(shipperId, status in assigned / heading_to_provider /\nqc_completed / in_transit) include reservation.receiver
+    Repo -> DB : SELECT deliveries JOIN reservations JOIN receiver_profiles
+    DB --> Repo : activeDelivery | null
+    Repo --> Svc : activeDelivery
+    alt has an active delivery
+      Svc -> WS : emitToUser(receiverUserId, 'delivery:location', { reservationId, lng, lat })
+      WS --> Receiver : the shipper marker moves on the tracking map
+    else no active delivery
+      Svc -> Svc : store the position only, emit nothing
+    end
+    Svc --> Ctrl : { ok: true }
+    Ctrl --> Screen : return data (200)
+    Screen --> User : the route on screen keeps up with the real position
+  end
+  deactivate Svc
+  deactivate Ctrl
+end
+deactivate Screen
+@enduml

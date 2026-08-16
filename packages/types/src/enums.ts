@@ -219,6 +219,8 @@ export enum TrustScoreReason {
   BULK_RUN_CANCELLED_AFTER_APPROVAL = 'bulk_run_cancelled_after_approval',
   /** TNV điểm danh trễ quá thời gian ân hạn tại chiến dịch bếp ăn. */
   LATE_CHECK_IN = 'late_check_in',
+  /** TNV đã được duyệt nhưng hết ngày trực vẫn không điểm danh. */
+  VOLUNTEER_NO_SHOW = 'volunteer_no_show',
 }
 
 export enum OfferStatus {

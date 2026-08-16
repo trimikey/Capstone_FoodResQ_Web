@@ -35,6 +35,12 @@ describe('DeliveriesService', () => {
   const notifications = { notify: jest.fn() };
   const trust = { applyDelta: jest.fn() };
   const storage = { saveImage: jest.fn() };
+  // Các mốc phạt uy tín đọc từ system_configs — trả mặc định để test không phụ thuộc DB.
+  const systemConfig = {
+    getNumber: jest.fn(async (key: string) =>
+      key === 'DELIVERY_LATE_PICKUP_THRESHOLD_MINUTES' ? 60 : 10,
+    ),
+  };
   let service: DeliveriesService;
 
   beforeEach(() => {
@@ -50,6 +56,7 @@ describe('DeliveriesService', () => {
       gateway as never,
       notifications as never,
       trust as never,
+      systemConfig as never,
     );
   });
 

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
@@ -93,6 +93,8 @@ interface DonationDemandDetails {
 
 @Injectable()
 export class CampaignsService {
+  private readonly logger = new Logger(CampaignsService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
@@ -455,6 +457,8 @@ export class CampaignsService {
     }
     const endDateStr = endDateObj.toISOString().slice(0, 10);
 
+    await this.assertLeadTime(dto.scheduledDate, endDateStr);
+
     const created = await this.prisma.$transaction(async (tx) => {
       // INSERT campaign (raw SQL vì cần ST_SetSRID cho geography)
       const [row] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
@@ -524,6 +528,97 @@ export class CampaignsService {
    * (dùng `endDate` để hỗ trợ campaign nhiều ngày).
    * Chạy định kỳ qua CampaignsCron.
    */
+  /**
+   * Đánh VẮNG các TNV đã được duyệt nhưng hết ngày trực vẫn không điểm danh.
+   *
+   * Trạng thái `absent` có sẵn trong enum nhưng trước đây KHÔNG chỗ nào ghi vào:
+   * người đăng ký rồi không tới cứ nằm mãi ở `assigned`, không mất uy tín, và tổ chức
+   * nhìn danh sách vẫn tưởng đủ người. Điều đó làm hỏng luôn ràng buộc tỉ lệ tuyển
+   * tối thiểu — đủ 50% trên giấy trong khi bếp thực tế thiếu người.
+   *
+   * Mốc chốt là hết ngày trực (23:59 giờ VN) chứ không phải hết giờ ca: TNV tới muộn
+   * vẫn điểm danh được cả ngày (xem `evaluateCheckInWindow`), chốt sớm hơn là đánh
+   * vắng người đang trên đường.
+   */
+  async markAbsentVolunteers(): Promise<number> {
+    // Cuối ngày trực theo giờ VN = 17:00Z cùng ngày (VN = UTC+7).
+    const cutoff = new Date(Date.now() - 7 * 3600_000);
+    const todayVn = cutoff.toISOString().slice(0, 10);
+
+    const stale = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        status: 'assigned',
+        checkInTime: null,
+        workDate: { lt: new Date(`${todayVn}T00:00:00Z`) },
+        campaign: { status: { in: ['in_progress', 'completed'] } },
+      },
+      select: {
+        id: true,
+        role: true,
+        workDate: true,
+        volunteer: { select: { userId: true, user: { select: { fullName: true } } } },
+        campaign: {
+          select: { id: true, title: true, charityReceiver: { select: { userId: true } } },
+        },
+      },
+      take: 500,
+    });
+    if (stale.length === 0) return 0;
+
+    const marked = await this.prisma.campaignVolunteerAssignment.updateMany({
+      where: { id: { in: stale.map((a) => a.id) }, status: 'assigned', checkInTime: null },
+      data: { status: 'absent' },
+    });
+    if (marked.count === 0) return 0;
+
+    const penalty = await this.systemConfig.getNumber('VOLUNTEER_NO_SHOW_PENALTY');
+    // Gom theo chiến dịch: bếp thiếu 4 người thì nhận MỘT thông báo, không phải bốn.
+    const byCampaign = new Map<string, { title: string; charityUserId: string; names: string[] }>();
+
+    for (const a of stale) {
+      if (penalty > 0) {
+        void this.trust.applyDelta(
+          a.volunteer.userId,
+          -penalty,
+          TrustScoreReason.VOLUNTEER_NO_SHOW,
+          'campaign',
+          a.campaign.id,
+        );
+      }
+      void this.notifications.notify(a.volunteer.userId, {
+        type: 'campaign',
+        title: 'Bạn bị đánh vắng',
+        body:
+          `Bạn đã đăng ký ca ${a.workDate ? `ngày ${this.toDateKey(a.workDate)} ` : ''}` +
+          `của chiến dịch "${a.campaign.title}" nhưng không điểm danh.` +
+          (penalty > 0 ? ` Bạn bị trừ ${penalty} điểm uy tín.` : ''),
+        data: { campaignId: a.campaign.id, assignmentId: a.id, status: 'absent' },
+      });
+
+      const entry = byCampaign.get(a.campaign.id) ?? {
+        title: a.campaign.title,
+        charityUserId: a.campaign.charityReceiver.userId,
+        names: [],
+      };
+      entry.names.push(a.volunteer.user.fullName);
+      byCampaign.set(a.campaign.id, entry);
+    }
+
+    for (const [campaignId, c] of byCampaign) {
+      void this.notifications.notify(c.charityUserId, {
+        type: 'campaign',
+        title: `${c.names.length} tình nguyện viên vắng mặt`,
+        body:
+          `Chiến dịch "${c.title}": ${c.names.slice(0, 5).join(', ')}` +
+          (c.names.length > 5 ? ` và ${c.names.length - 5} người khác` : '') +
+          ' đã được duyệt nhưng không điểm danh.',
+        data: { campaignId, absentCount: c.names.length },
+      });
+    }
+
+    return marked.count;
+  }
+
   async expireOverdueCampaigns(): Promise<number> {
     const now = new Date();
     const overdue = await this.prisma.kitchenCampaign.findMany({
@@ -1272,25 +1367,7 @@ export class CampaignsService {
       `;
       // Các đợt phát tổ chức giao cho chính shipper này — đây mới là "việc cần làm"
       // cụ thể, thay vì chỉ một nút đổi trạng thái chung chung.
-      const distributions = await this.prisma.mealDistribution.findMany({
-        where: {
-          campaignId: assignment.campaignId,
-          assigneeIds: { array_contains: volunteer.id },
-        },
-        orderBy: { distributedAt: 'asc' },
-        select: {
-          id: true,
-          roundLabel: true,
-          servingsServed: true,
-          peopleServed: true,
-          note: true,
-          points: true,
-          distributedAt: true,
-          completedAt: true,
-          actualServings: true,
-          actualPeopleServed: true,
-        },
-      });
+      const distributions = await this.myAssignedDistributions(assignment.campaignId, volunteer.id);
 
       const pickupOrders = await this.listPickupOrders([assignment.campaignId], volunteer.id);
 
@@ -1336,6 +1413,14 @@ export class CampaignsService {
     // Chef / Waiter → trả dishes + steps
     const detail = await this.dishSteps.getStepsForCampaign(assignment.campaignId, userId);
 
+    // Phục vụ cũng được điều đi phát suất ăn như shipper — không trả đợt phát thì màn
+    // nhiệm vụ của họ chỉ có bảng 4 khâu nấu ăn, vốn là việc của bếp chứ không phải
+    // việc của phục vụ.
+    const distributions =
+      assignment.role === 'waiter'
+        ? await this.myAssignedDistributions(assignment.campaignId, volunteer.id)
+        : [];
+
     return {
       assignment: {
         id: assignment.id,
@@ -1352,7 +1437,43 @@ export class CampaignsService {
       },
       campaign: assignment.campaign,
       ...detail,
+      ...(assignment.role === 'waiter'
+        ? {
+            distributions: distributions.map((d) => ({
+              id: d.id,
+              roundLabel: d.roundLabel,
+              servingsServed: d.servingsServed,
+              peopleServed: d.peopleServed,
+              note: d.note,
+              distributedAt: d.distributedAt,
+              completedAt: d.completedAt,
+              actualServings: d.actualServings,
+              actualPeopleServed: d.actualPeopleServed,
+              points: Array.isArray(d.points) ? (d.points as unknown[]) : [],
+            })),
+          }
+        : {}),
     };
+  }
+
+  /** Các đợt phát tổ chức phân công cho chính TNV này (shipper hoặc phục vụ). */
+  private myAssignedDistributions(campaignId: string, volunteerId: string) {
+    return this.prisma.mealDistribution.findMany({
+      where: { campaignId, assigneeIds: { array_contains: volunteerId } },
+      orderBy: { distributedAt: 'asc' },
+      select: {
+        id: true,
+        roundLabel: true,
+        servingsServed: true,
+        peopleServed: true,
+        note: true,
+        points: true,
+        distributedAt: true,
+        completedAt: true,
+        actualServings: true,
+        actualPeopleServed: true,
+      },
+    });
   }
 
   /**
@@ -2335,6 +2456,62 @@ export class CampaignsService {
     }
   }
 
+  /**
+   * Các ràng buộc form tạo chiến dịch cần biết để chặn NGAY tại ô nhập.
+   *
+   * Không để FE hardcode: các số này nằm trong `system_configs` cho admin chỉnh, hardcode
+   * lại ở FE thì admin đổi xong giao diện vẫn cho nhập rồi mới báo lỗi từ server.
+   * `/admin/configs` chỉ admin gọi được nên tổ chức cần lối riêng, chỉ lộ đúng phần cần.
+   */
+  async getCreateConstraints() {
+    const [multiDayLeadDays, minFillPercent, changeLockDays] = await Promise.all([
+      this.systemConfig.getNumber('MULTIDAY_CAMPAIGN_LEAD_DAYS'),
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS'),
+    ]);
+    // Ngày sớm nhất cho chiến dịch dài ngày — tính sẵn ở server để FE không phải
+    // cộng ngày theo múi giờ máy người dùng.
+    const earliest = new Date(Date.now() + 7 * 3600_000);
+    earliest.setUTCDate(earliest.getUTCDate() + multiDayLeadDays);
+    return {
+      multiDayLeadDays,
+      multiDayEarliestStartDate: earliest.toISOString().slice(0, 10),
+      minFillPercent,
+      changeLockDays,
+    };
+  }
+
+  /**
+   * Chiến dịch DÀI NGÀY phải được tạo trước một khoảng, chiến dịch trong ngày thì không.
+   *
+   * Lý do phân biệt: bếp một buổi có thể mở gấp khi vừa xin được thực phẩm — chặn lại
+   * là bỏ phí đồ ăn, đúng thứ hệ thống sinh ra để cứu. Còn chiến dịch 3 ngày cần tuyển
+   * đủ TNV cho TỪNG buổi và đặt nguyên liệu theo ngày; mở sát giờ thì ngày đầu có người
+   * còn hai ngày sau bỏ trống.
+   *
+   * So sánh bằng CHUỖI ngày `YYYY-MM-DD` theo giờ VN, không dùng `Date` trừ nhau: mốc
+   * ngày lưu ở UTC 00:00 nên từ 00:00–07:00 giờ VN, `new Date()` vẫn đang ở ngày hôm
+   * trước và mọi phép trừ lệch đúng một ngày.
+   */
+  private async assertLeadTime(startDate: string, endDate: string): Promise<void> {
+    if (endDate <= startDate) return; // gói gọn trong 1 ngày → cho tạo ngay
+
+    const leadDays = await this.systemConfig.getNumber('MULTIDAY_CAMPAIGN_LEAD_DAYS');
+    if (leadDays <= 0) return;
+
+    const earliest = new Date(Date.now() + 7 * 3600_000); // hôm nay theo giờ VN
+    earliest.setUTCDate(earliest.getUTCDate() + leadDays);
+    const earliestStr = earliest.toISOString().slice(0, 10);
+
+    if (startDate < earliestStr) {
+      throw new BadRequestException(
+        `Chiến dịch kéo dài nhiều ngày phải được tạo trước ít nhất ${leadDays} ngày ` +
+          `— sớm nhất có thể bắt đầu là ${earliestStr}. ` +
+          'Nếu cần tổ chức ngay, hãy đặt ngày kết thúc trùng ngày bắt đầu (chiến dịch trong ngày).',
+      );
+    }
+  }
+
   /** Cột `date` lưu ở UTC 00:00 → khoá `YYYY-MM-DD` để so sánh/hiển thị. */
   private toDateKey(d: Date): string {
     return d.toISOString().slice(0, 10);
@@ -2555,24 +2732,39 @@ export class CampaignsService {
       throw new BadRequestException('Cần cả kinh độ và vĩ độ khi điểm danh.');
     }
     if (next === 'checked_in') {
-      // TODO: bỏ comment khi deploy — tạm thời bỏ GPS check để test
-      // if (!hasLng || !hasLat) {
-      //   throw new BadRequestException('Cần vị trí GPS để điểm danh tại bếp.');
-      // }
       lateMinutes = this.evaluateCheckInWindow(a.campaign, a.shift, a.role, a.workDate).lateMinutes;
-      // TODO: bỏ comment khi deploy — tạm thời bỏ GPS check để test
-      // const [kitchen] = await this.prisma.$queryRaw<{ within_radius: boolean }[]>(Prisma.sql`
-      //   SELECT ST_DWithin(
-      //     kitchen_location,
-      //     ST_SetSRID(ST_MakePoint(${location.lng!}, ${location.lat!}), 4326)::geography,
-      //     500
-      //   ) AS within_radius
-      //   FROM kitchen_campaigns
-      //   WHERE id = ${a.campaignId}::uuid
-      // `);
-      // if (!kitchen?.within_radius) {
-      //   throw new BadRequestException('Bạn cần ở trong phạm vi 500 m của bếp để điểm danh.');
-      // }
+
+      // Kiểm tra vị trí: bán kính lấy từ `system_configs` để admin bật/tắt được.
+      // Trước đây khối này bị comment kèm "TODO: bỏ comment khi deploy" — nghĩa là
+      // điểm danh từ nhà vẫn qua, trong khi mọi bằng chứng phía sau (ảnh nguyên liệu,
+      // số kg, đợt phát) đều dựng trên giả định "đã điểm danh = đã có mặt".
+      // Đặt CHECKIN_GPS_RADIUS_M = 0 để tắt hẳn khi chạy demo / máy không có GPS.
+      const radiusM = await this.systemConfig.getNumber('CHECKIN_GPS_RADIUS_M');
+      if (radiusM > 0) {
+        if (!hasLng || !hasLat) {
+          throw new BadRequestException('Cần vị trí GPS để điểm danh tại bếp.');
+        }
+        const [kitchen] = await this.prisma.$queryRaw<{ within_radius: boolean | null }[]>(Prisma.sql`
+          SELECT ST_DWithin(
+            kitchen_location,
+            ST_SetSRID(ST_MakePoint(${location.lng!}, ${location.lat!}), 4326)::geography,
+            ${radiusM}
+          ) AS within_radius
+          FROM kitchen_campaigns
+          WHERE id = ${a.campaignId}::uuid
+        `);
+        // `within_radius` null = bếp chưa có toạ độ. Chặn ở đây là phạt TNV vì lỗi
+        // khai thiếu của tổ chức, nên cho qua và ghi log.
+        if (kitchen?.within_radius === null) {
+          this.logger.warn(
+            `Chiến dịch ${a.campaignId} chưa có toạ độ bếp — bỏ qua kiểm tra GPS khi điểm danh.`,
+          );
+        } else if (!kitchen?.within_radius) {
+          throw new BadRequestException(
+            `Bạn cần ở trong phạm vi ${radiusM} m quanh bếp để điểm danh.`,
+          );
+        }
+      }
     }
 
     const data: Prisma.CampaignVolunteerAssignmentUpdateInput = { status: next as never };
@@ -2849,6 +3041,14 @@ export class CampaignsService {
         throw new BadRequestException('Ngày kết thúc phải >= ngày bắt đầu.');
       }
     }
+
+    // Ràng buộc báo trước cũng phải áp ở đây: tạo chiến dịch 1 ngày cho ngày mai rồi
+    // xin kéo dài thành 3 ngày là lách được đúng luật vừa đặt ở lúc tạo.
+    const effectiveStartStr = (dto.scheduledDate ?? this.toDateKey(campaign.scheduledDate)).slice(0, 10);
+    const effectiveEndStr = (
+      dto.endDate ?? this.toDateKey(campaign.endDate ?? campaign.scheduledDate)
+    ).slice(0, 10);
+    await this.assertLeadTime(effectiveStartStr, effectiveEndStr);
 
     // Slot đề xuất không được nhỏ hơn số đã có người
     if (dto.chefSlotsNeeded !== undefined && dto.chefSlotsNeeded < campaign.chefSlotsFilled) {
@@ -3740,10 +3940,12 @@ export class CampaignsService {
     // hoàn toàn vô nghĩa, có thể trỏ sang TNV của chiến dịch khác.
     const APPROVED = ['assigned', 'checked_in', 'in_progress', 'completed'] as const;
 
-    // ── Nhiều shipper phụ trách đi phát ──────────────────────────────────────
-    // Danh sách này tồn tại để ĐIỀU shipper đi giao, nên mỗi người phải vừa được
-    // duyệt trong chiến dịch VỪA có vai trò shipper. Duyệt một lượt rồi so số lượng:
-    // thiếu người nào là chặn cả yêu cầu, không âm thầm bỏ bớt.
+    // ── Người phụ trách đi phát ──────────────────────────────────────────────
+    // Nhận cả shipper VÀ phục vụ: đợt phát tại chỗ (phát ngay ở bếp / một điểm gần)
+    // là việc của phục vụ, chỉ cho shipper thì phục vụ không có việc nào để làm.
+    // Đầu bếp không nằm trong danh sách — họ phải ở bếp lo mẻ tiếp theo.
+    // Duyệt một lượt rồi so số lượng: thiếu người nào là chặn cả yêu cầu, không
+    // âm thầm bỏ bớt.
     const requestedAssignees = [...new Set(dto.assigneeVolunteerIds ?? [])];
     let assignees: { volunteerId: string; userId: string; fullName: string }[] = [];
     if (requestedAssignees.length > 0) {
@@ -3751,7 +3953,7 @@ export class CampaignsService {
         where: {
           campaignId,
           volunteerId: { in: requestedAssignees },
-          role: 'shipper',
+          role: { in: ['shipper', 'waiter'] },
           status: { in: [...APPROVED] },
         },
         select: {
@@ -3768,7 +3970,7 @@ export class CampaignsService {
       const missing = requestedAssignees.filter((id) => !byVolunteer.has(id));
       if (missing.length > 0) {
         throw new BadRequestException(
-          `${missing.length} người được chọn không phải tình nguyện viên giao hàng đã được duyệt của chiến dịch này.`,
+          `${missing.length} người được chọn không phải TNV giao hàng / phục vụ đã được duyệt của chiến dịch này.`,
         );
       }
       // Giữ đúng thứ tự người dùng chọn — người đầu tiên đứng tên chính.
@@ -3927,18 +4129,19 @@ export class CampaignsService {
       select: { id: true, user: { select: { fullName: true } } },
     });
     const assigneeIds = Array.isArray(dist.assigneeIds) ? (dist.assigneeIds as string[]) : [];
-    const isAssignedShipper = !!volunteer && assigneeIds.includes(volunteer.id);
+    // Phục vụ cũng được điều đi phát, nên xét theo DANH SÁCH PHÂN CÔNG chứ không theo vai trò.
+    const isAssignee = !!volunteer && assigneeIds.includes(volunteer.id);
     const isOwner = dist.campaign.charityReceiver.userId === userId;
-    if (!isAssignedShipper && !isOwner) {
+    if (!isAssignee && !isOwner) {
       throw new ForbiddenException(
-        'Chỉ shipper được phân công đợt này hoặc tổ chức chủ chiến dịch mới xác nhận được.',
+        'Chỉ TNV được phân công đợt này hoặc tổ chức chủ chiến dịch mới xác nhận được.',
       );
     }
 
-    // Shipper phải ĐIỂM DANH trước rồi mới chốt được đợt phát. Không có bước này thì
+    // TNV phải ĐIỂM DANH trước rồi mới chốt được đợt phát. Không có bước này thì
     // một người ở nhà vẫn bấm "đã phát xong" được, và số liệu chiến dịch mất tin cậy.
     // Tổ chức chủ chiến dịch không cần điểm danh — họ chốt hộ khi shipper quên bấm.
-    if (isAssignedShipper && !isOwner) {
+    if (isAssignee && !isOwner) {
       const attended = await this.prisma.campaignVolunteerAssignment.findFirst({
         where: {
           campaignId: dist.campaignId,
@@ -3959,7 +4162,7 @@ export class CampaignsService {
       where: { id: distributionId, completedAt: null },
       data: {
         completedAt: new Date(),
-        completedByVolunteerId: isAssignedShipper ? volunteer!.id : null,
+        completedByVolunteerId: isAssignee ? volunteer!.id : null,
         actualServings,
         actualPeopleServed: actualPeople,
         completionNote: report.note?.trim() || null,
@@ -3973,8 +4176,8 @@ export class CampaignsService {
       return { id: distributionId, completedAt: fresh?.completedAt ?? null, alreadyCompleted: true };
     }
 
-    // Báo tổ chức khi shipper là người xác nhận (tổ chức tự bấm thì khỏi tự báo mình).
-    if (isAssignedShipper) {
+    // Báo tổ chức khi TNV được phân công là người xác nhận (tổ chức tự bấm thì khỏi tự báo mình).
+    if (isAssignee) {
       const leftover = dist.servingsServed - actualServings;
       void this.notifications.notify(dist.campaign.charityReceiver.userId, {
         type: 'campaign',

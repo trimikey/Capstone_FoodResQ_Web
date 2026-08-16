@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   ConflictException,
   UnauthorizedException,
   ServiceUnavailableException,
@@ -52,6 +53,8 @@ function coerceBoolean(value: unknown): boolean {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -801,7 +804,8 @@ export class AuthService {
         }));
       const code = Number(response.slice(0, 3));
       if (!expectedCodes.includes(code)) {
-        throw new Error(`Unexpected SMTP response ${code}`);
+        // Giữ nguyên văn phản hồi của SMTP server — đây là thứ duy nhất nói rõ vì sao mail bị từ chối
+        throw new Error(`Unexpected SMTP response ${code} (mong đợi ${expectedCodes.join('/')}): ${response}`);
       }
       return response;
     };
@@ -863,7 +867,11 @@ export class AuthService {
       socket.write(`${this.buildEmailMessage(options)}\r\n.\r\n`);
       await waitResponse([250]);
       await command('QUIT', [221]);
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Gửi email thất bại (host=${options.host}:${options.port}, from=${options.from}, to=${options.to}): ` +
+          (err instanceof Error ? err.message : String(err)),
+      );
       throw new ServiceUnavailableException('Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.');
     } finally {
       if (waitTimer) clearTimeout(waitTimer);

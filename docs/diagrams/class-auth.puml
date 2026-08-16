@@ -1,0 +1,139 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Auth (1)
+' Register · Login · Token Lifecycle · Password Reset
+'==============================================================
+'
+' Giải thích:
+'   Register: AuthController chỉ validate payload rồi giao hết cho AuthService. Với receiver cá
+'   nhân và volunteer, ảnh selfie phải rút được face descriptor trước — không có descriptor thì
+'   tài khoản không bao giờ được tạo. Dòng user và đúng một role profile được ghi trong cùng một
+'   transaction, sau đó phát cặp token và lưu refresh token đã hash.
+'   Login: ba đường vào nhưng chung một đường ra. Login bằng mật khẩu so bcrypt hash; Google và
+'   Firebase xác thực id token với nhà cung cấp rồi tự tạo tài khoản receiver ở lần đăng nhập đầu
+'   tiên. Mọi nhánh đều kết thúc ở issueTokens — nơi lưu refresh token mới đã hash. Tài khoản bị
+'   khoá bị chặn SAU khi định danh, không phải trước.
+'   Token Lifecycle: refresh thu hồi token vừa gửi lên và lưu token mới trong cùng transaction,
+'   nên một refresh token bị lộ chỉ dùng được đúng một lần. Logout thu hồi toàn bộ token còn
+'   sống của tài khoản — đúng hành vi mà lệnh ban và reset mật khẩu cũng kích hoạt. JwtAuthGuard
+'   bảo vệ route logout thông qua JwtStrategy.
+'   Password Reset: Redis chỉ lưu SHA-256 hash của reset token dưới key có TTL, nên lộ dump Redis
+'   cũng không đặt lại được mật khẩu của ai. Trường hợp email không tồn tại và trường hợp tài
+'   khoản bị khoá đều trả về đúng thông báo thành công — chặn việc dò danh sách người dùng. Reset
+'   thành công thu hồi mọi refresh token và xoá key Redis, khiến token chỉ dùng một lần.
+@startuml class-auth
+title Auth Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Auth" {
+
+  class AuthController {
+    +register(dto: RegisterDto, selfie: File): Promise<AuthResponse>
+    +checkEmail(email: string): Promise<ExistsResult>
+    +checkPhone(phone: string): Promise<ExistsResult>
+    +login(dto: LoginDto, req: Request): Promise<AuthResponse>
+    +firebase(dto: FirebaseLoginDto, req: Request): Promise<AuthResponse>
+    +refresh(refreshToken: string, req: Request): Promise<AuthResponse>
+    +logout(user: User): Promise<void>
+    +forgotPassword(dto: ForgotPasswordDto): Promise<Message>
+    +resetPassword(dto: ResetPasswordDto): Promise<Message>
+  }
+
+  class AuthService {
+    -prisma: PrismaService
+    -jwt: JwtService
+    -faceMatch: FaceMatchService
+    -storage: StorageService
+    -config: ConfigService
+    -redis: Redis
+    +register(dto: RegisterDto, selfie: File): Promise<AuthResponse>
+    +checkEmailExists(email: string): Promise<ExistsResult>
+    +checkPhoneExists(phone: string): Promise<ExistsResult>
+    -issueTokens(user: User): Promise<AuthResponse>
+    +login(dto: LoginDto, deviceInfo: string, ip: string): Promise<AuthResponse>
+    +loginWithFirebase(idToken: string, role: string): Promise<AuthResponse>
+    +refresh(rawToken: string, deviceInfo: string, ip: string): Promise<AuthResponse>
+    +logout(userId: string): Promise<void>
+    +forgotPassword(dto: ForgotPasswordDto): Promise<Message>
+    +resetPassword(dto: ResetPasswordDto): Promise<Message>
+    -hashResetToken(token: string): string
+    -passwordResetKey(tokenHash: string): string
+    -sendPasswordResetEmail(email: string, name: string, token: string): Promise<void>
+  }
+}
+
+class RegisterDto
+class LoginDto
+class FirebaseLoginDto
+class ForgotPasswordDto
+class ResetPasswordDto
+
+class JwtService {
+  +sign(payload: JwtPayload, options: SignOptions): string
+  +verify(token: string, options: VerifyOptions): JwtPayload
+}
+
+class JwtAuthGuard {
+  +canActivate(ctx: ExecutionContext): boolean
+}
+
+class JwtStrategy {
+  +validate(payload: JwtPayload): Promise<User>
+}
+
+class ThrottlerGuard {
+  +canActivate(ctx: ExecutionContext): boolean
+}
+
+class FaceMatchService {
+  +getFaceDescriptor(photo: File): Promise<number[]>
+  +compare(a: number[], b: number[]): MatchResult
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class FirebaseAdminService <<external>> {
+  +verifyIdToken(idToken: string): Promise<DecodedIdToken>
+}
+
+class Redis <<external>> {
+  +setex(key: string, ttl: number, value: string): Promise<void>
+  +get(key: string): Promise<string>
+  +del(key: string): Promise<number>
+}
+
+class MailService {
+  +sendPasswordResetEmail(email: string, name: string, token: string): Promise<void>
+}
+
+class PrismaService {
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+  +receiverProfile: ReceiverProfileDelegate
+}
+
+AuthController "1" --> "1" AuthService
+AuthController ..> RegisterDto
+AuthController ..> LoginDto
+AuthController ..> FirebaseLoginDto
+AuthController ..> ForgotPasswordDto
+AuthController ..> ResetPasswordDto
+AuthController ..> JwtAuthGuard
+AuthController ..> ThrottlerGuard
+
+JwtAuthGuard "1" --> "1" JwtStrategy
+JwtStrategy "1" --> "1" JwtService
+
+AuthService "1" --> "1" JwtService
+AuthService "1" --> "1" FaceMatchService
+AuthService "1" --> "1" StorageService
+AuthService "1" --> "1" Redis
+AuthService "1" --> "1" MailService
+AuthService "1" --> "1" PrismaService
+AuthService ..> FirebaseAdminService
+@enduml

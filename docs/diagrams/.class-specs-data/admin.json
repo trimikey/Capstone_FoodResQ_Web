@@ -1,0 +1,96 @@
+{
+  "class-admin.puml": {
+    "Admin": {
+      "explanation": "Admins open the console and review pending verifications. AdminService aggregates via $queryRaw, then reviewVerification toggles verificationStatus on the provider or volunteer profile and writes an AuditLog in the same transaction, only then notifying the profile owner. Admins create accounts and campaigns directly, lock/unlock users, assign volunteers to campaigns and review change requests. Locking an account revokes every RefreshToken for that user - which is why User is composed with RefreshToken. Every action leaves an AuditLog row attributing the actor. Food catalog CRUD, report moderation and system configuration. A category composes its items, so deleting a category deletes its items as well. SystemConfigService is the single source for runtime-tunable business parameters (daily quota, search radius, QR validity) that other modules read on each call.",
+      "classes": {
+        "AdminController": {
+          "description": "Dashboard endpoints and verification review actions.",
+          "methods": {
+            "+overview(): Promise<OverviewStats>": "Top-level KPIs for the dashboard landing page.",
+            "+stats(): Promise<CountStats>": "Lightweight counts by entity type.",
+            "+frequentCancellers(): Promise<Offender[]>": "Lists users with abnormal cancellation patterns.",
+            "+recentReservations(): Promise<Reservation[]>": "Live tail of recent reservations for the dashboard.",
+            "+verifications(): Promise<PendingVerification[]>": "Lists providers/volunteers pending verification.",
+            "+review(type: string, id: string, user: User, dto: ReviewVerificationDto): Promise<Message>": "Approves or rejects a pending verification.",
+            "+users(role: string, q: string): Promise<User[]>": "Lists users filtered by role and a search string.",
+            "+createUser(dto: AdminCreateUserDto): Promise<User>": "Creates a user on behalf of the platform (with all roles set).",
+            "+setUserStatus(id: string, user: User, dto: SetUserStatusDto): Promise<Message>": "Locks or unlocks a user; locking revokes all refresh tokens.",
+            "+volunteersManage(): Promise<VolunteerRow[]>": "Detailed volunteer list with current assignments and trust scores.",
+            "+createCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>": "Admin creates a campaign on behalf of a charity.",
+            "+setCampaignStatus(id: string, user: User, dto: SetCampaignStatusDto): Promise<StatusResult>": "Admin drives a campaign's status (pause / resume / cancel).",
+            "+assignVolunteer(id: string, dto: AssignVolunteerDto): Promise<CampaignDetail>": "Assigns a volunteer to a shift (optionally overriding slot limits).",
+            "+unassignVolunteer(id: string): Promise<Message>": "Removes an assignment.",
+            "+reviewCampaignChange(id: string, user: User, dto: ReviewCampaignChangeDto): Promise<ReviewResult>": "Approves or rejects a pending campaign change request.",
+            "+foodCatalog(search: string): Promise<CatalogTree>": "Lists the food catalog as a tree of categories and items.",
+            "+createFoodCategory(user: User, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>": "Creates a new food category.",
+            "+updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>": "Renames or reorders a category.",
+            "+deleteFoodCategory(id: string): Promise<DeleteResult>": "Deletes a category and cascades its items.",
+            "+createFoodCatalogItem(user: User, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>": "Adds an item to a category.",
+            "+updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>": "Updates an item.",
+            "+deleteFoodCatalogItem(id: string): Promise<DeleteResult>": "Deletes an item.",
+            "+reports(status: string): Promise<Report[]>": "Lists reports filtered by status.",
+            "+resolveReport(id: string, user: User, dto: ResolveReportDto): Promise<Report>": "Closes or escalates a report.",
+            "+configs(): Promise<ConfigItem[]>": "Lists all system config entries.",
+            "+setConfig(key: string, user: User, dto: SetConfigDto): Promise<ConfigItem>": "Updates a single config entry."
+          }
+        },
+        "AdminService": {
+          "description": "Aggregation + verification write logic.",
+          "methods": {
+            "+getOverview(): Promise<OverviewStats>": "Aggregates counts and trends for the dashboard.",
+            "+getStats(): Promise<CountStats>": "Fast count-only aggregation.",
+            "+listFrequentCancellers(): Promise<Offender[]>": "Groups reservations by user and flags high cancellation rates.",
+            "+listVerifications(): Promise<PendingVerification[]>": "Returns provider/volunteer profiles awaiting review.",
+            "+reviewVerification(type: string, profileId: string, adminUserId: string, dto: ReviewVerificationDto): Promise<Message>": "Updates verification status + audit log in one transaction; notifies the profile owner.",
+            "-audit(actorId: string, action: string, targetType: string, targetId: string): Promise<void>": "Internal helper to insert an AuditLog row.",
+            "+listUsers(role: string, q: string): Promise<User[]>": "Filtered user listing.",
+            "+adminCreateUser(dto: AdminCreateUserDto): Promise<User>": "Bypasses the normal register flow and creates the user with the requested role and verification status.",
+            "+setUserStatus(id: string, adminUserId: string, dto: SetUserStatusDto): Promise<Message>": "Sets status; on lock, deletes all refresh tokens for the user.",
+            "+listVolunteersDetailed(): Promise<VolunteerRow[]>": "Rich volunteer list for the management UI.",
+            "+adminCreateCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>": "Inserts a campaign owned by the specified charity user.",
+            "+setCampaignStatus(id: string, status: string, userId: string): Promise<StatusResult>": "Sets the campaign status with audit.",
+            "+adminAssignVolunteer(campaignId: string, volunteerId: string, role: string, override: boolean): Promise<CampaignDetail>": "Inserts the assignment; with override=true, bypasses slot-fill check.",
+            "+adminUnassignVolunteer(assignmentId: string): Promise<Message>": "Removes the assignment.",
+            "+reviewCampaignChangeRequest(id: string, decision: string, note: string, adminUserId: string): Promise<ReviewResult>": "Applies the requested diff onto the campaign when approved.",
+            "+listFoodCatalog(opts: SearchOpts): Promise<CatalogTree>": "Builds the category/item tree.",
+            "+createFoodCategory(adminUserId: string, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>": "Inserts a category.",
+            "+updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>": "Updates a category.",
+            "+deleteFoodCategory(id: string): Promise<DeleteResult>": "Cascades delete through its items.",
+            "+createFoodCatalogItem(adminUserId: string, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>": "Inserts an item.",
+            "+updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>": "Updates an item.",
+            "+deleteFoodCatalogItem(id: string): Promise<DeleteResult>": "Deletes an item.",
+            "+listReports(status: string): Promise<Report[]>": "Lists reports filtered by status.",
+            "+resolveReport(id: string, adminUserId: string, dto: ResolveReportDto): Promise<Report>": "Closes or escalates a report with audit.",
+            "+getConfigs(): Promise<ConfigItem[]>": "Delegates to SystemConfigService.",
+            "+setConfig(key: string, value: number, userId: string): Promise<ConfigItem>": "Delegates to SystemConfigService with audit."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "SystemConfigService": {
+          "description": "Runtime-tunable business parameters (daily quota, search radius, QR validity, trust thresholds). Other modules call this on every request rather than reading environment variables directly.",
+          "methods": {
+            "+getAll(): Promise<ConfigItem[]>": "Returns the full config table (admin view).",
+            "+getNumber(key: string): Promise<number>": "Reads a numeric config entry by key; throws if missing.",
+            "+set(key: string, value: number, userId: string): Promise<ConfigItem>": "Updates a config entry; writes an audit log."
+          }
+        }
+      }
+    }
+  }
+}

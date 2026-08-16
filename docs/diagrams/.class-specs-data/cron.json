@@ -1,0 +1,103 @@
+{
+  "class-cron.puml": {
+    "Scheduled Jobs": {
+      "explanation": "Four periodic jobs on the order side. Expire no-show: confirmed orders past qr_expires_at become no_show, stock is restored, -20 trust points. Reset daily quota: clears reservations_today. Sweep offers: expires stale offers and re-broadcasts to the next-nearest shipper. Stalled deliveries: deliveries with no status update after DELIVERY_STALL_HOURS are marked failed. Cleanup on the campaign and bulk-run side. Overdue campaigns are expired; finished campaigns auto-complete; the next cooking step auto-opens once the previous step is done and its scheduled time has arrived. Bulk runs that miss the pickup or completion deadline are closed and the leftover is returned to the listing.",
+      "classes": {
+        "ReservationsCron": {
+          "description": "Cron controller for reservation-related jobs.",
+          "methods": {
+            "+handleNoShows(): Promise<void>": "Scheduled handler that delegates to ReservationsService.expireNoShows.",
+            "+handleDailyReset(): Promise<void>": "Scheduled handler that delegates to ReservationsService.resetDailyReservationCounters."
+          }
+        },
+        "DeliveriesCron": {
+          "description": "Cron controller for delivery-related jobs.",
+          "methods": {
+            "+handleStalledDeliveries(): Promise<void>": "Scheduled handler that delegates to DeliveriesService.expireStalledDeliveries.",
+            "+handleOfferSweep(): Promise<void>": "Scheduled handler that delegates to DeliveriesService.sweepOffersAndRebroadcast."
+          }
+        },
+        "ReservationsService": {
+          "description": "Job-side helpers for reservations.",
+          "methods": {
+            "+expireNoShows(): Promise<number>": "Finds confirmed reservations past qr_expires_at, marks them no_show, restores stock, applies -20 trust.",
+            "+resetDailyReservationCounters(): Promise<void>": "Resets reservations_today for every receiver."
+          }
+        },
+        "DeliveriesService": {
+          "description": "Job-side helpers for deliveries.",
+          "methods": {
+            "+expireStalledDeliveries(): Promise<number>": "Finds deliveries that have not been updated for DELIVERY_STALL_HOURS and fails them.",
+            "+sweepOffersAndRebroadcast(): Promise<number>": "Expires stale offers, then re-broadcasts to the next-nearest shipper.",
+            "-failUnassignedTimeouts(): Promise<number>": "Fails deliveries that nobody accepted within ASSIGNMENT_TIMEOUT_MS.",
+            "-offerNextNearestShipper(deliveryId: string, lng: number, lat: number): Promise<void>": "Sequential rebroadcast helper."
+          }
+        },
+        "CronErrorLogger": {
+          "description": "Lightweight helper used by every @Cron handler to log failed jobs without crashing the Nest scheduler.",
+          "methods": {
+            "+logCronError(logger: Logger, handler: string, error: unknown): void": "Writes a structured error entry tagged with the handler name; never throws."
+          }
+        },
+        "TrustService": {
+          "description": "Trust-score writer: applies a signed delta with a reason, persists a trust_score_history row, and re-evaluates the restricted / banned thresholds (60 / 30).",
+          "methods": {
+            "+applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>": "Adjusts users.trust_score, writes a history row, applies restricted/banned status when thresholds are crossed."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "CampaignsCron": {
+          "description": "Cron controller for campaign-related jobs.",
+          "methods": {
+            "+handleExpireOverdue(): Promise<void>": "Delegates to CampaignsService.expireOverdueCampaigns.",
+            "+handleAutoComplete(): Promise<void>": "Delegates to CampaignsService.autoCompleteExpiredCampaigns.",
+            "+handleAutoOpenDishSteps(): Promise<void>": "Delegates to DishStepsService.autoOpenAvailableSteps."
+          }
+        },
+        "BulkRunsCron": {
+          "description": "Cron controller for bulk-run jobs.",
+          "methods": {
+            "+handleStalled(): Promise<void>": "Delegates to BulkRunsService.expireStalled."
+          }
+        },
+        "CampaignsService": {
+          "description": "Job-side helpers for campaigns.",
+          "methods": {
+            "+expireOverdueCampaigns(): Promise<number>": "Marks campaigns past their planned end as expired.",
+            "+autoCompleteExpiredCampaigns(): Promise<number>": "Auto-completes campaigns whose window has ended."
+          }
+        },
+        "DishStepsService": {
+          "description": "Job-side helper to auto-open steps as their time arrives.",
+          "methods": {
+            "+autoOpenAvailableSteps(): Promise<number>": "Computes effective status and transitions eligible steps to open.",
+            "+computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus": "Pure step-unlock predicate."
+          }
+        },
+        "BulkRunsService": {
+          "description": "Job-side helper for stalled bulk runs.",
+          "methods": {
+            "+expireStalled(): Promise<number>": "Closes bulk runs that miss PICKUP_DEADLINE_HOURS or RUN_COMPLETION_HOURS, returning leftover to the listing.",
+            "-restockSql(listingId: string, qty: number): Promise<number>": "Restocks leftover to the listing."
+          }
+        }
+      }
+    }
+  }
+}

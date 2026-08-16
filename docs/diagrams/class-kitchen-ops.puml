@@ -1,0 +1,145 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Kitchen Operations (1)
+' Shifts & Menu · Cooking & Safety · Meal Handoff
+'==============================================================
+'
+' Giải thích:
+'   Shifts & Menu: chủ chiến dịch khai báo các ca trực (mỗi ca một vai trò và số chỗ) và các món
+'   trong thực đơn. Thêm một món sẽ sinh ra các bước nấu qua DishStepsService. Ca trực, món ăn và
+'   bước nấu đều composition bởi cha của nó, nên xoá món là xoá luôn các bước.
+'   Cooking Steps & Safety: tình nguyện viên được phân công hoàn thành từng bước nấu kèm ảnh bằng
+'   chứng, hoặc báo lỗi chất lượng, đồng thời ghi nhật ký an toàn thực phẩm. computeEffectiveStatus
+'   quyết định một bước có mở hay không: bước trước phải xong VÀ đã tới giờ đã hẹn — nên bảng bếp
+'   không thể làm sai thứ tự.
+'   Meal Handoff: receiver cá nhân phát một mã QR ngắn hạn, tình nguyện viên quét tại điểm phát,
+'   MealHandoff ghi nhận suất ăn đó. Ràng buộc unique trên cặp (distribution, receiver) khiến
+'   không thể quét trùng một người trong cùng một đợt. Feedback composition bởi handoff, nên mỗi
+'   suất ăn chỉ mang tối đa một đánh giá.
+@startuml class-kitchen-ops
+title Kitchen Operations Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Kitchen Operations" {
+
+  class KitchenOpsController {
+    +listShifts(id: string): Promise<CampaignShift[]>
+    +createShift(id: string, user: User, dto: CreateShiftDto): Promise<CampaignShift>
+    +listMenuItems(id: string): Promise<CampaignMenuItem[]>
+    +addMenuItem(id: string, user: User, dto: AddMenuItemDto): Promise<CampaignMenuItem>
+    +removeMenuItem(itemId: string, user: User): Promise<DeleteResult>
+    +createSafetyLog(id: string, user: User, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>
+    +listSafetyLogs(id: string): Promise<KitchenSafetyLog[]>
+    +issueHandoffQr(user: User): Promise<HandoffQr>
+    +scanHandoff(id: string, distId: string, user: User, dto: ScanHandoffDto): Promise<MealHandoff>
+    +listMyHandoffs(user: User): Promise<HandoffReceipt[]>
+    +submitBeneficiaryFeedback(handoffId: string, user: User, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>
+    +beneficiaryFeedbackSummary(id: string): Promise<FeedbackSummary>
+  }
+
+  class KitchenOpsService {
+    -prisma: PrismaService
+    -dishSteps: DishStepsService
+    -storage: StorageService
+    -systemConfig: SystemConfigService
+    +listShifts(campaignId: string): Promise<CampaignShift[]>
+    +createShift(campaignId: string, userId: string, dto: CreateShiftDto): Promise<CampaignShift>
+    +listMenuItems(campaignId: string): Promise<CampaignMenuItem[]>
+    +addMenuItem(campaignId: string, userId: string, dto: AddMenuItemDto): Promise<CampaignMenuItem>
+    +removeMenuItem(itemId: string, userId: string): Promise<DeleteResult>
+    -assertCampaignOwner(campaignId: string, userId: string): Promise<KitchenCampaign>
+    +createSafetyLog(campaignId: string, userId: string, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>
+    +listSafetyLogs(campaignId: string): Promise<KitchenSafetyLog[]>
+    -assertAssignedAs(campaignId: string, userId: string, role: string): Promise<VolunteerRef>
+    +issueHandoffQr(userId: string): Promise<HandoffQr>
+    +scanHandoff(campaignId: string, distributionId: string, userId: string, qrToken: string): Promise<MealHandoff>
+    +listMyHandoffs(userId: string): Promise<HandoffReceipt[]>
+    +submitBeneficiaryFeedback(handoffId: string, userId: string, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>
+    +beneficiaryFeedbackSummary(campaignId: string): Promise<FeedbackSummary>
+    -assertIndividualReceiver(userId: string): Promise<ReceiverProfile>
+  }
+
+  class DishStepsController {
+    +listSteps(campaignId: string, user: User): Promise<KitchenBoard>
+    +setStepTimes(campaignId: string, menuItemId: string, user: User, dto: SetMenuItemMealDto): Promise<CampaignDishStep[]>
+    +completeStep(campaignId: string, stepId: string, user: User, proof: File, note: string): Promise<CampaignDishStep>
+    +flagStepFailure(campaignId: string, stepId: string, user: User, reason: string): Promise<CampaignDishStep>
+  }
+
+  class DishStepsService {
+    -prisma: PrismaService
+    -storage: StorageService
+    -notifications: NotificationsService
+    +ensureStepsForMenuItem(campaignId: string, menuItemId: string, scheduledTimes: string[]): Promise<CampaignDishStep[]>
+    +getStepsForCampaign(campaignId: string, currentUserId: string): Promise<KitchenBoard>
+    +setScheduledTimes(campaignId: string, userId: string, menuItemId: string, times: string[]): Promise<CampaignDishStep[]>
+    +completeStep(campaignId: string, userId: string, stepId: string, proof: File, note: string): Promise<CampaignDishStep>
+    +flagStepQualityFail(campaignId: string, userId: string, stepId: string, reason: string): Promise<CampaignDishStep>
+    +computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus
+    -assertAssignedVolunteer(campaignId: string, userId: string): Promise<VolunteerRef>
+  }
+}
+
+class CreateShiftDto
+class AddMenuItemDto
+class SetMenuItemMealDto
+class CreateSafetyLogDto
+class ScanHandoffDto
+class CreateBeneficiaryFeedbackDto
+
+class SystemConfigService {
+  +getAll(): Promise<ConfigItem[]>
+  +getNumber(key: string): Promise<number>
+  +set(key: string, value: number, userId: string): Promise<ConfigItem>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignShift: CampaignShiftDelegate
+  +campaignMenuItem: CampaignMenuItemDelegate
+  +campaignDishStep: CampaignDishStepDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +kitchenSafetyLog: KitchenSafetyLogDelegate
+  +receiverHandoffQr: ReceiverHandoffQrDelegate
+  +mealHandoff: MealHandoffDelegate
+  +beneficiaryFeedback: BeneficiaryFeedbackDelegate
+  +mealDistribution: MealDistributionDelegate
+  +receiverProfile: ReceiverProfileDelegate
+}
+
+KitchenOpsController "1" --> "1" KitchenOpsService
+KitchenOpsController ..> CreateShiftDto
+KitchenOpsController ..> AddMenuItemDto
+KitchenOpsController ..> CreateSafetyLogDto
+KitchenOpsController ..> ScanHandoffDto
+KitchenOpsController ..> CreateBeneficiaryFeedbackDto
+
+KitchenOpsService "1" --> "1" DishStepsService
+KitchenOpsService "1" --> "1" StorageService
+KitchenOpsService "1" --> "1" SystemConfigService
+KitchenOpsService "1" --> "1" PrismaService
+
+DishStepsController "1" --> "1" DishStepsService
+DishStepsController ..> SetMenuItemMealDto
+DishStepsService "1" --> "1" StorageService
+DishStepsService "1" --> "1" NotificationsService
+DishStepsService "1" --> "1" PrismaService
+@enduml

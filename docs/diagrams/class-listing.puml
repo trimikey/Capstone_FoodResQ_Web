@@ -1,0 +1,89 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Listings (1)
+' Search · Create · Manage
+'==============================================================
+'
+' Giải thích:
+'   Search & Browse: tìm kiếm quanh đây chạy ST_DWithin và ST_Distance trên pickup_location, luôn
+'   kèm điều kiện deleted_at IS NULL. Khi client không gửi bán kính thì lấy SEARCH_RADIUS_KM từ cấu
+'   hình hệ thống — đó là lý do ListingsService giữ SystemConfigService.
+'   Create Listing: provider upload ảnh trước, rồi tạo listing với các URL trả về. Chỉ provider
+'   đã xác minh mới được đăng, và pickup_location được dựng từ toạ độ gửi lên bằng ST_MakePoint để
+'   listing có thể tìm thấy được.
+'   Manage Listing: sửa, đăng, huỷ, xoá mềm và nhân bản listing. Listing đã có đơn đang chạy thì
+'   không xoá được; huỷ listing sẽ thông báo cho mọi receiver đang giữ đơn. Xoá là xoá mềm: đóng
+'   dấu deleted_at và mọi truy vấn đều lọc theo nó.
+@startuml class-listing
+title Listing Class Diagram
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Listing" {
+
+  class ListingsController {
+    +findNearby(query: QueryListingDto): Promise<PagedListings>
+    +findOne(id: string): Promise<ListingDetail>
+    +myListings(user: User, page: number, limit: number): Promise<PagedListings>
+    +getStats(user: User): Promise<ProviderStats>
+    +create(user: User, dto: CreateListingDto): Promise<ListingDetail>
+    +update(id: string, user: User, dto: UpdateListingDto): Promise<ListingDetail>
+    +publish(id: string, user: User): Promise<ListingDetail>
+    +cancel(id: string, user: User): Promise<ListingDetail>
+    +remove(id: string, user: User): Promise<DeleteResult>
+    +duplicate(id: string, user: User): Promise<ListingDetail>
+  }
+
+  class ListingsService {
+    -prisma: PrismaService
+    -systemConfig: SystemConfigService
+    +findNearby(query: QueryListingDto): Promise<PagedListings>
+    +findOne(id: string): Promise<ListingDetail>
+    +findByProvider(userId: string, page: number, limit: number): Promise<PagedListings>
+    +getProviderStats(userId: string): Promise<ProviderStats>
+    +create(userId: string, dto: CreateListingDto): Promise<ListingDetail>
+    -resolveProviderId(userId: string): Promise<string>
+    +update(listingId: string, userId: string, dto: UpdateListingDto): Promise<ListingDetail>
+    +publish(listingId: string, userId: string): Promise<ListingDetail>
+    +cancel(listingId: string, userId: string): Promise<ListingDetail>
+    +removeDraft(listingId: string, userId: string): Promise<DeleteResult>
+    +duplicate(listingId: string, userId: string): Promise<ListingDetail>
+  }
+}
+
+class QueryListingDto
+class CreateListingDto
+class UpdateListingDto
+
+class UploadsController {
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+  +uploadRegisterEvidence(file: File): Promise<UrlResponse>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class SystemConfigService {
+  +getAll(): Promise<ConfigItem[]>
+  +getNumber(key: string): Promise<number>
+  +set(key: string, value: number, userId: string): Promise<ConfigItem>
+}
+
+class PrismaService {
+  +foodListing: FoodListingDelegate
+  +reservation: ReservationDelegate
+  +providerProfile: ProviderProfileDelegate
+}
+
+ListingsController "1" --> "1" ListingsService
+ListingsController ..> QueryListingDto
+ListingsController ..> CreateListingDto
+ListingsController ..> UpdateListingDto
+ListingsController ..> UploadsController
+UploadsController "1" --> "1" StorageService
+
+ListingsService "1" --> "1" SystemConfigService
+ListingsService "1" --> "1" PrismaService
+@enduml

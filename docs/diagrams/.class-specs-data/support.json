@@ -1,0 +1,158 @@
+{
+  "class-support.puml": {
+    "Supporting Modules": {
+      "explanation": "Every module writes a notification through notify(), and NotificationsGateway pushes that exact payload into the user:{id} socket room so the badge updates without refresh. The gateway authenticates the socket with JwtService at connection time, so a client cannot snoop another user's room. Users report a listing, order, delivery, or campaign. validateOwnership checks that the reporter is actually involved with the target before saving - which keeps the admin queue clean of strangers' reports. Admins are notified the moment a report is created. Shared recipe library. Only chefs and admins can authorise - enforced through volunteer specialization entries. Ingredients are composed by the recipe. Deletes are soft so recipes referenced by campaign menus still resolve. Aggregated impact metrics: rescued food weight and CO2 avoided. Both are computed via $queryRaw on the provider's completed orders rather than stored as running totals, then snapshotted per-provider so CSR reports can show month-over-month trends. Single entry point for every image in the system. ParseFilePipe composes size and type validators, and StorageService double-checks magic bytes of the buffer because client-declared MIME types cannot be trusted.",
+      "classes": {
+        "NotificationsController": {
+          "description": "Notification listing, badge count and device-token endpoints.",
+          "methods": {
+            "+listMine(user: User): Promise<Notification[]>": "Returns the user's notifications paginated.",
+            "+unreadCount(user: User): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(user: User, dto: SaveDeviceTokenDto): Promise<OkResult>": "Registers an FCM device token for push notifications.",
+            "+markRead(id: string, user: User): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(user: User): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; idempotent via dedupeKey and broadcasts through the gateway.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey), then emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Reads the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "NotificationsGateway": {
+          "description": "Socket.IO gateway; per-connection JWT verify and per-user room emission.",
+          "methods": {
+            "+handleConnection(client: Socket): void": "Verifies the handshake JWT, joins the user:{userId} room, sets up disconnect cleanup.",
+            "+emitToUser(userId: string, event: string, data: unknown): void": "Emits the event into the user:{userId} room only."
+          }
+        },
+        "JwtService": {
+          "description": "Wrapper around the jsonwebtoken library: signing access tokens and verifying incoming tokens on protected routes.",
+          "methods": {
+            "+sign(payload: JwtPayload, options: SignOptions): string": "Signs a JWT with the configured secret and TTL.",
+            "+verify(token: string, options: VerifyOptions): JwtPayload": "Verifies a JWT signature and expiry; throws on invalid or expired tokens."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "ReportsController": {
+          "description": "Report creation and listing endpoints.",
+          "methods": {
+            "+create(user: User, dto: CreateReportDto): Promise<ReportResult>": "Creates a new report.",
+            "+findMine(user: User): Promise<Report[]>": "Lists reports filed by the authenticated user."
+          }
+        },
+        "ReportsService": {
+          "description": "Report persistence with ownership validation.",
+          "methods": {
+            "+create(reporterId: string, dto: CreateReportDto): Promise<ReportResult>": "Validates ownership, persists the report, notifies admins.",
+            "+findMine(reporterId: string): Promise<Report[]>": "Lists the caller's reports.",
+            "-validateOwnership(reporterId: string, targetType: string, targetId: string): Promise<void>": "Asserts the reporter is allowed to file a report against the target."
+          }
+        },
+        "RecipesController": {
+          "description": "Recipe CRUD endpoints.",
+          "methods": {
+            "+list(search: string, page: number, limit: number): Promise<PagedRecipes>": "Public paginated recipe list.",
+            "+mine(user: User, search: string, page: number, limit: number): Promise<PagedRecipes>": "Recipes authored by the caller.",
+            "+findOne(id: string): Promise<RecipeDetail>": "Returns one recipe with ingredients.",
+            "+create(user: User, dto: CreateRecipeDto): Promise<RecipeDetail>": "Creates a recipe with ingredients.",
+            "+uploadImage(image: File): Promise<UrlResponse>": "Uploads a recipe cover image.",
+            "+update(id: string, user: User, dto: UpdateRecipeDto): Promise<RecipeDetail>": "Updates a recipe the caller owns (or admin override).",
+            "+remove(id: string, user: User): Promise<DeleteResult>": "Soft-deletes a recipe."
+          }
+        },
+        "RecipesService": {
+          "description": "Recipe persistence + author checks.",
+          "methods": {
+            "+list(query: RecipeQuery): Promise<PagedRecipes>": "Filtered, paginated list.",
+            "+findOne(id: string): Promise<RecipeDetail>": "Loads one recipe with ingredients.",
+            "+create(userId: string, dto: CreateRecipeDto): Promise<RecipeDetail>": "Asserts the caller can author; inserts recipe + ingredients in one transaction.",
+            "+update(id: string, userId: string, dto: UpdateRecipeDto): Promise<RecipeDetail>": "Updates only owned recipes.",
+            "+remove(id: string, userId: string): Promise<DeleteResult>": "Soft delete; sets deleted_at.",
+            "+saveRecipeImage(photo: File): Promise<string>": "Delegates to StorageService.",
+            "-assertCanAuthor(userId: string): Promise<void>": "Throws if the user is not a verified chef or admin.",
+            "-assertOwnerOrAdmin(recipeId: string, userId: string): Promise<Recipe>": "Loads the recipe or throws if the caller is neither owner nor admin."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "EsgController": {
+          "description": "Read-only ESG endpoints.",
+          "methods": {
+            "+platform(): Promise<PlatformEsg>": "System-wide totals.",
+            "+providerMe(user: User): Promise<ProviderEsg>": "Provider's own totals.",
+            "+providerReport(user: User, months: number): Promise<CsrReport>": "Monthly time-series for the provider."
+          }
+        },
+        "EsgService": {
+          "description": "Aggregation logic via $queryRaw.",
+          "methods": {
+            "+getPlatformEsg(): Promise<PlatformEsg>": "Aggregates totals across all completed reservations.",
+            "+getProviderEsg(userId: string): Promise<ProviderEsg>": "Aggregates the given provider's totals.",
+            "+getProviderReport(userId: string, months: number): Promise<CsrReport>": "Monthly series for the provider's CSR report."
+          }
+        },
+        "UploadsController": {
+          "description": "Upload endpoints.",
+          "methods": {
+            "+uploadImage(kind: string, file: File): Promise<UrlResponse>": "Uploads a generic image and returns its URL.",
+            "+uploadRegisterEvidence(file: File): Promise<UrlResponse>": "Uploads face + ID-card evidence during registration."
+          }
+        },
+        "ParseFilePipe": {
+          "description": "NestJS pipe that composes size + type validators and applies them to every upload endpoint.",
+          "methods": {
+            "+transform(file: File): File": "Runs the file through each attached validator; throws on the first failure."
+          }
+        },
+        "JwtAuthGuard": {
+          "description": "NestJS guard that enforces a valid JWT on every incoming request via JwtStrategy.",
+          "methods": {
+            "+canActivate(ctx: ExecutionContext): boolean": "Returns true if the request carries a valid Bearer token; otherwise throws 401."
+          }
+        },
+        "ThrottlerGuard": {
+          "description": "Rate-limit guard backed by @nestjs/throttler; protects /auth/* and other sensitive routes from brute force.",
+          "methods": {
+            "+canActivate(ctx: ExecutionContext): boolean": "Allows up to N requests per minute per IP / user; throws 429 when the quota is exceeded."
+          }
+        },
+        "MaxFileSizeValidator": {
+          "description": "NestJS PipeValidator; rejects uploads larger than the configured byte limit.",
+          "methods": {
+            "+isValid(file: File): boolean": "Returns true when file.size is within the limit; otherwise false."
+          }
+        },
+        "FileTypeValidator": {
+          "description": "NestJS PipeValidator; rejects uploads whose MIME type is not on the allow-list.",
+          "methods": {
+            "+isValid(file: File): boolean": "Returns true when the MIME type is in the allowed set."
+          }
+        },
+        "FileSystem": {
+          "description": "fs/promises wrapper used by StorageService to mkdir and write buffers.",
+          "methods": {
+            "+mkdir(path: string, options: MkdirOptions): Promise<void>": "Creates a directory (recursive when recursive:true).",
+            "+writeFile(path: string, data: Buffer): Promise<void>": "Writes a Buffer to disk, replacing any existing file."
+          }
+        }
+      }
+    }
+  }
+}

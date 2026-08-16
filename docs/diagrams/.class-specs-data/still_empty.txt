@@ -1,0 +1,152 @@
+﻿Total empty: 103
+=== class-admin.puml / Catalog, Reports & Config / AdminService (2) ===
+  -prisma: PrismaService
+  -systemConfig: SystemConfigService
+=== class-admin.puml / Dashboard & Verification / AdminService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-admin.puml / Users & Campaigns / AdminService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-auth.puml / 01. Register / AuthService (4) ===
+  -prisma: PrismaService
+  -jwt: JwtService
+  -faceMatch: FaceMatchService
+  -storage: StorageService
+=== class-auth.puml / 02. Login / AuthService (3) ===
+  -prisma: PrismaService
+  -jwt: JwtService
+  -config: ConfigService
+=== class-auth.puml / 03. Token Lifecycle / AuthService (2) ===
+  -prisma: PrismaService
+  -jwt: JwtService
+=== class-auth.puml / 04. Password Reset / AuthService (2) ===
+  -prisma: PrismaService
+  -redis: Redis
+=== class-bulk-run.puml / Pickup & Stops / BulkRunsService (3) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -notifications: NotificationsService
+=== class-bulk-run.puml / Request & Review / BulkRunsService (3) ===
+  -prisma: PrismaService
+  -redlock: Redlock
+  -notifications: NotificationsService
+=== class-bulk-run.puml / Serve & Close / BulkRunsService (4) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -trust: TrustService
+  -notifications: NotificationsService
+=== class-campaign-supply.puml / Ingredient & Distribution / CampaignsService (3) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -notifications: NotificationsService
+=== class-campaign-supply.puml / Provider Review / CampaignsService (3) ===
+  -prisma: PrismaService
+  -deliveries: DeliveriesService
+  -notifications: NotificationsService
+=== class-campaign-supply.puml / Supplier Request / CampaignsService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-campaign.puml / Apply & Review / CampaignsService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-campaign.puml / Create & Browse / CampaignsService (3) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -notifications: NotificationsService
+=== class-campaign.puml / Donation & Change Request / CampaignsService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-campaign.puml / Lifecycle & Volunteer Task / CampaignsService (4) ===
+  -prisma: PrismaService
+  -systemConfig: SystemConfigService
+  -storage: StorageService
+  -notifications: NotificationsService
+=== class-cron.puml / Campaign & Bulk Run Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-cron.puml / Order Lifecycle Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-delivery.puml / Delivery Lifecycle / DeliveriesService (4) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -trust: TrustService
+  -notifications: NotificationsService
+=== class-delivery.puml / Shipper Offer / DeliveriesService (2) ===
+  -prisma: PrismaService
+  -gateway: NotificationsGateway
+=== class-delivery.puml / Shipper Offer / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-delivery.puml / Stop Delivery / DeliveriesService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-delivery.puml / Track & Performance / DeliveriesService (1) ===
+  -prisma: PrismaService
+=== class-delivery.puml / Track & Performance / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-kitchen-ops.puml / Cooking Steps & Safety / DishStepsService (3) ===
+  -prisma: PrismaService
+  -storage: StorageService
+  -notifications: NotificationsService
+=== class-kitchen-ops.puml / Cooking Steps & Safety / KitchenOpsService (2) ===
+  -prisma: PrismaService
+  -storage: StorageService
+=== class-kitchen-ops.puml / Meal Handoff / KitchenOpsService (2) ===
+  -prisma: PrismaService
+  -systemConfig: SystemConfigService
+=== class-kitchen-ops.puml / Shifts & Menu / DishStepsService (1) ===
+  +ensureStepsForMenuItem(campaignId: string, menuItemId: string, scheduledTimes: string[]): Promise<CampaignDishStep[]>
+=== class-kitchen-ops.puml / Shifts & Menu / KitchenOpsService (2) ===
+  -prisma: PrismaService
+  -dishSteps: DishStepsService
+=== class-listing.puml / Create Listing / ListingsService (1) ===
+  -prisma: PrismaService
+=== class-listing.puml / Create Listing / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-listing.puml / Manage Listing / ListingsService (1) ===
+  -prisma: PrismaService
+=== class-listing.puml / Search & Browse / ListingsService (2) ===
+  -prisma: PrismaService
+  -systemConfig: SystemConfigService
+=== class-reservation.puml / Cancel & Rate / ReservationsService (3) ===
+  -prisma: PrismaService
+  -trust: TrustService
+  -notifications: NotificationsService
+=== class-reservation.puml / Create Reservation / ReservationsService (4) ===
+  -prisma: PrismaService
+  -systemConfig: SystemConfigService
+  -redlock: Redlock
+  -deliveries: DeliveriesService
+=== class-reservation.puml / Handover / ReservationsService (5) ===
+  -prisma: PrismaService
+  -faceMatch: FaceMatchService
+  -storage: StorageService
+  -trust: TrustService
+  -notifications: NotificationsService
+=== class-reservation.puml / My Orders / ReservationsService (1) ===
+  -prisma: PrismaService
+=== class-support.puml / ESG / EsgService (1) ===
+  -prisma: PrismaService
+=== class-support.puml / Notifications / NotificationsService (2) ===
+  -prisma: PrismaService
+  -gateway: NotificationsGateway
+=== class-support.puml / Recipes / RecipesService (2) ===
+  -prisma: PrismaService
+  -storage: StorageService
+=== class-support.puml / Reports / ReportsService (2) ===
+  -prisma: PrismaService
+  -notifications: NotificationsService
+=== class-support.puml / Uploads / StorageService (1) ===
+  -uploadRoot: string
+=== class-users.puml / Face eKYC / UsersService (3) ===
+  -prisma: PrismaService
+  -faceMatch: FaceMatchService
+  -storage: StorageService
+=== class-users.puml / Profile / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-users.puml / Profile / UsersService (1) ===
+  -prisma: PrismaService
+=== class-users.puml / Volunteer Availability / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-users.puml / Volunteer Availability / VolunteersService (2) ===
+  -prisma: PrismaService
+  -gateway: NotificationsGateway

@@ -1,0 +1,213 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Supporting Modules (1)
+' Notifications · Reports · Recipes · ESG · Uploads
+'==============================================================
+'
+' Giải thích:
+'   Notifications: mọi module đều ghi thông báo qua notify(), và NotificationsGateway đẩy đúng
+'   payload đó vào socket room user:{id} nên badge cập nhật mà không cần refresh. Gateway xác thực
+'   socket bằng JwtService ngay lúc kết nối, nên client không thể nghe lén room của người khác.
+'   Reports: người dùng báo cáo một listing, đơn hàng, chuyến giao hoặc chiến dịch. validateOwnership
+'   kiểm tra người báo cáo có thực sự liên quan tới đối tượng đó trước khi lưu — giữ cho hàng đợi
+'   của admin sạch, không có báo cáo về người lạ. Admin được thông báo ngay khi báo cáo được tạo.
+'   Recipes: thư viện công thức dùng chung. Chỉ đầu bếp và admin được phép soạn, kiểm tra qua các
+'   volunteer specialization entry. Nguyên liệu composition bởi công thức. Xoá là xoá mềm để công
+'   thức đã được thực đơn chiến dịch tham chiếu vẫn đọc được.
+'   ESG: số liệu tác động tổng hợp: khối lượng thực phẩm cứu được và lượng CO2 tránh phát thải.
+'   Cả hai được tính bằng $queryRaw trên các đơn đã completed của provider chứ không lưu sẵn dạng
+'   tổng cộng dồn, rồi chụp snapshot theo provider để báo cáo CSR hiển thị được xu hướng từng tháng.
+'   Uploads: một cửa vào duy nhất cho mọi ảnh trong hệ thống. ParseFilePipe composition các
+'   validator kích thước và kiểu file, còn StorageService kiểm tra lại magic bytes của buffer vì
+'   MIME type do client khai báo không đáng tin.
+@startuml class-support
+title Supporting Modules Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Notifications" {
+
+  class NotificationsController {
+    +listMine(user: User): Promise<Notification[]>
+    +unreadCount(user: User): Promise<CountResult>
+    +saveDeviceToken(user: User, dto: SaveDeviceTokenDto): Promise<OkResult>
+    +markRead(id: string, user: User): Promise<OkResult>
+    +markAllRead(user: User): Promise<OkResult>
+  }
+
+  class NotificationsService {
+    -prisma: PrismaService
+    -gateway: NotificationsGateway
+    +notify(userId: string, input: NotifyInput): Promise<Notification>
+    +notifyAdmins(input: NotifyInput): Promise<number>
+    +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+    +listMine(userId: string): Promise<Notification[]>
+    +unreadCount(userId: string): Promise<CountResult>
+    +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+    +markRead(id: string, userId: string): Promise<OkResult>
+    +markAllRead(userId: string): Promise<OkResult>
+  }
+
+  class NotificationsGateway {
+    +handleConnection(client: Socket): void
+    +emitToUser(userId: string, event: string, data: unknown): void
+  }
+
+  class SaveDeviceTokenDto
+}
+
+package "Reports" {
+
+  class ReportsController {
+    +create(user: User, dto: CreateReportDto): Promise<ReportResult>
+    +findMine(user: User): Promise<Report[]>
+  }
+
+  class ReportsService {
+    -prisma: PrismaService
+    -notifications: NotificationsService
+    +create(reporterId: string, dto: CreateReportDto): Promise<ReportResult>
+    +findMine(reporterId: string): Promise<Report[]>
+    -validateOwnership(reporterId: string, targetType: string, targetId: string): Promise<void>
+  }
+
+  class CreateReportDto
+}
+
+package "Recipes" {
+
+  class RecipesController {
+    +list(search: string, page: number, limit: number): Promise<PagedRecipes>
+    +mine(user: User, search: string, page: number, limit: number): Promise<PagedRecipes>
+    +findOne(id: string): Promise<RecipeDetail>
+    +create(user: User, dto: CreateRecipeDto): Promise<RecipeDetail>
+    +uploadImage(image: File): Promise<UrlResponse>
+    +update(id: string, user: User, dto: UpdateRecipeDto): Promise<RecipeDetail>
+    +remove(id: string, user: User): Promise<DeleteResult>
+  }
+
+  class RecipesService {
+    -prisma: PrismaService
+    -storage: StorageService
+    +list(query: RecipeQuery): Promise<PagedRecipes>
+    +findOne(id: string): Promise<RecipeDetail>
+    +create(userId: string, dto: CreateRecipeDto): Promise<RecipeDetail>
+    +update(id: string, userId: string, dto: UpdateRecipeDto): Promise<RecipeDetail>
+    +remove(id: string, userId: string): Promise<DeleteResult>
+    +saveRecipeImage(photo: File): Promise<string>
+    -assertCanAuthor(userId: string): Promise<void>
+    -assertOwnerOrAdmin(recipeId: string, userId: string): Promise<Recipe>
+  }
+
+  class CreateRecipeDto
+  class UpdateRecipeDto
+  class RecipeIngredientDto
+}
+
+package "ESG" {
+
+  class EsgController {
+    +platform(): Promise<PlatformEsg>
+    +providerMe(user: User): Promise<ProviderEsg>
+    +providerReport(user: User, months: number): Promise<CsrReport>
+  }
+
+  class EsgService {
+    -prisma: PrismaService
+    +getPlatformEsg(): Promise<PlatformEsg>
+    +getProviderEsg(userId: string): Promise<ProviderEsg>
+    +getProviderReport(userId: string, months: number): Promise<CsrReport>
+  }
+}
+
+package "Uploads" {
+
+  class UploadsController {
+    +uploadImage(kind: string, file: File): Promise<UrlResponse>
+    +uploadRegisterEvidence(file: File): Promise<UrlResponse>
+  }
+
+  class StorageService {
+    -uploadRoot: string
+    +saveImage(file: File, subdir: string): Promise<string>
+    +imageExists(url: string): Promise<boolean>
+    -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+  }
+
+  class ParseFilePipe {
+    +transform(file: File): File
+  }
+
+  class JwtAuthGuard {
+    +canActivate(ctx: ExecutionContext): boolean
+  }
+
+  class ThrottlerGuard {
+    +canActivate(ctx: ExecutionContext): boolean
+  }
+}
+
+class JwtService {
+  +sign(payload: JwtPayload, options: SignOptions): string
+  +verify(token: string, options: VerifyOptions): JwtPayload
+}
+
+class MaxFileSizeValidator {
+  +isValid(file: File): boolean
+}
+
+class FileTypeValidator {
+  +isValid(file: File): boolean
+}
+
+class FileSystem {
+  +mkdir(path: string, options: MkdirOptions): Promise<void>
+  +writeFile(path: string, data: Buffer): Promise<void>
+}
+
+class PrismaService {
+  +notification: NotificationDelegate
+  +user: UserDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+  +report: ReportDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +reservation: ReservationDelegate
+  +foodListing: FoodListingDelegate
+  +delivery: DeliveryDelegate
+  +recipe: RecipeDelegate
+  +recipeIngredient: RecipeIngredientDelegate
+  +volunteerSpecializationEntry: SpecializationDelegate
+  +providerProfile: ProviderProfileDelegate
+  +esgSnapshot: EsgSnapshotDelegate
+}
+
+NotificationsController "1" --> "1" NotificationsService
+NotificationsController ..> SaveDeviceTokenDto
+NotificationsService "1" --> "1" NotificationsGateway
+NotificationsService "1" --> "1" PrismaService
+NotificationsGateway "1" --> "1" JwtService
+
+ReportsController "1" --> "1" ReportsService
+ReportsController ..> CreateReportDto
+ReportsService "1" --> "1" NotificationsService
+ReportsService "1" --> "1" PrismaService
+
+RecipesController "1" --> "1" RecipesService
+RecipesController ..> CreateRecipeDto
+RecipesController ..> UpdateRecipeDto
+CreateRecipeDto "1" *-- "0..*" RecipeIngredientDto
+RecipesService "1" --> "1" StorageService
+RecipesService "1" --> "1" PrismaService
+
+EsgController "1" --> "1" EsgService
+EsgService "1" --> "1" PrismaService
+
+UploadsController "1" --> "1" StorageService
+UploadsController ..> ParseFilePipe
+UploadsController ..> JwtAuthGuard
+UploadsController ..> ThrottlerGuard
+
+ParseFilePipe "1" *-- "0..*" MaxFileSizeValidator
+ParseFilePipe "1" *-- "0..*" FileTypeValidator
+StorageService ..> FileSystem
+@enduml

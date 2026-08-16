@@ -17,7 +17,7 @@ describe('CampaignsService', () => {
     kitchenCampaign: { findUnique: jest.fn() },
     // `count` được service gọi khi kiểm tra ca làm — thiếu mock thì 3 test apply() đỏ
     campaignShift: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-    campaignVolunteerAssignment: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn() },
+    campaignVolunteerAssignment: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     mealDistribution: { aggregate: jest.fn(), create: jest.fn() },
     campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
@@ -41,7 +41,7 @@ describe('CampaignsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: {} },
+        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => (k === 'CHECKIN_GPS_RADIUS_M' ? 500 : 0)) } },
         { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
         { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },
@@ -292,9 +292,8 @@ describe('CampaignsService', () => {
     });
   });
 
-  // SKIP: ràng buộc GPS trong `advanceTask` đang bị comment lại (xem TODO 'bỏ comment
-  // khi deploy' trong campaigns.service.ts). Bật lại khối đó thì bỏ .skip là test xanh.
-  it.skip('requires GPS coordinates to move an assignment to checked in', async () => {
+  // Bán kính GPS đọc từ `CHECKIN_GPS_RADIUS_M`; mock trả 500 nên khối kiểm tra chạy.
+  it('requires GPS coordinates to move an assignment to checked in', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({
       id: 'volunteer-1',
       dedicationPoints: 0,
@@ -313,8 +312,7 @@ describe('CampaignsService', () => {
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
-  // SKIP: cùng lý do — khối kiểm tra bán kính 500 m đang bị comment trong service.
-  it.skip('rejects GPS check-in outside the kitchen radius', async () => {
+  it('rejects GPS check-in outside the kitchen radius', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({
       id: 'volunteer-1',
       dedicationPoints: 0,
@@ -332,6 +330,76 @@ describe('CampaignsService', () => {
 
     await expect(service.advanceTask('assignment-1', 'user-1', { lng: 106.7, lat: 10.8 }))
       .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('assertLeadTime — báo trước cho chiến dịch dài ngày', () => {
+    afterEach(() => jest.useRealTimers());
+
+    /** Gọi thẳng helper private; mock config trả `leadDays`. */
+    const check = (start: string, end: string, leadDays = 3) => {
+      jest.useFakeTimers();
+      // 2099-01-01T03:00Z = 10:00 giờ VN cùng ngày.
+      jest.setSystemTime(new Date('2099-01-01T03:00:00.000Z'));
+      const svc = service as unknown as {
+        systemConfig: { getNumber: jest.Mock };
+        assertLeadTime: (s: string, e: string) => Promise<void>;
+      };
+      svc.systemConfig.getNumber = jest.fn().mockResolvedValue(leadDays);
+      return svc.assertLeadTime(start, end);
+    };
+
+    it('cho tạo chiến dịch TRONG NGÀY ngay hôm nay', async () => {
+      await expect(check('2099-01-01', '2099-01-01')).resolves.toBeUndefined();
+    });
+
+    it('chặn chiến dịch NHIỀU NGÀY bắt đầu quá sát', async () => {
+      await expect(check('2099-01-02', '2099-01-04')).rejects.toThrow('ít nhất 3 ngày');
+    });
+
+    it('cho chiến dịch nhiều ngày khi đã đủ số ngày báo trước', async () => {
+      await expect(check('2099-01-04', '2099-01-06')).resolves.toBeUndefined();
+    });
+
+    it('bỏ ràng buộc khi admin đặt 0 ngày', async () => {
+      await expect(check('2099-01-01', '2099-01-05', 0)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('markAbsentVolunteers', () => {
+    const staleAssignment = {
+      id: 'a-1',
+      role: AssignmentRole.CHEF,
+      workDate: new Date('2099-01-01T00:00:00.000Z'),
+      volunteer: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+      campaign: { id: 'campaign-1', title: 'Bếp ăn thử', charityReceiver: { userId: 'charity-1' } },
+    };
+
+    it('đánh vắng và trừ uy tín TNV đã duyệt mà không điểm danh', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([staleAssignment]);
+      prisma.campaignVolunteerAssignment.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(1);
+
+      expect(prisma.campaignVolunteerAssignment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'absent' } }),
+      );
+    });
+
+    it('không làm gì khi không còn ai bỏ ca', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([]);
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(0);
+      expect(prisma.campaignVolunteerAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    // updateMany kèm điều kiện status/checkInTime: người vừa kịp điểm danh giữa lúc
+    // cron chạy sẽ không khớp, và khi đó không được phạt ai.
+    it('bỏ qua khi bản ghi đã đổi trạng thái giữa chừng', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([staleAssignment]);
+      prisma.campaignVolunteerAssignment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(0);
+    });
   });
 
   describe('check-in work window', () => {
@@ -488,7 +556,7 @@ describe('CampaignsService.createDistribution', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn(), notifyAdmins: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: {} },
+        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => (k === 'CHECKIN_GPS_RADIUS_M' ? 500 : 0)) } },
         { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
         { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },

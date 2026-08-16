@@ -900,7 +900,7 @@
     border-top: 1px solid var(--cm-rule);
   }
 
-  /* === Popup overlay (modal nổi giữa màn hình) === */
+/* === Popup overlay (modal nổi giữa màn hình) === */
   .cm-create-overlay {
     position: fixed;
     inset: 0;
@@ -908,9 +908,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 16px;
-    overflow: hidden; /* overlay không scroll — chỉ body bên trong scroll */
+    justify-content: flex-start;
+    padding: 56px 16px 16px;
+    overflow: hidden;
   }
 
   /* === Create campaign — dialog giới hạn trong viewport === */
@@ -941,28 +941,29 @@
 
   .cm-create-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 20px;
-    padding: 14px 18px;
-    margin-bottom: 10px;
+padding: 14px 24px;
+    margin-bottom: 12px;
     background: linear-gradient(135deg, #1e4d21 0%, #2a662e 50%, #1b1c1c 100%);
     color: white;
     border-radius: 16px;
     box-shadow: 0 12px 32px rgba(42, 102, 46, 0.18);
     flex-shrink: 0;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
   .cm-create-header-title {
     font-family: var(--font-display, inherit);
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 800;
-    margin: 6px 0 4px;
+    margin: 4px 0 2px;
     line-height: 1.15;
     color: white;
   }
   .cm-create-header-sub {
-    font-size: 13px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.78);
     max-width: 560px;
   }
@@ -991,6 +992,15 @@
     border: 1px solid var(--cm-rule);
     box-shadow: 0 8px 24px rgba(16, 24, 16, 0.06);
     overflow: hidden;
+    /* Flex dọc để stepper/footer có thể sticky, body scroll riêng.
+       `flex: 1 1 auto` BẮT BUỘC để card giãn ra ăn hết phần còn lại của page —
+       nếu chỉ `display: flex` + `min-height: 0` mà thiếu flex-grow thì card chỉ
+       cao bằng tổng nội dung (banner+stepper+body+footer), và body flex-1 không
+       nhận được kích thước dư → scrollbar bị bé tí. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .cm-create-card--wizard {
     flex: 1 1 auto;
@@ -1034,239 +1044,17 @@
     line-height: 1.4;
   }
 
-  .cm-wizard-steps {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    padding: 14px 24px;
-    border-bottom: 1px solid var(--cm-rule);
-    background: #fbf9f8;
-  }
-  .cm-wizard-step {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 10px;
-    border-radius: 10px;
-    color: rgba(16, 24, 16, 0.55);
-    font-size: 12px;
-    font-weight: 800;
-    text-align: left;
-    transition: background 140ms ease, color 140ms ease;
-  }
-  .cm-wizard-step:hover {
-    background: rgba(42, 102, 46, 0.08);
-    color: #2a662e;
-  }
-  .cm-wizard-step--active {
-    background: #e6efe6;
-    color: #1e4d21;
-  }
-  .cm-wizard-step--done {
-    color: #2a662e;
-  }
-  .cm-wizard-step-number {
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    background: white;
-    border: 1px solid rgba(16, 24, 16, 0.1);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    font-size: 11px;
-  }
-  .cm-wizard-step--active .cm-wizard-step-number,
-  .cm-wizard-step--done .cm-wizard-step-number {
-    background: #2a662e;
-    border-color: #2a662e;
-    color: white;
-  }
-  .cm-wizard-step-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cm-wizard-step-mobile {
-    display: none;
-  }
-  .cm-wizard-body {
-    flex: 1 1 auto;
-  }
-  .cm-wizard-pane {
-    max-width: 920px;
-    margin: 0 auto;
-  }
-  .cm-wizard-pane--split {
-    max-width: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
-    gap: 28px;
-    align-items: start;
-  }
-  .cm-wizard-main {
-    min-width: 0;
-  }
-  .cm-wizard-preview,
-  .cm-review-card {
-    border: 1px solid var(--cm-rule);
-    border-radius: 16px;
-    background: #fbf9f8;
-    overflow: hidden;
-    position: sticky;
-    top: 0;
-  }
-  .cm-preview-cover {
-    height: 170px;
-    background: #e6efe6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #2a662e;
-  }
-  .cm-preview-cover img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .cm-preview-cover .material-symbols-outlined {
-    font-size: 42px;
-  }
-  .cm-preview-content,
-  .cm-review-card {
-    padding: 16px;
-  }
-  .cm-preview-badge {
-    display: inline-flex;
-    align-items: center;
-    width: fit-content;
-    border-radius: 999px;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    color: #9a3412;
-    padding: 4px 9px;
-    font-size: 11px;
-    font-weight: 800;
-  }
-  .cm-preview-content h3,
-  .cm-review-card h3 {
-    margin-top: 12px;
-    color: var(--cm-ink-900);
-    font-size: 18px;
-    font-weight: 850;
-    line-height: 1.25;
-  }
-  .cm-preview-content p {
-    margin-top: 8px;
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--cm-ink-700);
-  }
-  .cm-input--large {
-    min-height: 48px;
-    font-size: 15px;
-    font-weight: 700;
-  }
-  .cm-time-grid {
-    display: grid;
-    grid-template-columns: minmax(160px, 1.4fr) minmax(120px, 1fr) minmax(120px, 1fr);
-    gap: 10px;
-  }
-  .cm-modal-map--wizard {
-    height: 300px;
-    margin-top: 6px;
-  }
-  .cm-accordion-head {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    border: 1px solid rgba(16, 24, 16, 0.1);
-    background: #fbf9f8;
-    border-radius: 12px;
-    padding: 12px 14px;
-    color: var(--cm-ink-900);
-    font-size: 13px;
-    font-weight: 850;
-  }
-  .cm-accordion-head > span:first-child {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .cm-accordion-head .material-symbols-outlined {
-    color: #2a662e;
-    font-size: 18px;
-  }
-  .cm-accordion-panel {
-    padding: 4px 0 0;
-  }
-  .cm-template-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .cm-template-btn {
-    border: 1px solid rgba(42, 102, 46, 0.22);
-    background: #f4f8f4;
-    color: #1e4d21;
-    border-radius: 12px;
-    padding: 12px;
-    min-height: 46px;
-    font-size: 13px;
-    font-weight: 850;
-    text-align: center;
-    transition: background 140ms ease, border-color 140ms ease;
-  }
-  .cm-template-btn:hover {
-    background: #e6efe6;
-    border-color: #2a662e;
-  }
-  .cm-review-list {
-    margin-top: 14px;
-    display: grid;
-    gap: 12px;
-  }
-  .cm-review-list div {
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(16, 24, 16, 0.08);
-  }
-  .cm-review-list div:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
-  }
-  .cm-review-list dt {
-    color: rgba(16, 24, 16, 0.5);
-    font-size: 11px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-  .cm-review-list dd {
-    margin-top: 4px;
-    color: var(--cm-ink-900);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.45;
-  }
+/* `.cm-wizard-*` (HEAD) là dead code — JSX đã chuyển sang dùng `.cm-stepper`
+   (xem file CreateCampaignModal.tsx). Block này cũng kéo theo stub
+   `.cm-modal-body { padding: 28px 36px 12px }` gây mất scroll trên production
+   (rule sau thắng rule trước). Xoá toàn bộ block HEAD — chỉ giữ comment
+   làm anchor. */
 
-  /* Body không còn giới hạn height + overflow riêng — page scroll tự nhiên. */
-  .cm-modal-body {
-    padding: 28px 36px 12px;
-  }
-
-  /* Footer luôn ở dưới card, không sticky. */
-  .cm-modal-footer {
-    display: flex;
-    gap: 12px;
-    padding: 16px 36px 20px;
-    border-top: 1px solid var(--cm-rule);
-    background: var(--cm-paper);
-  }
+  /* `.cm-modal-body` được định nghĩa CHI TIẾT ở dưới với `overflow-y: auto` +
+   `flex: 1 1 auto` + `min-height: 0`. Stub cũ (HEAD) từng override rule đó
+   và làm body mất scroll trên production build (rule sau thắng rule trước
+   trong CSS cascade). Giữ comment rỗng làm anchor duy nhất. Stub
+   `.cm-modal-footer` HEAD cũng bị override bởi rule sticky ở dưới, xoá luôn. */
 
   @media (max-width: 900px) {
     .cm-create-overlay { padding: 64px 0 0; }
@@ -1462,15 +1250,18 @@
     }
   }
 
-  /* Thanh bước */
+  /* Thanh bước — sticky trên cùng form, không che input. */
   .cm-stepper {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 14px 36px;
+    padding: 10px 36px;
     border-bottom: 1px solid var(--cm-rule);
     background: var(--cm-paper);
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   .cm-stepper-item {
     display: flex;
@@ -1856,11 +1647,16 @@
   .cm-modal-footer {
     display: flex;
     gap: 12px;
-    padding: 16px 36px 20px;
+    padding: 12px 36px 14px;
     border-top: 1px solid var(--cm-rule);
     background: var(--cm-paper);
     flex-shrink: 0;
     box-shadow: 0 -8px 24px -12px rgba(16, 24, 16, 0.12);
+    /* Sticky dưới cùng form để nút Huỷ/Tiếp tục/Gửi luôn trong tầm tay khi body
+       cuộn qua ca dài hoặc danh sách món nhiều. */
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
   }
   .cm-modal-footer .cm-btn-cancel {
     flex: 1;

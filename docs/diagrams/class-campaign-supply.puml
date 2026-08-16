@@ -1,0 +1,117 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Campaign Supply Chain (1)
+' Supplier Request · Provider Review · Ingredient & Distribution
+'==============================================================
+'
+' Giải thích:
+'   Supplier Request: bếp từ thiện tìm provider ở gần bằng ST_DWithin trên vị trí provider và các
+'   listing đang mở, rồi gửi yêu cầu cung ứng kèm thông tin nhu cầu. Provider không nằm trong
+'   truy vấn vẫn có thể tự đề xuất — nên ProviderProposal gắn vào ReceiverProfile chứ không gắn
+'   vào request.
+'   Provider Review: provider nhận hoặc từ chối yêu cầu gửi tới. Nhận kèm vận chuyển sẽ tạo
+'   CampaignTransport và Delivery trong một transaction rồi chuyển delivery cho DeliveriesService
+'   để phát tin tới shipper. CampaignTransport composition bởi request: xoá request là mất luôn
+'   transport.
+'   Ingredient & Distribution: bếp xác nhận đã nhận nguyên liệu kèm ảnh, sau đó mở các đợt phát
+'   và đóng từng đợt bằng số người thực tế đã phục vụ. Con số này do tình nguyện viên chạy đợt
+'   đó tự nhập — luồng chiến dịch KHÔNG có QR ở bước này.
+@startuml class-campaign-supply
+title Campaign Supply Chain Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Campaign Supply Chain" {
+
+  class CampaignsController {
+    +suggestSuppliers(id: string, user: User, radiusKm: number, category: string): Promise<SupplierMatches>
+    +sendProviderRequest(user: User, dto: SendProviderRequestDto): Promise<RequestResult>
+    +submitProviderProposal(user: User, dto: SubmitProviderProposalDto): Promise<ProviderProposal>
+    +listMySentRequests(user: User): Promise<CampaignProviderRequest[]>
+    +listMyProviderRequests(user: User): Promise<CampaignProviderRequest[]>
+    +reviewProviderRequest(requestId: string, user: User, dto: ReviewProviderRequestDto): Promise<ReviewResult>
+    +myPickupOrders(user: User): Promise<PickupOrder[]>
+    +confirmIngredientPickup(requestId: string, user: User, dto: ConfirmIngredientPickupDto, photo: File): Promise<PickupReceipt>
+    +receiveTransport(id: string, transportId: string, user: User, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>
+    +createDistribution(id: string, user: User, dto: CreateDistributionDto): Promise<MealDistribution>
+    +completeDistribution(distributionId: string, user: User, dto: CompleteDistributionDto): Promise<CloseResult>
+  }
+
+  class CampaignsService {
+    -prisma: PrismaService
+    -deliveries: DeliveriesService
+    -storage: StorageService
+    -notifications: NotificationsService
+    +suggestSuppliersForCampaign(campaignId: string, charityUserId: string, opts: MatchOpts): Promise<SupplierMatches>
+    +sendProviderRequest(charityUserId: string, dto: SendProviderRequestDto): Promise<RequestResult>
+    +submitProviderProposal(charityUserId: string, dto: SubmitProviderProposalDto): Promise<ProviderProposal>
+    +listMySentRequests(charityUserId: string): Promise<CampaignProviderRequest[]>
+    -assertOwner(campaignId: string, userId: string): Promise<KitchenCampaign>
+    +listMyProviderRequests(providerUserId: string): Promise<CampaignProviderRequest[]>
+    +reviewProviderRequest(providerUserId: string, requestId: string, action: string, note: string, opts: ReviewOpts): Promise<ReviewResult>
+    -createTransportForRequest(tx: TransactionClient, requestId: string, campaign: CampaignSnapshot, pickup: Coords): Promise<TransportRef>
+    +myPickupOrders(userId: string): Promise<PickupOrder[]>
+    +confirmIngredientPickup(providerRequestId: string, userId: string, dto: ConfirmIngredientPickupDto, photoUrl: string): Promise<PickupReceipt>
+    +confirmTransportReceipt(campaignId: string, transportId: string, charityUserId: string, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>
+    +createDistribution(campaignId: string, userId: string, dto: CreateDistributionDto): Promise<MealDistribution>
+    +completeDistribution(distributionId: string, userId: string, report: DistributionReport): Promise<CloseResult>
+    -distanceMeters(a: Coords, b: Coords): number
+  }
+}
+
+class SendProviderRequestDto
+class SubmitProviderProposalDto
+class ReviewProviderRequestDto
+class ConfirmIngredientPickupDto
+class ConfirmCampaignTransportReceiptDto
+class CreateDistributionDto
+class CompleteDistributionDto
+
+class DeliveriesService {
+  +broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>
+  +createDeliveryAsync(reservationId: string, listingId: string): Promise<void>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignProviderRequest: ProviderRequestDelegate
+  +providerProposal: ProviderProposalDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +campaignTransport: CampaignTransportDelegate
+  +providerProfile: ProviderProfileDelegate
+  +campaignIngredientPickup: IngredientPickupDelegate
+  +mealDistribution: MealDistributionDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+}
+
+CampaignsController "1" --> "1" CampaignsService
+CampaignsController ..> SendProviderRequestDto
+CampaignsController ..> SubmitProviderProposalDto
+CampaignsController ..> ReviewProviderRequestDto
+CampaignsController ..> ConfirmIngredientPickupDto
+CampaignsController ..> ConfirmCampaignTransportReceiptDto
+CampaignsController ..> CreateDistributionDto
+CampaignsController ..> CompleteDistributionDto
+
+CampaignsService "1" --> "1" DeliveriesService
+CampaignsService "1" --> "1" StorageService
+CampaignsService "1" --> "1" NotificationsService
+CampaignsService "1" --> "1" PrismaService
+@enduml

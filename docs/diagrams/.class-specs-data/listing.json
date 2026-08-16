@@ -1,0 +1,67 @@
+{
+  "class-listing.puml": {
+    "Listings": {
+      "explanation": "Nearby search runs ST_DWithin and ST_Distance against pickup_location, always with deleted_at IS NULL. When the client does not pass a radius, SEARCH_RADIUS_KM is read from the system config - which is why ListingsService keeps a reference to SystemConfigService. Providers upload images first, then create the listing with the returned URLs. Only verified providers can publish, and pickup_location is constructed from the supplied coordinates with ST_MakePoint so the listing is discoverable. Edit, publish, cancel, soft-delete and duplicate. A listing with active orders cannot be deleted; cancelling a listing notifies all receivers who are still holding an order. Delete is soft: deleted_at is set and every query filters on it.",
+      "classes": {
+        "ListingsController": {
+          "description": "Search and inspection endpoints.",
+          "methods": {
+            "+findNearby(query: QueryListingDto): Promise<PagedListings>": "Lists nearby active listings sorted by distance.",
+            "+findOne(id: string): Promise<ListingDetail>": "Returns one listing with full detail.",
+            "+myListings(user: User, page: number, limit: number): Promise<PagedListings>": "Lists the provider's own listings.",
+            "+getStats(user: User): Promise<ProviderStats>": "Aggregated stats for the provider.",
+            "+create(user: User, dto: CreateListingDto): Promise<ListingDetail>": "Creates a listing with media URLs and pickup coords.",
+            "+update(id: string, user: User, dto: UpdateListingDto): Promise<ListingDetail>": "Updates an editable listing.",
+            "+publish(id: string, user: User): Promise<ListingDetail>": "Publishes a draft listing (transitions to active).",
+            "+cancel(id: string, user: User): Promise<ListingDetail>": "Cancels an active listing and notifies holders.",
+            "+remove(id: string, user: User): Promise<DeleteResult>": "Soft-deletes a draft.",
+            "+duplicate(id: string, user: User): Promise<ListingDetail>": "Clones an existing listing into a new draft."
+          }
+        },
+        "ListingsService": {
+          "description": "Spatial search + per-provider listing reads.",
+          "methods": {
+            "+findNearby(query: QueryListingDto): Promise<PagedListings>": "Reads SEARCH_RADIUS_KM from SystemConfigService when not provided, runs ST_DWithin, sorts by ST_Distance.",
+            "+findOne(id: string): Promise<ListingDetail>": "Loads the listing, filters deleted_at.",
+            "+findByProvider(userId: string, page: number, limit: number): Promise<PagedListings>": "Paginated listing list for the provider.",
+            "+getProviderStats(userId: string): Promise<ProviderStats>": "Aggregates the provider's listings + completion counts.",
+            "+create(userId: string, dto: CreateListingDto): Promise<ListingDetail>": "Resolves the provider, builds pickup_location from coords, persists the listing in status=draft.",
+            "-resolveProviderId(userId: string): Promise<string>": "Returns the provider_profile.id or throws if the user has no provider profile.",
+            "+update(listingId: string, userId: string, dto: UpdateListingDto): Promise<ListingDetail>": "Owner-only update of editable fields.",
+            "+publish(listingId: string, userId: string): Promise<ListingDetail>": "Owner-only transition draft -> active.",
+            "+cancel(listingId: string, userId: string): Promise<ListingDetail>": "Owner-only cancellation with mass notification.",
+            "+removeDraft(listingId: string, userId: string): Promise<DeleteResult>": "Soft-deletes a draft (throws if active).",
+            "+duplicate(listingId: string, userId: string): Promise<ListingDetail>": "Clones the listing into a fresh draft."
+          }
+        },
+        "SystemConfigService": {
+          "description": "Runtime-tunable business parameters (daily quota, search radius, QR validity, trust thresholds). Other modules call this on every request rather than reading environment variables directly.",
+          "methods": {
+            "+getAll(): Promise<ConfigItem[]>": "Returns the full config table (admin view).",
+            "+getNumber(key: string): Promise<number>": "Reads a numeric config entry by key; throws if missing.",
+            "+set(key: string, value: number, userId: string): Promise<ConfigItem>": "Updates a config entry; writes an audit log."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "UploadsController": {
+          "description": "Upload entry points for generic images and for face/ID evidence during registration.",
+          "methods": {
+            "+uploadImage(kind: string, file: File): Promise<UrlResponse>": "Uploads a generic image and returns its URL.",
+            "+uploadRegisterEvidence(file: File): Promise<UrlResponse>": "Uploads face + ID-card evidence during registration."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        }
+      }
+    }
+  }
+}

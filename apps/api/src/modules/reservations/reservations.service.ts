@@ -662,7 +662,10 @@ export class ReservationsService {
 
     // Apply trust score penalty for late cancellation
     if (isLateCancellation) {
-      void this.applyTrustDelta(userId, reservationId, TrustScoreReason.LATE_CANCELLATION, -10);
+      const penalty = await this.systemConfig.getNumber('RESERVATION_LATE_CANCEL_PENALTY');
+      if (penalty > 0) {
+        void this.applyTrustDelta(userId, reservationId, TrustScoreReason.LATE_CANCELLATION, -penalty);
+      }
     }
 
     return { message: 'Reservation cancelled' };
@@ -1044,7 +1047,10 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
-      await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -20);
+      const noShowPenalty = await this.systemConfig.getNumber('RESERVATION_NO_SHOW_PENALTY');
+      if (noShowPenalty > 0) {
+        await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -noShowPenalty);
+      }
     }
 
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.

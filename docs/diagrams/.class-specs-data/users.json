@@ -1,0 +1,79 @@
+{
+  "class-users.puml": {
+    "Users & Volunteers": {
+      "explanation": "Profile: view and update one's own profile, plus a trust-score history that explains how the current score came to be. Each role profile is composed by User, so deleting the account removes the profile while history rows are retained for traceability. Face eKYC: face enrollment extracts a descriptor from the ID-card photo and the on-site selfie, compares the two, and stores the descriptor on the role profile - without a descriptor, receivers cannot place orders and volunteers cannot toggle availability, which is what makes the eKYC gate actually bite. Volunteer Availability: shippers toggle availability and stream their GPS while the app is foregrounded. Going available is rejected when the shipper still has an unfinished delivery. The persisted location is exactly what the ST_DWithin query reads when picking the nearest shipper for a new offer - stale location means no offers.",
+      "classes": {
+        "UsersController": {
+          "description": "Profile, trust-history and face-enrollment endpoints served from the same UsersController.",
+          "methods": {
+            "+getMe(user: User): Promise<MeResponse>": "Returns the authenticated user with their role profile.",
+            "+getTrustHistory(user: User): Promise<TrustHistoryResponse>": "Returns the user's trust-score history with reasons.",
+            "+updateMe(user: User, dto: UpdateMeDto): Promise<User>": "Updates the user's mutable fields (name, phone, avatar).",
+            "+getFaceEnrollment(user: User): Promise<EnrollmentStatus>": "Returns whether the user has an enrolled face descriptor.",
+            "+enrollFace(user: User, files: FaceFiles): Promise<EnrollResult>": "Uploads ID-card and selfie, runs face match, persists descriptor on the profile."
+          }
+        },
+        "UsersService": {
+          "description": "Profile + trust-history reads, profile updates, and face-enrollment (descriptor extraction + persistence).",
+          "methods": {
+            "+getMe(userId: string): Promise<MeResponse>": "Loads user + role profile + latest trust score.",
+            "+getMeStats(userId: string, role: string): Promise<MeStats>": "Aggregates user-specific stats (e.g. reservations count for receivers, deliveries for shippers).",
+            "+getTrustHistory(userId: string, limit: number): Promise<TrustHistoryResponse>": "Reads recent trust_score_history rows with reasons.",
+            "+updateMe(userId: string, dto: UpdateMeDto): Promise<User>": "Updates allowed mutable fields.",
+            "+getFaceEnrollmentStatus(userId: string): Promise<EnrollmentStatus>": "Returns a boolean enrollment status.",
+            "+enrollFace(userId: string, idCard: File, selfie: File): Promise<EnrollResult>": "Extracts descriptors from both photos, compares them, rejects on mismatch, persists the selfie descriptor on the profile."
+          }
+        },
+        "VolunteersController": {
+          "description": "Availability and location endpoints for volunteer / shipper accounts.",
+          "methods": {
+            "+getMe(user: User): Promise<VolunteerResponse>": "Returns the volunteer's profile, stats and current availability.",
+            "+setAvailability(user: User, dto: SetAvailabilityDto): Promise<AvailabilityResult>": "Toggles is_available; rejected if an active delivery exists.",
+            "+updateLocation(user: User, dto: UpdateLocationDto): Promise<OkResult>": "Updates the volunteer's last known GPS position."
+          }
+        },
+        "VolunteersService": {
+          "description": "Availability + location update with eligibility checks.",
+          "methods": {
+            "+getMe(userId: string): Promise<VolunteerResponse>": "Returns profile + stats.",
+            "+setAvailability(userId: string, dto: SetAvailabilityDto): Promise<AvailabilityResult>": "Asserts no active delivery; updates is_available; broadcasts the change via NotificationsGateway.",
+            "+updateLocation(userId: string, lng: number, lat: number): Promise<OkResult>": "Persists latest GPS position."
+          }
+        },
+        "UploadsController": {
+          "description": "Upload entry points for generic images and for face/ID evidence during registration.",
+          "methods": {
+            "+uploadImage(kind: string, file: File): Promise<UrlResponse>": "Uploads a generic image and returns its URL.",
+            "+uploadRegisterEvidence(file: File): Promise<UrlResponse>": "Uploads face + ID-card evidence during registration."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "FaceMatchService": {
+          "description": "Face descriptor extraction and comparison using a local face-recognition model. Descriptors are 128-d vectors used for both 1:1 (live vs enrolled) and 1:N matching.",
+          "methods": {
+            "+getFaceDescriptor(photo: File): Promise<number[]>": "Extracts a 128-d descriptor from the input photo; throws if no face is detected.",
+            "+compare(a: number[], b: number[]): MatchResult": "Compares two descriptors and returns the match score plus a boolean accepted flag."
+          }
+        },
+        "NotificationsGateway": {
+          "description": "Socket.IO gateway that authenticates each connection with the JWT and emits events into per-user rooms.",
+          "methods": {
+            "+handleConnection(client: Socket): void": "Verifies the handshake JWT, joins the user:{userId} room, sets up disconnect cleanup.",
+            "+emitToUser(userId: string, event: string, data: unknown): void": "Emits the event into the user:{userId} room only."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        }
+      }
+    }
+  }
+}

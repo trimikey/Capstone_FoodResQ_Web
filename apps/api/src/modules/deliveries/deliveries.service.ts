@@ -15,6 +15,7 @@ import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 
 // Cửa sổ phản hồi của shipper. Theo mô hình gọi xe (mời lần lượt từng người,
 // đếm ngược ngắn) — để 2 phút thì một tài khoản không phản hồi chặn trọn 2 phút
@@ -62,6 +63,7 @@ export class DeliveriesService {
     private gateway: NotificationsGateway,
     private notifications: NotificationsService,
     private trust: TrustService,
+    private systemConfig: SystemConfigService,
   ) {}
 
   /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
@@ -556,12 +558,18 @@ export class DeliveriesService {
 
     const updateData: Prisma.DeliveryUpdateInput = { status: newStatus as never };
 
-    if (newStatus === 'qc_completed' && proofUrl) {
-      updateData.qcPhotoUrl = proofUrl;
-      updateData.qcPhotoAt = new Date();
+    if (newStatus === 'qc_completed') {
+      // `qc_completed` CHÍNH LÀ thời điểm shipper cầm được hàng. Trước đây cột này
+      // không ai ghi (4/112 đơn có giá trị, toàn từ luồng bulk-run) nên mọi báo cáo
+      // về thời gian lấy hàng phải lách qua `qc_photo_at` — mà ảnh QC là tuỳ chọn.
+      updateData.pickedUpAt = new Date();
+      if (proofUrl) {
+        updateData.qcPhotoUrl = proofUrl;
+        updateData.qcPhotoAt = new Date();
+      }
     }
 
-    // ── Late pickup penalty: trừ trust nếu lấy muộn ≥ 60 phút (campaign transport) ──
+    // ── Late pickup penalty: trừ trust nếu lấy muộn quá ngưỡng (campaign transport) ──
     if (newStatus === 'qc_completed' && !delivery.reservation && delivery.providerRequestId) {
       const request = await this.prisma.campaignProviderRequest.findUnique({
         where: { id: delivery.providerRequestId },
@@ -575,11 +583,12 @@ export class DeliveriesService {
         deadline.setUTCHours(h - 7 + (h < 7 ? 24 : 0), m, 0, 0);
         // Nếu deadline đã qua (pickupStart < giờ hiện tại → deadline < nowVN → muộn)
         const lateMinutes = Math.max(0, (nowVN.getTime() - deadline.getTime()) / 60_000);
-        const LATE_THRESHOLD_MIN = 60;
-        if (lateMinutes >= LATE_THRESHOLD_MIN) {
+        const threshold = await this.systemConfig.getNumber('DELIVERY_LATE_PICKUP_THRESHOLD_MINUTES');
+        const penalty = await this.systemConfig.getNumber('DELIVERY_LATE_PICKUP_PENALTY');
+        if (lateMinutes >= threshold && penalty > 0) {
           void this.trust.applyDelta(
             volunteer.userId,
-            -10,
+            -penalty,
             TrustScoreReason.LATE_PICKUP,
             'delivery',
             deliveryId,

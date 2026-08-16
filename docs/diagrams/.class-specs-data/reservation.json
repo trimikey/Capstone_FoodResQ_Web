@@ -1,0 +1,100 @@
+{
+  "class-reservation.puml": {
+    "Reservations": {
+      "explanation": "All validation and stock decrement run under the Redis lock on the listing. Daily quota, pickup window, and stock are checked, then the reservation row and the stock decrement are written in the same transaction so the two never drift. Delivery orders additionally create a Delivery row and start broadcasting to shippers - that step runs outside the lock so the user does not wait. Read-only screens for both sides of the transaction, with pagination and grouping by status. Receivers see their orders; providers see orders placed against their listings; both go through the same service and only differ in the source profile. Three endpoints, two verification paths. scanQr resolves the order from the QR token and marks it scanned. confirmPickupByProvider is the 'by-eye' path: the provider visually matches the face and the registered photo is stored as proof. submitPickupProof is the automated path: it extracts a descriptor from the on-site photo, compares against the enrolled descriptor, and returns 403 on mismatch. Cancelling within 30 minutes before pickup_end_time deducts 10 trust points, and the FE shows a penalty-warning popup with the projected score before the API call. Cancelling a delivery order also closes the delivery, recalls any open offers, and frees the shipper - unless the shipper has already picked the food up. Rating is only allowed after the order is completed.",
+      "classes": {
+        "ReservationsController": {
+          "description": "Single endpoint for creating a reservation; delegates everything to ReservationsService.",
+          "methods": {
+            "+create(user: User, dto: CreateReservationDto): Promise<ReservationResult>": "Receives the order, forwards to ReservationsService.create, returns reservation + QR token.",
+            "+myReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>": "Paginated receiver-side orders, optionally grouped by status.",
+            "+providerReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>": "Same shape but for the provider side.",
+            "+findOne(id: string, user: User): Promise<OrderDetail>": "Returns one order with full detail; asserts the user is either the receiver or the provider.",
+            "+scanQr(dto: ScanQrDto, user: User): Promise<ScanResult>": "Provider scans the receiver's QR; returns the matched reservation.",
+            "+confirmPickup(id: string, user: User): Promise<CompleteResult>": "Provider confirms identity by-eye; stores the registered photo as evidence.",
+            "+submitPickupProof(id: string, user: User, dto: SubmitPickupProofDto, photo: File): Promise<CompleteResult>": "Automated path: extracts face descriptor from the on-site photo, compares to the enrolled one, returns 403 on mismatch.",
+            "+cancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>": "Receiver cancels their reservation.",
+            "+providerCancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>": "Provider cancels an incoming reservation.",
+            "+rate(id: string, user: User, dto: RateReservationDto): Promise<Rating>": "Receiver rates a completed reservation."
+          }
+        },
+        "ReservationsService": {
+          "description": "Owns the Redis lock, the daily-quota check, the stock decrement and the transaction.",
+          "methods": {
+            "+create(receiverUserId: string, dto: CreateReservationDto): Promise<ReservationResult>": "Acquires the Redis lock, validates quota + window + stock, decrements stock and inserts the reservation in one transaction, releases the lock, then asynchronously kicks off delivery broadcast if needed.",
+            "-createDeliveryAsync(reservationId: string, listingId: string): Promise<void>": "Creates the Delivery row and asks DeliveriesService to broadcast to nearby shippers.",
+            "+findMyReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>": "Lists reservations belonging to the receiver, grouped by status when requested.",
+            "+findProviderReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>": "Lists reservations on the provider's listings, same grouping.",
+            "+findOne(id: string, userId: string): Promise<OrderDetail>": "Loads the reservation, enforces visibility, returns full detail.",
+            "+scanQr(qrToken: string, scannerUserId: string): Promise<ScanResult>": "Hashes the token, looks up the reservation, validates the scanner is the provider, marks it scanned.",
+            "+confirmPickupByProvider(reservationId: string, scannerUserId: string): Promise<CompleteResult>": "Marks the reservation completed, persists evidence, applies trust delta, notifies the receiver.",
+            "+submitPickupProof(reservationId: string, userId: string, type: PickupVerificationType, photo: File): Promise<CompleteResult>": "Saves the photo, runs face compare, rejects 403 on mismatch, otherwise completes the order.",
+            "+cancel(reservationId: string, userId: string, reason: string): Promise<CancelResult>": "Restores stock, applies trust penalty if within 30 min of pickup_end_time; if it's a delivery, closes the delivery and recalls offers.",
+            "+providerCancel(reservationId: string, providerUserId: string, reason: string): Promise<CancelResult>": "Same teardown but initiated by the provider.",
+            "+rateReservation(reservationId: string, userId: string, dto: RateReservationDto): Promise<Rating>": "Inserts the rating; only allowed when reservation.status = completed."
+          }
+        },
+        "SystemConfigService": {
+          "description": "Runtime-tunable business parameters (daily quota, search radius, QR validity, trust thresholds). Other modules call this on every request rather than reading environment variables directly.",
+          "methods": {
+            "+getAll(): Promise<ConfigItem[]>": "Returns the full config table (admin view).",
+            "+getNumber(key: string): Promise<number>": "Reads a numeric config entry by key; throws if missing.",
+            "+set(key: string, value: number, userId: string): Promise<ConfigItem>": "Updates a config entry; writes an audit log."
+          }
+        },
+        "Redlock": {
+          "description": "Redis-based distributed lock used to serialise concurrent reservation attempts on the same listing.",
+          "methods": {
+            "+acquire(resources: string[], ttl: number): Promise<Lock>": "Tries to acquire the named lock; throws if another holder still owns it within the TTL window.",
+            "+release(): Promise<void>": "Releases a previously acquired lock; safe to call multiple times."
+          }
+        },
+        "DeliveriesService": {
+          "description": "Delivery lifecycle service reused by other modules (reservations, campaigns). Owns the shipper-offer broadcast, status transitions and failure paths.",
+          "methods": {
+            "+broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>": "Offers the delivery to the next-nearest single available shipper with a 15s window.",
+            "+createDeliveryAsync(reservationId: string, listingId: string): Promise<void>": "Materialises the Delivery row and asks broadcastToNearbyShippers to start the queue."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "FaceMatchService": {
+          "description": "Face descriptor extraction and comparison using a local face-recognition model. Descriptors are 128-d vectors used for both 1:1 (live vs enrolled) and 1:N matching.",
+          "methods": {
+            "+getFaceDescriptor(photo: File): Promise<number[]>": "Extracts a 128-d descriptor from the input photo; throws if no face is detected.",
+            "+compare(a: number[], b: number[]): MatchResult": "Compares two descriptors and returns the match score plus a boolean accepted flag."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "TrustService": {
+          "description": "Trust-score writer: applies a signed delta with a reason, persists a trust_score_history row, and re-evaluates the restricted / banned thresholds (60 / 30).",
+          "methods": {
+            "+applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>": "Adjusts users.trust_score, writes a history row, applies restricted/banned status when thresholds are crossed."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        }
+      }
+    }
+  }
+}

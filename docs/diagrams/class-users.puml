@@ -1,0 +1,103 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Users & Volunteers (1)
+' Profile · Face eKYC · Volunteer Availability
+'==============================================================
+'
+' Giải thích:
+'   Profile: xem và cập nhật hồ sơ của chính mình, kèm lịch sử điểm uy tín giải thích vì sao điểm
+'   hiện tại ra như vậy. Mỗi role profile composition bởi User nên xoá tài khoản là mất profile,
+'   trong khi các dòng lịch sử vẫn được giữ để phục vụ truy vết.
+'   Face eKYC: đăng ký khuôn mặt rút descriptor từ ảnh CCCD và từ ảnh selfie chụp tại chỗ, so khớp
+'   hai bên, rồi lưu descriptor lên role profile. Chưa có descriptor thì receiver không đặt được
+'   đơn và volunteer không bật rảnh được — đó chính là thứ khiến cổng eKYC có hiệu lực.
+'   Volunteer Availability: shipper bật/tắt trạng thái rảnh và đẩy vị trí lên trong lúc mở app.
+'   Bật rảnh bị từ chối khi đang còn một delivery chưa xong. Vị trí đã lưu chính là dữ liệu mà
+'   truy vấn ST_DWithin đọc khi chọn shipper gần nhất cho một offer mới — vị trí cũ đồng nghĩa
+'   với không có offer.
+@startuml class-user-volunteer
+title Users & Volunteers Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "User Profile" {
+
+  class UsersController {
+    +getMe(user: User): Promise<MeResponse>
+    +getTrustHistory(user: User): Promise<TrustHistoryResponse>
+    +updateMe(user: User, dto: UpdateMeDto): Promise<User>
+    +getFaceEnrollment(user: User): Promise<EnrollmentStatus>
+    +enrollFace(user: User, files: FaceFiles): Promise<EnrollResult>
+  }
+
+  class UsersService {
+    -prisma: PrismaService
+    -faceMatch: FaceMatchService
+    -storage: StorageService
+    +getMe(userId: string): Promise<MeResponse>
+    +getMeStats(userId: string, role: string): Promise<MeStats>
+    +getTrustHistory(userId: string, limit: number): Promise<TrustHistoryResponse>
+    +updateMe(userId: string, dto: UpdateMeDto): Promise<User>
+    +getFaceEnrollmentStatus(userId: string): Promise<EnrollmentStatus>
+    +enrollFace(userId: string, idCard: File, selfie: File): Promise<EnrollResult>
+  }
+}
+
+package "Volunteer Availability" {
+
+  class VolunteersController {
+    +getMe(user: User): Promise<VolunteerResponse>
+    +setAvailability(user: User, dto: SetAvailabilityDto): Promise<AvailabilityResult>
+    +updateLocation(user: User, dto: UpdateLocationDto): Promise<OkResult>
+  }
+
+  class VolunteersService {
+    -prisma: PrismaService
+    -gateway: NotificationsGateway
+    +getMe(userId: string): Promise<VolunteerResponse>
+    +setAvailability(userId: string, dto: SetAvailabilityDto): Promise<AvailabilityResult>
+    +updateLocation(userId: string, lng: number, lat: number): Promise<OkResult>
+  }
+}
+
+class UploadsController {
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class FaceMatchService {
+  +getFaceDescriptor(photo: File): Promise<number[]>
+  +compare(a: number[], b: number[]): MatchResult
+}
+
+class NotificationsGateway {
+  +handleConnection(client: Socket): void
+  +emitToUser(userId: string, event: string, data: unknown): void
+}
+
+class PrismaService {
+  +user: UserDelegate
+  +trustScoreHistory: TrustScoreHistoryDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +delivery: DeliveryDelegate
+}
+
+UsersController "1" --> "1" UsersService
+UsersController ..> UpdateMeDto
+UsersController ..> UploadsController
+UploadsController "1" --> "1" StorageService
+
+UsersService "1" --> "1" FaceMatchService
+UsersService "1" --> "1" StorageService
+UsersService "1" --> "1" PrismaService
+
+VolunteersController "1" --> "1" VolunteersService
+VolunteersService "1" --> "1" NotificationsGateway
+VolunteersService "1" --> "1" PrismaService
+@enduml

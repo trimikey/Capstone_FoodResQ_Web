@@ -1,0 +1,199 @@
+﻿=== class-admin.puml / Catalog, Reports & Config / PrismaService (5) ===
+  +foodCatalogCategory: FoodCatalogCategoryDelegate
+  +foodCatalogItem: FoodCatalogItemDelegate
+  +report: ReportDelegate
+  +systemConfig: SystemConfigDelegate
+  +auditLog: AuditLogDelegate
+=== class-admin.puml / Dashboard & Verification / PrismaService (3) ===
+  +providerProfile: ProviderProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +auditLog: AuditLogDelegate
+=== class-admin.puml / Users & Campaigns / PrismaService (6) ===
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +campaignChangeRequest: ChangeRequestDelegate
+  +auditLog: AuditLogDelegate
+=== class-auth.puml / 01. Register / PrismaService (2) ===
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+=== class-auth.puml / 02. Login / PrismaService (3) ===
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-auth.puml / 03. Token Lifecycle / PrismaService (2) ===
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+=== class-auth.puml / 04. Password Reset / PrismaService (2) ===
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+=== class-bulk-run.puml / Pickup & Stops / PrismaService (4) ===
+  +bulkRun: BulkRunDelegate
+  +bulkRunStop: BulkRunStopDelegate
+  +reservation: ReservationDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-bulk-run.puml / Request & Review / PrismaService (4) ===
+  +bulkRun: BulkRunDelegate
+  +foodListing: FoodListingDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +delivery: DeliveryDelegate
+=== class-bulk-run.puml / Serve & Close / PrismaService (5) ===
+  +bulkRun: BulkRunDelegate
+  +bulkRunStop: BulkRunStopDelegate
+  +reservation: ReservationDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+=== class-campaign-supply.puml / Ingredient & Distribution / CampaignsController (1) ===
+  +myPickupOrders(user: User): Promise<PickupOrder[]>
+=== class-campaign-supply.puml / Ingredient & Distribution / PrismaService (5) ===
+  +campaignProviderRequest: ProviderRequestDelegate
+  +campaignIngredientPickup: IngredientPickupDelegate
+  +campaignTransport: CampaignTransportDelegate
+  +mealDistribution: MealDistributionDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+=== class-campaign-supply.puml / Provider Review / PrismaService (4) ===
+  +campaignProviderRequest: ProviderRequestDelegate
+  +campaignTransport: CampaignTransportDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+  +providerProfile: ProviderProfileDelegate
+=== class-campaign-supply.puml / Supplier Request / PrismaService (4) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignProviderRequest: ProviderRequestDelegate
+  +providerProposal: ProviderProposalDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-campaign.puml / Apply & Review / PrismaService (4) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignShift: CampaignShiftDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-campaign.puml / Create & Browse / PrismaService (2) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-campaign.puml / Donation & Change Request / PrismaService (4) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignDonation: CampaignDonationDelegate
+  +campaignChangeRequest: ChangeRequestDelegate
+  +providerProfile: ProviderProfileDelegate
+=== class-campaign.puml / Lifecycle & Volunteer Task / PrismaService (4) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+=== class-cron.puml / Campaign & Bulk Run Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-cron.puml / Campaign & Bulk Run Jobs / PrismaService (4) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignDishStep: CampaignDishStepDelegate
+  +bulkRun: BulkRunDelegate
+  +foodListing: FoodListingDelegate
+=== class-cron.puml / Order Lifecycle Jobs / CronErrorLogger (1) ===
+  +logCronError(logger: Logger, handler: string, error: unknown): void
+=== class-cron.puml / Order Lifecycle Jobs / PrismaService (5) ===
+  +reservation: ReservationDelegate
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-delivery.puml / Delivery Lifecycle / PrismaService (4) ===
+  +delivery: DeliveryDelegate
+  +reservation: ReservationDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+=== class-delivery.puml / Shipper Offer / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-delivery.puml / Shipper Offer / PrismaService (3) ===
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-delivery.puml / Stop Delivery / PrismaService (4) ===
+  +delivery: DeliveryDelegate
+  +reservation: ReservationDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-delivery.puml / Track & Performance / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-delivery.puml / Track & Performance / PrismaService (3) ===
+  +delivery: DeliveryDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-kitchen-ops.puml / Cooking Steps & Safety / PrismaService (5) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignMenuItem: CampaignMenuItemDelegate
+  +campaignDishStep: CampaignDishStepDelegate
+  +kitchenSafetyLog: KitchenSafetyLogDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+=== class-kitchen-ops.puml / Meal Handoff / PrismaService (5) ===
+  +receiverHandoffQr: ReceiverHandoffQrDelegate
+  +mealHandoff: MealHandoffDelegate
+  +beneficiaryFeedback: BeneficiaryFeedbackDelegate
+  +mealDistribution: MealDistributionDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-kitchen-ops.puml / Shifts & Menu / DishStepsService (1) ===
+  +ensureStepsForMenuItem(campaignId: string, menuItemId: string, scheduledTimes: string[]): Promise<CampaignDishStep[]>
+=== class-kitchen-ops.puml / Shifts & Menu / PrismaService (5) ===
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignShift: CampaignShiftDelegate
+  +campaignMenuItem: CampaignMenuItemDelegate
+  +campaignDishStep: CampaignDishStepDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+=== class-listing.puml / Create Listing / PrismaService (1) ===
+  +providerProfile: ProviderProfileDelegate
+=== class-listing.puml / Create Listing / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-listing.puml / Manage Listing / PrismaService (2) ===
+  +foodListing: FoodListingDelegate
+  +reservation: ReservationDelegate
+=== class-listing.puml / Search & Browse / PrismaService (2) ===
+  +foodListing: FoodListingDelegate
+  +reservation: ReservationDelegate
+=== class-reservation.puml / Cancel & Rate / PrismaService (4) ===
+  +reservation: ReservationDelegate
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +rating: RatingDelegate
+=== class-reservation.puml / Create Reservation / PrismaService (2) ===
+  +reservation: ReservationDelegate
+  +receiverProfile: ReceiverProfileDelegate
+=== class-reservation.puml / Handover / PrismaService (2) ===
+  +reservation: ReservationDelegate
+  +providerProfile: ProviderProfileDelegate
+=== class-reservation.puml / My Orders / PrismaService (3) ===
+  +reservation: ReservationDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +providerProfile: ProviderProfileDelegate
+=== class-support.puml / ESG / PrismaService (4) ===
+  +providerProfile: ProviderProfileDelegate
+  +reservation: ReservationDelegate
+  +foodListing: FoodListingDelegate
+  +esgSnapshot: EsgSnapshotDelegate
+=== class-support.puml / Notifications / PrismaService (3) ===
+  +notification: NotificationDelegate
+  +user: UserDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+=== class-support.puml / Recipes / PrismaService (4) ===
+  +recipe: RecipeDelegate
+  +recipeIngredient: RecipeIngredientDelegate
+  +user: UserDelegate
+  +volunteerSpecializationEntry: SpecializationDelegate
+=== class-support.puml / Reports / PrismaService (6) ===
+  +report: ReportDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +reservation: ReservationDelegate
+  +foodListing: FoodListingDelegate
+  +delivery: DeliveryDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+=== class-users.puml / Face eKYC / PrismaService (3) ===
+  +user: UserDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+=== class-users.puml / Profile / PrismaService (2) ===
+  +user: UserDelegate
+  +trustScoreHistory: TrustScoreHistoryDelegate
+=== class-users.puml / Profile / UploadsController (1) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+=== class-users.puml / Volunteer Availability / NotificationsGateway (1) ===
+  +emitToUser(userId: string, event: string, data: unknown): void
+=== class-users.puml / Volunteer Availability / PrismaService (2) ===
+  +volunteerProfile: VolunteerProfileDelegate
+  +delivery: DeliveryDelegate

@@ -1,0 +1,87 @@
+{
+  "class-bulk-run.puml": {
+    "Bulk Runs": {
+      "explanation": "Verified shippers request at least BULK_MIN_QTY portions from a single listing; the provider approves or rejects within REQUEST_EXPIRY_HOURS. Approval decrements the listing stock under the Redis lock so two runs cannot fight for the same portions. Cancellation AFTER approval costs BULK_CANCEL_PENALTY trust points. Once approved, the shipper confirms pickup (with optional QC photo) and pins distribution stops on the map. BulkRunStop is composed by BulkRun: deleting a run also drops its stops. Each stop carries a geography point for proximity checks against nearby receivers. Shippers log served portions per stop with an atomic conditional UPDATE, so the running total can never exceed the approved quantity even under concurrent calls. Serving the last portion auto-completes the run; manual completion returns leftover to the listing stock and credits dedication points.",
+      "classes": {
+        "BulkRunsController": {
+          "description": "Bulk-run request endpoints (shipper and provider sides).",
+          "methods": {
+            "+request(user: User, dto: RequestBulkRunDto): Promise<BulkRun>": "Shipper submits a bulk-run request.",
+            "+approve(id: string, user: User): Promise<StatusResult>": "Provider approves the request.",
+            "+reject(id: string, user: User, dto: RejectBulkRunDto): Promise<StatusResult>": "Provider rejects the request.",
+            "+my(user: User): Promise<BulkRun[]>": "Shipper's own runs.",
+            "+provider(user: User): Promise<BulkRun[]>": "Runs against the provider's listings.",
+            "+pickup(id: string, user: User, photo: File): Promise<PickupResult>": "Shipper confirms pickup with optional QC photo.",
+            "+addStop(id: string, user: User, dto: AddStopDto): Promise<BulkRunStop>": "Adds a new distribution stop with geography coords.",
+            "+updateStop(id: string, stopId: string, user: User, dto: UpdateStopDto): Promise<Message>": "Updates an existing stop.",
+            "+removeStop(id: string, stopId: string, user: User): Promise<Message>": "Removes a stop.",
+            "+serve(id: string, stopId: string, user: User, dto: ServeStopDto, photo: File): Promise<ServeResult>": "Records served portions at the stop with proof photo.",
+            "+complete(id: string, user: User): Promise<CloseResult>": "Manually closes the run, returning leftover to stock.",
+            "+cancel(id: string, user: User): Promise<CloseResult>": "Cancels the run (penalty applies after approval)."
+          }
+        },
+        "BulkRunsService": {
+          "description": "Bulk-run lifecycle with Redis-locked stock decrement and trust penalty on cancel-after-approve.",
+          "methods": {
+            "+request(shipperUserId: string, dto: RequestBulkRunDto): Promise<BulkRun>": "Asserts verified shipper, asserts quantity >= BULK_MIN_QTY, persists the request, notifies the provider.",
+            "+approve(runId: string, providerUserId: string): Promise<StatusResult>": "Under the listing Redis lock, decrements stock, sets status=approved, notifies the shipper.",
+            "+reject(runId: string, providerUserId: string, reason: string): Promise<StatusResult>": "Sets status=rejected, notifies the shipper.",
+            "+myRuns(shipperUserId: string): Promise<BulkRun[]>": "Lists runs the shipper created.",
+            "+providerRuns(providerUserId: string): Promise<BulkRun[]>": "Lists runs targeting the provider's listings.",
+            "-resolveVerifiedShipper(userId: string): Promise<VolunteerProfile>": "Loads the volunteer profile; throws if not verified or not a shipper.",
+            "-restockSql(listingId: string, qty: number): Promise<number>": "Raw SQL helper that adds qty back to quantity_remaining.",
+            "+pickup(runId: string, shipperUserId: string, qcPhotoUrl: string): Promise<PickupResult>": "Asserts PICKUP_DEADLINE_HOURS has not elapsed, persists qcPhotoUrl, sets status=picked_up.",
+            "+addStop(runId: string, userId: string, dto: AddStopDto): Promise<BulkRunStop>": "Adds a stop, asserts planned-quantity stays within quota.",
+            "+updateStop(runId: string, stopId: string, userId: string, dto: UpdateStopDto): Promise<Message>": "Updates stop details.",
+            "+removeStop(runId: string, stopId: string, userId: string): Promise<Message>": "Removes a stop.",
+            "-makeQrToken(runId: string, stopId: string): string": "Builds the per-stop QR token for receivers.",
+            "-assertPlannedWithinQuota(runId: string, runQty: number, plannedQty: number): Promise<void>": "Throws if the aggregated planned quantity exceeds the run's total.",
+            "-getBulkPlaceholderReceiverId(): Promise<string>": "Returns the system placeholder receiver used to materialize QR reservations for bulk runs.",
+            "+serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl: string): Promise<ServeResult>": "Atomic conditional UPDATE so the aggregate never exceeds the run's total; auto-completes when the last portion is logged.",
+            "+complete(runId: string, shipperUserId: string): Promise<CloseResult>": "Manual close: restocks the leftover and credits dedication points.",
+            "+cancel(runId: string, shipperUserId: string): Promise<CloseResult>": "Cancellation; if the run was already approved, applies BULK_CANCEL_PENALTY trust delta.",
+            "-finalize(runId: string): Promise<CloseResult>": "Common close path used by serve-auto-complete, complete, and cancel."
+          }
+        },
+        "Redlock": {
+          "description": "Redis-based distributed lock used to serialise concurrent reservation attempts on the same listing.",
+          "methods": {
+            "+acquire(resources: string[], ttl: number): Promise<Lock>": "Tries to acquire the named lock; throws if another holder still owns it within the TTL window.",
+            "+release(): Promise<void>": "Releases a previously acquired lock; safe to call multiple times."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "TrustService": {
+          "description": "Trust-score writer: applies a signed delta with a reason, persists a trust_score_history row, and re-evaluates the restricted / banned thresholds (60 / 30).",
+          "methods": {
+            "+applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>": "Adjusts users.trust_score, writes a history row, applies restricted/banned status when thresholds are crossed."
+          }
+        }
+      }
+    }
+  }
+}

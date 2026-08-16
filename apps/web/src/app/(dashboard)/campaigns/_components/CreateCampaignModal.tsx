@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { reverseGeocode, searchAddress, type AddressSuggestion } from '@/lib/geocode';
 import {
   useUploadCampaignImage,
+  useCampaignCreateConstraints,
   type CreateCampaignInput,
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
@@ -134,6 +135,12 @@ export default function CreateCampaignModal({
   onSubmit,
   pending,
 }: CreateCampaignModalProps) {
+  // Ràng buộc lấy từ server: chiến dịch dài ngày phải báo trước N ngày (admin chỉnh
+  // được), chiến dịch trong ngày thì mở lúc nào cũng được.
+  const { data: constraints } = useCampaignCreateConstraints();
+  const leadDays = constraints?.multiDayLeadDays ?? 0;
+  const multiDayMinDate = constraints?.multiDayEarliestStartDate ?? vnToday();
+
   // Nháp đọc từ localStorage — khôi phục nguyên trạng form đang điền dở.
   const draft = useCampaignDraft<CampaignDraftData>();
   const [f, setF] = useState(() => draft.restored?.data.f ?? {
@@ -420,6 +427,8 @@ export default function CreateCampaignModal({
 
   // Field-level errors (key = field path, value = Vietnamese message)
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** Đang chọn chiến dịch nhiều ngày (có endDate và sau ngày bắt đầu). */
+  const isMultiDayPick = !!f.endDate && !!f.scheduledDate && f.endDate > f.scheduledDate;
   // setState là bất đồng bộ nên ngay sau validateAll() thì `errors` vẫn là giá trị cũ.
   // Giữ thêm bản mới nhất ở ref để điều hướng bước đọc được đúng lỗi vừa tính.
   const lastErrorsRef = useRef<Record<string, string>>({});
@@ -456,6 +465,13 @@ export default function CreateCampaignModal({
       if (f.endDate < vnToday()) next.endDate = 'Ngày kết thúc không được trong quá khứ';
       else if (f.scheduledDate && f.endDate < f.scheduledDate)
         next.endDate = 'Ngày kết thúc phải từ ngày bắt đầu trở đi';
+      // Chiến dịch DÀI NGÀY phải báo trước: cần tuyển đủ TNV cho từng buổi và đặt
+      // nguyên liệu theo ngày. Chiến dịch trong ngày không bị ràng buộc này.
+      else if (leadDays > 0 && f.scheduledDate && f.endDate > f.scheduledDate
+               && f.scheduledDate < multiDayMinDate) {
+        next.scheduledDate =
+          `Chiến dịch nhiều ngày phải tạo trước ít nhất ${leadDays} ngày — sớm nhất là ${formatVnDate(multiDayMinDate)}`;
+      }
     }
     // Time
     if (!f.startTime) next.startTime = 'Chọn giờ bắt đầu';
@@ -985,6 +1001,7 @@ export default function CreateCampaignModal({
                       value={f.endDate}
                       min={f.scheduledDate || vnToday()}
                       placeholder="Bỏ trống nếu 1 ngày"
+                      title="Bỏ trống = chiến dịch gói gọn trong 1 ngày, mở lúc nào cũng được"
                       onChange={(e) => {
                         setF({ ...f, endDate: e.target.value });
                         if (errors.endDate) setErr('endDate', undefined);
@@ -1009,10 +1026,30 @@ export default function CreateCampaignModal({
                   </div>
                   <p className="text-[10px] text-neutral-400 mt-0.5">
                     {f.endDate
-                      ? `Chiến dịch kéo dài từ ${new Date(f.scheduledDate).toLocaleDateString('vi-VN')} đến ${new Date(f.endDate).toLocaleDateString('vi-VN')}.`
+                      ? `Chiến dịch kéo dài từ ${formatVnDate(f.scheduledDate)} đến ${formatVnDate(f.endDate)}.`
                       : 'Bỏ trống nếu chiến dịch chỉ diễn ra 1 ngày.'}
                   </p>
                   <FieldError message={errors.endDate} />
+                  {/* Nói rõ luật TRƯỚC khi người dùng điền xong: chiến dịch nhiều ngày
+                      cần thời gian tuyển TNV cho từng buổi nên phải báo trước. */}
+                  {leadDays > 0 && (
+                    <p
+                      className={`mt-1 flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ${
+                        isMultiDayPick && f.scheduledDate < multiDayMinDate
+                          ? 'bg-rose-50 text-rose-700'
+                          : 'bg-neutral-50 text-neutral-500'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {isMultiDayPick && f.scheduledDate < multiDayMinDate ? 'error' : 'info'}
+                      </span>
+                      <span>
+                        Chiến dịch <b>nhiều ngày</b> phải tạo trước ít nhất {leadDays} ngày — sớm nhất
+                        là <b>{formatVnDate(multiDayMinDate)}</b>. Chiến dịch <b>trong ngày</b> mở lúc
+                        nào cũng được.
+                      </span>
+                    </p>
+                  )}
                   <input
                     type="number"
                     min={1}

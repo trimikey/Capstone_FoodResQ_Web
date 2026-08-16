@@ -280,6 +280,16 @@ export class CampaignsController {
     return this.campaignsService.advanceTask(id, user.id, dto, proofUrl);
   }
 
+  @Get('create-constraints')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({
+    summary: 'Charity: các ràng buộc form tạo chiến dịch (báo trước dài ngày, tỉ lệ tuyển tối thiểu…)',
+  })
+  createConstraints() {
+    return this.campaignsService.getCreateConstraints();
+  }
+
   @Get('my-pickup-orders')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)

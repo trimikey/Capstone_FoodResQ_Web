@@ -57,7 +57,8 @@ describe('BulkRunsService', () => {
       {} as never,           // redlock
       {} as never,           // storage
       notifications as never,
-      {} as never,           // systemConfig
+      // systemConfig — mốc phạt uy tín giờ đọc từ system_configs, trả mặc định
+      { getNumber: jest.fn().mockResolvedValue(BULK_CANCEL_PENALTY) } as never,
       trust as never,
     );
   });

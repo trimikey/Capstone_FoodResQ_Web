@@ -1,0 +1,509 @@
+﻿Methods without description (after skipping private fields): 327
+
+=== class-admin.puml / Catalog, Reports & Config / AdminController (11) ===
+  +foodCatalog(search: string): Promise<CatalogTree>
+  +createFoodCategory(user: User, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>
+  +updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>
+  +deleteFoodCategory(id: string): Promise<DeleteResult>
+  +createFoodCatalogItem(user: User, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>
+  +updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>
+  +deleteFoodCatalogItem(id: string): Promise<DeleteResult>
+  +reports(status: string): Promise<Report[]>
+  +resolveReport(id: string, user: User, dto: ResolveReportDto): Promise<Report>
+  +configs(): Promise<ConfigItem[]>
+  +setConfig(key: string, user: User, dto: SetConfigDto): Promise<ConfigItem>
+
+=== class-admin.puml / Catalog, Reports & Config / AdminService (11) ===
+  +listFoodCatalog(opts: SearchOpts): Promise<CatalogTree>
+  +createFoodCategory(adminUserId: string, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>
+  +updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>
+  +deleteFoodCategory(id: string): Promise<DeleteResult>
+  +createFoodCatalogItem(adminUserId: string, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>
+  +updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>
+  +deleteFoodCatalogItem(id: string): Promise<DeleteResult>
+  +listReports(status: string): Promise<Report[]>
+  +resolveReport(id: string, adminUserId: string, dto: ResolveReportDto): Promise<Report>
+  +getConfigs(): Promise<ConfigItem[]>
+  +setConfig(key: string, value: number, userId: string): Promise<ConfigItem>
+
+=== class-admin.puml / Dashboard & Verification / AdminController (6) ===
+  +overview(): Promise<OverviewStats>
+  +stats(): Promise<CountStats>
+  +frequentCancellers(): Promise<Offender[]>
+  +recentReservations(): Promise<Reservation[]>
+  +verifications(): Promise<PendingVerification[]>
+  +review(type: string, id: string, user: User, dto: ReviewVerificationDto): Promise<Message>
+
+=== class-admin.puml / Dashboard & Verification / AdminService (5) ===
+  +getOverview(): Promise<OverviewStats>
+  +getStats(): Promise<CountStats>
+  +listFrequentCancellers(): Promise<Offender[]>
+  +listVerifications(): Promise<PendingVerification[]>
+  +reviewVerification(type: string, profileId: string, adminUserId: string, dto: ReviewVerificationDto): Promise<Message>
+
+=== class-admin.puml / Users & Campaigns / AdminController (9) ===
+  +users(role: string, q: string): Promise<User[]>
+  +createUser(dto: AdminCreateUserDto): Promise<User>
+  +setUserStatus(id: string, user: User, dto: SetUserStatusDto): Promise<Message>
+  +volunteersManage(): Promise<VolunteerRow[]>
+  +createCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>
+  +setCampaignStatus(id: string, user: User, dto: SetCampaignStatusDto): Promise<StatusResult>
+  +assignVolunteer(id: string, dto: AssignVolunteerDto): Promise<CampaignDetail>
+  +unassignVolunteer(id: string): Promise<Message>
+  +reviewCampaignChange(id: string, user: User, dto: ReviewCampaignChangeDto): Promise<ReviewResult>
+
+=== class-admin.puml / Users & Campaigns / AdminService (9) ===
+  +listUsers(role: string, q: string): Promise<User[]>
+  +adminCreateUser(dto: AdminCreateUserDto): Promise<User>
+  +setUserStatus(id: string, adminUserId: string, dto: SetUserStatusDto): Promise<Message>
+  +listVolunteersDetailed(): Promise<VolunteerRow[]>
+  +adminCreateCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>
+  +setCampaignStatus(id: string, status: string, userId: string): Promise<StatusResult>
+  +adminAssignVolunteer(campaignId: string, volunteerId: string, role: string, override: boolean): Promise<CampaignDetail>
+  +adminUnassignVolunteer(assignmentId: string): Promise<Message>
+  +reviewCampaignChangeRequest(id: string, decision: string, note: string, adminUserId: string): Promise<ReviewResult>
+
+=== class-auth.puml / 01. Register / AuthController (3) ===
+  +register(dto: RegisterDto, selfie: File): Promise<AuthResponse>
+  +checkEmail(email: string): Promise<ExistsResult>
+  +checkPhone(phone: string): Promise<ExistsResult>
+
+=== class-auth.puml / 01. Register / AuthService (3) ===
+  +register(dto: RegisterDto, selfie: File): Promise<AuthResponse>
+  +checkEmailExists(email: string): Promise<ExistsResult>
+  +checkPhoneExists(phone: string): Promise<ExistsResult>
+
+=== class-auth.puml / 02. Login / AuthController (2) ===
+  +login(dto: LoginDto, req: Request): Promise<AuthResponse>
+  +firebase(dto: FirebaseLoginDto, req: Request): Promise<AuthResponse>
+
+=== class-auth.puml / 02. Login / AuthService (2) ===
+  +login(dto: LoginDto, deviceInfo: string, ip: string): Promise<AuthResponse>
+  +loginWithFirebase(idToken: string, role: string): Promise<AuthResponse>
+
+=== class-auth.puml / 03. Token Lifecycle / AuthController (2) ===
+  +refresh(refreshToken: string, req: Request): Promise<AuthResponse>
+  +logout(user: User): Promise<void>
+
+=== class-auth.puml / 03. Token Lifecycle / AuthService (2) ===
+  +refresh(rawToken: string, deviceInfo: string, ip: string): Promise<AuthResponse>
+  +logout(userId: string): Promise<void>
+
+=== class-auth.puml / 04. Password Reset / AuthController (2) ===
+  +forgotPassword(dto: ForgotPasswordDto): Promise<Message>
+  +resetPassword(dto: ResetPasswordDto): Promise<Message>
+
+=== class-auth.puml / 04. Password Reset / AuthService (2) ===
+  +forgotPassword(dto: ForgotPasswordDto): Promise<Message>
+  +resetPassword(dto: ResetPasswordDto): Promise<Message>
+
+=== class-bulk-run.puml / Pickup & Stops / BulkRunsController (4) ===
+  +pickup(id: string, user: User, photo: File): Promise<PickupResult>
+  +addStop(id: string, user: User, dto: AddStopDto): Promise<BulkRunStop>
+  +updateStop(id: string, stopId: string, user: User, dto: UpdateStopDto): Promise<Message>
+  +removeStop(id: string, stopId: string, user: User): Promise<Message>
+
+=== class-bulk-run.puml / Pickup & Stops / BulkRunsService (4) ===
+  +pickup(runId: string, shipperUserId: string, qcPhotoUrl: string): Promise<PickupResult>
+  +addStop(runId: string, userId: string, dto: AddStopDto): Promise<BulkRunStop>
+  +updateStop(runId: string, stopId: string, userId: string, dto: UpdateStopDto): Promise<Message>
+  +removeStop(runId: string, stopId: string, userId: string): Promise<Message>
+
+=== class-bulk-run.puml / Request & Review / BulkRunsController (5) ===
+  +request(user: User, dto: RequestBulkRunDto): Promise<BulkRun>
+  +approve(id: string, user: User): Promise<StatusResult>
+  +reject(id: string, user: User, dto: RejectBulkRunDto): Promise<StatusResult>
+  +my(user: User): Promise<BulkRun[]>
+  +provider(user: User): Promise<BulkRun[]>
+
+=== class-bulk-run.puml / Request & Review / BulkRunsService (5) ===
+  +request(shipperUserId: string, dto: RequestBulkRunDto): Promise<BulkRun>
+  +approve(runId: string, providerUserId: string): Promise<StatusResult>
+  +reject(runId: string, providerUserId: string, reason: string): Promise<StatusResult>
+  +myRuns(shipperUserId: string): Promise<BulkRun[]>
+  +providerRuns(providerUserId: string): Promise<BulkRun[]>
+
+=== class-bulk-run.puml / Serve & Close / BulkRunsController (3) ===
+  +serve(id: string, stopId: string, user: User, dto: ServeStopDto, photo: File): Promise<ServeResult>
+  +complete(id: string, user: User): Promise<CloseResult>
+  +cancel(id: string, user: User): Promise<CloseResult>
+
+=== class-bulk-run.puml / Serve & Close / BulkRunsService (3) ===
+  +serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl: string): Promise<ServeResult>
+  +complete(runId: string, shipperUserId: string): Promise<CloseResult>
+  +cancel(runId: string, shipperUserId: string): Promise<CloseResult>
+
+=== class-campaign-supply.puml / Ingredient & Distribution / CampaignsController (4) ===
+  +confirmIngredientPickup(requestId: string, user: User, dto: ConfirmIngredientPickupDto, photo: File): Promise<PickupReceipt>
+  +receiveTransport(id: string, transportId: string, user: User, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>
+  +createDistribution(id: string, user: User, dto: CreateDistributionDto): Promise<MealDistribution>
+  +completeDistribution(distributionId: string, user: User, dto: CompleteDistributionDto): Promise<CloseResult>
+
+=== class-campaign-supply.puml / Ingredient & Distribution / CampaignsService (5) ===
+  +myPickupOrders(userId: string): Promise<PickupOrder[]>
+  +confirmIngredientPickup(providerRequestId: string, userId: string, dto: ConfirmIngredientPickupDto, photoUrl: string): Promise<PickupReceipt>
+  +confirmTransportReceipt(campaignId: string, transportId: string, charityUserId: string, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>
+  +createDistribution(campaignId: string, userId: string, dto: CreateDistributionDto): Promise<MealDistribution>
+  +completeDistribution(distributionId: string, userId: string, report: DistributionReport): Promise<CloseResult>
+
+=== class-campaign-supply.puml / Provider Review / CampaignsController (2) ===
+  +listMyProviderRequests(user: User): Promise<CampaignProviderRequest[]>
+  +reviewProviderRequest(requestId: string, user: User, dto: ReviewProviderRequestDto): Promise<ReviewResult>
+
+=== class-campaign-supply.puml / Provider Review / CampaignsService (2) ===
+  +listMyProviderRequests(providerUserId: string): Promise<CampaignProviderRequest[]>
+  +reviewProviderRequest(providerUserId: string, requestId: string, action: string, note: string, opts: ReviewOpts): Promise<ReviewResult>
+
+=== class-campaign-supply.puml / Supplier Request / CampaignsController (4) ===
+  +suggestSuppliers(id: string, user: User, radiusKm: number, category: string): Promise<SupplierMatches>
+  +sendProviderRequest(user: User, dto: SendProviderRequestDto): Promise<RequestResult>
+  +submitProviderProposal(user: User, dto: SubmitProviderProposalDto): Promise<ProviderProposal>
+  +listMySentRequests(user: User): Promise<CampaignProviderRequest[]>
+
+=== class-campaign-supply.puml / Supplier Request / CampaignsService (4) ===
+  +suggestSuppliersForCampaign(campaignId: string, charityUserId: string, opts: MatchOpts): Promise<SupplierMatches>
+  +sendProviderRequest(charityUserId: string, dto: SendProviderRequestDto): Promise<RequestResult>
+  +submitProviderProposal(charityUserId: string, dto: SubmitProviderProposalDto): Promise<ProviderProposal>
+  +listMySentRequests(charityUserId: string): Promise<CampaignProviderRequest[]>
+
+=== class-campaign.puml / Apply & Review / CampaignsController (3) ===
+  +apply(id: string, user: User, dto: ApplyCampaignDto): Promise<AssignmentResult>
+  +applyToShift(id: string, shiftId: string, user: User, dto: ApplyShiftDto): Promise<AssignmentResult>
+  +reviewAssignment(id: string, assignmentId: string, user: User, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>
+
+=== class-campaign.puml / Apply & Review / CampaignsService (2) ===
+  +apply(campaignId: string, userId: string, dto: ApplyCampaignDto): Promise<AssignmentResult>
+  +reviewAssignment(campaignId: string, assignmentId: string, userId: string, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>
+
+=== class-campaign.puml / Create & Browse / CampaignsController (8) ===
+  +create(user: User, dto: CreateCampaignDto): Promise<CampaignDetail>
+  +uploadImage(image: File): Promise<UrlResponse>
+  +listOpen(): Promise<Campaign[]>
+  +listCompleted(): Promise<Campaign[]>
+  +listPublicUpcoming(limit: number): Promise<Campaign[]>
+  +findOne(id: string): Promise<CampaignDetail>
+  +myCampaigns(user: User): Promise<Campaign[]>
+  +getManageDetail(id: string, user: User): Promise<ManageDetail>
+
+=== class-campaign.puml / Create & Browse / CampaignsService (7) ===
+  +create(userId: string, dto: CreateCampaignDto): Promise<CampaignDetail>
+  +saveCampaignImage(photo: File): Promise<string>
+  +listOpen(): Promise<Campaign[]>
+  +listCompleted(): Promise<Campaign[]>
+  +findOne(id: string): Promise<CampaignDetail>
+  +myCampaigns(userId: string): Promise<Campaign[]>
+  +getManageDetail(id: string, userId: string): Promise<ManageDetail>
+
+=== class-campaign.puml / Donation & Change Request / CampaignsController (5) ===
+  +pledge(id: string, user: User, dto: PledgeDonationDto): Promise<CampaignDonation>
+  +confirmDonation(donationId: string, user: User): Promise<CampaignDonation>
+  +submitChange(id: string, user: User, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>
+  +listChanges(id: string, user: User): Promise<CampaignChangeRequest[]>
+  +cancelChange(changeRequestId: string, user: User): Promise<StatusResult>
+
+=== class-campaign.puml / Donation & Change Request / CampaignsService (5) ===
+  +pledgeDonation(campaignId: string, providerUserId: string, dto: PledgeDonationDto): Promise<CampaignDonation>
+  +confirmDonation(donationId: string, charityUserId: string): Promise<CampaignDonation>
+  +submitChangeRequest(campaignId: string, userId: string, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>
+  +listChangeRequests(campaignId: string, userId: string): Promise<CampaignChangeRequest[]>
+  +cancelChangeRequest(changeRequestId: string, userId: string): Promise<StatusResult>
+
+=== class-campaign.puml / Lifecycle & Volunteer Task / CampaignsController (4) ===
+  +start(id: string, user: User): Promise<CampaignDetail>
+  +complete(id: string, user: User, dto: CompleteCampaignDto): Promise<CampaignDetail>
+  +cancel(id: string, user: User): Promise<StatusResult>
+  +advance(assignmentId: string, user: User, dto: AdvanceCampaignTaskDto, proof: File): Promise<Assignment>
+
+=== class-campaign.puml / Lifecycle & Volunteer Task / CampaignsService (4) ===
+  +startCampaign(campaignId: string, userId: string): Promise<CampaignDetail>
+  +completeCampaign(campaignId: string, userId: string, dto: CompleteCampaignDto): Promise<CampaignDetail>
+  +cancelCampaign(campaignId: string, userId: string): Promise<StatusResult>
+  +advanceTask(assignmentId: string, userId: string, location: Coords, proofUrl: string): Promise<Assignment>
+
+=== class-cron.puml / Campaign & Bulk Run Jobs / BulkRunsCron (1) ===
+  +handleStalled(): Promise<void>
+
+=== class-cron.puml / Campaign & Bulk Run Jobs / BulkRunsService (1) ===
+  +expireStalled(): Promise<number>
+
+=== class-cron.puml / Campaign & Bulk Run Jobs / CampaignsCron (3) ===
+  +handleExpireOverdue(): Promise<void>
+  +handleAutoComplete(): Promise<void>
+  +handleAutoOpenDishSteps(): Promise<void>
+
+=== class-cron.puml / Campaign & Bulk Run Jobs / CampaignsService (2) ===
+  +expireOverdueCampaigns(): Promise<number>
+  +autoCompleteExpiredCampaigns(): Promise<number>
+
+=== class-cron.puml / Campaign & Bulk Run Jobs / DishStepsService (2) ===
+  +autoOpenAvailableSteps(): Promise<number>
+  +computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus
+
+=== class-cron.puml / Order Lifecycle Jobs / DeliveriesCron (2) ===
+  +handleStalledDeliveries(): Promise<void>
+  +handleOfferSweep(): Promise<void>
+
+=== class-cron.puml / Order Lifecycle Jobs / DeliveriesService (2) ===
+  +expireStalledDeliveries(): Promise<number>
+  +sweepOffersAndRebroadcast(): Promise<number>
+
+=== class-cron.puml / Order Lifecycle Jobs / ReservationsCron (2) ===
+  +handleNoShows(): Promise<void>
+  +handleDailyReset(): Promise<void>
+
+=== class-cron.puml / Order Lifecycle Jobs / ReservationsService (2) ===
+  +expireNoShows(): Promise<number>
+  +resetDailyReservationCounters(): Promise<void>
+
+=== class-delivery.puml / Delivery Lifecycle / DeliveriesController (2) ===
+  +getMyActive(user: User): Promise<ActiveDelivery>
+  +updateStatus(id: string, user: User, dto: UpdateDeliveryStatusDto, photo: File): Promise<StatusResult>
+
+=== class-delivery.puml / Delivery Lifecycle / DeliveriesService (3) ===
+  +getMyActiveDelivery(shipperUserId: string): Promise<ActiveDelivery>
+  +updateStatus(deliveryId: string, shipperUserId: string, dto: UpdateDeliveryStatusDto): Promise<StatusResult>
+  +saveProofPhoto(photo: File): Promise<string>
+
+=== class-delivery.puml / Shipper Offer / DeliveriesController (3) ===
+  +getMyOffers(user: User): Promise<Offer[]>
+  +accept(id: string, user: User): Promise<AcceptResult>
+  +reject(id: string, user: User, dto: RejectOfferDto): Promise<Message>
+
+=== class-delivery.puml / Shipper Offer / DeliveriesService (4) ===
+  +broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>
+  +acceptOffer(deliveryId: string, shipperUserId: string): Promise<AcceptResult>
+  +rejectOffer(deliveryId: string, shipperUserId: string, reason: string): Promise<Message>
+  +getMyPendingOffers(shipperUserId: string): Promise<Offer[]>
+
+=== class-delivery.puml / Stop Delivery / DeliveriesController (3) ===
+  +cancel(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>
+  +fail(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>
+  +receiverCancel(id: string, user: User): Promise<StopResult>
+
+=== class-delivery.puml / Stop Delivery / DeliveriesService (3) ===
+  +cancelAssignment(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>
+  +failDelivery(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>
+  +cancelDeliverySearchByReceiver(deliveryId: string, userId: string): Promise<StopResult>
+
+=== class-delivery.puml / Track & Performance / DeliveriesController (4) ===
+  +track(reservationId: string, user: User): Promise<TrackingInfo>
+  +getMyStats(user: User): Promise<ShipperStats>
+  +getMyHistory(user: User, page: number, limit: number): Promise<PagedHistory>
+  +myRatings(user: User, page: number, limit: number): Promise<PagedRatings>
+
+=== class-delivery.puml / Track & Performance / DeliveriesService (4) ===
+  +getTrackingForReceiver(reservationId: string, receiverUserId: string): Promise<TrackingInfo>
+  +getMyStats(shipperUserId: string): Promise<ShipperStats>
+  +getMyDeliveryHistory(shipperUserId: string, opts: PageOpts): Promise<PagedHistory>
+  +getMyRatings(shipperUserId: string, page: number, limit: number): Promise<PagedRatings>
+
+=== class-kitchen-ops.puml / Cooking Steps & Safety / DishStepsController (4) ===
+  +listSteps(campaignId: string, user: User): Promise<KitchenBoard>
+  +setStepTimes(campaignId: string, menuItemId: string, user: User, dto: SetMenuItemMealDto): Promise<CampaignDishStep[]>
+  +completeStep(campaignId: string, stepId: string, user: User, proof: File, note: string): Promise<CampaignDishStep>
+  +flagStepFailure(campaignId: string, stepId: string, user: User, reason: string): Promise<CampaignDishStep>
+
+=== class-kitchen-ops.puml / Cooking Steps & Safety / DishStepsService (5) ===
+  +getStepsForCampaign(campaignId: string, currentUserId: string): Promise<KitchenBoard>
+  +setScheduledTimes(campaignId: string, userId: string, menuItemId: string, times: string[]): Promise<CampaignDishStep[]>
+  +completeStep(campaignId: string, userId: string, stepId: string, proof: File, note: string): Promise<CampaignDishStep>
+  +flagStepQualityFail(campaignId: string, userId: string, stepId: string, reason: string): Promise<CampaignDishStep>
+  +computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus
+
+=== class-kitchen-ops.puml / Cooking Steps & Safety / KitchenOpsController (2) ===
+  +createSafetyLog(id: string, user: User, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>
+  +listSafetyLogs(id: string): Promise<KitchenSafetyLog[]>
+
+=== class-kitchen-ops.puml / Cooking Steps & Safety / KitchenOpsService (2) ===
+  +createSafetyLog(campaignId: string, userId: string, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>
+  +listSafetyLogs(campaignId: string): Promise<KitchenSafetyLog[]>
+
+=== class-kitchen-ops.puml / Meal Handoff / KitchenOpsController (5) ===
+  +issueHandoffQr(user: User): Promise<HandoffQr>
+  +scanHandoff(id: string, distId: string, user: User, dto: ScanHandoffDto): Promise<MealHandoff>
+  +listMyHandoffs(user: User): Promise<HandoffReceipt[]>
+  +submitBeneficiaryFeedback(handoffId: string, user: User, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>
+  +beneficiaryFeedbackSummary(id: string): Promise<FeedbackSummary>
+
+=== class-kitchen-ops.puml / Meal Handoff / KitchenOpsService (5) ===
+  +issueHandoffQr(userId: string): Promise<HandoffQr>
+  +scanHandoff(campaignId: string, distributionId: string, userId: string, qrToken: string): Promise<MealHandoff>
+  +listMyHandoffs(userId: string): Promise<HandoffReceipt[]>
+  +submitBeneficiaryFeedback(handoffId: string, userId: string, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>
+  +beneficiaryFeedbackSummary(campaignId: string): Promise<FeedbackSummary>
+
+=== class-kitchen-ops.puml / Shifts & Menu / KitchenOpsController (5) ===
+  +listShifts(id: string): Promise<CampaignShift[]>
+  +createShift(id: string, user: User, dto: CreateShiftDto): Promise<CampaignShift>
+  +listMenuItems(id: string): Promise<CampaignMenuItem[]>
+  +addMenuItem(id: string, user: User, dto: AddMenuItemDto): Promise<CampaignMenuItem>
+  +removeMenuItem(itemId: string, user: User): Promise<DeleteResult>
+
+=== class-kitchen-ops.puml / Shifts & Menu / KitchenOpsService (5) ===
+  +listShifts(campaignId: string): Promise<CampaignShift[]>
+  +createShift(campaignId: string, userId: string, dto: CreateShiftDto): Promise<CampaignShift>
+  +listMenuItems(campaignId: string): Promise<CampaignMenuItem[]>
+  +addMenuItem(campaignId: string, userId: string, dto: AddMenuItemDto): Promise<CampaignMenuItem>
+  +removeMenuItem(itemId: string, userId: string): Promise<DeleteResult>
+
+=== class-listing.puml / Create Listing / ListingsController (1) ===
+  +create(user: User, dto: CreateListingDto): Promise<ListingDetail>
+
+=== class-listing.puml / Create Listing / ListingsService (1) ===
+  +create(userId: string, dto: CreateListingDto): Promise<ListingDetail>
+
+=== class-listing.puml / Manage Listing / ListingsController (5) ===
+  +update(id: string, user: User, dto: UpdateListingDto): Promise<ListingDetail>
+  +publish(id: string, user: User): Promise<ListingDetail>
+  +cancel(id: string, user: User): Promise<ListingDetail>
+  +remove(id: string, user: User): Promise<DeleteResult>
+  +duplicate(id: string, user: User): Promise<ListingDetail>
+
+=== class-listing.puml / Manage Listing / ListingsService (5) ===
+  +update(listingId: string, userId: string, dto: UpdateListingDto): Promise<ListingDetail>
+  +publish(listingId: string, userId: string): Promise<ListingDetail>
+  +cancel(listingId: string, userId: string): Promise<ListingDetail>
+  +removeDraft(listingId: string, userId: string): Promise<DeleteResult>
+  +duplicate(listingId: string, userId: string): Promise<ListingDetail>
+
+=== class-listing.puml / Search & Browse / ListingsController (4) ===
+  +findNearby(query: QueryListingDto): Promise<PagedListings>
+  +findOne(id: string): Promise<ListingDetail>
+  +myListings(user: User, page: number, limit: number): Promise<PagedListings>
+  +getStats(user: User): Promise<ProviderStats>
+
+=== class-listing.puml / Search & Browse / ListingsService (4) ===
+  +findNearby(query: QueryListingDto): Promise<PagedListings>
+  +findOne(id: string): Promise<ListingDetail>
+  +findByProvider(userId: string, page: number, limit: number): Promise<PagedListings>
+  +getProviderStats(userId: string): Promise<ProviderStats>
+
+=== class-reservation.puml / Cancel & Rate / ReservationsController (3) ===
+  +cancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>
+  +providerCancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>
+  +rate(id: string, user: User, dto: RateReservationDto): Promise<Rating>
+
+=== class-reservation.puml / Cancel & Rate / ReservationsService (3) ===
+  +cancel(reservationId: string, userId: string, reason: string): Promise<CancelResult>
+  +providerCancel(reservationId: string, providerUserId: string, reason: string): Promise<CancelResult>
+  +rateReservation(reservationId: string, userId: string, dto: RateReservationDto): Promise<Rating>
+
+=== class-reservation.puml / Create Reservation / ReservationsController (1) ===
+  +create(user: User, dto: CreateReservationDto): Promise<ReservationResult>
+
+=== class-reservation.puml / Create Reservation / ReservationsService (1) ===
+  +create(receiverUserId: string, dto: CreateReservationDto): Promise<ReservationResult>
+
+=== class-reservation.puml / Handover / ReservationsController (3) ===
+  +scanQr(dto: ScanQrDto, user: User): Promise<ScanResult>
+  +confirmPickup(id: string, user: User): Promise<CompleteResult>
+  +submitPickupProof(id: string, user: User, dto: SubmitPickupProofDto, photo: File): Promise<CompleteResult>
+
+=== class-reservation.puml / Handover / ReservationsService (3) ===
+  +scanQr(qrToken: string, scannerUserId: string): Promise<ScanResult>
+  +confirmPickupByProvider(reservationId: string, scannerUserId: string): Promise<CompleteResult>
+  +submitPickupProof(reservationId: string, userId: string, type: PickupVerificationType, photo: File): Promise<CompleteResult>
+
+=== class-reservation.puml / My Orders / ReservationsController (3) ===
+  +myReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>
+  +providerReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>
+  +findOne(id: string, user: User): Promise<OrderDetail>
+
+=== class-reservation.puml / My Orders / ReservationsService (3) ===
+  +findMyReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>
+  +findProviderReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>
+  +findOne(id: string, userId: string): Promise<OrderDetail>
+
+=== class-support.puml / ESG / EsgController (3) ===
+  +platform(): Promise<PlatformEsg>
+  +providerMe(user: User): Promise<ProviderEsg>
+  +providerReport(user: User, months: number): Promise<CsrReport>
+
+=== class-support.puml / ESG / EsgService (3) ===
+  +getPlatformEsg(): Promise<PlatformEsg>
+  +getProviderEsg(userId: string): Promise<ProviderEsg>
+  +getProviderReport(userId: string, months: number): Promise<CsrReport>
+
+=== class-support.puml / Notifications / NotificationsController (5) ===
+  +listMine(user: User): Promise<Notification[]>
+  +unreadCount(user: User): Promise<CountResult>
+  +saveDeviceToken(user: User, dto: SaveDeviceTokenDto): Promise<OkResult>
+  +markRead(id: string, user: User): Promise<OkResult>
+  +markAllRead(user: User): Promise<OkResult>
+
+=== class-support.puml / Notifications / NotificationsGateway (2) ===
+  +handleConnection(client: Socket): void
+  +emitToUser(userId: string, event: string, data: unknown): void
+
+=== class-support.puml / Notifications / NotificationsService (8) ===
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+
+=== class-support.puml / Recipes / RecipesController (7) ===
+  +list(search: string, page: number, limit: number): Promise<PagedRecipes>
+  +mine(user: User, search: string, page: number, limit: number): Promise<PagedRecipes>
+  +findOne(id: string): Promise<RecipeDetail>
+  +create(user: User, dto: CreateRecipeDto): Promise<RecipeDetail>
+  +uploadImage(image: File): Promise<UrlResponse>
+  +update(id: string, user: User, dto: UpdateRecipeDto): Promise<RecipeDetail>
+  +remove(id: string, user: User): Promise<DeleteResult>
+
+=== class-support.puml / Recipes / RecipesService (6) ===
+  +list(query: RecipeQuery): Promise<PagedRecipes>
+  +findOne(id: string): Promise<RecipeDetail>
+  +create(userId: string, dto: CreateRecipeDto): Promise<RecipeDetail>
+  +update(id: string, userId: string, dto: UpdateRecipeDto): Promise<RecipeDetail>
+  +remove(id: string, userId: string): Promise<DeleteResult>
+  +saveRecipeImage(photo: File): Promise<string>
+
+=== class-support.puml / Reports / ReportsController (2) ===
+  +create(user: User, dto: CreateReportDto): Promise<ReportResult>
+  +findMine(user: User): Promise<Report[]>
+
+=== class-support.puml / Reports / ReportsService (2) ===
+  +create(reporterId: string, dto: CreateReportDto): Promise<ReportResult>
+  +findMine(reporterId: string): Promise<Report[]>
+
+=== class-support.puml / Uploads / StorageService (2) ===
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+
+=== class-support.puml / Uploads / UploadsController (2) ===
+  +uploadImage(kind: string, file: File): Promise<UrlResponse>
+  +uploadRegisterEvidence(file: File): Promise<UrlResponse>
+
+=== class-users.puml / Face eKYC / UsersController (2) ===
+  +getFaceEnrollment(user: User): Promise<EnrollmentStatus>
+  +enrollFace(user: User, files: FaceFiles): Promise<EnrollResult>
+
+=== class-users.puml / Face eKYC / UsersService (2) ===
+  +getFaceEnrollmentStatus(userId: string): Promise<EnrollmentStatus>
+  +enrollFace(userId: string, idCard: File, selfie: File): Promise<EnrollResult>
+
+=== class-users.puml / Profile / UsersController (3) ===
+  +getMe(user: User): Promise<MeResponse>
+  +getTrustHistory(user: User): Promise<TrustHistoryResponse>
+  +updateMe(user: User, dto: UpdateMeDto): Promise<User>
+
+=== class-users.puml / Profile / UsersService (4) ===
+  +getMe(userId: string): Promise<MeResponse>
+  +getMeStats(userId: string, role: string): Promise<MeStats>
+  +getTrustHistory(userId: string, limit: number): Promise<TrustHistoryResponse>
+  +updateMe(userId: string, dto: UpdateMeDto): Promise<User>
+
+=== class-users.puml / Volunteer Availability / VolunteersController (3) ===
+  +getMe(user: User): Promise<VolunteerResponse>
+  +setAvailability(user: User, dto: SetAvailabilityDto): Promise<AvailabilityResult>
+  +updateLocation(user: User, dto: UpdateLocationDto): Promise<OkResult>
+
+=== class-users.puml / Volunteer Availability / VolunteersService (3) ===
+  +getMe(userId: string): Promise<VolunteerResponse>
+  +setAvailability(userId: string, dto: SetAvailabilityDto): Promise<AvailabilityResult>
+  +updateLocation(userId: string, lng: number, lat: number): Promise<OkResult>
+

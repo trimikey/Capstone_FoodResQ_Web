@@ -1,0 +1,138 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Campaigns (1)
+' Create & Browse · Apply & Review · Lifecycle & Volunteer Task · Donation & Change
+'==============================================================
+'
+' Giải thích:
+'   Create & Browse: receiver dạng tổ chức từ thiện tạo chiến dịch nấu ăn với vị trí bếp và lịch cụ
+'   thể. Tình nguyện viên duyệt các chiến dịch đang mở, sắp xếp theo khoảng cách từ vị trí của mình —
+'   đó là lý do truy vấn đi qua $queryRaw với ST_Distance thay vì Prisma client.
+'   Apply & Review: tình nguyện viên ứng tuyển vào một ca, chủ chiến dịch duyệt hoặc từ chối. Bộ
+'   đếm slot trên CampaignShift được cập nhật trong cùng transaction với assignment, nên một ca
+'   không thể bị vượt số chỗ do hai lượt duyệt xảy ra đồng thời.
+'   Lifecycle & Volunteer Task: chủ chiến dịch đưa chiến dịch đi qua chuỗi trạng thái và có thể huỷ.
+'   Ca trực, món ăn và yêu cầu thay đổi đều composition bởi chiến dịch, nên huỷ và xoá chiến dịch
+'   sẽ kéo theo toàn bộ kế hoạch, trong khi các assignment được giữ lại cho lịch sử tình nguyện.
+'   Donation & Change Request: provider quyên góp tiền hoặc hiện vật cho chiến dịch, còn chủ chiến
+'   dịch gửi yêu cầu thay đổi để admin duyệt. Cả donation lẫn change request đều cascade theo chiến
+'   dịch. Duyệt một change request sẽ áp giá trị mới trực tiếp lên chiến dịch.
+@startuml class-campaign
+title Campaign Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Campaign Create and Browse" {
+
+  class CampaignsController {
+    +create(user: User, dto: CreateCampaignDto): Promise<CampaignDetail>
+    +uploadImage(image: File): Promise<UrlResponse>
+    +listOpen(): Promise<Campaign[]>
+    +listCompleted(): Promise<Campaign[]>
+    +listPublicUpcoming(limit: number): Promise<Campaign[]>
+    +findOne(id: string): Promise<CampaignDetail>
+    +myCampaigns(user: User): Promise<Campaign[]>
+    +getManageDetail(id: string, user: User): Promise<ManageDetail>
+    +apply(id: string, user: User, dto: ApplyCampaignDto): Promise<AssignmentResult>
+    +applyToShift(id: string, shiftId: string, user: User, dto: ApplyShiftDto): Promise<AssignmentResult>
+    +reviewAssignment(id: string, assignmentId: string, user: User, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>
+    +start(id: string, user: User): Promise<CampaignDetail>
+    +complete(id: string, user: User, dto: CompleteCampaignDto): Promise<CampaignDetail>
+    +cancel(id: string, user: User): Promise<StatusResult>
+    +advance(assignmentId: string, user: User, dto: AdvanceCampaignTaskDto, proof: File): Promise<Assignment>
+    +pledge(id: string, user: User, dto: PledgeDonationDto): Promise<CampaignDonation>
+    +confirmDonation(donationId: string, user: User): Promise<CampaignDonation>
+    +submitChange(id: string, user: User, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>
+    +listChanges(id: string, user: User): Promise<CampaignChangeRequest[]>
+    +cancelChange(changeRequestId: string, user: User): Promise<StatusResult>
+  }
+
+  class CampaignsService {
+    -prisma: PrismaService
+    -storage: StorageService
+    -notifications: NotificationsService
+    -systemConfig: SystemConfigService
+    +create(userId: string, dto: CreateCampaignDto): Promise<CampaignDetail>
+    +saveCampaignImage(photo: File): Promise<string>
+    +listOpen(): Promise<Campaign[]>
+    +listCompleted(): Promise<Campaign[]>
+    +findOne(id: string): Promise<CampaignDetail>
+    +myCampaigns(userId: string): Promise<Campaign[]>
+    +getManageDetail(id: string, userId: string): Promise<ManageDetail>
+    +apply(campaignId: string, userId: string, dto: ApplyCampaignDto): Promise<AssignmentResult>
+    +reviewAssignment(campaignId: string, assignmentId: string, userId: string, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>
+    +startCampaign(campaignId: string, userId: string): Promise<CampaignDetail>
+    +completeCampaign(campaignId: string, userId: string, dto: CompleteCampaignDto): Promise<CampaignDetail>
+    +cancelCampaign(campaignId: string, userId: string): Promise<StatusResult>
+    +advanceTask(assignmentId: string, userId: string, location: Coords, proofUrl: string): Promise<Assignment>
+    +pledgeDonation(campaignId: string, providerUserId: string, dto: PledgeDonationDto): Promise<CampaignDonation>
+    +confirmDonation(donationId: string, charityUserId: string): Promise<CampaignDonation>
+    +submitChangeRequest(campaignId: string, userId: string, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>
+    +listChangeRequests(campaignId: string, userId: string): Promise<CampaignChangeRequest[]>
+    +cancelChangeRequest(changeRequestId: string, userId: string): Promise<StatusResult>
+    -assertShiftNotOverlapping(volunteerId: string, shift: CampaignShift): Promise<void>
+    -assertOwner(campaignId: string, userId: string): Promise<KitchenCampaign>
+    -evaluateCheckInWindow(campaign: KitchenCampaign, shift: CampaignShift, role: string, workDate: Date): CheckInResult
+    -campaignFillRate(campaign: KitchenCampaign): FillRate
+    -maybeCompleteAssignment(campaignId: string, volunteerId: string): Promise<void>
+    -withSupplyProgress(campaign: KitchenCampaign): CampaignDetail
+  }
+}
+
+class CreateCampaignDto
+class ApplyCampaignDto
+class ReviewCampaignAssignmentDto
+class CompleteCampaignDto
+class AdvanceCampaignTaskDto
+class PledgeDonationDto
+class SubmitCampaignChangeDto
+
+class SystemConfigService {
+  +getAll(): Promise<ConfigItem[]>
+  +getNumber(key: string): Promise<number>
+  +set(key: string, value: number, userId: string): Promise<ConfigItem>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +kitchenCampaign: KitchenCampaignDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +campaignShift: CampaignShiftDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+  +campaignDonation: CampaignDonationDelegate
+  +campaignChangeRequest: ChangeRequestDelegate
+  +providerProfile: ProviderProfileDelegate
+}
+
+CampaignsController "1" --> "1" CampaignsService
+CampaignsController ..> CreateCampaignDto
+CampaignsController ..> ApplyCampaignDto
+CampaignsController ..> ReviewCampaignAssignmentDto
+CampaignsController ..> CompleteCampaignDto
+CampaignsController ..> AdvanceCampaignTaskDto
+CampaignsController ..> PledgeDonationDto
+CampaignsController ..> SubmitCampaignChangeDto
+
+CampaignsService "1" --> "1" SystemConfigService
+CampaignsService "1" --> "1" StorageService
+CampaignsService "1" --> "1" NotificationsService
+CampaignsService "1" --> "1" PrismaService
+@enduml

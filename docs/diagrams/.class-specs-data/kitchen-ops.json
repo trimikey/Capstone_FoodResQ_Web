@@ -1,0 +1,100 @@
+{
+  "class-kitchen-ops.puml": {
+    "Kitchen Operations": {
+      "explanation": "The campaign owner declares shifts (each with one role and slot count) and items in the menu. Adding a menu item generates its cooking steps via DishStepsService. Shifts, menu items and cooking steps are all composed by their parent, so deleting an item cascades its steps. Assigned volunteers complete each cooking step with a proof photo, or flag a quality failure, and log food-safety entries. computeEffectiveStatus decides whether a step is unlocked: the previous step must be done AND the scheduled time must have arrived - so the kitchen board cannot do steps out of order. Individual receivers issue a short-lived QR code; volunteers scan it at the distribution point to register the handoff. A unique constraint on (distribution, receiver) makes it impossible to double-scan the same person in the same distribution. Feedback is composed by the handoff, so each meal carries at most one rating.",
+      "classes": {
+        "KitchenOpsController": {
+          "description": "Shift and menu management endpoints.",
+          "methods": {
+            "+listShifts(id: string): Promise<CampaignShift[]>": "Lists a campaign's shifts.",
+            "+createShift(id: string, user: User, dto: CreateShiftDto): Promise<CampaignShift>": "Owner creates a new shift.",
+            "+listMenuItems(id: string): Promise<CampaignMenuItem[]>": "Lists a campaign's menu items.",
+            "+addMenuItem(id: string, user: User, dto: AddMenuItemDto): Promise<CampaignMenuItem>": "Owner adds a menu item.",
+            "+removeMenuItem(itemId: string, user: User): Promise<DeleteResult>": "Removes a menu item (cascades its steps).",
+            "+createSafetyLog(id: string, user: User, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>": "Creates a food-safety log entry with photo.",
+            "+listSafetyLogs(id: string): Promise<KitchenSafetyLog[]>": "Lists safety logs for a campaign.",
+            "+issueHandoffQr(user: User): Promise<HandoffQr>": "Issues a short-lived QR token to a receiver for handoff.",
+            "+scanHandoff(id: string, distId: string, user: User, dto: ScanHandoffDto): Promise<MealHandoff>": "Volunteer scans the receiver's QR at the distribution.",
+            "+listMyHandoffs(user: User): Promise<HandoffReceipt[]>": "Lists handoffs the receiver has used.",
+            "+submitBeneficiaryFeedback(handoffId: string, user: User, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>": "Receiver submits feedback for their handoff.",
+            "+beneficiaryFeedbackSummary(id: string): Promise<FeedbackSummary>": "Aggregated feedback for the campaign."
+          }
+        },
+        "KitchenOpsService": {
+          "description": "Shift + menu persistence with cooking-step generation.",
+          "methods": {
+            "+listShifts(campaignId: string): Promise<CampaignShift[]>": "Lists shifts ordered by start time.",
+            "+createShift(campaignId: string, userId: string, dto: CreateShiftDto): Promise<CampaignShift>": "Asserts owner, inserts shift.",
+            "+listMenuItems(campaignId: string): Promise<CampaignMenuItem[]>": "Lists menu items.",
+            "+addMenuItem(campaignId: string, userId: string, dto: AddMenuItemDto): Promise<CampaignMenuItem>": "Asserts owner, inserts item, calls DishStepsService.ensureStepsForMenuItem.",
+            "+removeMenuItem(itemId: string, userId: string): Promise<DeleteResult>": "Asserts ownership, deletes (cascades steps).",
+            "-assertCampaignOwner(campaignId: string, userId: string): Promise<KitchenCampaign>": "Internal ownership check.",
+            "+createSafetyLog(campaignId: string, userId: string, dto: CreateSafetyLogDto, photo: File): Promise<KitchenSafetyLog>": "Asserts the user is assigned as a cook, persists the log with photo.",
+            "+listSafetyLogs(campaignId: string): Promise<KitchenSafetyLog[]>": "Lists logs ordered by createdAt desc.",
+            "-assertAssignedAs(campaignId: string, userId: string, role: string): Promise<VolunteerRef>": "Throws if the user is not assigned to the campaign with the given role.",
+            "+issueHandoffQr(userId: string): Promise<HandoffQr>": "Asserts the user is an individual receiver and issues a short-lived token.",
+            "+scanHandoff(campaignId: string, distributionId: string, userId: string, qrToken: string): Promise<MealHandoff>": "Validates the token, asserts the scanner is assigned as a server, records the handoff.",
+            "+listMyHandoffs(userId: string): Promise<HandoffReceipt[]>": "Lists handoffs belonging to the receiver.",
+            "+submitBeneficiaryFeedback(handoffId: string, userId: string, dto: CreateBeneficiaryFeedbackDto): Promise<BeneficiaryFeedback>": "Asserts ownership, persists the feedback (one per handoff).",
+            "+beneficiaryFeedbackSummary(campaignId: string): Promise<FeedbackSummary>": "Aggregates ratings and free-text counts.",
+            "-assertIndividualReceiver(userId: string): Promise<ReceiverProfile>": "Throws if the user is not an individual receiver."
+          }
+        },
+        "DishStepsService": {
+          "description": "Step status logic, photo storage and quality flagging.",
+          "methods": {
+            "+ensureStepsForMenuItem(campaignId: string, menuItemId: string, scheduledTimes: string[]): Promise<CampaignDishStep[]>": "Auto-generates the CampaignDishStep rows for a menu item, one per step with the given scheduled times.",
+            "+getStepsForCampaign(campaignId: string, currentUserId: string): Promise<KitchenBoard>": "Builds the per-volunteer board with effective statuses.",
+            "+setScheduledTimes(campaignId: string, userId: string, menuItemId: string, times: string[]): Promise<CampaignDishStep[]>": "Owner assigns scheduled times to each step.",
+            "+completeStep(campaignId: string, userId: string, stepId: string, proof: File, note: string): Promise<CampaignDishStep>": "Validates the assigned volunteer, stores proof, sets status=done.",
+            "+flagStepQualityFail(campaignId: string, userId: string, stepId: string, reason: string): Promise<CampaignDishStep>": "Marks quality failure, notifies the campaign owner.",
+            "+computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus": "Pure function: open iff prev step is done (or is the first) AND scheduled time has arrived.",
+            "-assertAssignedVolunteer(campaignId: string, userId: string): Promise<VolunteerRef>": "Throws if the user is not an assigned volunteer for this campaign."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "DishStepsController": {
+          "description": "Kitchen-board endpoints for cooking steps.",
+          "methods": {
+            "+listSteps(campaignId: string, user: User): Promise<KitchenBoard>": "Returns the kitchen board for the assigned volunteer.",
+            "+setStepTimes(campaignId: string, menuItemId: string, user: User, dto: SetMenuItemMealDto): Promise<CampaignDishStep[]>": "Owner sets the scheduled times for the steps of a menu item.",
+            "+completeStep(campaignId: string, stepId: string, user: User, proof: File, note: string): Promise<CampaignDishStep>": "Volunteer marks a step completed with proof.",
+            "+flagStepFailure(campaignId: string, stepId: string, user: User, reason: string): Promise<CampaignDishStep>": "Volunteer flags a quality failure on a step."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "SystemConfigService": {
+          "description": "Runtime-tunable business parameters (daily quota, search radius, QR validity, trust thresholds). Other modules call this on every request rather than reading environment variables directly.",
+          "methods": {
+            "+getAll(): Promise<ConfigItem[]>": "Returns the full config table (admin view).",
+            "+getNumber(key: string): Promise<number>": "Reads a numeric config entry by key; throws if missing.",
+            "+set(key: string, value: number, userId: string): Promise<ConfigItem>": "Updates a config entry; writes an audit log."
+          }
+        }
+      }
+    }
+  }
+}

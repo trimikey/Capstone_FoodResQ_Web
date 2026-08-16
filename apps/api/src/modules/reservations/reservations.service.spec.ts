@@ -222,7 +222,8 @@ describe('ReservationsService.expireNoShows', () => {
       {} as never,          // redlock
       {} as never,          // storage
       {} as never,          // faceMatch
-      {} as never,          // systemConfig
+      // systemConfig — mốc phạt uy tín giờ đọc từ system_configs, trả mặc định
+      { getNumber: jest.fn(async (k: string) => (k === 'RESERVATION_NO_SHOW_PENALTY' ? 20 : 10)) } as never,
       { notify: jest.fn() } as never,
       trust as never,
       { add: jest.fn() } as never,
