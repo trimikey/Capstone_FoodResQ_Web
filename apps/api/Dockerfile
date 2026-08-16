@@ -6,19 +6,19 @@
 # Trên Render: Root Directory để TRỐNG, Dockerfile Path = apps/api/Dockerfile.
 #
 # Stage 1 (builder): full deps → build @foodresq/types + prisma generate + nest build
-# Stage 2 (proddeps): chỉ prod deps, cài sạch (không prune)
-# Stage 3 (runner) : prod deps + dist + prisma client
+# Stage 2 (runner) : node_modules from builder + dist + prisma client
 
 # Debian slim thay vì alpine: bcrypt có prebuilt cho glibc (alpine/musl phải
 # compile từ source → cần python3/make/g++), và Prisma engine debian-openssl-3.0.x.
-ARG NODE_IMAGE=node:20-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
 
 # ============ Stage 1: builder ============
 FROM ${NODE_IMAGE} AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openssl ca-certificates python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
-# npm i -g thay vì corepack: corepack bundle trong Node 20 có thể fail
+# npm i -g thay vì corepack: corepack bundle trong Node 24 có thể fail
 # signature verification với các bản pnpm mới.
 RUN npm install -g pnpm@11.8.0
 
@@ -53,24 +53,7 @@ RUN pnpm --filter @foodresq/api run prisma:generate
 # Build NestJS — dùng tsc builder (đã set trong nest-cli.json)
 RUN pnpm --filter @foodresq/api run build
 
-# ============ Stage 2: prod dependencies ============
-FROM ${NODE_IMAGE} AS proddeps
-
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-RUN npm install -g pnpm@11.8.0
-
-WORKDIR /repo
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json ./
-COPY apps/api/package.json ./apps/api/package.json
-COPY apps/web/package.json ./apps/web/package.json
-COPY apps/mobile/package.json ./apps/mobile/package.json
-COPY packages/types/package.json ./packages/types/package.json
-
-RUN pnpm install --frozen-lockfile --prod --filter "@foodresq/api..."
-
-# ============ Stage 3: production runtime ============
+# ============ Stage 2: production runtime ============
 FROM ${NODE_IMAGE} AS runner
 
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -79,9 +62,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 ENV NODE_ENV=production
 WORKDIR /app
 
-# node_modules sạch (chỉ prod deps) + Prisma Client đã generate ở builder
+# node_modules from builder: includes devDependencies plus the generated
+# Prisma Client. A separate prod-only install stage was dropped because the
+# second pnpm install only slowed the build and risked losing .prisma.
 COPY --from=builder /repo/node_modules ./node_modules
-
 
 # Workspace layout phải giữ nguyên vì node_modules/@foodresq/types là symlink
 # tương đối trỏ về ../../packages/types
