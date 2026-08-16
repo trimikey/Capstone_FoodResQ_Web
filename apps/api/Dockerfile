@@ -67,11 +67,26 @@ WORKDIR /app
 # second pnpm install only slowed the build and risked losing .prisma.
 COPY --from=builder /repo/node_modules ./node_modules
 
+# Re-link workspace packages in case symlinks broke during copy.
+# pnpm-workspace.yaml + package.json are enough — no lockfile needed for linking.
+COPY --from=builder /repo/pnpm-workspace.yaml /repo/package.json ./
+COPY --from=builder /repo/packages/types ./packages/types
+RUN node -e "
+  const fs = require('fs'), path = require('path');
+  const nm = path.join(process.cwd(), 'node_modules');
+  fs.readdirSync(nm).filter(n => n.startsWith('@')).forEach(org => {
+    fs.readdirSync(path.join(nm, org)).forEach(pkg => {
+      const link = path.join(nm, org, pkg);
+      const target = path.join(process.cwd(), 'packages', pkg.replace('@'+org+'/','types/'));
+      if (fs.existsSync(target) && !fs.lstatSync(link).isSymbolicLink()) {
+        fs.symlinkSync(target, link);
+      }
+    });
+  });
+"
+
 # Workspace layout phải giữ nguyên vì node_modules/@foodresq/types là symlink
 # tương đối trỏ về ../../packages/types
-COPY --from=builder /repo/package.json /repo/pnpm-workspace.yaml ./
-COPY --from=builder /repo/packages/types/package.json ./packages/types/package.json
-COPY --from=builder /repo/packages/types/dist ./packages/types/dist
 COPY --from=builder /repo/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /repo/apps/api/dist ./apps/api/dist
 COPY --from=builder /repo/apps/api/prisma ./apps/api/prisma
