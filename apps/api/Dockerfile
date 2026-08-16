@@ -80,8 +80,8 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # node_modules sạch (chỉ prod deps) + Prisma Client đã generate ở builder
-COPY --from=proddeps /repo/node_modules ./node_modules
-COPY --from=builder /repo/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /repo/node_modules ./node_modules
+
 
 # Workspace layout phải giữ nguyên vì node_modules/@foodresq/types là symlink
 # tương đối trỏ về ../../packages/types
