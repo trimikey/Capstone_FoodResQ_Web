@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
-import { useMyProfile } from '@/hooks/useProfile';
+import { useVolunteerMe } from '@/hooks/useVolunteer';
 import { VolunteerKitchenOpsPanel } from '@/components/kitchen/VolunteerKitchenOpsPanel';
 import {
   statusMeta,
@@ -70,7 +70,7 @@ export default function VolunteerCampaignDetailScreen() {
     returnSegment?: 'open' | 'tasks';
   }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
-  const { data: profile } = useMyProfile(true);
+  const { data: volunteerProfile } = useVolunteerMe();
   const { data: myTasks, refetch: refetchTasks } = useMyTasks(true);
   const { data: shifts = [], refetch: refetchShifts } = useShifts(id);
   const { data: kitchenMenu = [] } = useMenuItems(id);
@@ -154,7 +154,7 @@ export default function VolunteerCampaignDetailScreen() {
   const hasShiftSchedule = shifts.length > 0;
   // Chỉ chuyên môn đã xác minh mới được dùng để đăng ký ca.
   const verifiedSpecs = new Set(
-    (profile?.volunteer?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
+    (volunteerProfile?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
   );
   // Role-level apply chỉ là assignment tổng không gắn ca. Shift-level apply phải xét theo shiftId.
   const appliedRoles = new Set(myCampaignTasks.filter((t) => !t.shiftId).map((t) => t.role));

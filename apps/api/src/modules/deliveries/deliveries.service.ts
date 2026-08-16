@@ -69,6 +69,17 @@ export class DeliveriesService {
     return this.storage.saveImage(photo, 'delivery-proofs');
   }
 
+  private normalizeQrToken(qrToken: string): string {
+    return qrToken.trim().replace(/[\s-]/g, '').toLowerCase();
+  }
+
+  private reservationQrMatches(input: string, storedQrToken: string): boolean {
+    const normalizedInput = this.normalizeQrToken(input);
+    const normalizedStored = this.normalizeQrToken(storedQrToken);
+    if (normalizedInput === normalizedStored) return true;
+    return /^[0-9a-f]{6,16}$/.test(normalizedInput) && normalizedStored.endsWith(normalizedInput);
+  }
+
   /**
    * Delivery này có phải chuyến của chiến dịch không.
    * Chỉ đụng tới `id`/`delivery_id` — hai cột luôn tồn tại — nên an toàn kể cả khi
@@ -618,7 +629,7 @@ export class DeliveriesService {
           'Cần quét mã QR trên màn hình của người nhận để xác nhận bàn giao đúng người.',
         );
       }
-      if (qrToken.trim() !== delivery.reservation.qrToken) {
+      if (!this.reservationQrMatches(qrToken, delivery.reservation.qrToken)) {
         throw new BadRequestException(
           'Mã QR không khớp với đơn này. Hãy quét mã trong trang theo dõi đơn của người nhận.',
         );

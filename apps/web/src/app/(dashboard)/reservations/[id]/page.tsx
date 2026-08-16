@@ -641,14 +641,14 @@ export default function ReservationDetailsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(reservation.qrToken!);
+                      void navigator.clipboard?.writeText(reservation.qrToken!.slice(-8).toUpperCase());
                       toast.success('Đã sao chép mã xác nhận');
                     }}
                     title="Nhấn để sao chép mã"
-                    className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono text-emerald-700 hover:bg-emerald-50 transition-colors max-w-full"
+                    className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono font-bold tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 transition-colors max-w-full"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                    <span className="truncate">{reservation.qrToken}</span>
+                    <span>{reservation.qrToken.slice(-8).toUpperCase()}</span>
                   </button>
                 )}
 
@@ -966,6 +966,25 @@ export default function ReservationDetailsPage() {
                           <div className="bg-white p-4 rounded-2xl shadow-lg">
                             <QRCodeSVG value={reservation.qrToken!} size={180} level="M" />
                           </div>
+                          {reservation.qrToken && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(reservation.qrToken!.slice(-8).toUpperCase());
+                                toast.success('Đã sao chép mã xác nhận');
+                              }}
+                              className="w-full max-w-md rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left transition-colors hover:bg-white/15"
+                              title="Nhấn để sao chép mã xác nhận"
+                            >
+                              <span className="mb-1 flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-300">
+                                <span className="material-symbols-outlined text-[15px]">pin</span>
+                                Mã nhận hàng
+                              </span>
+                              <span className="block text-center font-mono text-2xl font-black tracking-[0.18em] text-white">
+                                {reservation.qrToken.slice(-8).toUpperCase()}
+                              </span>
+                            </button>
+                          )}
                           <p className="text-sm font-semibold max-w-xs">Đưa mã QR này cho nhà cung cấp quét để xác nhận đã nhận hàng</p>
                           {liveStatus === 'picked_up' ? (
                             <button

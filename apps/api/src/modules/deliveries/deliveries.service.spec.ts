@@ -23,6 +23,8 @@ describe('DeliveriesService', () => {
     receiverProfile: { findUnique: jest.fn() },
     shipperTaskOffer: { findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
     delivery: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+    reservation: { update: jest.fn() },
+    dedicationPointsHistory: { create: jest.fn() },
     bulkRun: { findFirst: jest.fn() },
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
@@ -203,6 +205,38 @@ describe('DeliveriesService', () => {
       where: { id: 'delivery-1' },
       data: expect.objectContaining({ deliveryProofUrl: 'https://proof.example/image.jpg' }),
     }));
+  });
+
+  it('accepts receiver short QR code when completing a reservation delivery', async () => {
+    prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1', dedicationPoints: 10 });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 'delivery-1',
+      shipperId: 'shipper-1',
+      status: 'in_transit',
+      reservationId: 'reservation-1',
+      reservation: {
+        id: 'reservation-1',
+        qrToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa712b905e',
+        receiver: { userId: 'receiver-user-1' },
+      },
+    });
+    prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'completed' });
+    prisma.volunteerProfile.update.mockResolvedValue({});
+    prisma.dedicationPointsHistory.create.mockResolvedValue({});
+    prisma.delivery.update.mockResolvedValue({ id: 'delivery-1', status: 'delivered' });
+    prisma.$transaction.mockImplementation(async (input: unknown) => {
+      if (typeof input === 'function') return input(prisma);
+      return Promise.all(input as Promise<unknown>[]);
+    });
+
+    await expect(
+      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', undefined, '712B905E'),
+    ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
+
+    expect(prisma.reservation.update).toHaveBeenCalledWith({
+      where: { id: 'reservation-1' },
+      data: { status: 'completed' },
+    });
   });
 
   it('nhận đơn lẻ thành công mà không đụng campaign_transports', async () => {

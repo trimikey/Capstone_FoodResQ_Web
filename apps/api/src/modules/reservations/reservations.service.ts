@@ -308,22 +308,26 @@ export class ReservationsService {
   }
 
   async scanQr(qrToken: string, scannerUserId: string) {
-    const reservation = await this.prisma.reservation.findUnique({
-      where: { qrToken },
-      include: {
-        listing: { select: { providerId: true, title: true, quantityUnit: true } },
-        receiver: {
-          select: {
-            userId: true,
-            faceImageUrl: true,
-            idCardImageUrl: true,
-            idCardNumber: true,
-            faceDescriptor: true,
-            user: { select: { fullName: true, phone: true, avatarUrl: true } },
-          },
+    const normalizedToken = qrToken.trim().replace(/[\s-]/g, '').toLowerCase();
+    const include = {
+      listing: { select: { providerId: true, title: true, quantityUnit: true } },
+      receiver: {
+        select: {
+          userId: true,
+          faceImageUrl: true,
+          idCardImageUrl: true,
+          idCardNumber: true,
+          faceDescriptor: true,
+          user: { select: { fullName: true, phone: true, avatarUrl: true } },
         },
       },
-    });
+    } as const;
+    const reservation = normalizedToken.length === 64
+      ? await this.prisma.reservation.findUnique({
+          where: { qrToken: normalizedToken },
+          include,
+        })
+      : await this.resolveReservationByShortQrCode(normalizedToken);
 
     if (!reservation) throw new NotFoundException('Mã QR không hợp lệ.');
     // QR của GIAO SỈ thuộc về một điểm phát trên tuyến, dùng khi shipper phát hàng cho
@@ -380,7 +384,6 @@ export class ReservationsService {
       });
     }
 
-    // Trả kèm thẻ thông tin người nhận để provider đối chiếu trực tiếp (không cần receiver chụp lại)
     return {
       id: reservation.id,
       status,
@@ -397,6 +400,36 @@ export class ReservationsService {
         verificationImageAvailable,
       },
     };
+  }
+
+  private async resolveReservationByShortQrCode(shortCode: string) {
+    if (!/^[0-9a-f]{6,16}$/.test(shortCode)) {
+      throw new BadRequestException('Mã nhập tay chỉ gồm 6-16 ký tự hex.');
+    }
+
+    const matches = await this.prisma.reservation.findMany({
+      where: { qrToken: { endsWith: shortCode } },
+      include: {
+        listing: { select: { providerId: true, title: true, quantityUnit: true } },
+        receiver: {
+          select: {
+            userId: true,
+            faceImageUrl: true,
+            idCardImageUrl: true,
+            idCardNumber: true,
+            faceDescriptor: true,
+            user: { select: { fullName: true, phone: true, avatarUrl: true } },
+          },
+        },
+      },
+      take: 2,
+    });
+
+    if (matches.length > 1) {
+      throw new BadRequestException('Mã nhập tay bị trùng. Vui lòng quét QR hoặc nhập mã đầy đủ.');
+    }
+
+    return matches[0] ?? null;
   }
 
   /**
