@@ -63,26 +63,22 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # node_modules from builder: includes devDependencies plus the generated
-# Prisma Client. A separate prod-only install stage was dropped because the
-# second pnpm install only slowed the build and risked losing .prisma.
+# Prisma Client.
 COPY --from=builder /repo/node_modules ./node_modules
 
-# Re-link workspace packages in case symlinks broke during copy.
-# pnpm-workspace.yaml + package.json are enough — no lockfile needed for linking.
-COPY --from=builder /repo/pnpm-workspace.yaml /repo/package.json ./
-COPY --from=builder /repo/packages/types ./packages/types
+# Copy packages types dist directly (avoid symlink issues across stages)
+COPY --from=builder /repo/packages/types/package.json ./packages/types/package.json
+COPY --from=builder /repo/packages/types/dist ./packages/types/dist
+
+# Re-create @foodresq/types symlink pointing to local ./packages/types
 RUN node -e "
   const fs = require('fs'), path = require('path');
-  const nm = path.join(process.cwd(), 'node_modules');
-  fs.readdirSync(nm).filter(n => n.startsWith('@')).forEach(org => {
-    fs.readdirSync(path.join(nm, org)).forEach(pkg => {
-      const link = path.join(nm, org, pkg);
-      const target = path.join(process.cwd(), 'packages', pkg.replace('@'+org+'/','types/'));
-      if (fs.existsSync(target) && !fs.lstatSync(link).isSymbolicLink()) {
-        fs.symlinkSync(target, link);
-      }
-    });
-  });
+  const nm = process.cwd() + '/node_modules/@foodresq';
+  if (!fs.existsSync(nm)) fs.mkdirSync(nm, { recursive: true });
+  const tgt = process.cwd() + '/packages/types';
+  if (fs.existsSync(tgt) && !fs.lstatSync(nm+'/types').isSymbolicLink()) {
+    fs.symlinkSync(tgt, nm+'/types');
+  }
 "
 
 # Workspace layout phải giữ nguyên vì node_modules/@foodresq/types là symlink
