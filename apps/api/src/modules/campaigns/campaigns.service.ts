@@ -472,6 +472,11 @@ export class CampaignsService {
 
     // Validate & default endDate (>= scheduledDate, mặc định = scheduledDate nếu bỏ trống)
     const startDateObj = new Date(`${dto.scheduledDate}T00:00:00Z`);
+    const nowVn = new Date(Date.now() + 7 * 3600_000);
+    const tomorrowVn = new Date(Date.UTC(nowVn.getUTCFullYear(), nowVn.getUTCMonth(), nowVn.getUTCDate() + 1));
+    if (dto.scheduledDate < tomorrowVn.toISOString().slice(0, 10)) {
+      throw new BadRequestException('Ngày vận hành phải từ ngày mai trở đi.');
+    }
     let endDateObj: Date;
     if (dto.endDate) {
       endDateObj = new Date(`${dto.endDate}T00:00:00Z`);
@@ -511,6 +516,9 @@ export class CampaignsService {
     const operationEndAt = new Date(this.vnDateTimeToUtc(operationEndDate, lastPeriod.endTime));
     const recruitmentStartAt = new Date(dto.recruitmentStartAt);
     const recruitmentEndAt = new Date(dto.recruitmentEndAt);
+    if (recruitmentStartAt.getTime() < Date.now() - 60_000) {
+      throw new BadRequestException('Thời gian mở tuyển không được ở quá khứ.');
+    }
     if (recruitmentStartAt >= recruitmentEndAt) {
       throw new BadRequestException('Thời gian mở tuyển phải trước thời gian đóng tuyển.');
     }

@@ -65,6 +65,10 @@ function toVnLocalInput(date: Date) {
   return vn.toISOString().slice(0, 16);
 }
 
+function nowVnLocalInput() {
+  return toVnLocalInput(new Date());
+}
+
 function parseVnLocal(value: string) {
   return new Date(`${value}:00+07:00`);
 }
@@ -138,6 +142,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     return Math.floor((operationStartAt.getTime() - recruitmentEnd.getTime()) / 60_000);
   }, [operationStartAt, recruitmentEndAt]);
   const recruitmentBufferIsTooShort = recruitmentBufferMinutes !== null && recruitmentBufferMinutes < 360;
+  const minRecruitmentStartAt = nowVnLocalInput();
   const expectedServingsValue = expectedServings === '' ? 0 : expectedServings;
   const servingsRef = useRef(expectedServingsValue);
 
@@ -305,6 +310,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       const start = parseVnLocal(recruitmentStartAt);
       const end = parseVnLocal(recruitmentEndAt);
       if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return 'Thời gian tuyển không hợp lệ.';
+      if (start.getTime() < Date.now() - 60_000) return 'Thời gian mở tuyển không được ở quá khứ.';
       if (start >= end) return 'Thời gian mở tuyển phải trước thời gian đóng tuyển.';
       if (!scheduledDate || scheduledDate < dateAfter(1)) {
         return 'Ngày vận hành phải từ ngày mai trở đi.';
@@ -518,11 +524,11 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="text-xs font-bold text-neutral-600">
                     Mở tuyển
-                    <input type="datetime-local" className="cm-input mt-1" value={recruitmentStartAt} onChange={(e) => setRecruitmentStartAt(e.target.value)} />
+                    <input type="datetime-local" className="cm-input mt-1" value={recruitmentStartAt} min={minRecruitmentStartAt} onChange={(e) => setRecruitmentStartAt(e.target.value)} />
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Đóng tuyển
-                    <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
+                    <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} min={recruitmentStartAt || minRecruitmentStartAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
                   </label>
                 </div>
                 <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu 6 giờ.</p>
