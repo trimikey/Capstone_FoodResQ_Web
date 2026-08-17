@@ -436,8 +436,14 @@ export default function CreateListingScreen() {
           text1: editingIsPublished ? 'Đã cập nhật thông tin phụ' : 'Đã lưu tin nháp',
         });
       } else {
-        await createListing.mutateAsync(fullPayload);
-        Popup.show({ type: 'success', text1: 'Đã tạo tin (nháp)', text2: 'Bấm "Đăng tin" trong chi tiết để công khai.' });
+        const created = await createListing.mutateAsync(fullPayload);
+        Popup.show({
+          type: 'success',
+          text1: '\u0110\u00e3 t\u1ea1o tin nh\u00e1p',
+          text2: 'B\u1ea5m \"\u0110\u0103ng tin\" \u1edf m\u00e0n chi ti\u1ebft \u0111\u1ec3 hi\u1ec3n th\u1ecb tr\u00ean web.',
+        });
+        router.replace(`/(app)/provider/${created.id}`);
+        return;
       }
       router.replace('/(app)/provider/listings');
     } catch (err) {
@@ -981,7 +987,7 @@ export default function CreateListingScreen() {
             accessibilityState={{ disabled: submitting || uploading, busy: submitting }}
             icon={!editingIsPublished && activeStep < 3 ? 'arrow-right' : undefined}
           >
-            {!editingIsPublished && activeStep < 3 ? 'Ti\u1ebfp t\u1ee5c' : isEdit ? 'L?u thay ??i' : 'T?o tin'}
+            {!editingIsPublished && activeStep < 3 ? 'Ti\u1ebfp t\u1ee5c' : isEdit ? 'L\u01b0u thay \u0111\u1ed5i' : 'T\u1ea1o tin (Nh\u00e1p)'}
           </Button>
           <Text style={styles.footerHint} numberOfLines={2}>
             {isEdit ? 'Lưu xong sẽ quay lại danh sách tin.' : 'Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.'}
