@@ -717,7 +717,6 @@ export default function CreateCampaignModal({
           className="cm-create-header-close"
           aria-label="Đóng"
         >
-          <span className="material-symbols-outlined">arrow_back</span>
           Quay lại
         </button>
       </header>
@@ -1633,13 +1632,30 @@ function ImageUploader({
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'upload' | 'url'>('upload');
   const [url, setUrl] = useState('');
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (value) return;
+    setLocalPreviewUrl(null);
+  }, [value]);
+
+  function readLocalPreview(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
 
   async function onPick(file: File) {
     try {
+      setLocalPreviewUrl(await readLocalPreview(file));
       const res = await upload.mutateAsync(file);
       onChange(res.url);
     } catch (e) {
-      toast.error(errMsg(e, 'Tải ảnh thất bại'));
+      setLocalPreviewUrl(null);
+      toast.error(errMsg(e, 'Tai anh that bai'));
     }
   }
 
@@ -1652,6 +1668,7 @@ function ImageUploader({
     try {
       const u = new URL(trimmed);
       if (!/^https?:$/.test(u.protocol)) throw new Error();
+      setLocalPreviewUrl(null);
       onChange(trimmed);
       setUrl('');
       setMode('upload');
@@ -1675,13 +1692,16 @@ function ImageUploader({
         }}
       />
 
-      {value ? (
+      {value || localPreviewUrl ? (
         <div className="cm-upload-preview">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(value)} alt="Ảnh bìa" />
+          <img src={localPreviewUrl ?? mediaUrl(value ?? '')} alt="Anh bia" />
           <button
             type="button"
-            onClick={() => onChange(null)}
+            onClick={() => {
+              setLocalPreviewUrl(null);
+              onChange(null);
+            }}
             className="cm-upload-preview-remove"
             aria-label="Xoá ảnh"
           >

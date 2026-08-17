@@ -380,8 +380,16 @@ export const endpoints = {
     apply: (id: string) => `/campaigns/${id}/apply`,
     // Volunteer: các công việc đã đăng ký
     myTasks: '/campaigns/my-tasks',
+    myTaskDetail: (assignmentId: string) => `/campaigns/my-tasks/${assignmentId}`,
     // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
+    completeDishStep: (campaignId: string, stepId: string) =>
+      `/campaigns/${campaignId}/dish-steps/${stepId}/complete`,
+    flagDishStepQcFail: (campaignId: string, stepId: string) =>
+      `/campaigns/${campaignId}/dish-steps/${stepId}/qc-fail`,
+    supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
+    completeDistribution: (distributionId: string) =>
+      `/campaigns/distributions/${distributionId}/complete`,
   },
   recipes: {
     // Thư viện công thức nấu ăn (đầu bếp/chef đóng góp). List + detail công khai.

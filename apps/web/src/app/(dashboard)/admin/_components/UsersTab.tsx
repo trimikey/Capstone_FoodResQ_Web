@@ -138,6 +138,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
   const review = useReviewVerification();
   const [note, setNote] = useState('');
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
 
   const verif =
     (verifs ?? []).find((v) => u.profileId && v.profileId === u.profileId) ??
@@ -148,6 +149,51 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
   const st = USER_STATUS_META[displayStatus] ?? { label: displayStatus, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const displayScore = getDisplayScore(u);
   const contactPhone = u.contactPhone || u.phone || verif?.contactPhone || verif?.phone || null;
+
+  function markImageFailed(url: string) {
+    setFailedImages((prev) => {
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
+  }
+
+  function imageTile(rawUrl: string, alt: string, badge: string, badgeClass: string, key?: string) {
+    const url = mediaUrl(rawUrl);
+    const failed = failedImages.has(url);
+
+    return (
+      <button
+        type="button"
+        key={key ?? rawUrl}
+        onClick={() => {
+          if (!failed) setZoomedImg(url);
+        }}
+        className={`relative aspect-square rounded-xl overflow-hidden border border-neutral-200 ${
+          failed ? 'cursor-default bg-neutral-50' : 'hover:opacity-90'
+        }`}
+        title={failed ? 'Ảnh không còn tồn tại trên server' : 'Bấm để phóng to'}
+      >
+        {failed ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center text-xs font-semibold text-neutral-500">
+            <span className="material-symbols-outlined text-[28px] text-neutral-400">broken_image</span>
+            <span>Không tải được ảnh</span>
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt={alt}
+            className="w-full h-full object-cover"
+            onError={() => markImageFailed(url)}
+          />
+        )}
+        <span className={`absolute bottom-0 left-0 right-0 text-[10px] text-white text-center py-1 font-bold ${badgeClass}`}>
+          {badge}
+        </span>
+      </button>
+    );
+  }
 
   async function decide(decision: 'approved' | 'rejected') {
     if (!verif) return;
