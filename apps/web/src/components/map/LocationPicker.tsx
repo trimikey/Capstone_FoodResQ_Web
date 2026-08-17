@@ -133,7 +133,7 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
   const [isMounted, setIsMounted] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<number | null>(null);
   
   const addressJustSetFromMap = useRef(false);
   const lastLngRef = useRef(lng);
@@ -163,7 +163,7 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
         }
       } finally {
         setIsReverseGeocoding(false);
-        setTimeout(() => {
+        window.setTimeout(() => {
           addressJustSetFromMap.current = false;
         }, 100);
       }
@@ -178,9 +178,9 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
 
     if (!address?.trim()) return;
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
 
-    debounceRef.current = setTimeout(async () => {
+    debounceRef.current = window.setTimeout(async () => {
       setIsGeocoding(true);
       try {
         const result = await geocodeAddress(address);
@@ -195,7 +195,7 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
     }, 600);
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
   }, [address, onPick]);
 

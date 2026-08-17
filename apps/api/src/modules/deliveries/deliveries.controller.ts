@@ -15,9 +15,18 @@ import {
   FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { DeliveriesService } from './deliveries.service';
-import { UpdateDeliveryStatusDto, RejectOfferDto } from './dto/update-delivery-status.dto';
+import {
+  UpdateDeliveryStatusDto,
+  RejectOfferDto,
+} from './dto/update-delivery-status.dto';
 
 const MAX_PROOF_BYTES = 5 * 1024 * 1024;
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -50,32 +59,50 @@ export class DeliveriesController {
 
   @Get('track/:reservationId')
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Receiver: theo dõi đơn giao (trạng thái + vị trí shipper)' })
-  track(@Param('reservationId', ParseUUIDPipe) reservationId: string, @CurrentUser() user: User) {
-    return this.deliveriesService.getTrackingForReceiver(reservationId, user.id);
+  @ApiOperation({
+    summary: 'Receiver: theo dõi đơn giao (trạng thái + vị trí shipper)',
+  })
+  track(
+    @Param('reservationId', ParseUUIDPipe) reservationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.deliveriesService.getTrackingForReceiver(
+      reservationId,
+      user.id,
+    );
   }
 
   @Get('my/ratings')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: đánh giá đã nhận từ người nhận (kèm phân bố sao)' })
+  @ApiOperation({
+    summary: 'Shipper: đánh giá đã nhận từ người nhận (kèm phân bố sao)',
+  })
   myRatings(
     @CurrentUser() user: User,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.deliveriesService.getMyRatings(user.id, Number(page) || 1, Number(limit) || 10);
+    return this.deliveriesService.getMyRatings(
+      user.id,
+      Number(page) || 1,
+      Number(limit) || 10,
+    );
   }
 
   @Get('my/stats')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Bảng thành tích (số đơn, km, tỉ lệ hoàn thành, ★)' })
+  @ApiOperation({
+    summary: 'Shipper: Bảng thành tích (số đơn, km, tỉ lệ hoàn thành, ★)',
+  })
   getMyStats(@CurrentUser() user: User) {
     return this.deliveriesService.getMyStats(user.id);
   }
 
   @Get('my/history')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Lịch sử giao hàng (đã giao / thất bại), phân trang' })
+  @ApiOperation({
+    summary: 'Shipper: Lịch sử giao hàng (đã giao / thất bại), phân trang',
+  })
   getMyHistory(
     @CurrentUser() user: User,
     @Query('page') page?: string,
@@ -107,7 +134,9 @@ export class DeliveriesController {
 
   @Post(':id/cancel')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Huỷ nhận đơn (chỉ trước khi lấy hàng) → trả về chờ nhận' })
+  @ApiOperation({
+    summary: 'Shipper: Huỷ nhận đơn (chỉ trước khi lấy hàng) → trả về chờ nhận',
+  })
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -118,7 +147,9 @@ export class DeliveriesController {
 
   @Post(':id/receiver-cancel')
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Người nhận: Huỷ tìm shipper → chuyển đơn sang tự đến lấy' })
+  @ApiOperation({
+    summary: 'Người nhận: Huỷ tìm shipper → chuyển đơn sang tự đến lấy',
+  })
   receiverCancel(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -128,7 +159,9 @@ export class DeliveriesController {
 
   @Post(':id/fail')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Báo giao thất bại (sau khi đã lấy hàng), kèm lý do' })
+  @ApiOperation({
+    summary: 'Shipper: Báo giao thất bại (sau khi đã lấy hàng), kèm lý do',
+  })
   fail(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -141,7 +174,9 @@ export class DeliveriesController {
   @Roles(UserRole.VOLUNTEER)
   @UseInterceptors(FileInterceptor('photo'))
   @ApiConsumes('multipart/form-data', 'application/json')
-  @ApiOperation({ summary: 'Shipper: Advance delivery status (kèm ảnh proof tùy chọn)' })
+  @ApiOperation({
+    summary: 'Shipper: Advance delivery status (kèm ảnh proof tùy chọn)',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -149,7 +184,10 @@ export class DeliveriesController {
       properties: {
         status: { type: 'string' },
         photo: { type: 'string', format: 'binary' },
-        qrToken: { type: 'string', description: 'Mã QR của người nhận (bắt buộc khi status=delivered)' },
+        qrToken: {
+          type: 'string',
+          description: 'Mã QR của người nhận (bắt buộc khi status=delivered)',
+        },
       },
     },
   })
@@ -171,6 +209,12 @@ export class DeliveriesController {
     const proofUrl = photo
       ? await this.deliveriesService.saveProofPhoto(photo)
       : dto.proofUrl;
-    return this.deliveriesService.updateStatus(id, user.id, dto.status, proofUrl, dto.qrToken);
+    return this.deliveriesService.updateStatus(
+      id,
+      user.id,
+      dto.status,
+      proofUrl,
+      dto.qrToken,
+    );
   }
 }

@@ -237,7 +237,7 @@ export default function PublicHeader() {
                   )}
                 </div>
                 <div className="hidden lg:block leading-tight text-left pr-2">
-                  <p className="text-[13px] font-medium text-on-surface max-w-[100px] truncate">{user!.fullName}</p>
+                  <p className="text-[13px] font-medium text-on-surface max-w-[100px] truncate">{currentUserName}</p>
                 </div>
                 <span className="material-symbols-outlined text-[16px] text-neutral-400">arrow_drop_down</span>
               </div>

@@ -40,10 +40,14 @@ export class StorageService {
   async saveImage(file: Express.Multer.File, subdir: string): Promise<string> {
     const ext = EXT_BY_MIME[file.mimetype];
     if (!ext) {
-      throw new BadRequestException('Only JPEG, PNG or WebP images are allowed');
+      throw new BadRequestException(
+        'Only JPEG, PNG or WebP images are allowed',
+      );
     }
     if (!this.matchesMagicBytes(file.buffer, file.mimetype)) {
-      throw new BadRequestException('File content does not match its image type');
+      throw new BadRequestException(
+        'File content does not match its image type',
+      );
     }
 
     const safeSubdir = subdir.replace(/[^a-z0-9_-]/gi, '');
@@ -64,7 +68,10 @@ export class StorageService {
         return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
       case 'image/png':
         return (
-          buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
+          buffer[0] === 0x89 &&
+          buffer[1] === 0x50 &&
+          buffer[2] === 0x4e &&
+          buffer[3] === 0x47
         );
       case 'image/webp':
         return (

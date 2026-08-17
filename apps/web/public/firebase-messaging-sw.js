@@ -13,6 +13,24 @@ firebase.initializeApp({
 });
 
 const messaging = firebase.messaging();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function notificationLink(data) {
+  const rawLink = typeof data?.link === 'string' ? data.link.trim() : '';
+  if (rawLink) {
+    if (/^https?:\/\//i.test(rawLink) || rawLink.startsWith('/')) return rawLink;
+    if (UUID_RE.test(rawLink)) return `/campaigns/${rawLink}`;
+    return `/${rawLink.replace(/^\/+/, '')}`;
+  }
+
+  const assignmentId = typeof data?.assignmentId === 'string' ? data.assignmentId.trim() : '';
+  if (UUID_RE.test(assignmentId)) return `/my-tasks/${assignmentId}`;
+
+  const campaignId = typeof data?.campaignId === 'string' ? data.campaignId.trim() : '';
+  if (UUID_RE.test(campaignId)) return `/campaigns/${campaignId}`;
+
+  return '/';
+}
 
 messaging.onBackgroundMessage((payload) => {
   const n = payload.notification || {};
@@ -25,6 +43,6 @@ messaging.onBackgroundMessage((payload) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const link = (event.notification.data && event.notification.data.link) || '/';
+  const link = notificationLink(event.notification.data);
   event.waitUntil(clients.openWindow(link));
 });

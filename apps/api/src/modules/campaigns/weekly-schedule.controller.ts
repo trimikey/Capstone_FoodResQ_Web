@@ -24,7 +24,9 @@ export class WeeklyScheduleController {
     @CurrentUser() user: User,
     @Query('weekStart') weekStart?: string,
   ) {
-    const start = weekStart ? new Date(`${weekStart}T00:00:00.000Z`) : currentWeekStartUtc();
+    const start = weekStart
+      ? new Date(`${weekStart}T00:00:00.000Z`)
+      : currentWeekStartUtc();
     return this.service.getWeeklySchedule(start, user.id, user.role);
   }
 }
@@ -34,6 +36,12 @@ function currentWeekStartUtc(): Date {
   const now = new Date();
   const dow = now.getUTCDay(); // 0=CN, 1=T2, ...
   const diffToMonday = (dow + 6) % 7; // số ngày cần lùi để về T2
-  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - diffToMonday));
+  const monday = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - diffToMonday,
+    ),
+  );
   return monday;
 }

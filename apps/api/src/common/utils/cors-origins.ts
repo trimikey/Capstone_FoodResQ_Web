@@ -8,6 +8,12 @@
  */
 
 const DEFAULT_ORIGINS = ['http://localhost:3000'];
+const DEV_MOBILE_ORIGINS = [
+  'http://localhost:8081',
+  'http://127.0.0.1:8081',
+  'http://10.0.2.2:8081',
+  'http://10.0.2.2:3001',
+];
 
 /** Danh sách origin được phép, đọc từ env `ALLOWED_ORIGINS` (ngăn cách bởi dấu phẩy). */
 export function allowedOrigins(): string[] {
@@ -17,7 +23,9 @@ export function allowedOrigins(): string[] {
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
-  return list.length > 0 ? list : DEFAULT_ORIGINS;
+  const configured = list.length > 0 ? list : DEFAULT_ORIGINS;
+  if (process.env['NODE_ENV'] === 'production') return configured;
+  return Array.from(new Set([...configured, ...DEV_MOBILE_ORIGINS]));
 }
 
 /**

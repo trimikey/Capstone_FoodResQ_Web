@@ -1,0 +1,749 @@
+erDiagram
+  %% FoodResQ ERD generated from apps/api/prisma/schema.prisma
+  %% Paste into draw.io: Insert > Advanced > Mermaid
+
+  users {
+    VARCHAR id PK
+    VARCHAR email UK
+    VARCHAR phone UK
+    VARCHAR password_hash
+    VARCHAR full_name
+    VARCHAR avatar_url
+    USERROLE role
+    USERSTATUS status
+    INT trust_score
+    VARCHAR fcm_token
+    TIMESTAMPTZ last_login_at
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    TIMESTAMPTZ deleted_at
+  }
+
+  provider_profiles {
+    VARCHAR id PK
+    VARCHAR user_id FK,UK
+    VARCHAR business_name
+    BUSINESSTYPE business_type
+    VARCHAR tax_code
+    VARCHAR description
+    VARCHAR address
+    GEOGRAPHY location
+    VARCHAR contact_phone
+    VARCHAR website_url
+    BOOLEAN is_verified
+    VERIFICATIONSTATUS verification_status
+    TIMESTAMPTZ verified_at
+    VARCHAR verified_by
+    DECIMAL total_food_rescued_kg
+    DECIMAL total_co2_saved_kg
+    DECIMAL avg_rating
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  receiver_profiles {
+    VARCHAR id PK
+    VARCHAR user_id FK,UK
+    BOOLEAN is_charity_org
+    VARCHAR organization_name
+    VARCHAR id_card_number
+    VARCHAR id_card_image_url
+    VARCHAR face_image_url
+    JSONB face_descriptor
+    VARCHAR address
+    GEOGRAPHY location
+    VARCHAR income_proof_url
+    VERIFICATIONSTATUS verification_status
+    TIMESTAMPTZ verified_at
+    VARCHAR verified_by
+    INT reservations_today
+    DECIMAL avg_rating
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  volunteer_profiles {
+    VARCHAR id PK
+    VARCHAR user_id FK,UK
+    VARCHAR id_card_number
+    VARCHAR id_card_image_url
+    VARCHAR face_image_url
+    JSONB face_descriptor
+    GEOGRAPHY current_location
+    TIMESTAMPTZ location_updated_at
+    BOOLEAN is_available
+    INT dedication_points
+    VOLUNTEERRANK rank
+    VARCHAR vehicle_type
+    VARCHAR vehicle_plate
+    DECIMAL avg_rating
+    VERIFICATIONSTATUS verification_status
+    TIMESTAMPTZ verified_at
+    VARCHAR verified_by
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  volunteer_specializations {
+    VARCHAR id PK
+    VARCHAR volunteer_id FK
+    VOLUNTEERSPECIALIZATION specialization
+    VARCHAR food_safety_cert_url
+    TIMESTAMPTZ cert_expiry_date
+    BOOLEAN is_verified
+    TIMESTAMPTZ verified_at
+  }
+
+  liability_waivers {
+    VARCHAR id PK
+    VARCHAR user_id FK
+    VARCHAR waiver_version
+    TIMESTAMPTZ accepted_at
+    VARCHAR ip_address
+  }
+
+  food_listings {
+    VARCHAR id PK
+    VARCHAR provider_id FK
+    VARCHAR title
+    VARCHAR description
+    FOODCATEGORY category
+    DECIMAL quantity_total
+    DECIMAL quantity_remaining
+    QUANTITYUNIT quantity_unit
+    DECIMAL weight_per_unit_kg
+    TIMESTAMPTZ pickup_start_time
+    TIMESTAMPTZ pickup_end_time
+    INT daily_start_minute
+    INT daily_end_minute
+    TIMESTAMPTZ expiry_time
+    VARCHAR pickup_address
+    GEOGRAPHY pickup_location
+    VARCHAR storage_conditions
+    VARCHAR allergen_notes
+    INT max_per_reservation
+    JSONB image_urls
+    BOOLEAN is_surprise_bag
+    LISTINGSTATUS status
+    VARCHAR cancelled_reason
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    TIMESTAMPTZ deleted_at
+  }
+
+  reservations {
+    VARCHAR id PK
+    VARCHAR listing_id FK
+    VARCHAR receiver_id FK
+    VARCHAR bulk_run_stop_id FK,UK
+    DECIMAL quantity
+    RESERVATIONSTATUS status
+    VARCHAR qr_token UK
+    TIMESTAMPTZ qr_expires_at
+    VARCHAR pickup_proof_url
+    TIMESTAMPTZ pickup_proof_at
+    PICKUPVERIFICATIONTYPE pickup_verification_type
+    VARCHAR scanned_by
+    TIMESTAMPTZ scanned_at
+    TIMESTAMPTZ cancelled_at
+    VARCHAR cancellation_reason
+    VARCHAR receiver_notes
+    BOOLEAN trust_penalty_applied
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  deliveries {
+    VARCHAR id PK
+    VARCHAR reservation_id FK,UK
+    VARCHAR provider_request_id FK,UK
+    VARCHAR shipper_id FK
+    DELIVERYSTATUS status
+    VARCHAR qc_photo_url
+    TIMESTAMPTZ qc_photo_at
+    VARCHAR pickup_proof_url
+    TIMESTAMPTZ pickup_proof_at
+    VARCHAR delivery_proof_url
+    TIMESTAMPTZ delivery_proof_at
+    GEOGRAPHY pickup_location
+    GEOGRAPHY delivery_location
+    DECIMAL distance_km
+    TIMESTAMPTZ assigned_at
+    TIMESTAMPTZ picked_up_at
+    TIMESTAMPTZ delivered_at
+    VARCHAR failed_reason
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  bulk_runs {
+    VARCHAR id PK
+    VARCHAR listing_id FK
+    VARCHAR provider_id FK
+    VARCHAR shipper_id FK
+    INT quantity
+    INT quantity_distributed
+    BULKRUNSTATUS status
+    VARCHAR note
+    VARCHAR reject_reason
+    VARCHAR qc_photo_url
+    TIMESTAMPTZ approved_at
+    TIMESTAMPTZ picked_up_at
+    TIMESTAMPTZ completed_at
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  bulk_run_stops {
+    VARCHAR id PK
+    VARCHAR run_id FK
+    VARCHAR reservation_id UK
+    VARCHAR label
+    VARCHAR address
+    GEOGRAPHY location
+    INT planned_qty
+    INT served_qty
+    VARCHAR photo_url
+    VARCHAR note
+    VARCHAR created_by
+    INT order_index
+    TIMESTAMPTZ served_at
+    TIMESTAMPTZ created_at
+  }
+
+  kitchen_campaigns {
+    VARCHAR id PK
+    VARCHAR charity_receiver_id FK
+    VARCHAR title
+    VARCHAR description
+    VARCHAR kitchen_address
+    GEOGRAPHY kitchen_location
+    TIMESTAMPTZ scheduled_date
+    TIMESTAMPTZ end_date
+    VARCHAR start_time
+    VARCHAR end_time
+    INT chef_slots_needed
+    INT waiter_slots_needed
+    INT shipper_slots_needed
+    INT chef_slots_filled
+    INT waiter_slots_filled
+    INT shipper_slots_filled
+    CAMPAIGNSTATUS status
+    INT expected_servings
+    INT actual_servings
+    JSONB image_urls
+    VARCHAR notes
+    JSONB menu_items
+    JSONB schedule_items
+    JSONB supply_items
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  campaign_donations {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR provider_id FK
+    VARCHAR item_name
+    VARCHAR quantity
+    VARCHAR note
+    VARCHAR status
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ received_at
+  }
+
+  campaign_provider_requests {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR receiver_id FK
+    VARCHAR provider_id FK
+    VARCHAR message
+    CAMPAIGNREQUESTSTATUS status
+    INT duration_months
+    VARCHAR listing_ids
+    TIMESTAMPTZ scheduled_date
+    VARCHAR pickup_start_time
+    VARCHAR pickup_end_time
+    BOOLEAN needs_transport
+    JSONB demand_details
+    TIMESTAMPTZ reviewed_at
+    VARCHAR reviewed_note
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  campaign_transports {
+    VARCHAR id PK
+    VARCHAR provider_request_id FK,UK
+    VARCHAR delivery_id FK,UK
+    VARCHAR status
+    TIMESTAMPTZ assigned_at
+    TIMESTAMPTZ picked_up_at
+    TIMESTAMPTZ delivered_at
+    TIMESTAMPTZ received_at
+    TIMESTAMPTZ failed_at
+    VARCHAR failure_reason
+    VARCHAR received_by_user_id FK
+    VARCHAR receipt_note
+    VARCHAR receipt_photo_url
+    TIMESTAMPTZ last_broadcast_at
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  campaign_ingredient_pickups {
+    VARCHAR id PK
+    VARCHAR provider_request_id FK,UK
+    VARCHAR campaign_id
+    VARCHAR assignment_id
+    VARCHAR volunteer_id
+    DECIMAL requested_kg
+    DECIMAL received_kg
+    VARCHAR photo_url
+    VARCHAR note
+    TIMESTAMPTZ confirmed_at
+  }
+
+  campaign_volunteer_assignments {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR volunteer_id FK
+    ASSIGNMENTROLE role
+    ASSIGNMENTSTATUS status
+    TIMESTAMPTZ check_in_time
+    INT check_in_late_minutes
+    GEOGRAPHY check_in_location
+    TIMESTAMPTZ check_out_time
+    VARCHAR ingredient_proof_url
+    TIMESTAMPTZ ingredient_proof_at
+    VARCHAR cooked_proof_url
+    TIMESTAMPTZ cooked_proof_at
+    VARCHAR distribution_proof_url
+    TIMESTAMPTZ distribution_proof_at
+    INT points_awarded
+    VARCHAR notes
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    VARCHAR shift_id FK
+    TIMESTAMPTZ work_date
+  }
+
+  ratings {
+    VARCHAR id PK
+    VARCHAR reference_type
+    VARCHAR reference_id
+    VARCHAR rater_id FK
+    VARCHAR ratee_id FK
+    INT score
+    VARCHAR comment
+    TIMESTAMPTZ created_at
+  }
+
+  trust_score_history {
+    VARCHAR id PK
+    VARCHAR user_id FK
+    INT delta
+    TRUSTSCOREREASON reason
+    VARCHAR reference_type
+    VARCHAR reference_id
+    INT score_before
+    INT score_after
+    VARCHAR created_by
+    VARCHAR note
+    TIMESTAMPTZ created_at
+  }
+
+  dedication_points_history {
+    VARCHAR id PK
+    VARCHAR volunteer_id FK
+    INT delta
+    VARCHAR reason
+    VARCHAR reference_type
+    VARCHAR reference_id
+    INT points_before
+    INT points_after
+    TIMESTAMPTZ created_at
+  }
+
+  verification_requests {
+    VARCHAR id PK
+    VARCHAR user_id FK
+    VERIFICATIONREQUESTTYPE request_type
+    JSONB documents
+    VERIFICATIONSTATUS status
+    VARCHAR reviewer_id
+    VARCHAR reviewer_notes
+    TIMESTAMPTZ submitted_at
+    TIMESTAMPTZ reviewed_at
+    TIMESTAMPTZ created_at
+  }
+
+  notifications {
+    VARCHAR id PK
+    VARCHAR user_id FK
+    VARCHAR type
+    VARCHAR title
+    VARCHAR body
+    JSONB data
+    BOOLEAN is_read
+    TIMESTAMPTZ read_at
+    TIMESTAMPTZ created_at
+  }
+
+  audit_logs {
+    BIGINT id PK
+    VARCHAR actor_id FK
+    VARCHAR action
+    VARCHAR target_type
+    VARCHAR target_id
+    JSONB payload
+    VARCHAR ip_address
+    VARCHAR user_agent
+    TIMESTAMPTZ created_at
+  }
+
+  system_configs {
+    INT id PK
+    VARCHAR key UK
+    JSONB value
+    VARCHAR description
+    VARCHAR updated_by
+    TIMESTAMPTZ updated_at
+  }
+
+  esg_snapshots {
+    VARCHAR id PK
+    TIMESTAMPTZ snapshot_date
+    VARCHAR provider_id FK
+    DECIMAL total_food_rescued_kg
+    DECIMAL total_co2_saved_kg
+    INT total_reservations
+    INT total_volunteers_active
+    INT total_providers_active
+    TIMESTAMPTZ created_at
+  }
+
+  refresh_tokens {
+    VARCHAR id PK
+    VARCHAR user_id FK
+    VARCHAR token_hash UK
+    VARCHAR device_info
+    VARCHAR ip_address
+    BOOLEAN is_revoked
+    TIMESTAMPTZ revoked_at
+    TIMESTAMPTZ expires_at
+    TIMESTAMPTZ created_at
+  }
+
+  reports {
+    VARCHAR id PK
+    VARCHAR reporter_id FK
+    REPORTTARGETTYPE target_type
+    VARCHAR target_id
+    REPORTREASON reason
+    VARCHAR description
+    JSONB evidence_urls
+    REPORTSTATUS status
+    VARCHAR resolver_id FK
+    VARCHAR resolution_note
+    TIMESTAMPTZ resolved_at
+    TIMESTAMPTZ created_at
+  }
+
+  shipper_task_offers {
+    VARCHAR id PK
+    VARCHAR delivery_id FK
+    VARCHAR shipper_id FK
+    OFFERSTATUS status
+    TIMESTAMPTZ offered_at
+    TIMESTAMPTZ responded_at
+    TIMESTAMPTZ expires_at
+    VARCHAR reject_reason
+  }
+
+  recipes {
+    VARCHAR id PK
+    VARCHAR created_by_user_id FK
+    VARCHAR name
+    VARCHAR description
+    INT servings
+    INT prep_minutes
+    INT cook_minutes
+    RECIPEDIFFICULTY difficulty
+    VARCHAR instructions
+    JSONB image_urls
+    BOOLEAN is_public
+    DECIMAL avg_rating
+    INT times_used
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    TIMESTAMPTZ deleted_at
+  }
+
+  recipe_ingredients {
+    VARCHAR id PK
+    VARCHAR recipe_id FK
+    VARCHAR name
+    VARCHAR quantity
+    VARCHAR unit
+    VARCHAR note
+  }
+
+  campaign_change_requests {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR requested_by_user_id FK
+    CAMPAIGNCHANGESTATUS status
+    VARCHAR reason
+    TIMESTAMPTZ scheduled_date
+    TIMESTAMPTZ end_date
+    VARCHAR start_time
+    VARCHAR end_time
+    VARCHAR kitchen_address
+    FLOAT lng
+    FLOAT lat
+    INT chef_slots_needed
+    INT waiter_slots_needed
+    INT shipper_slots_needed
+    VARCHAR review_note
+    VARCHAR reviewed_by_user_id FK
+    TIMESTAMPTZ reviewed_at
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  provider_proposals {
+    VARCHAR id PK
+    VARCHAR proposed_by_user_id FK
+    VARCHAR business_name
+    VARCHAR contact_name
+    VARCHAR contact_phone
+    VARCHAR contact_email
+    VARCHAR address
+    VARCHAR note
+    INT duration_months
+    PROVIDERPROPOSALSTATUS status
+    VARCHAR reviewed_by_user_id FK
+    TIMESTAMPTZ reviewed_at
+    VARCHAR review_note
+    VARCHAR created_provider_id FK
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  campaign_experiences {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR volunteer_id FK
+    VARCHAR content
+    JSONB image_urls
+    INT rating
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  campaign_menu_items {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR recipe_id FK
+    VARCHAR custom_name
+    INT planned_servings
+    INT sort_order
+  }
+
+  campaign_shifts {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR label
+    ASSIGNMENTROLE role
+    VARCHAR start_time
+    VARCHAR end_time
+    INT slots_needed
+    INT slots_filled
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  kitchen_safety_logs {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR checked_by_volunteer_id FK
+    SAFETYCHECKTYPE check_type
+    VARCHAR measured_value
+    SAFETYCHECKRESULT result
+    VARCHAR photo_url
+    VARCHAR note
+    TIMESTAMPTZ checked_at
+  }
+
+  meal_distributions {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR served_by_volunteer_id FK
+    JSONB assignee_ids
+    JSONB points
+    TIMESTAMPTZ completed_at
+    VARCHAR completed_by_volunteer_id
+    INT actual_servings
+    INT actual_people_served
+    VARCHAR completion_note
+    VARCHAR round_label
+    INT servings_served
+    INT people_served
+    INT leftover_servings
+    GEOGRAPHY location
+    VARCHAR photo_url
+    VARCHAR note
+    TIMESTAMPTZ distributed_at
+  }
+
+  meal_feedback {
+    VARCHAR id PK
+    VARCHAR distribution_id FK
+    INT satisfaction
+    VARCHAR comment
+    TIMESTAMPTZ created_at
+  }
+
+  receiver_handoff_qr_tokens {
+    VARCHAR id PK
+    VARCHAR receiver_id FK
+    VARCHAR qr_token UK
+    TIMESTAMPTZ qr_expires_at
+    TIMESTAMPTZ consumed_at
+    TIMESTAMPTZ created_at
+  }
+
+  meal_handoffs {
+    VARCHAR id PK
+    VARCHAR distribution_id FK
+    VARCHAR receiver_id FK
+    VARCHAR scanned_by_volunteer_id FK
+    VARCHAR qr_token_id FK,UK
+    TIMESTAMPTZ served_at
+  }
+
+  campaign_dish_steps {
+    VARCHAR id PK
+    VARCHAR campaign_id FK
+    VARCHAR menu_item_id FK
+    INT step_order
+    VARCHAR step_name
+    VARCHAR scheduled_time
+    CAMPAIGNMENUSTEPSTATUS status
+    TIMESTAMPTZ completed_at
+    VARCHAR completed_by_volunteer_id FK
+    VARCHAR proof_url
+    VARCHAR note
+    TIMESTAMPTZ opened_at
+    TIMESTAMPTZ qc_failed_at
+    VARCHAR qc_failed_by_volunteer_id FK
+    VARCHAR qc_failure_reason
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+
+  food_catalog_categories {
+    VARCHAR id PK
+    VARCHAR name
+    VARCHAR group
+    VARCHAR description
+    INT sort_order
+    BOOLEAN is_active
+    VARCHAR created_by
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    TIMESTAMPTZ deleted_at
+  }
+
+  food_catalog_items {
+    VARCHAR id PK
+    VARCHAR category_id FK
+    VARCHAR name
+    VARCHAR description
+    BOOLEAN is_active
+    VARCHAR created_by
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+    TIMESTAMPTZ deleted_at
+  }
+
+  beneficiary_feedback {
+    VARCHAR id PK
+    VARCHAR handoff_id FK,UK
+    INT satisfaction
+    VARCHAR comment
+    TIMESTAMPTZ created_at
+  }
+
+  users ||--o{ provider_profiles : "user_id"
+  users ||--o{ receiver_profiles : "user_id"
+  users ||--o{ volunteer_profiles : "user_id"
+  volunteer_profiles ||--o{ volunteer_specializations : "volunteer_id"
+  users ||--o{ liability_waivers : "user_id"
+  provider_profiles ||--o{ food_listings : "provider_id"
+  food_listings ||--o{ reservations : "listing_id"
+  receiver_profiles ||--o{ reservations : "receiver_id"
+  bulk_run_stops ||--o{ reservations : "bulk_run_stop_id"
+  reservations ||--o{ deliveries : "reservation_id"
+  campaign_provider_requests ||--o{ deliveries : "provider_request_id"
+  volunteer_profiles ||--o{ deliveries : "shipper_id"
+  food_listings ||--o{ bulk_runs : "listing_id"
+  provider_profiles ||--o{ bulk_runs : "provider_id"
+  volunteer_profiles ||--o{ bulk_runs : "shipper_id"
+  bulk_runs ||--o{ bulk_run_stops : "run_id"
+  receiver_profiles ||--o{ kitchen_campaigns : "charity_receiver_id"
+  kitchen_campaigns ||--o{ campaign_donations : "campaign_id"
+  provider_profiles ||--o{ campaign_donations : "provider_id"
+  kitchen_campaigns ||--o{ campaign_provider_requests : "campaign_id"
+  receiver_profiles ||--o{ campaign_provider_requests : "receiver_id"
+  provider_profiles ||--o{ campaign_provider_requests : "provider_id"
+  campaign_provider_requests ||--o{ campaign_transports : "provider_request_id"
+  deliveries ||--o{ campaign_transports : "delivery_id"
+  users ||--o{ campaign_transports : "received_by_user_id"
+  campaign_provider_requests ||--o{ campaign_ingredient_pickups : "provider_request_id"
+  kitchen_campaigns ||--o{ campaign_volunteer_assignments : "campaign_id"
+  volunteer_profiles ||--o{ campaign_volunteer_assignments : "volunteer_id"
+  campaign_shifts ||--o{ campaign_volunteer_assignments : "shift_id"
+  users ||--o{ ratings : "rater_id"
+  users ||--o{ ratings : "ratee_id"
+  users ||--o{ trust_score_history : "user_id"
+  volunteer_profiles ||--o{ dedication_points_history : "volunteer_id"
+  users ||--o{ verification_requests : "user_id"
+  users ||--o{ notifications : "user_id"
+  users ||--o{ audit_logs : "actor_id"
+  provider_profiles ||--o{ esg_snapshots : "provider_id"
+  users ||--o{ refresh_tokens : "user_id"
+  users ||--o{ reports : "reporter_id"
+  users ||--o{ reports : "resolver_id"
+  deliveries ||--o{ shipper_task_offers : "delivery_id"
+  volunteer_profiles ||--o{ shipper_task_offers : "shipper_id"
+  users ||--o{ recipes : "created_by_user_id"
+  recipes ||--o{ recipe_ingredients : "recipe_id"
+  kitchen_campaigns ||--o{ campaign_change_requests : "campaign_id"
+  users ||--o{ campaign_change_requests : "requested_by_user_id"
+  users ||--o{ campaign_change_requests : "reviewed_by_user_id"
+  users ||--o{ provider_proposals : "proposed_by_user_id"
+  users ||--o{ provider_proposals : "reviewed_by_user_id"
+  provider_profiles ||--o{ provider_proposals : "created_provider_id"
+  kitchen_campaigns ||--o{ campaign_experiences : "campaign_id"
+  volunteer_profiles ||--o{ campaign_experiences : "volunteer_id"
+  kitchen_campaigns ||--o{ campaign_menu_items : "campaign_id"
+  recipes ||--o{ campaign_menu_items : "recipe_id"
+  kitchen_campaigns ||--o{ campaign_shifts : "campaign_id"
+  kitchen_campaigns ||--o{ kitchen_safety_logs : "campaign_id"
+  volunteer_profiles ||--o{ kitchen_safety_logs : "checked_by_volunteer_id"
+  kitchen_campaigns ||--o{ meal_distributions : "campaign_id"
+  volunteer_profiles ||--o{ meal_distributions : "served_by_volunteer_id"
+  meal_distributions ||--o{ meal_feedback : "distribution_id"
+  receiver_profiles ||--o{ receiver_handoff_qr_tokens : "receiver_id"
+  meal_distributions ||--o{ meal_handoffs : "distribution_id"
+  receiver_profiles ||--o{ meal_handoffs : "receiver_id"
+  volunteer_profiles ||--o{ meal_handoffs : "scanned_by_volunteer_id"
+  receiver_handoff_qr_tokens ||--o{ meal_handoffs : "qr_token_id"
+  kitchen_campaigns ||--o{ campaign_dish_steps : "campaign_id"
+  campaign_menu_items ||--o{ campaign_dish_steps : "menu_item_id"
+  volunteer_profiles ||--o{ campaign_dish_steps : "completed_by_volunteer_id"
+  volunteer_profiles ||--o{ campaign_dish_steps : "qc_failed_by_volunteer_id"
+  food_catalog_categories ||--o{ food_catalog_items : "category_id"
+  meal_handoffs ||--o{ beneficiary_feedback : "handoff_id"

@@ -10,7 +10,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.foodresq.mobile",
-      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -60,7 +59,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidWindowsNativeBuildFix"
     ],
     "experiments": {
       "typedRoutes": true

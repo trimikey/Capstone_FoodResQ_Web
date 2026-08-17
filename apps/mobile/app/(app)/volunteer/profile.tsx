@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import {
   Text,
   Button,
@@ -21,6 +21,8 @@ import { volunteerRankLabel } from '@/utils/userFormat';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
 import { Popup, Toast } from '@/components/ui/AppPopup';
+import { AppBackground } from '@/components/ui/AppBackground';
+import { AppImage } from '@/components/ui/AppImage';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess, notifyWarning, selectionFeedback } from '@/services/haptics';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -73,15 +75,26 @@ export default function VolunteerProfileScreen() {
   const { data: vol, isLoading, isError, refetch, isRefetching } = useVolunteerMe();
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
+  const refetchVolunteerRef = useRef(refetch);
+  const refetchFaceEnrollmentRef = useRef(refetchFaceEnrollment);
   const enrollFace = useEnrollFace();
   const setAvailability = useSetAvailability();
   const [toggling, setToggling] = useState(false);
   const [facePromptVisible, setFacePromptVisible] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    refetchVolunteerRef.current = refetch;
+    refetchFaceEnrollmentRef.current = refetchFaceEnrollment;
+  }, [refetch, refetchFaceEnrollment]);
 
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([refetch(), refetchFaceEnrollment()]);
-    }, [refetch, refetchFaceEnrollment])
+      void Promise.all([
+        refetchVolunteerRef.current(),
+        refetchFaceEnrollmentRef.current(),
+      ]);
+    }, [])
   );
 
   const handleEnrollFace = async (mode: 'camera' | 'library') => {
@@ -159,6 +172,8 @@ export default function VolunteerProfileScreen() {
   };
 
   const name = user?.name || user?.email || 'Tình nguyện viên';
+  const avatarUrl = user?.avatarUrl?.trim() ?? '';
+  const showAvatarImage = avatarUrl.length > 0 && failedAvatarUrl !== avatarUrl;
   const busy = toggling || setAvailability.isPending;
   const faceBusy = enrollFace.isPending;
   const faceEnrolled = faceEnrollment.data?.enrolled === true;
@@ -181,21 +196,38 @@ export default function VolunteerProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-      >
+      <AppBackground>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        >
         {/* Header: avatar + tên + hạng */}
         <View style={styles.header}>
-          {user?.avatarUrl ? (
-            <Avatar.Image size={84} source={{ uri: user.avatarUrl }} />
-          ) : (
-            <Avatar.Text
-              size={84}
-              label={name.charAt(0).toUpperCase()}
-              style={{ backgroundColor: COLORS.teal }}
-            />
-          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Chỉnh sửa ảnh đại diện"
+            onPress={() => router.push('/(app)/profile/edit')}
+            style={styles.avatarShell}
+          >
+            {showAvatarImage ? (
+              <AppImage
+                source={{ uri: avatarUrl }}
+                style={styles.avatarImage}
+                onError={() => setFailedAvatarUrl(avatarUrl)}
+              />
+            ) : (
+              <Avatar.Text
+                size={84}
+                label={(name.trim().charAt(0) || '?').toUpperCase()}
+                color={COLORS.onPrimary}
+                labelStyle={styles.avatarLabel}
+                style={styles.avatarFallback}
+              />
+            )}
+            <View style={styles.avatarEdit}>
+              <MaterialCommunityIcons name="pencil" size={14} color={COLORS.primary} />
+            </View>
+          </Pressable>
           <View style={styles.headerInfo}>
             <Text variant="titleLarge" style={styles.name}>
               {name}
@@ -421,7 +453,8 @@ export default function VolunteerProfileScreen() {
         >
           Đăng xuất
         </Button>
-      </ScrollView>
+        </ScrollView>
+      </AppBackground>
       <FaceEnrollmentPrompt
         visible={facePromptVisible}
         busy={faceBusy}
@@ -505,6 +538,32 @@ const styles = StyleSheet.create({
     ...elevation.card,
   },
   headerInfo: { flex: 1 },
+  avatarShell: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+  },
+  avatarImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: COLORS.teal,
+  },
+  avatarFallback: { backgroundColor: COLORS.teal },
+  avatarLabel: { color: COLORS.onPrimary, fontSize: 30, fontWeight: '900' },
+  avatarEdit: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.heroBlue,
+  },
   name: { fontWeight: '900', color: COLORS.onPrimary },
   headerSub: { marginTop: 3, color: COLORS.blueContainer, fontSize: 13, fontWeight: '700' },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },

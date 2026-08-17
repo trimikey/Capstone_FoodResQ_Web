@@ -121,7 +121,10 @@ export class UpdateListingDto {
   @IsString({ each: true })
   imageUrls?: string[];
 
-  @ApiPropertyOptional({ example: false, description: 'Túi bất ngờ (kiểu Too Good To Go)' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Túi bất ngờ (kiểu Too Good To Go)',
+  })
   @IsOptional()
   @IsBoolean()
   isSurpriseBag?: boolean;

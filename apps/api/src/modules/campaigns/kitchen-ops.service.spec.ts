@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { UserRole } from '@foodresq/types';
@@ -18,7 +22,12 @@ describe('KitchenOpsService', () => {
     mealDistribution: { create: jest.fn(), findUnique: jest.fn() },
     mealFeedback: { create: jest.fn() },
     receiverHandoffQr: { findUnique: jest.fn(), updateMany: jest.fn() },
-    mealHandoff: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    mealHandoff: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
     beneficiaryFeedback: { create: jest.fn(), aggregate: jest.fn() },
     user: { findUnique: jest.fn() },
     $executeRaw: jest.fn(),
@@ -34,7 +43,10 @@ describe('KitchenOpsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: { getNumber: jest.fn().mockResolvedValue(5) } },
+        {
+          provide: SystemConfigService,
+          useValue: { getNumber: jest.fn().mockResolvedValue(5) },
+        },
       ],
     }).compile();
     service = moduleRef.get(KitchenOpsService);
@@ -46,12 +58,16 @@ describe('KitchenOpsService', () => {
       user: { status: 'active' },
       specializations: [{ id: 'specialization-1' }],
     });
-    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({ id: 'assignment-1' });
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({
+      id: 'assignment-1',
+    });
   }
 
   it('records a distribution under the authorized waiter', async () => {
     allowWaiter();
-    prisma.kitchenCampaign.findUnique.mockResolvedValue({ status: 'in_progress' });
+    prisma.kitchenCampaign.findUnique.mockResolvedValue({
+      status: 'in_progress',
+    });
     prisma.mealDistribution.create.mockResolvedValue({ id: 'distribution-1' });
 
     await service.createDistribution('campaign-1', 'user-1', {
@@ -62,37 +78,47 @@ describe('KitchenOpsService', () => {
       lat: 10.8,
     });
 
-    expect(prisma.mealDistribution.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        campaignId: 'campaign-1',
-        servedByVolunteerId: 'waiter-1',
-        servingsServed: 20,
-        peopleServed: 18,
+    expect(prisma.mealDistribution.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          campaignId: 'campaign-1',
+          servedByVolunteerId: 'waiter-1',
+          servingsServed: 20,
+          peopleServed: 18,
+        }),
       }),
-    }));
+    );
     expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a distribution where people served exceeds portions', async () => {
     allowWaiter();
-    prisma.kitchenCampaign.findUnique.mockResolvedValue({ status: 'in_progress' });
+    prisma.kitchenCampaign.findUnique.mockResolvedValue({
+      status: 'in_progress',
+    });
 
-    await expect(service.createDistribution('campaign-1', 'user-1', {
-      servingsServed: 10,
-      peopleServed: 11,
-    })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createDistribution('campaign-1', 'user-1', {
+        servingsServed: 10,
+        peopleServed: 11,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.mealDistribution.create).not.toHaveBeenCalled();
   });
 
   it('rejects one-sided distribution coordinates', async () => {
     allowWaiter();
-    prisma.kitchenCampaign.findUnique.mockResolvedValue({ status: 'in_progress' });
+    prisma.kitchenCampaign.findUnique.mockResolvedValue({
+      status: 'in_progress',
+    });
 
-    await expect(service.createDistribution('campaign-1', 'user-1', {
-      servingsServed: 10,
-      peopleServed: 10,
-      lng: 106.7,
-    })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createDistribution('campaign-1', 'user-1', {
+        servingsServed: 10,
+        peopleServed: 10,
+        lng: 106.7,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('only allows the serving waiter to record distribution feedback', async () => {
@@ -107,8 +133,9 @@ describe('KitchenOpsService', () => {
       servedByVolunteerId: 'another-waiter',
     });
 
-    await expect(service.addFeedback('distribution-1', 'user-1', { satisfaction: 5 }))
-      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.addFeedback('distribution-1', 'user-1', { satisfaction: 5 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.mealFeedback.create).not.toHaveBeenCalled();
   });
 
@@ -160,20 +187,32 @@ describe('KitchenOpsService', () => {
     }
 
     beforeEach(() => {
-      prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
+      prisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+          callback(prisma),
+      );
     });
 
     it('issues a fresh short-lived QR only to an active individual receiver', async () => {
       activeIndividualReceiver();
-      prisma.$queryRaw.mockResolvedValue([{ id: 'qr-1', qr_token: qrToken, qr_expires_at: new Date() }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { id: 'qr-1', qr_token: qrToken, qr_expires_at: new Date() },
+      ]);
 
       await expect(service.issueHandoffQr('receiver-user-1')).resolves.toEqual({
-        id: 'qr-1', qrToken, expiresAt: expect.any(Date),
+        id: 'qr-1',
+        qrToken,
+        expiresAt: expect.any(Date),
       });
 
-      expect(prisma.receiverHandoffQr.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ receiverId: 'receiver-1', consumedAt: null }),
-      }));
+      expect(prisma.receiverHandoffQr.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            receiverId: 'receiver-1',
+            consumedAt: null,
+          }),
+        }),
+      );
     });
 
     it('rejects a charity organization from receiving a beneficiary QR', async () => {
@@ -183,21 +222,39 @@ describe('KitchenOpsService', () => {
         user: { status: 'active', role: UserRole.RECEIVER },
       });
 
-      await expect(service.issueHandoffQr('charity-user-1')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.issueHandoffQr('charity-user-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('records a waiter scan by consuming the valid QR exactly once', async () => {
       allowWaiter();
-      prisma.mealDistribution.findUnique.mockResolvedValue({ id: 'distribution-1', campaignId: 'campaign-1' });
+      prisma.mealDistribution.findUnique.mockResolvedValue({
+        id: 'distribution-1',
+        campaignId: 'campaign-1',
+      });
       validHandoffToken();
       prisma.mealHandoff.findUnique.mockResolvedValue(null);
       activeIndividualReceiver();
       prisma.receiverHandoffQr.updateMany.mockResolvedValue({ count: 1 });
-      prisma.mealHandoff.create.mockResolvedValue({ id: 'handoff-1', receiverId: 'receiver-1' });
+      prisma.mealHandoff.create.mockResolvedValue({
+        id: 'handoff-1',
+        receiverId: 'receiver-1',
+      });
 
-      await expect(service.scanHandoff('campaign-1', 'distribution-1', 'waiter-user-1', qrToken))
-        .resolves.toEqual({ id: 'handoff-1', receiverId: 'receiver-1', alreadyRecorded: false });
+      await expect(
+        service.scanHandoff(
+          'campaign-1',
+          'distribution-1',
+          'waiter-user-1',
+          qrToken,
+        ),
+      ).resolves.toEqual({
+        id: 'handoff-1',
+        receiverId: 'receiver-1',
+        alreadyRecorded: false,
+      });
 
       expect(prisma.mealHandoff.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -211,31 +268,62 @@ describe('KitchenOpsService', () => {
 
     it('rejects an expired beneficiary QR before it is consumed', async () => {
       allowWaiter();
-      prisma.mealDistribution.findUnique.mockResolvedValue({ id: 'distribution-1', campaignId: 'campaign-1' });
+      prisma.mealDistribution.findUnique.mockResolvedValue({
+        id: 'distribution-1',
+        campaignId: 'campaign-1',
+      });
       prisma.receiverHandoffQr.findUnique.mockResolvedValue({
-        id: 'qr-1', receiverId: 'receiver-1', qrExpiresAt: new Date(Date.now() - 1), consumedAt: null,
+        id: 'qr-1',
+        receiverId: 'receiver-1',
+        qrExpiresAt: new Date(Date.now() - 1),
+        consumedAt: null,
       });
       prisma.mealHandoff.findUnique.mockResolvedValue(null);
 
-      await expect(service.scanHandoff('campaign-1', 'distribution-1', 'waiter-user-1', qrToken))
-        .rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.scanHandoff(
+          'campaign-1',
+          'distribution-1',
+          'waiter-user-1',
+          qrToken,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.receiverHandoffQr.updateMany).not.toHaveBeenCalled();
     });
 
     it('returns an existing handoff when the receiver was already recorded at that distribution', async () => {
       allowWaiter();
-      prisma.mealDistribution.findUnique.mockResolvedValue({ id: 'distribution-1', campaignId: 'campaign-1' });
+      prisma.mealDistribution.findUnique.mockResolvedValue({
+        id: 'distribution-1',
+        campaignId: 'campaign-1',
+      });
       validHandoffToken();
-      prisma.mealHandoff.findUnique.mockResolvedValue({ id: 'handoff-1', feedback: null });
+      prisma.mealHandoff.findUnique.mockResolvedValue({
+        id: 'handoff-1',
+        feedback: null,
+      });
 
-      await expect(service.scanHandoff('campaign-1', 'distribution-1', 'waiter-user-1', qrToken))
-        .resolves.toEqual({ id: 'handoff-1', feedback: null, alreadyRecorded: true });
+      await expect(
+        service.scanHandoff(
+          'campaign-1',
+          'distribution-1',
+          'waiter-user-1',
+          qrToken,
+        ),
+      ).resolves.toEqual({
+        id: 'handoff-1',
+        feedback: null,
+        alreadyRecorded: true,
+      });
       expect(prisma.receiverHandoffQr.updateMany).not.toHaveBeenCalled();
     });
 
     it('returns the existing handoff when a concurrent scan won the QR consumption race', async () => {
       allowWaiter();
-      prisma.mealDistribution.findUnique.mockResolvedValue({ id: 'distribution-1', campaignId: 'campaign-1' });
+      prisma.mealDistribution.findUnique.mockResolvedValue({
+        id: 'distribution-1',
+        campaignId: 'campaign-1',
+      });
       validHandoffToken();
       prisma.mealHandoff.findUnique
         .mockResolvedValueOnce(null)
@@ -243,29 +331,54 @@ describe('KitchenOpsService', () => {
       activeIndividualReceiver();
       prisma.receiverHandoffQr.updateMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.scanHandoff('campaign-1', 'distribution-1', 'waiter-user-1', qrToken))
-        .resolves.toEqual({ id: 'handoff-1', feedback: null, alreadyRecorded: true });
+      await expect(
+        service.scanHandoff(
+          'campaign-1',
+          'distribution-1',
+          'waiter-user-1',
+          qrToken,
+        ),
+      ).resolves.toEqual({
+        id: 'handoff-1',
+        feedback: null,
+        alreadyRecorded: true,
+      });
       expect(prisma.mealHandoff.create).not.toHaveBeenCalled();
     });
 
     it('does not allow a receiver to submit feedback for another receiver handoff', async () => {
       activeIndividualReceiver();
-      prisma.mealHandoff.findUnique.mockResolvedValue({ id: 'handoff-1', receiverId: 'receiver-2' });
+      prisma.mealHandoff.findUnique.mockResolvedValue({
+        id: 'handoff-1',
+        receiverId: 'receiver-2',
+      });
 
-      await expect(service.submitBeneficiaryFeedback('handoff-1', 'receiver-user-1', { satisfaction: 5 }))
-        .rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.submitBeneficiaryFeedback('handoff-1', 'receiver-user-1', {
+          satisfaction: 5,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.beneficiaryFeedback.create).not.toHaveBeenCalled();
     });
 
     it('turns the database one-feedback constraint into a conflict', async () => {
       activeIndividualReceiver();
-      prisma.mealHandoff.findUnique.mockResolvedValue({ id: 'handoff-1', receiverId: 'receiver-1' });
+      prisma.mealHandoff.findUnique.mockResolvedValue({
+        id: 'handoff-1',
+        receiverId: 'receiver-1',
+      });
       prisma.beneficiaryFeedback.create.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: 'test' }),
+        new Prisma.PrismaClientKnownRequestError('duplicate', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
       );
 
-      await expect(service.submitBeneficiaryFeedback('handoff-1', 'receiver-user-1', { satisfaction: 5 }))
-        .rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.submitBeneficiaryFeedback('handoff-1', 'receiver-user-1', {
+          satisfaction: 5,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('returns privacy-safe campaign feedback totals', async () => {
@@ -275,7 +388,9 @@ describe('KitchenOpsService', () => {
         _count: { _all: 5 },
       });
 
-      await expect(service.beneficiaryFeedbackSummary('campaign-1')).resolves.toEqual({
+      await expect(
+        service.beneficiaryFeedbackSummary('campaign-1'),
+      ).resolves.toEqual({
         verifiedHandoffs: 8,
         feedbackCount: 5,
         avgSatisfaction: 4.38,

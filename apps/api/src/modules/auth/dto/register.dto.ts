@@ -26,7 +26,8 @@ export class RegisterDto {
   @IsString()
   @MinLength(8)
   @Matches(/(?=.*[A-Z])(?=.*[0-9])/, {
-    message: 'Password must contain at least one uppercase letter and one number',
+    message:
+      'Password must contain at least one uppercase letter and one number',
   })
   password!: string;
 
@@ -37,7 +38,9 @@ export class RegisterDto {
   @MaxLength(255)
   fullName!: string;
 
-  @ApiProperty({ enum: [UserRole.PROVIDER, UserRole.RECEIVER, UserRole.VOLUNTEER] })
+  @ApiProperty({
+    enum: [UserRole.PROVIDER, UserRole.RECEIVER, UserRole.VOLUNTEER],
+  })
   @IsEnum([UserRole.PROVIDER, UserRole.RECEIVER, UserRole.VOLUNTEER])
   role!: UserRole.PROVIDER | UserRole.RECEIVER | UserRole.VOLUNTEER;
 
@@ -49,7 +52,10 @@ export class RegisterDto {
   })
   phone?: string;
 
-  @ApiPropertyOptional({ example: 'Tiệm bánh Hạnh Phúc', description: 'Provider: tên cửa hàng' })
+  @ApiPropertyOptional({
+    example: 'Tiệm bánh Hạnh Phúc',
+    description: 'Provider: tên cửa hàng',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)
@@ -61,29 +67,46 @@ export class RegisterDto {
   @MaxLength(500)
   address?: string;
 
-  @ApiPropertyOptional({ example: 'Xe máy', description: 'Volunteer: phương tiện' })
+  @ApiPropertyOptional({
+    example: 'Xe máy',
+    description: 'Volunteer: phương tiện',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   vehicleType?: string;
 
-  @ApiPropertyOptional({ example: '59A1 12345', description: 'Shipper: biển số xe (FE không còn nhập — BE OCR trích từ ảnh biển số nếu có)' })
+  @ApiPropertyOptional({
+    example: '59A1 12345',
+    description:
+      'Shipper: biển số xe (FE không còn nhập — BE OCR trích từ ảnh biển số nếu có)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   vehiclePlate?: string;
 
-  @ApiPropertyOptional({ example: '079203001234', description: 'Volunteer: số CCCD 12 chữ số (FE không còn nhập — BE OCR trích từ ảnh CCCD)' })
+  @ApiPropertyOptional({
+    example: '079203001234',
+    description:
+      'Volunteer: số CCCD 12 chữ số (FE không còn nhập — BE OCR trích từ ảnh CCCD)',
+  })
   @IsOptional()
   @IsString()
   idCardNumber?: string;
 
-  @ApiPropertyOptional({ example: 'shipper', description: 'Volunteer: role (shipper, chef, waiter)' })
+  @ApiPropertyOptional({
+    example: 'shipper',
+    description: 'Volunteer: role (shipper, chef, waiter)',
+  })
   @IsOptional()
   @IsEnum(['shipper', 'chef', 'waiter'])
   volunteerRole?: 'shipper' | 'chef' | 'waiter';
 
-  @ApiPropertyOptional({ example: true, description: 'Charity: is a charity organization' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Charity: is a charity organization',
+  })
   @IsOptional()
   @IsBoolean()
   @Transform(({ value }) => {
@@ -151,7 +174,8 @@ export class RegisterDto {
   @IsString({ each: true })
   @Matches(/^(\/uploads\/|https?:\/\/)/, {
     each: true,
-    message: 'Mỗi ảnh minh chứng phải là đường dẫn /uploads/... hoặc URL http(s)',
+    message:
+      'Mỗi ảnh minh chứng phải là đường dẫn /uploads/... hoặc URL http(s)',
   })
   evidenceUrls?: string[];
 }

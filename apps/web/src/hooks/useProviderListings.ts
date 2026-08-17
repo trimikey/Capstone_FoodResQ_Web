@@ -242,6 +242,7 @@ export interface ProviderOrderItem {
     user: { fullName: string; phone: string | null; avatarUrl: string | null };
   };
   listing: {
+    id: string;
     title: string;
     imageUrls: string[];
     category: string;

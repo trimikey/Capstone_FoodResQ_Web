@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
+  ImageBackground,
   Platform,
   Pressable,
   ScrollView,
@@ -12,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
+
+const authFoodBackground = require('../../../assets/auth_food_bg.jpg');
 
 export function AuthScaffold({
   children,
@@ -42,30 +45,38 @@ export function AuthScaffold({
   }, []);
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+    <ImageBackground
+      source={authFoodBackground}
+      resizeMode="cover"
+      style={styles.background}
+      imageStyle={styles.backgroundImage}
     >
-      <ScrollView
-        style={styles.scroll}
-        scrollEnabled={scrollEnabled}
-        contentContainerStyle={[
-          styles.scrollContent,
-          useBalancedLayout && styles.scrollContentBalanced,
-          { paddingBottom: footer ? spacing.xl : Math.max(insets.bottom, spacing.lg) + spacing.xl },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <View pointerEvents="none" style={styles.backgroundOverlay} />
+      <KeyboardAvoidingView
+        style={[styles.container, { paddingTop: insets.top }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        {children}
-      </ScrollView>
-      {footer ? (
-        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-          {footer}
-        </View>
-      ) : null}
-    </KeyboardAvoidingView>
+        <ScrollView
+          style={styles.scroll}
+          scrollEnabled={scrollEnabled}
+          contentContainerStyle={[
+            styles.scrollContent,
+            useBalancedLayout && styles.scrollContentBalanced,
+            { paddingBottom: footer ? spacing.xl : Math.max(insets.bottom, spacing.lg) + spacing.xl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+        {footer ? (
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+            {footer}
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
@@ -224,9 +235,20 @@ export const authStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: {
+  background: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  backgroundImage: {
+    opacity: 1,
+  },
+  backgroundOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(245,244,238,0.72)',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   scroll: {
     flex: 1,

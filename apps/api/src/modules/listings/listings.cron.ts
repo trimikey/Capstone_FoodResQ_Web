@@ -69,7 +69,9 @@ export class ListingsCron {
       }
 
       if (expiringListings.length > 0) {
-        this.logger.log(`Sent expiry alerts for ${expiringListings.length} listing(s)`);
+        this.logger.log(
+          `Sent expiry alerts for ${expiringListings.length} listing(s)`,
+        );
       }
     } catch (e) {
       logCronError(this.logger, 'handleExpiryAlerts', e);

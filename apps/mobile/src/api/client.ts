@@ -113,10 +113,18 @@ apiClient.interceptors.response.use(
           refreshToken,
         });
 
-        const { accessToken: newAccessToken } = refreshResponse.data.data;
+        const {
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        } = refreshResponse.data.data as RefreshedTokens;
 
-        // Store new access token
+        // Backend rotates refresh tokens on every refresh, so both tokens must be replaced.
         await AsyncStorage.setItem('accessToken', newAccessToken);
+        await AsyncStorage.setItem('refreshToken', newRefreshToken);
+        onTokensRefreshed?.({
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        });
 
         // Update header for original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
@@ -139,10 +147,22 @@ apiClient.interceptors.response.use(
  * refresh token thất bại — giúp auth guard điều hướng về login ngay lập tức
  * mà không tạo circular import (store import client, không ngược lại).
  */
+type RefreshedTokens = {
+  accessToken: string;
+  refreshToken: string;
+};
+
 let onSessionExpired: (() => void) | null = null;
+let onTokensRefreshed: ((tokens: RefreshedTokens) => void) | null = null;
 
 export function setSessionExpiredHandler(handler: (() => void) | null): void {
   onSessionExpired = handler;
+}
+
+export function setTokensRefreshedHandler(
+  handler: ((tokens: RefreshedTokens) => void) | null,
+): void {
+  onTokensRefreshed = handler;
 }
 
 /**

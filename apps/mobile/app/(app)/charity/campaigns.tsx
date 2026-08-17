@@ -77,8 +77,12 @@ export default function CharityCampaignsScreen() {
       <FlashList
         data={items}
         keyExtractor={(item: Campaign) => item.id}
-        renderItem={({ item }: { item: Campaign }) => (
-          <CampaignCard campaign={item} onPress={() => router.push(`/(app)/charity/campaigns/${item.id}`)} />
+        renderItem={({ item, index }: { item: Campaign; index: number }) => (
+          <CampaignCard
+            campaign={item}
+            index={index}
+            onPress={() => router.push(`/(app)/charity/campaigns/${item.id}`)}
+          />
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}

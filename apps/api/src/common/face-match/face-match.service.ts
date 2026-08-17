@@ -43,7 +43,9 @@ export class FaceMatchService {
   private async doInit(): Promise<void> {
     const tf = faceapi.tf;
     try {
-      const wasmDir = dirname(require.resolve('@tensorflow/tfjs-backend-wasm/package.json'));
+      const wasmDir = dirname(
+        require.resolve('@tensorflow/tfjs-backend-wasm/package.json'),
+      );
       wasmBackend.setWasmPaths(join(wasmDir, 'dist').replace(/\\/g, '/') + '/');
       await tf.setBackend('wasm');
       await tf.ready();
@@ -51,7 +53,9 @@ export class FaceMatchService {
       // WASM không khởi tạo được → backend CPU thuần JS (chậm hơn nhưng luôn chạy)
       await tf.setBackend('cpu');
       await tf.ready();
-      this.logger.warn('WASM backend unavailable — falling back to CPU backend');
+      this.logger.warn(
+        'WASM backend unavailable — falling back to CPU backend',
+      );
     }
 
     const modelDir = join(
@@ -86,12 +90,17 @@ export class FaceMatchService {
       const detection = await faceapi
         .detectSingleFace(
           tensor,
-          new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }),
+          new faceapi.TinyFaceDetectorOptions({
+            inputSize: 512,
+            scoreThreshold: 0.3,
+          }),
         )
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      return detection ? Array.from(detection.descriptor as Float32Array) : null;
+      return detection
+        ? Array.from(detection.descriptor as Float32Array)
+        : null;
     } finally {
       tensor.dispose();
     }
@@ -99,7 +108,10 @@ export class FaceMatchService {
 
   /** So khớp 2 descriptor — matched=true nếu khoảng cách dưới ngưỡng. */
   compare(descriptorA: number[], descriptorB: number[]): FaceCompareResult {
-    const distance: number = faceapi.euclideanDistance(descriptorA, descriptorB);
+    const distance: number = faceapi.euclideanDistance(
+      descriptorA,
+      descriptorB,
+    );
     return {
       matched: distance <= this.threshold,
       distance: Math.round(distance * 1000) / 1000,
@@ -114,8 +126,15 @@ export class FaceMatchService {
   } {
     try {
       if (file.mimetype === 'image/jpeg') {
-        const decoded = jpeg.decode(file.buffer, { useTArray: true, maxMemoryUsageInMB: 512 });
-        return { data: decoded.data, width: decoded.width, height: decoded.height };
+        const decoded = jpeg.decode(file.buffer, {
+          useTArray: true,
+          maxMemoryUsageInMB: 512,
+        });
+        return {
+          data: decoded.data,
+          width: decoded.width,
+          height: decoded.height,
+        };
       }
       if (file.mimetype === 'image/png') {
         const decoded = PNG.sync.read(file.buffer);
@@ -126,9 +145,13 @@ export class FaceMatchService {
         };
       }
     } catch {
-      throw new BadRequestException('Cannot decode image — file may be corrupted');
+      throw new BadRequestException(
+        'Cannot decode image — file may be corrupted',
+      );
     }
     // face match chỉ hỗ trợ JPEG/PNG (decoder thuần JS); camera FE luôn xuất JPEG
-    throw new BadRequestException('Face verification requires a JPEG or PNG photo');
+    throw new BadRequestException(
+      'Face verification requires a JPEG or PNG photo',
+    );
   }
 }

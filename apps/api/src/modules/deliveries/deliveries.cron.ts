@@ -28,7 +28,8 @@ export class DeliveriesCron {
   async handleOfferSweep() {
     try {
       const n = await this.deliveries.sweepOffersAndRebroadcast();
-      if (n > 0) this.logger.log(`Re-broadcasted ${n} unassigned delivery(ies)`);
+      if (n > 0)
+        this.logger.log(`Re-broadcasted ${n} unassigned delivery(ies)`);
     } catch (e) {
       logCronError(this.logger, 'sweepOffersAndRebroadcast', e);
     }

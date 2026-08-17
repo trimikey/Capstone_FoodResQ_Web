@@ -10,8 +10,20 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, Matches, MaxLength, ArrayMaxSize } from 'class-validator';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -27,7 +39,10 @@ class SetStepTimesDto {
   @IsArray()
   @ArrayMaxSize(4, { message: 'Cần đúng 4 giờ cho 4 khâu' })
   @IsString({ each: true })
-  @Matches(/^\d{2}:\d{2}$/, { each: true, message: 'Giờ phải đúng định dạng HH:mm' })
+  @Matches(/^\d{2}:\d{2}$/, {
+    each: true,
+    message: 'Giờ phải đúng định dạng HH:mm',
+  })
   @Type(() => String)
   scheduledTimes!: string[];
 }
@@ -51,14 +66,22 @@ export class DishStepsController {
   @Post('menu-items/:menuItemId/step-times')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Bếp trưởng: thiết lập giờ 4 khâu (Sơ chế, Nấu, Trình bày, Sẵn sàng)' })
+  @ApiOperation({
+    summary:
+      'Bếp trưởng: thiết lập giờ 4 khâu (Sơ chế, Nấu, Trình bày, Sẵn sàng)',
+  })
   setStepTimes(
     @Param('campaignId', ParseUUIDPipe) campaignId: string,
     @Param('menuItemId', ParseUUIDPipe) menuItemId: string,
     @CurrentUser() user: User,
     @Body() dto: SetStepTimesDto,
   ) {
-    return this.service.setScheduledTimes(campaignId, user.id, menuItemId, dto.scheduledTimes);
+    return this.service.setScheduledTimes(
+      campaignId,
+      user.id,
+      menuItemId,
+      dto.scheduledTimes,
+    );
   }
 
   /** Public (trong campaign): xem danh sách món + 4 step + trạng thái. */

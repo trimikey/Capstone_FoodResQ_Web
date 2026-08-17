@@ -70,7 +70,9 @@ export default function BeneficiaryQrScreen() {
   }, [issueQr]);
 
   useEffect(() => {
-    if (user?.role === 'receiver' && !isCharityOrg) void refreshQr();
+    if (user?.role !== 'receiver' || isCharityOrg) return;
+    const timer = setTimeout(() => void refreshQr(), 0);
+    return () => clearTimeout(timer);
     // Chỉ cấp mã lần đầu khi vào màn; các lần sau do countdown kích hoạt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role, isCharityOrg]);

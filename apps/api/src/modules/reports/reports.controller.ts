@@ -14,7 +14,9 @@ export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Gửi báo cáo về listing/người dùng/đơn giao/chiến dịch' })
+  @ApiOperation({
+    summary: 'Gửi báo cáo về listing/người dùng/đơn giao/chiến dịch',
+  })
   create(@CurrentUser() user: User, @Body() dto: CreateReportDto) {
     return this.reportsService.create(user.id, dto);
   }

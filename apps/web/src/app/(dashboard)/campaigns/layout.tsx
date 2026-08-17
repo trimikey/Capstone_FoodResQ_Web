@@ -38,7 +38,7 @@ const VALID_SECTIONS: Section[] = [
  * Section hiện tại lấy từ ?tab=… trên URL (single source of truth);
  * page.tsx cũng đọc cùng param nên sidebar và main luôn đồng bộ.
  */
-export default function CampaignsLayout({ children }: { children: ReactNode }) {
+export default function CampaignsLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

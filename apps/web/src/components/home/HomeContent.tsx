@@ -404,6 +404,12 @@ export default function HomeContent() {
                     src={showcaseImg(item.category, item.imageUrls)}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(event) => {
+                      const fallback = CAT_IMG[item.category] || '/food_bread.png';
+                      const img = event.currentTarget;
+                      if (img.src.endsWith(fallback)) return;
+                      img.src = fallback;
+                    }}
                   />
                   <div className="absolute top-3 left-3 px-2.5 py-1.5 rounded-lg bg-black/60 backdrop-blur text-white text-[10px] font-bold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[12px] text-emerald-300">schedule</span>

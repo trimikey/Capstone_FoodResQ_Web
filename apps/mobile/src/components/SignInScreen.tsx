@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -27,6 +28,8 @@ import { AppImage } from './ui/AppImage';
 import { FadeInUp, FadeInView } from './ui/Motion';
 import { signInWithGoogle, AuthCancelledError } from '../services/firebaseAuth';
 import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
+
+const authFoodBackground = require('../../assets/auth_food_bg.jpg');
 
 interface SignInScreenProps {
   onSignInSuccess?: (user: any) => void;
@@ -103,7 +106,14 @@ export function SignInScreen({
   const submitting = isLoading || googleLoading;
 
   return (
-    <KeyboardAvoidingView
+    <ImageBackground
+      source={authFoodBackground}
+      resizeMode="cover"
+      style={styles.background}
+      imageStyle={styles.backgroundImage}
+    >
+      <View pointerEvents="none" style={styles.backgroundOverlay} />
+      <KeyboardAvoidingView
       style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
@@ -127,12 +137,7 @@ export function SignInScreen({
         </View>
 
         <FadeInView style={compactHeight ? styles.heroCompact : styles.hero}>
-          <AppImage
-            source={{
-              uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBMmLTbgMqJ7Os3EH_vc1wSOw1e7XLFKtHbs9Hdr5lr8yu8vynQuJvCOgAJ-LUyCYKKGGi7axLiBK4nAVdjpb-pnxOvb9tlBiNuivg4yaZfepnTgmBsQJIzYZLS5eTrlgapHDYyS-8dTAdk6YPKi2ZCfcw7GXg0d7EhLF4fP_EIFeeY54rRI62hQByH3D2U4wpxhFSwbyozgWBcZzf6RNDFvVE5gmthCK2sqkcMfKzxm9fg8PIzugPrtR4megGMKWxVaXKwVujB569-',
-            }}
-            style={styles.heroImage}
-          />
+          <AppImage source={authFoodBackground} style={styles.heroImage} />
           <View style={styles.heroOverlay} />
           <View style={styles.heroText}>
             <Text style={styles.heroKicker}>Đăng nhập</Text>
@@ -313,7 +318,8 @@ export function SignInScreen({
         onDismiss={clearError}
         duration={4000}
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
@@ -336,9 +342,20 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  container: {
+  background: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  backgroundImage: {
+    opacity: 1,
+  },
+  backgroundOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(245,244,238,0.72)',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,

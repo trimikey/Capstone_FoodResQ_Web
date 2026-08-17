@@ -131,7 +131,9 @@ export class NotificationsService {
   }
 
   async unreadCount(userId: string) {
-    const count = await this.prisma.notification.count({ where: { userId, isRead: false } });
+    const count = await this.prisma.notification.count({
+      where: { userId, isRead: false },
+    });
     return { count };
   }
 

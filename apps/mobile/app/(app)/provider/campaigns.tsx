@@ -6,6 +6,7 @@ import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useCampaigns, type Campaign } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
+import { AppBackground } from '@/components/ui/AppBackground';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
@@ -51,19 +52,25 @@ export default function ProviderCampaignsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Bếp ăn cộng đồng" />
-      <FlashList
-        data={items}
-        keyExtractor={(item: Campaign) => item.id}
-        renderItem={({ item }: { item: Campaign }) => (
-          <CampaignCard campaign={item} onPress={() => router.push(`/(app)/provider/campaigns/${item.id}`)} />
-        )}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={<ProviderCampaignHero total={items.length} />}
-        ListEmptyComponent={renderEmpty}
-        refreshing={isRefetching}
-        onRefresh={() => refetch()}
-      />
+      <AppBackground>
+        <ScreenHeader title="Bếp ăn cộng đồng" />
+        <FlashList
+          data={items}
+          keyExtractor={(item: Campaign) => item.id}
+          renderItem={({ item, index }: { item: Campaign; index: number }) => (
+            <CampaignCard
+              campaign={item}
+              index={index}
+              onPress={() => router.push(`/(app)/provider/campaigns/${item.id}`)}
+            />
+          )}
+          contentContainerStyle={styles.list}
+          ListHeaderComponent={<ProviderCampaignHero total={items.length} />}
+          ListEmptyComponent={renderEmpty}
+          refreshing={isRefetching}
+          onRefresh={() => refetch()}
+        />
+      </AppBackground>
     </SafeAreaView>
   );
 }

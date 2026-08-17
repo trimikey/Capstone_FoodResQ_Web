@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useMyProfile } from '@/hooks/useProfile';
 import { displayRoleLabel, statusDisplay, volunteerRankLabel } from '@/utils/userFormat';
+import { AppBackground } from '@/components/ui/AppBackground';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
@@ -132,12 +133,13 @@ export default function ProfileTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
-        }
-      >
+      <AppBackground>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
+          }
+        >
         <View style={styles.hero}>
           {avatarUrl ? (
             <AppImage source={{ uri: avatarUrl }} style={styles.avatarImg} />
@@ -406,7 +408,8 @@ export default function ProfileTab() {
             Đăng xuất
           </Button>
         </SurfaceCard>
-      </ScrollView>
+        </ScrollView>
+      </AppBackground>
     </SafeAreaView>
   );
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ApiResponse } from '@foodresq/types';
 import type { CreateReservationInput } from '@/schemas/reservation.schema';
+import { useAuthStore } from '@/stores/auth.store';
 
 interface ReservationResult {
   reservationId: string;
@@ -73,11 +74,13 @@ export function useCreateReservation() {
   });
 }
 
-export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20) {
+export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20, enabled = true) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
     queryKey: ['reservations', 'my', page, group, limit],
     queryFn: () => fetchMyReservations(page, group, limit),
     staleTime: 30_000,
+    enabled: enabled && !!accessToken,
     // Giữ dữ liệu trang cũ khi đang tải trang mới → không nhấp nháy khi phân trang
     placeholderData: (prev) => prev,
   });
