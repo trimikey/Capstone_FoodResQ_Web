@@ -164,11 +164,32 @@ export enum BulkRunStatus {
 }
 
 export enum CampaignStatus {
-  DRAFT = 'draft',
-  OPEN = 'open',
+  PENDING_APPROVAL = 'pending_approval',
+  APPROVED = 'approved',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
+}
+
+export enum RecruitmentStatus {
+  SCHEDULED = 'scheduled',
+  OPEN = 'open',
+  STAFFED = 'staffed',
+  EXPIRED_UNDERSTAFFED = 'expired_understaffed',
+  CLOSED_READY = 'closed_ready',
+}
+
+export enum CampaignShiftPeriod {
+  MIDNIGHT = 'midnight',
+  MORNING = 'morning',
+  AFTERNOON = 'afternoon',
+  EVENING = 'evening',
+}
+
+export enum AssignmentConfirmationStatus {
+  PENDING = 'pending',
+  CONFIRMED = 'confirmed',
+  DECLINED = 'declined',
 }
 
 export enum AssignmentRole {
