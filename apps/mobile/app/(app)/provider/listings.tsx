@@ -215,7 +215,7 @@ export default function ProviderListingsScreen() {
 
       <FAB
         icon="plus"
-        label="Đăng tin"
+        label="T\u1ea1o nh\u00e1p"
         color={COLORS.onPrimary}
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}

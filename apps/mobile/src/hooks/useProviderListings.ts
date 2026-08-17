@@ -101,6 +101,7 @@ export function usePublishListing() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['provider-listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing', id] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
     },
   });
 }
