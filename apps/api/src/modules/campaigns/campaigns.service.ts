@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CampaignShiftPeriod, Prisma } from '@prisma/client';
+import { AssignmentStatus, CampaignShiftPeriod, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { StorageService } from '@/common/storage/storage.service';
@@ -2733,6 +2733,14 @@ export class CampaignsService {
     volunteerId: string,
     shiftId: string,
     workDate: Date,
+    opts?: {
+      /** Bỏ qua chính bản ghi đang được duyệt — không tự trùng với mình. */
+      excludeAssignmentId?: string;
+      /** Danh sách status coi là "đang giữ chỗ" (mặc định: pending + đã nhận). */
+      statuses?: AssignmentStatus[];
+      /** true = thông điệp cho tổ chức đang duyệt (thay vì cho TNV đăng ký). */
+      orgView?: boolean;
+    },
   ): Promise<void> {
     const target = await this.prisma.campaignShift.findUnique({
       where: { id: shiftId },
@@ -2752,13 +2760,17 @@ export class CampaignsService {
       where: {
         volunteerId,
         shiftId: { not: null },
+        ...(opts?.excludeAssignmentId ? { id: { not: opts.excludeAssignmentId } } : {}),
         // Lấy thêm ngày kề để phát hiện ca tối kéo qua 00:00.
         workDate: { gte: rangeStart, lte: rangeEnd },
-        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'] },
+        status: {
+          in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'],
+        },
       },
       select: {
         workDate: true,
         shift: { select: { label: true, startTime: true, endTime: true, endDayOffset: true } },
+        campaign: { select: { title: true } },
       },
     });
 
@@ -2776,8 +2788,12 @@ export class CampaignsService {
       const heldEndAt = heldDay + e * 60_000;
       if (targetStartAt < heldEndAt && heldStartAt < targetEndAt) {
         throw new ConflictException(
-          `Ca này trùng giờ với ca "${a.shift?.label ?? 'đã đăng ký'}" bạn đã nhận. ` +
-            'Bạn có thể nhận nhiều ca liền kề, miễn là các ca không trùng thời gian.',
+          opts?.orgView
+            ? `TNV này đã nhận ca "${a.shift?.label ?? 'khác'}" (${a.shift?.startTime}–${a.shift?.endTime}` +
+                ` ngày ${this.toDateKey(a.workDate)}, chiến dịch "${a.campaign?.title ?? ''}") trùng giờ` +
+                ' với ca đang duyệt — không thể phân vào ca này.'
+            : `Ca này trùng giờ với ca "${a.shift?.label ?? 'đã đăng ký'}" bạn đã nhận. ` +
+                'Bạn có thể nhận nhiều ca liền kề, miễn là các ca không trùng thời gian.',
         );
       }
     }
@@ -4785,6 +4801,18 @@ export class CampaignsService {
         selectedShiftId = shift.id;
         selectedShiftLabel = shift.label;
         selectedShiftSlotsNeeded = shift.slotsNeeded;
+      }
+
+      // Chống trùng giờ khi DUYỆT: TNV có thể đã được nhận ca khác (kể cả ở
+      // chiến dịch khác) sau khi họ gửi đăng ký này, hoặc tổ chức đổi sang ca
+      // khác lúc duyệt (dto.shiftId). Chỉ so với ca ĐÃ NHẬN — các đăng ký
+      // pending khác chưa giữ chỗ thật; loại trừ chính bản ghi đang duyệt.
+      if (selectedShiftId && a.workDate) {
+        await this.assertShiftNotOverlapping(campaignId, a.volunteerId, selectedShiftId, a.workDate, {
+          excludeAssignmentId: assignmentId,
+          statuses: ['assigned', 'checked_in', 'in_progress', 'completed'],
+          orgView: true,
+        });
       }
 
       const campaignCapacity = await tx.kitchenCampaign.updateMany({

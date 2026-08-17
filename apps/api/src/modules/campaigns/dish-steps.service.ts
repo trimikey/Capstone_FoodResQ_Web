@@ -933,14 +933,20 @@ export class DishStepsService {
       });
       if (!volunteer) return { weekStart, isPersonalView: true, days: [] };
 
-      // Lấy assignments của volunteer trong tuần này
+      // Lấy assignments của volunteer trong tuần này.
+      // CHỈ lấy ca thật: chờ duyệt + đã được nhận. Đăng ký bị TỪ CHỐI / đã hủy
+      // không phải lịch làm việc — trước đây lấy tất nên lịch hiện cả ca rejected.
+      // Lọc theo NGÀY TRỰC (workDate) — chiến dịch nhiều ngày mà lọc theo
+      // scheduledDate thì mọi ca dồn hết vào ngày đầu tiên.
       const assignments = await this.prisma.campaignVolunteerAssignment.findMany({
         where: {
           volunteerId: volunteer.id,
-          campaign: {
-            scheduledDate: { gte: weekStart, lt: weekEnd },
-            status: { in: ['approved', 'in_progress', 'completed'] },
-          },
+          status: { in: ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'] },
+          campaign: { status: { in: ['approved', 'in_progress', 'completed'] } },
+          OR: [
+            { workDate: { gte: weekStart, lt: weekEnd } },
+            { workDate: null, campaign: { scheduledDate: { gte: weekStart, lt: weekEnd } } },
+          ],
         },
         include: {
           shift: { select: { id: true, label: true, role: true, startTime: true, endTime: true } },
@@ -954,10 +960,10 @@ export class DishStepsService {
         return { weekStart, isPersonalView: true, days: [] };
       }
 
-      // Gom theo ngày campaign
+      // Gom theo ngày trực (fallback ngày chiến dịch cho bản ghi cũ không có workDate)
       const byDay = new Map<string, typeof assignments>();
       for (const a of assignments) {
-        const dayKey = a.campaign.scheduledDate.toISOString().slice(0, 10);
+        const dayKey = (a.workDate ?? a.campaign.scheduledDate).toISOString().slice(0, 10);
         const arr = byDay.get(dayKey) ?? [];
         arr.push(a);
         byDay.set(dayKey, arr);
@@ -975,6 +981,8 @@ export class DishStepsService {
             title: a.campaign.title,
             status: a.campaign.status,
             role: a.role,
+            // Trạng thái duyệt của chính ca này — FE phân biệt "Chờ duyệt" với ca đã nhận.
+            assignmentStatus: a.status,
             shift: a.shift
               ? {
                   id: a.shift.id,

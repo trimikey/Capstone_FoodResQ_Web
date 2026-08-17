@@ -1805,6 +1805,11 @@ export interface WeeklyScheduleCampaign {
   status: 'approved' | 'in_progress' | 'completed';
   /** Chỉ có khi isPersonalView=true (TNV) */
   role?: 'chef' | 'waiter' | 'shipper';
+  /**
+   * Trạng thái duyệt của chính ca này (chỉ lịch TNV): 'pending' = đăng ký chờ
+   * tổ chức duyệt — chưa phải ca chính thức; còn lại là ca đã được nhận.
+   */
+  assignmentStatus?: 'pending' | 'assigned' | 'checked_in' | 'in_progress' | 'completed';
   /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */
   shift?: {
     id: string;
