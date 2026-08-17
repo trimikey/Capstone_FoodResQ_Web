@@ -28,6 +28,24 @@ import type {
   MenuTemplate,
 } from '@/components/campaigns/create-campaign-templates';
 
+type ApiSubmitError = {
+  message?: string;
+  response?: {
+    status?: number;
+    data?: {
+      error?: {
+        message?: string | string[];
+        details?: unknown;
+      };
+      message?: string | string[];
+    };
+  };
+  config?: {
+    url?: string;
+    method?: string;
+  };
+};
+
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), {
   ssr: false,
   loading: () => (
@@ -619,16 +637,22 @@ export default function CreateCampaignModal({
       emitFormReset();
       onClose();
     } catch (e: unknown) {
-      const err = e as {
-        response?: { data?: { error?: { message?: string | string[]; details?: unknown } } };
-      };
+      const err = e as ApiSubmitError;
       // class-validator thường trả về message là MẢNG chuỗi (1 entry / field lỗi).
       // Ghép lại để user thấy toàn bộ field bị reject trong 1 toast.
-      const raw = err?.response?.data?.error?.message;
+      const raw = err?.response?.data?.error?.message ?? err?.response?.data?.message;
       const details = err?.response?.data?.error?.details;
       const msg = Array.isArray(raw) ? raw.join(' · ') : raw ?? 'Tạo thất bại';
       // Log chi tiết ra console để dev debug nhanh (BE trả message + field path)
-      console.error('[CreateCampaign] POST /campaigns failed:', { msg, details, raw });
+      console.warn('[CreateCampaign] POST /campaigns failed:', {
+        status: err.response?.status,
+        url: err.config?.url,
+        method: err.config?.method,
+        msg,
+        details,
+        raw,
+        data: err.response?.data,
+      });
       toast.error(msg);
     }
   }
