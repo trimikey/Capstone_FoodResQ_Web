@@ -329,15 +329,16 @@ function ListingsPageContent() {
           </div>
 
           {/* Filter Row: Distance, Category, Time */}
-          <div className="flex gap-2 sm:gap-3 items-center text-[13px] overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex flex-wrap gap-2 sm:gap-3 items-center text-[13px]">
             <span className="text-neutral-500 font-medium flex items-center gap-1.5 uppercase tracking-wider text-[11px] shrink-0">
               <span className="material-symbols-outlined text-[16px]">filter_list</span>
               Bộ lọc:
             </span>
 
             {/* Distance Filter Dropdown */}
-            <div className="relative">
+            <div className="relative z-40">
               <button
+                type="button"
                 onClick={() => setOpenMenu(openMenu === 'distance' ? null : 'distance')}
                 className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
@@ -360,8 +361,9 @@ function ListingsPageContent() {
             </div>
 
             {/* Category Filter Dropdown */}
-            <div className="relative">
+            <div className="relative z-40">
               <button
+                type="button"
                 onClick={() => setOpenMenu(openMenu === 'category' ? null : 'category')}
                 className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
@@ -384,8 +386,9 @@ function ListingsPageContent() {
             </div>
 
             {/* Pickup Time Filter */}
-            <div className="relative">
+            <div className="relative z-40">
               <button
+                type="button"
                 onClick={() => setOpenMenu(openMenu === 'time' ? null : 'time')}
                 className="shrink-0 min-h-10 flex items-center gap-1.5 px-4 py-2 rounded-full border border-neutral-200 bg-white hover:border-[#236c2a]/40 font-medium text-neutral-700 shadow-sm transition-all whitespace-nowrap"
               >
@@ -400,9 +403,6 @@ function ListingsPageContent() {
               )}
             </div>
           </div>
-
-          {/* Lớp phủ bắt click ra ngoài để đóng dropdown */}
-          {openMenu && <div className="fixed inset-0 z-30" onClick={() => setOpenMenu(null)} />}
 
           {/* Quick pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none pt-2">
