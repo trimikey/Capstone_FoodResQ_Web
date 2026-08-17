@@ -13,10 +13,6 @@ export interface ListingForm {
   pickupEndTime: string;
   expiryDate: string;
   expiryTime: string;
-  /** Giờ mở nhận trong ngày, dạng "HH:mm" — khác với mốc bắt đầu/hạn lấy ở trên */
-  dailyStart: string;
-  /** Giờ đóng nhận trong ngày, dạng "HH:mm" */
-  dailyEnd: string;
   pickupAddress: string;
   lng: number;
   lat: number;
@@ -29,40 +25,64 @@ export interface ListingForm {
 const FALLBACK_LNG = 106.6297;
 const FALLBACK_LAT = 10.8231;
 
-/** "07:00" → 420. Trả null nếu chuỗi rỗng/không hợp lệ. */
-export function hhmmToMinute(v: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
+/** Mọi thời gian của tin đăng đều là giờ Việt Nam, không phụ thuộc múi giờ máy người dùng. */
+export const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1_000;
+
+type DateValue = string | number | Date;
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0');
 }
 
-/** 420 → "07:00" */
-export function minuteToHHmm(v?: number | null): string | null {
-  if (v == null) return null;
-  return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+function asDate(value: DateValue): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+/** Tách ngày/giờ Việt Nam từ một timestamp UTC. */
+function vietnamParts(value: DateValue): { date: string; time: string } | null {
+  const instant = asDate(value);
+  if (Number.isNaN(instant.getTime())) return null;
+
+  // Việt Nam không có DST, nên dịch timestamp cố định +07:00 rồi đọc bằng UTC
+  // để kết quả nhất quán trên máy người dùng, SSR và API server.
+  const vietnam = new Date(instant.getTime() + VIETNAM_UTC_OFFSET_MS);
+  return {
+    date: `${vietnam.getUTCFullYear()}-${pad(vietnam.getUTCMonth() + 1)}-${pad(vietnam.getUTCDate())}`,
+    time: `${pad(vietnam.getUTCHours())}:${pad(vietnam.getUTCMinutes())}`,
+  };
+}
+
+/** Chuyển ngày + giờ Provider chọn (giờ VN) thành timestamp UTC để gửi API. */
+export function combineToIso(date: string, time: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match || !timeMatch) return new Date().toISOString();
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+    return new Date().toISOString();
+  }
+
+  return new Date(Date.UTC(year, month - 1, day, hour - 7, minute)).toISOString();
 }
 
 export function localDateTime(offsetH = 0): string {
-  const d = new Date(Date.now() + offsetH * 3_600_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const parts = vietnamParts(Date.now() + offsetH * 3_600_000)!;
+  return `${parts.date}T${parts.time}`;
 }
 
+/** Trả về ngày + giờ Việt Nam để điền lại vào form Provider. */
 export function toLocalInput(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    const now = localDateTime(0).split('T');
-    return { date: now[0], time: now[1] };
-  }
-  const pad = (n: number) => String(n).padStart(2, '0');
-  // Use UTC getters to get the correct local date/time components
-  return {
-    date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
-    time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`,
-  };
+  const parts = vietnamParts(iso);
+  if (parts) return parts;
+
+  const [date, time] = localDateTime().split('T');
+  return { date, time };
 }
 
 export function toLocalInputSingle(iso: string): string {
@@ -70,18 +90,36 @@ export function toLocalInputSingle(iso: string): string {
   return `${date}T${time}`;
 }
 
+/** Chuyển giá trị của input datetime-local (được hiểu là giờ VN) sang UTC. */
 export function toIso(local: string): string {
-  return new Date(local).toISOString();
+  const [date, time = ''] = local.split('T');
+  return combineToIso(date, time.slice(0, 5));
 }
 
-export function combineToIso(date: string, time: string): string {
-  if (!date || !time) return new Date().toISOString();
-  // Parse as local time, then convert to UTC ISO string
-  const localDateTime = new Date(`${date}T${time}`);
-  // Get the local offset and apply it to get UTC time
-  const utcDateTime = new Date(localDateTime.getTime() - localDateTime.getTimezoneOffset() * 60_000);
-  return utcDateTime.toISOString();
+/** Định dạng giờ cố định theo múi giờ Việt Nam cho mọi màn hình listing. */
+export function formatVietnamTime(value: DateValue): string {
+  return vietnamParts(value)?.time ?? '—';
 }
+
+export function formatVietnamDate(value: DateValue): string {
+  const date = vietnamParts(value)?.date;
+  if (!date) return '—';
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+export function formatVietnamDateTime(value: DateValue): string {
+  const parts = vietnamParts(value);
+  if (!parts) return '—';
+  const [year, month, day] = parts.date.split('-');
+  return `${day}/${month}/${year} ${parts.time}`;
+}
+
+export function isSameVietnamDate(first: DateValue, second: DateValue): boolean {
+  const firstDate = vietnamParts(first)?.date;
+  return firstDate != null && firstDate === vietnamParts(second)?.date;
+}
+
 
 export function buildForm(
   provider: { address?: string | null; lng?: number | null; lat?: number | null } | null | undefined,
@@ -106,8 +144,6 @@ export function buildForm(
       pickupEndTime: end.time,
       expiryDate: expiry.date,
       expiryTime: expiry.time,
-      dailyStart: minuteToHHmm(source.dailyStartMinute) ?? '07:00',
-      dailyEnd: minuteToHHmm(source.dailyEndMinute) ?? '21:00',
       pickupAddress: source.pickupAddress ?? '',
       lng: source.lng ?? (hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG),
       lat: source.lat ?? (hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT),
@@ -131,8 +167,6 @@ export function buildForm(
     pickupEndTime: '',
     expiryDate: '',
     expiryTime: '',
-    dailyStart: '',
-    dailyEnd: '',
     pickupAddress: provider?.address ?? '',
     lng: hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG,
     lat: hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT,

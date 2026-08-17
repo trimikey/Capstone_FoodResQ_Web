@@ -10,7 +10,12 @@ import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hook
 import { UserRole } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { usePickupWindow } from '@/hooks/usePickupWindow';
-import { minuteToHHmm } from '@/lib/listing-form';
+import {
+  formatVietnamDate,
+  formatVietnamDateTime,
+  formatVietnamTime,
+  isSameVietnamDate,
+} from '@/lib/listing-form';
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
@@ -82,8 +87,6 @@ export default function ListingDetailPage({ params }: Props) {
   const pickupWindow = usePickupWindow(
     listing?.pickupStartTime,
     listing?.pickupEndTime,
-    listing?.dailyStartMinute,
-    listing?.dailyEndMinute,
   );
   const notYetOpen = !!listing && pickupWindow.notYetOpen;
   const windowClosed = !!listing && pickupWindow.closed;
@@ -164,14 +167,10 @@ export default function ListingDetailPage({ params }: Props) {
     }
   };
 
-  const dateObj = new Date(listing.pickupEndTime);
-  const formattedEndTime = `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+  const formattedEndTime = formatVietnamTime(listing.pickupEndTime);
 
-  // Khung giờ nhận hàng — ngoài khung này thì không cho đặt (BE cũng chặn tương tự)
-  const fmtTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
+  // Luôn hiển thị giờ Việt Nam, kể cả khi người nhận mở app ở múi giờ khác.
+  const fmtTime = formatVietnamTime;
 
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -354,7 +353,7 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="space-y-1">
                   <p className="font-label-lg text-sm text-on-surface font-bold">Trình mã QR cho nhà cung cấp</p>
                   <p className="font-label-sm text-xs text-on-surface-variant/80">
-                    Hiệu lực đến: {new Date(reservationResult.qrExpiresAt).toLocaleString('vi-VN')}
+                    Hiệu lực đến: {formatVietnamDateTime(reservationResult.qrExpiresAt)}
                   </p>
                 </div>
 
@@ -387,9 +386,7 @@ export default function ListingDetailPage({ params }: Props) {
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                   {notYetOpen
                     ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
-                    : pickupWindow.outsideDaily && listing.dailyStartMinute != null && listing.dailyEndMinute != null
-                      ? `Ngoài giờ mở cửa — cửa hàng nhận từ ${minuteToHHmm(listing.dailyStartMinute)} đến ${minuteToHHmm(listing.dailyEndMinute)} mỗi ngày`
-                      : `Đã quá giờ nhận hàng hôm nay (đến ${fmtTime(listing.pickupEndTime)})`}
+                    : `Đã quá giờ nhận hàng (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>
             ) : (
@@ -622,14 +619,8 @@ function ProviderManagementPanel({
   const remaining = listing.quantityRemaining;
   const total = remaining; // ListingDetail chỉ trả về remaining; total chỉ có ở ProviderListing view
   const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit;
-  const fmtTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
-  const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
+  const fmtTime = formatVietnamTime;
+  const fmtDate = formatVietnamDate;
   const isExpiringSoon = new Date(listing.pickupEndTime).getTime() - Date.now() < 4 * 60 * 60 * 1000;
   const isClosed = ['completed', 'expired', 'cancelled'].includes(listing.status);
 
@@ -687,7 +678,7 @@ function ProviderManagementPanel({
             {/* Mốc đầu/cuối thường khác NGÀY nhưng trùng giờ (vd 20:50 hôm nay → 20:50 mai).
                 In gộp một ngày sẽ ra "20:50–20:50" trông như khung rỗng. */}
             <p className="text-on-surface">
-              {fmtDate(listing.pickupStartTime) === fmtDate(listing.pickupEndTime) ? (
+              {isSameVietnamDate(listing.pickupStartTime, listing.pickupEndTime) ? (
                 <>
                   {fmtDate(listing.pickupStartTime)} · {fmtTime(listing.pickupStartTime)}–{fmtTime(listing.pickupEndTime)}
                 </>
@@ -699,11 +690,6 @@ function ProviderManagementPanel({
                 </>
               )}
             </p>
-            {listing.dailyStartMinute != null && listing.dailyEndMinute != null && (
-              <p className="text-xs text-on-surface-variant/80 mt-0.5">
-                Mở cửa nhận hàng: {minuteToHHmm(listing.dailyStartMinute)}–{minuteToHHmm(listing.dailyEndMinute)} mỗi ngày
-              </p>
-            )}
           </div>
         </div>
         <div className="flex items-start gap-2">
@@ -838,7 +824,7 @@ function PickupConfirmPopup({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
                 <span className="text-sm font-bold text-neutral-900">
-                  {new Date(effectiveStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  {formatVietnamTime(effectiveStartTime)} - {formatVietnamTime(pickupEndTime)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -857,14 +843,14 @@ function PickupConfirmPopup({
                   <>
                     <p className="text-sm font-bold text-rose-700">⚠️ Sắp hết giờ nhận hàng!</p>
                     <p className="text-xs text-rose-600 mt-1">
-                      Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
+                      Bạn cần đến trước {formatVietnamTime(deadlineToArrive)}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="text-sm font-bold text-amber-700">Lưu ý về thời gian</p>
                     <p className="text-xs text-amber-600 mt-1">
-                      Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
+                      Bạn cần đến trước {formatVietnamTime(deadlineToArrive)} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
                     </p>
                   </>
                 )}
@@ -943,13 +929,13 @@ function TimeInfoPopup({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
                 <span className="text-sm font-bold text-neutral-900">
-                  {new Date(pickupStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  {formatVietnamTime(pickupStartTime)} - {formatVietnamTime(pickupEndTime)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-neutral-500">Thời hạn đến</span>
                 <span className="text-sm font-bold text-rose-600">
-                  Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  Trước {formatVietnamTime(deadlineToArrive)}
                 </span>
               </div>
               <div className="flex items-start gap-2">
@@ -966,7 +952,7 @@ function TimeInfoPopup({
               <div className="flex-1">
                 <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
                 <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-                  Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
+                  Nếu bạn không đến nhận trước <strong>{formatVietnamTime(deadlineToArrive)}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
                 </p>
               </div>
             </div>
