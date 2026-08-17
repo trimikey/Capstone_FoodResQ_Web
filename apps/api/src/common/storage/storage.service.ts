@@ -72,7 +72,7 @@ export class StorageService {
           buffer[1] === 0x50 &&
           buffer[2] === 0x4e &&
           buffer[3] === 0x47
-        );
+          );
       case 'image/webp':
         return (
           buffer.toString('ascii', 0, 4) === 'RIFF' &&

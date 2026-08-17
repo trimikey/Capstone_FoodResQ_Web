@@ -2,20 +2,19 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: [
-    '172.20.10.4',
-    '192.168.174.1',
-    '192.168.1.4',
-    '192.168.15.36',
-    '192.168.14.34',
-    '192.168.1.6',
-    '192.168.1.5',
+    "172.20.10.4",
+    "192.168.174.1",
+    "192.168.1.4",
+    "192.168.15.36",
+    "192.168.14.34",
+    "192.168.1.6",
+    "192.168.1.5",
   ],
 
-  transpilePackages: ['@foodresq/types', '@foodresq/dto'],
+  transpilePackages: ["@foodresq/types", "@foodresq/dto"],
 
-  // Tắt StrictMode ở dev vì react-leaflet (Leaflet) không tương thích
-  // với double-mount trong dev mode của React 18+ — sẽ crash với
-  // "Map container is being reused by another instance".
+  // Disable StrictMode in dev because react-leaflet can crash with
+  // React 18+ double-mounting in development mode.
   reactStrictMode: false,
 };
 
