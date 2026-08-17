@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useManageContext, STATUS_META } from '../../../_components/ManageShell';
 import { campaignStartWindow } from '@/lib/campaign-schedule';
@@ -35,6 +36,56 @@ type Participant = CampaignManageParticipant & {
   shiftLabel?: string;
   /** Số chiến dịch đã tham gia */
   campaignsJoined?: number;
+};
+
+type ParticipantTone = 'mint' | 'honey' | 'rose' | 'sky' | 'neutral';
+
+const STATUS_TONE: Record<string, ParticipantTone> = {
+  pending: 'honey',
+  applied: 'honey',
+  approved: 'mint',
+  confirmed: 'mint',
+  checked_in: 'sky',
+  completed: 'mint',
+  rejected: 'rose',
+  cancelled: 'rose',
+  absent: 'rose',
+  no_show: 'rose',
+};
+
+const TONE_COLORS: Record<ParticipantTone, string> = {
+  mint: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  honey: 'bg-amber-50 text-amber-700 border-amber-200',
+  rose: 'bg-rose-50 text-rose-700 border-rose-200',
+  sky: 'bg-sky-50 text-sky-700 border-sky-200',
+  neutral: 'bg-neutral-100 text-neutral-600 border-neutral-200',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  applied: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  confirmed: 'Đã xác nhận',
+  checked_in: 'Đã điểm danh',
+  completed: 'Hoàn tất',
+  rejected: 'Từ chối',
+  cancelled: 'Đã hủy',
+  absent: 'Vắng mặt',
+  no_show: 'Không đến',
+};
+
+const ROLE_LABEL_VN: Record<string, string> = {
+  chef: 'Bếp',
+  waiter: 'Phục vụ',
+  shipper: 'Giao hàng',
+};
+
+const RANK_COLORS: Record<string, string> = {
+  'Hạng Tân binh': 'bg-neutral-100 text-neutral-600 border-neutral-300',
+  'Hạng Đồng': 'bg-orange-50 text-orange-700 border-orange-200',
+  'Hạng Bạc': 'bg-slate-50 text-slate-700 border-slate-200',
+  'Hạng Vàng': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Hạng Kim cương': 'bg-sky-50 text-sky-700 border-sky-200',
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -324,6 +375,8 @@ function VolunteerDetailModal({
 
 export default function CampaignStatusPage() {
   const { campaign: c, openAction } = useManageContext();
+  const [volFilter] = useState<'all' | 'pending' | 'chef' | 'waiter' | 'shipper' | 'removed'>('all');
+  const [selectedVol] = useState<Participant | null>(null);
   const meta = STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink', icon: 'help' };
   const current = stageOf(c.status);
   const currentIndex = STAGES.findIndex((s) => s.key === current);
