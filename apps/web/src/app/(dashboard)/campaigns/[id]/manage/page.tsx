@@ -23,6 +23,16 @@ type DishStepForUI = {
   scheduledTime: string | null;
 };
 
+type DishStepsPayload =
+  | DishStepForUI[]
+  | {
+      dishes?: Array<{
+        id: string;
+        name: string;
+        steps?: Array<Omit<DishStepForUI, 'name'> & { stepName?: string }>;
+      }>;
+    };
+
 export default function ManageOverviewPage() {
   const { campaign: c } = useManageContext();
   const [decisions, setDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
@@ -84,7 +94,21 @@ export default function ManageOverviewPage() {
 
   // Lọc món cần duyệt: step cuối (order=4) đang ở trạng thái "available" (chef đã tick)
   // Deduplicate theo menuItemId để tránh duplicate key warning
-  const rawPendingDishes = ((c as { dishSteps?: DishStepForUI[] })?.dishSteps ?? []).filter(
+  const dishStepsPayload = (c as { dishSteps?: DishStepsPayload })?.dishSteps;
+  const dishStepsForUI: DishStepForUI[] = Array.isArray(dishStepsPayload)
+    ? dishStepsPayload
+    : Array.isArray(dishStepsPayload?.dishes)
+      ? dishStepsPayload.dishes.flatMap((dish) =>
+          Array.isArray(dish.steps)
+            ? dish.steps.map((step) => ({
+                ...step,
+                menuItemId: step.menuItemId ?? dish.id,
+                name: dish.name,
+              }))
+            : [],
+        )
+      : [];
+  const rawPendingDishes = dishStepsForUI.filter(
     (s) => s.stepOrder === 4 && s.effectiveStatus === 'available'
   );
   const seenMenuItemIds = new Set<string>();
