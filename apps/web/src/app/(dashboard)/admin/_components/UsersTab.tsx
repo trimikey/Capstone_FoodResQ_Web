@@ -138,6 +138,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
   const review = useReviewVerification();
   const [note, setNote] = useState('');
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
 
   const verif =
     (verifs ?? []).find((v) => u.profileId && v.profileId === u.profileId) ??
@@ -148,6 +149,51 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
   const st = USER_STATUS_META[displayStatus] ?? { label: displayStatus, dot: 'bg-neutral-400', text: 'text-neutral-500' };
   const displayScore = getDisplayScore(u);
   const contactPhone = u.contactPhone || u.phone || verif?.contactPhone || verif?.phone || null;
+
+  function markImageFailed(url: string) {
+    setFailedImages((prev) => {
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
+  }
+
+  function imageTile(rawUrl: string, alt: string, badge: string, badgeClass: string, key?: string) {
+    const url = mediaUrl(rawUrl);
+    const failed = failedImages.has(url);
+
+    return (
+      <button
+        type="button"
+        key={key ?? rawUrl}
+        onClick={() => {
+          if (!failed) setZoomedImg(url);
+        }}
+        className={`relative aspect-square rounded-xl overflow-hidden border border-neutral-200 ${
+          failed ? 'cursor-default bg-neutral-50' : 'hover:opacity-90'
+        }`}
+        title={failed ? 'Ảnh không còn tồn tại trên server' : 'Bấm để phóng to'}
+      >
+        {failed ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center text-xs font-semibold text-neutral-500">
+            <span className="material-symbols-outlined text-[28px] text-neutral-400">broken_image</span>
+            <span>Không tải được ảnh</span>
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt={alt}
+            className="w-full h-full object-cover"
+            onError={() => markImageFailed(url)}
+          />
+        )}
+        <span className={`absolute bottom-0 left-0 right-0 text-[10px] text-white text-center py-1 font-bold ${badgeClass}`}>
+          {badge}
+        </span>
+      </button>
+    );
+  }
 
   async function decide(decision: 'approved' | 'rejected') {
     if (!verif) return;
@@ -208,22 +254,8 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
             <section>
               <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {u.faceImageUrl && (
-                  <button type="button" onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={mediaUrl(u.faceImageUrl)} alt="Ảnh khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">Ảnh selfie</span>
-                  </button>
-                )}
-                {u.idCardImageUrl && (
-                  <button type="button" onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={mediaUrl(u.idCardImageUrl)} alt="Ảnh CCCD đã đăng ký" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-neutral-800 text-white text-center py-1 font-bold">CCCD</span>
-                  </button>
-                )}
+                {u.faceImageUrl && imageTile(u.faceImageUrl, 'Ảnh khuôn mặt đã đăng ký', 'Ảnh selfie', 'bg-emerald-700')}
+                {u.idCardImageUrl && imageTile(u.idCardImageUrl, 'Ảnh CCCD đã đăng ký', 'CCCD', 'bg-neutral-800')}
               </div>
             </section>
           )}
@@ -267,15 +299,15 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {verif.evidenceUrls.map((eu: string, i: number) => (
-                    <button type="button" key={eu} onClick={() => setZoomedImg(mediaUrl(eu))}
-                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group" title="Bấm để phóng to">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={mediaUrl(eu)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
-                      <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">#{i + 1}</span>
-                      {i === 0 && <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">GPKD / ĐKKD</span>}
-                    </button>
-                  ))}
+                  {verif.evidenceUrls.map((eu: string, i: number) =>
+                    imageTile(
+                      eu,
+                      `evidence-${i + 1}`,
+                      i === 0 ? 'GPKD / ĐKKD' : `#${i + 1}`,
+                      i === 0 ? 'bg-emerald-700' : 'bg-black/70',
+                      `${eu}-${i}`,
+                    ),
+                  )}
                 </div>
               )}
             </section>
@@ -324,7 +356,17 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
         <div role="dialog" aria-modal="true" onClick={(e) => { e.stopPropagation(); setZoomedImg(null); }}
           className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-6 cursor-zoom-out">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={zoomedImg} alt="zoom" className="max-w-full max-h-full object-contain cursor-default" onClick={(e) => e.stopPropagation()} />
+          <img
+            src={zoomedImg}
+            alt="zoom"
+            className="max-w-full max-h-full object-contain cursor-default"
+            onClick={(e) => e.stopPropagation()}
+            onError={() => {
+              markImageFailed(zoomedImg);
+              setZoomedImg(null);
+              toast.error('Không tải được ảnh. File có thể đã mất trên server.');
+            }}
+          />
         </div>
       )}
     </div>
