@@ -1233,6 +1233,84 @@ export function useMyTaskDetail(assignmentId: string, enabled = true) {
 }
 
 /** Đơn nguyên liệu trong Trung tâm giao hàng — gom từ mọi chiến dịch shipper đang nhận ca. */
+export interface TaskDetail {
+  id: string;
+  role: 'chef' | 'waiter' | 'shipper';
+  status: string;
+  shift: MyTaskDetail['assignment']['shift'];
+  taskList: string[];
+  chainStatus: Array<{
+    role: 'chef' | 'waiter' | 'shipper';
+    label: string;
+    total: number;
+    completed: number;
+    inProgress: number;
+    done: boolean;
+  }>;
+  blockedBy: { role: 'chef' | 'waiter' | 'shipper'; label: string } | null;
+  ingredientProofUrl: string | null;
+  cookedProofUrl: string | null;
+  distributionProofUrl: string | null;
+  pointsAwarded: number | null;
+  campaign: MyTaskDetail['campaign'] & {
+    scheduleItems: Array<{ time: string; label: string }>;
+    menuItems: Array<{ id: string; customName: string | null; plannedServings: number | null }>;
+    donationsReceived: Array<{ id: string; itemName: string; quantity: string | null }>;
+  };
+}
+
+export function useTask(assignmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'task-detail', assignmentId],
+    queryFn: async () => {
+      const { data } = await api.get(`/campaigns/my-tasks/${assignmentId}`);
+      const detail = data.data as MyTaskDetail & {
+        dishes?: Array<{ id?: string; customName?: string | null; plannedServings?: number | null; name?: string | null }>;
+      };
+      const chainLabels = {
+        chef: 'Dau bep',
+        waiter: 'Phuc vu',
+        shipper: 'Giao hang',
+      } as const;
+
+      return {
+        id: detail.assignment.id,
+        role: detail.assignment.role,
+        status: detail.assignment.status,
+        shift: detail.assignment.shift,
+        taskList: [] as string[],
+        chainStatus: (['chef', 'waiter', 'shipper'] as const).map((role) => ({
+          role,
+          label: chainLabels[role],
+          total: role === detail.assignment.role ? 1 : 0,
+          completed: role === detail.assignment.role && detail.assignment.status === 'completed' ? 1 : 0,
+          inProgress: role === detail.assignment.role && ['checked_in', 'in_progress'].includes(detail.assignment.status) ? 1 : 0,
+          done: role === detail.assignment.role && detail.assignment.status === 'completed',
+        })),
+        blockedBy: null as TaskDetail['blockedBy'],
+        ingredientProofUrl: detail.assignment.ingredientProofUrl,
+        cookedProofUrl: detail.assignment.cookedProofUrl,
+        distributionProofUrl: detail.assignment.distributionProofUrl,
+        pointsAwarded: detail.assignment.pointsAwarded,
+        campaign: {
+          ...detail.campaign,
+          scheduleItems: [] as Array<{ time: string; label: string }>,
+          menuItems: ((detail.dishes ?? []) as Array<{ id?: string; customName?: string | null; plannedServings?: number | null; name?: string | null }>).map((dish, idx) => ({
+            id: dish.id ?? String(idx),
+            customName: dish.customName ?? dish.name ?? null,
+            plannedServings: dish.plannedServings ?? null,
+          })),
+          donationsReceived: [] as Array<{ id: string; itemName: string; quantity: string | null }>,
+        },
+      } satisfies TaskDetail;
+    },
+    enabled: enabled && !!assignmentId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export interface MyPickupOrder extends PickupOrder {
   assignmentId: string | null;
   /** Đã điểm danh tại bếp của chiến dịch này chưa — điều kiện để xác nhận lấy hàng. */
