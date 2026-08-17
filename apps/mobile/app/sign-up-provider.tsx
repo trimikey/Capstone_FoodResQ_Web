@@ -644,7 +644,7 @@ const styles = StyleSheet.create({
   },
   evidenceThumb: { width: SLOT, height: SLOT, borderRadius: radius.md },
   evidenceOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',

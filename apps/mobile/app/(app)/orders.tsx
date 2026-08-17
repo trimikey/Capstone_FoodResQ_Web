@@ -120,7 +120,6 @@ export default function OrdersTab() {
       <FlashList
         data={items}
         keyExtractor={(item: MyReservation) => item.id}
-        estimatedItemSize={180}
         renderItem={({ item }: { item: MyReservation }) => (
           <MyReservationCard
             reservation={item}

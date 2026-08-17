@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Platform, View, ViewStyle } from 'react-native';
+import { Platform, Pressable, View, ViewStyle, type PressableProps, type StyleProp } from 'react-native';
 import Animated, {
   FadeInDown,
   FadeIn,
@@ -62,6 +62,34 @@ export function FadeInView({
     >
       {children}
     </Animated.View>
+  );
+}
+
+interface InteractiveScaleProps extends Omit<PressableProps, 'style'> {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  pressedScale?: number;
+}
+
+export function InteractiveScale({
+  children,
+  style,
+  pressedScale = 0.98,
+  ...props
+}: InteractiveScaleProps) {
+  return (
+    <Pressable
+      {...props}
+      style={({ pressed }) => [
+        style,
+        pressed && {
+          transform: [{ scale: pressedScale }],
+          opacity: 0.92,
+        },
+      ]}
+    >
+      {children}
+    </Pressable>
   );
 }
 
