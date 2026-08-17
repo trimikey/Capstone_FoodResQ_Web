@@ -12,6 +12,27 @@ import { QueryListingDto } from './dto/query-listing.dto';
 
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
+const LOCAL_UPLOAD_HOSTS = new Set(['10.0.2.2', 'localhost', '127.0.0.1']);
+
+function normalizeListingImageUrls(imageUrls: string[] | undefined): string[] {
+  return (imageUrls ?? [])
+    .map((value) => {
+      const raw = value.trim();
+      if (!raw) return '';
+      const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+      if (uploadPath) return uploadPath;
+      if (!/^https?:\/\//i.test(raw)) return raw;
+      try {
+        const url = new URL(raw);
+        return LOCAL_UPLOAD_HOSTS.has(url.hostname) && url.pathname.startsWith('/uploads/')
+          ? `${url.pathname}${url.search}`
+          : raw;
+      } catch {
+        return raw;
+      }
+    })
+    .filter(Boolean);
+}
 
 /** Field được phép sửa khi tin đã đăng (active/fully_reserved) — tránh đổi địa điểm/số lượng khi người nhận đã đặt. */
 const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
@@ -75,16 +96,13 @@ export class ListingsService {
 
   async create(userId: string, dto: CreateListingDto) {
     const providerId = await this.resolveProviderId(userId);
+    const imageUrls = normalizeListingImageUrls(dto.imageUrls);
 
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
-      throw new BadRequestException(
-        'Giờ kết thúc nhận phải sau giờ bắt đầu nhận.',
-      );
+      throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
     }
     if (new Date(dto.expiryTime) < new Date(dto.pickupEndTime)) {
-      throw new BadRequestException(
-        'Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.',
-      );
+      throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
     }
 
     // Khung giờ trong ngày đi theo cặp — có mở thì phải có đóng, và không hỗ trợ
@@ -92,14 +110,10 @@ export class ListingsService {
     const hasDaily = dto.dailyStartMinute != null || dto.dailyEndMinute != null;
     if (hasDaily) {
       if (dto.dailyStartMinute == null || dto.dailyEndMinute == null) {
-        throw new BadRequestException(
-          'Cần nhập đủ cả giờ mở và giờ đóng nhận trong ngày.',
-        );
+        throw new BadRequestException('Cần nhập đủ cả giờ mở và giờ đóng nhận trong ngày.');
       }
       if (dto.dailyStartMinute >= dto.dailyEndMinute) {
-        throw new BadRequestException(
-          'Giờ đóng nhận trong ngày phải sau giờ mở nhận.',
-        );
+        throw new BadRequestException('Giờ đóng nhận trong ngày phải sau giờ mở nhận.');
       }
     }
 
@@ -122,15 +136,14 @@ export class ListingsService {
         ${dto.dailyStartMinute ?? null}, ${dto.dailyEndMinute ?? null},
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
-        ${dto.maxPerReservation}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
+        ${dto.maxPerReservation}, ${JSON.stringify(imageUrls)}::jsonb,
         ${dto.isSurpriseBag ?? false}, 'draft'::listing_status, NOW(), NOW()
       )
       RETURNING id
     `);
 
     const id = result[0]?.id;
-    if (!id)
-      throw new BadRequestException('Tạo tin thất bại. Vui lòng thử lại.');
+    if (!id) throw new BadRequestException('Tạo tin thất bại. Vui lòng thử lại.');
 
     return this.findOne(id);
   }
@@ -209,9 +222,7 @@ export class ListingsService {
       category: r.category,
       quantityRemaining: Number(r.quantity_remaining),
       quantityUnit: r.quantity_unit,
-      weightPerUnitKg: r.weight_per_unit_kg
-        ? Number(r.weight_per_unit_kg)
-        : null,
+      weightPerUnitKg: r.weight_per_unit_kg ? Number(r.weight_per_unit_kg) : null,
       pickupStartTime: r.pickup_start_time,
       pickupEndTime: r.pickup_end_time,
       dailyStartMinute: r.daily_start_minute ?? null,
@@ -256,9 +267,7 @@ export class ListingsService {
       category: r.category,
       quantityRemaining: Number(r.quantity_remaining),
       quantityUnit: r.quantity_unit,
-      weightPerUnitKg: r.weight_per_unit_kg
-        ? Number(r.weight_per_unit_kg)
-        : null,
+      weightPerUnitKg: r.weight_per_unit_kg ? Number(r.weight_per_unit_kg) : null,
       pickupStartTime: r.pickup_start_time,
       pickupEndTime: r.pickup_end_time,
       dailyStartMinute: r.daily_start_minute ?? null,
@@ -277,15 +286,11 @@ export class ListingsService {
 
   async publish(listingId: string, userId: string) {
     const providerId = await this.resolveProviderId(userId);
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-    });
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();
     if (listing.status !== 'draft') {
-      throw new BadRequestException(
-        'Chỉ đăng được tin đang ở trạng thái nháp.',
-      );
+      throw new BadRequestException('Chỉ đăng được tin đang ở trạng thái nháp.');
     }
 
     return this.prisma.foodListing.update({
@@ -296,9 +301,7 @@ export class ListingsService {
 
   async cancel(listingId: string, userId: string, reason?: string) {
     const providerId = await this.resolveProviderId(userId);
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-    });
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();
 
@@ -314,16 +317,11 @@ export class ListingsService {
    */
   async removeDraft(listingId: string, userId: string) {
     const providerId = await this.resolveProviderId(userId);
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-    });
-    if (!listing || listing.deletedAt)
-      throw new NotFoundException('Không tìm thấy tin thực phẩm.');
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
+    if (!listing || listing.deletedAt) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) throw new ForbiddenException();
     if (listing.status !== 'draft') {
-      throw new BadRequestException(
-        'Chỉ xoá được bản nháp. Tin đã đăng vui lòng dùng chức năng huỷ.',
-      );
+      throw new BadRequestException('Chỉ xoá được bản nháp. Tin đã đăng vui lòng dùng chức năng huỷ.');
     }
 
     await this.prisma.foodListing.update({
@@ -350,33 +348,26 @@ export class ListingsService {
 
   async getProviderStats(userId: string) {
     const providerId = await this.resolveProviderId(userId);
-    const [
-      totalListings,
-      activeListings,
-      totalReservations,
-      completedReservations,
-    ] = await this.prisma.$transaction([
-      this.prisma.foodListing.count({ where: { providerId, deletedAt: null } }),
-      this.prisma.foodListing.count({
-        where: { providerId, deletedAt: null, status: 'active' },
-      }),
-      this.prisma.reservation.count({
-        where: { listing: { providerId } },
-      }),
-      this.prisma.reservation.count({
-        where: { listing: { providerId }, status: 'completed' },
-      }),
-    ]);
+    const [totalListings, activeListings, totalReservations, completedReservations] =
+      await this.prisma.$transaction([
+        this.prisma.foodListing.count({ where: { providerId, deletedAt: null } }),
+        this.prisma.foodListing.count({ where: { providerId, deletedAt: null, status: 'active' } }),
+        this.prisma.reservation.count({
+          where: { listing: { providerId } },
+        }),
+        this.prisma.reservation.count({
+          where: { listing: { providerId }, status: 'completed' },
+        }),
+      ]);
 
     return {
       totalListings,
       activeListings,
       totalReservations,
       completedReservations,
-      completionRate:
-        totalReservations > 0
-          ? Math.round((completedReservations / totalReservations) * 100)
-          : 0,
+      completionRate: totalReservations > 0
+        ? Math.round((completedReservations / totalReservations) * 100)
+        : 0,
     };
   }
 
@@ -391,9 +382,7 @@ export class ListingsService {
    */
   async update(listingId: string, userId: string, dto: UpdateListingDto) {
     const providerId = await this.resolveProviderId(userId);
-    const listing = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-    });
+    const listing = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!listing) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (listing.providerId !== providerId) {
       throw new ForbiddenException('Bạn không sở hữu tin này.');
@@ -422,49 +411,29 @@ export class ListingsService {
 
     // Validate thời gian nếu có thay đổi
     if (isDraft) {
-      const newStart = dto.pickupStartTime
-        ? new Date(dto.pickupStartTime)
-        : listing.pickupStartTime;
-      const newEnd = dto.pickupEndTime
-        ? new Date(dto.pickupEndTime)
-        : listing.pickupEndTime;
-      const newExp = dto.expiryTime
-        ? new Date(dto.expiryTime)
-        : listing.expiryTime;
+      const newStart = dto.pickupStartTime ? new Date(dto.pickupStartTime) : listing.pickupStartTime;
+      const newEnd = dto.pickupEndTime ? new Date(dto.pickupEndTime) : listing.pickupEndTime;
+      const newExp = dto.expiryTime ? new Date(dto.expiryTime) : listing.expiryTime;
       if (newEnd <= newStart) {
-        throw new BadRequestException(
-          'Giờ kết thúc nhận phải sau giờ bắt đầu nhận.',
-        );
+        throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
       }
       if (newExp < newEnd) {
-        throw new BadRequestException(
-          'Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.',
-        );
+        throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
       }
     }
 
     // Validate gia hạn khi active (chỉ cho phép kéo dài, không rút ngắn)
     if (!isDraft) {
-      if (
-        dto.pickupStartTime &&
-        new Date(dto.pickupStartTime) < listing.pickupStartTime
-      ) {
-        throw new BadRequestException(
-          'Không thể rút ngắn giờ bắt đầu nhận hàng.',
-        );
+      if (dto.pickupStartTime && new Date(dto.pickupStartTime) < listing.pickupStartTime) {
+        throw new BadRequestException('Không thể rút ngắn giờ bắt đầu nhận hàng.');
       }
-      if (
-        dto.pickupEndTime &&
-        new Date(dto.pickupEndTime) <= listing.pickupEndTime
-      ) {
+      if (dto.pickupEndTime && new Date(dto.pickupEndTime) <= listing.pickupEndTime) {
         throw new BadRequestException(
           'Giờ kết thúc nhận mới phải sau giờ hiện tại (chỉ cho phép gia hạn).',
         );
       }
       if (dto.pickupEndTime && new Date(dto.pickupEndTime) < new Date()) {
-        throw new BadRequestException(
-          'Giờ kết thúc nhận phải ở trong tương lai.',
-        );
+        throw new BadRequestException('Giờ kết thúc nhận phải ở trong tương lai.');
       }
       if (dto.expiryTime && new Date(dto.expiryTime) < listing.expiryTime) {
         throw new BadRequestException('Không thể rút ngắn hạn sử dụng.');
@@ -472,20 +441,13 @@ export class ListingsService {
     }
 
     // Không cho quantityTotal < quantityRemaining (có người đã đặt)
-    if (
-      dto.quantityTotal !== undefined &&
-      dto.quantityTotal < Number(listing.quantityRemaining)
-    ) {
+    if (dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityRemaining)) {
       throw new BadRequestException(
         `Tổng số lượng mới (${dto.quantityTotal}) không được nhỏ hơn số đã có người đặt (${listing.quantityRemaining}).`,
       );
     }
     // Khi active → chỉ cho phép tăng quantityTotal
-    if (
-      !isDraft &&
-      dto.quantityTotal !== undefined &&
-      dto.quantityTotal < Number(listing.quantityTotal)
-    ) {
+    if (!isDraft && dto.quantityTotal !== undefined && dto.quantityTotal < Number(listing.quantityTotal)) {
       throw new BadRequestException(
         'Khi tin đã đăng chỉ có thể TĂNG số lượng phần ăn, không thể giảm.',
       );
@@ -494,8 +456,7 @@ export class ListingsService {
     // Nếu đổi toạ độ trên draft → so sánh với vị trí hiện tại (đọc qua raw SQL vì pickup_location là Unsupported)
     let locationChanged = false;
     if (isDraft && dto.lng !== undefined && dto.lat !== undefined) {
-      const [{ lng: curLng = null, lat: curLat = null } = {}] = await this
-        .prisma.$queryRaw<
+      const [{ lng: curLng = null, lat: curLat = null } = {}] = await this.prisma.$queryRaw<
         { lng: number | null; lat: number | null }[]
       >(Prisma.sql`
         SELECT ST_X(pickup_location::geometry) AS lng,
@@ -511,8 +472,7 @@ export class ListingsService {
 
     const data: Prisma.FoodListingUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;
-    if (dto.description !== undefined)
-      data.description = dto.description ?? null;
+    if (dto.description !== undefined) data.description = dto.description ?? null;
     if (dto.category !== undefined) data.category = dto.category;
     if (dto.quantityTotal !== undefined) {
       data.quantityTotal = dto.quantityTotal;
@@ -522,22 +482,15 @@ export class ListingsService {
       }
     }
     if (dto.quantityUnit !== undefined) data.quantityUnit = dto.quantityUnit;
-    if (dto.weightPerUnitKg !== undefined)
-      data.weightPerUnitKg = dto.weightPerUnitKg ?? null;
-    if (dto.pickupStartTime !== undefined)
-      data.pickupStartTime = new Date(dto.pickupStartTime);
-    if (dto.pickupEndTime !== undefined)
-      data.pickupEndTime = new Date(dto.pickupEndTime);
-    if (dto.expiryTime !== undefined)
-      data.expiryTime = new Date(dto.expiryTime);
+    if (dto.weightPerUnitKg !== undefined) data.weightPerUnitKg = dto.weightPerUnitKg ?? null;
+    if (dto.pickupStartTime !== undefined) data.pickupStartTime = new Date(dto.pickupStartTime);
+    if (dto.pickupEndTime !== undefined) data.pickupEndTime = new Date(dto.pickupEndTime);
+    if (dto.expiryTime !== undefined) data.expiryTime = new Date(dto.expiryTime);
     if (dto.pickupAddress !== undefined) data.pickupAddress = dto.pickupAddress;
-    if (dto.storageConditions !== undefined)
-      data.storageConditions = dto.storageConditions ?? null;
-    if (dto.allergenNotes !== undefined)
-      data.allergenNotes = dto.allergenNotes ?? null;
-    if (dto.maxPerReservation !== undefined)
-      data.maxPerReservation = dto.maxPerReservation;
-    if (dto.imageUrls !== undefined) data.imageUrls = dto.imageUrls;
+    if (dto.storageConditions !== undefined) data.storageConditions = dto.storageConditions ?? null;
+    if (dto.allergenNotes !== undefined) data.allergenNotes = dto.allergenNotes ?? null;
+    if (dto.maxPerReservation !== undefined) data.maxPerReservation = dto.maxPerReservation;
+    if (dto.imageUrls !== undefined) data.imageUrls = normalizeListingImageUrls(dto.imageUrls) as never;
     if (dto.isSurpriseBag !== undefined) data.isSurpriseBag = dto.isSurpriseBag;
 
     await this.prisma.$transaction(async (tx) => {
@@ -571,15 +524,11 @@ export class ListingsService {
 
   async duplicate(listingId: string, userId: string) {
     const providerId = await this.resolveProviderId(userId);
-    const original = await this.prisma.foodListing.findUnique({
-      where: { id: listingId },
-    });
+    const original = await this.prisma.foodListing.findUnique({ where: { id: listingId } });
     if (!original) throw new NotFoundException('Không tìm thấy tin thực phẩm.');
     if (original.providerId !== providerId) throw new ForbiddenException();
 
-    const [{ lng, lat }] = await this.prisma.$queryRaw<
-      { lng: number; lat: number }[]
-    >(
+    const [{ lng, lat }] = await this.prisma.$queryRaw<{ lng: number; lat: number }[]>(
       Prisma.sql`SELECT ST_X(pickup_location::geometry) AS lng, ST_Y(pickup_location::geometry) AS lat FROM food_listings WHERE id = ${listingId}::uuid`,
     );
 
@@ -610,7 +559,7 @@ export class ListingsService {
         ${original.storageConditions},
         ${original.allergenNotes},
         ${original.maxPerReservation},
-        ${JSON.stringify(original.imageUrls ?? [])}::jsonb,
+        ${JSON.stringify(normalizeListingImageUrls((original.imageUrls as string[]) ?? []))}::jsonb,
         ${original.isSurpriseBag},
         'draft'::listing_status,
         NOW(),

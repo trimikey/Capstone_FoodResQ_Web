@@ -1,0 +1,121 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Bulk Runs (1)
+' Request & Review · Pickup & Stops · Serve & Close
+'==============================================================
+'
+' Giải thích:
+'   Request & Review: shipper đã xác minh xin tối thiểu BULK_MIN_QTY phần từ một listing, provider
+'   duyệt hoặc từ chối trong REQUEST_EXPIRY_HOURS. Duyệt sẽ trừ tồn kho listing dưới Redis lock
+'   nên hai run không thể giành cùng số phần. Huỷ SAU khi đã được duyệt bị trừ BULK_CANCEL_PENALTY
+'   điểm uy tín.
+'   Pickup & Stops: sau khi được duyệt, shipper xác nhận đã lấy hàng (kèm ảnh QC nếu có) rồi
+'   ghim các điểm phát trên bản đồ. BulkRunStop composition bởi BulkRun: xoá run là xoá luôn
+'   các stop. Mỗi stop mang một điểm geography để đối chiếu với receiver ở gần.
+'   Serve & Close: shipper ghi số phần đã phát tại từng stop bằng một UPDATE có điều kiện nguyên
+'   tử, nên tổng cộng dồn không bao giờ vượt quá số lượng đã duyệt kể cả khi gọi đồng thời. Phát
+'   hết phần cuối thì run tự hoàn tất; đóng thủ công sẽ trả phần thừa về tồn kho listing và cộng
+'   điểm cống hiến.
+@startuml class-bulk-run
+title Bulk Run Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Bulk Run" {
+
+  class BulkRunsController {
+    +request(user: User, dto: RequestBulkRunDto): Promise<BulkRun>
+    +approve(id: string, user: User): Promise<StatusResult>
+    +reject(id: string, user: User, dto: RejectBulkRunDto): Promise<StatusResult>
+    +my(user: User): Promise<BulkRun[]>
+    +provider(user: User): Promise<BulkRun[]>
+    +pickup(id: string, user: User, photo: File): Promise<PickupResult>
+    +addStop(id: string, user: User, dto: AddStopDto): Promise<BulkRunStop>
+    +updateStop(id: string, stopId: string, user: User, dto: UpdateStopDto): Promise<Message>
+    +removeStop(id: string, stopId: string, user: User): Promise<Message>
+    +serve(id: string, stopId: string, user: User, dto: ServeStopDto, photo: File): Promise<ServeResult>
+    +complete(id: string, user: User): Promise<CloseResult>
+    +cancel(id: string, user: User): Promise<CloseResult>
+  }
+
+  class BulkRunsService {
+    -prisma: PrismaService
+    -redlock: Redlock
+    -storage: StorageService
+    -trust: TrustService
+    -notifications: NotificationsService
+    +request(shipperUserId: string, dto: RequestBulkRunDto): Promise<BulkRun>
+    +approve(runId: string, providerUserId: string): Promise<StatusResult>
+    +reject(runId: string, providerUserId: string, reason: string): Promise<StatusResult>
+    +myRuns(shipperUserId: string): Promise<BulkRun[]>
+    +providerRuns(providerUserId: string): Promise<BulkRun[]>
+    -resolveVerifiedShipper(userId: string): Promise<VolunteerProfile>
+    -restockSql(listingId: string, qty: number): Promise<number>
+    +pickup(runId: string, shipperUserId: string, qcPhotoUrl: string): Promise<PickupResult>
+    +addStop(runId: string, userId: string, dto: AddStopDto): Promise<BulkRunStop>
+    +updateStop(runId: string, stopId: string, userId: string, dto: UpdateStopDto): Promise<Message>
+    +removeStop(runId: string, stopId: string, userId: string): Promise<Message>
+    -makeQrToken(runId: string, stopId: string): string
+    -assertPlannedWithinQuota(runId: string, runQty: number, plannedQty: number): Promise<void>
+    -getBulkPlaceholderReceiverId(): Promise<string>
+    +serve(runId: string, shipperUserId: string, stopId: string, dto: ServeStopDto, photoUrl: string): Promise<ServeResult>
+    +complete(runId: string, shipperUserId: string): Promise<CloseResult>
+    +cancel(runId: string, shipperUserId: string): Promise<CloseResult>
+    -finalize(runId: string): Promise<CloseResult>
+  }
+}
+
+class RequestBulkRunDto
+class AddStopDto
+class UpdateStopDto
+class ServeStopDto
+
+class Redlock {
+  +acquire(resources: string[], ttl: number): Promise<Lock>
+  +release(): Promise<void>
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class TrustService {
+  +applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +bulkRun: BulkRunDelegate
+  +foodListing: FoodListingDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +delivery: DeliveryDelegate
+  +bulkRunStop: BulkRunStopDelegate
+  +reservation: ReservationDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+}
+
+BulkRunsController "1" --> "1" BulkRunsService
+BulkRunsController ..> RequestBulkRunDto
+BulkRunsController ..> AddStopDto
+BulkRunsController ..> UpdateStopDto
+BulkRunsController ..> ServeStopDto
+
+BulkRunsService "1" --> "1" Redlock
+BulkRunsService "1" --> "1" StorageService
+BulkRunsService "1" --> "1" TrustService
+BulkRunsService "1" --> "1" NotificationsService
+BulkRunsService "1" --> "1" PrismaService
+@enduml

@@ -36,7 +36,10 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
   const [servings, setServings] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [showChange, setShowChange] = useState(false);
+  const [confirmingDonationId, setConfirmingDonationId] = useState<string | null>(null);
+  const [receiptNote, setReceiptNote] = useState('');
   const st = CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' };
+  const confirmingDonation = c.donations?.find((d) => d.id === confirmingDonationId) ?? null;
 
   // Đã qua ngày diễn ra (so theo lịch UTC, đồng bộ với backend daysUntil)
   const overdue = (() => {
@@ -47,11 +50,19 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
 
   async function doConfirm(donationId: string) {
     try {
-      await confirmDon.mutateAsync(donationId);
+      await confirmDon.mutateAsync({ donationId, note: receiptNote.trim() || undefined });
       toast.success('Đã xác nhận nhận nguyên liệu');
+      setConfirmingDonationId(null);
+      setReceiptNote('');
     } catch (e) {
       toast.error(errMsg(e, 'Xác nhận thất bại'));
     }
+  }
+
+  function closeConfirmModal() {
+    if (confirmDon.isPending) return;
+    setConfirmingDonationId(null);
+    setReceiptNote('');
   }
 
   async function doStart() {
@@ -221,11 +232,11 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
                 {d.status === 'pledged' ? (
                   <button
                     type="button"
-                    onClick={() => doConfirm(d.id)}
+                    onClick={() => setConfirmingDonationId(d.id)}
                     disabled={confirmDon.isPending}
                     className="ml-auto px-2.5 py-1 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-full text-[10px] font-bold disabled:opacity-50 transition-colors shrink-0"
                   >
-                    Đã nhận
+                    Xác nhận nhận
                   </button>
                 ) : (
                   <span className={`badge ${ds.cls} ml-auto shrink-0`}>{ds.label}</span>
@@ -233,6 +244,83 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {confirmingDonation && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`confirm-donation-title-${confirmingDonation.id}`}
+          onClick={closeConfirmModal}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Phản hồi provider</p>
+                <h4 id={`confirm-donation-title-${confirmingDonation.id}`} className="mt-1 text-lg font-bold text-neutral-900">
+                  Xác nhận nhận nguyên liệu
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                disabled={confirmDon.isPending}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                aria-label="Đóng"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <p className="text-sm font-bold text-neutral-900">{confirmingDonation.itemName}</p>
+                <p className="mt-1 text-xs text-neutral-600">
+                  {confirmingDonation.quantity ? `${confirmingDonation.quantity} ` : ''}
+                  từ {confirmingDonation.provider.businessName}
+                </p>
+              </div>
+
+              <label className="block">
+                <span className="text-xs font-bold text-neutral-700">Ghi chú gửi provider</span>
+                <textarea
+                  value={receiptNote}
+                  onChange={(e) => setReceiptNote(e.target.value)}
+                  rows={4}
+                  placeholder="Ví dụ: đã nhận đủ số lượng, chất lượng đạt yêu cầu, thời gian giao đúng hẹn..."
+                  className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  autoFocus
+                />
+              </label>
+              <p className="text-xs leading-relaxed text-neutral-500">
+                Nội dung này sẽ được lưu vào biên nhận và gửi thông báo cho provider để họ biết kết quả xử lý.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                disabled={confirmDon.isPending}
+                className="rounded-full px-4 py-2 text-sm font-bold text-neutral-500 transition-colors hover:bg-white hover:text-neutral-700 disabled:opacity-50"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={() => doConfirm(confirmingDonation.id)}
+                disabled={confirmDon.isPending}
+                className="rounded-full bg-[#236c2a] px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-[#1a4f1f] disabled:opacity-50"
+              >
+                {confirmDon.isPending ? 'Đang xác nhận...' : 'Xác nhận đã nhận'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

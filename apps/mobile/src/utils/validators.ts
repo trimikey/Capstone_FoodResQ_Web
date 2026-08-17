@@ -6,12 +6,12 @@ import { z } from 'zod';
 export const loginSchema = z.object({
   email: z
     .string()
-    .email('Invalid email address')
-    .min(5, 'Email must be at least 5 characters'),
+    .email('Địa chỉ email không hợp lệ')
+    .min(5, 'Email phải có ít nhất 5 ký tự'),
   password: z
     .string()
-    .min(6, 'Password must be at least 6 characters')
-    .max(50, 'Password must not exceed 50 characters'),
+    .min(6, 'Mật khẩu phải có ít nhất 6 ký tự')
+    .max(50, 'Mật khẩu tối đa 50 ký tự'),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -23,20 +23,20 @@ export const registerSchema = z
   .object({
     email: z
       .string()
-      .email('Invalid email address')
-      .min(5, 'Email must be at least 5 characters'),
+      .email('Địa chỉ email không hợp lệ')
+      .min(5, 'Email phải có ít nhất 5 ký tự'),
     password: z
       .string()
-      .min(6, 'Password must be at least 6 characters')
-      .max(50, 'Password must not exceed 50 characters'),
+      .min(6, 'Mật khẩu phải có ít nhất 6 ký tự')
+      .max(50, 'Mật khẩu tối đa 50 ký tự'),
     confirmPassword: z.string(),
     name: z
       .string()
-      .min(2, 'Name must be at least 2 characters')
-      .max(50, 'Name must not exceed 50 characters'),
+      .min(2, 'Họ tên phải có ít nhất 2 ký tự')
+      .max(50, 'Họ tên tối đa 50 ký tự'),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
+    message: 'Mật khẩu xác nhận không khớp',
     path: ['confirmPassword'],
   });
 
@@ -49,25 +49,25 @@ export const signUpBasicInfoSchema = z
   .object({
     email: z
       .string()
-      .email('Invalid email address')
-      .min(5, 'Email must be at least 5 characters'),
+      .email('Địa chỉ email không hợp lệ')
+      .min(5, 'Email phải có ít nhất 5 ký tự'),
     password: z
       .string()
-      .min(8, 'Password must be at least 8 characters')
-      .max(50, 'Password must not exceed 50 characters')
-      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one number'),
+      .min(8, 'Mật khẩu phải có ít nhất 8 ký tự')
+      .max(50, 'Mật khẩu tối đa 50 ký tự')
+      .regex(/[A-Z]/, 'Mật khẩu phải có ít nhất 1 chữ hoa')
+      .regex(/[0-9]/, 'Mật khẩu phải có ít nhất 1 chữ số'),
     confirmPassword: z.string(),
     name: z
       .string()
-      .min(2, 'Name must be at least 2 characters')
-      .max(50, 'Name must not exceed 50 characters'),
+      .min(2, 'Họ tên phải có ít nhất 2 ký tự')
+      .max(50, 'Họ tên tối đa 50 ký tự'),
     phone: z
       .string()
       .regex(/^0[35789][0-9]{8}$/, 'Số điện thoại Việt Nam không hợp lệ'),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
+    message: 'Mật khẩu xác nhận không khớp',
     path: ['confirmPassword'],
   });
 
@@ -82,7 +82,7 @@ export const signUpRecipientInfoSchema = z
     idNumber: z.string().optional(),
     organizationName: z.string().optional(),
     taxId: z.string().optional(),
-    address: z.string().min(10, 'Address must be at least 10 characters'),
+    address: z.string().min(10, 'Địa chỉ phải có ít nhất 10 ký tự'),
   })
   .refine(
     (data) => {
@@ -97,7 +97,7 @@ export const signUpRecipientInfoSchema = z
       );
     },
     {
-      message: 'Please fill in all required fields for your recipient type',
+      message: 'Vui lòng điền đầy đủ thông tin theo loại người nhận',
       path: ['recipientType'],
     }
   );
@@ -125,14 +125,14 @@ export const resetPasswordSchema = z
   .object({
     password: z
       .string()
-      .min(6, 'Password must be at least 6 characters')
-      .max(50, 'Password must not exceed 50 characters')
-      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one number'),
+      .min(6, 'Mật khẩu phải có ít nhất 6 ký tự')
+      .max(50, 'Mật khẩu tối đa 50 ký tự')
+      .regex(/[A-Z]/, 'Mật khẩu phải có ít nhất 1 chữ hoa')
+      .regex(/[0-9]/, 'Mật khẩu phải có ít nhất 1 chữ số'),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
+    message: 'Mật khẩu xác nhận không khớp',
     path: ['confirmPassword'],
   });
 
@@ -144,8 +144,8 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export const forgotPasswordSchema = z.object({
   email: z
     .string()
-    .email('Invalid email address')
-    .min(5, 'Email must be at least 5 characters'),
+    .email('Địa chỉ email không hợp lệ')
+    .min(5, 'Email phải có ít nhất 5 ký tự'),
 });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;

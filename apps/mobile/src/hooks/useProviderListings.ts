@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
-import type { Listing, FoodCategory, QuantityUnit } from './useListings';
+import { normalizeListingImages, type Listing, type FoodCategory, type QuantityUnit } from './useListings';
 
 /** Tin của provider — như Listing nhưng luôn kèm status (mọi trạng thái). */
 export type ProviderListing = Listing;
@@ -45,7 +45,7 @@ export function useProviderListings() {
         endpoints.listings.providerMy,
         { params: { page: 1, limit: 50 } }
       );
-      return res.data.data.items;
+      return res.data.data.items.map(normalizeListingImages);
     },
   });
 }
@@ -59,7 +59,7 @@ export function useCreateListing() {
         endpoints.listings.create,
         input
       );
-      return res.data.data;
+      return normalizeListingImages(res.data.data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['provider-listings'] });
@@ -76,7 +76,7 @@ export function useUpdateListing() {
         endpoints.listings.update(id),
         input
       );
-      return res.data.data;
+      return normalizeListingImages(res.data.data);
     },
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['provider-listings'] });
@@ -94,7 +94,7 @@ export function usePublishListing() {
       const res = await apiClient.patch<ApiResponse<ProviderListing>>(
         endpoints.listings.publish(id)
       );
-      return res.data.data;
+      return normalizeListingImages(res.data.data);
     },
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['provider-listings'] });

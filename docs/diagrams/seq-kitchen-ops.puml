@@ -1,0 +1,515 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Kitchen Operations (7)
+' 55. Manage Shifts · 56. Manage Menu Items · 57. Cooking Steps ·
+' 58. Safety Log · 59. Issue Handoff QR · 60. Scan Meal Handoff ·
+' 61. Beneficiary Feedback
+'==============================================================
+
+'──────────────────── 55. Manage Shifts ──────────────────────
+
+@startuml seq-kitchen-shifts
+title Manage Campaign Shifts Sequence Diagram
+
+actor "Charity Org" as User
+participant ":ShiftBoardScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the shift board
+activate Screen
+Screen -> Ctrl : GET /campaigns/:id/shifts
+activate Ctrl
+Ctrl -> Svc : listShifts(campaignId)
+activate Svc
+Svc -> Repo : campaignShift.findMany(campaignId) order startTime
+Repo -> DB : SELECT campaign_shifts
+DB --> Repo : shifts[]
+Repo --> Svc : shifts
+Svc --> Ctrl : shifts[] with slotsNeeded / slotsFilled
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the shifts and how many slots are still open
+
+alt Create a shift
+  User -> Screen : enter label, role, start / end time and slots
+  Screen -> Ctrl : POST /campaigns/:id/shifts (CreateShiftDto)
+  activate Ctrl
+  Ctrl -> Svc : createShift(campaignId, userId, dto)
+  activate Svc
+  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  alt Caller does not own the campaign
+    Svc --> Ctrl : 403 "Only the organizing charity can manage this campaign"
+  else endTime <= startTime
+    Svc --> Ctrl : 400 "End time must be after start time"
+  else valid
+    Svc -> Repo : campaignShift.create(label, role, startTime, endTime, slotsNeeded)
+    Repo -> DB : INSERT campaign_shifts
+    DB --> Repo : shift
+    Svc --> Ctrl : shift
+  end
+else Update a shift
+  User -> Screen : change the time window or the number of slots
+  Screen -> Ctrl : PUT /campaigns/:id/shifts/:shiftId (UpdateShiftDto)
+  activate Ctrl
+  Ctrl -> Svc : updateShift(campaignId, shiftId, userId, dto)
+  activate Svc
+  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  Svc -> Repo : campaignShift.findUnique(shiftId)
+  Repo --> Svc : shift | null
+  alt Shift not found or not in this campaign
+    Svc --> Ctrl : 404 NotFound
+  else slotsNeeded below slotsFilled
+    Svc --> Ctrl : 400 "You cannot cut slots below the volunteers already assigned"
+  else valid
+    Svc -> Repo : campaignShift.update(label, role, startTime, endTime, slotsNeeded)
+    Repo -> DB : UPDATE campaign_shifts
+    Svc --> Ctrl : updated shift
+  end
+else Delete a shift
+  User -> Screen : remove an empty shift
+  Screen -> Ctrl : DELETE /campaigns/:id/shifts/:shiftId
+  activate Ctrl
+  Ctrl -> Svc : deleteShift(campaignId, shiftId, userId)
+  activate Svc
+  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  Svc -> Repo : campaignVolunteerAssignment.count(shiftId, status != cancelled)
+  Repo -> DB : SELECT COUNT(*) FROM campaign_volunteer_assignments
+  DB --> Repo : assignedCount
+  Repo --> Svc : assignedCount
+  alt assignedCount > 0
+    Svc --> Ctrl : 400 "Volunteers are already assigned to this shift"
+  else empty shift
+    Svc -> Repo : campaignShift.delete(shiftId)
+    Repo -> DB : DELETE campaign_shifts
+    Svc --> Ctrl : { id, deleted: true }
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the shift board (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 56. Manage Menu Items ──────────────────
+@startuml seq-kitchen-menu
+title Manage Campaign Menu Sequence Diagram
+
+actor "Charity Org" as User
+participant ":MenuScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":DishStepsService" as Steps
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the campaign menu
+activate Screen
+Screen -> Ctrl : GET /campaigns/:id/menu-items
+activate Ctrl
+Ctrl -> Svc : listMenuItems(campaignId)
+activate Svc
+Svc -> Repo : campaignMenuItem.findMany(campaignId) include recipe order sortOrder
+Repo -> DB : SELECT campaign_menu_items JOIN recipes
+DB --> Repo : menuItems[]
+Repo --> Svc : menuItems
+Svc --> Ctrl : menuItems[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the dish list with planned servings
+
+alt Add a dish
+  User -> Screen : pick a recipe or type a dish name plus planned servings
+  Screen -> Ctrl : POST /campaigns/:id/menu-items (AddMenuItemDto)
+  activate Ctrl
+  Ctrl -> Svc : addMenuItem(campaignId, userId, dto)
+  activate Svc
+  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  alt Caller does not own the campaign
+    Svc --> Ctrl : 403 "Only the organizing charity can manage this campaign"
+  else neither recipeId nor customName supplied
+    Svc --> Ctrl : 400 "Choose a recipe or enter a dish name"
+  else valid
+    Svc -> Repo : campaignMenuItem.create(recipeId?, customName?, plannedServings, sortOrder)
+    Repo -> DB : INSERT campaign_menu_items
+    DB --> Repo : menuItem
+    Svc -> Steps : ensureStepsForMenuItem(campaignId, menuItemId, 4 scheduled times)
+    activate Steps
+    Steps -> Repo : campaignDishStep.findMany(campaignId, menuItemId)
+    Repo --> Steps : existing[]
+    alt already has the 4 steps
+      Steps --> Svc : existing steps (idempotent)
+    else missing or partial
+      Steps -> Repo : campaignDishStep.deleteMany(campaignId, menuItemId)
+      Steps -> Repo : campaignDishStep.createMany(Prep / Cook / Plate / Ready to serve)
+      Repo -> DB : DELETE + INSERT campaign_dish_steps
+      Steps --> Svc : steps[]
+    end
+    deactivate Steps
+    Svc --> Ctrl : menuItem
+  end
+else Remove a dish
+  User -> Screen : delete a dish from the menu
+  Screen -> Ctrl : DELETE /campaigns/menu-items/:itemId
+  activate Ctrl
+  Ctrl -> Svc : removeMenuItem(itemId, userId)
+  activate Svc
+  Svc -> Repo : campaignMenuItem.findUnique(itemId) include campaign
+  Repo -> DB : SELECT campaign_menu_items JOIN kitchen_campaigns
+  DB --> Repo : item | null
+  Repo --> Svc : item
+  alt Item not found
+    Svc --> Ctrl : 404 NotFound
+  else caller does not own the campaign
+    Svc --> Ctrl : 403 Forbidden
+  else valid
+    Svc -> Repo : campaignMenuItem.delete(itemId)
+    Repo -> DB : DELETE campaign_menu_items (+ campaign_dish_steps ON DELETE CASCADE)
+    Svc --> Ctrl : { id, deleted: true }
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the menu (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 57. Cooking Steps ──────────────────────
+@startuml seq-kitchen-cooking-steps
+title Cooking Steps Sequence Diagram
+
+actor "Chef" as User
+participant ":KitchenBoardScreen\n(Camera)" as Screen
+participant ":DishStepsController" as Ctrl
+participant ":DishStepsService" as Svc
+participant ":StorageService" as Storage
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Charity Org" as Org
+
+User -> Screen : open the kitchen board
+activate Screen
+Screen -> Ctrl : GET /campaigns/:campaignId/dish-steps
+activate Ctrl
+Ctrl -> Svc : getStepsForCampaign(campaignId, currentUserId)
+activate Svc
+Svc -> Repo : kitchenCampaign.findUnique(id) select scheduledDate, startTime, endTime
+Svc -> Repo : campaignMenuItem.findMany include recipe, dishSteps
+Svc -> Repo : campaignVolunteerAssignment.findMany(role = chef) + last 5 kitchenSafetyLog rows
+Repo -> DB : SELECT ...
+DB --> Repo : rows
+Repo --> Svc : campaign, dishes, team, safetyLogs
+loop for each step of each dish
+  Svc -> Svc : computeEffectiveStatus(step, prevDone, isFirst, campaignTiming)
+end
+Svc --> Ctrl : { dishes[] (steps + effectiveStatus), cookingTeam, safetyLogs }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : four-step timeline per dish
+
+alt Mark a step as done
+  User -> Screen : take a proof photo and confirm the step
+  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/complete (proof, note?)
+  activate Ctrl
+  Ctrl -> Svc : completeStep(campaignId, userId, stepId, proof, note)
+  activate Svc
+  alt No proof photo
+    Svc --> Ctrl : 400 "A proof photo is required"
+  else photo supplied
+    Svc -> Svc : assertAssignedVolunteer(campaignId, userId)
+    Svc -> Repo : volunteerProfile + campaignVolunteerAssignment.findFirst(on duty)
+    Repo --> Svc : volunteer, assignment
+    alt Not assigned to this campaign / account not active
+      Svc --> Ctrl : 403 error
+    else assigned
+      Svc -> Repo : campaignDishStep.findUnique(stepId) + the previous step
+      Repo --> Svc : step, prevStep
+      Svc -> Svc : computeEffectiveStatus(...)
+      alt Not due yet, or the previous step is unfinished
+        Svc --> Ctrl : 400 "This step cannot start yet"
+      else already completed
+        Svc --> Ctrl : 400 "This step is already done"
+      else valid
+        Svc -> Storage : saveImage(proof, 'dish-step-proofs')
+        activate Storage
+        Storage --> Svc : proofUrl
+        deactivate Storage
+        Svc -> Repo : campaignDishStep.update(status = done, completedAt, completedBy, proofUrl)
+        opt the next step is already due
+          Svc -> Repo : campaignDishStep.update(next step → available, openedAt)
+        end
+        opt this was step 4 and every dish is ready
+          Svc -> Repo : campaignVolunteerAssignment.update(status = completed)
+        end
+        Repo -> DB : UPDATE campaign_dish_steps / assignments
+        Svc --> Ctrl : updated step
+      end
+    end
+  end
+else Flag a QC failure (emergency stop)
+  User -> Screen : enter the reason for the emergency stop
+  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/qc-fail (reason)
+  activate Ctrl
+  Ctrl -> Svc : flagStepQualityFail(campaignId, userId, stepId, reason)
+  activate Svc
+  alt Reason empty or longer than 500 characters
+    Svc --> Ctrl : 400 BadRequest
+  else the step is already done or already flagged
+    Svc --> Ctrl : 400 error
+  else valid
+    Svc -> Repo : campaignDishStep.update(qcFailedAt, qcFailedByVolunteerId, qcFailureReason)
+    Repo -> DB : UPDATE campaign_dish_steps
+    Svc -> Notif : notifyCampaignOwner(campaignId, "Emergency stop: {dish}")
+    Notif --> Org : realtime alert
+    Svc --> Ctrl : updated step
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : refresh the kitchen board (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 58. Safety Log ─────────────────────────
+@startuml seq-kitchen-safety-log
+title Kitchen Safety Log Sequence Diagram
+
+actor "Chef" as User
+participant ":SafetyLogScreen\n(Camera)" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : record a food-safety check (check type, measured value, photo)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/safety-logs (multipart: checkType, measuredValue, result, photo?)
+activate Ctrl
+Ctrl -> Svc : createSafetyLog(campaignId, userId, dto, photo)
+activate Svc
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'chef')
+Svc -> Repo : volunteerProfile.findUnique(userId)\n+ campaignVolunteerAssignment.findFirst(campaignId, role = chef, on duty)
+Repo -> DB : SELECT volunteer_profiles / campaign_volunteer_assignments
+DB --> Repo : rows
+Repo --> Svc : volunteer, assignment
+alt Not a chef on duty for this campaign
+  Svc --> Ctrl : 403 "You are not assigned as a chef on this campaign"
+else valid
+  opt photo supplied
+    Svc -> Storage : saveImage(photo, 'safety-logs')
+    activate Storage
+    Storage -> Storage : check MIME and magic bytes
+    Storage --> Svc : photoUrl
+    deactivate Storage
+  end
+  Svc -> Repo : kitchenSafetyLog.create(checkType, measuredValue, result, photoUrl, checkedBy, checkedAt)
+  Repo -> DB : INSERT kitchen_safety_logs
+  DB --> Repo : log
+  Svc --> Ctrl : safetyLog
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : check recorded (or show error message)
+
+User -> Screen : view the check history
+Screen -> Ctrl : GET /campaigns/:id/safety-logs
+activate Ctrl
+Ctrl -> Svc : listSafetyLogs(campaignId)
+activate Svc
+Svc -> Repo : kitchenSafetyLog.findMany(campaignId) order checkedAt desc include checkedBy
+Repo -> DB : SELECT kitchen_safety_logs JOIN volunteer_profiles JOIN users
+DB --> Repo : logs[]
+Svc --> Ctrl : logs[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the food-safety log table
+deactivate Screen
+@enduml
+
+'──────────────────── 59. Issue Handoff QR ───────────────────
+@startuml seq-kitchen-issue-qr
+title Issue Meal Handoff QR Sequence Diagram
+
+actor "Beneficiary" as User
+participant ":MyQrScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the meal collection code
+activate Screen
+Screen -> Ctrl : POST /campaigns/handoffs/qr
+activate Ctrl
+Ctrl -> Svc : issueHandoffQr(userId)
+activate Svc
+Svc -> Svc : assertIndividualReceiver(userId)
+Svc -> Repo : receiverProfile.findUnique(userId) include user.status, user.role
+Repo -> DB : SELECT receiver_profiles JOIN users
+DB --> Repo : receiver | null
+Repo --> Svc : receiver
+alt Receiver profile not found
+  Svc --> Ctrl : 404 NotFound
+else account not active or role is not receiver
+  Svc --> Ctrl : 403 "Your account is not active"
+else the account is an organization
+  Svc --> Ctrl : 403 "Organization accounts cannot collect meals as beneficiaries"
+else eligible
+  Svc -> Cfg : getNumber(HANDOFF_QR_VALIDITY_MINUTES)
+  activate Cfg
+  Cfg --> Svc : validMinutes
+  deactivate Cfg
+  group $transaction
+    Svc -> Repo : receiverHandoffQr.updateMany(live codes of this receiver → expire now)
+    Svc -> Repo : $queryRaw INSERT receiver_handoff_qr_tokens\n(qr_token = encode(gen_random_bytes(32), 'hex'), qr_expires_at)
+    Repo -> DB : UPDATE + INSERT receiver_handoff_qr_tokens
+    DB --> Repo : { id, qr_token, qr_expires_at }
+  end
+  Svc --> Ctrl : { qrToken, expiresAt }
+  Ctrl --> Screen : return data (201)
+  Screen --> User : show the QR code with a countdown
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 60. Scan Meal Handoff ──────────────────
+@startuml seq-kitchen-scan-handoff
+title Scan Meal Handoff Sequence Diagram
+
+actor "Waiter" as User
+participant ":ScanScreen\n(QR Scanner)" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : scan the beneficiary QR code at a distribution point
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/distributions/:distId/scan-handoff (qrToken)
+activate Ctrl
+Ctrl -> Svc : scanHandoff(campaignId, distributionId, userId, qrToken)
+activate Svc
+Svc -> Svc : assertAssignedAs(campaignId, userId, 'waiter')
+Svc -> Repo : mealDistribution.findUnique(distributionId)
+Svc -> Repo : receiverHandoffQr.findUnique(qrToken)
+Repo -> DB : SELECT meal_distributions / receiver_handoff_qr_tokens
+DB --> Repo : dist, token
+Repo --> Svc : dist, token
+alt Caller is not an assigned waiter of this campaign
+  Svc --> Ctrl : 403 Forbidden
+else the round does not belong to this campaign
+  Svc --> Ctrl : 404 NotFound
+else unknown QR code
+  Svc --> Ctrl : 404 "Invalid QR code"
+else a handoff was already recorded for this person in this round
+  Svc --> Ctrl : { ...handoff, alreadyRecorded: true }
+else the code was already used or has expired
+  Svc --> Ctrl : 400 "Ask the beneficiary to refresh their code"
+else the beneficiary is an organization or a suspended account
+  Svc --> Ctrl : 403 Forbidden
+else valid
+  group $transaction
+    Svc -> Repo : receiverHandoffQr.updateMany(id, consumedAt IS NULL AND still valid → consumedAt)
+    Repo -> DB : UPDATE receiver_handoff_qr_tokens
+    DB --> Repo : claimed count
+    alt claimed count != 1 (another waiter won the race)
+      Svc -> Repo : mealHandoff.findUnique(distributionId + receiverId)
+      alt a receipt now exists
+        Svc --> Ctrl : { ...handoff, alreadyRecorded: true }
+      else nothing recorded
+        Svc --> Ctrl : 409 "That code was just used — ask for a new one"
+      end
+    else claimed
+      Svc -> Repo : mealHandoff.create(distributionId, receiverId,\nscannedByVolunteerId, qrTokenId)
+      Repo -> DB : INSERT meal_handoffs
+      Svc --> Ctrl : { ...handoff, alreadyRecorded: false }
+    end
+  end
+  Ctrl --> Screen : return data (201)
+  Screen --> User : receipt created — hand over the meal
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 61. Beneficiary Feedback ───────────────
+@startuml seq-kitchen-beneficiary-feedback
+title Beneficiary Feedback Sequence Diagram
+
+actor "Beneficiary" as User
+participant ":MyHandoffsScreen" as Screen
+participant ":KitchenOpsController" as Ctrl
+participant ":KitchenOpsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open "meals I received"
+activate Screen
+Screen -> Ctrl : GET /campaigns/handoffs/mine
+activate Ctrl
+Ctrl -> Svc : listMyHandoffs(userId)
+activate Svc
+Svc -> Svc : assertIndividualReceiver(userId)
+Svc -> Repo : mealHandoff.findMany(receiverId) order servedAt desc take 50\ninclude feedback, distribution.campaign
+Repo -> DB : SELECT meal_handoffs JOIN meal_distributions JOIN kitchen_campaigns
+DB --> Repo : rows[]
+Repo --> Svc : rows
+Svc -> Svc : map → { servedAt, roundLabel, campaign, hasSubmitted, myFeedback }
+Svc --> Ctrl : handoffs[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : list the receipts, marking which ones still need a review
+
+User -> Screen : rate one meal (satisfaction, comment)
+Screen -> Ctrl : POST /campaigns/handoffs/:handoffId/feedback (satisfaction, comment?)
+activate Ctrl
+Ctrl -> Svc : submitBeneficiaryFeedback(handoffId, userId, dto)
+activate Svc
+Svc -> Svc : assertIndividualReceiver(userId)
+Svc -> Repo : mealHandoff.findUnique(handoffId) select receiverId
+Repo -> DB : SELECT meal_handoffs
+DB --> Repo : handoff | null
+Repo --> Svc : handoff
+alt Receipt not found
+  Svc --> Ctrl : 404 "Meal receipt not found"
+else the receipt belongs to someone else
+  Svc --> Ctrl : 403 "You may only review meals you received"
+else valid
+  Svc -> Repo : beneficiaryFeedback.create(handoffId, satisfaction, comment)
+  Repo -> DB : INSERT beneficiary_feedbacks
+  alt unique violation (P2002)
+    DB --> Repo : constraint error
+    Svc --> Ctrl : 409 "You already reviewed this meal"
+  else inserted
+    DB --> Repo : feedback
+    Svc --> Ctrl : feedback
+    Ctrl --> Screen : return data (201)
+    Screen --> User : thank you for the feedback
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml

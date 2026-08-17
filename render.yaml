@@ -1,49 +1,51 @@
 services:
   - type: web
     name: foodresq-api
-    runtime: node
-    plan: starter
-    region: singapore
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @foodresq/api build
-    startCommand: pnpm --filter @foodresq/api start:prod
-    healthCheckPath: /api/v1/health
+    runtime: docker
+    # Build context = root monorepo (Dockerfile cần lockfile + packages/*).
+    # KHÔNG set rootDir: apps/api — sẽ làm context co lại còn apps/api và
+    # mọi COPY từ root (pnpm-workspace.yaml, packages/) sẽ "not found".
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter            # Free tier — $7/mo nếu cần always-on, free sleep 15min nếu không traffic
+    region: singapore        # Gần VN
+    branch: master
     autoDeploy: true
+    healthCheckPath: /api/docs
     envVars:
-      - key: NODE_VERSION
-        value: 22
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 10000
+        value: 3001
       - key: DATABASE_URL
-        sync: false
+        sync: false         # paste tay (có password)
       - key: DIRECT_URL
         sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
       - key: REDIS_URL
         sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: JWT_REFRESH_SECRET
-        sync: false
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://capstone-food-res-q-web-web.vercel.app,http://localhost:3000
       - key: SMTP_HOST
-        sync: false
+        value: smtp.gmail.com
       - key: SMTP_PORT
-        sync: false
+        value: 587
       - key: SMTP_USER
-        sync: false
+        value: leductri12321@gmail.com
       - key: SMTP_PASS
         sync: false
       - key: MAIL_FROM
-        sync: false
+        value: FoodResQ <trildse180473@fpt.edu.vn>
       - key: FIREBASE_PROJECT_ID
-        sync: false
+        value: foodresq-53ae8
       - key: FIREBASE_CLIENT_EMAIL
-        sync: false
+        value: firebase-adminsdk-fbsvc@foodresq-53ae8.iam.gserviceaccount.com
       - key: FIREBASE_PRIVATE_KEY
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT
-        sync: false
       - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
         sync: false

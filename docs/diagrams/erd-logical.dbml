@@ -1,0 +1,1186 @@
+// ==============================================================
+// FoodResQ — Logical ERD (DBML)
+// Source: apps/api/prisma/schema.prisma (1.447 dòng)
+// Apply at: https://dbdiagram.io/d (paste this block) hoặc
+// render CLI: dbml2sql --postgres schema.dbml > out.sql
+// Convention: snake_case, geography(Point,4326) dùng GIST,
+// JSONB giữ nguyên shape, enum Postgres được khai báo riêng và
+// các cột enum tham chiếu tên enum (dbdiagram tự resolve).
+// ==============================================================
+
+Project FoodResQ {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Logical ERD của FoodResQ — Food rescue platform.
+  Stack: NestJS BE · Next.js FE · PostgreSQL + PostGIS.
+  Tổng cộng 47 bảng + 22 enum, phủ đủ 9 nhóm nghiệp vụ:
+  auth · users/volunteer · listings · reservations · deliveries ·
+  bulk-runs · campaigns · kitchen-ops · admin/reporting.
+  Sinh diagram online: dbdiagram.io/d
+  Sinh SQL DDL:    dbml2sql --postgres erd-logical.dbml
+  '''
+}
+
+// ─── 0. ENUMS (Postgres native enum types) ──────────────────────────────
+
+Enum UserRole {
+  admin
+  provider
+  receiver
+  volunteer
+}
+
+Enum UserStatus {
+  pending_verification
+  active
+  suspended
+  banned
+}
+
+Enum BusinessType {
+  restaurant
+  supermarket
+  bakery
+  hotel
+  other
+}
+
+Enum VerificationStatus {
+  pending
+  under_review
+  approved
+  rejected
+}
+
+Enum VolunteerRank {
+  newcomer
+  active
+  experienced
+  expert
+}
+
+Enum VolunteerSpecialization {
+  shipper
+  chef
+  waiter
+}
+
+Enum FoodCategory {
+  cooked_meal
+  bakery
+  fresh_fruit
+  beverage
+  vegetables
+  raw_protein
+  dry_goods
+  canned_packaged
+  other
+  prepared_meal []
+  raw_ingredients []
+}
+
+Enum ListingStatus {
+  draft
+  active
+  fully_reserved
+  completed
+  expired
+  cancelled
+}
+
+Enum QuantityUnit {
+  kg
+  portion
+  item
+  box
+  liter
+}
+
+Enum ReservationStatus {
+  confirmed
+  picked_up
+  completed
+  cancelled
+  expired
+  no_show
+}
+
+Enum PickupVerificationType {
+  face
+  id_card
+}
+
+Enum DeliveryStatus {
+  pending_assignment
+  assigned
+  heading_to_provider
+  qc_completed
+  in_transit
+  delivered
+  failed
+  cancelled
+}
+
+Enum CampaignStatus {
+  draft
+  open
+  in_progress
+  completed
+  cancelled
+}
+
+Enum AssignmentRole {
+  chef
+  waiter
+  shipper
+}
+
+Enum AssignmentStatus {
+  pending
+  assigned
+  checked_in
+  in_progress
+  completed
+  absent
+  rejected
+  cancelled
+}
+
+Enum VerificationRequestType {
+  provider_registration
+  charity_registration
+  volunteer_chef_cert
+  receiver_income_proof
+}
+
+Enum TrustScoreReason {
+  late_cancellation
+  no_show
+  bad_rating_received
+  food_safety_violation
+  hoarding_detected
+  manual_penalty
+  successful_rescue
+  high_rating_received
+  manual_bonus
+  late_pickup
+  bulk_run_cancelled_after_approval
+  late_check_in
+  volunteer_no_show
+}
+
+Enum OfferStatus {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+Enum ReportTargetType {
+  user
+  listing
+  delivery
+  campaign
+}
+
+Enum ReportReason {
+  spoiled_food
+  fake_account
+  hoarding
+  no_show_provider
+  unsafe_food
+  harassment
+  fraud
+  other
+}
+
+Enum ReportStatus {
+  pending
+  under_review
+  resolved
+  dismissed
+}
+
+Enum BulkRunStatus {
+  requested
+  approved
+  rejected
+  picked_up
+  completed
+  cancelled
+}
+
+Enum CampaignRequestStatus {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+Enum CampaignChangeStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+Enum ProviderProposalStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+Enum RecipeDifficulty {
+  easy
+  medium
+  hard
+}
+
+Enum SafetyCheckType {
+  temperature
+  hygiene
+  storage
+  cross_contamination
+  handwashing
+  other
+}
+
+Enum SafetyCheckResult {
+  pass
+  warning
+  fail
+}
+
+Enum CampaignMenuStepStatus {
+  locked
+  available
+  in_progress
+  done
+}
+
+// ─── 1. IDENTITY (auth + profiles) ─────────────────────────────────────
+
+Table users [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  email varchar(255) [unique, not null]
+  phone varchar(20) [unique]
+  password_hash varchar [not null]
+  full_name varchar(255) [not null]
+  avatar_url varchar
+  role UserRole [not null]
+  status UserStatus [not null, default: `pending_verification`]
+  trust_score smallint [not null, default: 100]
+  fcm_token varchar
+  last_login_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Note: 'Anchor table — bị ban thì cascade revoke refresh_tokens.'
+
+  Indexes {
+    email [name: 'idx_users_email']
+    (role, status) [name: 'idx_users_role_status']
+  }
+}
+
+Table refresh_tokens [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  token_hash varchar [unique, not null]
+  device_info varchar(255)
+  ip_address varchar
+  is_revoked boolean [not null, default: false]
+  revoked_at timestamptz
+  expires_at timestamptz [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Rotation mỗi lần refresh; ban xoá hết row qua FK CASCADE.'
+
+  Indexes {
+    token_hash
+    user_id
+  }
+}
+
+Table liability_waivers [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  waiver_version varchar(20) [not null, default: 'v1.0']
+  accepted_at timestamptz [not null, default: `now()`]
+  ip_address varchar
+
+  Indexes {
+    (user_id, waiver_version) [unique]
+  }
+}
+
+Table provider_profiles [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [unique, not null, ref: > users.id]
+  business_name varchar(255) [not null]
+  business_type BusinessType [not null]
+  tax_code varchar(50)
+  description text
+  address varchar [not null]
+  location geography(Point, 4326)
+  contact_phone varchar(20)
+  website_url varchar
+  is_verified boolean [not null, default: false]
+  verification_status VerificationStatus [not null, default: `pending`]
+  verified_at timestamptz
+  verified_by uuid [ref: > users.id]
+  total_food_rescued_kg decimal(10,2) [not null, default: 0]
+  total_co2_saved_kg decimal(10,2) [not null, default: 0]
+  avg_rating decimal(3,2)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'ST_DWithin tìm NCC gần bếp ăn (PostGIS).'
+
+  Indexes {
+    user_id
+    location [type: gist, name: 'idx_provider_location']
+  }
+}
+
+Table receiver_profiles [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [unique, not null, ref: > users.id]
+  is_charity_org boolean [not null, default: false]
+  organization_name varchar(255)
+  id_card_number varchar(50)
+  id_card_image_url varchar
+  face_image_url varchar
+  face_descriptor jsonb
+  address varchar
+  location geography(Point, 4326)
+  income_proof_url varchar
+  verification_status VerificationStatus [not null, default: `pending`]
+  verified_at timestamptz
+  verified_by uuid [ref: > users.id]
+  reservations_today smallint [not null, default: 0]
+  avg_rating decimal(3,2)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    user_id
+  }
+}
+
+Table volunteer_profiles [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [unique, not null, ref: > users.id]
+  id_card_number varchar(50)
+  id_card_image_url varchar
+  face_image_url varchar
+  face_descriptor jsonb
+  current_location geography(Point, 4326)
+  location_updated_at timestamptz
+  is_available boolean [not null, default: false]
+  dedication_points int [not null, default: 0]
+  rank VolunteerRank [not null, default: `newcomer`]
+  vehicle_type varchar(50)
+  vehicle_plate varchar(20)
+  avg_rating decimal(3,2)
+  verification_status VerificationStatus [not null, default: `pending`]
+  verified_at timestamptz
+  verified_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    user_id
+    is_available [name: 'idx_volunteer_available']
+    current_location [type: gist, name: 'idx_volunteer_location']
+  }
+}
+
+Table volunteer_specializations [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  specialization VolunteerSpecialization [not null]
+  food_safety_cert_url varchar
+  cert_expiry_date date
+  is_verified boolean [not null, default: false]
+  verified_at timestamptz
+
+  Indexes {
+    (volunteer_id, specialization) [unique]
+  }
+}
+
+Table verification_requests [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  request_type VerificationRequestType [not null]
+  documents jsonb [not null, default: `'[]'::jsonb`]
+  status VerificationStatus [not null, default: `pending`]
+  reviewer_id uuid [ref: > users.id]
+  reviewer_notes text
+  submitted_at timestamptz [not null, default: `now()`]
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    user_id
+    status
+  }
+}
+
+// ─── 2. LISTINGS + RESERVATIONS + DELIVERIES ────────────────────────────
+
+Table food_listings [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  title varchar(255) [not null]
+  description text
+  category FoodCategory [not null]
+  quantity_total decimal(10,2) [not null]
+  quantity_remaining decimal(10,2) [not null]
+  quantity_unit QuantityUnit [not null, default: `portion`]
+  weight_per_unit_kg decimal(6,3)
+  pickup_start_time timestamptz [not null]
+  pickup_end_time timestamptz [not null]
+  daily_start_minute smallint []
+  daily_end_minute smallint []
+  expiry_time timestamptz [not null]
+  pickup_address varchar [not null]
+  pickup_location geography(Point, 4326)
+  storage_conditions text
+  allergen_notes text
+  max_per_reservation smallint [not null, default: 1]
+  image_urls jsonb [not null, default: `'[]'::jsonb`]
+  is_surprise_bag boolean [not null, default: false]
+  status ListingStatus [not null, default: `draft`]
+  cancelled_reason text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Note: 'Search nearby dùng ST_DWithin trên pickup_location.'
+
+  Indexes {
+    provider_id
+    pickup_location [type: gist, name: 'idx_listing_location']
+  }
+}
+
+Table reservations [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  listing_id uuid [not null, ref: > food_listings.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  bulk_run_stop_id uuid [unique, ref: > bulk_run_stops.id]
+  quantity decimal(10,2) [not null]
+  status ReservationStatus [not null, default: `confirmed`]
+  qr_token varchar(64) [unique, not null]
+  qr_expires_at timestamptz [not null]
+  pickup_proof_url varchar
+  pickup_proof_at timestamptz
+  pickup_verification_type PickupVerificationType
+  scanned_by uuid [ref: > users.id]
+  scanned_at timestamptz
+  cancelled_at timestamptz
+  cancellation_reason text
+  receiver_notes text
+  trust_penalty_applied boolean [not null, default: false]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Tạo sau redlock + quota check, giảm quantity_remaining atomic.'
+
+  Indexes {
+    (listing_id, receiver_id)
+    receiver_id
+    qr_token
+    status
+    (receiver_id, created_at)
+  }
+}
+
+Table deliveries [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reservation_id uuid [unique, ref: > reservations.id]
+  provider_request_id uuid [unique, ref: > campaign_provider_requests.id]
+  shipper_id uuid [ref: > volunteer_profiles.id]
+  status DeliveryStatus [not null, default: `pending_assignment`]
+  qc_photo_url varchar
+  qc_photo_at timestamptz
+  pickup_proof_url varchar
+  pickup_proof_at timestamptz
+  delivery_proof_url varchar
+  delivery_proof_at timestamptz
+  pickup_location geography(Point, 4326)
+  delivery_location geography(Point, 4326)
+  distance_km decimal(8,2)
+  assigned_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  failed_reason text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Tìm shipper gần nhất (ST_DWithin 5km). Sequential offer 15s/lượt, max 5 offer.'
+
+  Indexes {
+    shipper_id
+    status
+  }
+}
+
+Table shipper_task_offers [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  delivery_id uuid [not null, ref: > deliveries.id]
+  shipper_id uuid [not null, ref: > volunteer_profiles.id]
+  status OfferStatus [not null, default: `pending`]
+  offered_at timestamptz [not null, default: `now()`]
+  responded_at timestamptz
+  expires_at timestamptz [not null]
+  reject_reason text
+
+  Note: 'Shipper không phản hồi trong 15s → is_available=false, offer kế tiếp.'
+
+  Indexes {
+    (delivery_id, shipper_id) [unique]
+    delivery_id
+    (shipper_id, status)
+  }
+}
+
+Table bulk_runs [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  listing_id uuid [not null, ref: > food_listings.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  shipper_id uuid [not null, ref: > volunteer_profiles.id]
+  quantity int [not null]
+  quantity_distributed int [not null, default: 0]
+  status BulkRunStatus [not null, default: `requested`]
+  note text
+  reject_reason text
+  qc_photo_url varchar
+  approved_at timestamptz
+  picked_up_at timestamptz
+  completed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Provider duyệt dưới redlock(stock). Cron xoá stale 24h requested / 6h picked_up.'
+
+  Indexes {
+    (shipper_id, status)
+    (provider_id, status)
+  }
+}
+
+Table bulk_run_stops [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  run_id uuid [not null, ref: > bulk_runs.id]
+  reservation_id uuid [unique, ref: > reservations.id]
+  label varchar(255) [not null]
+  address varchar
+  location geography(Point, 4326)
+  planned_qty int
+  served_qty int [not null, default: 0]
+  photo_url varchar
+  note text
+  created_by varchar(10) [not null]
+  order_index int [not null, default: 0]
+  served_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    run_id
+  }
+}
+
+// ─── 3. CAMPAIGNS + KITCHEN OPS ──────────────────────────────────────────
+
+Table kitchen_campaigns [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  charity_receiver_id uuid [not null, ref: > receiver_profiles.id]
+  title varchar(255) [not null]
+  description text
+  kitchen_address varchar [not null]
+  kitchen_location geography(Point, 4326)
+  scheduled_date date [not null]
+  end_date date []
+  start_time varchar(8) [not null]
+  end_time varchar(8) [not null]
+  chef_slots_needed smallint [not null, default: 0]
+  waiter_slots_needed smallint [not null, default: 0]
+  shipper_slots_needed smallint [not null, default: 0]
+  chef_slots_filled smallint [not null, default: 0]
+  waiter_slots_filled smallint [not null, default: 0]
+  shipper_slots_filled smallint [not null, default: 0]
+  status CampaignStatus [not null, default: `draft`]
+  expected_servings int
+  actual_servings int
+  image_urls jsonb [not null, default: `'[]'::jsonb`]
+  notes text
+  menu_items jsonb [not null, default: `'[]'::jsonb`]
+  schedule_items jsonb [not null, default: `'[]'::jsonb`]
+  supply_items jsonb [not null, default: `'[]'::jsonb`]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Cron tự đóng: 00:00 huỷ chưa start; hourly đóng khi quá endDate+endTime.'
+
+  Indexes {
+    charity_receiver_id
+    (scheduled_date, status)
+    kitchen_location [type: gist, name: 'idx_campaign_location']
+  }
+}
+
+Table campaign_shifts [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  label varchar(100) [not null]
+  role AssignmentRole
+  start_time varchar(8) [not null]
+  end_time varchar(8) [not null]
+  slots_needed smallint [not null, default: 0]
+  slots_filled smallint [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Ca không có ngày — multi-date campaign lặp lại ca mỗi ngày.'
+
+  Indexes {
+    campaign_id
+  }
+}
+
+Table campaign_volunteer_assignments [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  role AssignmentRole [not null]
+  status AssignmentStatus [not null, default: `assigned`]
+  check_in_time timestamptz
+  check_in_late_minutes int []
+  check_in_location geography(Point, 4326)
+  check_out_time timestamptz
+  ingredient_proof_url varchar
+  ingredient_proof_at timestamptz
+  cooked_proof_url varchar
+  cooked_proof_at timestamptz
+  distribution_proof_url varchar
+  distribution_proof_at timestamptz
+  points_awarded smallint
+  notes text
+  shift_id uuid [ref: > campaign_shifts.id]
+  work_date date []
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    (shift_id, volunteer_id, role, work_date) [unique]
+    (campaign_id, volunteer_id, role)
+    campaign_id
+    volunteer_id
+  }
+}
+
+Table campaign_donations [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  item_name varchar(255) [not null]
+  quantity varchar(100)
+  note text
+  status varchar(20) [not null, default: 'pledged']
+  created_at timestamptz [not null, default: `now()`]
+  received_at timestamptz
+
+  Indexes {
+    campaign_id
+    provider_id
+  }
+}
+
+Table campaign_provider_requests [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  message varchar(500)
+  status CampaignRequestStatus [not null, default: `pending`]
+  duration_months int []
+  listing_ids varchar(1000) []
+  scheduled_date date
+  pickup_start_time varchar(8) []
+  pickup_end_time varchar(8) []
+  needs_transport boolean [not null, default: false]
+  demand_details jsonb []
+  reviewed_at timestamptz
+  reviewed_note varchar(255)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    (campaign_id, provider_id) [unique]
+    campaign_id
+    provider_id
+    status
+  }
+}
+
+Table campaign_transports [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_request_id uuid [unique, not null, ref: > campaign_provider_requests.id]
+  delivery_id uuid [unique, ref: > deliveries.id]
+  status varchar(20) [not null, default: 'pending']
+  assigned_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  received_at timestamptz
+  failed_at timestamptz
+  failure_reason text
+  received_by_user_id uuid [ref: > users.id]
+  receipt_note varchar(500)
+  receipt_photo_url varchar
+  last_broadcast_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    provider_request_id
+    status
+  }
+}
+
+Table campaign_ingredient_pickups [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_request_id uuid [unique, not null, ref: > campaign_provider_requests.id]
+  campaign_id uuid [not null]
+  assignment_id uuid [not null, ref: > campaign_volunteer_assignments.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  requested_kg decimal(10,2) []
+  received_kg decimal(10,2) [not null]
+  photo_url varchar [not null]
+  note varchar(500)
+  confirmed_at timestamptz [not null, default: `now()`]
+
+  Note: 'Cho đơn needs_transport=false — TNV tự đến lấy, cần ảnh bằng chứng.'
+
+  Indexes {
+    campaign_id
+    volunteer_id
+  }
+}
+
+Table campaign_change_requests [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  requested_by_user_id uuid [not null, ref: > users.id]
+  status CampaignChangeStatus [not null, default: `pending`]
+  reason text
+  scheduled_date date
+  end_date date
+  start_time varchar(8)
+  end_time varchar(8)
+  kitchen_address varchar
+  lng float8
+  lat float8
+  chef_slots_needed smallint
+  waiter_slots_needed smallint
+  shipper_slots_needed smallint
+  review_note text
+  reviewed_by_user_id uuid [ref: > users.id]
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    campaign_id [name: 'idx_campaign_change_campaign']
+    status [name: 'idx_campaign_change_status']
+  }
+}
+
+Table campaign_experiences [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  content text [not null]
+  image_urls jsonb [not null, default: `'[]'::jsonb`]
+  rating smallint
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    (campaign_id, volunteer_id) [unique]
+    campaign_id
+  }
+}
+
+Table campaign_menu_items [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  recipe_id uuid [ref: > recipes.id]
+  custom_name varchar(255)
+  planned_servings int
+  scheduled_order int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    campaign_id
+    recipe_id
+  }
+}
+
+Table campaign_dish_steps [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  menu_item_id uuid [not null, ref: > campaign_menu_items.id]
+  step_order smallint [not null]
+  step_name varchar(100) [not null]
+  scheduled_time varchar(8) [not null]
+  status CampaignMenuStepStatus [not null, default: `locked`]
+  completed_at timestamptz
+  completed_by_volunteer_id uuid [ref: > volunteer_profiles.id]
+  proof_url varchar []
+  note varchar(500)
+  opened_at timestamptz []
+  qc_failed_at timestamptz
+  qc_failed_by_volunteer_id uuid [ref: > volunteer_profiles.id]
+  qc_failure_reason varchar(500)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Cron 30s mở khoá (locked→available) khi đủ điều kiện.'
+
+  Indexes {
+    (campaign_id, menu_item_id, step_order) [unique]
+    campaign_id
+    menu_item_id
+    status
+    scheduled_time
+  }
+}
+
+Table kitchen_safety_logs [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  checked_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  check_type SafetyCheckType [not null]
+  measured_value varchar(50) []
+  result SafetyCheckResult [not null, default: `pass`]
+  photo_url varchar
+  note text
+  checked_at timestamptz [not null, default: `now()`]
+
+  Note: 'Append-only log — không sửa xoá sau khi ghi.'
+
+  Indexes {
+    campaign_id
+    checked_by_volunteer_id
+  }
+}
+
+Table meal_distributions [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  served_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  assignee_ids jsonb []
+  points jsonb []
+  completed_at timestamptz []
+  completed_by_volunteer_id uuid
+  actual_servings int []
+  actual_people_served int []
+  completion_note text
+  round_label varchar(100)
+  servings_served int [not null, default: 0]
+  people_served int [not null, default: 0]
+  leftover_servings int [not null, default: 0]
+  location geography(Point, 4326)
+  photo_url varchar
+  note text
+  distributed_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    campaign_id
+    served_by_volunteer_id
+  }
+}
+
+Table meal_feedback [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  distribution_id uuid [not null, ref: > meal_distributions.id]
+  satisfaction smallint [not null]
+  comment text
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    distribution_id
+  }
+}
+
+Table receiver_handoff_qr_tokens [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  qr_token varchar(64) [unique, not null]
+  qr_expires_at timestamptz [not null]
+  consumed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Chỉ 1 token live tại 1 thời điểm (issued by issue-handoff endpoint).'
+
+  Indexes {
+    (receiver_id, qr_expires_at)
+  }
+}
+
+Table meal_handoffs [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  distribution_id uuid [not null, ref: > meal_distributions.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  scanned_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  qr_token_id uuid [unique, not null, ref: > receiver_handoff_qr_tokens.id]
+  served_at timestamptz [not null, default: `now()`]
+
+  Note: 'Conditional claim chống scan 2 lần cho cùng đợt + receiver.'
+
+  Indexes {
+    (distribution_id, receiver_id) [unique]
+    (receiver_id, served_at)
+    distribution_id
+  }
+}
+
+Table beneficiary_feedback [headercolor: #AD1457] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  handoff_id uuid [unique, not null, ref: > meal_handoffs.id]
+  satisfaction smallint [not null]
+  comment text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// ─── 4. CATALOG / RECIPES / ESG ──────────────────────────────────────────
+
+Table food_catalog_categories [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(120) [not null]
+  group varchar(20) [not null, default: 'other']
+  description text
+  sort_order int [not null, default: 0]
+  is_active boolean [not null, default: true]
+  created_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+}
+
+Table food_catalog_items [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  category_id uuid [not null, ref: > food_catalog_categories.id]
+  name varchar(255) [not null]
+  description text
+  is_active boolean [not null, default: true]
+  created_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Indexes {
+    category_id
+  }
+}
+
+Table recipes [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  created_by_user_id uuid [not null, ref: > users.id]
+  name varchar(255) [not null]
+  description text
+  servings int [not null, default: 0]
+  prep_minutes int
+  cook_minutes int
+  difficulty RecipeDifficulty [not null, default: `medium`]
+  instructions text
+  image_urls jsonb [not null, default: `'[]'::jsonb`]
+  is_public boolean [not null, default: true]
+  avg_rating decimal(3,2)
+  times_used int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Indexes {
+    created_by_user_id
+    name
+  }
+}
+
+Table recipe_ingredients [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  recipe_id uuid [not null, ref: > recipes.id]
+  name varchar(255) [not null]
+  quantity varchar(100) []
+  unit varchar(30)
+  note text
+
+  Indexes {
+    recipe_id
+  }
+}
+
+Table esg_snapshots [headercolor: #00838F] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  snapshot_date date [not null]
+  provider_id uuid [ref: > provider_profiles.id]
+  total_food_rescued_kg decimal(12,2) [not null, default: 0]
+  total_co2_saved_kg decimal(12,2) [not null, default: 0]
+  total_reservations int [not null, default: 0]
+  total_volunteers_active int [not null, default: 0]
+  total_providers_active int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (snapshot_date, provider_id) [unique]
+    snapshot_date []
+  }
+}
+
+// ─── 5. SYSTEM (notifications, ratings, reports, audit, config) ─────────
+
+Table notifications [headercolor: #455A64] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  type varchar(50) [not null]
+  title varchar(255) [not null]
+  body text [not null]
+  data jsonb [not null, default: `'{}'::jsonb`]
+  is_read boolean [not null, default: false]
+  read_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_id, created_at) []
+  }
+}
+
+Table ratings [headercolor: #455A64] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reference_type varchar(20) [not null]
+  reference_id uuid [not null]
+  rater_id uuid [not null, ref: > users.id]
+  ratee_id uuid [not null, ref: > users.id]
+  score smallint [not null]
+  comment text
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (reference_type, reference_id, rater_id, ratee_id) [unique]
+    ratee_id
+    (reference_type, reference_id)
+  }
+}
+
+Table trust_score_history [headercolor: #455A64] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  delta smallint [not null]
+  reason TrustScoreReason [not null]
+  reference_type varchar(20)
+  reference_id uuid
+  score_before smallint [not null]
+  score_after smallint [not null]
+  created_by uuid [ref: > users.id]
+  note text
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_id, created_at) []
+  }
+}
+
+Table dedication_points_history [headercolor: #455A64] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  delta int [not null]
+  reason varchar(100) [not null]
+  reference_type varchar(20)
+  reference_id uuid
+  points_before int [not null]
+  points_after int [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (volunteer_id, created_at) []
+  }
+}
+
+Table reports [headercolor: #EF6C00] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reporter_id uuid [not null, ref: > users.id]
+  target_type ReportTargetType [not null]
+  target_id uuid [not null]
+  reason ReportReason [not null]
+  description text
+  evidence_urls jsonb [not null, default: `'[]'::jsonb`]
+  status ReportStatus [not null, default: `pending`]
+  resolver_id uuid [ref: > users.id]
+  resolution_note text
+  resolved_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    status
+    (target_type, target_id)
+    reporter_id
+  }
+}
+
+Table audit_logs [headercolor: #424242] {
+  id bigint [pk, increment]
+  actor_id uuid [ref: > users.id]
+  action varchar(100) [not null]
+  target_type varchar(50)
+  target_id uuid
+  payload jsonb
+  ip_address varchar
+  user_agent varchar
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Mỗi mutation của admin ghi 1 row trong cùng transaction.'
+
+  Indexes {
+    (actor_id, created_at) [name: 'idx_audit_actor_created']
+    (target_type, target_id)
+  }
+}
+
+Table system_configs [headercolor: #424242] {
+  id int [pk, increment]
+  key varchar(100) [unique, not null]
+  value jsonb [not null]
+  description text
+  updated_by uuid [ref: > users.id]
+  updated_at timestamptz [not null]
+}
+
+Table provider_proposals [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  proposed_by_user_id uuid [not null, ref: > users.id]
+  business_name varchar(255) [not null]
+  contact_name varchar(120)
+  contact_phone varchar(20)
+  contact_email varchar(255)
+  address varchar(255)
+  note varchar(1000)
+  duration_months smallint [not null, default: 1]
+  status ProviderProposalStatus [not null, default: `pending`]
+  reviewed_by_user_id uuid [ref: > users.id]
+  reviewed_at timestamptz
+  review_note varchar(500)
+  created_provider_id uuid [ref: > provider_profiles.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Indexes {
+    proposed_by_user_id
+    status
+  }
+}

@@ -568,9 +568,10 @@ export function useCompleteCampaign() {
 export function useConfirmDonation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ donationId }: { donationId: string; campaignId: string }) => {
+    mutationFn: async ({ donationId, note }: { donationId: string; campaignId: string; note?: string }) => {
       const res = await apiClient.patch<ApiResponse<{ id: string; status: string }>>(
-        endpoints.campaigns.confirmDonation(donationId)
+        endpoints.campaigns.confirmDonation(donationId),
+        note ? { note } : {}
       );
       return res.data.data;
     },
@@ -705,6 +706,122 @@ export interface CampaignTask {
   };
 }
 
+export interface DishStep {
+  id: string;
+  stepOrder: 1 | 2 | 3 | 4;
+  stepName: string;
+  scheduledTime: string;
+  status: 'locked' | 'available' | 'in_progress' | 'done';
+  effectiveStatus: 'locked' | 'available' | 'in_progress' | 'done';
+  completedAt: string | null;
+  completedByVolunteerId: string | null;
+  proofUrl: string | null;
+  note: string | null;
+  qcFailedAt?: string | null;
+  qcFailureReason?: string | null;
+  qcFailedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
+  completedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
+}
+
+export interface DishProcessItem {
+  id: string;
+  name: string;
+  plannedServings: number | null;
+  recipe?: {
+    id: string;
+    name: string;
+    description: string | null;
+    instructions: string | null;
+    prepMinutes: number | null;
+    cookMinutes: number | null;
+    difficulty: string | null;
+    imageUrls: unknown;
+    ingredients: { name: string; quantity: string | null }[];
+  } | null;
+  steps: DishStep[];
+}
+
+export interface CookingTeamMember {
+  assignmentId?: string;
+  volunteerId: string;
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  shift: { id?: string; label: string; startTime: string; endTime: string } | null;
+  isMe: boolean;
+}
+
+export interface DistributionPoint {
+  label: string;
+  address: string;
+  lng?: number | null;
+  lat?: number | null;
+}
+
+export interface AssignedDistribution {
+  id: string;
+  roundLabel: string | null;
+  servingsServed: number;
+  peopleServed: number;
+  actualServings: number | null;
+  actualPeopleServed: number | null;
+  note: string | null;
+  distributedAt: string;
+  completedAt: string | null;
+  points: DistributionPoint[];
+}
+
+export interface MyTaskDetail {
+  assignment: {
+    id: string;
+    role: AssignmentRole;
+    status: string;
+    checkInTime: string | null;
+    checkInLateMinutes?: number | null;
+    workDate?: string | null;
+    ingredientProofUrl: string | null;
+    cookedProofUrl: string | null;
+    distributionProofUrl: string | null;
+    pointsAwarded: number | null;
+    shift: {
+      id: string;
+      label: string;
+      role: AssignmentRole | null;
+      startTime: string;
+      endTime: string;
+    } | null;
+  };
+  campaign: {
+    id: string;
+    title: string;
+    description: string | null;
+    kitchenAddress: string;
+    scheduledDate: string;
+    endDate: string | null;
+    startTime: string;
+    endTime: string;
+    status: string;
+    charityReceiver: { organizationName: string | null; user: { fullName: string; phone: string | null } };
+  };
+  distributions?: AssignedDistribution[];
+  dishes?: DishProcessItem[];
+  cookingTeam?: CookingTeamMember[];
+}
+
+export interface CampaignSuppliesPayload {
+  requested: { name: string; unit: string | null; quantity: number | null }[];
+  total: number;
+  items: { itemName: string; entries: number; quantities: string[] }[];
+  donations: {
+    id: string;
+    itemName: string;
+    quantity: string | null;
+    note: string | null;
+    receivedAt: string | null;
+    provider: { id: string; businessName: string; user: { fullName: string } };
+  }[];
+}
+
 /** Volunteer đăng ký 1 vai trò trong chiến dịch. POST /campaigns/:id/apply */
 export function useApplyCampaign() {
   const queryClient = useQueryClient();
@@ -735,6 +852,110 @@ export function useMyTasks(enabled: boolean = true) {
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
       return res.data.data;
+    },
+  });
+}
+
+/** Chi tiết nhiệm vụ theo assignment, gồm món/khâu hoặc các đợt phát được giao. */
+export function useMyTaskDetail(assignmentId?: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-task-detail', assignmentId],
+    enabled: enabled && !!assignmentId,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<MyTaskDetail>>(
+        endpoints.campaigns.myTaskDetail(assignmentId!)
+      );
+      return res.data.data;
+    },
+  });
+}
+
+/** Chef xác nhận xong một khâu món ăn, bắt buộc ảnh minh chứng. */
+export function useCompleteDishStep() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, stepId, proof, note }: {
+      campaignId: string;
+      stepId: string;
+      proof: CapturedImage;
+      note?: string;
+    }) => {
+      const form = new FormData();
+      form.append('proof', proof as unknown as Blob);
+      if (note) form.append('note', note);
+      const res = await apiClient.post<ApiResponse<DishStep>>(
+        endpoints.campaigns.completeDishStep(campaignId, stepId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+    },
+  });
+}
+
+/** Chef báo QC không đạt và ngắt quy trình món. */
+export function useFlagDishStepQcFail() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, stepId, reason }: {
+      campaignId: string;
+      stepId: string;
+      reason: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<DishStep>>(
+        endpoints.campaigns.flagDishStepQcFail(campaignId, stepId),
+        { reason }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'supplies'] });
+    },
+  });
+}
+
+export function useCampaignSupplies(campaignId?: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'supplies', campaignId],
+    enabled: !!campaignId,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<CampaignSuppliesPayload>>(
+        endpoints.campaigns.supplies(campaignId!)
+      );
+      return res.data.data;
+    },
+  });
+}
+
+/** Waiter chốt đợt phát được tổ chức giao bằng số thực tế. */
+export function useCompleteAssignedDistribution() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, actualPeopleServed, note }: {
+      distributionId: string;
+      campaignId: string;
+      actualServings: number;
+      actualPeopleServed: number;
+      note?: string;
+    }) => {
+      const res = await apiClient.post<ApiResponse<AssignedDistribution>>(
+        endpoints.campaigns.completeDistribution(distributionId),
+        { actualServings, actualPeopleServed, ...(note ? { note } : {}) }
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, { campaignId }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
     },
   });
 }

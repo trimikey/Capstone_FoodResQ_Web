@@ -1,0 +1,150 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Admin (1)
+' Dashboard & Verification · Users & Campaigns · Catalog, Reports & Config
+'==============================================================
+'
+' Giải thích:
+'   Dashboard & Verification: admin mở console và duyệt các hồ sơ chờ xác minh. AdminService gom
+'   số liệu bằng $queryRaw, sau đó reviewVerification đổi verificationStatus trên provider hoặc
+'   volunteer profile và ghi AuditLog trong cùng một transaction, rồi mới thông báo cho chủ hồ sơ.
+'   Users & Campaigns: admin tạo thẳng tài khoản và chiến dịch, khoá / mở khoá người dùng, gán
+'   tình nguyện viên vào chiến dịch và duyệt yêu cầu thay đổi. Khoá tài khoản sẽ thu hồi toàn
+'   bộ RefreshToken của người đó — đó là lý do User composition với RefreshToken. Mọi thao tác
+'   đều để lại một dòng AuditLog ghi rõ ai làm.
+'   Catalog, Reports & Config: CRUD danh mục thực phẩm, xử lý báo cáo vi phạm và cấu hình hệ
+'   thống. Một category composition các item của nó, nên xoá category là xoá luôn item bên trong.
+'   SystemConfigService là nơi duy nhất giữ các tham số nghiệp vụ (hạn mức đặt/ngày, bán kính
+'   tìm kiếm, thời hạn QR) mà các module khác đọc lúc chạy.
+@startuml class-admin
+title Admin Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Admin" {
+
+  class AdminController {
+    +overview(): Promise<OverviewStats>
+    +stats(): Promise<CountStats>
+    +frequentCancellers(): Promise<Offender[]>
+    +recentReservations(): Promise<Reservation[]>
+    +verifications(): Promise<PendingVerification[]>
+    +review(type: string, id: string, user: User, dto: ReviewVerificationDto): Promise<Message>
+    +users(role: string, q: string): Promise<User[]>
+    +createUser(dto: AdminCreateUserDto): Promise<User>
+    +setUserStatus(id: string, user: User, dto: SetUserStatusDto): Promise<Message>
+    +volunteersManage(): Promise<VolunteerRow[]>
+    +createCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>
+    +setCampaignStatus(id: string, user: User, dto: SetCampaignStatusDto): Promise<StatusResult>
+    +assignVolunteer(id: string, dto: AssignVolunteerDto): Promise<CampaignDetail>
+    +unassignVolunteer(id: string): Promise<Message>
+    +reviewCampaignChange(id: string, user: User, dto: ReviewCampaignChangeDto): Promise<ReviewResult>
+    +foodCatalog(search: string): Promise<CatalogTree>
+    +createFoodCategory(user: User, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>
+    +updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>
+    +deleteFoodCategory(id: string): Promise<DeleteResult>
+    +createFoodCatalogItem(user: User, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>
+    +updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>
+    +deleteFoodCatalogItem(id: string): Promise<DeleteResult>
+    +reports(status: string): Promise<Report[]>
+    +resolveReport(id: string, user: User, dto: ResolveReportDto): Promise<Report>
+    +configs(): Promise<ConfigItem[]>
+    +setConfig(key: string, user: User, dto: SetConfigDto): Promise<ConfigItem>
+  }
+
+  class AdminService {
+    -prisma: PrismaService
+    -notifications: NotificationsService
+    -systemConfig: SystemConfigService
+    +getOverview(): Promise<OverviewStats>
+    +getStats(): Promise<CountStats>
+    +listFrequentCancellers(): Promise<Offender[]>
+    +listVerifications(): Promise<PendingVerification[]>
+    +reviewVerification(type: string, profileId: string, adminUserId: string, dto: ReviewVerificationDto): Promise<Message>
+    -audit(actorId: string, action: string, targetType: string, targetId: string): Promise<void>
+    +listUsers(role: string, q: string): Promise<User[]>
+    +adminCreateUser(dto: AdminCreateUserDto): Promise<User>
+    +setUserStatus(id: string, adminUserId: string, dto: SetUserStatusDto): Promise<Message>
+    +listVolunteersDetailed(): Promise<VolunteerRow[]>
+    +adminCreateCampaign(dto: AdminCreateCampaignDto): Promise<CampaignDetail>
+    +setCampaignStatus(id: string, status: string, userId: string): Promise<StatusResult>
+    +adminAssignVolunteer(campaignId: string, volunteerId: string, role: string, override: boolean): Promise<CampaignDetail>
+    +adminUnassignVolunteer(assignmentId: string): Promise<Message>
+    +reviewCampaignChangeRequest(id: string, decision: string, note: string, adminUserId: string): Promise<ReviewResult>
+    +listFoodCatalog(opts: SearchOpts): Promise<CatalogTree>
+    +createFoodCategory(adminUserId: string, dto: CreateFoodCategoryDto): Promise<FoodCatalogCategory>
+    +updateFoodCategory(id: string, dto: UpdateFoodCategoryDto): Promise<FoodCatalogCategory>
+    +deleteFoodCategory(id: string): Promise<DeleteResult>
+    +createFoodCatalogItem(adminUserId: string, dto: CreateFoodCatalogItemDto): Promise<FoodCatalogItem>
+    +updateFoodCatalogItem(id: string, dto: UpdateFoodCatalogItemDto): Promise<FoodCatalogItem>
+    +deleteFoodCatalogItem(id: string): Promise<DeleteResult>
+    +listReports(status: string): Promise<Report[]>
+    +resolveReport(id: string, adminUserId: string, dto: ResolveReportDto): Promise<Report>
+    +getConfigs(): Promise<ConfigItem[]>
+    +setConfig(key: string, value: number, userId: string): Promise<ConfigItem>
+  }
+}
+
+class ReviewVerificationDto
+class AdminCreateUserDto
+class SetUserStatusDto
+class AdminCreateCampaignDto
+class AssignVolunteerDto
+class ReviewCampaignChangeDto
+class CreateFoodCategoryDto
+class UpdateFoodCategoryDto
+class CreateFoodCatalogItemDto
+class UpdateFoodCatalogItemDto
+class ResolveReportDto
+class SetConfigDto
+
+class SystemConfigService {
+  +getAll(): Promise<ConfigItem[]>
+  +getNumber(key: string): Promise<number>
+  +set(key: string, value: number, userId: string): Promise<ConfigItem>
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +providerProfile: ProviderProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +auditLog: AuditLogDelegate
+  +user: UserDelegate
+  +refreshToken: RefreshTokenDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignVolunteerAssignment: AssignmentDelegate
+  +campaignChangeRequest: ChangeRequestDelegate
+  +foodCatalogCategory: FoodCatalogCategoryDelegate
+  +foodCatalogItem: FoodCatalogItemDelegate
+  +report: ReportDelegate
+  +systemConfig: SystemConfigDelegate
+}
+
+AdminController "1" --> "1" AdminService
+AdminController ..> ReviewVerificationDto
+AdminController ..> AdminCreateUserDto
+AdminController ..> SetUserStatusDto
+AdminController ..> AdminCreateCampaignDto
+AdminController ..> AssignVolunteerDto
+AdminController ..> ReviewCampaignChangeDto
+AdminController ..> CreateFoodCategoryDto
+AdminController ..> UpdateFoodCategoryDto
+AdminController ..> CreateFoodCatalogItemDto
+AdminController ..> UpdateFoodCatalogItemDto
+AdminController ..> ResolveReportDto
+AdminController ..> SetConfigDto
+
+AdminService "1" --> "1" SystemConfigService
+AdminService "1" --> "1" NotificationsService
+AdminService "1" --> "1" PrismaService
+@enduml

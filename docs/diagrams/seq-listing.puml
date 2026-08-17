@@ -1,0 +1,406 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Listings (8)
+' 10. Search & Detail · 11. Create · 12. Update · 13. Publish ·
+' 14. Cancel · 15. Delete Draft · 16. Duplicate · 17. Provider Overview
+'==============================================================
+
+'──────────────────── 10. Search & Detail ────────────────────
+@startuml seq-listing-search
+title Search Nearby Listings Sequence Diagram
+
+actor "Receiver" as User
+participant ":ListingsScreen\n(Map)" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : grant location access, set filters (radius, category)
+activate Screen
+Screen -> Ctrl : GET /listings?lat&lng&radius&category&page&limit
+activate Ctrl
+Ctrl -> Svc : findNearby(query)
+activate Svc
+opt radius not provided
+  Svc -> Cfg : getNumber(SEARCH_RADIUS_KM)
+  activate Cfg
+  Cfg --> Svc : 5 km
+  deactivate Cfg
+end
+Svc -> Repo : $queryRaw ST_Distance + ST_DWithin(pickup_location, ST_MakePoint(lng, lat), radiusM)\nWHERE status = 'active' AND deleted_at IS NULL AND pickup_end_time > NOW()\nORDER BY distance_m LIMIT/OFFSET
+Repo -> DB : SELECT food_listings (GIST index)
+DB --> Repo : rows + distance_m
+Repo --> Svc : listings[]
+Svc --> Ctrl : { items, meta: { page, limit, total } }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render map pins and a distance-sorted list
+
+User -> Screen : open one listing
+Screen -> Ctrl : GET /listings/:id
+activate Ctrl
+Ctrl -> Svc : findOne(id)
+activate Svc
+Svc -> Repo : foodListing.findFirst(id, deletedAt = null) include provider
+Repo -> DB : SELECT food_listings JOIN provider_profiles
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found or soft-deleted
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : $queryRaw ST_X / ST_Y (pickup_location)
+  Repo --> Svc : { lng, lat }
+  Svc --> Ctrl : listing + pickup coordinates + provider info
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render details with the Reserve button
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 11. Create Listing ─────────────────────
+@startuml seq-listing-create
+title Create Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":CreateListingScreen" as Screen
+participant ":UploadsController" as Upload
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : fill the form, attach photos, pin the pickup point
+activate Screen
+Screen -> Upload : POST /uploads/image?kind=listing (multipart)
+activate Upload
+Upload -> Storage : saveImage(file, 'listings')
+activate Storage
+Storage -> Storage : check MIME and magic bytes
+Storage --> Upload : "/uploads/listings/{uuid}.{ext}"
+deactivate Storage
+Upload --> Screen : { url }
+deactivate Upload
+
+Screen -> Ctrl : POST /listings (CreateListingDto + imageUrls)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId)
+Repo -> DB : SELECT provider_profiles
+DB --> Repo : provider | null
+Repo --> Svc : provider
+alt No provider profile
+  Svc --> Ctrl : 404 "Provider profile not found"
+else verificationStatus != approved
+  Svc --> Ctrl : 403 "Provider profile is not approved yet"
+else pickupEndTime <= pickupStartTime OR expiryTime < pickupEndTime
+  Svc --> Ctrl : 400 "Invalid time window"
+else valid
+  Svc -> Repo : $queryRaw INSERT food_listings (..., quantity_remaining = quantity_total,\npickup_location = ST_SetSRID(ST_MakePoint(lng, lat), 4326), status) RETURNING id
+  Repo -> DB : INSERT food_listings
+  DB --> Repo : { id }
+  Repo --> Svc : newId
+  Svc -> Svc : findOne(newId)
+  Svc --> Ctrl : listing
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : listing created (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 12. Update Listing ─────────────────────
+@startuml seq-listing-update
+title Update Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":EditListingScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : edit a listing
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id (UpdateListingDto)
+activate Ctrl
+Ctrl -> Svc : update(listingId, userId, dto)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+else listing.providerId != providerId
+  Svc --> Ctrl : 403 "You do not own this listing"
+else status not in (draft, active, fully_reserved)
+  Svc --> Ctrl : 400 "Listing is {status} — it can no longer be edited"
+else status = draft
+  Svc -> Svc : validate pickupEnd > pickupStart and expiry >= pickupEnd
+  alt Invalid time window
+    Svc --> Ctrl : 400 BadRequest
+  else valid
+    Svc -> Repo : foodListing.update(any field)
+    opt coordinates changed
+      Svc -> Repo : $executeRaw UPDATE pickup_location = ST_MakePoint(lng, lat)
+    end
+    Repo -> DB : UPDATE food_listings
+    Svc --> Ctrl : updated listing
+  end
+else status = active / fully_reserved
+  Svc -> Svc : reject any field outside EDITABLE_WHEN_ACTIVE\n(description, photos, storage conditions, allergen notes)
+  Svc -> Svc : allow the pickup window to be EXTENDED only
+  alt Editing a frozen field
+    Svc --> Ctrl : 400 "Cannot edit {field} once the listing is published"
+  else Shortening the pickup window or setting it in the past
+    Svc --> Ctrl : 400 BadRequest
+  else quantityTotal below quantityRemaining
+    Svc --> Ctrl : 400 BadRequest
+  else valid
+    Svc -> Repo : foodListing.update(soft fields)
+    Repo -> DB : UPDATE food_listings
+    Svc --> Ctrl : updated listing
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : listing saved (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 13. Publish Listing ────────────────────
+@startuml seq-listing-publish
+title Publish Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : publish a draft
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id/publish
+activate Ctrl
+Ctrl -> Svc : publish(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found or soft-deleted
+  Svc --> Ctrl : 404 NotFound
+else listing.providerId != providerId
+  Svc --> Ctrl : 403 "You do not own this listing"
+else status != draft
+  Svc --> Ctrl : 400 "Only drafts can be published"
+else pickupEndTime already in the past
+  Svc --> Ctrl : 400 "Update the pickup window before publishing"
+else valid
+  Svc -> Repo : foodListing.update(status = active, publishedAt = NOW())
+  Repo -> DB : UPDATE food_listings
+  DB --> Repo : listing
+  Svc --> Ctrl : published listing
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : the listing is now visible in nearby search (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 14. Cancel Listing ─────────────────────
+@startuml seq-listing-cancel
+title Cancel Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : cancel a published listing
+activate Screen
+Screen -> Ctrl : PATCH /listings/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancel(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found or soft-deleted
+  Svc --> Ctrl : 404 NotFound
+else listing.providerId != providerId
+  Svc --> Ctrl : 403 "You do not own this listing"
+else status not in (active, fully_reserved)
+  Svc --> Ctrl : 400 "Only a published listing can be cancelled"
+else valid
+  Svc -> Repo : reservation.count(listingId, status = confirmed)
+  Repo -> DB : SELECT COUNT(*) FROM reservations
+  DB --> Repo : activeCount
+  Repo --> Svc : activeCount
+  alt activeCount > 0
+    Svc --> Ctrl : 400 "Open reservations remain — cannot cancel"
+  else no open reservation
+    Svc -> Repo : foodListing.update(status = cancelled)
+    Repo -> DB : UPDATE food_listings
+    Svc --> Ctrl : cancelled listing
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : the listing disappears from search (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 15. Delete Draft ───────────────────────
+@startuml seq-listing-delete-draft
+title Delete Draft Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : delete a draft
+activate Screen
+Screen -> Ctrl : DELETE /listings/:id
+activate Ctrl
+Ctrl -> Svc : removeDraft(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : listing | null
+Repo --> Svc : listing
+alt Not found or already soft-deleted
+  Svc --> Ctrl : 404 NotFound
+else listing.providerId != providerId
+  Svc --> Ctrl : 403 "You do not own this listing"
+else status != draft
+  Svc --> Ctrl : 400 "Only drafts can be deleted — cancel published listings instead"
+else valid
+  Svc -> Repo : foodListing.update(deletedAt = NOW())
+  Repo -> DB : UPDATE food_listings SET deleted_at
+  DB --> Repo : ok
+  Svc --> Ctrl : { id, message }
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : draft removed from the list (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 16. Duplicate Listing ──────────────────
+@startuml seq-listing-duplicate
+title Duplicate Listing Sequence Diagram
+
+actor "Provider" as User
+participant ":MyListingsScreen" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : repost an existing listing
+activate Screen
+Screen -> Ctrl : POST /listings/:id/duplicate
+activate Ctrl
+Ctrl -> Svc : duplicate(listingId, userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : foodListing.findUnique(id)
+Repo -> DB : SELECT food_listings
+DB --> Repo : original | null
+Repo --> Svc : original
+alt Not found
+  Svc --> Ctrl : 404 NotFound
+else original.providerId != providerId
+  Svc --> Ctrl : 403 "You do not own this listing"
+else valid
+  Svc -> Repo : $queryRaw ST_X / ST_Y (pickup_location)
+  Repo -> DB : SELECT pickup_location
+  DB --> Repo : { lng, lat }
+  Repo --> Svc : coordinates
+  Svc -> Repo : $queryRaw INSERT food_listings (copied fields,\nquantity_remaining = quantity_total,\npickup_location = ST_MakePoint(lng, lat), status = 'draft') RETURNING id
+  Repo -> DB : INSERT food_listings
+  DB --> Repo : { id } | empty
+  Repo --> Svc : newId
+  alt Insert returned nothing
+    Svc --> Ctrl : 400 "Could not duplicate the listing"
+  else created
+    Svc -> Svc : findOne(newId)
+    Svc --> Ctrl : the new draft listing
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : open the copy for editing (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 17. Provider Overview ──────────────────
+@startuml seq-listing-provider-overview
+title Provider Listings and Stats Sequence Diagram
+
+actor "Provider" as User
+participant ":ProviderDashboard" as Screen
+participant ":ListingsController" as Ctrl
+participant ":ListingsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the provider dashboard
+activate Screen
+Screen -> Ctrl : GET /listings/provider/stats
+activate Ctrl
+Ctrl -> Svc : getProviderStats(userId)
+activate Svc
+Svc -> Svc : resolveProviderId(userId)
+Svc -> Repo : $transaction([ count listings, count active,\ncount reservations, count completed ])
+Repo -> DB : SELECT COUNT(*) × 4
+DB --> Repo : counts
+Repo --> Svc : totals
+Svc -> Svc : completionRate = round(completed / total × 100)
+Svc --> Ctrl : { totalListings, activeListings, totalReservations,\ncompletedReservations, completionRate }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render KPI tiles
+
+Screen -> Ctrl : GET /listings/provider/my?page&limit
+activate Ctrl
+Ctrl -> Svc : findByProvider(userId, page, limit)
+activate Svc
+Svc -> Repo : $transaction([ foodListing.findMany(providerId, deletedAt = null,\norder createdAt desc, skip, take), count ])
+Repo -> DB : SELECT food_listings
+DB --> Repo : items[], total
+Repo --> Svc : rows
+Svc --> Ctrl : { items, total, page, limit, totalPages }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render listings with management actions
+deactivate Screen
+@enduml

@@ -118,10 +118,6 @@ export function buildForm(
     };
   }
 
-  const now = localDateTime(0).split('T');
-  const in24h = localDateTime(24).split('T');
-  const in48h = localDateTime(48).split('T');
-
   return {
     title: '',
     description: '',
@@ -129,15 +125,14 @@ export function buildForm(
     quantityTotal: 10,
     quantityUnit: 'portion',
     weightPerUnitKg: '',
-    pickupStartDate: now[0],
-    pickupStartTime: now[1],
-    pickupEndDate: in24h[0],
-    pickupEndTime: in24h[1],
-    expiryDate: in48h[0],
-    expiryTime: in48h[1],
-    // Mặc định giờ hành chính mở rộng — hợp với đa số cửa hàng ăn uống
-    dailyStart: '07:00',
-    dailyEnd: '21:00',
+    pickupStartDate: '',
+    pickupStartTime: '',
+    pickupEndDate: '',
+    pickupEndTime: '',
+    expiryDate: '',
+    expiryTime: '',
+    dailyStart: '',
+    dailyEnd: '',
     pickupAddress: provider?.address ?? '',
     lng: hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG,
     lat: hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT,

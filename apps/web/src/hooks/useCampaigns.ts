@@ -35,6 +35,7 @@ export interface Campaign {
     note?: string | null;
     status: string;
     provider: { businessName: string };
+    receivedAt?: string | null;
   }[];
   supplyProgress?: SupplyProgressItem[];
 }
@@ -206,6 +207,8 @@ export interface CampaignParticipant {
 export interface VolunteerDetail {
   fullName: string;
   avatarUrl: string | null;
+  /** Ảnh mặt chụp khi đăng ký eKYC — dùng làm avatar mặc định khi avatarUrl chưa được đặt. */
+  faceImageUrl: string | null;
   phone: string | null;
   trustScore: number;
   userStatus: string;
@@ -510,7 +513,11 @@ export function usePledgeDonation() {
 export function useConfirmDonation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (donationId: string) => (await api.patch(`/campaigns/donations/${donationId}/confirm`)).data.data,
+    mutationFn: async (p: string | { donationId: string; note?: string }) => {
+      const donationId = typeof p === 'string' ? p : p.donationId;
+      const body = typeof p === 'string' ? {} : { note: p.note };
+      return (await api.patch(`/campaigns/donations/${donationId}/confirm`, body)).data.data;
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }
@@ -1230,6 +1237,28 @@ export interface MyPickupOrder extends PickupOrder {
   assignmentId: string | null;
   /** Đã điểm danh tại bếp của chiến dịch này chưa — điều kiện để xác nhận lấy hàng. */
   checkedIn: boolean;
+}
+
+/** Ràng buộc form tạo chiến dịch — lấy từ system_configs để FE không hardcode. */
+export interface CampaignCreateConstraints {
+  /** Chiến dịch ≥ 2 ngày phải tạo trước bấy nhiêu ngày. 0 = không ràng buộc. */
+  multiDayLeadDays: number;
+  /** Ngày bắt đầu sớm nhất cho chiến dịch dài ngày (YYYY-MM-DD, tính sẵn theo giờ VN). */
+  multiDayEarliestStartDate: string;
+  minFillPercent: number;
+  changeLockDays: number;
+}
+
+export function useCampaignCreateConstraints(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'create-constraints'],
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/create-constraints');
+      return data.data as CampaignCreateConstraints;
+    },
+    enabled,
+    staleTime: 5 * 60_000,
+  });
 }
 
 /** Shipper: đơn nguyên liệu cần đi lấy, gom từ mọi chiến dịch đang chạy. */

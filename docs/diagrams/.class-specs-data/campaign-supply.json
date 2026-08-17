@@ -1,0 +1,76 @@
+{
+  "class-campaign-supply.puml": {
+    "Campaign Supply Chain": {
+      "explanation": "The charity kitchen finds nearby providers via ST_DWithin on provider locations plus the currently-open listings, then sends a supply request carrying the actual need. Providers not in the query can still self-propose, which is why ProviderProposal is attached to ReceiverProfile rather than to a specific request. The provider accepts or rejects an incoming request. Acceptance with transport creates CampaignTransport and Delivery in one transaction and hands the delivery off to DeliveriesService to broadcast to shippers. CampaignTransport is composed by the request, so deleting the request also drops the transport. The kitchen confirms receipt of ingredients with a photo, then opens meal distributions and closes each one with the actual served count. The number is keyed in by the volunteer running the distribution - this campaign flow has NO QR at this stage.",
+      "classes": {
+        "CampaignsController": {
+          "description": "Supplier matching and request submission.",
+          "methods": {
+            "+suggestSuppliers(id: string, user: User, radiusKm: number, category: string): Promise<SupplierMatches>": "Returns ranked supplier candidates (verified providers within radius).",
+            "+sendProviderRequest(user: User, dto: SendProviderRequestDto): Promise<RequestResult>": "Charity sends a supply request to one or more providers.",
+            "+submitProviderProposal(user: User, dto: SubmitProviderProposalDto): Promise<ProviderProposal>": "A provider self-proposes to fulfill a campaign's supply needs.",
+            "+listMySentRequests(user: User): Promise<CampaignProviderRequest[]>": "Charity lists requests they have sent.",
+            "+listMyProviderRequests(user: User): Promise<CampaignProviderRequest[]>": "Provider lists incoming supply requests.",
+            "+reviewProviderRequest(requestId: string, user: User, dto: ReviewProviderRequestDto): Promise<ReviewResult>": "Provider approves (optionally with transport) or rejects the request.",
+            "+myPickupOrders(user: User): Promise<PickupOrder[]>": "Lists pickup orders awaiting the user's confirmation.",
+            "+confirmIngredientPickup(requestId: string, user: User, dto: ConfirmIngredientPickupDto, photo: File): Promise<PickupReceipt>": "Charity confirms receipt with a photo as proof.",
+            "+receiveTransport(id: string, transportId: string, user: User, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>": "Charity confirms receipt of a transport-run delivery.",
+            "+createDistribution(id: string, user: User, dto: CreateDistributionDto): Promise<MealDistribution>": "Opens a new meal distribution at the chosen location.",
+            "+completeDistribution(distributionId: string, user: User, dto: CompleteDistributionDto): Promise<CloseResult>": "Closes the distribution with the actually-served count."
+          }
+        },
+        "CampaignsService": {
+          "description": "Supplier matching via raw spatial query; persists requests and proposals.",
+          "methods": {
+            "+suggestSuppliersForCampaign(campaignId: string, charityUserId: string, opts: MatchOpts): Promise<SupplierMatches>": "Asserts owner, then runs ST_DWithin against provider_profile.location; ranks by distance, optionally filters by food category.",
+            "+sendProviderRequest(charityUserId: string, dto: SendProviderRequestDto): Promise<RequestResult>": "Inserts CampaignProviderRequest row(s) and notifies each provider.",
+            "+submitProviderProposal(charityUserId: string, dto: SubmitProviderProposalDto): Promise<ProviderProposal>": "Records a provider's self-proposal; notifications go to the charity.",
+            "+listMySentRequests(charityUserId: string): Promise<CampaignProviderRequest[]>": "Returns requests originated by the charity user.",
+            "-assertOwner(campaignId: string, userId: string): Promise<KitchenCampaign>": "Reused ownership check.",
+            "+listMyProviderRequests(providerUserId: string): Promise<CampaignProviderRequest[]>": "Lists requests targeted at the provider.",
+            "+reviewProviderRequest(providerUserId: string, requestId: string, action: string, note: string, opts: ReviewOpts): Promise<ReviewResult>": "Updates status; on approve-with-transport, creates CampaignTransport + Delivery and broadcasts to shippers.",
+            "-createTransportForRequest(tx: TransactionClient, requestId: string, campaign: CampaignSnapshot, pickup: Coords): Promise<TransportRef>": "Inside the same transaction, inserts CampaignTransport and the linked Delivery row.",
+            "+myPickupOrders(userId: string): Promise<PickupOrder[]>": "Lists pickup orders where the user is the receiver.",
+            "+confirmIngredientPickup(providerRequestId: string, userId: string, dto: ConfirmIngredientPickupDto, photoUrl: string): Promise<PickupReceipt>": "Persists proof URL, marks the pickup as received.",
+            "+confirmTransportReceipt(campaignId: string, transportId: string, charityUserId: string, dto: ConfirmCampaignTransportReceiptDto): Promise<CampaignTransport>": "Marks CampaignTransport as received by the charity.",
+            "+createDistribution(campaignId: string, userId: string, dto: CreateDistributionDto): Promise<MealDistribution>": "Opens a distribution with target location and portion count.",
+            "+completeDistribution(distributionId: string, userId: string, report: DistributionReport): Promise<CloseResult>": "Writes the actually-served count; if zero the distribution is closed with no deduction.",
+            "-distanceMeters(a: Coords, b: Coords): number": "Haversine helper used to validate distribution distance to the campaign location."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        },
+        "DeliveriesService": {
+          "description": "Delivery lifecycle service reused by other modules (reservations, campaigns). Owns the shipper-offer broadcast, status transitions and failure paths.",
+          "methods": {
+            "+broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>": "Offers the delivery to the next-nearest single available shipper with a 15s window.",
+            "+createDeliveryAsync(reservationId: string, listingId: string): Promise<void>": "Materialises the Delivery row and asks broadcastToNearbyShippers to start the queue."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        }
+      }
+    }
+  }
+}

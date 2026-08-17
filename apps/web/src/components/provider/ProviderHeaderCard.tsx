@@ -23,7 +23,7 @@ interface Props {
 export default function ProviderHeaderCard({ eyebrow, title, description, crumbs, cta, meta }: Props) {
   return (
     <header className="bg-white border border-neutral-150 rounded-3xl shadow-sm overflow-hidden">
-      <div className="px-6 md:px-8 py-6 md:py-7 flex flex-col gap-5">
+      <div className="px-4 sm:px-6 md:px-8 py-5 md:py-7 flex flex-col gap-5">
         {crumbs && crumbs.length > 0 && (
           <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[11px] text-neutral-500 font-bold">
             {crumbs.map((c, i) => (
@@ -52,7 +52,7 @@ export default function ProviderHeaderCard({ eyebrow, title, description, crumbs
             {description && <p className="mt-2 text-sm text-neutral-500 max-w-2xl">{description}</p>}
             {meta && <div className="mt-3">{meta}</div>}
           </div>
-          {cta && <div className="shrink-0 flex flex-wrap items-center gap-2">{cta}</div>}
+          {cta && <div className="shrink-0 grid grid-cols-1 min-[420px]:flex min-[420px]:flex-wrap min-[420px]:items-center gap-2">{cta}</div>}
         </div>
       </div>
     </header>

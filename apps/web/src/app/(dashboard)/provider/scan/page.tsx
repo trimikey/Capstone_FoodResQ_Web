@@ -273,7 +273,34 @@ export default function ProviderScanPage() {
             </label>
             <p className="text-[11px] text-neutral-400 text-center -mt-1">Chụp/lưu ảnh mã QR của người nhận rồi tải lên — ổn định hơn quét qua màn hình.</p>
 
-
+            <div className="space-y-2 border-t border-neutral-100 pt-3">
+              <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                Mã nhận hàng
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && manualToken.trim()) void submitToken(manualToken.trim());
+                  }}
+                  placeholder="VD: B18982A3"
+                  className="min-w-0 flex-1 rounded-2xl border border-neutral-200 px-4 py-3 font-mono text-sm font-bold tracking-[0.14em] text-neutral-900 outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  disabled={scanQr.isPending}
+                />
+                <button
+                  type="button"
+                  onClick={() => void submitToken(manualToken.trim())}
+                  disabled={scanQr.isPending || !manualToken.trim()}
+                  className="rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  Xác nhận
+                </button>
+              </div>
+              <p className="text-[11px] text-neutral-400">
+                Nhập mã 8 ký tự hiển thị dưới QR nếu camera không quét được.
+              </p>
+            </div>
           </div>
         )}
         </div>

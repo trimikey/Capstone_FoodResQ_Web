@@ -1,22 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, FAB, Button } from 'react-native-paper';
+import { Text, FAB, Button, Menu } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
 import { ProviderListingCard } from '@/components/ProviderListingCard';
+import { ExtendListingModal, type ExtendListingMode } from '@/components/ExtendListingModal';
 import { ListingListSkeleton } from '@/components/ListingCardSkeleton';
 import { ListingsStateView } from '@/components/ListingsStateView';
 import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom các status backend thành nhóm dễ hiểu cho provider. */
 type FilterKey = 'all' | 'active' | 'draft' | 'completed' | 'cancelled';
+type SortKey = 'created_desc' | 'pickup_asc';
 const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[] = [
   { key: 'all', label: 'Tất cả', match: () => true },
   { key: 'active', label: 'Đang phát', match: (s) => s === 'active' || s === 'fully_reserved' },
@@ -24,6 +25,31 @@ const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[
   { key: 'completed', label: 'Hoàn thành', match: (s) => s === 'completed' },
   { key: 'cancelled', label: 'Đã huỷ', match: (s) => s === 'cancelled' || s === 'expired' },
 ];
+
+const SORT_LABEL: Record<SortKey, string> = {
+  created_desc: 'Mới đăng trước',
+  pickup_asc: 'Ngày gần nhất',
+};
+
+function pickupTimeMs(listing: ProviderListing): number {
+  const value = new Date(listing.pickupStartTime).getTime();
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function sortListings(items: ProviderListing[], sort: SortKey): ProviderListing[] {
+  if (sort === 'pickup_asc') {
+    const now = Date.now();
+    return [...items].sort((a, b) => {
+      const aTime = pickupTimeMs(a);
+      const bTime = pickupTimeMs(b);
+      const aPast = aTime < now;
+      const bPast = bTime < now;
+      if (aPast !== bPast) return aPast ? 1 : -1;
+      return aTime - bTime;
+    });
+  }
+  return items;
+}
 
 /**
  * Tin của tôi (Provider) — danh sách tin thực phẩm của nhà cung cấp, có bộ lọc
@@ -33,13 +59,28 @@ export default function ProviderListingsScreen() {
   const { user, initialize } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProviderListings();
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [sort, setSort] = useState<SortKey>('created_desc');
+  const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [extendTarget, setExtendTarget] = useState<{ listing: ProviderListing; mode: ExtendListingMode } | null>(null);
   const [checking, setChecking] = useState(false);
 
   const all = useMemo(() => data ?? [], [data]);
   const items = useMemo(() => {
     const f = FILTERS.find((x) => x.key === filter)!;
-    return all.filter((l) => f.match(l.status));
-  }, [all, filter]);
+    return sortListings(all.filter((l) => f.match(l.status)), sort);
+  }, [all, filter, sort]);
+
+  const isPending = !!user && user.status !== 'active';
+
+  // Khi đang chờ xác minh: poll mỗi 10 giây — đảm bảo màn hình tự chuyển
+  // ngay khi admin duyệt, dù socket chậm hay bị miss.
+  const initializeRef = useRef(initialize);
+  initializeRef.current = initialize;
+  useEffect(() => {
+    if (!isPending) return;
+    const id = setInterval(() => { void initializeRef.current(); }, 10_000);
+    return () => clearInterval(id);
+  }, [isPending]);
 
   // Receiver lỡ vào route provider → đưa về trang chủ.
   if (user && user.role !== 'provider') {
@@ -47,7 +88,6 @@ export default function ProviderListingsScreen() {
   }
 
   // Provider chưa được admin xác minh → màn "Chờ xác minh", chưa cho đăng tin.
-  const isPending = !!user && user.status !== 'active';
   if (isPending) {
     const onRecheck = async () => {
       try {
@@ -119,6 +159,43 @@ export default function ProviderListingsScreen() {
         })}
       </ScrollView>
 
+      <View style={styles.sortRow}>
+        <Text style={styles.sortLabel}>Sắp xếp</Text>
+        <Menu
+          visible={sortMenuVisible}
+          onDismiss={() => setSortMenuVisible(false)}
+          anchor={
+            <Button
+              mode="outlined"
+              icon="sort-calendar-ascending"
+              onPress={() => setSortMenuVisible(true)}
+              compact
+              textColor={COLORS.primary}
+              style={styles.sortButton}
+            >
+              {SORT_LABEL[sort]}
+            </Button>
+          }
+        >
+          <Menu.Item
+            leadingIcon="history"
+            onPress={() => {
+              setSort('created_desc');
+              setSortMenuVisible(false);
+            }}
+            title={SORT_LABEL.created_desc}
+          />
+          <Menu.Item
+            leadingIcon="calendar-clock"
+            onPress={() => {
+              setSort('pickup_asc');
+              setSortMenuVisible(false);
+            }}
+            title="Ngày gần nhất đến tương lai"
+          />
+        </Menu>
+      </View>
+
       <FlashList
         data={items}
         numColumns={2}
@@ -127,6 +204,7 @@ export default function ProviderListingsScreen() {
           <ProviderListingCard
             listing={item}
             onPress={() => router.push(`/(app)/provider/${item.id}`)}
+            onExtend={(mode) => setExtendTarget({ listing: item, mode })}
           />
         )}
         contentContainerStyle={styles.list}
@@ -142,6 +220,13 @@ export default function ProviderListingsScreen() {
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}
       />
+
+      <ExtendListingModal
+        visible={extendTarget != null}
+        listing={extendTarget?.listing ?? null}
+        defaultMode={extendTarget?.mode ?? 'both'}
+        onClose={() => setExtendTarget(null)}
+      />
     </AppScreen>
   );
 }
@@ -153,7 +238,18 @@ const styles = StyleSheet.create({
   title: { fontWeight: '700', color: COLORS.onSurface },
   filterBar: { flexGrow: 0, maxHeight: 52 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 96 },
+  sortRow: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
+  sortLabel: { fontSize: 13, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  sortButton: { borderRadius: radius.md },
+  list: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 96 },
   fab: { position: 'absolute', right: 20, bottom: 24, backgroundColor: COLORS.primary },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   pendingIcon: {

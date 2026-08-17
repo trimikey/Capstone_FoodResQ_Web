@@ -38,10 +38,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     if (!isAuthenticated()) {
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [mounted, isAuthenticated, router]);
 
   useEffect(() => {
     if (user) {
@@ -49,7 +53,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [user]);
 
-  if (!mounted || !user) return null;
+  if (!mounted || !user) {
+    return (
+      <div className="h-screen overflow-hidden bg-[#FAFBF9] flex">
+        {/* Skeleton sidebar */}
+        <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white border-r border-neutral-100 z-40">
+          <div className="px-5 py-6">
+            <div className="h-10 w-32 bg-neutral-100 rounded-xl animate-pulse" />
+          </div>
+          <nav className="flex flex-col gap-2 p-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-11 rounded-lg bg-neutral-100 animate-pulse" />
+            ))}
+          </nav>
+        </aside>
+        {/* Skeleton content */}
+        <div className="lg:ml-64 flex-1 flex flex-col">
+          <header className="hidden lg:flex h-16 border-b border-neutral-200/60 px-6 items-center gap-3">
+            <div className="h-5 w-40 bg-neutral-100 rounded-lg animate-pulse" />
+          </header>
+          <div className="flex-1 p-6 space-y-4">
+            <div className="h-8 w-64 bg-neutral-100 rounded-xl animate-pulse" />
+            <div className="grid grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-28 bg-neutral-100 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+            <div className="h-64 bg-neutral-100 rounded-2xl animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = () => {
     logout();
@@ -62,7 +97,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     [...ADMIN_NAV, ...ADMIN_FOOTER_NAV].find((n) => pathname === n.href)?.label ?? 'Quản trị viên';
 
   return (
-    <div className="min-h-screen bg-[#FAFBF9] font-body-md">
+    <div className="h-screen overflow-hidden bg-[#FAFBF9] font-body-md flex flex-col">
       {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
@@ -175,7 +210,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen flex flex-col bg-[#FAFBF9]">
+      <div className="lg:ml-64 pt-16 lg:pt-0 h-screen flex flex-col bg-[#FAFBF9]">
         {/* TopAppBar - Desktop */}
         <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30 bg-[#FAFBF9]/95 backdrop-blur-sm border-b border-neutral-200/60">
           <div className="flex items-center gap-3">
@@ -205,7 +240,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
 
         {/* Scrollable Canvas */}
-        <div className="flex-grow p-4 lg:p-6 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
           {children}
         </div>
       </div>

@@ -20,16 +20,17 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 export default function DistributionPage() {
   const { campaign: c } = useManageContext();
 
-  // Chỉ SHIPPER đã duyệt mới được phân công đi phát tận điểm — đây là danh sách để
-  // điều người đi giao, nên đầu bếp/phục vụ không thuộc về đây (backend cũng chỉ nhận
-  // vai trò shipper cho `assigneeVolunteerIds`).
+  // SHIPPER và PHỤC VỤ đã duyệt đều được phân công đi phát: đợt phát tại chỗ là việc
+  // của phục vụ, chỉ cho shipper thì phục vụ không có việc nào. Đầu bếp không nằm ở đây
+  // — họ phải ở bếp lo mẻ tiếp theo (backend áp cùng quy tắc).
   // Khử trùng theo volunteerId: một người nhận NHIỀU CA sẽ có nhiều bản ghi phân công,
   // để nguyên thì danh sách hiện trùng tên và React báo lỗi key trùng.
   const APPROVED = ['assigned', 'checked_in', 'in_progress', 'completed'];
-  const approvedShippers = [
+  const DISTRIBUTOR_ROLES = ['shipper', 'waiter'];
+  const approvedDistributors = [
     ...new Map(
       (c.participants ?? [])
-        .filter((p) => p.role === 'shipper' && APPROVED.includes(p.status))
+        .filter((p) => DISTRIBUTOR_ROLES.includes(p.role) && APPROVED.includes(p.status))
         .map((p) => [
           p.volunteerId,
           { volunteerId: p.volunteerId, fullName: p.fullName, role: p.role },
@@ -431,7 +432,7 @@ export default function DistributionPage() {
         <CreateDistributionModal
           campaignId={c.id}
           onClose={() => setCreateOpen(false)}
-          volunteers={approvedShippers}
+          volunteers={approvedDistributors}
           remainingServings={remainingServings}
           kitchenCoords={
             c.kitchenLng != null && c.kitchenLat != null

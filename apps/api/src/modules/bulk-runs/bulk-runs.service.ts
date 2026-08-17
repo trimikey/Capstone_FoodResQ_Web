@@ -35,6 +35,10 @@ export const PICKUP_DEADLINE_HOURS = 4; // đã duyệt → phải đến lấy 
 export const RUN_COMPLETION_HOURS = 8; // đã lấy hàng → phải phát xong
 // Huỷ chuyến SAU KHI NCC đã duyệt → phạt uy tín (bằng mức huỷ trễ của đơn lẻ).
 // Huỷ khi còn chờ duyệt thì không phạt vì chưa gây thiệt hại cho ai.
+/**
+ * Mặc định khi chưa cấu hình. Giá trị thật đọc từ `system_configs.BULK_CANCEL_PENALTY`
+ * để admin chỉnh được mà không cần deploy; hằng số này chỉ còn dùng cho test.
+ */
 export const BULK_CANCEL_PENALTY = 10;
 
 const ACTIVE_RUN_STATUSES = ['requested', 'approved', 'picked_up'] as const;
@@ -964,13 +968,16 @@ export class BulkRunsService implements OnModuleInit {
     // - Đã 'approved': kho đã bị giữ, NCC đã từ chối khách khác để dành hàng, và
     //   suất ăn nằm chờ hết hạn → phạt như huỷ trễ.
     if (wasApproved) {
-      void this.trust.applyDelta(
-        shipperUserId,
-        -BULK_CANCEL_PENALTY,
-        TrustScoreReason.BULK_RUN_CANCELLED_AFTER_APPROVAL,
-        'bulk_run',
-        runId,
-      );
+      const penalty = await this.systemConfig.getNumber('BULK_CANCEL_PENALTY');
+      if (penalty > 0) {
+        void this.trust.applyDelta(
+          shipperUserId,
+          -penalty,
+          TrustScoreReason.BULK_RUN_CANCELLED_AFTER_APPROVAL,
+          'bulk_run',
+          runId,
+        );
+      }
     }
 
     const full = await this.prisma.bulkRun.findUnique({
@@ -1062,7 +1069,8 @@ export class BulkRunsService implements OnModuleInit {
             rank: true,
             dedicationPoints: true,
             avgRating: true,
-            user: { select: { fullName: true, phone: true, trustScore: true } },
+            faceImageUrl: true,
+            user: { select: { fullName: true, phone: true, trustScore: true, avatarUrl: true } },
           },
         },
         stops: {

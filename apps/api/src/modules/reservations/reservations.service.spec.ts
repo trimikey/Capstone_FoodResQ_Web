@@ -30,11 +30,7 @@ describe('ReservationsService.rateReservation', () => {
     prisma.rating.aggregate.mockResolvedValue({ _avg: { score: 4.5 } });
     service = new ReservationsService(
       prisma as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
       { add: jest.fn() } as never,
@@ -72,26 +68,18 @@ describe('ReservationsService.rateReservation', () => {
   });
 
   it('chặn chấm shipper khi đơn tự đến lấy (không có người giao)', async () => {
-    prisma.reservation.findFirst.mockResolvedValue({
-      ...baseReservation,
-      delivery: null,
-    });
+    prisma.reservation.findFirst.mockResolvedValue({ ...baseReservation, delivery: null });
 
-    await expect(
-      service.rateReservation('res-1', 'user-1', 5, undefined, 'shipper'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.rateReservation('res-1', 'user-1', 5, undefined, 'shipper'))
+      .rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.rating.upsert).not.toHaveBeenCalled();
   });
 
   it('chặn đánh giá đơn chưa hoàn tất', async () => {
-    prisma.reservation.findFirst.mockResolvedValue({
-      ...baseReservation,
-      status: 'confirmed',
-    });
+    prisma.reservation.findFirst.mockResolvedValue({ ...baseReservation, status: 'confirmed' });
 
-    await expect(
-      service.rateReservation('res-1', 'user-1', 5),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.rateReservation('res-1', 'user-1', 5))
+      .rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.rating.upsert).not.toHaveBeenCalled();
   });
 });
@@ -109,11 +97,7 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
   const prisma = {
     providerProfile: { findUnique: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
-    reservation: {
-      findMany: jest.fn(),
-      count: jest.fn(),
-      findUnique: jest.fn(),
-    },
+    reservation: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
     $transaction: jest.fn(),
   };
   let service: ReservationsService;
@@ -122,11 +106,7 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
     jest.clearAllMocks();
     service = new ReservationsService(
       prisma as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
       { add: jest.fn() } as never,
@@ -140,10 +120,7 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
     await service.findProviderReservations('provider-user-1');
 
     const where = prisma.reservation.findMany.mock.calls[0][0].where;
-    expect(where).toEqual({
-      listing: { providerId: 'provider-1' },
-      bulkRunStopId: null,
-    });
+    expect(where).toEqual({ listing: { providerId: 'provider-1' }, bulkRunStopId: null });
   });
 
   it('chặn NCC quét nhầm QR của điểm phát giao sỉ', async () => {
@@ -156,9 +133,8 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
       receiver: {},
     });
 
-    await expect(
-      service.scanQr('bulk-token', 'provider-user-1'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.scanQr('bulk-token', 'provider-user-1'))
+      .rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -193,18 +169,13 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
       reservationsToday: 0,
     });
     prisma.$queryRaw.mockResolvedValue([
-      {
-        ...listingBase,
-        daily_start_minute: daily.start,
-        daily_end_minute: daily.end,
-      },
+      { ...listingBase, daily_start_minute: daily.start, daily_end_minute: daily.end },
     ]);
     return new ReservationsService(
       prisma as never,
       {} as never,
       { acquire: jest.fn().mockResolvedValue(lock) } as never,
-      {} as never,
-      {} as never,
+      {} as never, {} as never,
       { getNumber: jest.fn().mockResolvedValue(3) } as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
@@ -218,24 +189,16 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
     // Khung 00:00–00:01 nên mọi thời điểm thực tế đều nằm ngoài
     service = build({ start: 0, end: 1 });
 
-    await expect(
-      service.create('user-1', {
-        listingId: 'listing-1',
-        quantity: 1,
-      }),
-    ).rejects.toThrow(/Ngoài giờ nhận hàng/);
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/Ngoài giờ nhận hàng/);
   });
 
   it('không áp ràng buộc khi tin cũ chưa khai báo khung giờ ngày', async () => {
     service = build({ start: null, end: null });
 
     // Đi qua được bước kiểm giờ → dừng ở bước sau, KHÔNG phải lỗi "ngoài giờ"
-    await expect(
-      service.create('user-1', {
-        listingId: 'listing-1',
-        quantity: 1,
-      }),
-    ).rejects.not.toThrow(/Ngoài giờ nhận hàng/);
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.not.toThrow(/Ngoài giờ nhận hàng/);
   });
 });
 
@@ -255,11 +218,12 @@ describe('ReservationsService.expireNoShows', () => {
     prisma.$transaction.mockResolvedValue([]);
     service = new ReservationsService(
       prisma as never,
-      {} as never, // config
-      {} as never, // redlock
-      {} as never, // storage
-      {} as never, // faceMatch
-      {} as never, // systemConfig
+      {} as never,          // config
+      {} as never,          // redlock
+      {} as never,          // storage
+      {} as never,          // faceMatch
+      // systemConfig — mốc phạt uy tín giờ đọc từ system_configs, trả mặc định
+      { getNumber: jest.fn(async (k: string) => (k === 'RESERVATION_NO_SHOW_PENALTY' ? 20 : 10)) } as never,
       { notify: jest.fn() } as never,
       trust as never,
       { add: jest.fn() } as never,
@@ -301,11 +265,7 @@ describe('ReservationsService.expireNoShows', () => {
       data: { status: 'no_show' },
     });
     expect(trust.applyDelta).toHaveBeenCalledWith(
-      'user-1',
-      -20,
-      'no_show',
-      'reservation',
-      'res-1',
+      'user-1', -20, 'no_show', 'reservation', 'res-1',
     );
   });
 

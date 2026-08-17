@@ -11,15 +11,16 @@ export const CAMPAIGN_CREATE_STEPS = [
   { title: 'Thông tin cơ bản', icon: 'clipboard-text-outline' },
   { title: 'Ảnh chiến dịch', icon: 'image-outline' },
   { title: 'Thời gian & địa điểm', icon: 'map-clock-outline' },
-  { title: 'Mục tiêu phục vụ', icon: 'account-group-outline' },
-  { title: 'Ca trực TNV', icon: 'calendar-account-outline' },
-  { title: 'Thực đơn', icon: 'silverware-fork-knife' },
-  { title: 'Lịch trình', icon: 'timeline-clock-outline' },
+  { title: 'Nhân sự & Ca trực', icon: 'account-group-outline' },
   { title: 'Vật phẩm hỗ trợ', icon: 'basket-outline' },
+  { title: 'Thực đơn dự kiến', icon: 'silverware-fork-knife' },
+  { title: 'Lịch trình', icon: 'timeline-clock-outline' },
   { title: 'Báo cáo & chốt thông tin', icon: 'file-check-outline' },
 ] as const;
 
 export const CAMPAIGN_REVIEW_STEP = CAMPAIGN_CREATE_STEPS.length - 1;
+
+export const SUPPLY_UNIT_OPTIONS = ['kg', 'quả', 'hộp', 'bộ', 'cái', 'thùng', 'chai'] as const;
 
 export const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -75,12 +76,25 @@ export type NormalizedCampaignShift = {
 
 export function normalizeCampaignMenuItems(items: CampaignMenuDraft[]): NormalizedCampaignMenuItem[] {
   return items
-    .filter((item) => item.name.trim())
+    .filter((item) => item.name.trim() && item.type.trim())
     .map((item) => ({
       name: item.name.trim(),
       type: item.type.trim(),
       ...(item.plannedServings != null ? { plannedServings: item.plannedServings } : {}),
     }));
+}
+
+export function getCampaignMenuSummary(draft: CampaignCreateDraft) {
+  const validItems = normalizeCampaignMenuItems(draft.menuItems);
+  const plannedServings = validItems.reduce((sum, item) => sum + (item.plannedServings ?? 0), 0);
+  const expectedServings = toInt(draft.expectedServings);
+  return {
+    validCount: validItems.length,
+    plannedServings,
+    expectedServings,
+    hasDraftRows: draft.menuItems.some((item) => item.name.trim()),
+    isUnderExpected: plannedServings > 0 && expectedServings > 0 && plannedServings < expectedServings,
+  };
 }
 
 export function normalizeCampaignScheduleItems(items: CampaignScheduleDraft[]): NormalizedCampaignScheduleItem[] {
@@ -145,9 +159,6 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
     }
     if (!expected || expected < 1) return 'Số suất ăn dự kiến tối thiểu là 1.';
     if (expected > 100000) return 'Số suất ăn dự kiến tối đa 100.000.';
-  }
-
-  if (step === 4) {
     const shifts = normalizeCampaignShifts(draft.shifts);
     if (shifts.length > 10) return 'Tối đa 10 ca trực hợp lệ.';
     const invalidShift = draft.shifts.find(
@@ -160,6 +171,28 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
         item.slotsNeeded > 100,
     );
     if (invalidShift) return 'Kiểm tra tên ca, giờ bắt đầu/kết thúc và số người cần tối thiểu 1.';
+  }
+
+  if (step === 4) {
+    const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
+    if (supplyItems.length > 30) return 'Vật phẩm hỗ trợ tối đa 30 mục hợp lệ.';
+    const seenSupplyNames = new Set<string>();
+    const hasDuplicateSupply = supplyItems.some((item) => {
+      const normalizedName = item.name.toLowerCase();
+      if (seenSupplyNames.has(normalizedName)) return true;
+      seenSupplyNames.add(normalizedName);
+      return false;
+    });
+    if (hasDuplicateSupply) return 'Vật phẩm hỗ trợ không được trùng tên.';
+    const invalidSupply = draft.supplyItems.find(
+      (item) =>
+        item.name.trim().length > 80 ||
+        (item.name.trim() && (item.quantity == null || item.quantity <= 0)) ||
+        (item.name.trim() && !item.unit?.trim()) ||
+        (item.name.trim() && !SUPPLY_UNIT_OPTIONS.includes(item.unit?.trim() as (typeof SUPPLY_UNIT_OPTIONS)[number])) ||
+        (item.unit != null && item.unit.trim().length > 20),
+    );
+    if (invalidSupply) return 'Vật phẩm có tên phải có số lượng lớn hơn 0 và chọn đơn vị chuẩn, tên tối đa 80 ký tự.';
   }
 
   if (step === 5) {
@@ -181,19 +214,6 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
       (item) => item.label.trim().length > 160 || (item.label.trim() && !item.time.trim()),
     );
     if (invalidSchedule) return 'Mốc có mô tả phải có giờ, nội dung tối đa 160 ký tự.';
-  }
-
-  if (step === 7) {
-    const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
-    if (supplyItems.length > 30) return 'Vật phẩm hỗ trợ tối đa 30 mục hợp lệ.';
-    const invalidSupply = draft.supplyItems.find(
-      (item) =>
-        item.name.trim().length > 80 ||
-        (item.name.trim() && (item.quantity == null || item.quantity <= 0)) ||
-        (item.name.trim() && !item.unit?.trim()) ||
-        (item.unit != null && item.unit.trim().length > 20),
-    );
-    if (invalidSupply) return 'Vật phẩm có tên phải có số lượng lớn hơn 0 và đơn vị, tên tối đa 80 ký tự, đơn vị tối đa 20 ký tự.';
   }
 
   if (step === CAMPAIGN_REVIEW_STEP) {

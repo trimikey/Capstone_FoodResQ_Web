@@ -900,22 +900,7 @@
     border-top: 1px solid var(--cm-rule);
   }
 
-  /* === Create campaign — full page form layout === */
-  .cm-create-page {
-    /* Card nổi, scroll do overlay xử lý, card chỉ đặt size */
-    position: relative;
-    width: 100%;
-    max-width: 1200px;
-    margin: 0 auto 24px;
-    padding: 28px 40px 64px;
-    background: var(--cm-cream-50);
-    border-radius: 24px;
-    box-shadow: 0 24px 64px rgba(16, 24, 16, 0.32);
-    z-index: 1;
-    flex-shrink: 0;
-  }
-
-  /* === Popup overlay (modal nổi giữa màn hình) === */
+/* === Popup overlay (modal nổi giữa màn hình) === */
   .cm-create-overlay {
     position: fixed;
     inset: 0;
@@ -923,30 +908,25 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 88px 16px 24px;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
+    justify-content: flex-start;
+    padding: 56px 16px 16px;
+    overflow: hidden;
   }
-  /* Scrollbar đẹp cho overlay */
-  .cm-create-overlay::-webkit-scrollbar { width: 10px; }
-  .cm-create-overlay::-webkit-scrollbar-track {
-    background: rgba(16, 24, 16, 0.04);
-    border-radius: 999px;
-  }
-  .cm-create-overlay::-webkit-scrollbar-thumb {
-    background: rgba(16, 24, 16, 0.35);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    border-radius: 999px;
-  }
-  .cm-create-overlay::-webkit-scrollbar-thumb:hover {
-    background: rgba(16, 24, 16, 0.55);
-    background-clip: padding-box;
-    border: 2px solid transparent;
-  }
-  .cm-create-overlay {
-    scrollbar-color: rgba(16, 24, 16, 0.35) transparent;
-    scrollbar-width: thin;
+
+  /* === Create campaign — dialog giới hạn trong viewport === */
+  .cm-create-page {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+    max-height: calc(100dvh - 32px);
+    padding: 16px 20px;
+    background: var(--cm-cream-50);
+    border-radius: 24px;
+    box-shadow: 0 24px 64px rgba(16, 24, 16, 0.32);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* page không scroll, chỉ .cm-modal-body scroll */
   }
   .cm-create-overlay-backdrop {
     position: fixed;
@@ -961,27 +941,29 @@
 
   .cm-create-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 20px;
-    padding: 20px 24px;
-    margin-bottom: 20px;
+padding: 14px 24px;
+    margin-bottom: 12px;
     background: linear-gradient(135deg, #1e4d21 0%, #2a662e 50%, #1b1c1c 100%);
     color: white;
-    border-radius: 20px;
+    border-radius: 16px;
     box-shadow: 0 12px 32px rgba(42, 102, 46, 0.18);
+    flex-shrink: 0;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
   .cm-create-header-title {
     font-family: var(--font-display, inherit);
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 800;
-    margin: 6px 0 4px;
+    margin: 4px 0 2px;
     line-height: 1.15;
     color: white;
   }
   .cm-create-header-sub {
-    font-size: 13px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.78);
     max-width: 560px;
   }
@@ -1009,6 +991,22 @@
     border-radius: 24px;
     border: 1px solid var(--cm-rule);
     box-shadow: 0 8px 24px rgba(16, 24, 16, 0.06);
+    overflow: hidden;
+    /* Flex dọc để stepper/footer có thể sticky, body scroll riêng.
+       `flex: 1 1 auto` BẮT BUỘC để card giãn ra ăn hết phần còn lại của page —
+       nếu chỉ `display: flex` + `min-height: 0` mà thiếu flex-grow thì card chỉ
+       cao bằng tổng nội dung (banner+stepper+body+footer), và body flex-1 không
+       nhận được kích thước dư → scrollbar bị bé tí. */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .cm-create-card--wizard {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 
@@ -1046,19 +1044,17 @@
     line-height: 1.4;
   }
 
-  /* Body không còn giới hạn height + overflow riêng — page scroll tự nhiên. */
-  .cm-modal-body {
-    padding: 28px 36px 12px;
-  }
+/* `.cm-wizard-*` (HEAD) là dead code — JSX đã chuyển sang dùng `.cm-stepper`
+   (xem file CreateCampaignModal.tsx). Block này cũng kéo theo stub
+   `.cm-modal-body { padding: 28px 36px 12px }` gây mất scroll trên production
+   (rule sau thắng rule trước). Xoá toàn bộ block HEAD — chỉ giữ comment
+   làm anchor. */
 
-  /* Footer luôn ở dưới card, không sticky. */
-  .cm-modal-footer {
-    display: flex;
-    gap: 12px;
-    padding: 16px 36px 20px;
-    border-top: 1px solid var(--cm-rule);
-    background: var(--cm-paper);
-  }
+  /* `.cm-modal-body` được định nghĩa CHI TIẾT ở dưới với `overflow-y: auto` +
+   `flex: 1 1 auto` + `min-height: 0`. Stub cũ (HEAD) từng override rule đó
+   và làm body mất scroll trên production build (rule sau thắng rule trước
+   trong CSS cascade). Giữ comment rỗng làm anchor duy nhất. Stub
+   `.cm-modal-footer` HEAD cũng bị override bởi rule sticky ở dưới, xoá luôn. */
 
   @media (max-width: 900px) {
     .cm-create-overlay { padding: 64px 0 0; }
@@ -1067,9 +1063,44 @@
       margin: 0;
       border-radius: 0;
     }
-    .cm-create-page { padding: 12px 12px 80px; }
+    .cm-create-page { padding: 10px 10px; max-height: calc(100dvh - 20px); }
     .cm-create-header { padding: 16px 18px; }
     .cm-create-header-title { font-size: 20px; }
+    .cm-wizard-steps {
+      grid-template-columns: 1fr;
+      padding: 10px 14px;
+    }
+    .cm-wizard-step {
+      display: none;
+    }
+    .cm-wizard-step--active {
+      display: flex;
+    }
+    .cm-wizard-step-number {
+      display: none;
+    }
+    .cm-wizard-step-mobile {
+      display: inline;
+      white-space: nowrap;
+      color: #2a662e;
+    }
+    .cm-wizard-pane,
+    .cm-wizard-pane--split {
+      max-width: none;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .cm-wizard-preview,
+    .cm-review-card {
+      position: static;
+    }
+    .cm-time-grid,
+    .cm-template-grid {
+      grid-template-columns: 1fr;
+    }
+    .cm-modal-map--wizard {
+      height: 280px;
+    }
     .cm-modal-grid { grid-template-columns: 1fr; gap: 20px; }
     .cm-modal-body { padding: 16px 14px 8px; }
     .cm-modal-footer { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
@@ -1219,15 +1250,18 @@
     }
   }
 
-  /* Thanh bước */
+  /* Thanh bước — sticky trên cùng form, không che input. */
   .cm-stepper {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 14px 36px;
+    padding: 10px 36px;
     border-bottom: 1px solid var(--cm-rule);
     background: var(--cm-paper);
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   .cm-stepper-item {
     display: flex;
@@ -1324,6 +1358,39 @@
     .cm-modal-cover-overlay { padding: 16px 18px; }
     .cm-modal-body { padding: 20px 14px 8px; }
     .cm-modal-footer { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+  }
+  @media (max-width: 640px) {
+    .cm-wizard-banner {
+      align-items: flex-start;
+      padding: 12px 14px;
+    }
+    .cm-preview-cover {
+      height: 140px;
+    }
+    .cm-modal-footer--wizard {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+    }
+    .cm-modal-footer--wizard .cm-btn-cancel,
+    .cm-modal-footer--wizard .cm-btn-submit {
+      min-width: 0;
+      padding-inline: 12px;
+    }
+    .cm-modal-map--wizard {
+      height: 260px;
+    }
+    .cm-repeat-row--menu,
+    .cm-repeat-row--schedule,
+    .cm-repeat-row--supplies {
+      grid-template-columns: 1fr;
+    }
+    .cm-repeat-row--menu .cm-repeat-remove,
+    .cm-repeat-row--schedule .cm-repeat-remove,
+    .cm-repeat-row--supplies .cm-repeat-remove {
+      width: 100%;
+      justify-content: center;
+      border: 1px solid rgba(224, 74, 63, 0.16);
+    }
   }
 
   .cm-form-block {
@@ -1580,11 +1647,16 @@
   .cm-modal-footer {
     display: flex;
     gap: 12px;
-    padding: 16px 36px 20px;
+    padding: 12px 36px 14px;
     border-top: 1px solid var(--cm-rule);
     background: var(--cm-paper);
     flex-shrink: 0;
     box-shadow: 0 -8px 24px -12px rgba(16, 24, 16, 0.12);
+    /* Sticky dưới cùng form để nút Huỷ/Tiếp tục/Gửi luôn trong tầm tay khi body
+       cuộn qua ca dài hoặc danh sách món nhiều. */
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
   }
   .cm-modal-footer .cm-btn-cancel {
     flex: 1;

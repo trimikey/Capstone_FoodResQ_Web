@@ -248,7 +248,12 @@ export default function OrderDetailScreen() {
         </SurfaceCard>
 
         {/* Theo dõi giao hàng (đơn giao tận nơi) */}
-        {order.delivery ? <DeliveryTrackingCard reservationId={order.id} /> : null}
+        {order.delivery ? (
+          <DeliveryTrackingCard
+            reservationId={order.id}
+            shipperAvatarUrl={order.delivery.shipper?.user.avatarUrl}
+          />
+        ) : null}
 
         {/* Đánh giá đã gửi */}
         {completed && alreadyRated ? (

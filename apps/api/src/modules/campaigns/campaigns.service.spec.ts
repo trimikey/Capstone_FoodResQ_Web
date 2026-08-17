@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AssignmentRole } from '@foodresq/types';
 import { CampaignsService } from './campaigns.service';
@@ -21,25 +16,11 @@ describe('CampaignsService', () => {
     volunteerProfile: { findUnique: jest.fn() },
     kitchenCampaign: { findUnique: jest.fn() },
     // `count` được service gọi khi kiểm tra ca làm — thiếu mock thì 3 test apply() đỏ
-    campaignShift: {
-      findUnique: jest.fn(),
-      count: jest.fn().mockResolvedValue(0),
-    },
-    campaignVolunteerAssignment: {
-      findUnique: jest.fn(),
-      findFirst: jest.fn(),
-      findMany: jest.fn().mockResolvedValue([]),
-      count: jest.fn().mockResolvedValue(0),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
+    campaignShift: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+    campaignVolunteerAssignment: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     mealDistribution: { aggregate: jest.fn(), create: jest.fn() },
-    campaignTransport: {
-      findFirst: jest.fn(),
-      findUnique: jest.fn(),
-      updateMany: jest.fn(),
-    },
+    campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
     $transaction: jest.fn(),
@@ -60,21 +41,9 @@ describe('CampaignsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: {} },
-        {
-          provide: DeliveriesService,
-          useValue: { broadcastToNearbyShippers: jest.fn() },
-        },
-        {
-          provide: DishStepsService,
-          useValue: {
-            getStepsForCampaign: jest.fn().mockResolvedValue({
-              dishes: [],
-              cookingTeam: [],
-              safetyLogs: [],
-            }),
-          },
-        },
+        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => (k === 'CHECKIN_GPS_RADIUS_M' ? 500 : 0)) } },
+        { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
+        { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },
       ],
     }).compile();
@@ -111,12 +80,8 @@ describe('CampaignsService', () => {
     prisma.kitchenCampaign.findUnique.mockResolvedValue(campaign);
     prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
 
-    await expect(
-      service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }),
-    ).resolves.toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining('chờ tổ chức duyệt'),
-      }),
+    await expect(service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF })).resolves.toEqual(
+      expect.objectContaining({ message: expect.stringContaining('chờ tổ chức duyệt') }),
     );
 
     expect(prisma.campaignVolunteerAssignment.create).toHaveBeenCalledWith({
@@ -132,14 +97,10 @@ describe('CampaignsService', () => {
   it('rejects a duplicate pending campaign application', async () => {
     activeVolunteer();
     prisma.kitchenCampaign.findUnique.mockResolvedValue(campaign);
-    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({
-      id: 'assignment-1',
-      status: 'pending',
-    });
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({ id: 'assignment-1', status: 'pending' });
 
-    await expect(
-      service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }),
-    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }))
+      .rejects.toBeInstanceOf(ConflictException);
   });
 
   describe('đăng ký nhiều ca trong cùng chiến dịch', () => {
@@ -154,14 +115,7 @@ describe('CampaignsService', () => {
       // Đúng tình huống "đầu bếp làm cả ngày": ca sáng 06–11, ca chiều 11–16.
       shiftCampaign();
       prisma.campaignShift.findUnique
-        .mockResolvedValueOnce({
-          id: 'shift-2',
-          campaignId: 'campaign-1',
-          role: 'chef',
-          label: 'Ca chiều',
-          startTime: '11:00',
-          endTime: '16:00',
-        })
+        .mockResolvedValueOnce({ id: 'shift-2', campaignId: 'campaign-1', role: 'chef', label: 'Ca chiều', startTime: '11:00', endTime: '16:00' })
         .mockResolvedValueOnce({ startTime: '11:00', endTime: '16:00' });
       prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
       prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([
@@ -169,35 +123,18 @@ describe('CampaignsService', () => {
       ]);
 
       await expect(
-        service.apply('campaign-1', 'user-1', {
-          role: AssignmentRole.CHEF,
-          shiftId: 'shift-2',
-        }),
-      ).resolves.toEqual(
-        expect.objectContaining({
-          message: expect.stringContaining('chờ tổ chức duyệt'),
-        }),
-      );
+        service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF, shiftId: 'shift-2' }),
+      ).resolves.toEqual(expect.objectContaining({ message: expect.stringContaining('chờ tổ chức duyệt') }));
 
       expect(prisma.campaignVolunteerAssignment.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          shiftId: 'shift-2',
-          role: AssignmentRole.CHEF,
-        }),
+        data: expect.objectContaining({ shiftId: 'shift-2', role: AssignmentRole.CHEF }),
       });
     });
 
     it('chặn ca CHỒNG GIỜ với ca đã giữ', async () => {
       shiftCampaign();
       prisma.campaignShift.findUnique
-        .mockResolvedValueOnce({
-          id: 'shift-2',
-          campaignId: 'campaign-1',
-          role: 'chef',
-          label: 'Ca nấu',
-          startTime: '10:00',
-          endTime: '16:00',
-        })
+        .mockResolvedValueOnce({ id: 'shift-2', campaignId: 'campaign-1', role: 'chef', label: 'Ca nấu', startTime: '10:00', endTime: '16:00' })
         .mockResolvedValueOnce({ startTime: '10:00', endTime: '16:00' });
       prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
       prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([
@@ -205,10 +142,7 @@ describe('CampaignsService', () => {
       ]);
 
       await expect(
-        service.apply('campaign-1', 'user-1', {
-          role: AssignmentRole.CHEF,
-          shiftId: 'shift-2',
-        }),
+        service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF, shiftId: 'shift-2' }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.campaignVolunteerAssignment.create).not.toHaveBeenCalled();
     });
@@ -223,16 +157,10 @@ describe('CampaignsService', () => {
         startTime: '06:00',
         endTime: '11:00',
       });
-      prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({
-        id: 'a-1',
-        status: 'pending',
-      });
+      prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({ id: 'a-1', status: 'pending' });
 
       await expect(
-        service.apply('campaign-1', 'user-1', {
-          role: AssignmentRole.CHEF,
-          shiftId: 'shift-1',
-        }),
+        service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF, shiftId: 'shift-1' }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -263,14 +191,9 @@ describe('CampaignsService', () => {
         jest.setSystemTime(new Date('2099-01-01T08:00:00.000Z'));
 
         await expect(
-          service.apply('campaign-1', 'user-1', {
-            role: AssignmentRole.CHEF,
-            shiftId: 'shift-1',
-          }),
+          service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF, shiftId: 'shift-1' }),
         ).rejects.toThrow('đã qua');
-        expect(
-          prisma.campaignVolunteerAssignment.create,
-        ).not.toHaveBeenCalled();
+        expect(prisma.campaignVolunteerAssignment.create).not.toHaveBeenCalled();
       });
 
       /** Chiến dịch 01/01 → 03/01, bây giờ 15:00 VN ngày 01/01. */
@@ -297,16 +220,10 @@ describe('CampaignsService', () => {
             shiftId: 'shift-1',
             workDate: '2099-01-02',
           }),
-        ).resolves.toEqual(
-          expect.objectContaining({
-            message: expect.stringContaining('chờ tổ chức duyệt'),
-          }),
-        );
+        ).resolves.toEqual(expect.objectContaining({ message: expect.stringContaining('chờ tổ chức duyệt') }));
 
         expect(prisma.campaignVolunteerAssignment.create).toHaveBeenCalledWith({
-          data: expect.objectContaining({
-            workDate: new Date('2099-01-02T00:00:00.000Z'),
-          }),
+          data: expect.objectContaining({ workDate: new Date('2099-01-02T00:00:00.000Z') }),
         });
       });
 
@@ -326,10 +243,7 @@ describe('CampaignsService', () => {
         multiDayNow();
 
         await expect(
-          service.apply('campaign-1', 'user-1', {
-            role: AssignmentRole.CHEF,
-            shiftId: 'shift-1',
-          }),
+          service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF, shiftId: 'shift-1' }),
         ).rejects.toThrow('hãy chọn ngày');
       });
 
@@ -357,9 +271,8 @@ describe('CampaignsService', () => {
   it('rejects a banned volunteer application', async () => {
     activeVolunteer('banned');
 
-    await expect(
-      service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }))
+      .rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('allows a rejected volunteer to resubmit as pending', async () => {
@@ -375,18 +288,12 @@ describe('CampaignsService', () => {
 
     expect(prisma.campaignVolunteerAssignment.update).toHaveBeenCalledWith({
       where: { id: 'assignment-1' },
-      data: {
-        status: 'pending',
-        shiftId: null,
-        workDate: campaign.scheduledDate,
-        notes: null,
-      },
+      data: { status: 'pending', shiftId: null, workDate: campaign.scheduledDate, notes: null },
     });
   });
 
-  // SKIP: ràng buộc GPS trong `advanceTask` đang bị comment lại (xem TODO 'bỏ comment
-  // khi deploy' trong campaigns.service.ts). Bật lại khối đó thì bỏ .skip là test xanh.
-  it.skip('requires GPS coordinates to move an assignment to checked in', async () => {
+  // Bán kính GPS đọc từ `CHECKIN_GPS_RADIUS_M`; mock trả 500 nên khối kiểm tra chạy.
+  it('requires GPS coordinates to move an assignment to checked in', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({
       id: 'volunteer-1',
       dedicationPoints: 0,
@@ -398,22 +305,14 @@ describe('CampaignsService', () => {
       campaignId: 'campaign-1',
       role: AssignmentRole.CHEF,
       status: 'assigned',
-      campaign: {
-        status: 'in_progress',
-        scheduledDate: new Date(),
-        endDate: null,
-        startTime: '00:00',
-        endTime: '23:59',
-      },
+      campaign: { status: 'in_progress', scheduledDate: new Date(), endDate: null, startTime: '00:00', endTime: '23:59' },
     });
 
-    await expect(
-      service.advanceTask('assignment-1', 'user-1', {}),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.advanceTask('assignment-1', 'user-1', {}))
+      .rejects.toBeInstanceOf(BadRequestException);
   });
 
-  // SKIP: cùng lý do — khối kiểm tra bán kính 500 m đang bị comment trong service.
-  it.skip('rejects GPS check-in outside the kitchen radius', async () => {
+  it('rejects GPS check-in outside the kitchen radius', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({
       id: 'volunteer-1',
       dedicationPoints: 0,
@@ -425,19 +324,82 @@ describe('CampaignsService', () => {
       campaignId: 'campaign-1',
       role: AssignmentRole.CHEF,
       status: 'assigned',
-      campaign: {
-        status: 'in_progress',
-        scheduledDate: new Date(),
-        endDate: null,
-        startTime: '00:00',
-        endTime: '23:59',
-      },
+      campaign: { status: 'in_progress', scheduledDate: new Date(), endDate: null, startTime: '00:00', endTime: '23:59' },
     });
     prisma.$queryRaw.mockResolvedValue([{ within_radius: false }]);
 
-    await expect(
-      service.advanceTask('assignment-1', 'user-1', { lng: 106.7, lat: 10.8 }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.advanceTask('assignment-1', 'user-1', { lng: 106.7, lat: 10.8 }))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('assertLeadTime — báo trước cho chiến dịch dài ngày', () => {
+    afterEach(() => jest.useRealTimers());
+
+    /** Gọi thẳng helper private; mock config trả `leadDays`. */
+    const check = (start: string, end: string, leadDays = 3) => {
+      jest.useFakeTimers();
+      // 2099-01-01T03:00Z = 10:00 giờ VN cùng ngày.
+      jest.setSystemTime(new Date('2099-01-01T03:00:00.000Z'));
+      const svc = service as unknown as {
+        systemConfig: { getNumber: jest.Mock };
+        assertLeadTime: (s: string, e: string) => Promise<void>;
+      };
+      svc.systemConfig.getNumber = jest.fn().mockResolvedValue(leadDays);
+      return svc.assertLeadTime(start, end);
+    };
+
+    it('cho tạo chiến dịch TRONG NGÀY ngay hôm nay', async () => {
+      await expect(check('2099-01-01', '2099-01-01')).resolves.toBeUndefined();
+    });
+
+    it('chặn chiến dịch NHIỀU NGÀY bắt đầu quá sát', async () => {
+      await expect(check('2099-01-02', '2099-01-04')).rejects.toThrow('ít nhất 3 ngày');
+    });
+
+    it('cho chiến dịch nhiều ngày khi đã đủ số ngày báo trước', async () => {
+      await expect(check('2099-01-04', '2099-01-06')).resolves.toBeUndefined();
+    });
+
+    it('bỏ ràng buộc khi admin đặt 0 ngày', async () => {
+      await expect(check('2099-01-01', '2099-01-05', 0)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('markAbsentVolunteers', () => {
+    const staleAssignment = {
+      id: 'a-1',
+      role: AssignmentRole.CHEF,
+      workDate: new Date('2099-01-01T00:00:00.000Z'),
+      volunteer: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+      campaign: { id: 'campaign-1', title: 'Bếp ăn thử', charityReceiver: { userId: 'charity-1' } },
+    };
+
+    it('đánh vắng và trừ uy tín TNV đã duyệt mà không điểm danh', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([staleAssignment]);
+      prisma.campaignVolunteerAssignment.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(1);
+
+      expect(prisma.campaignVolunteerAssignment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'absent' } }),
+      );
+    });
+
+    it('không làm gì khi không còn ai bỏ ca', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([]);
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(0);
+      expect(prisma.campaignVolunteerAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    // updateMany kèm điều kiện status/checkInTime: người vừa kịp điểm danh giữa lúc
+    // cron chạy sẽ không khớp, và khi đó không được phạt ai.
+    it('bỏ qua khi bản ghi đã đổi trạng thái giữa chừng', async () => {
+      prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([staleAssignment]);
+      prisma.campaignVolunteerAssignment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.markAbsentVolunteers()).resolves.toBe(0);
+    });
   });
 
   describe('check-in work window', () => {
@@ -455,23 +417,17 @@ describe('CampaignsService', () => {
     //   2099-01-01T17:00Z = 2099-01-02 00:00 VN  (sang ngày khác → chặn)
     const checkWindow = (
       now: string,
-      shift: {
-        role: string | null;
-        startTime: string;
-        endTime: string;
-      } | null = null,
+      shift: { role: string | null; startTime: string; endTime: string } | null = null,
     ) => {
       jest.useFakeTimers();
       jest.setSystemTime(new Date(now));
-      return (
-        service as unknown as {
-          evaluateCheckInWindow: (
-            campaign: typeof campaignWindow,
-            assignedShift: typeof shift,
-            role: string,
-          ) => { lateMinutes: number };
-        }
-      ).evaluateCheckInWindow(campaignWindow, shift, AssignmentRole.CHEF);
+      return (service as unknown as {
+        evaluateCheckInWindow: (
+          campaign: typeof campaignWindow,
+          assignedShift: typeof shift,
+          role: string,
+        ) => { lateMinutes: number };
+      }).evaluateCheckInWindow(campaignWindow, shift, AssignmentRole.CHEF);
     };
 
     afterEach(() => {
@@ -490,40 +446,26 @@ describe('CampaignsService', () => {
     });
 
     it('measures lateness against the assigned shift, not the campaign start', () => {
-      const shift = {
-        role: AssignmentRole.CHEF,
-        startTime: '13:00',
-        endTime: '14:00',
-      };
+      const shift = { role: AssignmentRole.CHEF, startTime: '13:00', endTime: '14:00' };
       // 15:00 VN, ca bắt đầu 13:00 → trễ 120 phút (không phải 360 theo giờ chiến dịch)
-      expect(checkWindow('2099-01-01T08:00:00.000Z', shift).lateMinutes).toBe(
-        120,
-      );
+      expect(checkWindow('2099-01-01T08:00:00.000Z', shift).lateMinutes).toBe(120);
     });
 
     it('rejects check-in before the campaign opens', () => {
-      expect(() => checkWindow('2098-12-31T17:00:00.000Z')).toThrow(
-        BadRequestException,
-      );
+      expect(() => checkWindow('2098-12-31T17:00:00.000Z')).toThrow(BadRequestException);
     });
 
     it('rejects check-in outside the campaign date range', () => {
-      expect(() => checkWindow('2098-12-31T16:59:00.000Z')).toThrow(
-        BadRequestException,
-      );
-      expect(() => checkWindow('2099-01-01T17:00:00.000Z')).toThrow(
-        BadRequestException,
-      );
+      expect(() => checkWindow('2098-12-31T16:59:00.000Z')).toThrow(BadRequestException);
+      expect(() => checkWindow('2099-01-01T17:00:00.000Z')).toThrow(BadRequestException);
     });
 
     it('rejects a shift assigned to a different volunteer role', () => {
-      expect(() =>
-        checkWindow('2099-01-01T02:30:00.000Z', {
-          role: AssignmentRole.WAITER,
-          startTime: '09:00',
-          endTime: '10:00',
-        }),
-      ).toThrow(BadRequestException);
+      expect(() => checkWindow('2099-01-01T02:30:00.000Z', {
+        role: AssignmentRole.WAITER,
+        startTime: '09:00',
+        endTime: '10:00',
+      })).toThrow(BadRequestException);
     });
   });
 
@@ -531,14 +473,8 @@ describe('CampaignsService', () => {
     prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-1' });
     prisma.campaignTransport.findFirst.mockResolvedValue(null);
 
-    await expect(
-      service.confirmTransportReceipt(
-        'campaign-1',
-        'transport-1',
-        'user-1',
-        {},
-      ),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.confirmTransportReceipt('campaign-1', 'transport-1', 'user-1', {}))
+      .rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.campaignTransport.updateMany).not.toHaveBeenCalled();
   });
 
@@ -550,14 +486,8 @@ describe('CampaignsService', () => {
       deliveryId: 'delivery-1',
     });
 
-    await expect(
-      service.confirmTransportReceipt(
-        'campaign-1',
-        'transport-1',
-        'user-1',
-        {},
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.confirmTransportReceipt('campaign-1', 'transport-1', 'user-1', {}))
+      .rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.campaignTransport.updateMany).not.toHaveBeenCalled();
   });
 
@@ -578,14 +508,9 @@ describe('CampaignsService', () => {
       },
     });
 
-    await service.confirmTransportReceipt(
-      'campaign-1',
-      'transport-1',
-      'user-1',
-      {
-        note: '  Đã kiểm tra đủ hàng.  ',
-      },
-    );
+    await service.confirmTransportReceipt('campaign-1', 'transport-1', 'user-1', {
+      note: '  Đã kiểm tra đủ hàng.  ',
+    });
 
     expect(prisma.campaignTransport.updateMany).toHaveBeenCalledWith({
       where: { id: 'transport-1', status: 'delivered' },
@@ -608,14 +533,8 @@ describe('CampaignsService', () => {
     });
     prisma.campaignTransport.findUnique.mockResolvedValue(receivedTransport);
 
-    await expect(
-      service.confirmTransportReceipt(
-        'campaign-1',
-        'transport-1',
-        'user-1',
-        {},
-      ),
-    ).resolves.toEqual(receivedTransport);
+    await expect(service.confirmTransportReceipt('campaign-1', 'transport-1', 'user-1', {}))
+      .resolves.toEqual(receivedTransport);
     expect(prisma.campaignTransport.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -635,26 +554,11 @@ describe('CampaignsService.createDistribution', () => {
       providers: [
         CampaignsService,
         { provide: PrismaService, useValue: prisma },
-        {
-          provide: NotificationsService,
-          useValue: { notify: jest.fn(), notifyAdmins: jest.fn() },
-        },
+        { provide: NotificationsService, useValue: { notify: jest.fn(), notifyAdmins: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: {} },
-        {
-          provide: DeliveriesService,
-          useValue: { broadcastToNearbyShippers: jest.fn() },
-        },
-        {
-          provide: DishStepsService,
-          useValue: {
-            getStepsForCampaign: jest.fn().mockResolvedValue({
-              dishes: [],
-              cookingTeam: [],
-              safetyLogs: [],
-            }),
-          },
-        },
+        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => (k === 'CHECKIN_GPS_RADIUS_M' ? 500 : 0)) } },
+        { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
+        { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },
       ],
     }).compile();
@@ -675,26 +579,19 @@ describe('CampaignsService.createDistribution', () => {
       id: 'a-1',
       volunteerId: 'vol-1',
     });
-    prisma.mealDistribution.create.mockImplementation(({ data }) =>
-      Promise.resolve({ id: 'd-1', ...data }),
-    );
+    prisma.mealDistribution.create.mockImplementation(({ data }) => Promise.resolve({ id: 'd-1', ...data }));
   });
 
   const base = { servingsServed: 50, peopleServed: 40 };
 
   it('ghi nhận được đợt phát hợp lệ', async () => {
     const r = await service.createDistribution('campaign-1', 'user-1', base);
-    expect(r).toEqual(
-      expect.objectContaining({ servingsServed: 50, peopleServed: 40 }),
-    );
+    expect(r).toEqual(expect.objectContaining({ servingsServed: 50, peopleServed: 40 }));
   });
 
   it('số người nhận KHÔNG được lớn hơn số suất — mỗi người ít nhất 1 suất', async () => {
     await expect(
-      service.createDistribution('campaign-1', 'user-1', {
-        servingsServed: 10,
-        peopleServed: 25,
-      }),
+      service.createDistribution('campaign-1', 'user-1', { servingsServed: 10, peopleServed: 25 }),
     ).rejects.toThrow('không thể lớn hơn số suất đã phát');
   });
 
@@ -703,10 +600,7 @@ describe('CampaignsService.createDistribution', () => {
       _sum: { servingsServed: 80, leftoverServings: 5 },
     });
     await expect(
-      service.createDistribution('campaign-1', 'user-1', {
-        servingsServed: 20,
-        peopleServed: 20,
-      }),
+      service.createDistribution('campaign-1', 'user-1', { servingsServed: 20, peopleServed: 20 }),
     ).rejects.toThrow('chỉ còn 15 suất');
   });
 
@@ -735,9 +629,9 @@ describe('CampaignsService.createDistribution', () => {
 
   it('chưa duyệt TNV nào thì không cho ghi nhận (không lấy đại người ngoài)', async () => {
     prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
-    await expect(
-      service.createDistribution('campaign-1', 'user-1', base),
-    ).rejects.toThrow('chưa có tình nguyện viên nào được duyệt');
+    await expect(service.createDistribution('campaign-1', 'user-1', base)).rejects.toThrow(
+      'chưa có tình nguyện viên nào được duyệt',
+    );
     expect(prisma.mealDistribution.create).not.toHaveBeenCalled();
   });
 });

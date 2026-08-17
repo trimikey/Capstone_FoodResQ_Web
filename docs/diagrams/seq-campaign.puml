@@ -1,0 +1,701 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Campaigns (12)
+' 36. Create · 37. Browse & Detail · 38. Apply & Review ·
+' 39. Start · 40. Volunteer Check-in · 41. Task Progress ·
+' 42. Complete · 43. Cancel · 44. Pledge Donation ·
+' 45. Confirm Donation · 46. Change Request · 47. Cancel Change Request
+'==============================================================
+
+'──────────────────── 36. Create Campaign ────────────────────
+@startuml seq-campaign-create
+title Create Kitchen Campaign Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignFormScreen\n(Map)" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":StorageService" as Storage
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+actor "Admin" as Admin
+
+User -> Screen : fill the campaign form (date, time window, servings,\nchef/waiter/shipper slots, required supplies)
+activate Screen
+Screen -> Ctrl : POST /campaigns/upload-image (cover photo)
+activate Ctrl
+Ctrl -> Svc : saveCampaignImage(image)
+activate Svc
+Svc -> Storage : saveImage(file, 'campaigns')
+activate Storage
+Storage --> Svc : coverImageUrl
+deactivate Storage
+Svc --> Ctrl : url
+deactivate Svc
+Ctrl --> Screen : { url } (201)
+deactivate Ctrl
+
+Screen -> Ctrl : POST /campaigns (CreateCampaignDto)
+activate Ctrl
+Ctrl -> Svc : create(userId, dto)
+activate Svc
+Svc -> Repo : receiverProfile.findUnique(userId) select id, isCharityOrg
+Repo -> DB : SELECT receiver_profiles
+DB --> Repo : receiver | null
+Repo --> Svc : receiver
+alt No receiver profile
+  Svc --> Ctrl : 404 "Organization profile not found"
+else isCharityOrg = false
+  Svc --> Ctrl : 403 "Only charity organizations can create campaigns"
+else scheduled date in the past OR endTime <= startTime
+  Svc --> Ctrl : 400 "Invalid time window"
+else valid
+  Svc -> Repo : $queryRaw INSERT kitchen_campaigns (..., supply_items JSONB,\nkitchen_location = ST_SetSRID(ST_MakePoint(lng, lat), 4326), status = 'draft') RETURNING id
+  Repo -> DB : INSERT kitchen_campaigns
+  DB --> Repo : { id }
+  opt shifts or menu items declared upfront
+    Svc -> Repo : campaignShift.createMany · campaignMenuItem.createMany
+    Repo -> DB : INSERT campaign_shifts / campaign_menu_items
+  end
+  Svc -> Notif : notifyAdmins("New campaign awaiting approval")
+  Notif --> Admin : realtime notification
+  Svc -> Svc : findOne(newId)
+  Svc --> Ctrl : campaign detail
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : campaign created, awaiting admin approval (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 37. Browse & Detail ────────────────────
+@startuml seq-campaign-browse
+title Browse Campaigns Sequence Diagram
+
+actor "Volunteer / Guest" as User
+participant ":CampaignsScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the campaign list
+activate Screen
+alt campaigns still recruiting
+  Screen -> Ctrl : GET /campaigns
+  activate Ctrl
+  Ctrl -> Svc : listOpen()
+  activate Svc
+  Svc -> Repo : kitchenCampaign.findMany(status = open, scheduledDate >= today)
+else my campaigns
+  Screen -> Ctrl : GET /campaigns/my
+  activate Ctrl
+  Ctrl -> Svc : myCampaigns(userId)
+  activate Svc
+  Svc -> Repo : kitchenCampaign.findMany(charityReceiverId)
+else public / completed
+  Screen -> Ctrl : GET /campaigns/public · /campaigns/completed
+  activate Ctrl
+  Ctrl -> Svc : listPublicUpcoming(limit) · listCompleted()
+  activate Svc
+  Svc -> Repo : kitchenCampaign.findMany(by matching status)
+end
+Repo -> DB : SELECT kitchen_campaigns
+DB --> Repo : campaigns[]
+Repo --> Svc : campaigns
+Svc --> Ctrl : campaigns[] with slot fill rates
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render campaign cards
+
+User -> Screen : open one campaign
+Screen -> Ctrl : GET /campaigns/:id
+activate Ctrl
+Ctrl -> Svc : findOne(id)
+activate Svc
+Svc -> Repo : kitchenCampaign.findUnique(id) include charityReceiver, shifts,\nmenuItemRefs, assignments, donations
+Repo -> DB : SELECT kitchen_campaigns JOIN ...
+DB --> Repo : campaign | null
+Repo --> Svc : campaign
+alt Not found
+  Svc --> Ctrl : 404 "Campaign not found"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Svc : withSupplyProgress(campaign)
+  Svc --> Ctrl : campaign + shifts + supplyProgress
+  Ctrl --> Screen : return data (200)
+  Screen --> User : render details with the Apply button
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 38. Apply & Review ─────────────────────
+@startuml seq-campaign-apply-review
+title Apply and Review Volunteer Assignment Sequence Diagram
+
+actor "Volunteer" as User
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Charity Org" as Org
+
+User -> Screen : pick a role and a shift, then apply
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/apply · /campaigns/:id/shifts/:shiftId/apply
+activate Ctrl
+Ctrl -> Svc : apply(campaignId, userId, dto)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) include specializations, user.status
+Svc -> Repo : kitchenCampaign.findUnique(id) include shifts
+Repo -> DB : SELECT volunteer_profiles / kitchen_campaigns
+DB --> Repo : rows
+Repo --> Svc : volunteer, campaign
+alt No volunteer profile / account not active
+  Svc --> Ctrl : 404 / 403 error
+else the campaign is not recruiting
+  Svc --> Ctrl : 400 "This campaign no longer accepts applications"
+else missing the specialization for the chosen role
+  Svc --> Ctrl : 400 "You do not have the {role} specialization"
+else the shift is already full
+  Svc --> Ctrl : 409 "This shift is full"
+else already assigned to an overlapping shift
+  Svc --> Ctrl : 409 "You already have a shift in this time window"
+else valid
+  Svc -> Repo : campaignVolunteerAssignment.create(status = pending, role, shiftId, workDate)
+  Repo -> DB : INSERT campaign_volunteer_assignments
+  Svc -> Notif : notify(org, "New volunteer application")
+  Notif --> Org : realtime notification
+  Svc --> Ctrl : { assignmentId, status: pending }
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : application submitted, awaiting review (or show error message)
+
+== Organization reviews the application ==
+Org -> Screen : approve or reject an application
+Screen -> Ctrl : PATCH /campaigns/:id/assignments/:assignmentId/review (decision, note?)
+activate Ctrl
+Ctrl -> Svc : reviewAssignment(campaignId, assignmentId, userId, dto)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : campaignVolunteerAssignment.findUnique(assignmentId)
+Repo --> Svc : assignment | null
+alt Caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else not found / status != pending
+  Svc --> Ctrl : 404 / 400 error
+else reject
+  Svc -> Repo : assignment.update(status = rejected, notes)
+else approve
+  group $transaction
+    Svc -> Repo : assignment.update(status = assigned)
+    Svc -> Repo : kitchenCampaign / campaignShift slotsFilled +1 for that role
+    Repo -> DB : UPDATE assignment / kitchen_campaigns / campaign_shifts
+  end
+  alt the slot is already full
+    Svc --> Ctrl : 400 "This role has no free slot left"
+  end
+end
+Svc -> Notif : notify(volunteer, the review outcome)
+Notif --> User : realtime notification
+Svc --> Ctrl : { id, status }
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> Org : application processed
+deactivate Screen
+@enduml
+
+'──────────────────── 39. Start Campaign ─────────────────────
+@startuml seq-campaign-start
+title Start Campaign Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : tap Start campaign
+activate Screen
+Screen -> Ctrl : PATCH /campaigns/:id/start
+activate Ctrl
+Ctrl -> Svc : startCampaign(campaignId, userId)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : kitchenCampaign.findUnique(id) + receiverProfile.findUnique(userId)
+Repo -> DB : SELECT kitchen_campaigns / receiver_profiles
+DB --> Repo : campaign, receiver
+Repo --> Svc : campaign, receiver
+Svc -> Cfg : getNumber(CAMPAIGN_MIN_FILL_PERCENT)
+activate Cfg
+Cfg --> Svc : minPercent
+deactivate Cfg
+Svc -> Svc : startAt = scheduledDate + startTime (VN time)\nopensAt = startAt − CAMPAIGN_START_LEAD_HOURS
+Svc -> Svc : fillRate = (chef + waiter + shipper slotsFilled) / slotsNeeded
+alt Caller does not own the campaign
+  Svc --> Ctrl : 403 "Only the organizing charity can start this campaign"
+else status != open
+  Svc --> Ctrl : 400 "Only campaigns still recruiting can be started"
+else now < opensAt
+  Svc --> Ctrl : 400 "You can open it {N} hours before the start time"
+else now > end of the scheduled day
+  Svc --> Ctrl : 400 "The scheduled date has passed — cancel it instead"
+else fillRate < minPercent
+  Svc --> Ctrl : 400 "Only {filled}/{needed} volunteers recruited"
+else valid
+  Svc -> Repo : kitchenCampaign.update(status = in_progress)
+  Repo -> DB : UPDATE kitchen_campaigns
+  DB --> Repo : campaign
+  Svc -> Svc : findOne(campaignId)
+  Svc --> Ctrl : campaign detail
+  Ctrl --> Screen : return data (200)
+  Screen --> User : campaign is running, volunteers may check in
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 40. Volunteer Check-in ─────────────────
+@startuml seq-campaign-checkin
+title Volunteer Check-in Sequence Diagram
+
+actor "Volunteer" as User
+participant ":MyTaskScreen\n(GPS)" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : arrive at the kitchen and tap Check in
+activate Screen
+Screen -> Screen : read the current GPS position (lng, lat)
+Screen -> Ctrl : POST /campaigns/assignments/:id/advance (lng, lat)
+activate Ctrl
+Ctrl -> Svc : advanceTask(assignmentId, userId, location)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) include user.status
+Svc -> Repo : campaignVolunteerAssignment.findUnique(id) include shift, campaign
+Repo -> DB : SELECT volunteer_profiles / campaign_volunteer_assignments
+DB --> Repo : rows
+Repo --> Svc : volunteer, assignment
+alt Volunteer profile missing or account not active
+  Svc --> Ctrl : 404 / 403 error
+else the assignment belongs to someone else
+  Svc --> Ctrl : 403 "This task is not yours"
+else the campaign is not in_progress
+  Svc --> Ctrl : 400 "Tasks can only advance while the campaign is running"
+else only one of lng / lat supplied
+  Svc --> Ctrl : 400 "Both longitude and latitude are required"
+else valid caller
+  Svc -> Svc : evaluateCheckInWindow(campaign, shift, role, workDate)
+  alt the shift role does not match the assignment role
+    Svc --> Ctrl : 400 "This shift does not match your role"
+  else today is outside the campaign date range
+    Svc --> Ctrl : 400 "Check-in is only allowed on campaign days"
+  else today is not the assigned work date
+    Svc --> Ctrl : 400 "You signed up for {assignedDate}"
+  else before the campaign start time on day one
+    Svc --> Ctrl : 400 "Check-in has not opened yet"
+  else inside the window
+    Svc -> Svc : lateMinutes = current VN time − shift start time
+    Svc -> Repo : $queryRaw ST_DWithin(kitchen_location, ST_MakePoint(lng, lat), 500)
+    Repo -> DB : SELECT kitchen_campaigns
+    DB --> Repo : withinRadius
+    alt outside the 500 m radius around the kitchen
+      Svc --> Ctrl : 400 "You must be at the kitchen to check in"
+    else at the kitchen
+      Svc -> Repo : assignment.update(status = checked_in, checkInTime, checkInLateMinutes)
+      Repo -> DB : UPDATE campaign_volunteer_assignments
+      Svc --> Ctrl : updated assignment
+      Ctrl --> Screen : return data (201)
+      Screen --> User : checked in, late by {lateMinutes} minutes
+    end
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 41. Volunteer Task Progress ────────────
+@startuml seq-campaign-task-progress
+title Volunteer Task Progress Sequence Diagram
+
+actor "Volunteer" as User
+participant ":MyTaskScreen\n(Camera)" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the assigned task after checking in
+activate Screen
+loop checked_in → in_progress → completed
+  User -> Screen : advance the step, attach a proof photo when required
+  opt a proof photo is attached
+    Screen -> Ctrl : upload the proof photo
+    activate Ctrl
+    Ctrl -> Storage : saveImage(photo, 'campaign-proofs')
+    activate Storage
+    Storage --> Ctrl : proofUrl
+    deactivate Storage
+    deactivate Ctrl
+  end
+  Screen -> Ctrl : POST /campaigns/assignments/:id/advance (proofUrl?)
+  activate Ctrl
+  Ctrl -> Svc : advanceTask(assignmentId, userId, {}, proofUrl)
+  activate Svc
+  Svc -> Repo : campaignVolunteerAssignment.findUnique(id) include shift, campaign
+  Repo -> DB : SELECT campaign_volunteer_assignments
+  DB --> Repo : assignment | null
+  Repo --> Svc : assignment
+  alt Assignment not found
+    Svc --> Ctrl : 404 "Task not found"
+  else the assignment belongs to someone else
+    Svc --> Ctrl : 403 "This task is not yours"
+  else the campaign is not in_progress
+    Svc --> Ctrl : 400 "Tasks can only advance while the campaign is running"
+  else no next step (already completed or cancelled)
+    Svc --> Ctrl : 400 "This task is already finished"
+  else valid
+    Svc -> Svc : next = ASSIGN_NEXT[current status]
+    Svc -> Repo : assignment.update(status = next, matching timestamp, proofUrl?)
+    Repo -> DB : UPDATE campaign_volunteer_assignments
+    DB --> Repo : assignment
+    Svc --> Ctrl : updated assignment
+    Ctrl --> Screen : return data (201)
+    Screen --> User : task progress updated
+  end
+  deactivate Svc
+  Ctrl --> Screen : return error (on any failure)
+  deactivate Ctrl
+  Screen --> User : show error message
+end
+deactivate Screen
+@enduml
+
+'──────────────────── 42. Complete Campaign ──────────────────
+@startuml seq-campaign-complete
+title Complete Campaign Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Volunteers" as Volunteers
+
+User -> Screen : close the campaign and report the actual servings
+activate Screen
+Screen -> Ctrl : PATCH /campaigns/:id/complete (actualServings, note?)
+activate Ctrl
+Ctrl -> Svc : completeCampaign(campaignId, userId, dto)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : kitchenCampaign.findUnique(id) include assignments
+Repo -> DB : SELECT kitchen_campaigns JOIN campaign_volunteer_assignments
+DB --> Repo : campaign | null
+Repo --> Svc : campaign
+alt Campaign not found
+  Svc --> Ctrl : 404 NotFound
+else caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else status != in_progress
+  Svc --> Ctrl : 400 "Only a running campaign can be completed"
+else valid
+  group $transaction
+    Svc -> Repo : kitchenCampaign.update(status = completed, actualServings, completedAt)
+    Svc -> Repo : campaignVolunteerAssignment.updateMany(on duty → completed)
+    Svc -> Repo : volunteerProfile.update(dedicationPoints += reward per role)
+    Svc -> Repo : dedicationPointsHistory.createMany(campaign_completed)
+    Repo -> DB : UPDATE kitchen_campaigns / assignments / volunteer_profiles
+  end
+  loop for each volunteer who served
+    Svc -> Notif : notify(volunteer, "Campaign completed — thank you")
+  end
+  Notif --> Volunteers : realtime notification
+  Svc -> Svc : findOne(campaignId)
+  Svc --> Ctrl : campaign detail
+  Ctrl --> Screen : return data (200)
+  Screen --> User : campaign closed, impact figures published
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 43. Cancel Campaign ────────────────────
+@startuml seq-campaign-cancel
+title Cancel Campaign Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Applicants" as Applicants
+
+User -> Screen : cancel a campaign that cannot go ahead
+activate Screen
+Screen -> Ctrl : PATCH /campaigns/:id/cancel (reason?)
+activate Ctrl
+Ctrl -> Svc : cancelCampaign(campaignId, userId)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : kitchenCampaign.findUnique(id) include assignments
+Repo -> DB : SELECT kitchen_campaigns JOIN campaign_volunteer_assignments
+DB --> Repo : campaign | null
+Repo --> Svc : campaign
+alt Campaign not found
+  Svc --> Ctrl : 404 NotFound
+else caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else status not in (draft, open)
+  Svc --> Ctrl : 400 "Only a campaign that has not started can be cancelled"
+else valid
+  group $transaction
+    Svc -> Repo : kitchenCampaign.update(status = cancelled)
+    Svc -> Repo : campaignVolunteerAssignment.updateMany(pending / assigned → cancelled)
+    Repo -> DB : UPDATE kitchen_campaigns / campaign_volunteer_assignments
+  end
+  loop for each applicant and assigned volunteer
+    Svc -> Notif : notify(volunteer, "The campaign was cancelled")
+  end
+  Notif --> Applicants : realtime notification
+  Svc --> Ctrl : { id, status: cancelled }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : campaign cancelled, everyone notified
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 44. Pledge Donation ────────────────────
+@startuml seq-campaign-pledge-donation
+title Pledge Campaign Donation Sequence Diagram
+
+actor "Provider" as User
+participant ":CampaignDetailScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Charity Org" as Org
+
+User -> Screen : pledge a donation (item name, quantity, unit)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/donations (itemName, quantity, unit?, note?)
+activate Ctrl
+Ctrl -> Svc : pledgeDonation(campaignId, providerUserId, dto)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId)
+Svc -> Repo : kitchenCampaign.findUnique(id) select status
+Repo -> DB : SELECT provider_profiles / kitchen_campaigns
+DB --> Repo : rows
+Repo --> Svc : provider, campaign
+alt No provider profile
+  Svc --> Ctrl : 404 "Provider profile not found"
+else campaign not found
+  Svc --> Ctrl : 404 "Campaign not found"
+else status not in (open, in_progress)
+  Svc --> Ctrl : 400 "This campaign no longer accepts donations"
+else valid
+  Svc -> Repo : campaignDonation.create(campaignId, providerId, itemName,\nquantity, note, status = pledged)
+  Repo -> DB : INSERT campaign_donations
+  DB --> Repo : donation
+  Repo --> Svc : donation
+  Svc -> Notif : notify(org, "New donation pledge")
+  Notif --> Org : realtime notification
+  Svc --> Ctrl : donation
+  Ctrl --> Screen : return data (201)
+  Screen --> User : pledge submitted, awaiting the organization
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 45. Confirm Donation ───────────────────
+@startuml seq-campaign-confirm-donation
+title Confirm Campaign Donation Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : confirm the pledged ingredients were received
+activate Screen
+Screen -> Ctrl : PATCH /campaigns/donations/:id/confirm
+activate Ctrl
+Ctrl -> Svc : confirmDonation(donationId, charityUserId)
+activate Svc
+Svc -> Repo : campaignDonation.findUnique(id) include campaign.charityReceiver, provider
+Repo -> DB : SELECT campaign_donations JOIN kitchen_campaigns JOIN provider_profiles
+DB --> Repo : donation | null
+Repo --> Svc : donation
+alt Donation not found
+  Svc --> Ctrl : 404 NotFound
+else caller does not own the campaign
+  Svc --> Ctrl : 403 "Only the organizing charity can confirm this"
+else status = received already
+  Svc --> Ctrl : 400 "This donation was already confirmed"
+else valid
+  Svc -> Repo : campaignDonation.update(status = received, receivedAt = NOW())
+  Repo -> DB : UPDATE campaign_donations
+  DB --> Repo : donation
+  Svc -> Notif : notify(provider, "The organization confirmed receipt")
+  Notif --> Provider : realtime notification
+  Svc --> Ctrl : donation
+  Ctrl --> Screen : return data (200)
+  Screen --> User : counted into the kitchen pantry and the supply progress bar
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 46. Campaign Change Request ────────────
+@startuml seq-campaign-change-request
+title Submit Campaign Change Request Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Admin" as Admin
+
+User -> Screen : request a change (date, time, slots, kitchen location)
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/change-requests (SubmitCampaignChangeDto)
+activate Ctrl
+Ctrl -> Svc : submitChangeRequest(campaignId, userId, dto)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : kitchenCampaign.findUnique(id) select slotsFilled, scheduledDate
+Svc -> Repo : campaignChangeRequest.findFirst(campaignId, status = pending)
+Repo -> DB : SELECT kitchen_campaigns / campaign_change_requests
+DB --> Repo : campaign, pending | null
+Repo --> Svc : campaign, pending
+alt Caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else a request is already awaiting review
+  Svc --> Ctrl : 409 "A change request is already pending"
+else proposed slots below the number already filled
+  Svc --> Ctrl : 400 "You cannot cut slots below the volunteers already approved"
+else proposed date in the past
+  Svc --> Ctrl : 400 BadRequest
+else valid
+  Svc -> Repo : campaignChangeRequest.create(status = pending, proposed fields)
+  Repo -> DB : INSERT campaign_change_requests
+  DB --> Repo : changeRequest
+  Repo --> Svc : changeRequest
+  Svc -> Notif : notifyAdmins("Campaign change request")
+  Notif --> Admin : realtime notification
+  Svc --> Ctrl : changeRequest
+  Ctrl --> Screen : return data (201)
+  Screen --> User : awaiting admin review (see seq-admin-campaigns)
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 47. Cancel Change Request ──────────────
+@startuml seq-campaign-cancel-change-request
+title Cancel Campaign Change Request Sequence Diagram
+
+actor "Charity Org" as User
+participant ":CampaignManageScreen" as Screen
+participant ":CampaignsController" as Ctrl
+participant ":CampaignsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the change requests of a campaign
+activate Screen
+Screen -> Ctrl : GET /campaigns/:id/change-requests
+activate Ctrl
+Ctrl -> Svc : listChangeRequests(campaignId, userId)
+activate Svc
+Svc -> Svc : assertOwner(campaignId, userId)
+Svc -> Repo : campaignChangeRequest.findMany(campaignId) order createdAt desc
+Repo -> DB : SELECT campaign_change_requests
+DB --> Repo : requests[]
+Repo --> Svc : requests
+Svc --> Ctrl : requests[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the request history and their statuses
+
+User -> Screen : withdraw a request that is still pending
+Screen -> Ctrl : PATCH /campaigns/change-requests/:id/cancel
+activate Ctrl
+Ctrl -> Svc : cancelChangeRequest(changeRequestId, userId)
+activate Svc
+Svc -> Repo : campaignChangeRequest.findUnique(id) include campaign.charityReceiver
+Repo -> DB : SELECT campaign_change_requests JOIN kitchen_campaigns
+DB --> Repo : changeRequest | null
+Repo --> Svc : changeRequest
+alt Request not found
+  Svc --> Ctrl : 404 NotFound
+else caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else status != pending
+  Svc --> Ctrl : 400 "Only a pending request can be withdrawn"
+else valid
+  Svc -> Repo : campaignChangeRequest.update(status = cancelled)
+  Repo -> DB : UPDATE campaign_change_requests
+  DB --> Repo : changeRequest
+  Svc --> Ctrl : { id, status: cancelled }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : request withdrawn, the campaign keeps its current details
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml

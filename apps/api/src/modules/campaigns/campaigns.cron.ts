@@ -59,6 +59,22 @@ export class CampaignsCron {
   }
 
   /**
+   * Mỗi giờ: đánh vắng TNV đã được duyệt nhưng hết ngày trực vẫn không điểm danh.
+   *
+   * Chạy theo giờ chứ không nửa đêm: chiến dịch nhiều ngày có ca kết thúc từ sáng,
+   * để tới nửa đêm mới chốt thì suốt cả ngày danh sách vẫn báo "đủ người".
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleMarkAbsentVolunteers() {
+    try {
+      const n = await this.campaigns.markAbsentVolunteers();
+      if (n > 0) this.logger.log(`Marked ${n} volunteer assignment(s) as absent`);
+    } catch (e) {
+      logCronError(this.logger, 'markAbsentVolunteers', e);
+    }
+  }
+
+  /**
    * Mỗi 30 giây: mở khoá các khâu (step) đủ điều kiện.
    * Điều kiện: đến `scheduled_time` (giờ VN) VÀ khâu trước cùng món đã `done`.
    */

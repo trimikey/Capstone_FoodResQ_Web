@@ -271,7 +271,7 @@ export default function DeliveriesPage() {
           }}
         />
       )}
-      <div className="max-w-5xl mx-auto px-6 md:px-12 py-10 space-y-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 md:px-12 py-6 md:py-10 space-y-6 md:space-y-8">
         {/* Header + availability toggle */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -300,7 +300,7 @@ export default function DeliveriesPage() {
           <button
             onClick={handleToggle}
             disabled={setAvailability.isPending || !!active}
-            className={`flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm disabled:opacity-60 ${
+            className={`min-h-12 w-full sm:w-auto justify-center flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm disabled:opacity-60 ${
               me?.isAvailable
                 ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                 : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-50'
@@ -313,7 +313,7 @@ export default function DeliveriesPage() {
 
         {/* Bảng thành tích shipper (kiểu dashboard tài xế) */}
         {me?.isShipper && stats && (
-          <div className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-3xl p-5 space-y-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-3xl p-4 sm:p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-extrabold text-lg text-neutral-900 flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">workspace_premium</span>
@@ -323,7 +323,7 @@ export default function DeliveriesPage() {
                 Hạng {RANK_LABEL[stats.rank] ?? stats.rank}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
               <StatTile icon="local_shipping" value={stats.totalDelivered} label="Đã giao" />
               <StatTile icon="today" value={stats.todayDelivered} label="Hôm nay" />
               <StatTile icon="route" value={`${stats.totalKm} km`} label="Tổng quãng đường" />
@@ -375,7 +375,7 @@ export default function DeliveriesPage() {
         {/* ĐƠN ĐANG GIAO */}
         {active ? (
           <div className="bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-neutral-100 flex items-center gap-4">
+            <div className="p-4 sm:p-6 border-b border-neutral-100 flex items-center gap-3 sm:gap-4">
               <div className="w-14 h-14 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -433,7 +433,7 @@ export default function DeliveriesPage() {
             )}
 
             {/* Steps */}
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="relative flex justify-between mb-8">
                 {STEPS.map((s) => {
                   const curIdx = STEPS.findIndex((x) => x.key === active.status);
@@ -533,7 +533,7 @@ export default function DeliveriesPage() {
                           href={mapsDirUrl(tLat, tLng)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold"
+                          className="shrink-0 min-h-11 flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold"
                         >
                           <span className="material-symbols-outlined text-[18px]">directions</span> Điều hướng
                         </a>
@@ -647,9 +647,9 @@ export default function DeliveriesPage() {
 
             {me?.isAvailable &&
               offers?.map((o) => (
-                <div key={o.id} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
+                <div key={o.id} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5">
+                  <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center gap-4">
+                    <div className="w-full min-[420px]:w-16 h-36 min-[420px]:h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={deliveryImage(o.delivery) ? mediaUrl(deliveryImage(o.delivery)!) : '/food_bread.png'}
@@ -695,7 +695,7 @@ export default function DeliveriesPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Điều hướng tới điểm lấy hàng"
-                        className="shrink-0 w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center"
+                        className="shrink-0 min-w-11 w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center self-end min-[420px]:self-center"
                       >
                         <span className="material-symbols-outlined text-[20px]">directions</span>
                       </a>
@@ -727,18 +727,18 @@ export default function DeliveriesPage() {
                       </div>
                     )}
 
-                  <div className="flex gap-3 mt-4">
+                  <div className="grid grid-cols-2 gap-3 mt-4">
                     <button
                       onClick={() => handleReject(o.deliveryId)}
                       disabled={rejectOffer.isPending}
-                      className="flex-1 py-3 border border-neutral-200 text-neutral-600 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
+                      className="min-h-12 py-3 border border-neutral-200 text-neutral-600 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
                     >
                       Bỏ qua
                     </button>
                     <button
                       onClick={() => handleAccept(o.deliveryId)}
                       disabled={acceptOffer.isPending}
-                      className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                      className="min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50"
                     >
                       Nhận đơn
                     </button>

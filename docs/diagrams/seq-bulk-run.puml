@@ -1,0 +1,341 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Bulk Runs (4)
+' 32. Request & Review · 33. Pickup · 34. Manage Stops · 35. Serve & Close
+'
+' Constants: BULK_MIN_QTY = 2 · REQUEST_EXPIRY_HOURS = 24 ·
+'            PICKUP_DEADLINE_HOURS = 4 · RUN_COMPLETION_HOURS = 8 ·
+'            BULK_CANCEL_PENALTY = 10
+'==============================================================
+
+'──────────────────── 32. Request & Review ───────────────────
+@startuml seq-bulk-request-review
+!include _seq-style.iuml
+title Request and Review Bulk Run Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":Redlock\n(Redis)" as Lock
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : request N portions from one listing
+activate Screen
+Screen -> Ctrl : POST /bulk-runs (RequestBulkRunDto)
+activate Ctrl
+Ctrl -> Svc : request(shipperUserId, dto)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) include specializations
+Svc -> Repo : bulkRun.findFirst(shipperId, active) + delivery.findFirst(shipperId, active)
+Svc -> Repo : foodListing.findFirst(listingId, deletedAt = null)
+Repo -> DB : SELECT volunteer_profiles / bulk_runs / deliveries / food_listings
+DB --> Repo : rows
+Repo --> Svc : volunteer, activeRun, activeDelivery, listing
+alt No VERIFIED shipper specialization
+  Svc --> Ctrl : 403 "Only verified delivery volunteers may take bulk runs"
+else quantity < BULK_MIN_QTY (2)
+  Svc --> Ctrl : 400 "Bulk runs start from 2 portions"
+else already has an active bulk run or single delivery
+  Svc --> Ctrl : 400 "Finish your current task first"
+else listing invalid / past the pickup window / not enough stock
+  Svc --> Ctrl : 404 / 400 error
+else valid
+  Svc -> Repo : bulkRun.create(status = requested)
+  Repo -> DB : INSERT bulk_runs
+  Svc -> Notif : notify(provider, "New bulk run request")
+  Notif --> Provider : realtime notification
+  Svc --> Ctrl : run
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : waiting for provider approval (24 hour deadline)
+
+== Provider handles the request ==
+Provider -> Screen : open the bulk request page
+Screen -> Ctrl : POST /bulk-runs/:id/approve · /reject (reason?)
+activate Ctrl
+Ctrl -> Svc : approve / reject(runId, providerUserId)
+activate Svc
+Svc -> Repo : providerProfile.findUnique(userId) + bulkRun.findUnique(id)
+Repo --> Svc : provider, run
+alt Not found / not the listing owner / status != requested
+  Svc --> Ctrl : 404 / 403 / 400 error
+else reject
+  Svc -> Repo : bulkRun.update(status = rejected, rejectReason)
+  Repo -> DB : UPDATE bulk_runs
+else approve
+  Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
+  activate Lock
+  Lock --> Svc : lock
+  deactivate Lock
+  Svc -> Repo : $queryRaw SELECT quantity_remaining, status, pickup_end_time
+  Repo -> DB : SELECT food_listings
+  DB --> Repo : row
+  alt Listing inactive / past the window / not enough stock
+    Svc --> Ctrl : 400 "Reject the request or wait for a walk-in cancellation"
+  else enough stock
+    group $transaction
+      Svc -> Repo : $executeRaw quantity_remaining −= run.quantity (0 → fully_reserved)
+      Svc -> Repo : bulkRun.update(status = approved, approvedAt)
+      Repo -> DB : UPDATE food_listings / bulk_runs
+    end
+  end
+  Svc -> Lock : release()  <<finally>>
+end
+Svc -> Notif : notify(shipper, the review outcome)
+Notif --> User : realtime notification
+Svc --> Ctrl : { id, status }
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> Provider : decision saved — the shipper must collect within 4 hours
+deactivate Screen
+@enduml
+
+'──────────────────── 33. Pickup ─────────────────────────────
+@startuml seq-bulk-pickup
+title Bulk Run Pickup Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen\n(Camera)" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":StorageService" as Storage
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : arrive at the store and take a handover photo
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/pickup (multipart qcPhoto?)
+activate Ctrl
+opt QC photo attached
+  Ctrl -> Svc : saveProofPhoto(photo)
+  activate Svc
+  Svc -> Storage : saveImage(photo, 'bulk-proofs')
+  activate Storage
+  Storage --> Svc : qcPhotoUrl
+  deactivate Storage
+  deactivate Svc
+end
+Ctrl -> Svc : pickup(runId, shipperUserId, qcPhotoUrl)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+Svc -> Repo : volunteerProfile.findUnique(userId) + bulkRun.findUnique(runId)
+Repo --> Svc : shipper, run
+alt Not found / not the assigned shipper
+  Svc --> Ctrl : 404 / 403 error
+else status != approved
+  Svc --> Ctrl : 400 "The run is not approved yet, or was already collected"
+else valid
+  Svc -> Repo : bulkRunStop.findMany(runId) order orderIndex
+  Repo -> DB : SELECT bulk_run_stops
+  DB --> Repo : stops[]
+  Repo --> Svc : stops
+  Svc -> Svc : getBulkPlaceholderReceiverId()
+  group $transaction
+    Svc -> Repo : bulkRun.update(status = picked_up, pickedUpAt, qcPhotoUrl?)
+    loop for each distribution stop
+      Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt = +24h, status = confirmed)
+    end
+    Repo -> DB : UPDATE bulk_runs / INSERT reservations
+  end
+  Svc -> Notif : notify(shipper, "Collected — {n} QR codes generated")
+  Svc --> Ctrl : { id, status: picked_up, stopCount }
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : per-stop QR list — distribution must finish within 8 hours
+deactivate Screen
+@enduml
+
+'──────────────────── 34. Manage Stops ───────────────────────
+@startuml seq-bulk-manage-stops
+!include _seq-style.iuml
+title Manage Distribution Stops Sequence Diagram
+
+actor "Shipper / Provider" as User
+participant ":BulkRunMapScreen" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+
+User -> Screen : pin, edit or remove a stop on the map
+activate Screen
+alt Add a stop
+  Screen -> Ctrl : POST /bulk-runs/:id/stops (AddStopDto)
+  activate Ctrl
+  Ctrl -> Svc : addStop(runId, userId, dto)
+  activate Svc
+else Edit a stop
+  Screen -> Ctrl : PATCH /bulk-runs/:id/stops/:stopId (UpdateStopDto)
+  activate Ctrl
+  Ctrl -> Svc : updateStop(runId, stopId, userId, dto)
+  activate Svc
+else Remove a stop
+  Screen -> Ctrl : DELETE /bulk-runs/:id/stops/:stopId
+  activate Ctrl
+  Ctrl -> Svc : removeStop(runId, stopId, userId)
+  activate Svc
+end
+Svc -> Repo : bulkRun.findUnique(id) include shipper, provider, _count.stops
+Repo -> DB : SELECT bulk_runs
+DB --> Repo : run | null
+Repo --> Svc : run
+alt Run not found
+  Svc --> Ctrl : 404 NotFound
+else caller is neither the run shipper nor its provider
+  Svc --> Ctrl : 403 Forbidden
+else the run has already finished
+  Svc --> Ctrl : 400 "The run is closed — stops can no longer be edited"
+else already picked up and the caller is the provider
+  Svc --> Ctrl : 403 "The volunteer is on the road — only they can adjust stops"
+else allowed
+  opt plannedQty supplied
+    Svc -> Repo : bulkRunStop.aggregate(SUM plannedQty)
+    Repo --> Svc : used
+    alt used + plannedQty > run.quantity
+      Svc --> Ctrl : 400 "This stop can take at most {quantity − used} portions"
+    end
+  end
+  alt action = add
+    Svc -> Repo : bulkRunStop.create(label, address, plannedQty, orderIndex)
+    Svc -> Repo : $executeRaw UPDATE location = ST_MakePoint(lng, lat)
+    opt the run is already picked_up
+      Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt = +24h)
+    end
+  else action = edit / remove
+    Svc -> Repo : $queryRaw stop LEFT JOIN reservations ON r.bulk_run_stop_id = s.id
+    Repo --> Svc : stop | null
+    alt The stop does not belong to this run
+      Svc --> Ctrl : 404 NotFound
+    else stop.servedQty > 0
+      Svc --> Ctrl : 400 "This stop already served food — it cannot be edited or removed"
+    else still editable
+      alt edit
+        Svc -> Repo : bulkRunStop.update(label, address, plannedQty, note)
+        opt coordinates changed (both lng and lat required)
+          Svc -> Repo : $executeRaw UPDATE location = ST_MakePoint(lng, lat)
+        end
+      else remove
+        group $transaction
+          opt the stop has a bookkeeping reservation
+            Svc -> Repo : reservation.update(status = cancelled, cancellationReason)
+          end
+          Svc -> Repo : bulkRunStop.delete(stopId)
+        end
+      end
+    end
+  end
+  Repo -> DB : INSERT / UPDATE / DELETE bulk_run_stops (+ reservations)
+  Svc --> Ctrl : stop | { id, message }
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the route (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 35. Serve & Close ──────────────────────
+@startuml seq-bulk-serve-close
+!include _seq-style.iuml
+title Serve Portions and Close Bulk Run Sequence Diagram
+
+actor "Shipper" as User
+participant ":BulkRunScreen\n(Camera)" as Screen
+participant ":BulkRunsController" as Ctrl
+participant ":BulkRunsService" as Svc
+participant ":TrustService" as Trust
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Provider" as Provider
+
+User -> Screen : log the portions served at one stop
+activate Screen
+Screen -> Ctrl : POST /bulk-runs/:id/stops/:stopId/serve (servedQty, photo?)
+activate Ctrl
+Ctrl -> Svc : serve(runId, shipperUserId, stopId, dto, photoUrl)
+activate Svc
+Svc -> Svc : ownedRun(runId, shipperUserId)
+alt Not the assigned shipper / status != picked_up
+  Svc --> Ctrl : 403 / 400 error
+else valid
+  Svc -> Repo : $queryRaw stop LEFT JOIN reservations
+  Repo -> DB : SELECT bulk_run_stops
+  DB --> Repo : stop | null
+  alt Stop not in this run / no QR code yet
+    Svc --> Ctrl : 404 / 400 error
+  else recordable
+    Svc -> Repo : $executeRaw UPDATE bulk_runs SET quantity_distributed += servedQty\nWHERE status = 'picked_up' AND quantity_distributed + servedQty <= quantity
+    Repo -> DB : UPDATE bulk_runs
+    DB --> Repo : affectedRows
+    alt affectedRows = 0 (would exceed the quota)
+      Svc --> Ctrl : 400 "Only {remaining} portions are left"
+    else recorded
+      group $transaction
+        Svc -> Repo : bulkRunStop.update(servedQty += n, servedAt, photoUrl?)
+        Svc -> Repo : reservation.update(status = picked_up)
+        Repo -> DB : UPDATE bulk_run_stops / reservations
+      end
+    end
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : stop marked as served (or show error message)
+
+== Closing the run ==
+alt every portion has been served
+  Screen --> User : the system auto-completes the run, no extra tap needed
+else shipper taps Complete / Cancel
+  User -> Screen : tap Complete or Cancel
+  Screen -> Ctrl : POST /bulk-runs/:id/complete · /cancel
+  Ctrl -> Svc : complete / cancel(runId, shipperUserId)
+end
+alt cancelling after pickup
+  Svc --> Ctrl : 400 "Already collected — complete the run instead"
+else cancel (requested / approved)
+  group $transaction
+    Svc -> Repo : bulkRun.update(status = cancelled)
+    opt it had been approved (stock was decremented)
+      Svc -> Repo : restockSql(listingId, run.quantity)
+    end
+    Repo -> DB : UPDATE bulk_runs / food_listings
+  end
+  opt it had been approved
+    Svc -> Trust : applyDelta(shipper, −10, BULK_RUN_CANCELLED_AFTER_APPROVAL)
+  end
+else complete
+  Svc -> Repo : bulkRun.updateMany(id, status = picked_up → completed, completedAt)
+  Repo --> Svc : claimed.count
+  alt claimed.count = 0 (already completed)
+    Svc --> Ctrl : current state, no second reward
+  else claimed
+    Svc -> Svc : leftover = quantity − quantityDistributed\npoints = 5 + servedStops × 2
+    group $transaction
+      opt leftover > 0
+        Svc -> Repo : restockSql(listingId, leftover)
+      end
+      Svc -> Repo : volunteerProfile.update(dedicationPoints += points)
+      Svc -> Repo : dedicationPointsHistory.create(bulk_distribution_completed)
+      Svc -> Repo : reservation.update(unserved stops → completed)
+      Repo -> DB : UPDATE food_listings / volunteer_profiles / reservations
+    end
+    Svc -> Notif : notify(provider, "Bulk run completed — {d}/{q} portions across {n} stops")
+    Notif --> Provider : realtime notification
+  end
+end
+Svc --> Ctrl : { id, status, quantityDistributed, leftover, pointsAwarded }
+Ctrl --> Screen : return data (201) / error
+Screen --> User : run closed and dedication points awarded
+deactivate Screen
+@enduml

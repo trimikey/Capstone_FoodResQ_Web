@@ -14,7 +14,6 @@ import {
   type CampaignTask,
 } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
-import { AppBackground } from '@/components/ui/AppBackground';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
@@ -130,6 +129,13 @@ export default function VolunteerCampaignsScreen() {
     });
   };
 
+  const openTaskDetail = (assignmentId: string) => {
+    router.push({
+      pathname: '/volunteer/tasks/[assignmentId]',
+      params: { assignmentId },
+    });
+  };
+
   const renderOpenEmpty = () => {
     if (openQuery.isLoading) {
       return <ScreenState kind="loading" title="Đang tải chiến dịch" />;
@@ -170,55 +176,53 @@ export default function VolunteerCampaignsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <AppBackground>
-        <ScreenHeader title="Chiến dịch bếp ăn" />
-        <View style={styles.hero}>
-          <Text style={styles.heroKicker}>Volunteer kitchen</Text>
-          <Text style={styles.heroTitle}>Chọn ca bếp ăn và theo dõi việc của bạn</Text>
-        </View>
-        <View style={styles.segmentWrap}>
-          <SegmentedButtons
-            value={segment}
-            onValueChange={(v) => setSegment(v as Segment)}
-            buttons={[
-              { value: 'open', label: 'Đang mở', icon: 'charity' },
-              { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
-            ]}
-            theme={{ colors: { secondaryContainer: COLORS.purpleContainer, onSecondaryContainer: COLORS.purple } }}
-          />
-        </View>
+      <ScreenHeader title="Chiến dịch bếp ăn" />
+      <View style={styles.hero}>
+        <Text style={styles.heroKicker}>Volunteer kitchen</Text>
+        <Text style={styles.heroTitle}>Chọn ca bếp ăn và theo dõi việc của bạn</Text>
+      </View>
+      <View style={styles.segmentWrap}>
+        <SegmentedButtons
+          value={segment}
+          onValueChange={(v) => setSegment(v as Segment)}
+          buttons={[
+            { value: 'open', label: 'Đang mở', icon: 'charity' },
+            { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
+          ]}
+          theme={{ colors: { secondaryContainer: COLORS.purpleContainer, onSecondaryContainer: COLORS.purple } }}
+        />
+      </View>
 
-        {segment === 'open' ? (
-          <FlashList
-            data={openQuery.data ?? []}
-            keyExtractor={(item: Campaign) => item.id}
-            renderItem={({ item, index }: { item: Campaign; index: number }) => (
-              <CampaignCard campaign={item} index={index} onPress={() => openCampaignDetail(item.id, 'open')} />
-            )}
-            contentContainerStyle={styles.list}
-            ListEmptyComponent={renderOpenEmpty}
-            refreshing={openQuery.isRefetching}
-            onRefresh={() => openQuery.refetch()}
-          />
-        ) : (
-          <FlashList
-            data={tasksQuery.data ?? []}
-            keyExtractor={(item: CampaignTask) => item.id}
-            renderItem={({ item }: { item: CampaignTask }) => (
-              <TaskCard
-                task={item}
-                advancing={advanceMut.isPending}
-                onAdvance={() => handleAdvance(item)}
-                onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
-              />
-            )}
-            contentContainerStyle={styles.list}
-            ListEmptyComponent={renderTasksEmpty}
-            refreshing={tasksQuery.isRefetching}
-            onRefresh={() => tasksQuery.refetch()}
-          />
-        )}
-      </AppBackground>
+      {segment === 'open' ? (
+        <FlashList
+          data={openQuery.data ?? []}
+          keyExtractor={(item: Campaign) => item.id}
+          renderItem={({ item }: { item: Campaign }) => (
+            <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
+          )}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={renderOpenEmpty}
+          refreshing={openQuery.isRefetching}
+          onRefresh={() => openQuery.refetch()}
+        />
+      ) : (
+        <FlashList
+          data={tasksQuery.data ?? []}
+          keyExtractor={(item: CampaignTask) => item.id}
+          renderItem={({ item }: { item: CampaignTask }) => (
+            <TaskCard
+              task={item}
+              advancing={advanceMut.isPending}
+              onAdvance={() => handleAdvance(item)}
+              onOpen={() => openTaskDetail(item.id)}
+            />
+          )}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={renderTasksEmpty}
+          refreshing={tasksQuery.isRefetching}
+          onRefresh={() => tasksQuery.refetch()}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -238,7 +242,7 @@ function TaskCard({
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
-  const hasKitchenOps = task.role === 'chef' || task.role === 'waiter';
+  const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter';
 
   return (
     <View style={styles.taskCard}>
@@ -291,7 +295,18 @@ function TaskCard({
         })}
       </View>
 
-      {canAdvance ? (
+      {hasRoleSpecificTask ? (
+        <Button
+          mode="contained"
+          icon={task.role === 'chef' ? 'chef-hat' : 'silverware-fork-knife'}
+          buttonColor={COLORS.primary}
+          onPress={onOpen}
+          style={styles.taskBtn}
+          contentStyle={{ height: 44 }}
+        >
+          Vào nhiệm vụ
+        </Button>
+      ) : canAdvance ? (
         <Button
           mode="contained"
           icon={assignmentStepRequiresPhotoIcon(task.status)}
@@ -307,19 +322,6 @@ function TaskCard({
       ) : (
         <Text style={styles.doneNote}>Bạn đã hoàn thành công việc này. Cảm ơn bạn!</Text>
       )}
-
-      {hasKitchenOps ? (
-        <Button
-          mode="outlined"
-          icon={task.role === 'chef' ? 'clipboard-pulse-outline' : 'silverware-fork-knife'}
-          textColor={COLORS.purple}
-          onPress={onOpen}
-          style={styles.kitchenBtn}
-          contentStyle={{ height: 42 }}
-        >
-          {task.role === 'chef' ? 'Ghi nhật ký ATTP' : 'Ghi phân phát'}
-        </Button>
-      ) : null}
     </View>
   );
 }

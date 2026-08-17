@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Button, Checkbox, Text, TextInput } from 'react-native-paper';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Button, Checkbox, HelperText, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,6 +20,21 @@ import {
 } from './auth/AuthLayout';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
+const VEHICLE_TYPES: ReadonlyArray<{
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+}> = [
+  { label: 'Xe máy', icon: 'motorbike' },
+  { label: 'Xe đạp điện', icon: 'lightning-bolt' },
+  { label: 'Xe đạp', icon: 'bicycle' },
+  { label: 'Ô tô', icon: 'car-outline' },
+  { label: 'Xe tải nhỏ', icon: 'truck-outline' },
+];
+
+// Biển số VN: 2 chữ số tỉnh + 1–2 chữ cái + tùy chọn chữ số + dấu cách/gạch + 4–5 chữ số
+// VD hợp lệ: 59A1-12345 | 51A-12345 | 29B2 12345 | 30H-12345
+const PLATE_REGEX = /^[0-9]{2}[A-ZĐ]{1,2}[0-9]?[ -]?[0-9]{4,5}$/i;
+
 const volunteerInfoSchema = z
   .object({
     idCard: z.string().regex(/^[0-9]{12}$/, 'Số CCCD phải gồm đúng 12 chữ số'),
@@ -34,7 +49,7 @@ const volunteerInfoSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['vehicleType'],
-          message: 'Cần nhập loại phương tiện cho shipper',
+          message: 'Chọn loại phương tiện cho shipper',
         });
       }
       if (!data.plateNumber?.trim()) {
@@ -43,11 +58,11 @@ const volunteerInfoSchema = z
           path: ['plateNumber'],
           message: 'Cần nhập biển số cho shipper',
         });
-      } else if (!/^[0-9]{2}[A-ZĐ]{1,2}[0-9]?[ -]?[0-9]{4,5}$/i.test(data.plateNumber.trim())) {
+      } else if (!PLATE_REGEX.test(data.plateNumber.trim())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['plateNumber'],
-          message: 'Biển số xe không hợp lệ',
+          message: 'Biển số không hợp lệ. VD: 59A1-12345 hoặc 51A-12345',
         });
       }
     }
@@ -282,57 +297,77 @@ export function SignUpVolunteerScreen({
 
           <AuthField label="Ảnh căn cước công dân" error={!idCardPhoto ? 'Cần ảnh CCCD khi gửi đăng ký' : undefined}>
             <View style={styles.selfieBox}>
-              <View style={styles.selfieText}>
-                <MaterialCommunityIcons
-                  name={idCardPhoto ? 'check-decagram' : 'card-account-details-outline'}
-                  size={24}
-                  color={idCardPhoto ? COLORS.teal : COLORS.onSurfaceVariant}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.selfieTitle}>
-                    {idCardPhoto ? 'Đã có ảnh CCCD' : 'Chụp mặt trước CCCD'}
-                  </Text>
-                  <Text style={styles.selfieSub} numberOfLines={2}>
-                    {idCardPhoto ? idCardPhoto.name : 'Ảnh cần rõ chân dung và số CCCD để backend so khớp với selfie.'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.selfieActions}>
-                <Button mode="contained-tonal" icon="camera" onPress={() => handlePickIdCard(true)} disabled={isLoading}>
-                  Chụp
-                </Button>
-                <Button mode="outlined" icon="image" onPress={() => handlePickIdCard(false)} disabled={isLoading}>
-                  Thư viện
-                </Button>
-              </View>
+              {idCardPhoto ? (
+                <>
+                  <Image source={{ uri: idCardPhoto.uri }} style={styles.photoPreviewLandscape} resizeMode="contain" />
+                  <View style={styles.selfieActions}>
+                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickIdCard(true)} disabled={isLoading}>
+                      Chụp lại
+                    </Button>
+                    <Button mode="outlined" icon="image" onPress={() => handlePickIdCard(false)} disabled={isLoading}>
+                      Chọn lại
+                    </Button>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.selfieText}>
+                    <MaterialCommunityIcons name="card-account-details-outline" size={24} color={COLORS.onSurfaceVariant} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selfieTitle}>Chụp mặt trước CCCD</Text>
+                      <Text style={styles.selfieSub} numberOfLines={2}>
+                        Ảnh cần rõ chân dung và số CCCD để đối chiếu với ảnh selfie.
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.selfieActions}>
+                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickIdCard(true)} disabled={isLoading}>
+                      Chụp
+                    </Button>
+                    <Button mode="outlined" icon="image" onPress={() => handlePickIdCard(false)} disabled={isLoading}>
+                      Thư viện
+                    </Button>
+                  </View>
+                </>
+              )}
             </View>
           </AuthField>
 
           <AuthField label="Xác minh khuôn mặt" error={!selfie ? 'Cần selfie khi gửi đăng ký' : undefined}>
             <View style={styles.selfieBox}>
-              <View style={styles.selfieText}>
-                <MaterialCommunityIcons
-                  name={selfie ? 'check-decagram' : 'face-man-profile'}
-                  size={24}
-                  color={selfie ? COLORS.teal : COLORS.onSurfaceVariant}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.selfieTitle}>
-                    {selfie ? 'Đã có ảnh selfie' : 'Chụp ảnh khuôn mặt'}
-                  </Text>
-                  <Text style={styles.selfieSub} numberOfLines={2}>
-                    {selfie ? selfie.name : 'Ảnh này được gửi kèm hồ sơ để backend nhận diện khuôn mặt trước khi tạo tài khoản.'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.selfieActions}>
-                <Button mode="contained-tonal" icon="camera" onPress={() => handlePickSelfie(true)} disabled={isLoading}>
-                  Chụp
-                </Button>
-                <Button mode="outlined" icon="image" onPress={() => handlePickSelfie(false)} disabled={isLoading}>
-                  Thư viện
-                </Button>
-              </View>
+              {selfie ? (
+                <>
+                  <Image source={{ uri: selfie.uri }} style={styles.photoPreviewPortrait} resizeMode="contain" />
+                  <View style={styles.selfieActions}>
+                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickSelfie(true)} disabled={isLoading}>
+                      Chụp lại
+                    </Button>
+                    <Button mode="outlined" icon="image" onPress={() => handlePickSelfie(false)} disabled={isLoading}>
+                      Chọn lại
+                    </Button>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.selfieText}>
+                    <MaterialCommunityIcons name="face-man-profile" size={24} color={COLORS.onSurfaceVariant} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selfieTitle}>Chụp ảnh khuôn mặt</Text>
+                      <Text style={styles.selfieSub} numberOfLines={2}>
+                        Ảnh selfie giúp FoodResQ xác minh khuôn mặt của bạn trước khi tạo tài khoản.
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.selfieActions}>
+                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickSelfie(true)} disabled={isLoading}>
+                      Chụp
+                    </Button>
+                    <Button mode="outlined" icon="image" onPress={() => handlePickSelfie(false)} disabled={isLoading}>
+                      Thư viện
+                    </Button>
+                  </View>
+                </>
+              )}
             </View>
           </AuthField>
 
@@ -387,19 +422,34 @@ export function SignUpVolunteerScreen({
                   control={control}
                   name="vehicleType"
                   render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      mode="outlined"
-                      label="Xe máy, xe đạp, ô tô..."
-                      value={value}
-                      onChangeText={onChange}
-                      editable={!isLoading}
-                      left={<TextInput.Icon icon="motorbike" color={COLORS.onSurfaceVariant} />}
-                      style={authStyles.input}
-                      outlineColor={COLORS.outline}
-                      activeOutlineColor={COLORS.primary}
-                      error={!!errors.vehicleType}
-                      dense
-                    />
+                    <View style={styles.vehicleTypeRow}>
+                      {VEHICLE_TYPES.map((type) => {
+                        const isSelected = value === type.label;
+                        return (
+                          <Pressable
+                            key={type.label}
+                            onPress={() => !isLoading && onChange(type.label)}
+                            disabled={isLoading}
+                            style={[
+                              styles.vehicleChip,
+                              isSelected && styles.vehicleChipSelected,
+                            ]}
+                            accessibilityRole="radio"
+                            accessibilityLabel={type.label}
+                            accessibilityState={{ selected: isSelected, disabled: isLoading }}
+                          >
+                            <MaterialCommunityIcons
+                              name={type.icon}
+                              size={16}
+                              color={isSelected ? COLORS.blue : COLORS.onSurfaceVariant}
+                            />
+                            <Text style={[styles.vehicleChipLabel, isSelected && styles.vehicleChipLabelSelected]}>
+                              {type.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
                   )}
                 />
               </AuthField>
@@ -408,49 +458,68 @@ export function SignUpVolunteerScreen({
                 <Controller
                   control={control}
                   name="plateNumber"
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      mode="outlined"
-                      label="VD: 59A1 12345"
-                      value={value}
-                      onChangeText={onChange}
-                      editable={!isLoading}
-                      left={<TextInput.Icon icon="identifier" color={COLORS.onSurfaceVariant} />}
-                      style={authStyles.input}
-                      outlineColor={COLORS.outline}
-                      activeOutlineColor={COLORS.primary}
-                      error={!!errors.plateNumber}
-                      dense
-                    />
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <>
+                      <TextInput
+                        mode="outlined"
+                        label="VD: 59A1-12345"
+                        value={value}
+                        onChangeText={(v) => onChange(v.toUpperCase().replace(/\s+/g, ' ').trimStart())}
+                        onBlur={onBlur}
+                        autoCapitalize="characters"
+                        editable={!isLoading}
+                        left={<TextInput.Icon icon="identifier" color={COLORS.onSurfaceVariant} />}
+                        style={authStyles.input}
+                        outlineColor={COLORS.outline}
+                        activeOutlineColor={COLORS.primary}
+                        error={!!errors.plateNumber}
+                        dense
+                      />
+                      {!errors.plateNumber && (
+                        <HelperText type="info" visible style={styles.helperText}>
+                          Nhập đúng định dạng. VD: 59A1-12345 (xe máy) hoặc 51A-12345 (ô tô)
+                        </HelperText>
+                      )}
+                    </>
                   )}
                 />
               </AuthField>
 
               <AuthField label="Ảnh biển số xe" error={!vehiclePlatePhoto ? 'Cần ảnh biển số xe' : undefined}>
                 <View style={styles.selfieBox}>
-                  <View style={styles.selfieText}>
-                    <MaterialCommunityIcons
-                      name={vehiclePlatePhoto ? 'check-decagram' : 'image-plus'}
-                      size={24}
-                      color={vehiclePlatePhoto ? COLORS.teal : COLORS.onSurfaceVariant}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.selfieTitle}>
-                        {vehiclePlatePhoto ? 'Đã có ảnh biển số' : 'Chụp ảnh biển số'}
-                      </Text>
-                      <Text style={styles.selfieSub} numberOfLines={2}>
-                        {vehiclePlatePhoto ? vehiclePlatePhoto.name : 'Ảnh cần rõ biển số để admin đối chiếu với số bạn nhập.'}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.selfieActions}>
-                    <Button mode="contained-tonal" icon="camera" onPress={() => handlePickVehiclePlate(true)} disabled={isLoading}>
-                      Chụp
-                    </Button>
-                    <Button mode="outlined" icon="image" onPress={() => handlePickVehiclePlate(false)} disabled={isLoading}>
-                      Thư viện
-                    </Button>
-                  </View>
+                  {vehiclePlatePhoto ? (
+                    <>
+                      <Image source={{ uri: vehiclePlatePhoto.uri }} style={styles.photoPreviewLandscape} resizeMode="contain" />
+                      <View style={styles.selfieActions}>
+                        <Button mode="contained-tonal" icon="camera" onPress={() => handlePickVehiclePlate(true)} disabled={isLoading}>
+                          Chụp lại
+                        </Button>
+                        <Button mode="outlined" icon="image" onPress={() => handlePickVehiclePlate(false)} disabled={isLoading}>
+                          Chọn lại
+                        </Button>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.selfieText}>
+                        <MaterialCommunityIcons name="image-plus" size={24} color={COLORS.onSurfaceVariant} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.selfieTitle}>Chụp ảnh biển số</Text>
+                          <Text style={styles.selfieSub} numberOfLines={2}>
+                            Ảnh cần rõ biển số để admin đối chiếu với số bạn nhập.
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.selfieActions}>
+                        <Button mode="contained-tonal" icon="camera" onPress={() => handlePickVehiclePlate(true)} disabled={isLoading}>
+                          Chụp
+                        </Button>
+                        <Button mode="outlined" icon="image" onPress={() => handlePickVehiclePlate(false)} disabled={isLoading}>
+                          Thư viện
+                        </Button>
+                      </View>
+                    </>
+                  )}
                 </View>
               </AuthField>
             </View>
@@ -580,6 +649,53 @@ const styles = StyleSheet.create({
   },
   mainFooterButton: {
     flex: 2,
+  },
+  photoPreviewLandscape: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerHighest,
+  },
+  photoPreviewPortrait: {
+    width: '60%',
+    alignSelf: 'center',
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceContainerHighest,
+  },
+  vehicleTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  vehicleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+  },
+  vehicleChipSelected: {
+    borderColor: COLORS.blue,
+    backgroundColor: COLORS.blueContainer,
+  },
+  vehicleChipLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.onSurfaceVariant,
+  },
+  vehicleChipLabelSelected: {
+    color: COLORS.blue,
+    fontWeight: '900',
+  },
+  helperText: {
+    fontSize: 11,
+    marginTop: -4,
+    paddingHorizontal: 0,
   },
 });
 

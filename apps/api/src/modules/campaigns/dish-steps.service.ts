@@ -1,14 +1,5 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  CampaignDishStep,
-  CampaignMenuStepStatus,
-  Prisma,
-} from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { CampaignDishStep, CampaignMenuStepStatus, Prisma } from '@prisma/client';
 import { UserRole } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
@@ -62,10 +53,7 @@ export interface CampaignTiming {
  * mà bộ 4 khâu chỉ tồn tại một lần cho mỗi món — đẩy ngày ở trường hợp đó sẽ khoá
  * khâu sai.
  */
-export function stepDueAtUtc(
-  campaign: CampaignTiming,
-  scheduledTime: string,
-): Date {
+export function stepDueAtUtc(campaign: CampaignTiming, scheduledTime: string): Date {
   const startMin = vnHhmmToTotalMinutes(campaign.startTime);
   const endMin = vnHhmmToTotalMinutes(campaign.endTime);
   const stepMin = vnHhmmToTotalMinutes(scheduledTime);
@@ -104,12 +92,9 @@ export class DishStepsService {
         user: { select: { status: true } },
       },
     });
-    if (!volunteer)
-      throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
     if (volunteer.user.status !== 'active') {
-      throw new ForbiddenException(
-        'Tài khoản của bạn chưa ở trạng thái hoạt động.',
-      );
+      throw new ForbiddenException('Tài khoản của bạn chưa ở trạng thái hoạt động.');
     }
 
     const assignment = await this.prisma.campaignVolunteerAssignment.findFirst({
@@ -122,9 +107,7 @@ export class DishStepsService {
       select: { id: true, role: true, status: true },
     });
     if (!assignment) {
-      throw new ForbiddenException(
-        'Bạn chưa được phân công vào chiến dịch này.',
-      );
+      throw new ForbiddenException('Bạn chưa được phân công vào chiến dịch này.');
     }
     return { volunteer, assignment };
   }
@@ -141,9 +124,7 @@ export class DishStepsService {
       select: { id: true },
     });
     if (!receiver || campaign.charityReceiverId !== receiver.id) {
-      throw new ForbiddenException(
-        'Chỉ tổ chức tạo chiến dịch mới thao tác được.',
-      );
+      throw new ForbiddenException('Chỉ tổ chức tạo chiến dịch mới thao tác được.');
     }
     return campaign;
   }
@@ -164,9 +145,7 @@ export class DishStepsService {
     }
     for (const t of scheduledTimes) {
       if (!/^\d{2}:\d{2}$/.test(t)) {
-        throw new BadRequestException(
-          `Giờ dự kiến không hợp lệ: "${t}" (định dạng HH:mm).`,
-        );
+        throw new BadRequestException(`Giờ dự kiến không hợp lệ: "${t}" (định dạng HH:mm).`);
       }
     }
 
@@ -178,9 +157,7 @@ export class DishStepsService {
 
     // Nếu partial (ví dụ seed dở) thì xóa + tạo lại cho clean
     if (existing.length > 0) {
-      await this.prisma.campaignDishStep.deleteMany({
-        where: { campaignId, menuItemId },
-      });
+      await this.prisma.campaignDishStep.deleteMany({ where: { campaignId, menuItemId } });
     }
 
     const data = FIXED_DISH_STEPS.map((step, idx) => ({
@@ -205,9 +182,7 @@ export class DishStepsService {
     scheduledTimes: string[],
   ) {
     await this.assertCampaignOwner(campaignId, userId);
-    const menuItem = await this.prisma.campaignMenuItem.findUnique({
-      where: { id: menuItemId },
-    });
+    const menuItem = await this.prisma.campaignMenuItem.findUnique({ where: { id: menuItemId } });
     if (!menuItem || menuItem.campaignId !== campaignId) {
       throw new NotFoundException('Không tìm thấy món trong chiến dịch này.');
     }
@@ -229,8 +204,7 @@ export class DishStepsService {
     campaign: CampaignTiming,
   ): CampaignMenuStepStatus {
     if (step.status === 'done') return 'done';
-    const onTime =
-      Date.now() >= stepDueAtUtc(campaign, step.scheduledTime).getTime();
+    const onTime = Date.now() >= stepDueAtUtc(campaign, step.scheduledTime).getTime();
     const prevOk = isFirstStep || prevStepDone;
     if (onTime && prevOk) return 'available';
     return 'locked';
@@ -270,10 +244,7 @@ export class DishStepsService {
     const timingById = new Map(campaigns.map((c) => [c.id, c]));
 
     const allSteps = await this.prisma.campaignDishStep.findMany({
-      where: {
-        campaignId: { in: campaigns.map((c) => c.id) },
-        status: { in: ['locked', 'available'] },
-      },
+      where: { campaignId: { in: campaigns.map((c) => c.id) }, status: { in: ['locked', 'available'] } },
       orderBy: [{ menuItemId: 'asc' }, { stepOrder: 'asc' }],
     });
 
@@ -291,9 +262,7 @@ export class DishStepsService {
       for (const s of steps) {
         const timing = timingById.get(s.campaignId);
         // Bỏ qua nếu không tra được campaign — không đủ dữ liệu để neo ngày.
-        const onTime = timing
-          ? nowMs >= stepDueAtUtc(timing, s.scheduledTime).getTime()
-          : false;
+        const onTime = timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime).getTime() : false;
         // Chỉ mở nếu đến giờ VÀ khâu trước đã done.
         if (onTime && prevDone && s.status === 'locked') {
           toOpen.push({ id: s.id });
@@ -306,10 +275,7 @@ export class DishStepsService {
 
     if (toOpen.length === 0) return 0;
     const result = await this.prisma.campaignDishStep.updateMany({
-      where: {
-        id: { in: toOpen.map((x) => x.id) },
-        status: { in: ['locked'] },
-      },
+      where: { id: { in: toOpen.map((x) => x.id) }, status: { in: ['locked'] } },
       data: { status: 'available', openedAt: new Date() },
     });
     return result.count;
@@ -326,18 +292,13 @@ export class DishStepsService {
     campaignId: string,
     userId: string,
     stepId: string,
-    proof?: Express.Multer.File,
-    note?: string,
+    proof: Express.Multer.File | undefined,
+    note: string | undefined,
   ) {
     if (!proof) {
-      throw new BadRequestException(
-        'Vui lòng chụp ảnh bằng chứng trước khi xác nhận hoàn thành khâu.',
-      );
+      throw new BadRequestException('Vui lòng chụp ảnh bằng chứng trước khi xác nhận hoàn thành khâu.');
     }
-    const { volunteer } = await this.assertAssignedVolunteer(
-      campaignId,
-      userId,
-    );
+    const { volunteer } = await this.assertAssignedVolunteer(campaignId, userId);
 
     const step = await this.prisma.campaignDishStep.findUnique({
       where: { id: stepId },
@@ -352,12 +313,7 @@ export class DishStepsService {
     // Lấy timing để computeEffectiveStatus
     const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
       where: { id: campaignId },
-      select: {
-        scheduledDate: true,
-        endDate: true,
-        startTime: true,
-        endTime: true,
-      },
+      select: { scheduledDate: true, endDate: true, startTime: true, endTime: true },
     });
     if (!campaignTiming) {
       throw new NotFoundException('Không tìm thấy chiến dịch.');
@@ -368,12 +324,7 @@ export class DishStepsService {
       where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder - 1 },
       select: { status: true },
     });
-    const effective = this.computeEffectiveStatus(
-      step,
-      prevStep?.status === 'done',
-      step.stepOrder === 1,
-      campaignTiming,
-    );
+    const effective = this.computeEffectiveStatus(step, prevStep?.status === 'done', step.stepOrder === 1, campaignTiming);
     if (effective === 'locked') {
       throw new BadRequestException(
         'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
@@ -403,9 +354,7 @@ export class DishStepsService {
       select: { id: true, scheduledTime: true, status: true },
     });
     if (nextStep && nextStep.status !== 'done') {
-      const now =
-        Math.floor((Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000) / 60_000) %
-        (24 * 60);
+      const now = Math.floor((Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000) / 60_000) % (24 * 60);
       const scheduled = vnHhmmToTotalMinutes(nextStep.scheduledTime);
       if (now >= scheduled) {
         await this.prisma.campaignDishStep.update({
@@ -424,17 +373,9 @@ export class DishStepsService {
   }
 
   /** Nếu tất cả step cuối (order=4) của các món đã done → set assignment = completed. */
-  private async maybeCompleteAssignment(
-    campaignId: string,
-    volunteerId: string,
-  ) {
+  private async maybeCompleteAssignment(campaignId: string, volunteerId: string) {
     const assignment = await this.prisma.campaignVolunteerAssignment.findFirst({
-      where: {
-        campaignId,
-        volunteerId,
-        role: 'chef',
-        status: { in: ['checked_in', 'in_progress'] },
-      },
+      where: { campaignId, volunteerId, role: 'chef', status: { in: ['checked_in', 'in_progress'] } },
     });
     if (!assignment) return;
     const pendingLastSteps = await this.prisma.campaignDishStep.count({
@@ -482,17 +423,13 @@ export class DishStepsService {
 
     // 2. Parse supplyItems (charity khai báo lúc đăng ký)
     //    Schema: [{ name: string, unit?: string, quantity?: number }, ...]
-    type RequestedSupply = {
-      name: string;
-      unit: string | null;
-      quantity: number | null;
-    };
+    type RequestedSupply = { name: string; unit: string | null; quantity: number | null };
     const rawRequested = (campaign.supplyItems as unknown) ?? [];
     const requested: RequestedSupply[] = Array.isArray(rawRequested)
       ? (rawRequested as Array<Record<string, unknown>>)
           .map((it) => ({
             name: typeof it?.name === 'string' ? it.name.trim() : '',
-            unit: typeof it?.unit === 'string' ? it.unit : null,
+            unit: typeof it?.unit === 'string' ? (it.unit as string) : null,
             quantity:
               typeof it?.quantity === 'number'
                 ? it.quantity
@@ -572,20 +509,13 @@ export class DishStepsService {
       throw new BadRequestException('Lý do tối đa 500 ký tự.');
     }
 
-    const { volunteer } = await this.assertAssignedVolunteer(
-      campaignId,
-      userId,
-    );
+    const { volunteer } = await this.assertAssignedVolunteer(campaignId, userId);
 
     const step = await this.prisma.campaignDishStep.findUnique({
       where: { id: stepId },
       include: {
         menuItem: {
-          select: {
-            id: true,
-            customName: true,
-            recipe: { select: { name: true } },
-          },
+          select: { id: true, customName: true, recipe: { select: { name: true } } },
         },
       },
     });
@@ -593,18 +523,14 @@ export class DishStepsService {
       throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
     }
     if (step.status === 'done') {
-      throw new BadRequestException(
-        'Khâu này đã hoàn thành — không thể đánh dấu fail.',
-      );
+      throw new BadRequestException('Khâu này đã hoàn thành — không thể đánh dấu fail.');
     }
     if (step.qcFailedAt) {
       throw new BadRequestException('Khâu này đã được đánh dấu fail trước đó.');
     }
 
     const dishName =
-      step.menuItem.customName ??
-      step.menuItem.recipe?.name ??
-      'Món chưa đặt tên';
+      step.menuItem.customName ?? step.menuItem.recipe?.name ?? 'Món chưa đặt tên';
 
     const updated = await this.prisma.campaignDishStep.update({
       where: { id: stepId },
@@ -639,12 +565,7 @@ export class DishStepsService {
   async getStepsForCampaign(campaignId: string, currentUserId?: string) {
     const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
       where: { id: campaignId },
-      select: {
-        scheduledDate: true,
-        endDate: true,
-        startTime: true,
-        endTime: true,
-      },
+      select: { scheduledDate: true, endDate: true, startTime: true, endTime: true },
     });
 
     // Lấy menu items trước để check nếu cần auto-generate steps
@@ -697,20 +618,21 @@ export class DishStepsService {
     });
 
     // ── Đội bếp: tất cả chef trong campaign ───────────────────────────────
-    const teamAssignments =
-      await this.prisma.campaignVolunteerAssignment.findMany({
-        where: { campaignId, role: 'chef', status: { not: 'cancelled' } },
-        select: {
-          volunteer: {
-            select: {
-              id: true,
-              user: { select: { id: true, fullName: true, avatarUrl: true } },
-            },
+    const teamAssignments = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: { campaignId, role: 'chef', status: { not: 'cancelled' } },
+      select: {
+        id: true,
+        volunteer: {
+          select: {
+            id: true,
+            user: { select: { id: true, fullName: true, avatarUrl: true } },
           },
-          shift: { select: { label: true, startTime: true, endTime: true } },
         },
-      });
+        shift: { select: { id: true, label: true, startTime: true, endTime: true } },
+      },
+    });
     const cookingTeam = teamAssignments.map((a) => ({
+      assignmentId: a.id,
       volunteerId: a.volunteer.id,
       userId: a.volunteer.user.id,
       fullName: a.volunteer.user.fullName,
@@ -738,7 +660,7 @@ export class DishStepsService {
       },
     });
 
-    function mapDish(mi: (typeof reloaded)[number]) {
+    function mapDish(mi: typeof reloaded[number]) {
       return {
         id: mi.id,
         name: mi.customName ?? mi.recipe?.name ?? 'Món chưa đặt tên',
@@ -807,35 +729,21 @@ export class DishStepsService {
       if (!volunteer) return { weekStart, isPersonalView: true, days: [] };
 
       // Lấy assignments của volunteer trong tuần này
-      const assignments =
-        await this.prisma.campaignVolunteerAssignment.findMany({
-          where: {
-            volunteerId: volunteer.id,
-            campaign: {
-              scheduledDate: { gte: weekStart, lt: weekEnd },
-              status: { in: ['open', 'in_progress', 'completed'] },
-            },
+      const assignments = await this.prisma.campaignVolunteerAssignment.findMany({
+        where: {
+          volunteerId: volunteer.id,
+          campaign: {
+            scheduledDate: { gte: weekStart, lt: weekEnd },
+            status: { in: ['open', 'in_progress', 'completed'] },
           },
-          include: {
-            shift: {
-              select: {
-                id: true,
-                label: true,
-                role: true,
-                startTime: true,
-                endTime: true,
-              },
-            },
-            campaign: {
-              select: {
-                id: true,
-                title: true,
-                scheduledDate: true,
-                status: true,
-              },
-            },
+        },
+        include: {
+          shift: { select: { id: true, label: true, role: true, startTime: true, endTime: true } },
+          campaign: {
+            select: { id: true, title: true, scheduledDate: true, status: true },
           },
-        });
+        },
+      });
 
       if (assignments.length === 0) {
         return { weekStart, isPersonalView: true, days: [] };
@@ -857,8 +765,8 @@ export class DishStepsService {
         return {
           date: key,
           campaigns: dayAssignments.map((a) => ({
-            id: a.id, // assignmentId — dùng làm React key
-            campaignId: a.campaign.id, // campaign UUID — dùng cho link
+            id: a.id,                          // assignmentId — dùng làm React key
+            campaignId: a.campaign.id,         // campaign UUID — dùng cho link
             title: a.campaign.title,
             status: a.campaign.status,
             role: a.role,

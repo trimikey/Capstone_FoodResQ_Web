@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl, Pressable, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, ActivityIndicator } from 'react-native-paper';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -38,6 +38,132 @@ import {
   requiresQcPhoto,
 } from '@/utils/delivery';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
+
+interface PhotoReviewState {
+  photo: CapturedImage;
+  action: 'qc' | 'campaign_delivery';
+  delivery: ActiveDelivery;
+}
+
+function PhotoReviewModal({
+  state,
+  onConfirm,
+  onRetake,
+  isConfirming,
+}: {
+  state: PhotoReviewState | null;
+  onConfirm: () => void;
+  onRetake: () => void;
+  isConfirming: boolean;
+}) {
+  return (
+    <Modal
+      visible={state != null}
+      transparent
+      animationType="slide"
+      onRequestClose={isConfirming ? undefined : onRetake}
+    >
+      <View style={styles.reviewOverlay}>
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewTitle}>Xem lại ảnh</Text>
+          {state != null ? (
+            <Image source={{ uri: state.photo.uri }} style={styles.reviewImage} resizeMode="contain" />
+          ) : null}
+          <Text style={styles.reviewHint}>
+            {state?.action === 'qc'
+              ? 'Ảnh lấy hàng tại điểm nhận. Xem lại trước khi xác nhận.'
+              : 'Ảnh bàn giao tại điểm giao. Xem lại trước khi hoàn tất.'}
+          </Text>
+          <View style={styles.reviewActions}>
+            <Button
+              mode="outlined"
+              icon="camera-retake"
+              onPress={onRetake}
+              disabled={isConfirming}
+              textColor={COLORS.danger}
+              style={[styles.reviewBtn, { borderColor: COLORS.danger }]}
+            >
+              Chụp lại
+            </Button>
+            <Button
+              mode="contained"
+              icon="check-circle-outline"
+              onPress={onConfirm}
+              loading={isConfirming}
+              disabled={isConfirming}
+              buttonColor={COLORS.primary}
+              style={styles.reviewBtn}
+            >
+              Xác nhận
+            </Button>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface DeliveredSummary {
+  title: string;
+  recipient: string;
+  quantity: number | null;
+  distanceLabel: string | null;
+}
+
+function DeliveredSuccessModal({ summary, onDismiss }: { summary: DeliveredSummary | null; onDismiss: () => void }) {
+  return (
+    <Modal visible={summary != null} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={styles.successOverlay}>
+        <View style={styles.successCard}>
+          <View style={styles.successIconWrap}>
+            <MaterialCommunityIcons name="check-circle" size={72} color={COLORS.success} />
+          </View>
+          <Text style={styles.successTitle}>Đã giao thành công</Text>
+          <Text style={styles.successSub}>Đơn hàng đã hoàn tất</Text>
+
+          <View style={styles.successDivider} />
+
+          <View style={styles.successDetails}>
+            <View style={styles.successRow}>
+              <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
+              <Text style={styles.successRowText} numberOfLines={2}>{summary?.title}</Text>
+            </View>
+            <View style={styles.successRow}>
+              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
+              <Text style={styles.successRowText}>{summary?.recipient}</Text>
+            </View>
+            {summary?.quantity != null && (
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="package-variant-closed" size={18} color={COLORS.indigo} />
+                <Text style={styles.successRowText}>{summary.quantity} phần</Text>
+              </View>
+            )}
+            {summary?.distanceLabel != null && (
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="map-marker-distance" size={18} color={COLORS.teal} />
+                <Text style={styles.successRowText}>{summary.distanceLabel}</Text>
+              </View>
+            )}
+            <View style={[styles.successRow, styles.pointsRow]}>
+              <MaterialCommunityIcons name="medal-outline" size={18} color={COLORS.warning} />
+              <Text style={[styles.successRowText, styles.pointsText]}>+5 điểm cống hiến</Text>
+            </View>
+          </View>
+
+          <Button
+            mode="contained"
+            buttonColor={COLORS.primary}
+            style={styles.successBtn}
+            contentStyle={styles.successBtnContent}
+            onPress={onDismiss}
+          >
+            OK
+          </Button>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 type RouteTarget = {
   key: 'pickup' | 'dropoff';
@@ -143,9 +269,11 @@ export default function VolunteerActiveScreen() {
   const [qrToken, setQrToken] = useState('');
   const [reportVisible, setReportVisible] = useState(false);
   const [pendingPickupPhoto, setPendingPickupPhoto] = useState<{ deliveryId: string; photo: CapturedImage } | null>(null);
+  const [photoReview, setPhotoReview] = useState<PhotoReviewState | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrScanning, setQrScanning] = useState(false);
   const [torch, setTorch] = useState(false);
+  const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
 
   const delivery = data ?? null;
   const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
@@ -234,13 +362,13 @@ export default function VolunteerActiveScreen() {
           Popup.show({ type: 'info', text1: 'Cần ảnh bàn giao', text2: 'Hãy chụp ảnh thực phẩm tại bếp trước khi hoàn tất.' });
           return;
         }
-        await updateDeliveryStatus(d, next, { photo, successText: 'Đã bàn giao cho bếp' });
+        setPhotoReview({ photo, action: 'campaign_delivery', delivery: d });
       } catch (e: any) {
         void notifyError();
         Popup.show({
           type: 'error',
-          text1: 'Không thể hoàn tất giao hàng',
-          text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+          text1: 'Không mở được camera',
+          text2: e?.message ?? 'Cần quyền camera.',
         });
       }
       return;
@@ -270,9 +398,7 @@ export default function VolunteerActiveScreen() {
           Popup.show({ type: 'info', text1: 'Cần ảnh lấy hàng', text2: 'Hãy chụp ảnh hàng trước khi xác nhận.' });
           return;
         }
-        setPendingPickupPhoto({ deliveryId: d.id, photo });
-        void notifySuccess();
-        Popup.show({ type: 'success', text1: 'Ảnh đã sẵn sàng', text2: 'Bấm xác nhận để chuyển sang bước giao hàng.' });
+        setPhotoReview({ photo, action: 'qc', delivery: d });
       } catch (e: any) {
         Popup.show({ type: 'error', text1: 'Không mở được camera', text2: e?.message ?? 'Cần quyền camera.' });
       }
@@ -310,6 +436,12 @@ export default function VolunteerActiveScreen() {
       void notifyWarning();
       return;
     }
+    const snapshot = {
+      title: delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao',
+      recipient: delivery.reservation?.receiver?.user.fullName ?? delivery.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch',
+      quantity: delivery.reservation?.quantity ?? null,
+      distanceLabel: formatKm(delivery.distanceKm),
+    };
     try {
       setQrScanning(true);
       await updateStatus.mutateAsync({ deliveryId: delivery.id, status: 'delivered' as DeliveryStatus, qrToken: token });
@@ -317,7 +449,7 @@ export default function VolunteerActiveScreen() {
       setQrToken('');
       setQrScannerOpen(false);
       void notifySuccess();
-      Popup.show({ type: 'success', text1: 'Đã giao thành công', text2: 'Đơn đã hoàn tất.' });
+      setDeliveredSummary(snapshot);
     } catch (e: any) {
       void notifyError();
       Popup.show({
@@ -360,6 +492,30 @@ export default function VolunteerActiveScreen() {
     }
   };
 
+  const confirmPhotoReview = async () => {
+    if (!photoReview) return;
+    const { photo, action, delivery } = photoReview;
+    if (action === 'qc') {
+      setPhotoReview(null);
+      setPendingPickupPhoto({ deliveryId: delivery.id, photo });
+      void notifySuccess();
+      Popup.show({ type: 'success', text1: 'Ảnh đã sẵn sàng', text2: 'Bấm xác nhận để chuyển sang bước giao hàng.' });
+    } else {
+      try {
+        await updateDeliveryStatus(delivery, 'delivered', { photo, successText: 'Đã bàn giao cho bếp' });
+      } catch (e: any) {
+        void notifyError();
+        Popup.show({
+          type: 'error',
+          text1: 'Không thể hoàn tất giao hàng',
+          text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+        });
+      } finally {
+        setPhotoReview(null);
+      }
+    }
+  };
+
   if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
     return <Redirect href="/(app)/volunteer/campaigns" />;
   }
@@ -389,6 +545,7 @@ export default function VolunteerActiveScreen() {
               : 'Hãy bật "Sẵn sàng nhận đơn" và nhận lời mời ở tab Đơn cần giao.'}
           </Text>
         </ScrollView>
+        <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
       </SafeAreaView>
     );
   }
@@ -772,6 +929,14 @@ export default function VolunteerActiveScreen() {
         title="Báo cáo sự cố giao hàng"
         onDismiss={() => setReportVisible(false)}
       />
+
+      <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
+      <PhotoReviewModal
+        state={photoReview}
+        onConfirm={() => void confirmPhotoReview()}
+        onRetake={() => setPhotoReview(null)}
+        isConfirming={updateStatus.isPending && photoReview?.action === 'campaign_delivery'}
+      />
     </SafeAreaView>
   );
 }
@@ -977,4 +1142,61 @@ const styles = StyleSheet.create({
   },
   scanningText: { color: '#fff', marginTop: 8, fontWeight: '700' },
   sheetActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.section,
+  },
+  successCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 28,
+    padding: spacing.section,
+    width: '100%',
+    alignItems: 'center',
+    gap: 12,
+    ...elevation.card,
+  },
+  successIconWrap: { marginBottom: 4 },
+  successTitle: { fontSize: 24, fontWeight: '900', color: COLORS.onSurface, textAlign: 'center' },
+  successSub: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  successDivider: { width: '100%', height: 1, backgroundColor: COLORS.outlineVariant, marginVertical: 4 },
+  successDetails: { width: '100%', gap: 10 },
+  successRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  successRowText: { flex: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '600' },
+  pointsRow: {
+    backgroundColor: COLORS.warningContainer,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  pointsText: { color: COLORS.warning, fontWeight: '800' },
+  successBtn: { borderRadius: 14, width: '100%', marginTop: 4 },
+  successBtnContent: { paddingVertical: 8 },
+  reviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    padding: spacing.lg,
+    paddingBottom: 48,
+  },
+  reviewCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 28,
+    padding: spacing.lg,
+    width: '100%',
+    gap: spacing.md,
+  },
+  reviewTitle: { fontSize: 20, fontWeight: '800', color: COLORS.onSurface },
+  reviewImage: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: 16,
+    backgroundColor: '#111',
+  },
+  reviewHint: { fontSize: 13, color: COLORS.onSurfaceVariant, lineHeight: 18 },
+  reviewActions: { flexDirection: 'row', gap: 12 },
+  reviewBtn: { flex: 1, borderRadius: 14 },
 });

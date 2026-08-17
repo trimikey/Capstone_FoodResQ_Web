@@ -1,10 +1,13 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+
+/** Thời gian để người dùng kịp đọc thông báo thành công trước khi bị chuyển trang. */
+const REDIRECT_DELAY_MS = 1500;
 
 export default function ResetPasswordPage() {
   return (
@@ -15,16 +18,27 @@ export default function ResetPasswordPage() {
 }
 
 function ResetPasswordForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [token, setToken] = useState(searchParams.get("token") ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [succeeded, setSucceeded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    },
+    [],
+  );
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (succeeded) return;
     setMessage(null);
     setError(null);
 
@@ -39,9 +53,14 @@ function ResetPasswordForm() {
         token,
         password,
       });
-      setMessage(res.data?.data?.message ?? "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.");
+      const successMessage =
+        res.data?.data?.message ?? "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.";
+      setMessage(`${successMessage} Đang chuyển về trang đăng nhập...`);
+      setSucceeded(true);
       setPassword("");
       setConfirmPassword("");
+      // replace (không push) để nút back không quay lại form với token đã dùng
+      redirectTimer.current = setTimeout(() => router.replace("/login"), REDIRECT_DELAY_MS);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data
@@ -91,7 +110,7 @@ function ResetPasswordForm() {
               onChange={(event) => setToken(event.target.value.trim())}
               placeholder="Dán mã trong email"
               className="w-full min-h-24 px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant border-neutral-200/30"
-              disabled={isSubmitting}
+              disabled={isSubmitting || succeeded}
             />
           </div>
 
@@ -108,7 +127,7 @@ function ResetPasswordForm() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder="NewPassword123"
               className="w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant border-neutral-200/30"
-              disabled={isSubmitting}
+              disabled={isSubmitting || succeeded}
             />
           </div>
 
@@ -125,16 +144,20 @@ function ResetPasswordForm() {
               onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="Nhập lại mật khẩu mới"
               className="w-full px-4 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-outline-variant border-neutral-200/30"
-              disabled={isSubmitting}
+              disabled={isSubmitting || succeeded}
             />
           </div>
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || succeeded}
             className="squishy-button w-full py-3 bg-emerald-800 text-white font-bold text-lg rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Đang cập nhật..." : "Lưu mật khẩu mới"}
+            {succeeded
+              ? "Đang chuyển về đăng nhập..."
+              : isSubmitting
+                ? "Đang cập nhật..."
+                : "Lưu mật khẩu mới"}
           </button>
         </form>
       </section>

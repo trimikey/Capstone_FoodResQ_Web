@@ -1,0 +1,339 @@
+// ==============================================================
+// FoodResQ — ERD for Admin module
+// Source: class-admin.puml → 12 Prisma delegates used by AdminService
+// Apply at: https://dbdiagram.io/d (paste this block)
+// ==============================================================
+
+Project FoodResQ_Admin {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Admin module data model.
+
+  Tables reachable from AdminService through Prisma delegates.
+  Status enums are flattened to varchar in DBML; see schema.prisma
+  for full enum definitions.
+  '''
+}
+
+// ------------------ Enums (as Reference tables for visibility) ------------------
+
+Table UserRole {
+  value varchar [pk, note: 'admin | provider | receiver_individual | receiver_charity | volunteer | shipper']
+}
+
+Table UserStatus {
+  value varchar [pk, note: 'pending_verification | active | banned | suspended']
+}
+
+Table VerificationStatus {
+  value varchar [pk, note: 'pending | verified | rejected']
+}
+
+Table CampaignStatus {
+  value varchar [pk, note: 'draft | open | in_progress | completed | cancelled']
+}
+
+Table CampaignChangeStatus {
+  value varchar [pk, note: 'pending | approved | rejected | cancelled']
+}
+
+Table ReportTargetType {
+  value varchar [pk, note: 'listing | reservation | delivery | campaign | user']
+}
+
+Table ReportReason {
+  value varchar [pk, note: 'food_safety_violation | harassment | spam | other']
+}
+
+Table ReportStatus {
+  value varchar [pk, note: 'pending | resolved | dismissed']
+}
+
+Table AssignmentRole {
+  value varchar [pk, note: 'chef | waiter | shipper']
+}
+
+Table AssignmentStatus {
+  value varchar [pk, note: 'pending | assigned | checked_in | completed | cancelled | no_show']
+}
+
+// ------------------ Core entities ------------------
+
+Table users [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  email varchar(255) [unique, not null]
+  phone varchar(20) [unique]
+  password_hash varchar [not null]
+  full_name varchar(255) [not null]
+  avatar_url varchar
+  role UserRole [not null]
+  status UserStatus [not null, default: 'pending_verification']
+  trust_score smallint [not null, default: 100]
+  fcm_token varchar
+  last_login_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Note: 'Anchor table. Admin locks via setUserStatus → cascade revoke refresh_tokens.'
+
+  Indexes {
+    email [name: 'idx_users_email']
+    (role, status) [name: 'idx_users_role_status']
+  }
+}
+
+Table refresh_tokens [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id, note: 'FK → users.id (CASCADE)']
+  token_hash varchar [unique, not null]
+  device_info varchar(255)
+  ip_address varchar
+  is_revoked boolean [not null, default: false]
+  revoked_at timestamptz
+  expires_at timestamptz [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Composition by users. Banning / password reset wipes all rows.'
+
+  Indexes {
+    token_hash [name: 'idx_refresh_tokens_hash']
+    user_id [name: 'idx_refresh_tokens_user']
+  }
+}
+
+Table provider_profiles [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [unique, not null, ref: > users.id, note: 'FK → users.id (CASCADE)']
+  business_name varchar(255) [not null]
+  business_type varchar [not null, note: 'enum BusinessType in DB']
+  tax_code varchar(50)
+  description text
+  address varchar [not null]
+  location geography(Point, 4326)
+  contact_phone varchar(20)
+  website_url varchar
+  is_verified boolean [not null, default: false]
+  verification_status VerificationStatus [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid [ref: > users.id, note: 'admin who verified']
+  total_food_rescued_kg decimal(10,2) [not null, default: 0]
+  total_co2_saved_kg decimal(10,2) [not null, default: 0]
+  avg_rating decimal(3,2)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Admin reviewVerification writes here + audit_logs in one tx.'
+
+  Indexes {
+    user_id [name: 'idx_provider_user']
+    location [type: gist, name: 'idx_provider_location']
+  }
+}
+
+Table volunteer_profiles [headercolor: #2E7D32] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [unique, not null, ref: > users.id, note: 'FK → users.id (CASCADE)']
+  id_card_number varchar(50)
+  id_card_image_url varchar
+  face_image_url varchar
+  face_descriptor jsonb
+  current_location geography(Point, 4326)
+  location_updated_at timestamptz
+  is_available boolean [not null, default: false]
+  dedication_points int [not null, default: 0]
+  rank varchar [not null, default: 'newcomer', note: 'enum VolunteerRank in DB']
+  vehicle_type varchar(50)
+  vehicle_plate varchar(20)
+  avg_rating decimal(3,2)
+  verification_status VerificationStatus [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid [ref: > users.id, note: 'admin who verified']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Admin reviewVerification flips verification_status.'
+
+  Indexes {
+    user_id [name: 'idx_volunteer_user']
+    is_available [name: 'idx_volunteer_available']
+    current_location [type: gist, name: 'idx_volunteer_location']
+  }
+}
+
+// ------------------ Campaigns ------------------
+
+Table kitchen_campaigns [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  charity_receiver_id uuid [not null, ref: > users.id, note: 'charity receiver User.id']
+  title varchar(255) [not null]
+  description text
+  kitchen_address varchar [not null]
+  kitchen_location geography(Point, 4326)
+  scheduled_date date [not null]
+  end_date date
+  start_time varchar(8) [not null]
+  end_time varchar(8) [not null]
+  chef_slots_needed smallint [not null, default: 0]
+  waiter_slots_needed smallint [not null, default: 0]
+  shipper_slots_needed smallint [not null, default: 0]
+  chef_slots_filled smallint [not null, default: 0]
+  waiter_slots_filled smallint [not null, default: 0]
+  shipper_slots_filled smallint [not null, default: 0]
+  status CampaignStatus [not null, default: 'draft']
+  expected_servings int
+  actual_servings int
+  image_urls jsonb [not null, default: `'[]'::jsonb`]
+  notes text
+  menu_items jsonb [not null, default: `'[]'::jsonb`]
+  schedule_items jsonb [not null, default: `'[]'::jsonb`]
+  supply_items jsonb [not null, default: `'[]'::jsonb`]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Admin can create + setCampaignStatus (override).'
+}
+
+Table campaign_volunteer_assignments [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  role AssignmentRole [not null]
+  status AssignmentStatus [not null, default: 'assigned']
+  check_in_time timestamptz
+  check_in_late_minutes int
+  check_in_location geography(Point, 4326)
+  check_out_time timestamptz
+  ingredient_proof_url varchar
+  ingredient_proof_at timestamptz
+  cooked_proof_url varchar
+  cooked_proof_at timestamptz
+  distribution_proof_url varchar
+  distribution_proof_at timestamptz
+  points_awarded smallint
+  notes text
+  shift_id uuid
+  work_date date
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Admin assign/unassign lives here.'
+
+  Indexes {
+    (campaign_id, volunteer_id, role) [name: 'idx_assign_campaign_volunteer_role']
+    campaign_id [name: 'idx_assign_campaign']
+    volunteer_id [name: 'idx_assign_volunteer']
+  }
+}
+
+Table campaign_change_requests [headercolor: #1565C0] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id, note: 'CASCADE']
+  requested_by_user_id uuid [not null, ref: > users.id]
+  status CampaignChangeStatus [not null, default: 'pending']
+  reason text
+  scheduled_date date
+  end_date date
+  start_time varchar(8)
+  end_time varchar(8)
+  kitchen_address varchar
+  lng float8
+  lat float8
+  chef_slots_needed smallint
+  waiter_slots_needed smallint
+  shipper_slots_needed smallint
+  review_note text
+  reviewed_by_user_id uuid [ref: > users.id, note: 'admin']
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  Note: 'Admin reviews via reviewCampaignChangeRequest → approves → applies to campaign.'
+
+  Indexes {
+    campaign_id [name: 'idx_campaign_change_campaign']
+    status [name: 'idx_campaign_change_status']
+  }
+}
+
+// ------------------ Catalog / Reports / Audit ------------------
+
+Table food_catalog_categories [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(120) [not null]
+  group varchar(20) [not null, default: 'other', note: 'ready_to_eat | raw_ingredient | other']
+  description text
+  sort_order int [not null, default: 0]
+  is_active boolean [not null, default: true]
+  created_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+
+  Note: 'Composition: items live inside category.'
+}
+
+Table food_catalog_items [headercolor: #6A1B9A] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  category_id uuid [not null, ref: > food_catalog_categories.id, note: 'CASCADE via composition']
+  name varchar(255) [not null]
+  description text
+  is_active boolean [not null, default: true]
+  created_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Belongs to one category; soft-disabled rather than deleted to keep history.'
+}
+
+Table reports [headercolor: #EF6C00] {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reporter_id uuid [not null, ref: > users.id, note: 'FK ReporterRelation']
+  target_type ReportTargetType [not null]
+  target_id uuid [not null, note: 'polymorphic target (listing | reservation | delivery | campaign | user)']
+  reason ReportReason [not null]
+  description text
+  evidence_urls jsonb [not null, default: `'[]'::jsonb`]
+  status ReportStatus [not null, default: 'pending']
+  resolver_id uuid [ref: > users.id, note: 'admin, FK ResolverRelation']
+  resolution_note text
+  resolved_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Admin resolves → set status + resolver_id + resolved_at.'
+
+  Indexes {
+    status [name: 'idx_reports_status']
+    (target_type, target_id) [name: 'idx_reports_target']
+    reporter_id [name: 'idx_reports_reporter']
+  }
+}
+
+Table audit_logs [headercolor: #424242] {
+  id bigint [pk, increment]
+  actor_id uuid [ref: > users.id, note: 'admin user id (nullable)']
+  action varchar(100) [not null]
+  target_type varchar(50)
+  target_id uuid
+  payload jsonb
+  ip_address varchar
+  user_agent varchar
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Every admin mutation writes a row here in the same transaction.'
+
+  Indexes {
+    (actor_id, created_at) [name: 'idx_audit_actor_created', note: 'descending on created_at']
+    (target_type, target_id) [name: 'idx_audit_target']
+  }
+}
+
+Table system_configs [headercolor: #424242] {
+  id int [pk, increment]
+  key varchar(100) [unique, not null]
+  value jsonb [not null]
+  description text
+  updated_by uuid [ref: > users.id, note: 'admin']
+  updated_at timestamptz [not null]
+
+  Note: 'Single source of truth for runtime business parameters.'
+}

@@ -17,6 +17,7 @@ import {
 } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
 import ShipperTaskView from './ShipperTaskView';
+import WaiterTaskView from './WaiterTaskView';
 import { errMsg, mediaUrl } from '@/lib/utils';
 
 const STEP_ICONS: Record<number, string> = {
@@ -118,6 +119,9 @@ export default function MyTaskDetailPage() {
   const statusMeta = STATUS_META[assignment.status] ?? { label: assignment.status, chip: 'cm-chip cm-chip--ink' };
   const isShipper = assignment.role === 'shipper';
   const isChef = assignment.role === 'chef';
+  // Phục vụ không nấu — họ chờ bếp ra món rồi chia suất, nên có màn riêng như shipper
+  // thay vì dùng chung bảng 4 khâu của đầu bếp.
+  const isWaiter = assignment.role === 'waiter';
 
   const notCheckedIn = !['checked_in', 'in_progress', 'completed'].includes(assignment.status);
   const canAct = !notCheckedIn && assignment.status !== 'completed';
@@ -219,7 +223,7 @@ export default function MyTaskDetailPage() {
 
       {/* Shipper có quy trình khác hẳn bếp: không có 4 khâu nấu, mà là chuỗi việc
           giao nhận theo giờ. Tách hẳn view riêng cho khỏi nhồi hai luồng vào một chỗ. */}
-      {isShipper && (
+      {(isShipper || isWaiter) && (
         <>
           <header className="cm-card mb-4 p-5">
             <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
@@ -235,11 +239,15 @@ export default function MyTaskDetailPage() {
             </p>
             <span className={`${statusMeta.chip} mt-3 inline-flex`}>{statusMeta.label}</span>
           </header>
-          <ShipperTaskView detail={detail} onCheckedIn={() => void refetch()} />
+          {isShipper ? (
+            <ShipperTaskView detail={detail} onCheckedIn={() => void refetch()} />
+          ) : (
+            <WaiterTaskView detail={detail} onCheckedIn={() => void refetch()} />
+          )}
         </>
       )}
 
-      {!isShipper && (
+      {!isShipper && !isWaiter && (
       <>
 
       {/* Header */}

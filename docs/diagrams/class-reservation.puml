@@ -1,0 +1,138 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Reservations (1)
+' Create · My Orders · Handover · Cancel & Rate
+'==============================================================
+'
+' Giải thích:
+'   Create: toàn bộ chuỗi kiểm tra và trừ kho chạy dưới Redis lock trên listing. Hạn mức trong
+'   ngày, khung giờ nhận và tồn kho được kiểm tra, rồi dòng reservation và lệnh trừ kho được ghi
+'   trong cùng một transaction nên hai thứ này không bao giờ lệch nhau. Đơn giao hàng còn tạo thêm
+'   Delivery và bắt đầu phát tin tới shipper — bước này chạy ngoài lock để không bắt người dùng chờ.
+'   My Orders: các màn hình chỉ đọc cho cả hai phía của giao dịch, có phân trang và gom nhóm theo
+'   trạng thái. Receiver xem đơn của mình, provider xem đơn đặt vào listing của mình; cả hai đi qua
+'   cùng một service, chỉ khác profile xuất phát.
+'   Handover: ba endpoint, hai đường xác minh. scanQr định danh đơn từ QR token và đánh dấu đã quét.
+'   confirmPickupByProvider là đường "nhìn mắt thường": provider tự đối chiếu khuôn mặt, ảnh đã đăng
+'   ký được lưu làm bằng chứng. submitPickupProof là đường tự động: rút descriptor từ ảnh chụp tại
+'   chỗ, so với descriptor đã đăng ký, lệch thì trả 403.
+'   Cancel & Rate: huỷ trong vòng 30 phút trước pickup_end_time bị trừ 10 điểm uy tín, và frontend
+'   cảnh báo kèm điểm dự kiến trước khi gọi API. Huỷ đơn giao hàng còn đóng delivery, thu hồi các
+'   offer đang treo và giải phóng shipper — trừ khi shipper đã lấy hàng rồi. Chỉ được đánh giá sau
+'   khi đơn đã completed.
+@startuml class-reservation
+title Reservation Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Reservation" {
+
+  class ReservationsController {
+    +create(user: User, dto: CreateReservationDto): Promise<ReservationResult>
+    +myReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>
+    +providerReservations(user: User, page: number, limit: number, group: string): Promise<PagedOrders>
+    +findOne(id: string, user: User): Promise<OrderDetail>
+    +scanQr(dto: ScanQrDto, user: User): Promise<ScanResult>
+    +confirmPickup(id: string, user: User): Promise<CompleteResult>
+    +submitPickupProof(id: string, user: User, dto: SubmitPickupProofDto, photo: File): Promise<CompleteResult>
+    +cancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>
+    +providerCancel(id: string, user: User, dto: CancelReservationDto): Promise<CancelResult>
+    +rate(id: string, user: User, dto: RateReservationDto): Promise<Rating>
+  }
+
+  class ReservationsService {
+    -prisma: PrismaService
+    -systemConfig: SystemConfigService
+    -redlock: Redlock
+    -deliveries: DeliveriesService
+    -faceMatch: FaceMatchService
+    -storage: StorageService
+    -trust: TrustService
+    -notifications: NotificationsService
+    +create(receiverUserId: string, dto: CreateReservationDto): Promise<ReservationResult>
+    -createDeliveryAsync(reservationId: string, listingId: string): Promise<void>
+    +findMyReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>
+    +findProviderReservations(userId: string, page: number, limit: number, group: string): Promise<PagedOrders>
+    +findOne(id: string, userId: string): Promise<OrderDetail>
+    +scanQr(qrToken: string, scannerUserId: string): Promise<ScanResult>
+    +confirmPickupByProvider(reservationId: string, scannerUserId: string): Promise<CompleteResult>
+    +submitPickupProof(reservationId: string, userId: string, type: PickupVerificationType, photo: File): Promise<CompleteResult>
+    +cancel(reservationId: string, userId: string, reason: string): Promise<CancelResult>
+    +providerCancel(reservationId: string, providerUserId: string, reason: string): Promise<CancelResult>
+    +rateReservation(reservationId: string, userId: string, dto: RateReservationDto): Promise<Rating>
+  }
+}
+
+class CreateReservationDto
+class ScanQrDto
+class SubmitPickupProofDto
+class CancelReservationDto
+class RateReservationDto
+
+class SystemConfigService {
+  +getAll(): Promise<ConfigItem[]>
+  +getNumber(key: string): Promise<number>
+  +set(key: string, value: number, userId: string): Promise<ConfigItem>
+}
+
+class Redlock {
+  +acquire(resources: string[], ttl: number): Promise<Lock>
+  +release(): Promise<void>
+}
+
+class DeliveriesService {
+  +broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>
+  +createDeliveryAsync(reservationId: string, listingId: string): Promise<void>
+}
+
+class FaceMatchService {
+  +getFaceDescriptor(photo: File): Promise<number[]>
+  +compare(a: number[], b: number[]): MatchResult
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class TrustService {
+  +applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +reservation: ReservationDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +providerProfile: ProviderProfileDelegate
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +rating: RatingDelegate
+}
+
+ReservationsController "1" --> "1" ReservationsService
+ReservationsController ..> CreateReservationDto
+ReservationsController ..> ScanQrDto
+ReservationsController ..> SubmitPickupProofDto
+ReservationsController ..> CancelReservationDto
+ReservationsController ..> RateReservationDto
+
+ReservationsService "1" --> "1" SystemConfigService
+ReservationsService "1" --> "1" Redlock
+ReservationsService "1" --> "1" DeliveriesService
+ReservationsService "1" --> "1" FaceMatchService
+ReservationsService "1" --> "1" StorageService
+ReservationsService "1" --> "1" TrustService
+ReservationsService "1" --> "1" NotificationsService
+ReservationsService "1" --> "1" PrismaService
+@enduml

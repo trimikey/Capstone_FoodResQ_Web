@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { useOnboardingStore } from '../../stores/onboarding';
 import { getErrorMessage } from '../../hooks/useErrorHandler';
+import { uploadRegisterEvidenceToBackend } from '../../services/imageUpload';
 
 interface SignUpVerificationScreenProps {
   navigation: any;
@@ -34,6 +35,11 @@ export default function SignUpVerificationScreen({
     try {
       setIsSubmitting(true);
       const isCharity = recipientData.recipientType === 'charity' || !!recipientData.isCharityOrg;
+      const evidenceUrls = isCharity && verificationData.charityEvidence?.length
+        ? await Promise.all(
+            verificationData.charityEvidence.map((image) => uploadRegisterEvidenceToBackend(image.uri)),
+          )
+        : undefined;
 
       // Gộp dữ liệu các bước (store register chỉ lấy email/password/name->fullName/role)
       const fullData = {
@@ -44,6 +50,7 @@ export default function SignUpVerificationScreen({
         ...(isCharity && recipientData.organizationName?.trim()
           ? { businessName: recipientData.organizationName.trim() }
           : {}),
+        ...(evidenceUrls?.length ? { evidenceUrls } : {}),
         ...(verificationData.selfie ? { selfie: verificationData.selfie } : {}),
       };
 

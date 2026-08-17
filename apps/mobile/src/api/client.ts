@@ -1,7 +1,60 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+const DEFAULT_API_URL = 'http://localhost:3001/api/v1';
+const ANDROID_EMULATOR_HOST = '10.0.2.2';
+
+function replaceUrlHost(url: string, host: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hostname = host;
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return `http://${host}:3001/api/v1`;
+  }
+}
+
+function getMetroApiUrl(): string | null {
+  const metroHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  return metroHost ? `http://${metroHost}:3001/api/v1` : null;
+}
+
+function isAndroidEmulator(): boolean {
+  if (Platform.OS !== 'android') return false;
+
+  const constants = Platform.constants as Record<string, unknown>;
+  const fingerprint = String(constants.Fingerprint ?? '').toLowerCase();
+  const model = String(constants.Model ?? '').toLowerCase();
+  const brand = String(constants.Brand ?? '').toLowerCase();
+  const manufacturer = String(constants.Manufacturer ?? '').toLowerCase();
+
+  return [fingerprint, model, brand, manufacturer].some((value) =>
+    /emulator|sdk|google_sdk|genymotion|x86|ranchu/.test(value)
+  );
+}
+
+// Dev URL strategy:
+// - Android emulator: 10.0.2.2 points to the host machine.
+// - Physical devices: use EXPO_PUBLIC_API_URL, which should be the host LAN IP.
+// - iOS simulator fallback: localhost.
+function getApiUrl(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+
+  if (__DEV__ && isAndroidEmulator()) {
+    return replaceUrlHost(envUrl ?? DEFAULT_API_URL, ANDROID_EMULATOR_HOST);
+  }
+
+  if (envUrl) {
+    return envUrl;
+  }
+
+  return (__DEV__ && getMetroApiUrl()) || DEFAULT_API_URL;
+}
+
+export const API_URL = getApiUrl();
+export const API_ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, '');
 
 /**
  * Axios instance for API calls
@@ -347,8 +400,16 @@ export const endpoints = {
     apply: (id: string) => `/campaigns/${id}/apply`,
     // Volunteer: các công việc đã đăng ký
     myTasks: '/campaigns/my-tasks',
+    myTaskDetail: (assignmentId: string) => `/campaigns/my-tasks/${assignmentId}`,
     // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
+    completeDishStep: (campaignId: string, stepId: string) =>
+      `/campaigns/${campaignId}/dish-steps/${stepId}/complete`,
+    flagDishStepQcFail: (campaignId: string, stepId: string) =>
+      `/campaigns/${campaignId}/dish-steps/${stepId}/qc-fail`,
+    supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
+    completeDistribution: (distributionId: string) =>
+      `/campaigns/distributions/${distributionId}/complete`,
   },
   recipes: {
     // Thư viện công thức nấu ăn (đầu bếp/chef đóng góp). List + detail công khai.

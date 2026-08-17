@@ -39,12 +39,14 @@ import {
   CAMPAIGN_REVIEW_STEP,
   dateFromTime,
   fmtDate,
+  getCampaignMenuSummary,
   getCampaignStepError,
   hasCampaignDraftData,
   normalizeCampaignMenuItems,
   normalizeCampaignScheduleItems,
   normalizeCampaignShifts,
   normalizeCampaignSupplyItems,
+  SUPPLY_UNIT_OPTIONS,
   toInt,
   toTimeStr,
   toDateStr,
@@ -78,22 +80,326 @@ const SHIFT_TEMPLATES: CampaignShiftDraft[] = [
 ];
 
 const SCHEDULE_TEMPLATES: CampaignScheduleDraft[] = [
-  { time: '06:00', label: 'Tập trung tại bếp, phân công nhiệm vụ' },
-  { time: '06:30', label: 'Kiểm tra nguyên liệu, dụng cụ và thiết bị bếp' },
-  { time: '08:00', label: 'Bắt đầu nấu các món chính' },
-  { time: '10:30', label: 'Đóng gói suất, dán nhãn' },
-  { time: '12:00', label: 'Bắt đầu phát suất cho người nhận' },
-  { time: '13:30', label: 'Kết thúc phát suất, dọn dẹp khu vực' },
+  { time: '06:00', label: 'Chuẩn bị bếp và phân công nhiệm vụ' },
+  { time: '06:30', label: 'Nhận và kiểm tra vật phẩm hỗ trợ' },
+  { time: '08:00', label: 'Sơ chế và nấu các món chính' },
+  { time: '10:30', label: 'Kiểm tra chất lượng, đóng gói suất ăn' },
+  { time: '12:00', label: 'Phát suất ăn và điều phối giao nhận' },
+  { time: '13:30', label: 'Dọn dẹp khu vực, báo cáo số suất' },
+];
+
+type SupplyUnit = (typeof SUPPLY_UNIT_OPTIONS)[number];
+type SupplyCategoryId = 'staple' | 'protein' | 'vegetable' | 'seasoning' | 'packaging' | 'operation';
+
+type SupplyCatalogItem = CampaignSupplyDraft & {
+  category: SupplyCategoryId;
+  unit: SupplyUnit;
+  quantity: number;
+};
+
+const SUPPLY_CATEGORY_LABELS: Record<SupplyCategoryId, string> = {
+  staple: 'Nguyên liệu chính',
+  protein: 'Đạm',
+  vegetable: 'Rau củ',
+  seasoning: 'Gia vị',
+  packaging: 'Đóng gói',
+  operation: 'Vận hành',
+};
+
+const SUPPLY_CATALOG: SupplyCatalogItem[] = [
+  { category: 'staple', name: 'Gạo sạch', quantity: 12, unit: 'kg' },
+  { category: 'staple', name: 'Mì/nui', quantity: 8, unit: 'kg' },
+  { category: 'staple', name: 'Gạo nấu cháo', quantity: 6, unit: 'kg' },
+  { category: 'staple', name: 'Bánh mì', quantity: 100, unit: 'cái' },
+  { category: 'protein', name: 'Trứng gà', quantity: 100, unit: 'quả' },
+  { category: 'protein', name: 'Thịt heo', quantity: 10, unit: 'kg' },
+  { category: 'protein', name: 'Thịt gà', quantity: 10, unit: 'kg' },
+  { category: 'protein', name: 'Cá', quantity: 10, unit: 'kg' },
+  { category: 'protein', name: 'Đậu hũ', quantity: 15, unit: 'kg' },
+  { category: 'vegetable', name: 'Rau xanh', quantity: 12, unit: 'kg' },
+  { category: 'vegetable', name: 'Củ quả', quantity: 15, unit: 'kg' },
+  { category: 'vegetable', name: 'Nấm', quantity: 5, unit: 'kg' },
+  { category: 'seasoning', name: 'Dầu ăn', quantity: 2, unit: 'chai' },
+  { category: 'seasoning', name: 'Nước mắm/nước tương', quantity: 2, unit: 'chai' },
+  { category: 'seasoning', name: 'Muối/đường', quantity: 3, unit: 'kg' },
+  { category: 'packaging', name: 'Hộp đựng suất ăn', quantity: 105, unit: 'hộp' },
+  { category: 'packaging', name: 'Ly/hộp đựng cháo', quantity: 84, unit: 'cái' },
+  { category: 'packaging', name: 'Muỗng/đũa dùng một lần', quantity: 105, unit: 'bộ' },
+  { category: 'operation', name: 'Găng tay nilon', quantity: 2, unit: 'hộp' },
+  { category: 'operation', name: 'Khẩu trang', quantity: 2, unit: 'hộp' },
+  { category: 'operation', name: 'Thùng giữ nhiệt', quantity: 3, unit: 'thùng' },
+  { category: 'operation', name: 'Túi rác', quantity: 2, unit: 'hộp' },
+  { category: 'operation', name: 'Nước rửa tay', quantity: 2, unit: 'chai' },
 ];
 
 const SUPPLY_TEMPLATES: CampaignSupplyDraft[] = [
-  { name: 'Gạo sạch', quantity: 10, unit: 'kg' },
-  { name: 'Rau củ các loại', quantity: 5, unit: 'kg' },
-  { name: 'Trứng gà', quantity: 30, unit: 'quả' },
-  { name: 'Hộp đựng suất ăn', quantity: 100, unit: 'hộp' },
-  { name: 'Găng tay nilon', quantity: 2, unit: 'hộp' },
-  { name: 'Thùng giữ nhiệt', quantity: 3, unit: 'thùng' },
+  'Gạo sạch',
+  'Trứng gà',
+  'Rau xanh',
+  'Củ quả',
+  'Hộp đựng suất ăn',
+  'Muỗng/đũa dùng một lần',
+  'Găng tay nilon',
+  'Thùng giữ nhiệt',
+].map((name) => {
+  const item = SUPPLY_CATALOG.find((candidate) => candidate.name === name)!;
+  return { name: item.name, quantity: item.quantity, unit: item.unit };
+});
+
+const MENU_QUICK_TEMPLATES: CampaignMenuDraft[] = [
+  { name: 'Cơm trưa 100 suất', type: 'lunch', plannedServings: 100 },
+  { name: 'Cháo sáng dinh dưỡng', type: 'breakfast', plannedServings: 80 },
+  { name: 'Suất ăn chay', type: 'lunch', plannedServings: 100 },
 ];
+
+type CampaignScenarioPreset = {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  campaignTitle: string;
+  description: string;
+  expectedServings: number;
+  startTime: string;
+  endTime: string;
+  chefSlots: number;
+  waiterSlots: number;
+  shipperSlots: number;
+  supplies: CampaignSupplyDraft[];
+  menu: CampaignMenuDraft[];
+  schedule: CampaignScheduleDraft[];
+};
+
+const CAMPAIGN_SCENARIO_PRESETS: CampaignScenarioPreset[] = [
+  {
+    id: 'lunch-rice-100',
+    title: 'Bếp cơm trưa 100 suất',
+    subtitle: 'Cơm phần, canh, đóng hộp và phát tại điểm cố định.',
+    icon: 'food-turkey',
+    campaignTitle: 'Bữa cơm trưa 0 đồng cho lao động khó khăn',
+    description: 'Chuẩn bị và phát các suất cơm trưa đủ dinh dưỡng cho người lao động, sinh viên và người có hoàn cảnh khó khăn quanh khu vực bếp.',
+    expectedServings: 100,
+    startTime: '08:00',
+    endTime: '13:00',
+    chefSlots: 3,
+    waiterSlots: 4,
+    shipperSlots: 2,
+    supplies: [
+      { name: 'Gạo sạch', quantity: 12, unit: 'kg' },
+      { name: 'Thịt heo', quantity: 10, unit: 'kg' },
+      { name: 'Rau xanh', quantity: 8, unit: 'kg' },
+      { name: 'Củ quả', quantity: 10, unit: 'kg' },
+      { name: 'Hộp đựng suất ăn', quantity: 105, unit: 'hộp' },
+      { name: 'Muỗng/đũa dùng một lần', quantity: 105, unit: 'bộ' },
+      { name: 'Găng tay nilon', quantity: 2, unit: 'hộp' },
+      { name: 'Thùng giữ nhiệt', quantity: 3, unit: 'thùng' },
+    ],
+    menu: [
+      { name: 'Suất cơm thịt kho trứng', type: 'lunch', plannedServings: 100 },
+      { name: 'Canh rau củ', type: 'lunch' },
+      { name: 'Rau xào theo mùa', type: 'lunch' },
+    ],
+    schedule: [
+      { time: '08:00', label: 'Nhận và kiểm tra vật phẩm tại bếp' },
+      { time: '08:30', label: 'Sơ chế nguyên liệu, phân công TNV' },
+      { time: '09:30', label: 'Nấu món chính và canh' },
+      { time: '11:00', label: 'Kiểm tra chất lượng, đóng gói suất ăn' },
+      { time: '11:30', label: 'Phát suất tại điểm cố định và điều phối giao nhận' },
+      { time: '13:00', label: 'Dọn dẹp, ghi nhận số suất đã phát' },
+    ],
+  },
+  {
+    id: 'breakfast-porridge-80',
+    title: 'Cháo sáng 80 suất',
+    subtitle: 'Phù hợp bữa sáng nhẹ, dễ nấu số lượng lớn.',
+    icon: 'pot-steam-outline',
+    campaignTitle: 'Cháo sáng yêu thương cho người cần hỗ trợ',
+    description: 'Nấu và phát cháo sáng nóng, dễ ăn cho người cao tuổi, người lao động sớm và các hoàn cảnh khó khăn.',
+    expectedServings: 80,
+    startTime: '05:30',
+    endTime: '08:30',
+    chefSlots: 2,
+    waiterSlots: 3,
+    shipperSlots: 1,
+    supplies: [
+      { name: 'Gạo nấu cháo', quantity: 6, unit: 'kg' },
+      { name: 'Thịt heo', quantity: 6, unit: 'kg' },
+      { name: 'Củ quả', quantity: 8, unit: 'kg' },
+      { name: 'Ly/hộp đựng cháo', quantity: 84, unit: 'cái' },
+      { name: 'Muỗng/đũa dùng một lần', quantity: 84, unit: 'bộ' },
+      { name: 'Thùng giữ nhiệt', quantity: 2, unit: 'thùng' },
+    ],
+    menu: [
+      { name: 'Cháo thịt bằm rau củ', type: 'breakfast', plannedServings: 80 },
+      { name: 'Sữa đậu nành', type: 'breakfast' },
+    ],
+    schedule: [
+      { time: '05:30', label: 'Tập trung tại bếp, kiểm tra nguyên liệu' },
+      { time: '05:45', label: 'Sơ chế rau củ và chuẩn bị nồi cháo' },
+      { time: '06:15', label: 'Nấu cháo, kiểm tra độ nóng và khẩu phần' },
+      { time: '07:15', label: 'Đóng ly/hộp cháo, chuẩn bị phát' },
+      { time: '07:30', label: 'Phát cháo sáng cho người nhận' },
+      { time: '08:30', label: 'Dọn dẹp và báo cáo số suất đã phát' },
+    ],
+  },
+  {
+    id: 'vegetarian-100',
+    title: 'Suất ăn chay 100 suất',
+    subtitle: 'Cơm chay, đậu hũ, rau củ, ít rủi ro bảo quản.',
+    icon: 'leaf',
+    campaignTitle: 'Suất cơm chay nghĩa tình',
+    description: 'Chuẩn bị các suất cơm chay thanh đạm, dễ bảo quản và phù hợp với nhiều nhóm người nhận.',
+    expectedServings: 100,
+    startTime: '08:00',
+    endTime: '12:30',
+    chefSlots: 3,
+    waiterSlots: 4,
+    shipperSlots: 1,
+    supplies: [
+      { name: 'Gạo sạch', quantity: 12, unit: 'kg' },
+      { name: 'Đậu hũ', quantity: 15, unit: 'kg' },
+      { name: 'Rau xanh', quantity: 12, unit: 'kg' },
+      { name: 'Củ quả', quantity: 8, unit: 'kg' },
+      { name: 'Nấm', quantity: 5, unit: 'kg' },
+      { name: 'Hộp đựng suất ăn', quantity: 105, unit: 'hộp' },
+      { name: 'Muỗng/đũa dùng một lần', quantity: 105, unit: 'bộ' },
+      { name: 'Găng tay nilon', quantity: 2, unit: 'hộp' },
+    ],
+    menu: [
+      { name: 'Suất cơm chay đậu hũ sốt cà', type: 'lunch', plannedServings: 100 },
+      { name: 'Canh rau củ chay', type: 'lunch' },
+      { name: 'Rau xào nấm', type: 'lunch' },
+    ],
+    schedule: [
+      { time: '08:00', label: 'Nhận vật phẩm và kiểm tra dụng cụ bếp' },
+      { time: '08:30', label: 'Sơ chế rau củ, đậu hũ và nấm' },
+      { time: '09:30', label: 'Nấu món chay chính và canh' },
+      { time: '10:45', label: 'Đóng gói suất ăn, kiểm tra khẩu phần' },
+      { time: '11:30', label: 'Phát suất ăn tại điểm cố định' },
+      { time: '12:30', label: 'Dọn dẹp, tổng kết số suất còn lại' },
+    ],
+  },
+  {
+    id: 'dinner-rice-100',
+    title: 'Phát cơm tối 100 suất',
+    subtitle: 'Chuẩn bị chiều, phát tối cho khu lưu trú hoặc bệnh viện.',
+    icon: 'weather-night',
+    campaignTitle: 'Cơm tối sẻ chia cho người khó khăn',
+    description: 'Chuẩn bị và phát suất cơm tối cho người có hoàn cảnh khó khăn, thân nhân bệnh nhân hoặc người lao động về muộn.',
+    expectedServings: 100,
+    startTime: '15:00',
+    endTime: '19:30',
+    chefSlots: 3,
+    waiterSlots: 4,
+    shipperSlots: 2,
+    supplies: [
+      { name: 'Gạo sạch', quantity: 12, unit: 'kg' },
+      { name: 'Trứng gà', quantity: 100, unit: 'quả' },
+      { name: 'Rau xanh', quantity: 8, unit: 'kg' },
+      { name: 'Củ quả', quantity: 8, unit: 'kg' },
+      { name: 'Hộp đựng suất ăn', quantity: 105, unit: 'hộp' },
+      { name: 'Muỗng/đũa dùng một lần', quantity: 105, unit: 'bộ' },
+      { name: 'Thùng giữ nhiệt', quantity: 3, unit: 'thùng' },
+    ],
+    menu: [
+      { name: 'Suất cơm trứng kho rau củ', type: 'dinner', plannedServings: 100 },
+      { name: 'Canh rau củ', type: 'dinner' },
+    ],
+    schedule: [
+      { time: '15:00', label: 'Tập trung tại bếp, kiểm tra vật phẩm' },
+      { time: '15:30', label: 'Sơ chế nguyên liệu và chuẩn bị hộp' },
+      { time: '16:30', label: 'Nấu món chính và canh' },
+      { time: '18:00', label: 'Đóng gói, giữ nóng suất ăn' },
+      { time: '18:30', label: 'Phát suất tối và điều phối giao nhận' },
+      { time: '19:30', label: 'Dọn dẹp, ghi nhận kết quả phát suất' },
+    ],
+  },
+];
+
+function dateWithTime(baseDate: Date, time: string): Date {
+  const [hour = '0', minute = '0'] = time.split(':');
+  const next = new Date(baseDate);
+  next.setHours(Number(hour), Number(minute), 0, 0);
+  return next;
+}
+
+function buildScenarioShifts(preset: CampaignScenarioPreset): CampaignShiftDraft[] {
+  const shifts: CampaignShiftDraft[] = [];
+  if (preset.chefSlots > 0) {
+    shifts.push({ label: 'Ca bếp', role: 'chef', startTime: preset.startTime, endTime: preset.endTime, slotsNeeded: preset.chefSlots });
+  }
+  if (preset.waiterSlots > 0) {
+    shifts.push({ label: 'Ca phục vụ', role: 'waiter', startTime: preset.startTime, endTime: preset.endTime, slotsNeeded: preset.waiterSlots });
+  }
+  if (preset.shipperSlots > 0) {
+    shifts.push({ label: 'Ca giao nhận', role: 'shipper', startTime: preset.startTime, endTime: preset.endTime, slotsNeeded: preset.shipperSlots });
+  }
+  return shifts;
+}
+
+function inferMealType(startTime: Date): 'breakfast' | 'lunch' | 'dinner' {
+  const hour = startTime.getHours();
+  if (hour < 10) return 'breakfast';
+  if (hour < 15) return 'lunch';
+  return 'dinner';
+}
+
+function buildMenuSuggestionsFromSupplies(draft: ReturnType<typeof useCampaignCreateDraftStore.getState>['draft']): CampaignMenuDraft[] {
+  const suppliesText = draft.supplyItems.map((item) => item.name.toLowerCase()).join(' ');
+  const expected = toInt(draft.expectedServings) || 100;
+  const mealType = inferMealType(draft.startTime);
+  const suggestions: CampaignMenuDraft[] = [];
+
+  if (suppliesText.includes('gạo')) {
+    suggestions.push({ name: 'Cơm phần dinh dưỡng', type: mealType, plannedServings: expected });
+  }
+  if (suppliesText.includes('trứng')) {
+    suggestions.push({ name: 'Cơm trứng rau củ', type: mealType, plannedServings: Math.min(expected, 100) });
+  }
+  if (suppliesText.includes('rau') || suppliesText.includes('củ')) {
+    suggestions.push({ name: 'Canh rau củ', type: mealType, plannedServings: expected });
+  }
+  if (suppliesText.includes('thịt') || suppliesText.includes('gà') || suppliesText.includes('cá')) {
+    suggestions.push({ name: 'Cơm mặn suất hỗ trợ', type: mealType, plannedServings: expected });
+  }
+  if (suppliesText.includes('cháo')) {
+    suggestions.push({ name: 'Cháo sáng dinh dưỡng', type: 'breakfast', plannedServings: expected });
+  }
+
+  return suggestions.filter(
+    (item, index, list) => list.findIndex((candidate) => candidate.name === item.name) === index,
+  );
+}
+
+function findSupplyCatalogItem(name: string) {
+  const normalizedName = name.trim().toLowerCase();
+  return SUPPLY_CATALOG.find((item) => item.name.toLowerCase() === normalizedName);
+}
+
+function isAllowedSupplyUnit(unit?: string) {
+  return Boolean(unit && SUPPLY_UNIT_OPTIONS.includes(unit as SupplyUnit));
+}
+
+type ScheduleStageId = 'prep' | 'receive' | 'cook' | 'pack' | 'serve' | 'report';
+
+const SCHEDULE_STAGE_META: Record<ScheduleStageId, { label: string; description: string; color: string; bg: string }> = {
+  prep: { label: 'Chuẩn bị', description: 'Sắp bếp, phân công đầu việc', color: '#2563eb', bg: '#dbeafe' },
+  receive: { label: 'Nhận/kiểm tra', description: 'Nhận vật phẩm và kiểm số lượng', color: '#b45309', bg: '#fef3c7' },
+  cook: { label: 'Sơ chế/nấu', description: 'Sơ chế và nấu món chính', color: '#15803d', bg: '#dcfce7' },
+  pack: { label: 'Đóng gói/QC', description: 'Kiểm tra chất lượng, đóng gói', color: '#7c3aed', bg: '#ede9fe' },
+  serve: { label: 'Phát/giao', description: 'Phát suất và điều phối giao nhận', color: COLORS.primary, bg: COLORS.primaryContainer },
+  report: { label: 'Dọn dẹp/báo cáo', description: 'Dọn khu vực, ghi nhận kết quả', color: '#64748b', bg: '#e2e8f0' },
+};
+
+function classifyScheduleStage(label: string): ScheduleStageId {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('nhận') || normalized.includes('kiểm tra')) return 'receive';
+  if (normalized.includes('sơ chế') || normalized.includes('nấu')) return 'cook';
+  if (normalized.includes('đóng gói') || normalized.includes('chất lượng') || normalized.includes('qc')) return 'pack';
+  if (normalized.includes('phát') || normalized.includes('giao')) return 'serve';
+  if (normalized.includes('dọn') || normalized.includes('báo cáo') || normalized.includes('tổng kết')) return 'report';
+  return 'prep';
+}
 
 export default function CreateCampaignScreen() {
   const createCampaign = useCreateCampaign();
@@ -101,6 +407,7 @@ export default function CreateCampaignScreen() {
   const { data: profile } = useMyProfile();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [returnToStep, setReturnToStep] = useState<number | null>(null);
 
   const currentStep = useCampaignCreateDraftStore((state) => state.currentStep);
   const draft = useCampaignCreateDraftStore((state) => state.draft);
@@ -147,6 +454,11 @@ export default function CreateCampaignScreen() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (returnToStep !== null) {
+        setReturnToStep(null);
+        setStep(returnToStep);
+        return true;
+      }
       if (currentStep === 0) {
         confirmLeave();
       } else {
@@ -156,9 +468,19 @@ export default function CreateCampaignScreen() {
     });
 
     return () => subscription.remove();
-  }, [confirmLeave, currentStep, setStep]);
+  }, [confirmLeave, currentStep, returnToStep, setStep]);
+
+  const handleEditFromReview = (step: number) => {
+    setReturnToStep(CAMPAIGN_REVIEW_STEP);
+    setStep(step);
+  };
 
   const goBackStep = () => {
+    if (returnToStep !== null) {
+      setReturnToStep(null);
+      setStep(returnToStep);
+      return;
+    }
     if (currentStep === 0) {
       confirmLeave();
       return;
@@ -167,8 +489,11 @@ export default function CreateCampaignScreen() {
   };
 
   const goNextStep = () => {
-    if (stepError) {
-      showValidationError(stepError);
+    if (stepError) return;
+    if (returnToStep !== null) {
+      const target = returnToStep;
+      setReturnToStep(null);
+      setStep(target);
       return;
     }
     setStep(Math.min(currentStep + 1, CAMPAIGN_REVIEW_STEP));
@@ -226,6 +551,34 @@ export default function CreateCampaignScreen() {
     }
   };
 
+  const applyScenarioPreset = (preset: CampaignScenarioPreset) => {
+    patchDraft({
+      title: preset.campaignTitle,
+      description: preset.description,
+      startTime: dateWithTime(draft.scheduledDate, preset.startTime),
+      endTime: dateWithTime(draft.scheduledDate, preset.endTime),
+      expectedServings: String(preset.expectedServings),
+      chefSlots: String(preset.chefSlots),
+      waiterSlots: String(preset.waiterSlots),
+      shipperSlots: String(preset.shipperSlots),
+      shifts: buildScenarioShifts(preset),
+      supplyItems: preset.supplies.map((item) => ({ ...item })),
+      menuItems: preset.menu.map((item) => ({ ...item })),
+      scheduleItems: preset.schedule.map((item) => ({ ...item })),
+    });
+    Alert.alert(
+      'Đã áp dụng mẫu chiến dịch',
+      'Mẫu đã điền sẵn mục tiêu, ca trực, vật phẩm, thực đơn và lịch trình. Bạn muốn tiếp tục chỉnh từng bước hay xem lại và gửi ngay?',
+      [
+        { text: 'Chỉnh từng bước', style: 'cancel' },
+        {
+          text: 'Xem lại ngay',
+          onPress: () => setStep(CAMPAIGN_REVIEW_STEP),
+        },
+      ],
+    );
+  };
+
   const submitCampaign = async () => {
     const reviewError = getCampaignStepError(CAMPAIGN_REVIEW_STEP, draft);
     if (reviewError) {
@@ -253,7 +606,7 @@ export default function CreateCampaignScreen() {
   const renderStep = () => {
     switch (currentStep) {
       case 0:
-        return <BasicStep draft={draft} patchDraft={patchDraft} />;
+        return <BasicStep draft={draft} patchDraft={patchDraft} onApplyScenario={applyScenarioPreset} />;
       case 1:
         return (
           <ImageStep
@@ -275,18 +628,35 @@ export default function CreateCampaignScreen() {
             applyProfileAddress={applyProfileAddress}
           />
         );
-      case 3:
-        return <GoalStep draft={draft} patchDraft={patchDraft} />;
+      case 3: {
+        const shiftsForWarning = normalizeCampaignShifts(draft.shifts);
+        const slotWarnings = getSlotWarnings(draft, shiftsForWarning);
+        return (
+          <View style={styles.stepStack}>
+            <GoalStep draft={draft} patchDraft={patchDraft} />
+            {slotWarnings.length > 0 && (
+              <View style={styles.reviewWarning}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={18} color={COLORS.warning} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.reviewWarningTitle}>Cần cân nhắc phân bổ ca</Text>
+                  {slotWarnings.map((w) => (
+                    <Text key={w} style={styles.reviewWarningText}>{w}</Text>
+                  ))}
+                </View>
+              </View>
+            )}
+            <ShiftStep draft={draft} patchDraft={patchDraft} />
+          </View>
+        );
+      }
       case 4:
-        return <ShiftStep draft={draft} patchDraft={patchDraft} />;
+        return <SupplyStep draft={draft} patchDraft={patchDraft} />;
       case 5:
         return <MenuStep draft={draft} patchDraft={patchDraft} />;
       case 6:
         return <ScheduleStep draft={draft} patchDraft={patchDraft} />;
-      case 7:
-        return <SupplyStep draft={draft} patchDraft={patchDraft} />;
       default:
-        return <ReviewStep draft={draft} onEdit={setStep} />;
+        return <ReviewStep draft={draft} onEdit={handleEditFromReview} />;
     }
   };
 
@@ -316,6 +686,12 @@ export default function CreateCampaignScreen() {
           </View>
 
           {renderStep()}
+          {!isReviewStep && stepError ? (
+            <View style={styles.stepErrorBanner}>
+              <MaterialCommunityIcons name="alert-circle" size={18} color={COLORS.error} />
+              <Text style={styles.stepErrorText}>{stepError}</Text>
+            </View>
+          ) : null}
         </ScrollView>
 
         <StickyActionBar style={styles.footer}>
@@ -327,19 +703,19 @@ export default function CreateCampaignScreen() {
             style={styles.footerButton}
             disabled={submitting}
           >
-            {currentStep === 0 ? 'Hủy' : 'Quay lại'}
+            {returnToStep !== null ? 'Về tổng quan' : currentStep === 0 ? 'Hủy' : 'Quay lại'}
           </Button>
           <Button
             mode="contained"
-            icon={isReviewStep ? 'send' : 'arrow-right'}
+            icon={isReviewStep ? 'send' : returnToStep !== null ? 'check' : 'arrow-right'}
             onPress={isReviewStep ? submitCampaign : goNextStep}
             loading={submitting}
-            disabled={submitting}
+            disabled={submitting || (!isReviewStep && !!stepError)}
             buttonColor={COLORS.primary}
             style={styles.footerButton}
             contentStyle={styles.footerPrimaryContent}
           >
-            {isReviewStep ? 'Gửi yêu cầu' : 'Tiếp tục'}
+            {isReviewStep ? 'Gửi yêu cầu' : returnToStep !== null ? 'Lưu & Xem lại' : 'Tiếp tục'}
           </Button>
         </StickyActionBar>
       </KeyboardAvoidingView>
@@ -356,15 +732,13 @@ function getStepHelper(step: number) {
     case 2:
       return 'Địa chỉ, ngày và giờ cần chính xác để phối hợp bếp, TNV và giao nhận.';
     case 3:
-      return 'Đặt số suất và số người cần tuyển cho từng vai trò.';
+      return 'Đặt số suất, nhân sự cần tuyển và tạo các ca để TNV đăng ký đúng vai trò và khung giờ.';
     case 4:
-      return 'Tạo các ca để TNV đăng ký đúng vai trò và khung giờ.';
+      return 'Nhập rõ tên, số lượng và đơn vị để nhà cung cấp biết cần hỗ trợ gì.';
     case 5:
-      return 'Thêm món hoặc nhóm món dự kiến để bếp chuẩn bị trước.';
+      return 'Thêm món dự kiến hoặc dùng gợi ý dựa trên vật phẩm cần chuẩn bị.';
     case 6:
       return 'Ghi các mốc vận hành như nhận nguyên liệu, nấu, đóng gói, phát suất.';
-    case 7:
-      return 'Nhập rõ tên, số lượng và đơn vị để nhà cung cấp biết cần hỗ trợ gì.';
     default:
       return 'Rà lại toàn bộ thông tin trước khi gửi yêu cầu chờ admin duyệt.';
   }
@@ -373,37 +747,83 @@ function getStepHelper(step: number) {
 function BasicStep({
   draft,
   patchDraft,
+  onApplyScenario,
 }: {
   draft: ReturnType<typeof useCampaignCreateDraftStore.getState>['draft'];
   patchDraft: ReturnType<typeof useCampaignCreateDraftStore.getState>['patchDraft'];
+  onApplyScenario: (preset: CampaignScenarioPreset) => void;
 }) {
   return (
-    <FormCard>
-      <Field label="Tên chiến dịch *">
-        <TextInput
-          mode="outlined"
-          value={draft.title}
-          onChangeText={(title) => patchDraft({ title })}
-          outlineColor={COLORS.outline}
-          activeOutlineColor={COLORS.primary}
-          style={styles.input}
-          maxLength={255}
-        />
-      </Field>
-      <Field label="Mô tả">
-        <TextInput
-          mode="outlined"
-          multiline
-          numberOfLines={4}
-          value={draft.description}
-          onChangeText={(description) => patchDraft({ description })}
-          outlineColor={COLORS.outline}
-          activeOutlineColor={COLORS.primary}
-          style={styles.input}
-          maxLength={5000}
-        />
-      </Field>
-    </FormCard>
+    <View style={styles.stepStack}>
+      <FormCard>
+        <View style={styles.scenarioHeader}>
+          <View style={styles.scenarioHeaderIcon}>
+            <MaterialCommunityIcons name="auto-fix" size={20} color={COLORS.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionLabel}>Mẫu chiến dịch nhanh</Text>
+            <Text style={styles.scenarioHint}>
+              Chọn một kịch bản để tự điền mục tiêu, ca trực, vật phẩm, thực đơn và lịch trình.
+            </Text>
+          </View>
+        </View>
+        <View style={styles.scenarioGrid}>
+          {CAMPAIGN_SCENARIO_PRESETS.map((preset) => (
+            <ScenarioPresetCard key={preset.id} preset={preset} onPress={() => onApplyScenario(preset)} />
+          ))}
+        </View>
+      </FormCard>
+
+      <FormCard>
+        <Field label="Tên chiến dịch *">
+          <TextInput
+            mode="outlined"
+            value={draft.title}
+            onChangeText={(title) => patchDraft({ title })}
+            outlineColor={COLORS.outline}
+            activeOutlineColor={COLORS.primary}
+            style={styles.input}
+            maxLength={255}
+          />
+        </Field>
+        <Field label="Mô tả">
+          <TextInput
+            mode="outlined"
+            multiline
+            numberOfLines={4}
+            value={draft.description}
+            onChangeText={(description) => patchDraft({ description })}
+            outlineColor={COLORS.outline}
+            activeOutlineColor={COLORS.primary}
+            style={styles.input}
+            maxLength={5000}
+          />
+        </Field>
+      </FormCard>
+    </View>
+  );
+}
+
+function ScenarioPresetCard({
+  preset,
+  onPress,
+}: {
+  preset: CampaignScenarioPreset;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.scenarioCard}>
+      <View style={styles.scenarioIcon}>
+        <MaterialCommunityIcons name={preset.icon} size={20} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.scenarioTitle}>{preset.title}</Text>
+        <Text style={styles.scenarioSubtitle}>{preset.subtitle}</Text>
+        <Text style={styles.scenarioMeta}>
+          {preset.expectedServings} suất · {preset.chefSlots + preset.waiterSlots + preset.shipperSlots} TNV · {preset.startTime}-{preset.endTime}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -663,8 +1083,47 @@ function MenuStep({
   draft: ReturnType<typeof useCampaignCreateDraftStore.getState>['draft'];
   patchDraft: ReturnType<typeof useCampaignCreateDraftStore.getState>['patchDraft'];
 }) {
+  const summary = getCampaignMenuSummary(draft);
+  const supplySuggestions = buildMenuSuggestionsFromSupplies(draft);
+  const addTemplate = (template: CampaignMenuDraft) => {
+    if (draft.menuItems.some((item) => item.name.trim().toLowerCase() === template.name.toLowerCase())) return;
+    patchDraft({ menuItems: [...draft.menuItems, template] });
+  };
+
   return (
     <FormCard>
+      <View style={styles.infoBanner}>
+        <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.primary} />
+        <Text style={styles.infoBannerText}>
+          Thực đơn là dự kiến và có thể bổ sung sau khi chiến dịch được duyệt. Gợi ý món ăn dựa trên vật phẩm dự kiến cần chuẩn bị.
+        </Text>
+      </View>
+      <MenuSummaryCard summary={summary} />
+      <Text style={styles.sectionLabel}>Mẫu nhanh</Text>
+      <TemplateChips
+        items={MENU_QUICK_TEMPLATES}
+        getLabel={(item) => item.name}
+        onPick={addTemplate}
+        onPickAll={() => MENU_QUICK_TEMPLATES.forEach(addTemplate)}
+      />
+      {supplySuggestions.length > 0 ? (
+        <>
+          <Text style={styles.sectionLabel}>Gợi ý theo vật phẩm dự kiến</Text>
+          <TemplateChips
+            items={supplySuggestions}
+            getLabel={(item) => item.name}
+            onPick={addTemplate}
+            onPickAll={() => supplySuggestions.forEach(addTemplate)}
+          />
+        </>
+      ) : (
+        <View style={styles.emptyHint}>
+          <MaterialCommunityIcons name="basket-outline" size={17} color={COLORS.onSurfaceVariant} />
+          <Text style={styles.emptyHintText}>
+            Bạn vẫn có thể nhập thực đơn thủ công hoặc quay lại bước vật phẩm để nhận gợi ý món ăn phù hợp.
+          </Text>
+        </View>
+      )}
       {draft.menuItems.map((item, index) => (
         <EditableMenuRow
           key={index}
@@ -687,6 +1146,34 @@ function MenuStep({
   );
 }
 
+function MenuSummaryCard({
+  summary,
+}: {
+  summary: ReturnType<typeof getCampaignMenuSummary>;
+}) {
+  const summaryText = summary.validCount
+    ? `Thực đơn: ${summary.validCount} món / ${summary.plannedServings || 0} suất dự kiến`
+    : 'Thực đơn: Chưa nhập, có thể bổ sung sau';
+
+  return (
+    <View style={[styles.menuSummaryCard, summary.isUnderExpected && styles.menuSummaryWarning]}>
+      <View style={styles.menuSummaryHeader}>
+        <MaterialCommunityIcons
+          name={summary.isUnderExpected ? 'alert-circle-outline' : 'silverware-fork-knife'}
+          size={18}
+          color={summary.isUnderExpected ? COLORS.warning : COLORS.primary}
+        />
+        <Text style={styles.menuSummaryTitle}>{summaryText}</Text>
+      </View>
+      {summary.isUnderExpected ? (
+        <Text style={styles.menuSummaryText}>
+          Tổng suất món ăn đang thấp hơn mục tiêu {summary.expectedServings} suất của chiến dịch.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function ScheduleStep({
   draft,
   patchDraft,
@@ -701,6 +1188,7 @@ function ScheduleStep({
 
   return (
     <FormCard>
+      <ScheduleTimelineOverview items={draft.scheduleItems} />
       <TemplateChips
         items={SCHEDULE_TEMPLATES}
         getLabel={(item) => `${item.time} ${item.label}`}
@@ -719,13 +1207,67 @@ function ScheduleStep({
         mode="outlined"
         icon="plus"
         textColor={COLORS.primary}
-        onPress={() => patchDraft({ scheduleItems: [...draft.scheduleItems, { time: '06:00', label: '' }] })}
+        onPress={() => patchDraft({ scheduleItems: [...draft.scheduleItems, { time: toTimeStr(draft.startTime), label: '' }] })}
         compact
         style={styles.addBtn}
       >
         Thêm dòng mốc
       </Button>
     </FormCard>
+  );
+}
+
+function ScheduleTimelineOverview({ items }: { items: CampaignScheduleDraft[] }) {
+  const timelineItems = normalizeCampaignScheduleItems(items);
+
+  return (
+    <View style={styles.timelineCard}>
+      <View style={styles.timelineHeader}>
+        <MaterialCommunityIcons name="timeline-clock-outline" size={18} color={COLORS.primary} />
+        <Text style={styles.timelineTitle}>Tổng quan lịch trình</Text>
+      </View>
+      {timelineItems.length ? (
+        <View style={styles.timelineList}>
+          {timelineItems.map((item, index) => {
+            const stage = SCHEDULE_STAGE_META[classifyScheduleStage(item.label)];
+            return (
+              <View key={`${item.time}-${item.label}-${index}`} style={styles.timelineItem}>
+                <View style={styles.timelineRail}>
+                  <View style={[styles.timelineDot, { backgroundColor: stage.color }]} />
+                  {index < timelineItems.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: stage.bg }]} /> : null}
+                </View>
+                <View style={styles.timelineBody}>
+                  <View style={styles.timelineItemHeader}>
+                    <Text style={styles.timelineTime}>{item.time}</Text>
+                    <View style={[styles.timelineStageBadge, { backgroundColor: stage.bg }]}>
+                      <Text style={[styles.timelineStageText, { color: stage.color }]}>{stage.label}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.timelineItemTitle}>{item.label}</Text>
+                  <Text style={styles.timelineItemDesc}>{stage.description}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.emptyHint}>
+          <MaterialCommunityIcons name="timeline-plus-outline" size={17} color={COLORS.onSurfaceVariant} />
+          <Text style={styles.emptyHintText}>Thêm mốc hoặc dùng mẫu để xem tổng quan vận hành.</Text>
+        </View>
+      )}
+      <View style={styles.timelineLegend}>
+        {(Object.keys(SCHEDULE_STAGE_META) as ScheduleStageId[]).map((stageId) => {
+          const stage = SCHEDULE_STAGE_META[stageId];
+          return (
+            <View key={stageId} style={styles.timelineLegendItem}>
+              <View style={[styles.timelineLegendDot, { backgroundColor: stage.color }]} />
+              <Text style={styles.timelineLegendText}>{stage.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -736,13 +1278,62 @@ function SupplyStep({
   draft: ReturnType<typeof useCampaignCreateDraftStore.getState>['draft'];
   patchDraft: ReturnType<typeof useCampaignCreateDraftStore.getState>['patchDraft'];
 }) {
+  const [selectedCategory, setSelectedCategory] = useState<SupplyCategoryId>('staple');
+  const catalogItems = SUPPLY_CATALOG.filter((item) => item.category === selectedCategory);
   const addTemplate = (template: CampaignSupplyDraft) => {
-    if (draft.supplyItems.some((item) => item.name === template.name)) return;
+    if (draft.supplyItems.some((item) => item.name.trim().toLowerCase() === template.name.trim().toLowerCase())) return;
     patchDraft({ supplyItems: [...draft.supplyItems, template] });
   };
 
   return (
     <FormCard>
+      <View style={styles.infoBanner}>
+        <MaterialCommunityIcons name="basket-check-outline" size={18} color={COLORS.primary} />
+        <Text style={styles.infoBannerText}>
+          Ưu tiên chọn vật phẩm từ danh mục chuẩn để nhà cung cấp hiểu đúng loại hỗ trợ. Vật phẩm khác vẫn phải chọn đơn vị chuẩn.
+        </Text>
+      </View>
+      <Text style={styles.sectionLabel}>Nhóm vật phẩm</Text>
+      <View style={styles.supplyCategoryWrap}>
+        {(Object.keys(SUPPLY_CATEGORY_LABELS) as SupplyCategoryId[]).map((category) => {
+          const active = selectedCategory === category;
+          return (
+            <Pressable
+              key={category}
+              onPress={() => setSelectedCategory(category)}
+              style={[styles.supplyCategoryChip, active && styles.supplyCategoryChipActive]}
+            >
+              <Text style={[styles.supplyCategoryText, active && { color: COLORS.primary }]}>
+                {SUPPLY_CATEGORY_LABELS[category]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.supplyCatalogGrid}>
+        {catalogItems.map((item) => {
+          const selected = draft.supplyItems.some((supply) => supply.name.trim().toLowerCase() === item.name.toLowerCase());
+          return (
+            <Pressable
+              key={item.name}
+              disabled={selected}
+              onPress={() => addTemplate({ name: item.name, quantity: item.quantity, unit: item.unit })}
+              style={[styles.supplyCatalogCard, selected && styles.supplyCatalogCardSelected]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.supplyCatalogTitle}>{item.name}</Text>
+                <Text style={styles.supplyCatalogMeta}>{item.quantity} {item.unit} gợi ý</Text>
+              </View>
+              <MaterialCommunityIcons
+                name={selected ? 'check-circle' : 'plus-circle-outline'}
+                size={20}
+                color={selected ? COLORS.primary : COLORS.onSurfaceVariant}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={styles.sectionLabel}>Mẫu phổ biến</Text>
       <TemplateChips
         items={SUPPLY_TEMPLATES}
         getLabel={(item) => item.name}
@@ -761,11 +1352,11 @@ function SupplyStep({
         mode="outlined"
         icon="plus"
         textColor={COLORS.primary}
-        onPress={() => patchDraft({ supplyItems: [...draft.supplyItems, { name: '', quantity: undefined, unit: '' }] })}
+        onPress={() => patchDraft({ supplyItems: [...draft.supplyItems, { name: '', quantity: undefined, unit: 'kg' }] })}
         compact
         style={styles.addBtn}
       >
-        Thêm dòng vật phẩm
+        Thêm vật phẩm khác
       </Button>
     </FormCard>
   );
@@ -785,6 +1376,7 @@ function ReviewStep({
   const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
   const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
   const slotWarnings = getSlotWarnings(draft, shifts);
+  const menuSummary = getCampaignMenuSummary(draft);
 
   return (
     <View style={styles.reviewStack}>
@@ -828,7 +1420,7 @@ function ReviewStep({
         </View>
       ) : null}
 
-      <ReviewListGroup title="Ca trực TNV" icon="calendar-account-outline" count={shifts.length} onEdit={() => onEdit(4)}>
+      <ReviewListGroup title="Ca trực TNV" icon="calendar-account-outline" count={shifts.length} onEdit={() => onEdit(3)}>
         {shifts.map((item, index) => (
           <ReviewBullet
             key={`${item.label}-${index}`}
@@ -838,7 +1430,35 @@ function ReviewStep({
         ))}
       </ReviewListGroup>
 
-      <ReviewListGroup title="Thực đơn" icon="silverware-fork-knife" count={menuItems.length} onEdit={() => onEdit(5)}>
+      <ReviewListGroup title="Vật phẩm cần hỗ trợ" icon="basket-outline" count={supplyItems.length} onEdit={() => onEdit(4)}>
+        {supplyItems.map((item, index) => (
+          <ReviewBullet
+            key={`${item.name}-${index}`}
+            title={item.name}
+            meta={`${item.quantity} ${item.unit}`}
+          />
+        ))}
+      </ReviewListGroup>
+
+      <ReviewListGroup
+        title="Thực đơn dự kiến"
+        icon="silverware-fork-knife"
+        count={menuItems.length}
+        onEdit={() => onEdit(5)}
+        emptyText="Chưa nhập, có thể bổ sung sau"
+      >
+        <ReviewLine
+          label="Tổng suất món"
+          value={`${menuSummary.validCount} món / ${menuSummary.plannedServings || 0} suất dự kiến`}
+        />
+        {menuSummary.isUnderExpected ? (
+          <View style={styles.reviewWarningInline}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.warning} />
+            <Text style={styles.reviewWarningText}>
+              Tổng suất món ăn thấp hơn mục tiêu {menuSummary.expectedServings} suất.
+            </Text>
+          </View>
+        ) : null}
         {menuItems.map((item, index) => (
           <ReviewBullet
             key={`${item.name}-${index}`}
@@ -851,16 +1471,6 @@ function ReviewStep({
       <ReviewListGroup title="Lịch trình" icon="timeline-clock-outline" count={scheduleItems.length} onEdit={() => onEdit(6)}>
         {scheduleItems.map((item, index) => (
           <ReviewBullet key={`${item.label}-${index}`} title={item.label} meta={item.time} />
-        ))}
-      </ReviewListGroup>
-
-      <ReviewListGroup title="Vật phẩm cần hỗ trợ" icon="basket-outline" count={supplyItems.length} onEdit={() => onEdit(7)}>
-        {supplyItems.map((item, index) => (
-          <ReviewBullet
-            key={`${item.name}-${index}`}
-            title={item.name}
-            meta={`${item.quantity} ${item.unit}`}
-          />
         ))}
       </ReviewListGroup>
 
@@ -1128,39 +1738,33 @@ function EditableScheduleRow({
   return (
     <View style={styles.editRow}>
       <EditRowHeader icon="timeline-clock-outline" title={item.time || 'Mốc mới'} onRemove={onRemove} />
-      <View style={styles.rowFields}>
-        <View style={{ flex: 1 }}>
-          <Field label="Giờ">
-            <PickerButton
-              icon="clock-outline"
-              text={item.time || 'Chọn giờ'}
-              onPress={() =>
-                DateTimePickerAndroid.open({
-                  value: dateFromTime(item.time || '06:00'),
-                  mode: 'time',
-                  is24Hour: true,
-                  onChange: (_event, date) => date && onChange({ ...item, time: toTimeStr(date) }),
-                })
-              }
-            />
-          </Field>
-        </View>
-        <View style={{ flex: 2 }}>
-          <Field label="Nội dung">
-            <TextInput
-              mode="outlined"
-              dense
-              placeholder="VD: Chuẩn bị nguyên liệu"
-              value={item.label}
-              onChangeText={(label) => onChange({ ...item, label })}
-              outlineColor={COLORS.outline}
-              activeOutlineColor={COLORS.primary}
-              style={styles.input}
-              maxLength={160}
-            />
-          </Field>
-        </View>
-      </View>
+      <Field label="Giờ">
+        <PickerButton
+          icon="clock-outline"
+          text={item.time || 'Chọn giờ'}
+          onPress={() =>
+            DateTimePickerAndroid.open({
+              value: dateFromTime(item.time || '06:00'),
+              mode: 'time',
+              is24Hour: true,
+              onChange: (_event, date) => date && onChange({ ...item, time: toTimeStr(date) }),
+            })
+          }
+        />
+      </Field>
+      <Field label="Nội dung">
+        <TextInput
+          mode="outlined"
+          dense
+          placeholder="VD: Nhận vật phẩm và kiểm tra số lượng"
+          value={item.label}
+          onChangeText={(label) => onChange({ ...item, label })}
+          outlineColor={COLORS.outline}
+          activeOutlineColor={COLORS.primary}
+          style={styles.input}
+          maxLength={160}
+        />
+      </Field>
     </View>
   );
 }
@@ -1174,22 +1778,34 @@ function EditableSupplyRow({
   onChange: (item: CampaignSupplyDraft) => void;
   onRemove: () => void;
 }) {
+  const catalogItem = findSupplyCatalogItem(item.name);
+
   return (
     <View style={styles.editRow}>
-      <EditRowHeader icon="basket-outline" title="Vật phẩm" onRemove={onRemove} />
-      <Field label="Tên vật phẩm">
-        <TextInput
-          mode="outlined"
-          dense
-          placeholder="VD: Gạo sạch"
-          value={item.name}
-          onChangeText={(name) => onChange({ ...item, name })}
-          outlineColor={COLORS.outline}
-          activeOutlineColor={COLORS.primary}
-          style={styles.input}
-          maxLength={80}
-        />
-      </Field>
+      <EditRowHeader icon="basket-outline" title={catalogItem ? catalogItem.name : 'Vật phẩm khác'} onRemove={onRemove} />
+      {catalogItem ? (
+        <View style={styles.supplyLockedName}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supplyLockedLabel}>{SUPPLY_CATEGORY_LABELS[catalogItem.category]}</Text>
+            <Text style={styles.supplyLockedTitle}>{catalogItem.name}</Text>
+          </View>
+          <MaterialCommunityIcons name="lock-check-outline" size={19} color={COLORS.primary} />
+        </View>
+      ) : (
+        <Field label="Tên vật phẩm khác">
+          <TextInput
+            mode="outlined"
+            dense
+            placeholder="VD: Khăn giấy, nước uống..."
+            value={item.name}
+            onChangeText={(name) => onChange({ ...item, name })}
+            outlineColor={COLORS.outline}
+            activeOutlineColor={COLORS.primary}
+            style={styles.input}
+            maxLength={80}
+          />
+        </Field>
+      )}
       <View style={styles.rowFields}>
         <View style={{ flex: 1 }}>
           <Text style={styles.inlineQuantityLabel}>Số lượng</Text>
@@ -1197,20 +1813,28 @@ function EditableSupplyRow({
         </View>
         <View style={{ flex: 1 }}>
           <Field label="Đơn vị">
-            <TextInput
-              mode="outlined"
-              dense
-              placeholder="kg"
-              value={item.unit ?? ''}
-              onChangeText={(unit) => onChange({ ...item, unit })}
-              outlineColor={COLORS.outline}
-              activeOutlineColor={COLORS.primary}
-              style={styles.input}
-              maxLength={20}
+            <SupplyUnitPicker
+              value={isAllowedSupplyUnit(item.unit) ? (item.unit as SupplyUnit) : 'kg'}
+              onChange={(unit) => onChange({ ...item, unit })}
             />
           </Field>
         </View>
       </View>
+    </View>
+  );
+}
+
+function SupplyUnitPicker({ value, onChange }: { value: SupplyUnit; onChange: (unit: SupplyUnit) => void }) {
+  return (
+    <View style={styles.unitPicker}>
+      {SUPPLY_UNIT_OPTIONS.map((unit) => {
+        const active = value === unit;
+        return (
+          <Pressable key={unit} onPress={() => onChange(unit)} style={[styles.unitOption, active && styles.unitOptionActive]}>
+            <Text style={[styles.unitOptionText, active && { color: COLORS.primary }]}>{unit}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -1302,17 +1926,19 @@ function ReviewListGroup({
   count,
   onEdit,
   children,
+  emptyText = 'Chưa thêm',
 }: {
   title: string;
   icon: any;
   count: number;
   onEdit: () => void;
   children: React.ReactNode;
+  emptyText?: string;
 }) {
   const hasItems = count > 0;
   return (
     <ReviewGroup title={title} icon={icon} onEdit={onEdit}>
-      {hasItems ? children : <ReviewLine label="Nội dung" value="Chưa thêm" />}
+      {hasItems ? children : <ReviewLine label="Nội dung" value={emptyText} />}
     </ReviewGroup>
   );
 }
@@ -1365,6 +1991,7 @@ const styles = StyleSheet.create({
   },
   progressDotActive: { backgroundColor: COLORS.primary },
   content: { padding: 16, paddingTop: 8, paddingBottom: 28 },
+  stepStack: { gap: 12 },
   stepHero: {
     flexDirection: 'row',
     gap: 12,
@@ -1393,6 +2020,56 @@ const styles = StyleSheet.create({
     borderColor: COLORS.outline,
     padding: 14,
   },
+  scenarioHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 12,
+  },
+  scenarioHeaderIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scenarioHint: { marginTop: -4, fontSize: 12, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  scenarioGrid: { gap: 9 },
+  scenarioCard: {
+    minHeight: 96,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    backgroundColor: COLORS.background,
+    padding: 12,
+  },
+  scenarioIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scenarioTitle: { fontSize: 14, fontWeight: '900', color: COLORS.onSurface },
+  scenarioSubtitle: { marginTop: 3, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
+  scenarioMeta: { marginTop: 7, fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryContainer,
+    padding: 12,
+    marginBottom: 12,
+  },
+  infoBannerText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.onSurface },
   field: { marginBottom: 12 },
   label: { fontSize: 13, fontWeight: '800', color: COLORS.onSurfaceVariant, marginBottom: 8 },
   sectionLabel: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface, marginBottom: 10 },
@@ -1517,6 +2194,117 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   templateChipText: { maxWidth: 220, fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  emptyHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    padding: 10,
+    marginBottom: 12,
+  },
+  emptyHintText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  timelineCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceVariant,
+    padding: 12,
+    marginBottom: 12,
+  },
+  timelineHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  timelineTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: COLORS.onSurface },
+  timelineList: { gap: 2 },
+  timelineItem: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
+  timelineRail: { width: 18, alignItems: 'center' },
+  timelineDot: { width: 13, height: 13, borderRadius: 7, marginTop: 5 },
+  timelineLine: { width: 3, flex: 1, minHeight: 44, marginTop: 4, borderRadius: 999 },
+  timelineBody: {
+    flex: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outlineVariant,
+    paddingBottom: 10,
+    marginBottom: 6,
+  },
+  timelineItemHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  timelineTime: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface },
+  timelineStageBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  timelineStageText: { fontSize: 10, fontWeight: '900' },
+  timelineItemTitle: { fontSize: 13, fontWeight: '800', lineHeight: 18, color: COLORS.onSurface },
+  timelineItemDesc: { marginTop: 2, fontSize: 12, lineHeight: 16, color: COLORS.onSurfaceVariant },
+  timelineLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  timelineLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  timelineLegendDot: { width: 8, height: 8, borderRadius: 4 },
+  timelineLegendText: { fontSize: 10, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  supplyCategoryWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  supplyCategoryChip: {
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: COLORS.background,
+  },
+  supplyCategoryChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryContainer },
+  supplyCategoryText: { fontSize: 12, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  supplyCatalogGrid: { gap: 8, marginBottom: 12 },
+  supplyCatalogCard: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    backgroundColor: COLORS.background,
+    padding: 11,
+  },
+  supplyCatalogCardSelected: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryContainer, opacity: 0.82 },
+  supplyCatalogTitle: { fontSize: 14, fontWeight: '900', color: COLORS.onSurface },
+  supplyCatalogMeta: { marginTop: 3, fontSize: 12, color: COLORS.onSurfaceVariant },
+  supplyLockedName: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+  supplyLockedLabel: { fontSize: 11, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  supplyLockedTitle: { marginTop: 2, fontSize: 14, fontWeight: '900', color: COLORS.onSurface },
+  unitPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  unitOption: {
+    minWidth: 44,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: COLORS.surface,
+  },
+  unitOptionActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryContainer },
+  unitOptionText: { fontSize: 12, fontWeight: '900', color: COLORS.onSurfaceVariant },
+  menuSummaryCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceVariant,
+    padding: 12,
+    marginBottom: 12,
+  },
+  menuSummaryWarning: {
+    borderColor: COLORS.warning,
+    backgroundColor: COLORS.warningContainer,
+  },
+  menuSummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  menuSummaryTitle: { flex: 1, fontSize: 13, fontWeight: '900', color: COLORS.onSurface },
+  menuSummaryText: { marginTop: 6, fontSize: 12, lineHeight: 18, color: COLORS.onSurfaceVariant },
   editRow: {
     borderWidth: 1,
     borderColor: COLORS.outline,
@@ -1610,5 +2398,27 @@ const styles = StyleSheet.create({
   },
   reviewWarningTitle: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface, marginBottom: 3 },
   reviewWarningText: { fontSize: 12, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  reviewWarningInline: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    borderRadius: 12,
+    backgroundColor: COLORS.warningContainer,
+    padding: 10,
+    marginBottom: 8,
+  },
   note: { fontSize: 12, color: COLORS.onSurfaceVariant, textAlign: 'center', marginTop: 4, fontStyle: 'italic' },
+  stepErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.errorContainer,
+  },
+  stepErrorText: { flex: 1, fontSize: 13, lineHeight: 19, color: COLORS.error, fontWeight: '600' },
 });

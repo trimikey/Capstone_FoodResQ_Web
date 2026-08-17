@@ -1,0 +1,118 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Deliveries (1)
+' Offer · Lifecycle · Track & Performance · Stop Delivery
+'==============================================================
+'
+' Giải thích:
+'   Offer: offer đi TUẦN TỰ, mỗi lần một shipper, theo mô hình gọi xe: shipper đã xác minh, đang
+'   rảnh, gần nhất trong 5 km nhận offer 15 giây. Nhận thì gán delivery; từ chối thì chuyển ngay
+'   sang người kế tiếp; còn để offer trôi qua thì shipper bị set is_available = false — vì không có
+'   ai ở máy, để nguyên sẽ chặn hàng đợi của mọi đơn sau.
+'   Lifecycle: chuỗi trạng thái assigned → heading_to_provider → qc_completed (kèm ảnh) → in_transit
+'   → delivered. Bước cuối BẮT BUỘC quét QR token của receiver — đó là bằng chứng đồ ăn tới đúng
+'   người; chỉ khi đó reservation mới thành completed và điểm uy tín / điểm cống hiến mới được cộng.
+'   Track & Performance: shipper đẩy toạ độ GPS trong lúc giao, receiver theo dõi đơn.
+'   NotificationsGateway chuyển tiếp từng vị trí vào socket room riêng của mỗi bên, nên bản đồ chạy
+'   mà không cần poll REST endpoint.
+'   Stop: shipper huỷ, hoặc hệ thống đánh thất bại một delivery. Đánh thất bại sẽ hoàn tồn kho
+'   listing và báo receiver đặt lại. KHÔNG trừ điểm uy tín khi nguyên nhân là không ai nhận kịp —
+'   receiver không làm gì sai.
+@startuml class-delivery
+title Delivery Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Delivery" {
+
+  class DeliveriesController {
+    +getMyOffers(user: User): Promise<Offer[]>
+    +accept(id: string, user: User): Promise<AcceptResult>
+    +reject(id: string, user: User, dto: RejectOfferDto): Promise<Message>
+    +getMyActive(user: User): Promise<ActiveDelivery>
+    +updateStatus(id: string, user: User, dto: UpdateDeliveryStatusDto, photo: File): Promise<StatusResult>
+    +track(reservationId: string, user: User): Promise<TrackingInfo>
+    +getMyStats(user: User): Promise<ShipperStats>
+    +getMyHistory(user: User, page: number, limit: number): Promise<PagedHistory>
+    +myRatings(user: User, page: number, limit: number): Promise<PagedRatings>
+    +cancel(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>
+    +fail(id: string, user: User, dto: RejectOfferDto): Promise<StopResult>
+    +receiverCancel(id: string, user: User): Promise<StopResult>
+  }
+
+  class DeliveriesService {
+    -prisma: PrismaService
+    -gateway: NotificationsGateway
+    -storage: StorageService
+    -trust: TrustService
+    -notifications: NotificationsService
+    +broadcastToNearbyShippers(deliveryId: string, lng: number, lat: number): Promise<void>
+    +acceptOffer(deliveryId: string, shipperUserId: string): Promise<AcceptResult>
+    +rejectOffer(deliveryId: string, shipperUserId: string, reason: string): Promise<Message>
+    +getMyPendingOffers(shipperUserId: string): Promise<Offer[]>
+    -offerNextNearestShipper(deliveryId: string, lng: number, lat: number): Promise<void>
+    -goOfflineAfterLapse(shipperIds: string[]): Promise<void>
+    +getMyActiveDelivery(shipperUserId: string): Promise<ActiveDelivery>
+    +updateStatus(deliveryId: string, shipperUserId: string, dto: UpdateDeliveryStatusDto): Promise<StatusResult>
+    +saveProofPhoto(photo: File): Promise<string>
+    -syncCampaignTransport(deliveryId: string, status: string): Promise<void>
+    +getTrackingForReceiver(reservationId: string, receiverUserId: string): Promise<TrackingInfo>
+    +getMyStats(shipperUserId: string): Promise<ShipperStats>
+    +getMyDeliveryHistory(shipperUserId: string, opts: PageOpts): Promise<PagedHistory>
+    +getMyRatings(shipperUserId: string, page: number, limit: number): Promise<PagedRatings>
+    -getDeliveryCoords(ids: string[]): Promise<CoordMap>
+    -getCampaignTransportSummaries(ids: string[]): Promise<SummaryMap>
+    +cancelAssignment(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>
+    +failDelivery(deliveryId: string, shipperUserId: string, reason: string): Promise<StopResult>
+    +cancelDeliverySearchByReceiver(deliveryId: string, userId: string): Promise<StopResult>
+  }
+}
+
+class RejectOfferDto
+class UpdateDeliveryStatusDto
+
+class NotificationsGateway {
+  +handleConnection(client: Socket): void
+  +emitToUser(userId: string, event: string, data: unknown): void
+}
+
+class StorageService {
+  +saveImage(file: File, subdir: string): Promise<string>
+  +imageExists(url: string): Promise<boolean>
+  -matchesMagicBytes(buffer: Buffer, mimetype: string): boolean
+}
+
+class TrustService {
+  +applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +reservation: ReservationDelegate
+  +dedicationPointsHistory: DedicationPointsHistoryDelegate
+  +receiverProfile: ReceiverProfileDelegate
+}
+
+DeliveriesController "1" --> "1" DeliveriesService
+DeliveriesController ..> RejectOfferDto
+DeliveriesController ..> UpdateDeliveryStatusDto
+
+DeliveriesService "1" --> "1" NotificationsGateway
+DeliveriesService "1" --> "1" StorageService
+DeliveriesService "1" --> "1" TrustService
+DeliveriesService "1" --> "1" NotificationsService
+DeliveriesService "1" --> "1" PrismaService
+@enduml

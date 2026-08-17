@@ -138,9 +138,12 @@ export interface BulkRun {
     dedicationPoints: number;
     /** Điểm đánh giá trung bình do người nhận chấm (null nếu chưa có lượt nào) */
     avgRating?: number | null;
+    /** Ảnh mặt eKYC của TNV — dùng làm avatar mặc định khi user.avatarUrl chưa được đặt */
+    faceImageUrl?: string | null;
     user: {
       fullName: string;
       phone: string | null;
+      avatarUrl?: string | null;
       /** Điểm uy tín hiện tại — cơ sở để NCC quyết định duyệt hay từ chối */
       trustScore?: number;
     };

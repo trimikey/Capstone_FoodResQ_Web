@@ -192,6 +192,8 @@ enum TrustScoreReason {
   bulk_run_cancelled_after_approval
   /// TNV điểm danh trễ quá thời gian ân hạn tại chiến dịch bếp ăn.
   late_check_in
+  /// TNV đã được duyệt nhưng hết ngày trực vẫn không điểm danh.
+  volunteer_no_show
 
   @@map("trust_score_reason")
 }

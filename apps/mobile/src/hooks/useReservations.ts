@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { ReservationStatus } from './useProviderReservations';
 import type { CapturedImage } from '../services/faceCapture';
+import { normalizeImageUrl } from './useListings';
 
 export type { ReservationStatus };
 
@@ -87,16 +88,31 @@ interface Paginated<T> {
   totalPages: number;
 }
 
-/** Danh sách đơn của tôi. GET /reservations/my (phân trang, lấy gộp 50). */
-export function useMyReservations() {
+function normalizeNullableImageUrls(imageUrls: string[] | null): string[] | null {
+  return Array.isArray(imageUrls) ? imageUrls.map(normalizeImageUrl).filter(Boolean) : imageUrls;
+}
+
+function normalizeReservationListingImages<T extends MyReservation | ReservationDetail>(reservation: T): T {
+  return {
+    ...reservation,
+    listing: {
+      ...reservation.listing,
+      imageUrls: normalizeNullableImageUrls(reservation.listing.imageUrls),
+    },
+  };
+}
+
+/** Danh sách đơn của tôi. GET /reservations/my (phân trang). */
+export function useMyReservations(page = 1, limit = 20) {
   return useQuery({
-    queryKey: ['reservations'],
+    queryKey: ['reservations', page, limit],
+    staleTime: 30_000,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Paginated<MyReservation>>>(
         endpoints.reservations.list,
-        { params: { page: 1, limit: 50 } }
+        { params: { page, limit } }
       );
-      return res.data.data.items;
+      return res.data.data;
     },
   });
 }
@@ -110,7 +126,7 @@ export function useReservationDetail(id?: string) {
       const res = await apiClient.get<ApiResponse<ReservationDetail>>(
         endpoints.reservations.detail(id!)
       );
-      return res.data.data;
+      return normalizeReservationListingImages(res.data.data);
     },
   });
 }

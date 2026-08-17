@@ -17,9 +17,9 @@ interface Props {
   onClose: () => void;
   onCreated?: () => void;
   /**
-   * Shipper đã được duyệt của chiến dịch — nguồn cho danh sách "người phụ trách".
-   * Chỉ shipper: đây là danh sách để ĐIỀU người đi phát tận điểm, và BE cũng chỉ
-   * nhận vai trò shipper cho `assigneeVolunteerIds`.
+   * TNV đã duyệt của chiến dịch có thể đi phát — shipper (đi điểm xa) và phục vụ
+   * (phát tại chỗ). BE áp cùng quy tắc cho `assigneeVolunteerIds`; đầu bếp không
+   * thuộc danh sách này vì họ phải ở bếp.
    */
   volunteers: Array<{ volunteerId: string; fullName: string; role: string }>;
   /** Số suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa). null = chưa đặt mục tiêu. */
@@ -125,7 +125,7 @@ export default function CreateDistributionModal({
       next.servings = `Chỉ còn ${remainingServings} suất — đang ghi ${s} phát + ${l} thừa`;
     }
     if (assignees.length === 0) {
-      next.assignees = 'Chọn ít nhất một shipper phụ trách đi phát';
+      next.assignees = 'Chọn ít nhất một người phụ trách đi phát';
     }
     if (roundLabel.trim().length > 100) {
       next.roundLabel = 'Tên đợt tối đa 100 ký tự';
@@ -135,7 +135,7 @@ export default function CreateDistributionModal({
     }
 
     // Điểm phát: bỏ qua dòng để trống hoàn toàn; dòng nhập nửa vời thì báo lỗi
-    // thay vì âm thầm bỏ — nếu không shipper sẽ mất một điểm mà không ai biết.
+    // thay vì âm thầm bỏ — nếu không TNV sẽ mất một điểm mà không ai biết.
     const cleanPoints: DistributionPoint[] = [];
     points.forEach((pt, i) => {
       const label = pt.label.trim();
@@ -218,17 +218,17 @@ export default function CreateDistributionModal({
       <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
         <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-4">
-        {/* Shipper phụ trách — chọn được nhiều người. BE kiểm lại từng người phải là
-            TNV đã duyệt của chiến dịch VÀ có vai trò shipper, rồi gửi thông báo cho
-            tất cả để họ đi giao. */}
+        {/* Người phụ trách — chọn được nhiều người. BE kiểm lại từng người phải là
+            TNV đã duyệt của chiến dịch VÀ có vai trò shipper hoặc phục vụ, rồi gửi
+            thông báo cho tất cả để họ đi phát. */}
         <div className="space-y-1">
           <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide">
-            Shipper phụ trách đi phát <span className="text-rose-500">*</span>
+            Người phụ trách đi phát <span className="text-rose-500">*</span>
           </p>
           {volunteers.length === 0 ? (
             <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-semibold text-amber-800">
-              Chiến dịch chưa có tình nguyện viên giao hàng nào được duyệt — hãy duyệt ít nhất
-              1 đăng ký vai trò Giao hàng trước khi phân công đi phát.
+              Chiến dịch chưa duyệt TNV giao hàng hoặc phục vụ nào — hãy duyệt ít nhất
+              1 đăng ký thuộc hai vai trò này trước khi phân công đi phát.
             </p>
           ) : (
             <>
@@ -255,8 +255,16 @@ export default function CreateDistributionModal({
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-800">
                         {v.fullName}
                       </span>
-                      <span className="shrink-0 rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-700">
-                        Giao hàng
+                      {/* Nhãn vai trò: tổ chức cần phân biệt ai đi điểm xa (shipper)
+                          và ai phát tại chỗ (phục vụ) khi chọn người. */}
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          v.role === 'waiter'
+                            ? 'bg-violet-100 text-violet-700'
+                            : 'bg-teal-100 text-teal-700'
+                        }`}
+                      >
+                        {v.role === 'waiter' ? 'Phục vụ' : 'Giao hàng'}
                       </span>
                     </label>
                   );
@@ -265,7 +273,7 @@ export default function CreateDistributionModal({
               <p className="text-[11px] font-medium text-neutral-400">
                 {assignees.length > 0
                   ? `Đã chọn ${assignees.length} người — tất cả sẽ nhận thông báo đi giao.`
-                  : 'Chọn một hoặc nhiều shipper.'}
+                  : 'Chọn một hoặc nhiều TNV giao hàng / phục vụ.'}
               </p>
             </>
           )}

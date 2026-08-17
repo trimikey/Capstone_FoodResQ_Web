@@ -24,6 +24,30 @@ const STATUS_VI: Record<BulkRun['status'], { label: string; cls: string }> = {
   cancelled: { label: 'Đã huỷ', cls: 'bg-neutral-200 text-neutral-600' },
 };
 
+const RANK_VI: Record<string, { label: string; cls: string }> = {
+  newcomer:    { label: 'Mới bắt đầu',    cls: 'bg-neutral-100 text-neutral-600' },
+  active:      { label: 'Hoạt động',       cls: 'bg-sky-100 text-sky-700' },
+  experienced: { label: 'Có kinh nghiệm', cls: 'bg-violet-100 text-violet-700' },
+  expert:      { label: 'Chuyên gia',      cls: 'bg-amber-100 text-amber-700' },
+};
+
+function shipperInitials(name: string) {
+  return name.trim().split(/\s+/).map((w) => w[0]).slice(-2).join('').toUpperCase();
+}
+
+function failRate(stats: BulkRun['shipperStats']): string {
+  if (!stats) return '—';
+  const total = stats.deliveredOrders + stats.failedOrders;
+  if (total === 0) return '—';
+  return `${Math.round((stats.failedOrders / total) * 100)}%`;
+}
+
+function failRateWarn(stats: BulkRun['shipperStats']): boolean {
+  if (!stats) return false;
+  const total = stats.deliveredOrders + stats.failedOrders;
+  return total > 0 && stats.failedOrders / total > 0.3;
+}
+
 /**
  * Khối "Yêu cầu giao sỉ" cho trang quản lý của nhà cung cấp:
  * duyệt/từ chối yêu cầu ≥10 phần và theo dõi tiến độ phát của các chuyến đang chạy.
@@ -136,22 +160,67 @@ export default function BulkRunRequests() {
               </button>
 
               {showProfileFor === r.id && (
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <Metric
-                    label="Điểm uy tín"
-                    value={r.shipper?.user.trustScore ?? '—'}
-                    warn={(r.shipper?.user.trustScore ?? 100) <= 60}
-                  />
-                  <Metric
-                    label="Đánh giá"
-                    value={r.shipper?.avgRating != null ? `${Number(r.shipper.avgRating).toFixed(1)}★` : 'Chưa có'}
-                  />
-                  <Metric label="Chuyến sỉ đã xong" value={r.shipperStats?.completedRuns ?? 0} />
-                  <Metric
-                    label="Đơn lẻ giao/hỏng"
-                    value={`${r.shipperStats?.deliveredOrders ?? 0}/${r.shipperStats?.failedOrders ?? 0}`}
-                    warn={(r.shipperStats?.failedOrders ?? 0) > (r.shipperStats?.deliveredOrders ?? 0)}
-                  />
+                <div className="mt-3 space-y-3">
+                  {r.shipper ? (
+                    <>
+                      {/* Danh tính */}
+                      <div className="flex items-center gap-3">
+                        {/* Ưu tiên: avatarUrl → faceImageUrl (eKYC) → initials */}
+                        <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 overflow-hidden">
+                          {(r.shipper.user.avatarUrl ?? r.shipper.faceImageUrl) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={r.shipper.user.avatarUrl ?? r.shipper.faceImageUrl ?? ''}
+                              alt={r.shipper.user.fullName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-sm font-extrabold text-emerald-700 select-none">
+                              {shipperInitials(r.shipper.user.fullName)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <p className="text-sm font-extrabold text-neutral-800">{r.shipper.user.fullName}</p>
+                            {r.shipper.rank && (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${(RANK_VI[r.shipper.rank] ?? RANK_VI.newcomer).cls}`}>
+                                {(RANK_VI[r.shipper.rank] ?? RANK_VI.newcomer).label}
+                              </span>
+                            )}
+                          </div>
+                          {r.shipper.user.phone && (
+                            <a href={`tel:${r.shipper.user.phone}`} className="text-xs text-emerald-700 hover:underline">
+                              {r.shipper.user.phone}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Chỉ số */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <Metric
+                          label="Điểm uy tín"
+                          value={r.shipper.user.trustScore ?? '—'}
+                          warn={(r.shipper.user.trustScore ?? 100) <= 60}
+                        />
+                        <Metric
+                          label="Đánh giá TB"
+                          value={r.shipper.avgRating != null ? `${Number(r.shipper.avgRating).toFixed(1)} ★` : 'Chưa có'}
+                        />
+                        <Metric label="Điểm cống hiến" value={r.shipper.dedicationPoints} />
+                        <Metric label="Chuyến sỉ đã xong" value={r.shipperStats?.completedRuns ?? 0} />
+                        <Metric label="Đơn giao thành công" value={r.shipperStats?.deliveredOrders ?? 0} />
+                        <Metric
+                          label="Tỉ lệ thất bại"
+                          value={failRate(r.shipperStats)}
+                          warn={failRateWarn(r.shipperStats)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-neutral-400">Chưa có thông tin tình nguyện viên.</p>
+                  )}
                 </div>
               )}
             </div>

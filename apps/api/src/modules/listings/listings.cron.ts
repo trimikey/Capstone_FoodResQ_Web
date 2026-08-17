@@ -13,6 +13,24 @@ export class ListingsCron {
     private notifications: NotificationsService,
   ) {}
 
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleAutoExpire() {
+    try {
+      const result = await this.prisma.foodListing.updateMany({
+        where: {
+          status: { in: ['active', 'fully_reserved'] },
+          pickupEndTime: { lt: new Date() },
+          deletedAt: null,
+        },
+        data: { status: 'expired' },
+      });
+      if (result.count > 0)
+        this.logger.log(`Auto-expired ${result.count} listing(s)`);
+    } catch (e) {
+      logCronError(this.logger, 'handleAutoExpire', e);
+    }
+  }
+
   @Cron(CronExpression.EVERY_30_MINUTES)
   async handleExpiryAlerts() {
     try {

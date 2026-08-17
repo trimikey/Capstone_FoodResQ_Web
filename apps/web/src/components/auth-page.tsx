@@ -435,7 +435,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
     try {
       const res = await api.post<{
         data: { accessToken: string; refreshToken: string; user: Parameters<typeof setUser>[0] };
-      }>('/auth/google', { idToken });
+      }>('/auth/firebase', { idToken });
       setTokens(res.data.data.accessToken, res.data.data.refreshToken);
       setUser(res.data.data.user);
       // Xóa cache user cũ để chắc chắn hiển thị profile của user vừa đăng nhập
@@ -453,7 +453,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
     }
   };
 
-  // Mở popup Firebase → lấy ID token → gửi lên backend (/auth/google)
+  // Mở popup Firebase → lấy ID token → gửi lên backend (/auth/firebase)
   const handleGoogleSignIn = async () => {
     try {
       const idToken = await signInWithGoogle();

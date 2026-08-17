@@ -2,15 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  useDuplicateListing,
-  useProviderOrders,
-  useProviderCancelReservation,
-  type ProviderOrderItem,
-} from '@/hooks/useProviderListings';
+import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
@@ -135,7 +129,6 @@ function receiverInitial(name: string): string {
 }
 
 export default function ProviderOrdersPage() {
-  const router = useRouter();
   const [page, setPage] = useState(1);
   const { data, isLoading, isError, refetch } = useProviderOrders(page);
   const items = (data?.items ?? []) as ProviderOrderItem[];
@@ -143,9 +136,7 @@ export default function ProviderOrdersPage() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
   const [cancelling, setCancelling] = useState<ProviderOrderItem | null>(null);
-  const [selectedOrder, setSelectedOrder] = useState<ProviderOrderItem | null>(null);
   const providerCancel = useProviderCancelReservation();
-  const duplicateListing = useDuplicateListing();
 
   // ─── Charity cooperation requests ─────────────────────────────────────
   const requestsQuery = useProviderRequests();
@@ -187,19 +178,9 @@ export default function ProviderOrdersPage() {
 
   const isLoadingList = isLoading && items.length === 0;
 
-  async function handleDuplicateListing(listingId: string) {
-    try {
-      await duplicateListing.mutateAsync(listingId);
-      toast.success('Đã tạo bản nháp mới từ tin cũ.');
-      router.push('/provider');
-    } catch (e) {
-      toast.error(errMsg(e, 'Đăng lại thất bại. Vui lòng thử lại.'));
-    }
-  }
-
   return (
     <div className="flex-1 min-w-0 bg-[#FAFBF9]">
-      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-6 md:py-10 space-y-6">
+      <div className="max-w-6xl mx-auto px-0 sm:px-4 md:px-8 lg:px-10 py-4 sm:py-6 md:py-10 space-y-5 sm:space-y-6">
         {/* Header — đồng bộ với các trang provider khác */}
         <ProviderHeaderCard
           eyebrow="Lịch sử"
@@ -382,7 +363,7 @@ export default function ProviderOrdersPage() {
                       setFilter(f.key);
                       setPage(1);
                     }}
-                    className={`relative px-5 py-4 text-sm font-medium transition-colors whitespace-nowrap ${
+                    className={`relative min-h-11 px-4 sm:px-5 py-3 sm:py-4 text-sm font-medium transition-colors whitespace-nowrap ${
                       active ? 'text-[#236c2a]' : 'text-neutral-500 hover:text-neutral-700'
                     }`}
                   >
@@ -463,9 +444,6 @@ export default function ProviderOrdersPage() {
               <OrderCard
                 key={item.id}
                 item={item}
-                onViewDetail={() => setSelectedOrder(item)}
-                onDuplicateListing={() => handleDuplicateListing(item.listing.id)}
-                duplicating={duplicateListing.isPending}
                 onCancelRequest={() => setCancelling(item)}
               />
             ))}
@@ -493,17 +471,6 @@ export default function ProviderOrdersPage() {
                 }
               }}
               onClose={() => setCancelling(null)}
-            />
-          )}
-
-          {selectedOrder && (
-            <OrderDetailModal
-              item={selectedOrder}
-              onClose={() => setSelectedOrder(null)}
-              onCancelRequest={() => {
-                setCancelling(selectedOrder);
-                setSelectedOrder(null);
-              }}
             />
           )}
 
@@ -553,15 +520,9 @@ function StatCard({
 
 function OrderCard({
   item,
-  onViewDetail,
-  onDuplicateListing,
-  duplicating,
   onCancelRequest,
 }: {
   item: ProviderOrderItem;
-  onViewDetail: () => void;
-  onDuplicateListing: () => void;
-  duplicating: boolean;
   onCancelRequest: () => void;
 }) {
   const meta = getStatus(item);
@@ -598,7 +559,7 @@ function OrderCard({
         <div className="flex-1 min-w-0 flex items-start gap-3">
           <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={mediaUrl(image)} alt={item.listing.title} className="w-full h-full object-cover" />
+            <img src={image} alt={item.listing.title} className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-800 text-sm truncate">{item.listing.title}</p>
@@ -624,18 +585,16 @@ function OrderCard({
           <span className={`self-start md:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
             {meta.label}
           </span>
-          <div className="flex gap-1.5 mt-auto">
+          <div className="grid grid-cols-2 min-[420px]:flex gap-2 min-[420px]:gap-1.5 mt-auto">
             <button
-              type="button"
-              onClick={onViewDetail}
-              className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
               title="Xem chi tiết"
             >
               <span className="material-symbols-outlined text-[14px]">visibility</span>
               Chi tiết
             </button>
             {meta.group === 'pending' && (
-              <button className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
+              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
                 Duyệt
               </button>
@@ -643,7 +602,7 @@ function OrderCard({
             {meta.group === 'confirmed' && (
               <Link
                 href="/provider/scan"
-                className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors"
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">qr_code_scanner</span>
                 Quét QR
@@ -653,153 +612,19 @@ function OrderCard({
               <button
                 onClick={onCancelRequest}
                 title="Huỷ đơn này (không phạt điểm người nhận)"
-                className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
+                className="min-h-10 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">block</span>
                 Huỷ đơn
               </button>
             )}
             {meta.group === 'cancelled' && (
-              <button
-                type="button"
-                onClick={onDuplicateListing}
-                disabled={duplicating}
-                className="flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 disabled:opacity-60 disabled:cursor-not-allowed text-xs font-medium text-neutral-700 transition-colors"
-              >
-                <span className={`material-symbols-outlined text-[14px] ${duplicating ? 'animate-spin' : ''}`}>
-                  refresh
-                </span>
-                {duplicating ? 'Đang tạo...' : 'Đăng lại'}
+              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
+                <span className="material-symbols-outlined text-[14px]">refresh</span>
+                Đăng lại
               </button>
             )}
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OrderDetailModal({
-  item,
-  onClose,
-  onCancelRequest,
-}: {
-  item: ProviderOrderItem;
-  onClose: () => void;
-  onCancelRequest: () => void;
-}) {
-  const meta = getStatus(item);
-  const image = item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
-  const code = item.id.slice(0, 8).toUpperCase();
-  const qty = formatWeight(item);
-  const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
-
-  return (
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <section
-        className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="provider-order-detail-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4 md:px-6">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#236c2a]">Chi tiết đơn</p>
-            <h2 id="provider-order-detail-title" className="mt-1 text-xl font-extrabold text-neutral-900">
-              #{code}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
-            aria-label="Đóng"
-          >
-            <span className="material-symbols-outlined text-[22px]">close</span>
-          </button>
-        </header>
-
-        <div className="max-h-[75vh] overflow-y-auto px-5 py-5 md:px-6">
-          <div className="grid gap-5 md:grid-cols-[180px_1fr]">
-            <div className="overflow-hidden rounded-2xl bg-neutral-100 aspect-square">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={mediaUrl(image)} alt={item.listing.title} className="h-full w-full object-cover" />
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${meta.badge}`}>
-                  {meta.label}
-                </span>
-                <h3 className="mt-3 text-2xl font-extrabold text-neutral-900">{item.listing.title}</h3>
-                <p className="mt-1 text-sm text-neutral-500">Số lượng: {qty}</p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DetailTile icon="person" label="Người nhận" value={item.receiver.user.fullName} />
-                <DetailTile icon="call" label="Số điện thoại" value={item.receiver.user.phone ?? 'Chưa cập nhật'} />
-                <DetailTile icon="schedule" label="Thời gian đặt" value={formatDateTime(item.createdAt)} />
-                <DetailTile icon="event_upcoming" label="Ngày tạo đơn" value={formatDate(item.createdAt)} />
-              </div>
-
-              <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-                <div className="flex items-start gap-3">
-                  <span className="material-symbols-outlined mt-0.5 text-[20px] text-[#236c2a]">location_on</span>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">Điểm lấy hàng</p>
-                    <p className="mt-1 text-sm font-semibold text-neutral-800">{item.listing.pickupAddress}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <footer className="flex flex-col-reverse gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-4 sm:flex-row sm:justify-end md:px-6">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 hover:bg-neutral-100"
-          >
-            Đóng
-          </button>
-          {meta.group === 'confirmed' && (
-            <Link
-              href="/provider/scan"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#236c2a] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#1a4f1f]"
-            >
-              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-              Quét QR
-            </Link>
-          )}
-          {canProviderCancel && (
-            <button
-              type="button"
-              onClick={onCancelRequest}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50"
-            >
-              <span className="material-symbols-outlined text-[18px]">block</span>
-              Hủy đơn
-            </button>
-          )}
-        </footer>
-      </section>
-    </div>
-  );
-}
-
-function DetailTile({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-neutral-100 bg-white p-4">
-      <div className="flex items-start gap-3">
-        <span className="material-symbols-outlined mt-0.5 text-[20px] text-neutral-400">{icon}</span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">{label}</p>
-          <p className="mt-1 break-words text-sm font-semibold text-neutral-800">{value}</p>
         </div>
       </div>
     </div>

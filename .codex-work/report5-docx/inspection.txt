@@ -1,0 +1,164 @@
+paragraphs=133 tables=6 sections=1
+section 0: page=7560310x10692130 margins=914400,899160,914400,914400
+
+PARAGRAPHS
+P009 style='normal': CAPSTONE PROJECT REPORT
+P010 style='normal': Report 5 – Software Test Documentation
+P020 style='normal': – TPHCM, December 2025 –
+P021 style='normal': Table of Contents
+P023 style='Heading 1': I. Record of Changes
+P024 style='normal': *A - Added M - Modified D - Deleted
+P026 style='Heading 1': II. Testing Documentation
+P027 style='Heading 2': 1. Scope of Testing
+P028 style='Heading 3': 1.1 Scopes of Test
+P029 style='normal': Features & Functions to Be Tested
+P030 style='normal': User Authentication & Authorization
+P031 style='normal': Login, Register, Logout
+P032 style='normal': Role-based access (Learner, Coach, Admin)
+P033 style='normal': Learner Course Module
+P034 style='normal': View course list
+P035 style='normal': View course details
+P036 style='normal': View lessons
+P037 style='normal': Upload practice video
+P038 style='normal': Receive AI feedback
+P039 style='normal': Coach panel
+P040 style='normal': View student’s submitted practice video
+P041 style='normal': Provide manual coaching feedback
+P042 style='normal': Review course history
+P043 style='normal': Admin panel
+P044 style='normal': Manage course
+P045 style='normal': Manage account 
+P046 style='normal': Monitor system activities
+P047 style='normal': AI Analysis Pipeline
+P048 style='normal': Video upload → processing
+P049 style='normal': Receive results from AI model
+P050 style='normal': Display analysis score & suggestions
+P051 style='normal': Non-functional Requirements
+P052 style='normal': Performance (video upload time, response time)
+P053 style='normal': Reliability (no crash)
+P054 style='normal': Security (token validation, password hashing)
+P055 style='normal': Usability (UI/UX clarity)
+P056 style='normal': Features Not Tested
+P057 style='normal': Advanced machine learning accuracy benchmarking
+P058 style='normal': Cross-platform browser compatibility
+P059 style='normal': Stress testing for 1,000+ concurrent users
+P060 style='normal': Payment gateway (not in scope)
+P061 style='Heading 3': 1.2 Testing level
+P062 style='normal': Unit testing
+P063 style='normal': In-charge: Backend + Mobile Developers
+P064 style='normal': Focus: API validation, UI handlers, utility functions
+P065 style='normal': Acceptance Criteria:
+P066 style='normal': Functions return expected values
+P067 style='normal': API status codes correct
+P068 style='normal': No logic-breaking errors
+P069 style='normal': Integration Testing
+P070 style='normal': In-charge: Developers + QA (Quality Assurance)
+P071 style='normal': Focus: 
+P072 style='normal': Mobile App ↔ Backend
+P073 style='normal': Video Upload ↔ Storage
+P074 style='normal': Acceptance Criteria:
+P075 style='normal': Modules communicate correctly
+P076 style='normal': No broken data flow
+P077 style='normal': Upload-process-download works
+P078 style='normal': System Testing
+P079 style='normal': In-charge: QA team
+P080 style='normal': Focus: End-to-end flow
+P081 style='normal': Acceptance Criteria:
+P082 style='normal': All main user journeys run without error
+P083 style='normal': System meets SRS requirements
+P084 style='Heading 3': 1.3 Constraints and Assumptions
+P085 style='normal': Constraints
+P086 style='normal': Video upload speed dependent on network
+P087 style='normal': Backend hosted locally during development
+P088 style='normal': Assumptions 
+P089 style='normal': Users have stable internet
+P090 style='normal': All team members can maintain test environment
+P091 style='normal': Test accounts are available and functional
+P092 style='Heading 2': 2. Test Strategy
+P093 style='Heading 3': 2.1 Testing Types
+P094 style='normal': Functional Testing
+P095 style='normal': Objective: Verify all functions match requirements
+P096 style='normal': Technique: Black-box, scenario-based
+P097 style='normal': Completion Criteria: All test cases passed, no major defects left
+P098 style='normal': Integration Testing
+P099 style='normal': Objective: Ensure connected modules function correctly
+P100 style='normal': Technique: API integration tests, data flow validation
+P101 style='normal': Completion Criteria: All interfaces return correct data
+P102 style='normal': Usability Testing
+P103 style='normal': Objective: Ensure UI is intuitive for learners & coaches
+P104 style='normal': Technique: User observation, heuristic evaluation
+P105 style='normal': Completion Criteria: No critical UX blockers
+P106 style='normal': Performance Testing
+P107 style='normal': Objective: Ensure upload/AI processing within acceptable time
+P108 style='normal': Technique: Load tests, manual measurement
+P109 style='normal': Completion Criteria: 
+P110 style='normal': Video upload < 15 seconds 
+P111 style='normal': AI results < 25 seconds
+P112 style='normal':  Security Testing
+P113 style='normal': Objective: Validate safety of user data & authentication
+P114 style='normal': Technique: Token validation check, role-access testing
+P115 style='normal': Completion Criteria: Unauthorized access attempts blocked
+P116 style='Heading 3': 2.2 Test Levels
+P118 style='Heading 3': 2.3 Supporting Tools
+P120 style='Heading 2': 3. Test Plan
+P121 style='Heading 3': 3.1 Human Resources
+P123 style='Heading 3': 3.2 Test Environment
+P125 style='Heading 3': 3.3 Test Milestones
+P127 style='Heading 2': 4. Test Cases
+P128 style='normal': Unit Test Cases:  Report5_UnitTest.xlsx 
+P129 style='normal': System Test Cases: Report5_Test Report.xlsx 
+P130 style='Heading 2': 5. Test Reports
+P131 style='normal': Unit Test Cases:  Report5_UnitTest.xlsx 
+P132 style='normal': System Test Cases: Report5_Test Report.xlsx 
+
+TABLES
+TABLE 0: rows=14 cols=4
+  R00: Date || A* | M, D || In charge || Change Description
+  R01: 20/11/2025 || A ||  || 
+  R02: 20/11/2025 || A ||  || 
+  R03: 20/11/2025 || A ||  || 
+  R04: 20/11/2025 || A ||  || 
+  R05: 20/11/2025 || A ||  || 
+  R06:  ||  ||  || 
+  R07:  ||  ||  || 
+  R08:  ||  ||  || 
+  R09:  ||  ||  || 
+  R10:  ||  ||  || 
+  R11:  ||  ||  || 
+  R12:  ||  ||  || 
+  R13:  ||  ||  || 
+TABLE 1: rows=7 cols=5
+  R00: Type of Tests || Test Level || Test Level || Test Level || Test Level
+  R01: Type of Tests || Unit || Integration || System || Acceptance
+  R02: Functional Testing || X || X || X || X
+  R03: Integration Testing ||  || X || X || 
+  R04: Performance Testing || X || X || X || 
+  R05: Usability Testing ||  ||  || X || X
+  R06: Security Testing || X || X || X || 
+TABLE 2: rows=5 cols=4
+  R00: Purpose || Tool || Vendor/In-house || Version
+  R01: API Testing || Postman || Postman Inc || Latest
+  R02: Mobile testing || Expo go || Expo || Latest
+  R03: Issue Tracking || Github issus || Github || -
+  R04: UI testing || Android/iOS simulator || Apple/Google || Android 8.0+ | IOS 13+
+TABLE 3: rows=5 cols=3
+  R00: Worker/Doer || Role || Specific Responsibilities/Comments
+  R01: HungLT || Backend Dev || Unit testing API, Integration with AI
+  R02: TuanNA || Mobile Dev || Unit test components, integration testing
+  R03: HoaiNTT || Tester || System test, report defects
+  R04: QuangDM || Tester || System test, report defects
+TABLE 4: rows=6 cols=4
+  R00: Purpose || Tool || Provider || Version
+  R01: Mobile testing || Android Emulator || Google || 8+
+  R02: Mobile testing || iOS Emulator || Apple || 13+
+  R03: Backend || NestJs Sever || In-house || Latest
+  R04: Database || PostgreSQL || Open-source || 15.x
+  R05: Cloud Storage Test || AWS S3 || AWS || Latest
+TABLE 5: rows=7 cols=3
+  R00: Milestone Task || Start Date || End Date
+  R01: Prepare Test Plan || 09/09/2025 || 20/09/2025
+  R02: Unit Testing || 21/09/2025 || 10/10/2025
+  R03: Integration Testing || 11/10/2025 || 30/10/2025
+  R04: System Testing || 01/11/2025 || 20/11/2025
+  R05: Acceptance Testing || 21/11/2025 || 05/12/2025
+  R06: Final Report || 06/12/2025 || 15/12/2025

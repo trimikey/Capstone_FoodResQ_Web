@@ -252,73 +252,98 @@ export default function ProfileTab() {
                     <MaterialCommunityIcons
                       name={faceEnrolled ? 'check-decagram' : 'face-man-profile'}
                       size={22}
-                      color={COLORS.primary}
+                      color={faceEnrolled ? COLORS.primary : COLORS.onSurfaceVariant}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cardTitle}>Xác minh khuôn mặt</Text>
                     <Text style={styles.faceStatus}>
                       {faceEnrollment.isLoading
-                        ? 'Đang kiểm tra trạng thái...'
+                        ? 'Đang kiểm tra...'
                         : faceBusy
-                          ? 'Đang cập nhật selfie...'
+                          ? 'Đang cập nhật...'
                           : faceEnrolled
-                          ? 'Đã đăng ký khuôn mặt'
+                          ? 'Đã xác minh'
                           : 'Chưa đăng ký'}
                     </Text>
                   </View>
+                  {faceEnrolled && !faceBusy ? (
+                    <Button
+                      mode="text"
+                      compact
+                      icon="camera-outline"
+                      textColor={COLORS.onSurfaceVariant}
+                      onPress={() => handleEnrollFace('camera')}
+                    >
+                      Cập nhật
+                    </Button>
+                  ) : null}
                 </View>
-                <Text style={styles.faceHint}>
-                  {faceEnrolled
-                    ? 'Bạn đã đủ điều kiện xác minh khi nhận hàng. Có thể cập nhật selfie nếu ảnh cũ không còn hiển thị.'
-                    : 'Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.'}
-                </Text>
-                {faceFeedback ? (
+                {!faceEnrolled ? (
+                  <>
+                    <Text style={styles.faceHint}>
+                      Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.
+                    </Text>
+                    {faceFeedback ? (
+                      <View style={[styles.faceFeedback, getFaceFeedbackStyle(faceFeedback.type)]}>
+                        <MaterialCommunityIcons
+                          name={
+                            faceFeedback.type === 'success'
+                              ? 'check-circle-outline'
+                              : faceFeedback.type === 'error'
+                                ? 'alert-circle-outline'
+                                : 'progress-upload'
+                          }
+                          size={18}
+                          color={
+                            faceFeedback.type === 'success'
+                              ? COLORS.primary
+                              : faceFeedback.type === 'error'
+                                ? COLORS.error
+                                : COLORS.onSurfaceVariant
+                          }
+                        />
+                        <Text style={[styles.faceFeedbackText, getFaceFeedbackTextStyle(faceFeedback.type)]}>
+                          {faceFeedback.message}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.faceActions}>
+                      <Button
+                        mode="contained"
+                        icon="camera"
+                        buttonColor={COLORS.primary}
+                        loading={faceBusy}
+                        disabled={faceBusy}
+                        onPress={() => handleEnrollFace('camera')}
+                        style={styles.faceButton}
+                      >
+                        Đăng ký selfie
+                      </Button>
+                      <Button
+                        mode="text"
+                        icon="image-outline"
+                        textColor={COLORS.onSurfaceVariant}
+                        disabled={faceBusy}
+                        onPress={() => handleEnrollFace('library')}
+                      >
+                        Chọn ảnh
+                      </Button>
+                    </View>
+                  </>
+                ) : null}
+                {faceFeedback && faceEnrolled ? (
                   <View style={[styles.faceFeedback, getFaceFeedbackStyle(faceFeedback.type)]}>
                     <MaterialCommunityIcons
-                      name={
-                        faceFeedback.type === 'success'
-                          ? 'check-circle-outline'
-                          : faceFeedback.type === 'error'
-                            ? 'alert-circle-outline'
-                            : 'progress-upload'
-                      }
+                      name={faceFeedback.type === 'success' ? 'check-circle-outline' : faceFeedback.type === 'error' ? 'alert-circle-outline' : 'progress-upload'}
                       size={18}
-                      color={
-                        faceFeedback.type === 'success'
-                          ? COLORS.primary
-                          : faceFeedback.type === 'error'
-                            ? COLORS.error
-                            : COLORS.onSurfaceVariant
-                      }
+                      color={faceFeedback.type === 'success' ? COLORS.primary : faceFeedback.type === 'error' ? COLORS.error : COLORS.onSurfaceVariant}
                     />
                     <Text style={[styles.faceFeedbackText, getFaceFeedbackTextStyle(faceFeedback.type)]}>
                       {faceFeedback.message}
                     </Text>
                   </View>
                 ) : null}
-                <View style={styles.faceActions}>
-                    <Button
-                      mode="contained"
-                      icon="camera"
-                      buttonColor={COLORS.primary}
-                      loading={faceBusy}
-                      disabled={faceBusy}
-                      onPress={() => handleEnrollFace('camera')}
-                      style={styles.faceButton}
-                    >
-                      {faceBusy ? 'Đang cập nhật...' : faceEnrolled ? 'Cập nhật selfie' : 'Đăng ký selfie'}
-                    </Button>
-                    <Button
-                      mode="text"
-                      icon="image-outline"
-                      textColor={COLORS.onSurfaceVariant}
-                      disabled={faceBusy}
-                      onPress={() => handleEnrollFace('library')}
-                    >
-                      Chọn ảnh
-                    </Button>
-                </View>
               </SurfaceCard>
             ) : null}
 
@@ -362,15 +387,6 @@ export default function ProfileTab() {
           </Button>
         ) : null}
         <SurfaceCard style={styles.actionCard}>
-          <Button
-            mode="outlined"
-            icon="chef-hat"
-            onPress={() => router.push('/(app)/recipes')}
-            style={styles.actionBtn}
-            textColor={COLORS.primary}
-          >
-            Công thức nấu ăn
-          </Button>
           <Button
             mode="contained"
             icon="account-edit"

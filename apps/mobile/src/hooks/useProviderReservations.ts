@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
+import { normalizeImageUrl } from './useListings';
 
 /** Trạng thái đơn đặt chỗ (khớp enum ReservationStatus backend). */
 export type ReservationStatus =
@@ -41,6 +42,18 @@ interface Paginated<T> {
   totalPages: number;
 }
 
+function normalizeReservationListingImages<T extends ProviderReservation>(reservation: T): T {
+  return {
+    ...reservation,
+    listing: {
+      ...reservation.listing,
+      imageUrls: Array.isArray(reservation.listing.imageUrls)
+        ? reservation.listing.imageUrls.map(normalizeImageUrl).filter(Boolean)
+        : reservation.listing.imageUrls,
+    },
+  };
+}
+
 /**
  * Danh sách đơn đặt vào các tin của provider đang đăng nhập.
  * GET /reservations/provider/my (lọc theo status tuỳ chọn).
@@ -53,7 +66,7 @@ export function useProviderReservations(status?: string) {
         endpoints.reservations.providerMy,
         { params: { page: 1, limit: 50, ...(status ? { status } : {}) } }
       );
-      return res.data.data.items;
+      return res.data.data.items.map(normalizeReservationListingImages);
     },
   });
 }
@@ -67,7 +80,7 @@ export function useProviderReservationDetail(id?: string) {
       const res = await apiClient.get<ApiResponse<ProviderReservation>>(
         endpoints.reservations.detail(id!)
       );
-      return res.data.data;
+      return normalizeReservationListingImages(res.data.data);
     },
   });
 }

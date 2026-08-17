@@ -1,0 +1,381 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Supporting Modules (5)
+' 69. Notifications · 70. Reports · 71. Recipes · 72. ESG · 73. Uploads
+'==============================================================
+
+'──────────────────── 69. Notifications ──────────────────────
+@startuml seq-notification-center
+!include _seq-style.iuml
+title Realtime Notification Sequence Diagram
+
+actor "User" as User
+participant ":NotificationCenter\n(socket.io-client)" as Screen
+participant ":NotificationsGateway" as WS
+participant ":JwtService" as Jwt
+participant ":NotificationsController" as Ctrl
+participant ":NotificationsService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+participant ":Caller\n(any service)" as Caller
+
+User -> Screen : successful login
+activate Screen
+Screen -> WS : connect(handshake.auth.token = accessToken)
+activate WS
+WS -> Jwt : verify(token, JWT_SECRET)
+activate Jwt
+Jwt --> WS : payload { sub: userId } | throw
+deactivate Jwt
+alt Token missing or invalid
+  WS --> Screen : client.disconnect()
+  Screen --> User : REST only, no realtime channel
+else valid
+  WS -> WS : client.join("user:{userId}")
+  WS --> Screen : connected
+  Screen --> User : realtime channel is ready
+end
+
+== Any service emits a notification ==
+Caller -> Svc : notify(userId, { type, title, body, data })
+activate Svc
+Svc -> Repo : notification.create(...)
+activate Repo
+Repo -> DB : INSERT notifications
+alt The insert fails
+  Repo --> Svc : throw
+  Svc -> Svc : swallow the error and return null
+else inserted
+  DB --> Repo : notification
+  Repo --> Svc : notification
+  deactivate Repo
+  Svc -> WS : emitToUser(userId, 'notification:new', notification)
+  WS --> Screen : socket event
+  Screen --> User : toast and badge +1
+end
+deactivate Svc
+
+== User opens the notification centre ==
+User -> Screen : open the notification list
+Screen -> Ctrl : GET /notifications/my · GET /notifications/unread-count
+activate Ctrl
+Ctrl -> Svc : listMine(userId) · unreadCount(userId)
+activate Svc
+Svc -> Repo : notification.findMany(userId) order createdAt desc take 50
+Svc -> Repo : notification.count(userId, isRead = false)
+Repo -> DB : SELECT notifications
+DB --> Repo : items[], count
+Svc --> Ctrl : notifications[], { count }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : the list plus the unread badge
+
+User -> Screen : tap one notification / mark all as read
+Screen -> Ctrl : PATCH /notifications/:id/read · PATCH /notifications/read-all
+activate Ctrl
+Ctrl -> Svc : markRead(id, userId) · markAllRead(userId)
+activate Svc
+Svc -> Repo : notification.updateMany(filter includes userId) set isRead, readAt
+Repo -> DB : UPDATE notifications
+Svc --> Ctrl : { ok: true }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : the badge refreshes
+
+User -> Screen : grant push permission
+Screen -> Ctrl : POST /notifications/device-token (fcmToken)
+activate Ctrl
+Ctrl -> Svc : saveDeviceToken(userId, token)
+activate Svc
+Svc -> Repo : user.update(fcmToken)
+Repo -> DB : UPDATE users SET fcm_token
+Svc --> Ctrl : { ok: true }
+deactivate Svc
+Ctrl --> Screen : return data (201)
+deactivate Ctrl
+Screen --> User : push notifications enabled
+deactivate WS
+deactivate Screen
+@enduml
+
+'──────────────────── 70. Reports ────────────────────────────
+@startuml seq-report-create
+!include _seq-style.iuml
+title Create Report Sequence Diagram
+
+actor "User" as User
+participant ":ReportScreen" as Screen
+participant ":ReportsController" as Ctrl
+participant ":ReportsService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Admin" as Admin
+
+User -> Screen : choose the target, the reason and a description
+activate Screen
+Screen -> Ctrl : POST /reports (CreateReportDto)
+activate Ctrl
+Ctrl -> Svc : create(reporterId, dto)
+activate Svc
+Svc -> Svc : validateOwnership(reporterId, targetType, targetId)
+alt targetType = reservation
+  Svc -> Repo : receiverProfile.findUnique(userId) + reservation.findFirst(id, receiverId)
+  Repo -> DB : SELECT receiver_profiles / reservations
+  DB --> Repo : rows
+  Repo --> Svc : receiver, reservation
+  alt Not the receiver of that order
+    Svc --> Ctrl : 403 "You cannot report this order"
+  end
+else targetType = listing / delivery / user / campaign
+  Svc -> Repo : findUnique(targetId) on the matching table
+  Repo -> DB : SELECT food_listings / deliveries / users / kitchen_campaigns
+  DB --> Repo : row | null
+  Repo --> Svc : exists
+  alt Target does not exist
+    Svc --> Ctrl : 404 "The reported item does not exist"
+  end
+end
+Svc -> Repo : report.create(reporterId, targetType, targetId, reason, description)
+Repo -> DB : INSERT reports (status = pending)
+DB --> Repo : { id, status, createdAt }
+Repo --> Svc : report
+Svc -> Notif : notifyAdmins("New report — {target} / {reason}")
+Notif --> Admin : realtime notification
+Svc --> Ctrl : { id, status, message }
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : "report submitted" (or show error message)
+
+User -> Screen : review the reports already submitted
+Screen -> Ctrl : GET /reports/my
+activate Ctrl
+Ctrl -> Svc : findMine(reporterId)
+activate Svc
+Svc -> Repo : report.findMany(reporterId) order createdAt desc
+Repo -> DB : SELECT reports
+DB --> Repo : reports[]
+Svc --> Ctrl : reports[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : status of each report (pending / resolved / dismissed)
+deactivate Screen
+@enduml
+
+'──────────────────── 71. Recipes ────────────────────────────
+@startuml seq-recipe-manage
+!include _seq-style.iuml
+title Manage Recipe Library Sequence Diagram
+
+actor "Chef" as User
+participant ":RecipeScreen" as Screen
+participant ":RecipesController" as Ctrl
+participant ":RecipesService" as Svc
+participant ":StorageService" as Storage
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : browse the recipe library (search, pagination)
+activate Screen
+Screen -> Ctrl : GET /recipes?search&page&limit · GET /recipes/mine
+activate Ctrl
+Ctrl -> Svc : list({ search, mine?, userId, page, limit })
+activate Svc
+Svc -> Svc : page = max(1, page) · limit = min(limit ?? 20, 50)
+Svc -> Repo : $transaction([ recipe.findMany(where, skip, take), recipe.count(where) ])
+Repo -> DB : SELECT recipes ORDER BY times_used DESC, created_at DESC
+DB --> Repo : rows[], total
+Repo --> Svc : rows
+Svc --> Ctrl : { items, meta }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : recipe cards
+
+alt Create a recipe
+  User -> Screen : enter the name, servings, instructions, ingredients and a photo
+  Screen -> Ctrl : POST /recipes/upload-image → POST /recipes (CreateRecipeDto)
+  activate Ctrl
+  Ctrl -> Svc : saveRecipeImage(image) → create(userId, dto)
+  activate Svc
+  Svc -> Storage : saveImage(file, 'recipes')
+  activate Storage
+  Storage --> Svc : imageUrl
+  deactivate Storage
+  Svc -> Svc : assertCanAuthor(userId)
+  Svc -> Repo : user.findUnique(id) select role\n+ volunteerSpecializationEntry.findFirst(specialization = chef)
+  Repo -> DB : SELECT users / volunteer_specializations
+  DB --> Repo : rows
+  Repo --> Svc : role, chef
+  alt Neither an admin nor a chef
+    Svc --> Ctrl : 403 "Only chefs or administrators can add recipes"
+  else allowed
+    Svc -> Repo : recipe.create(...) with nested ingredients[]
+    Repo -> DB : INSERT recipes + recipe_ingredients
+    Svc --> Ctrl : recipe
+  end
+else Update or delete a recipe
+  User -> Screen : edit or delete one of their recipes
+  Screen -> Ctrl : PATCH /recipes/:id · DELETE /recipes/:id
+  activate Ctrl
+  Ctrl -> Svc : update(id, userId, dto) · remove(id, userId)
+  activate Svc
+  Svc -> Svc : assertOwnerOrAdmin(recipeId, userId)
+  Svc -> Repo : recipe.findFirst(id, deletedAt = null) select createdByUserId
+  Repo --> Svc : recipe | null
+  alt Not found
+    Svc --> Ctrl : 404 "Recipe not found"
+  else neither the author nor an admin
+    Svc --> Ctrl : 403 "Only the author or an administrator can edit this"
+  else update
+    alt ingredients supplied
+      group $transaction
+        Svc -> Repo : recipeIngredient.deleteMany(recipeId)
+        Svc -> Repo : recipe.update(data + recreate ingredients[])
+        Repo -> DB : DELETE + UPDATE + INSERT
+      end
+    else fields only
+      Svc -> Repo : recipe.update(data)
+      Repo -> DB : UPDATE recipes
+    end
+    Svc --> Ctrl : the updated recipe
+  else delete
+    Svc -> Repo : recipe.update(deletedAt = NOW())
+    Repo -> DB : UPDATE recipes SET deleted_at
+    Svc --> Ctrl : { id, deleted: true }
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the library (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 72. ESG ────────────────────────────────
+@startuml seq-esg-report
+!include _seq-style.iuml
+title ESG Impact and CSR Report Sequence Diagram
+
+actor "Guest / Provider" as User
+participant ":ImpactScreen" as Screen
+participant ":EsgController" as Ctrl
+participant ":EsgService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the impact page
+activate Screen
+Screen -> Ctrl : GET /esg/platform
+activate Ctrl
+Ctrl -> Svc : getPlatformEsg()
+activate Svc
+Svc -> Repo : $queryRaw SUM(quantity × weight_per_unit_kg) FILTER (status = completed)
+Svc -> Repo : $queryRaw COUNT(provider_profiles) / COUNT(volunteer_profiles)
+Repo -> DB : SELECT aggregates
+DB --> Repo : { kg, completed, providers, volunteers }
+Repo --> Svc : rows
+Svc -> Svc : co2SavedKg = round(kg × 2.5, 1)
+Svc --> Ctrl : { kgRescued, co2SavedKg, mealsServed, providers, volunteers }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : platform-wide impact counters
+
+User -> Screen : provider opens the CSR report (choose a range in months)
+Screen -> Ctrl : GET /esg/provider/me · GET /esg/provider/me/report?months
+activate Ctrl
+Ctrl -> Svc : getProviderEsg(userId) · getProviderReport(userId, months)
+activate Svc
+Svc -> Svc : months = clamp(months ?? 6, 1, 24)
+Svc -> Repo : providerProfile.findUnique(userId)
+Repo --> Svc : provider | null
+alt Provider profile not found
+  Svc --> Ctrl : 404 "Provider profile not found"
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  Svc -> Repo : $queryRaw monthly series (generate_series LEFT JOIN completed orders)
+  Svc -> Repo : $queryRaw kg and meals grouped by food category
+  Svc -> Repo : $queryRaw COUNT(*) GROUP BY reservation status (operational quality)
+  Svc -> Repo : $queryRaw the five highest contributing listings
+  Repo -> DB : SELECT reservations JOIN food_listings (4 aggregate queries)
+  DB --> Repo : monthly, byCategory, fulfillment, topListings
+  Repo --> Svc : rows
+  Svc --> Ctrl : { kgRescued, co2SavedKg, rangeMonths, monthly, byCategory,\nfulfillment, topListings }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : charts plus a CSR report export
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 73. Uploads ────────────────────────────
+@startuml seq-upload-image
+!include _seq-style.iuml
+title Upload Image Sequence Diagram
+
+actor "User / Guest" as User
+participant ":UploadWidget" as Screen
+participant ":ThrottlerGuard" as Throttle
+participant ":UploadsController" as Ctrl
+participant ":ParseFilePipe" as Pipe
+participant ":StorageService" as Storage
+participant ":Disk / Object Storage" as Disk
+
+User -> Screen : pick an image
+activate Screen
+alt Signed in (listing photo / avatar / verification evidence)
+  Screen -> Ctrl : POST /uploads/image?kind=listing|avatar|verification (multipart)
+  activate Ctrl
+else Registering as a provider, no account yet
+  Screen -> Throttle : POST /uploads/register-evidence (multipart)
+  activate Throttle
+  alt Rate limit exceeded
+    Throttle --> Screen : 429 Too Many Requests
+    Screen --> User : "please try again in a few minutes"
+  else within the limit
+    Throttle -> Ctrl : forward the request
+    deactivate Throttle
+    activate Ctrl
+  end
+end
+Ctrl -> Pipe : validate the file
+activate Pipe
+alt Larger than 5MB or MIME outside (jpeg, png, webp)
+  Pipe --> Ctrl : throw
+  deactivate Pipe
+  Ctrl --> Screen : 400 BadRequest
+  Screen --> User : show error message
+else valid
+  Pipe --> Ctrl : file
+  Ctrl -> Ctrl : folder = FOLDER_BY_KIND[kind]
+  alt kind is not in the whitelist
+    Ctrl --> Screen : 400 "kind must be listing, avatar or verification"
+    Screen --> User : show error message
+  else allowed kind
+    Ctrl -> Storage : saveImage(file, folder)
+    activate Storage
+    Storage -> Storage : ext = EXT_BY_MIME[mimetype]\nmatchesMagicBytes(buffer, mimetype)
+    alt Unsupported extension or magic bytes mismatch
+      Storage --> Ctrl : 400 BadRequest
+      Ctrl --> Screen : return error
+      Screen --> User : show error message
+    else the content really is an image
+      Storage -> Storage : safeSubdir = subdir.replace(/[^a-z0-9_-]/gi, '')
+      Storage -> Disk : mkdir(recursive) + writeFile(randomUUID().ext)
+      Disk --> Storage : written
+      Storage --> Ctrl : "/uploads/{subdir}/{uuid}.{ext}"
+      deactivate Storage
+      Ctrl --> Screen : { url } (201)
+      Screen --> User : preview the image, the url is attached to the form
+    end
+  end
+end
+deactivate Ctrl
+deactivate Screen
+@enduml

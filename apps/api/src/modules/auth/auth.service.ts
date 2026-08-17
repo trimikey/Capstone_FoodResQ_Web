@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   ConflictException,
   UnauthorizedException,
   ServiceUnavailableException,
@@ -31,8 +32,7 @@ const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_DAYS = 30;
 const PASSWORD_RESET_TTL_SECONDS = 15 * 60;
-const PASSWORD_RESET_MESSAGE =
-  'Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi.';
+const PASSWORD_RESET_MESSAGE = 'Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi.';
 
 /** BusinessType cần MST + ảnh GPKD/ĐKKD (cá nhân/hộ gia đình thì miễn). */
 const BUSINESS_TYPE_REQUIRES_TAXCODE = new Set([
@@ -53,6 +53,8 @@ function coerceBoolean(value: unknown): boolean {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -72,22 +74,12 @@ export class AuthService {
     vehiclePlateImage?: Express.Multer.File,
   ) {
     const isCharityOrg = coerceBoolean(dto.isCharityOrg);
-    const exists = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (exists)
-      throw new ConflictException(
-        'Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.',
-      );
+    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (exists) throw new ConflictException('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
 
     if (dto.phone) {
-      const phoneExists = await this.prisma.user.findUnique({
-        where: { phone: dto.phone },
-      });
-      if (phoneExists)
-        throw new ConflictException(
-          'Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.',
-        );
+      const phoneExists = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+      if (phoneExists) throw new ConflictException('Số điện thoại này đã được đăng ký. Vui lòng dùng số khác.');
     }
 
     // eKYC BẮT BUỘC khi đăng ký: người nhận cá nhân & tình nguyện viên phải có
@@ -99,14 +91,12 @@ export class AuthService {
     let faceImageUrl: string | null = null;
     let idCardImageUrl: string | null = null;
     let vehiclePlateImageUrl: string | null = null;
-    let verifiedSelfie = selfie;
     if (needsFace) {
       if (!selfie) {
         throw new BadRequestException(
           'Cần ảnh khuôn mặt (selfie) để đăng ký. Vui lòng chụp ảnh rõ nét trước khi gửi.',
         );
       }
-      verifiedSelfie = selfie;
       faceDescriptor = await this.faceMatch.getFaceDescriptor(selfie);
       if (!faceDescriptor) {
         throw new BadRequestException(
@@ -121,15 +111,9 @@ export class AuthService {
 
     if (dto.role === 'provider') {
       if (!dto.businessName?.trim() || !dto.address?.trim()) {
-        throw new BadRequestException(
-          'Nhà cung cấp cần nhập tên cửa hàng và địa chỉ.',
-        );
+        throw new BadRequestException('Nhà cung cấp cần nhập tên cửa hàng và địa chỉ.');
       }
-      if (
-        dto.businessType &&
-        BUSINESS_TYPE_REQUIRES_TAXCODE.has(dto.businessType) &&
-        !dto.taxCode
-      ) {
+      if (dto.businessType && BUSINESS_TYPE_REQUIRES_TAXCODE.has(dto.businessType) && !dto.taxCode) {
         throw new BadRequestException(
           `Loại hình "${dto.businessType}" yêu cầu mã số thuế (taxCode) để admin xác minh doanh nghiệp.`,
         );
@@ -139,12 +123,8 @@ export class AuthService {
     }
 
     if (dto.role === 'receiver' && isCharityOrg) {
-      if (!dto.businessName?.trim() || !dto.address?.trim()) {
-        throw new BadRequestException(
-          'Tổ chức cần nhập tên tổ chức và địa chỉ hoạt động.',
-        );
-      }
-      if (!dto.evidenceUrls || dto.evidenceUrls.length === 0) {
+      const evidenceUrls = dto.evidenceUrls ?? [];
+      if (evidenceUrls.length < 2) {
         throw new BadRequestException(
           'Tổ chức cần tải lên giấy phép/giấy giới thiệu và giấy tờ người đại diện để admin xác minh.',
         );
@@ -155,9 +135,7 @@ export class AuthService {
       // Volunteer phải upload ảnh CCCD ở FE (bắt buộc) — dùng cho eKYC:
       // BE so khớp khuôn mặt giữa ảnh CCCD và selfie.
       if (!idCard) {
-        throw new BadRequestException(
-          'Tình nguyện viên cần gửi ảnh CCCD để xác minh eKYC.',
-        );
+        throw new BadRequestException('Tình nguyện viên cần gửi ảnh CCCD để xác minh eKYC.');
       }
       const idCardDescriptor = await this.faceMatch.getFaceDescriptor(idCard);
       if (!idCardDescriptor) {
@@ -166,54 +144,33 @@ export class AuthService {
         );
       }
       if (!faceDescriptor) {
-        throw new BadRequestException(
-          'Cần ảnh selfie hợp lệ để so khớp với CCCD.',
-        );
+        throw new BadRequestException('Cần ảnh selfie hợp lệ để so khớp với CCCD.');
       }
       const match = this.faceMatch.compare(faceDescriptor, idCardDescriptor);
       if (!match.matched) {
-        throw new BadRequestException(
-          'Ảnh selfie không khớp với ảnh trên CCCD. Vui lòng dùng CCCD của chính bạn.',
-        );
-      }
-      if (!verifiedSelfie) {
-        throw new BadRequestException(
-          'Cần ảnh selfie hợp lệ để so khớp với CCCD.',
-        );
+        throw new BadRequestException('Ảnh selfie không khớp với ảnh trên CCCD. Vui lòng dùng CCCD của chính bạn.');
       }
       [faceImageUrl, idCardImageUrl] = await Promise.all([
-        this.storage.saveImage(verifiedSelfie, 'faces'),
+        this.storage.saveImage(selfie!, 'faces'),
         this.storage.saveImage(idCard, 'id-cards'),
       ]);
       if (!dto.volunteerRole) {
-        throw new BadRequestException(
-          'Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.',
-        );
+        throw new BadRequestException('Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.');
       }
       if (vehiclePlateImage) {
-        vehiclePlateImageUrl = await this.storage.saveImage(
-          vehiclePlateImage,
-          'verifications',
-        );
+        vehiclePlateImageUrl = await this.storage.saveImage(vehiclePlateImage, 'verifications');
       }
     }
 
     if (needsFace && !faceImageUrl) {
-      if (!verifiedSelfie) {
-        throw new BadRequestException(
-          'Cần ảnh khuôn mặt (selfie) để đăng ký. Vui lòng chụp ảnh rõ nét trước khi gửi.',
-        );
-      }
-      faceImageUrl = await this.storage.saveImage(verifiedSelfie, 'faces');
+      faceImageUrl = await this.storage.saveImage(selfie!, 'faces');
     }
 
     // Trạng thái ban đầu: NCC/TNV cần admin duyệt hồ sơ (GPKD/CCCD) → pending_verification.
     // Người nhận cá nhân đã eKYC khớp khuôn mặt ngay trong request này nên kích hoạt luôn;
     // chỉ tổ chức từ thiện (isCharityOrg, không bắt buộc selfie) mới cần admin xác minh thủ công.
     const initialStatus: 'active' | 'pending_verification' =
-      dto.role === 'receiver' && !isCharityOrg
-        ? 'active'
-        : 'pending_verification';
+      dto.role === 'receiver' && !isCharityOrg ? 'active' : 'pending_verification';
 
     // Tạo user + profile theo role trong 1 transaction — các flow sau
     // (đặt chỗ, face enrollment, nhận task) đều yêu cầu profile tồn tại
@@ -230,15 +187,13 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
-        const evidenceUrls = dto.evidenceUrls ?? [];
+        const organizationName = isCharityOrg ? (dto.businessName ?? fullName) : null;
         const rp = await tx.receiverProfile.create({
           data: {
             userId: created.id,
             address: dto.address ?? null,
             isCharityOrg,
-            organizationName: isCharityOrg
-              ? (dto.businessName ?? fullName)
-              : null,
+            organizationName,
             // eKYC đã xác thực ở trên (bắt buộc với cá nhân)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
@@ -254,18 +209,18 @@ export class AuthService {
           `);
         }
         if (isCharityOrg) {
+          const evidenceUrls = dto.evidenceUrls ?? [];
           await tx.verificationRequest.create({
             data: {
               userId: created.id,
               requestType: 'charity_registration',
               status: 'pending',
               documents: {
-                organizationName: dto.businessName ?? fullName,
+                organizationName,
                 address: dto.address ?? null,
                 phone: dto.phone ?? null,
-                lng: dto.lng ?? null,
-                lat: dto.lat ?? null,
                 evidenceUrls,
+                evidenceLabels: ['organization_license', 'representative_id'],
               } as never,
             },
           });
@@ -273,19 +228,16 @@ export class AuthService {
       } else if (dto.role === 'volunteer') {
         const specialization = dto.volunteerRole;
         if (!specialization) {
-          throw new BadRequestException(
-            'Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.',
-          );
+          throw new BadRequestException('Tình nguyện viên cần chọn chuyên môn: shipper, đầu bếp hoặc phục vụ.');
         }
 
         const vp = await tx.volunteerProfile.create({
           data: {
             userId: created.id,
-            // Số CCCD không bắt buộc nhập tay — admin đối soát từ ảnh CCCD.
-            idCardNumber: null,
+            idCardNumber: dto.idCardNumber ?? null,
             idCardImageUrl,
-            vehicleType: null,
-            vehiclePlate: null,
+            vehicleType: dto.vehicleType ?? null,
+            vehiclePlate: dto.vehiclePlate ?? null,
             // eKYC đã xác thực ở trên (bắt buộc với tình nguyện viên)
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
@@ -361,20 +313,12 @@ export class AuthService {
 
     // Hồ sơ chờ xác minh nằm im tới khi có admin tình cờ mở trang duyệt — báo ngay
     // sau khi transaction commit (báo bên trong transaction thì rollback vẫn gửi nhầm).
-    if (
-      user.role === 'provider' ||
-      user.role === 'volunteer' ||
-      (user.role === 'receiver' && isCharityOrg)
-    ) {
+    if (user.role === 'provider' || user.role === 'volunteer') {
       void this.notifications.notifyAdmins({
         type: 'verification',
         title: 'Hồ sơ mới chờ xác minh',
         body: `${user.fullName} vừa đăng ký tài khoản ${
-          user.role === 'provider'
-            ? 'nhà cung cấp'
-            : user.role === 'volunteer'
-              ? 'tình nguyện viên'
-              : 'tổ chức từ thiện'
+          user.role === 'provider' ? 'nhà cung cấp' : 'tình nguyện viên'
         } và đang chờ duyệt hồ sơ.`,
         data: { userId: user.id, role: user.role },
       });
@@ -389,15 +333,11 @@ export class AuthService {
     });
 
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedException(
-        'Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
-      );
+      throw new UnauthorizedException('Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.');
     }
 
     if (user.status === 'banned') {
-      throw new UnauthorizedException(
-        'Tài khoản của bạn đã bị khóa. Liên hệ quản trị viên để được hỗ trợ.',
-      );
+      throw new UnauthorizedException('Tài khoản của bạn đã bị khóa. Liên hệ quản trị viên để được hỗ trợ.');
     }
 
     await this.prisma.user.update({
@@ -439,9 +379,7 @@ export class AuthService {
     const payload = await this.redis.get(key);
 
     if (!payload) {
-      throw new BadRequestException(
-        'Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
-      );
+      throw new BadRequestException('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
     }
 
     let userId: string;
@@ -449,16 +387,12 @@ export class AuthService {
       userId = (JSON.parse(payload) as { userId?: string }).userId ?? '';
     } catch {
       await this.redis.del(key);
-      throw new BadRequestException(
-        'Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
-      );
+      throw new BadRequestException('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
     }
 
     if (!userId) {
       await this.redis.del(key);
-      throw new BadRequestException(
-        'Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
-      );
+      throw new BadRequestException('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
     }
 
     const user = await this.prisma.user.findUnique({
@@ -467,9 +401,7 @@ export class AuthService {
     });
     if (!user || user.status === 'banned') {
       await this.redis.del(key);
-      throw new BadRequestException(
-        'Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.',
-      );
+      throw new BadRequestException('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -492,16 +424,10 @@ export class AuthService {
    * Đăng nhập/đăng ký bằng Google: verify ID token (kiểm tra audience = GOOGLE_CLIENT_ID),
    * email đã được Google xác thực nên tài khoản mới được kích hoạt luôn (role mặc định receiver).
    */
-  async loginWithGoogle(
-    idToken: string,
-    deviceInfo?: string,
-    ipAddress?: string,
-  ) {
+  async loginWithGoogle(idToken: string, deviceInfo?: string, ipAddress?: string) {
     const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
     if (!clientId) {
-      throw new ServiceUnavailableException(
-        'Google login chưa được cấu hình trên máy chủ',
-      );
+      throw new ServiceUnavailableException('Google login chưa được cấu hình trên máy chủ');
     }
 
     const client = new OAuth2Client(clientId);
@@ -509,10 +435,7 @@ export class AuthService {
     let name: string | undefined;
     let picture: string | undefined;
     try {
-      const ticket = await client.verifyIdToken({
-        idToken,
-        audience: clientId,
-      });
+      const ticket = await client.verifyIdToken({ idToken, audience: clientId });
       const payload = ticket.getPayload();
       email = payload?.email;
       name = payload?.name;
@@ -523,8 +446,7 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Google token không hợp lệ');
     }
-    if (!email)
-      throw new UnauthorizedException('Không lấy được email từ Google');
+    if (!email) throw new UnauthorizedException('Không lấy được email từ Google');
 
     let user = await this.prisma.user.findUnique({ where: { email } });
 
@@ -554,10 +476,7 @@ export class AuthService {
         data: { avatarUrl: picture, lastLoginAt: new Date() },
       });
     } else {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      });
+      await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     }
 
     return this.issueTokens(user, deviceInfo, ipAddress);
@@ -620,12 +539,7 @@ export class AuthService {
           await tx.volunteerProfile.create({ data: { userId: created.id } });
         } else if (newRole === 'provider') {
           await tx.providerProfile.create({
-            data: {
-              userId: created.id,
-              businessName: fullName,
-              businessType: 'other',
-              address: '',
-            },
+            data: { userId: created.id, businessName: fullName, businessType: 'other', address: '' },
           });
         }
         return created;
@@ -648,9 +562,7 @@ export class AuthService {
 
   async refresh(rawToken: string, deviceInfo?: string, ipAddress?: string) {
     if (!rawToken || typeof rawToken !== 'string') {
-      throw new UnauthorizedException(
-        'Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.',
-      );
+      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
     }
 
     // Find by scanning active tokens and bcrypt-compare against the raw token
@@ -666,10 +578,7 @@ export class AuthService {
       return null;
     })();
 
-    if (!tokenRecord)
-      throw new UnauthorizedException(
-        'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
-      );
+    if (!tokenRecord) throw new UnauthorizedException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
 
     // Rotate: revoke old, issue new
     await this.prisma.refreshToken.update({
@@ -709,11 +618,7 @@ export class AuthService {
     return { exists: !!user };
   }
 
-  private async issueTokens(
-    user: User,
-    deviceInfo?: string,
-    ipAddress?: string,
-  ) {
+  private async issueTokens(user: User, deviceInfo?: string, ipAddress?: string) {
     const payload = { sub: user.id, email: user.email, role: user.role };
 
     const accessToken = this.jwt.sign(payload, {
@@ -761,20 +666,13 @@ export class AuthService {
     const explicit = this.config.get<string>('FRONTEND_URL')?.trim();
     if (explicit) return explicit.replace(/\/$/, '');
 
-    const allowed = this.config
-      .get<string>('ALLOWED_ORIGINS')
-      ?.split(',')[0]
-      ?.trim();
+    const allowed = this.config.get<string>('ALLOWED_ORIGINS')?.split(',')[0]?.trim();
     if (allowed) return allowed.replace(/\/$/, '');
 
     return 'http://localhost:3000';
   }
 
-  private async sendPasswordResetEmail(
-    to: string,
-    fullName: string,
-    token: string,
-  ) {
+  private async sendPasswordResetEmail(to: string, fullName: string, token: string) {
     const host = this.config.get<string>('SMTP_HOST');
     const port = Number(this.config.get<string>('SMTP_PORT') ?? 587);
     const user = this.config.get<string>('SMTP_USER');
@@ -782,9 +680,7 @@ export class AuthService {
     const from = this.config.get<string>('MAIL_FROM');
 
     if (!host || !port || !user || !pass || !from) {
-      throw new ServiceUnavailableException(
-        'Email đặt lại mật khẩu chưa được cấu hình trên máy chủ.',
-      );
+      throw new ServiceUnavailableException('Email đặt lại mật khẩu chưa được cấu hình trên máy chủ.');
     }
 
     const resetLink = `${this.getFrontendOrigin()}/reset-password?token=${encodeURIComponent(token)}`;
@@ -908,7 +804,8 @@ export class AuthService {
         }));
       const code = Number(response.slice(0, 3));
       if (!expectedCodes.includes(code)) {
-        throw new Error(`Unexpected SMTP response ${code}`);
+        // Giữ nguyên văn phản hồi của SMTP server — đây là thứ duy nhất nói rõ vì sao mail bị từ chối
+        throw new Error(`Unexpected SMTP response ${code} (mong đợi ${expectedCodes.join('/')}): ${response}`);
       }
       return response;
     };
@@ -961,24 +858,21 @@ export class AuthService {
         await command('EHLO foodresq.local', [250]);
       }
 
-      const auth = Buffer.from(
-        `\u0000${options.user}\u0000${options.pass}`,
-      ).toString('base64');
+      const auth = Buffer.from(`\u0000${options.user}\u0000${options.pass}`).toString('base64');
       await command(`AUTH PLAIN ${auth}`, [235]);
-      await command(
-        `MAIL FROM:<${this.extractEmailAddress(options.from)}>`,
-        [250],
-      );
+      await command(`MAIL FROM:<${this.extractEmailAddress(options.from)}>`, [250]);
       await command(`RCPT TO:<${options.to}>`, [250, 251]);
       await command('DATA', [354]);
 
       socket.write(`${this.buildEmailMessage(options)}\r\n.\r\n`);
       await waitResponse([250]);
       await command('QUIT', [221]);
-    } catch {
-      throw new ServiceUnavailableException(
-        'Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.',
+    } catch (err) {
+      this.logger.error(
+        `Gửi email thất bại (host=${options.host}:${options.port}, from=${options.from}, to=${options.to}): ` +
+          (err instanceof Error ? err.message : String(err)),
       );
+      throw new ServiceUnavailableException('Không gửi được email đặt lại mật khẩu. Vui lòng thử lại sau.');
     } finally {
       if (waitTimer) clearTimeout(waitTimer);
       socket?.end();

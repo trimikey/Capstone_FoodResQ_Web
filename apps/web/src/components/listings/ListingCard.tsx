@@ -85,7 +85,7 @@ export default function ListingCard({ listing }: Props) {
       className="bg-white rounded-2xl overflow-hidden border border-neutral-200 flex flex-col hover:shadow-lg hover:border-[#236c2a]/30 transition-all duration-300 group cursor-pointer hover:-translate-y-1"
     >
       {/* Image Container */}
-      <div className="relative h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
+      <div className="relative h-40 sm:h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
         <img
           src={imageUrl}
           alt={listing.title}
@@ -131,14 +131,14 @@ export default function ListingCard({ listing }: Props) {
       </div>
 
       {/* Content */}
-      <div className="p-5 flex flex-col flex-1 gap-2">
+      <div className="p-4 sm:p-5 flex flex-col flex-1 gap-2">
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <h3 className="font-headline-md text-[17px] text-neutral-900 font-medium line-clamp-1 group-hover:text-[#236c2a] transition-colors">
+          <div className="flex flex-col min-[390px]:flex-row min-[390px]:items-start min-[390px]:justify-between gap-2">
+            <h3 className="font-headline-md text-[16px] sm:text-[17px] text-neutral-900 font-medium line-clamp-2 min-w-0 group-hover:text-[#236c2a] transition-colors">
               {listing.title}
             </h3>
             {/* Portions left badge (Green as shown in mockup) */}
-            <span className="shrink-0 bg-[#efe8d8] text-[#236c2a] px-2.5 py-1 rounded-full font-body-md text-[11px] font-bold">
+            <span className="self-start shrink-0 bg-[#efe8d8] text-[#236c2a] px-2.5 py-1 rounded-full font-body-md text-[11px] font-bold whitespace-nowrap">
               Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
             </span>
           </div>
@@ -146,7 +146,7 @@ export default function ListingCard({ listing }: Props) {
         </div>
 
         {/* Details Row: Distance & Rating */}
-        <div className="flex items-center gap-3 mt-auto pt-4 border-t border-neutral-100 text-[13px] text-neutral-500 font-body-md">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-auto pt-4 border-t border-neutral-100 text-[13px] text-neutral-500 font-body-md">
           <div className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[#236c2a] text-[16px]">location_on</span>
             <span>{formatDistance(listing.distanceM || 1200)}</span>

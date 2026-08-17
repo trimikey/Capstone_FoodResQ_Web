@@ -10,56 +10,23 @@ export function cn(...inputs: ClassValue[]) {
 // CHỈ prefix đường dẫn /uploads — ảnh tĩnh của web (/banh-mi.png trong public/) và
 // URL http(s) giữ nguyên, nếu prefix bừa sẽ 404 vì API không serve chúng.
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
-
-function apiOriginForBrowser(): string {
-  if (typeof window === 'undefined') return API_ORIGIN;
-
-  try {
-    const apiUrl = new URL(API_ORIGIN);
-    const pageHost = window.location.hostname;
-    const apiIsLocalhost = apiUrl.hostname === 'localhost' || apiUrl.hostname === '127.0.0.1';
-    const pageIsLocalhost = pageHost === 'localhost' || pageHost === '127.0.0.1';
-
-    // Khi mở web bằng IP LAN trên điện thoại/máy khác, localhost trong NEXT_PUBLIC_API_URL
-    // sẽ trỏ về thiết bị đó. Giữ nguyên port API, chỉ đổi hostname theo trang hiện tại.
-    if (apiIsLocalhost && !pageIsLocalhost) {
-      apiUrl.hostname = pageHost;
-      return apiUrl.origin;
-    }
-  } catch {
-    return API_ORIGIN;
-  }
-
-  return API_ORIGIN;
-}
-
 export function mediaUrl(path: string): string {
-  const value = path.trim();
-  if (!value) return '';
-  if (value.startsWith('data:') || value.startsWith('blob:')) {
-    return value;
-  }
-  const origin = apiOriginForBrowser();
-  if (/^https?:\/\//i.test(value)) {
+  if (!path) return '';
+  if (path.startsWith('http')) {
     try {
-      const url = new URL(value);
-      if (url.pathname.startsWith('/uploads/')) {
-        return `${origin}${url.pathname}${url.search}${url.hash}`;
+      const url = new URL(path);
+      if (
+        (url.hostname === '10.0.2.2' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
+        url.pathname.startsWith('/uploads/')
+      ) {
+        return `${API_ORIGIN}${url.pathname}${url.search}`;
       }
     } catch {
-      return value;
+      return path;
     }
-    return value;
+    return path;
   }
-  if (value.startsWith('/api/v1/uploads')) {
-    return `${origin}${value.replace(/^\/api\/v1/, '')}`;
-  }
-  if (value.startsWith('api/v1/uploads')) {
-    return `${origin}/${value.replace(/^api\/v1\//, '')}`;
-  }
-  if (value.startsWith('/uploads')) return `${origin}${value}`;
-  if (value.startsWith('uploads/')) return `${origin}/${value}`;
-  return value;
+  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
 }
 
 // Link điều hướng Google Maps tới một toạ độ
@@ -115,76 +82,8 @@ export const UNIT_LABEL: Record<QuantityUnit, string> = {
 };
 
 /** Trích thông điệp lỗi từ response API (axios) — fallback nếu không có. */
-const FIELD_LABELS: Record<string, string> = {
-  address: 'địa chỉ',
-  lng: 'kinh độ',
-  lat: 'vĩ độ',
-  avatarUrl: 'ảnh đại diện',
-  fullName: 'họ và tên',
-  phone: 'số điện thoại',
-  email: 'email',
-  password: 'mật khẩu',
-};
-
-function fieldLabel(field: string): string {
-  return FIELD_LABELS[field] ?? `trường "${field}"`;
-}
-
-export function translateApiMessage(message: string): string {
-  const parts = message
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  const translated = parts.map((part) => {
-    const forbidden = /^property ([\w.]+) should not exist$/.exec(part);
-    if (forbidden) return `${fieldLabel(forbidden[1])} không được hỗ trợ ở thao tác này.`;
-
-    const minLength = /^(\w+) must be longer than or equal to (\d+) characters$/.exec(part);
-    if (minLength) return `${fieldLabel(minLength[1])} phải có ít nhất ${minLength[2]} ký tự.`;
-
-    const maxLength = /^(\w+) must be shorter than or equal to (\d+) characters$/.exec(part);
-    if (maxLength) return `${fieldLabel(maxLength[1])} không được vượt quá ${maxLength[2]} ký tự.`;
-
-    const isString = /^(\w+) must be a string$/.exec(part);
-    if (isString) return `${fieldLabel(isString[1])} phải là chuỗi ký tự.`;
-
-    const isNumber = /^(\w+) must be a number/.exec(part);
-    if (isNumber) return `${fieldLabel(isNumber[1])} phải là một số hợp lệ.`;
-
-    if (part === 'Phone must be a valid Vietnamese mobile number') {
-      return 'Số điện thoại không hợp lệ. Vui lòng nhập số di động Việt Nam.';
-    }
-    if (part === 'Password must contain at least one uppercase letter and one number') {
-      return 'Mật khẩu phải có ít nhất một chữ hoa và một chữ số.';
-    }
-    if (part === 'avatarUrl must be an http(s) URL or an uploaded /uploads path') {
-      return 'Ảnh đại diện phải là URL hợp lệ hoặc ảnh đã tải lên hệ thống.';
-    }
-    if (part === 'Unauthorized') {
-      return 'Bạn cần đăng nhập để thực hiện thao tác này.';
-    }
-    if (part === 'Only JPEG, PNG or WebP images are allowed') {
-      return 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.';
-    }
-    if (part === 'File content does not match its image type') {
-      return 'Nội dung file không khớp với định dạng ảnh.';
-    }
-    if (part === 'Cannot decode image — file may be corrupted') {
-      return 'Không đọc được ảnh. File có thể đã bị lỗi.';
-    }
-    if (part === 'Face verification requires a JPEG or PNG photo') {
-      return 'Xác minh khuôn mặt cần ảnh JPEG hoặc PNG.';
-    }
-
-    return part;
-  });
-
-  return translated.join(', ');
-}
-
 export function errMsg(e: unknown, fallback: string): string {
-  const message =
-    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback;
-  return translateApiMessage(message);
+  return (
+    (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback
+  );
 }

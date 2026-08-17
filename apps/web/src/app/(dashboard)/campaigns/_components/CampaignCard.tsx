@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { AssignmentRole } from '@foodresq/types';
 import { usePledgeDonation, type Campaign } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
-import RoleBadge, { ROLE_LABEL, ROLE_META } from './RoleBadge';
+import { ROLE_LABEL, ROLE_META } from './RoleBadge';
 
 const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
   pledged: { label: 'Đã hứa góp', cls: 'badge-honey' },
@@ -27,8 +27,11 @@ interface CampaignCardProps {
 export default function CampaignCard({ c, myRoles, onApply, applying, isProvider, disabled }: CampaignCardProps) {
   const pledge = usePledgeDonation();
   const [donating, setDonating] = useState(false);
-  const [item, setItem] = useState('');
+  const availableSupply = (c.supplyProgress ?? []).filter((s) => s.remainingQuantity > 0);
+  const [item, setItem] = useState(availableSupply[0]?.name ?? '');
   const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const selectedSupply = availableSupply.find((s) => s.name === item) ?? availableSupply[0];
 
   const dateStr = new Date(c.scheduledDate).toLocaleDateString('vi-VN', {
     weekday: 'short',
@@ -44,8 +47,8 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
   })();
 
   async function doPledge() {
-    if (item.trim().length < 1) {
-      toast.error('Nhập tên nguyên liệu');
+    if (!selectedSupply) {
+      toast.error('Chiến dịch chưa còn nguyên liệu cần hỗ trợ');
       return;
     }
     const numericQuantity = Number(qty.replace(',', '.'));
@@ -53,15 +56,22 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
       toast.error('Nhập số lượng nguyên liệu lớn hơn 0');
       return;
     }
+    if (numericQuantity > selectedSupply.remainingQuantity) {
+      toast.error(`Chỉ còn cần ${selectedSupply.remainingQuantity} ${selectedSupply.unit} ${selectedSupply.name}`);
+      return;
+    }
     try {
       await pledge.mutateAsync({
         campaignId: c.id,
-        itemName: item.trim(),
+        itemName: selectedSupply.name,
         quantity: Math.round(numericQuantity * 1000) / 1000,
+        unit: selectedSupply.unit,
+        note: note.trim() || undefined,
       });
       toast.success('Đã gửi quyên góp — chờ tổ chức xác nhận. Cảm ơn bạn!');
-      setItem('');
+      setItem(availableSupply[0]?.name ?? '');
       setQty('');
+      setNote('');
       setDonating(false);
     } catch (e) {
       toast.error(errMsg(e, 'Quyên góp thất bại'));
@@ -227,26 +237,56 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
         >
           {donating ? (
             <div className="space-y-2">
+              {availableSupply.length === 0 ? (
+                <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                  Các mục nguyên liệu đã đủ cam kết. Không cần gửi thêm.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid gap-1.5">
+                    {availableSupply.map((s) => (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => setItem(s.name)}
+                        className={`rounded-xl border px-3 py-2 text-left transition-colors ${selectedSupply?.name === s.name ? 'border-emerald-400 bg-emerald-50' : 'border-neutral-150 bg-white hover:bg-neutral-50'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-extrabold text-neutral-800">{s.name}</span>
+                          <span className="text-[11px] font-bold text-emerald-700">Còn {s.remainingQuantity} {s.unit}</span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${s.progressPercent}%` }} />
+                        </div>
+                        <p className="mt-1 text-[10px] font-semibold text-neutral-400">
+                          Mục tiêu {s.targetQuantity} {s.unit} · Đã cam kết {s.pledgedQuantity} · Đã nhận {s.receivedQuantity}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2">
-                <input
-                  value={item}
-                  onChange={(e) => setItem(e.target.value)}
-                  placeholder="Nguyên liệu (vd: Gạo)"
-                  className="input-base !py-2 text-sm flex-1"
-                  autoFocus
-                />
                 <input
                   value={qty}
                   onChange={(e) => setQty(e.target.value)}
-                  placeholder="20 kg"
-                  className="input-base !py-2 text-sm w-24"
+                  placeholder={selectedSupply ? `Tối đa ${selectedSupply.remainingQuantity} ${selectedSupply.unit}` : 'Số lượng'}
+                  className="input-base !py-2 text-sm flex-1"
+                  disabled={!selectedSupply}
+                />
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Ghi chú chất lượng/thời gian giao"
+                  className="input-base !py-2 text-sm flex-1"
+                  disabled={!selectedSupply}
                 />
               </div>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={doPledge}
-                  disabled={pledge.isPending}
+                  disabled={pledge.isPending || !selectedSupply}
                   className="flex-1 py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
                 >
                   {pledge.isPending ? 'Đang gửi...' : 'Gửi quyên góp'}

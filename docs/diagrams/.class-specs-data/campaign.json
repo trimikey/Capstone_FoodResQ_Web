@@ -1,0 +1,96 @@
+{
+  "class-campaign.puml": {
+    "Campaigns": {
+      "explanation": "Charity receivers create cooking campaigns with a kitchen location and schedule. Volunteers browse open campaigns sorted by distance from their own position, which is why the query goes through $queryRaw with ST_Distance. Volunteers apply to a campaign (or a specific shift); the campaign owner approves or rejects - the slot counter on CampaignShift is updated in the same transaction as the assignment, so two parallel approvals can never overbook a shift. The owner drives the campaign through its status chain and can cancel it; shifts, menu items and change requests are composed by the campaign, so cancelling the campaign cascades the plan while keeping the assignment rows for volunteer history. Providers pledge cash or in-kind donations; the campaign owner submits change requests for admin review - both donations and change requests cascade with the campaign, and approving a change request applies the new value directly onto the campaign.",
+      "classes": {
+        "CampaignsController": {
+          "description": "All campaign endpoints: create/browse, volunteer apply + owner review, lifecycle transitions, donations, change requests.",
+          "methods": {
+            "+create(user: User, dto: CreateCampaignDto): Promise<CampaignDetail>": "Charity receiver creates a new campaign with shifts and menu items in one request.",
+            "+uploadImage(image: File): Promise<UrlResponse>": "Uploads a campaign cover image to StorageService and returns its URL.",
+            "+listOpen(): Promise<Campaign[]>": "Public list of campaigns currently accepting volunteers (status=open).",
+            "+listCompleted(): Promise<Campaign[]>": "Public list of completed campaigns for portfolio/reputation view.",
+            "+listPublicUpcoming(limit: number): Promise<Campaign[]>": "Top-N campaigns about to start, used on the public landing page.",
+            "+findOne(id: string): Promise<CampaignDetail>": "Full detail of a campaign including shifts, menu items, supply progress.",
+            "+myCampaigns(user: User): Promise<Campaign[]>": "All campaigns owned by the authenticated user.",
+            "+getManageDetail(id: string, user: User): Promise<ManageDetail>": "Owner-only management view (volunteers, supply requests, distributions).",
+            "+apply(id: string, user: User, dto: ApplyCampaignDto): Promise<AssignmentResult>": "Volunteer applies to the campaign (system picks the next available shift).",
+            "+applyToShift(id: string, shiftId: string, user: User, dto: ApplyShiftDto): Promise<AssignmentResult>": "Volunteer applies to a specific shift with role selection.",
+            "+reviewAssignment(id: string, assignmentId: string, user: User, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>": "Owner approves or rejects a pending assignment; updates slotsFilled atomically.",
+            "+start(id: string, user: User): Promise<CampaignDetail>": "Moves an open campaign to in_progress (only the owner, only when at least one shift has started).",
+            "+complete(id: string, user: User, dto: CompleteCampaignDto): Promise<CampaignDetail>": "Marks the campaign completed, awards dedication points to participants.",
+            "+cancel(id: string, user: User): Promise<StatusResult>": "Cancels an open/in_progress campaign and notifies all assigned volunteers.",
+            "+advance(assignmentId: string, user: User, dto: AdvanceCampaignTaskDto, proof: File): Promise<Assignment>": "Volunteer check-in: uploads proof photo and updates the task status with the configured check-in window.",
+            "+pledge(id: string, user: User, dto: PledgeDonationDto): Promise<CampaignDonation>": "Provider pledges a donation (money or in-kind) to the campaign.",
+            "+confirmDonation(donationId: string, user: User): Promise<CampaignDonation>": "Charity receiver confirms receipt of a pending donation.",
+            "+submitChange(id: string, user: User, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>": "Owner submits a change request (schedule, location, supplies) for admin review.",
+            "+listChanges(id: string, user: User): Promise<CampaignChangeRequest[]>": "Lists change requests for a campaign, visible to owner and admin.",
+            "+cancelChange(changeRequestId: string, user: User): Promise<StatusResult>": "Owner cancels a still-pending change request."
+          }
+        },
+        "CampaignsService": {
+          "description": "All campaign business logic: CRUD with $queryRaw ST_Distance, applications with atomic slot updates, lifecycle state machine, donations, change-request workflow.",
+          "methods": {
+            "+create(userId: string, dto: CreateCampaignDto): Promise<CampaignDetail>": "Inserts campaign + shifts + menu items in a single transaction; notifies admins.",
+            "+saveCampaignImage(photo: File): Promise<string>": "Delegates to StorageService under the 'campaigns' subdir.",
+            "+listOpen(): Promise<Campaign[]>": "Returns status=open campaigns ordered by start time.",
+            "+listCompleted(): Promise<Campaign[]>": "Returns status=completed campaigns ordered by completed_at desc.",
+            "+findOne(id: string): Promise<CampaignDetail>": "Loads campaign with shifts, menu items, and aggregated supply progress.",
+            "+myCampaigns(userId: string): Promise<Campaign[]>": "Lists campaigns owned by the given user.",
+            "+getManageDetail(id: string, userId: string): Promise<ManageDetail>": "Asserts owner, then returns full management view.",
+            "-withSupplyProgress(campaign: KitchenCampaign): CampaignDetail": "Decorates the campaign with aggregated supply progress (pledged vs needed).",
+            "+apply(campaignId: string, userId: string, dto: ApplyCampaignDto): Promise<AssignmentResult>": "Asserts the volunteer has no overlapping shifts, inserts an assignment in pending status, notifies the owner.",
+            "+reviewAssignment(campaignId: string, assignmentId: string, userId: string, dto: ReviewCampaignAssignmentDto): Promise<AssignmentResult>": "Owner decision: approve increments slotsFilled (transaction), reject only updates status. Notifies the volunteer either way.",
+            "-assertShiftNotOverlapping(volunteerId: string, shift: CampaignShift): Promise<void>": "Throws if the volunteer already has a confirmed assignment overlapping the same time window.",
+            "-assertOwner(campaignId: string, userId: string): Promise<KitchenCampaign>": "Loads the campaign or throws 403 if the user is not the owner.",
+            "+startCampaign(campaignId: string, userId: string): Promise<CampaignDetail>": "Asserts owner, validates state transition, notifies all volunteers.",
+            "+completeCampaign(campaignId: string, userId: string, dto: CompleteCampaignDto): Promise<CampaignDetail>": "Marks completed, awards dedication points via DedicationPointsHistory, notifies participants.",
+            "+cancelCampaign(campaignId: string, userId: string): Promise<StatusResult>": "Cancels and cascades to shifts/menu items; assignment rows are kept for history.",
+            "+advanceTask(assignmentId: string, userId: string, location: Coords, proofUrl: string): Promise<Assignment>": "Evaluates check-in window against shift timing; persists cookedProofUrl; may auto-complete the assignment if the campaign is fully served.",
+            "-evaluateCheckInWindow(campaign: KitchenCampaign, shift: CampaignShift, role: string, workDate: Date): CheckInResult": "Returns whether the volunteer is on time, early, or late for the given shift.",
+            "-campaignFillRate(campaign: KitchenCampaign): FillRate": "Aggregates filled slots vs total across all shifts for the dashboard.",
+            "-maybeCompleteAssignment(campaignId: string, volunteerId: string): Promise<void>": "Side-effect: if the volunteer finished all their shifts, automatically write their dedication reward.",
+            "+pledgeDonation(campaignId: string, providerUserId: string, dto: PledgeDonationDto): Promise<CampaignDonation>": "Inserts donation row (status=pending), notifies the campaign owner and admins.",
+            "+confirmDonation(donationId: string, charityUserId: string): Promise<CampaignDonation>": "Asserts the caller is the campaign owner, sets status=received with receivedAt.",
+            "+submitChangeRequest(campaignId: string, userId: string, dto: SubmitCampaignChangeDto): Promise<CampaignChangeRequest>": "Snapshots the desired diff, persists the request, notifies admins.",
+            "+listChangeRequests(campaignId: string, userId: string): Promise<CampaignChangeRequest[]>": "Owner or admin reads the change-request history.",
+            "+cancelChangeRequest(changeRequestId: string, userId: string): Promise<StatusResult>": "Cancels a still-pending change request (owner only)."
+          }
+        },
+        "SystemConfigService": {
+          "description": "Runtime-tunable business parameters (daily quota, search radius, QR validity, trust thresholds). Other modules call this on every request rather than reading environment variables directly.",
+          "methods": {
+            "+getAll(): Promise<ConfigItem[]>": "Returns the full config table (admin view).",
+            "+getNumber(key: string): Promise<number>": "Reads a numeric config entry by key; throws if missing.",
+            "+set(key: string, value: number, userId: string): Promise<ConfigItem>": "Updates a config entry; writes an audit log."
+          }
+        },
+        "StorageService": {
+          "description": "Local-disk image storage with MIME + magic-byte validation. Production deployments swap this implementation for S3 / R2 / Cloudinary without touching callers.",
+          "methods": {
+            "+saveImage(file: File, subdir: string): Promise<string>": "Validates the file, picks a path under {uploadRoot}/{subdir}/, writes the buffer, returns the public URL.",
+            "+imageExists(url: string): Promise<boolean>": "Cheap existence probe used by cleanup jobs.",
+            "-matchesMagicBytes(buffer: Buffer, mimetype: string): boolean": "Verifies the file signature matches the declared MIME type."
+          }
+        },
+        "NotificationsService": {
+          "description": "Single entry point for emitting notifications; persists the row, then pushes the payload into the user's socket room through NotificationsGateway. Idempotent via dedupeKey.",
+          "methods": {
+            "+notify(userId: string, input: NotifyInput): Promise<Notification>": "Persists the notification (deduped by dedupeKey) and emits the socket event.",
+            "+notifyAdmins(input: NotifyInput): Promise<number>": "Broadcasts to every user with role=admin.",
+            "+notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>": "Looks up the campaign owner and notifies them.",
+            "+listMine(userId: string): Promise<Notification[]>": "Lists the user's notifications.",
+            "+unreadCount(userId: string): Promise<CountResult>": "Returns the unread badge count.",
+            "+saveDeviceToken(userId: string, token: string): Promise<OkResult>": "Persists the FCM device token for push notifications.",
+            "+markRead(id: string, userId: string): Promise<OkResult>": "Marks a single notification as read.",
+            "+markAllRead(userId: string): Promise<OkResult>": "Marks every unread notification as read."
+          }
+        },
+        "PrismaService": {
+          "description": "Prisma ORM client wrapper. Each field exposes a model delegate used by services to issue typed queries and mutations.",
+          "methods": {}
+        }
+      }
+    }
+  }
+}

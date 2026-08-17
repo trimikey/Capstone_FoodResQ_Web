@@ -1,0 +1,582 @@
+'==============================================================
+' FoodResQ — Sequence Diagrams: Admin (7)
+' 62. Dashboard · 63. Verification Review · 64. User Management ·
+' 65. Campaign Governance · 66. Manage Food Catalog ·
+' 67. Handle Reports · 68. System Configuration
+' NOTE: every admin route is guarded by JwtAuthGuard + RolesGuard(@Roles ADMIN)
+'==============================================================
+
+'──────────────────── 62. Dashboard ──────────────────────────
+@startuml seq-admin-dashboard
+title Admin Dashboard Sequence Diagram
+
+actor "Admin" as User
+participant ":AdminDashboard" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the dashboard
+activate Screen
+Screen -> Ctrl : GET /admin/overview
+activate Ctrl
+Ctrl -> Svc : getOverview()
+activate Svc
+Svc -> Repo : $queryRaw kg rescued / meals served / people helped
+Svc -> Repo : $queryRaw breakdown by food category + 6 month trend
+Svc -> Repo : getStats() counts of users, providers, listings, reports
+Repo -> DB : SELECT aggregates
+DB --> Repo : metrics
+Repo --> Svc : rows
+Svc --> Ctrl : { kgRescued, co2SavedKg, categories, trend, donations, reports }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : charts and KPI tiles
+
+User -> Screen : review frequent cancellers and no-shows
+Screen -> Ctrl : GET /admin/frequent-cancellers
+activate Ctrl
+Ctrl -> Svc : listFrequentCancellers()
+activate Svc
+Svc -> Repo : $queryRaw users JOIN receiver_profiles JOIN reservations\nCOUNT FILTER (cancelled) / FILTER (no_show) GROUP BY user ORDER BY DESC
+Repo -> DB : SELECT ... GROUP BY u.id
+DB --> Repo : rows[]
+Svc --> Ctrl : { userId, fullName, trustScore, cancelledCount, noShowCount }[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : offender table linked to the account status action
+
+User -> Screen : look at recent reservations
+Screen -> Ctrl : GET /admin/recent-reservations
+activate Ctrl
+Ctrl -> Svc : listRecentReservations()
+activate Svc
+Svc -> Repo : reservation.findMany(order createdAt desc, take N) include listing, receiver
+Repo -> DB : SELECT reservations JOIN ...
+DB --> Repo : rows[]
+Svc --> Ctrl : reservations[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : activity timeline
+deactivate Screen
+@enduml
+
+'──────────────────── 63. Verification Review ────────────────
+@startuml seq-admin-verification
+!include _seq-style.iuml
+title Review Verification Sequence Diagram
+
+actor "Admin" as User
+participant ":VerificationScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Provider / Volunteer" as Applicant
+
+User -> Screen : open the pending verification queue
+activate Screen
+Screen -> Ctrl : GET /admin/verifications
+activate Ctrl
+Ctrl -> Svc : listVerifications()
+activate Svc
+Svc -> Repo : providerProfile.findMany(verificationStatus = pending)
+Svc -> Repo : volunteerProfile.findMany(verificationStatus = pending)
+Repo -> DB : SELECT provider_profiles / volunteer_profiles
+DB --> Repo : pending[]
+Repo --> Svc : rows
+Svc -> Svc : merge and sort by createdAt
+Svc --> Ctrl : verifications[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : profile list with the supporting evidence photos
+
+User -> Screen : approve or reject a profile
+Screen -> Ctrl : PATCH /admin/verifications/:type/:id (ReviewVerificationDto)
+activate Ctrl
+Ctrl -> Svc : reviewVerification(type, profileId, adminUserId, dto)
+activate Svc
+Svc -> Repo : providerProfile | volunteerProfile.findUnique(profileId)
+Repo -> DB : SELECT profile
+DB --> Repo : profile | null
+Repo --> Svc : profile
+alt Profile not found
+  Svc --> Ctrl : 404 NotFound
+  Ctrl --> Screen : return error
+  Screen --> User : show error message
+else found
+  group $transaction
+    Svc -> Repo : profile.update(verificationStatus, verifiedBy, verifiedAt)
+    Svc -> Repo : user.update(status = approved ? active : suspended)
+    opt volunteer approved
+      Svc -> Repo : volunteerSpecializations.updateMany(isVerified = true)
+    end
+    Repo -> DB : UPDATE profile / users / volunteer_specializations
+  end
+  Svc -> Repo : auditLog.create(verification_decision)
+  Svc -> Notif : notify(applicant, the verification outcome)
+  Notif --> Applicant : realtime notification
+  Svc --> Ctrl : { message }
+  Ctrl --> Screen : return data (200)
+  Screen --> User : profile reviewed
+end
+deactivate Svc
+deactivate Ctrl
+deactivate Screen
+@enduml
+
+'──────────────────── 64. User Management ────────────────────
+@startuml seq-admin-users
+title Admin User Management Sequence Diagram
+
+actor "Admin" as User
+participant ":UsersScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":bcrypt" as Bcrypt
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open user management (filter by role, search)
+activate Screen
+Screen -> Ctrl : GET /admin/users?role&q · GET /admin/volunteers/manage
+activate Ctrl
+Ctrl -> Svc : listUsers(role, q) · listVolunteersDetailed()
+activate Svc
+Svc -> Repo : user.findMany(role, search by email/name) include profiles
+Repo -> DB : SELECT users JOIN profiles
+DB --> Repo : users[]
+Repo --> Svc : rows
+Svc -> Svc : flatten specializations and the isCharityOrg flag
+Svc --> Ctrl : users[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : user table
+
+alt Create an account
+  User -> Screen : fill the create-account form
+  Screen -> Ctrl : POST /admin/users (AdminCreateUserDto)
+  activate Ctrl
+  Ctrl -> Svc : adminCreateUser(dto)
+  activate Svc
+  Svc -> Repo : user.findUnique(email)
+  Repo -> DB : SELECT users
+  DB --> Repo : existing | null
+  Repo --> Svc : existing
+  alt Email already registered
+    Svc --> Ctrl : 409 Conflict
+  else available
+    Svc -> Bcrypt : hash(password, 12)
+    activate Bcrypt
+    Bcrypt --> Svc : passwordHash
+    deactivate Bcrypt
+    group $transaction
+      Svc -> Repo : user.create(status = active)
+      Svc -> Repo : create the role profile (receiver / volunteer / provider)
+      Repo -> DB : INSERT users + profile
+    end
+    Svc --> Ctrl : { id, email, role, status }
+  end
+else Change an account status
+  User -> Screen : pick active / suspended / banned
+  Screen -> Ctrl : PATCH /admin/users/:id/status (SetUserStatusDto)
+  activate Ctrl
+  Ctrl -> Svc : setUserStatus(id, adminUserId, dto)
+  activate Svc
+  Svc -> Repo : user.findUnique(id)
+  Repo --> Svc : user | null
+  alt Not found or the target is an admin
+    Svc --> Ctrl : 404 / 400 error
+  else allowed
+    group $transaction
+      Svc -> Repo : user.update(status)
+      opt status = banned
+        Svc -> Repo : refreshToken.updateMany(isRevoked = true)
+      end
+      Repo -> DB : UPDATE users / refresh_tokens
+    end
+    Svc -> Repo : auditLog.create(user_status)
+    Svc --> Ctrl : { message }
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the user table (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 65. Campaign Governance ────────────────
+@startuml seq-admin-campaigns
+title Admin Campaign Governance Sequence Diagram
+
+actor "Admin" as User
+participant ":CampaignManageScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database (PostGIS)" as DB
+actor "Charity Org / Volunteer" as Target
+
+User -> Screen : open campaign governance
+activate Screen
+Screen -> Ctrl : GET /admin/campaigns · /admin/campaign-assignments/pending\n· /admin/campaign-change-requests
+activate Ctrl
+Ctrl -> Svc : listCampaigns() · listPendingAssignments() · listChangeRequests()
+activate Svc
+Svc -> Repo : kitchenCampaign / assignment / changeRequest.findMany(...)
+Repo -> DB : SELECT kitchen_campaigns / assignments / change requests
+DB --> Repo : rows[]
+Svc --> Ctrl : the matching lists
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : the review queues
+
+alt Create a campaign on behalf of an organization
+  User -> Screen : fill the campaign form for a chosen organization
+  Screen -> Ctrl : POST /admin/campaigns (AdminCreateCampaignDto)
+  activate Ctrl
+  Ctrl -> Svc : adminCreateCampaign(dto)
+  activate Svc
+  Svc -> Repo : receiverProfile.findUnique(charityReceiverId)
+  Repo --> Svc : charity | null
+  alt Organization not found
+    Svc --> Ctrl : 404 NotFound
+  else valid
+    Svc -> Repo : $queryRaw INSERT kitchen_campaigns\n(kitchen_location = ST_MakePoint(lng ?? 106.6297, lat ?? 10.8231)) RETURNING id
+    Repo -> DB : INSERT kitchen_campaigns
+    Svc --> Ctrl : campaign detail
+  end
+else Change a campaign status
+  User -> Screen : approve draft → open, or close a campaign
+  Screen -> Ctrl : PATCH /admin/campaigns/:id/status (status)
+  activate Ctrl
+  Ctrl -> Svc : setCampaignStatus(id, status, userId)
+  activate Svc
+  alt Status outside the allowed set
+    Svc --> Ctrl : 400 BadRequest
+  else valid
+    Svc -> Repo : kitchenCampaign.update(status)
+    Repo -> DB : UPDATE kitchen_campaigns
+    Svc -> Notif : notify(charity, "Campaign status changed")
+  end
+else Assign or unassign a volunteer
+  User -> Screen : assign a volunteer to a role, or remove an assignment
+  Screen -> Ctrl : POST /admin/campaigns/:id/assign · DELETE /admin/assignments/:id
+  activate Ctrl
+  Ctrl -> Svc : adminAssignVolunteer(...) · adminUnassignVolunteer(id)
+  activate Svc
+  Svc -> Repo : volunteerProfile.findUnique include specializations + kitchenCampaign.findUnique
+  Repo --> Svc : volunteer, campaign
+  alt Wrong role / missing specialization (no override) / slot full / already assigned
+    Svc --> Ctrl : 400 / 404 / 409 error
+  else valid
+    group $transaction
+      Svc -> Repo : assignment.create(status = assigned) or assignment.delete(id)
+      Svc -> Repo : kitchenCampaign slotsFilled ±1
+      Repo -> DB : INSERT / DELETE assignment + UPDATE kitchen_campaigns
+    end
+    Svc -> Notif : notify(volunteer, the assignment change)
+  end
+else Review a campaign change request
+  User -> Screen : approve or reject a change request
+  Screen -> Ctrl : PATCH /admin/campaign-change-requests/:id (decision, reviewNote)
+  activate Ctrl
+  Ctrl -> Svc : reviewCampaignChangeRequest(id, decision, reviewNote, adminUserId)
+  activate Svc
+  Svc -> Repo : campaignChangeRequest.findUnique(id) include campaign
+  Repo --> Svc : changeRequest | null
+  alt Not found / status != pending
+    Svc --> Ctrl : 404 / 400 error
+  else reject
+    Svc -> Repo : changeRequest.update(status = rejected, reviewNote)
+  else approve
+    alt proposed slots below the filled count, or a past date
+      Svc --> Ctrl : 400 BadRequest
+    else valid
+      group $transaction
+        Svc -> Repo : kitchenCampaign.update(apply the proposed fields)
+        opt new coordinates supplied
+          Svc -> Repo : $executeRaw UPDATE kitchen_location = ST_MakePoint(lng, lat)
+        end
+        Svc -> Repo : changeRequest.update(status = approved)
+        Repo -> DB : UPDATE kitchen_campaigns / campaign_change_requests
+      end
+    end
+  end
+  Svc -> Notif : notify(charity, the review outcome)
+end
+Notif --> Target : realtime notification
+Svc --> Ctrl : the matching result
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the review queue (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 66. Manage Food Catalog ────────────────
+@startuml seq-admin-food-catalog
+!include _seq-style.iuml
+title Manage Food Catalog Sequence Diagram
+
+actor "Admin" as User
+participant ":FoodCatalogScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the food catalog (optional search)
+activate Screen
+Screen -> Ctrl : GET /admin/food-catalog?search
+activate Ctrl
+Ctrl -> Svc : listFoodCatalog({ search })
+activate Svc
+Svc -> Repo : foodCatalogCategory.findMany(deletedAt = null)\ninclude items(deletedAt = null, name contains search)
+Repo -> DB : SELECT food_catalog_categories JOIN food_catalog_items
+DB --> Repo : categories[]
+Repo --> Svc : categories
+opt a search term was given
+  Svc -> Svc : drop the categories whose item list came back empty
+end
+Svc --> Ctrl : { categories[] with itemCount and items[] }
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the category tree
+
+alt Create a category
+  User -> Screen : enter a category name and group
+  Screen -> Ctrl : POST /admin/food-categories (name, group?, description?, sortOrder?)
+  activate Ctrl
+  Ctrl -> Svc : createFoodCategory(adminUserId, dto)
+  activate Svc
+  Svc -> Repo : foodCatalogCategory.findFirst(deletedAt = null,\nname equals — case insensitive)
+  Repo --> Svc : dup | null
+  alt Name already taken
+    Svc --> Ctrl : 409 "Category {name} already exists"
+  else available
+    Svc -> Repo : foodCatalogCategory.create(name, group ?? 'other', sortOrder ?? 0, createdBy)
+    Repo -> DB : INSERT food_catalog_categories
+    Svc --> Ctrl : category
+  end
+else Update a category
+  User -> Screen : rename a category or switch it inactive
+  Screen -> Ctrl : PATCH /admin/food-categories/:id (name?, group?, sortOrder?, isActive?)
+  activate Ctrl
+  Ctrl -> Svc : updateFoodCategory(id, dto)
+  activate Svc
+  Svc -> Repo : foodCatalogCategory.findFirst(id, deletedAt = null)
+  Repo --> Svc : category | null
+  alt Category not found
+    Svc --> Ctrl : 404 "Food category not found"
+  else the new name belongs to another category
+    Svc -> Repo : findFirst(id NOT this one, same name — case insensitive)
+    Repo --> Svc : dup
+    Svc --> Ctrl : 409 Conflict
+  else valid
+    Svc -> Repo : foodCatalogCategory.update(name, group, description, sortOrder, isActive)
+    Repo -> DB : UPDATE food_catalog_categories
+    Svc --> Ctrl : updated category
+  end
+else Delete a category
+  User -> Screen : remove a category
+  Screen -> Ctrl : DELETE /admin/food-categories/:id
+  activate Ctrl
+  Ctrl -> Svc : deleteFoodCategory(id)
+  activate Svc
+  Svc -> Repo : foodCatalogCategory.findFirst(id, deletedAt = null) include _count.items
+  Repo --> Svc : category | null
+  alt Category not found
+    Svc --> Ctrl : 404 NotFound
+  else valid
+    group $transaction
+      Svc -> Repo : foodCatalogItem.updateMany(categoryId → deletedAt = NOW())
+      Svc -> Repo : foodCatalogCategory.update(deletedAt = NOW())
+      Repo -> DB : UPDATE food_catalog_items / food_catalog_categories
+    end
+    Svc --> Ctrl : { id, deleted: true, itemsDeleted }
+  end
+else Create an item
+  User -> Screen : add a food type into a category
+  Screen -> Ctrl : POST /admin/food-catalog (categoryId, name, description?)
+  activate Ctrl
+  Ctrl -> Svc : createFoodCatalogItem(adminUserId, dto)
+  activate Svc
+  Svc -> Repo : foodCatalogCategory.findFirst(categoryId, deletedAt = null)
+  Repo --> Svc : category | null
+  alt Parent category missing
+    Svc --> Ctrl : 400 "Food category does not exist"
+  else valid
+    Svc -> Repo : foodCatalogItem.create(categoryId, name, description, createdBy)
+    Repo -> DB : INSERT food_catalog_items
+    Svc --> Ctrl : item
+  end
+else Update an item
+  User -> Screen : rename an item or move it to another category
+  Screen -> Ctrl : PATCH /admin/food-catalog/:id (categoryId?, name?, description?, isActive?)
+  activate Ctrl
+  Ctrl -> Svc : updateFoodCatalogItem(id, dto)
+  activate Svc
+  Svc -> Repo : foodCatalogItem.findFirst(id, deletedAt = null)
+  Repo --> Svc : item | null
+  alt Item not found
+    Svc --> Ctrl : 404 "Food type not found"
+  else moving into a category that does not exist
+    Svc -> Repo : foodCatalogCategory.findFirst(dto.categoryId, deletedAt = null)
+    Repo --> Svc : null
+    Svc --> Ctrl : 400 "Food category does not exist"
+  else valid
+    Svc -> Repo : foodCatalogItem.update(categoryId, name, description, isActive)
+    Repo -> DB : UPDATE food_catalog_items
+    Svc --> Ctrl : updated item
+  end
+else Delete an item
+  User -> Screen : remove a food type
+  Screen -> Ctrl : DELETE /admin/food-catalog/:id
+  activate Ctrl
+  Ctrl -> Svc : deleteFoodCatalogItem(id)
+  activate Svc
+  Svc -> Repo : foodCatalogItem.findFirst(id, deletedAt = null)
+  Repo --> Svc : item | null
+  alt Item not found
+    Svc --> Ctrl : 404 NotFound
+  else valid
+    Svc -> Repo : foodCatalogItem.update(deletedAt = NOW())
+    Repo -> DB : UPDATE food_catalog_items SET deleted_at
+    Svc --> Ctrl : { id, deleted: true }
+  end
+end
+deactivate Svc
+Ctrl --> Screen : return data (200 / 201) / error
+deactivate Ctrl
+Screen --> User : refresh the catalog tree (or show error message)
+deactivate Screen
+@enduml
+
+'──────────────────── 67. Handle Reports ─────────────────────
+@startuml seq-admin-reports
+!include _seq-style.iuml
+title Handle User Reports Sequence Diagram
+
+actor "Admin" as User
+participant ":ReportsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the report queue (filter by status)
+activate Screen
+Screen -> Ctrl : GET /admin/reports?status
+activate Ctrl
+Ctrl -> Svc : listReports(status)
+activate Svc
+Svc -> Repo : report.findMany(status) include reporter
+Repo -> DB : SELECT reports JOIN users
+DB --> Repo : reports[]
+Repo --> Svc : reports
+Svc --> Ctrl : reports[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the reports with their target and reason
+
+User -> Screen : resolve or dismiss one report
+Screen -> Ctrl : PATCH /admin/reports/:id (ResolveReportDto)
+activate Ctrl
+Ctrl -> Svc : resolveReport(id, adminUserId, dto)
+activate Svc
+Svc -> Repo : report.findUnique(id)
+Repo -> DB : SELECT reports
+DB --> Repo : report | null
+Repo --> Svc : report
+alt Report not found
+  Svc --> Ctrl : 404 NotFound
+else valid
+  Svc -> Repo : report.update(status, resolverId, resolutionNote, resolvedAt)
+  Repo -> DB : UPDATE reports
+  DB --> Repo : report
+  Svc -> Repo : auditLog.create(action = report_status, actorId, targetId)
+  Repo -> DB : INSERT audit_logs
+  Svc --> Ctrl : updated report
+  Ctrl --> Screen : return data (200)
+  Screen --> User : the report leaves the pending queue
+end
+deactivate Svc
+Ctrl --> Screen : return error (on any failure)
+deactivate Ctrl
+Screen --> User : show error message
+deactivate Screen
+@enduml
+
+'──────────────────── 68. System Configuration ───────────────
+@startuml seq-admin-config
+!include _seq-style.iuml
+title System Configuration Sequence Diagram
+
+actor "Admin" as User
+participant ":ConfigScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open the system settings
+activate Screen
+Screen -> Ctrl : GET /admin/configs
+activate Ctrl
+Ctrl -> Svc : getConfigs()
+activate Svc
+Svc -> Cfg : getAll()
+activate Cfg
+Cfg -> Repo : systemConfig.findMany()
+Repo -> DB : SELECT system_configs
+DB --> Repo : rows[]
+Repo --> Cfg : rows
+Cfg -> Cfg : merge the stored values over the declared definitions\n(label, description, group, unit, min, max, default)
+Cfg --> Svc : configs[]
+deactivate Cfg
+Svc --> Ctrl : configs[]
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the operational parameters grouped by area
+
+User -> Screen : change one value
+Screen -> Ctrl : PATCH /admin/configs/:key (value)
+activate Ctrl
+Ctrl -> Svc : setConfig(key, value, userId)
+activate Svc
+Svc -> Cfg : set(key, value, userId)
+activate Cfg
+alt Unknown configuration key
+  Cfg --> Svc : 404 NotFound
+else value outside the declared min / max
+  Cfg --> Svc : 400 "Value must be between {min} and {max}"
+else valid
+  Cfg -> Repo : systemConfig.upsert(key, value, updatedBy)
+  Repo -> DB : INSERT / UPDATE system_configs
+  DB --> Repo : config
+  Cfg -> Cfg : invalidate the cached value
+  Cfg --> Svc : updated config
+end
+deactivate Cfg
+Svc --> Ctrl : config
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> User : the new threshold applies immediately, no deploy needed
+deactivate Screen
+@enduml

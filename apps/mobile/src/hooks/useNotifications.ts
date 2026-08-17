@@ -3,16 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import apiClient, { ApiResponse, endpoints } from '../api/client';
+import apiClient, { API_ORIGIN, ApiResponse, endpoints } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { Popup, Toast } from '../components/ui/AppPopup';
 import { notifyError, notifySuccess } from '../services/haptics';
 import type { TaskOffer } from './useDeliveries';
 import type { CampaignTask } from './useCampaigns';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 /** Origin cho WebSocket — bỏ prefix /api/v1 (gateway gắn ở gốc). */
-const SOCKET_URL = API_URL.replace(/\/api\/v\d+\/?$/, '');
+const SOCKET_URL = API_ORIGIN;
 
 export interface AppNotification {
   id: string;
@@ -215,6 +214,11 @@ export function useNotificationSocket() {
         void qc.invalidateQueries({ queryKey: ['notifications'] });
         const campaignId = notificationCampaignId(n);
         if (campaignId) refreshCampaignQueries(qc, campaignId, n);
+        // Khi admin duyệt/từ chối hồ sơ → làm mới auth để user.status cập nhật ngay,
+        // màn hình "Chờ xác minh" tự chuyển sang giao diện chính mà không cần bấm "Kiểm tra lại".
+        if (n.type === 'verification') {
+          void useAuthStore.getState().initialize();
+        }
       });
 
       socket.on('delivery:offer', async (event: DeliveryOfferEvent) => {

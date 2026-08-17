@@ -1094,9 +1094,10 @@
   }
   .cm-upload-preview-remove:hover { background: rgba(16, 24, 16, 0.85); }
 
-  .cm-modal-body {
-    padding: 28px 36px 12px;
-  }
+  /* `.cm-modal-body` ở route /campaigns/[id] cũ KHÔNG có scroll — route này đã
+     chết, không có UI nào tham chiếu. Stub dưới đây được xoá để khi Next.js build
+     gộp CSS chung không override rule scroll ở file CSS dashboard (đã từng làm
+     body modal CreateCampaign mất overflow-y trên production). */
   .cm-modal-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);

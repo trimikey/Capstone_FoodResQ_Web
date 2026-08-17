@@ -1,0 +1,120 @@
+'==============================================================
+' FoodResQ — Class Diagrams: Scheduled Jobs (1)
+' Order Lifecycle Jobs · Campaign & Bulk Run Jobs
+'==============================================================
+'
+' Giải thích:
+'   Order Lifecycle Jobs: bốn job định kỳ phía đơn hàng. Expire no-show: đơn confirmed quá hạn
+'   QR chuyển thành no_show, hoàn tồn kho, trừ 20 điểm uy tín. Reset daily quota: xoá
+'   reservations_today. Sweep offers: hết hạn offer cũ và phát lại cho shipper gần kế tiếp.
+'   Stalled deliveries: delivery không cập nhật quá DELIVERY_STALL_HOURS bị đánh thất bại.
+'   Campaign & Bulk Run Jobs: dọn dẹp phía chiến dịch và bulk run. Chiến dịch quá hạn bị expire,
+'   chiến dịch xong tự complete, và bước nấu kế tiếp tự mở khi bước trước đã xong và tới giờ đã
+'   hẹn. Bulk run trễ hạn lấy hàng hoặc hạn hoàn thành bị đóng, phần còn lại trả về listing.
+@startuml class-cron
+title Scheduled Jobs Class Diagram
+
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Scheduled Jobs" {
+
+  class ReservationsCron {
+    +handleNoShows(): Promise<void>
+    +handleDailyReset(): Promise<void>
+  }
+
+  class DeliveriesCron {
+    +handleStalledDeliveries(): Promise<void>
+    +handleOfferSweep(): Promise<void>
+  }
+
+  class CampaignsCron {
+    +handleExpireOverdue(): Promise<void>
+    +handleAutoComplete(): Promise<void>
+    +handleAutoOpenDishSteps(): Promise<void>
+  }
+
+  class BulkRunsCron {
+    +handleStalled(): Promise<void>
+  }
+
+  class ReservationsService {
+    +expireNoShows(): Promise<number>
+    +resetDailyReservationCounters(): Promise<void>
+  }
+
+  class DeliveriesService {
+    +expireStalledDeliveries(): Promise<number>
+    +sweepOffersAndRebroadcast(): Promise<number>
+    -failUnassignedTimeouts(): Promise<number>
+    -offerNextNearestShipper(deliveryId: string, lng: number, lat: number): Promise<void>
+  }
+
+  class CampaignsService {
+    +expireOverdueCampaigns(): Promise<number>
+    +autoCompleteExpiredCampaigns(): Promise<number>
+  }
+
+  class DishStepsService {
+    +autoOpenAvailableSteps(): Promise<number>
+    +computeEffectiveStatus(step: CampaignDishStep, prevDone: boolean, isFirst: boolean, campaign: CampaignTiming): CampaignMenuStepStatus
+  }
+
+  class BulkRunsService {
+    +expireStalled(): Promise<number>
+    -restockSql(listingId: string, qty: number): Promise<number>
+  }
+
+  class CronErrorLogger {
+    +logCronError(logger: Logger, handler: string, error: unknown): void
+  }
+}
+
+class TrustService {
+  +applyDelta(userId: string, delta: number, reason: TrustScoreReason): Promise<void>
+}
+
+class NotificationsService {
+  +notify(userId: string, input: NotifyInput): Promise<Notification>
+  +notifyAdmins(input: NotifyInput): Promise<number>
+  +notifyCampaignOwner(campaignId: string, input: NotifyInput): Promise<number>
+  +listMine(userId: string): Promise<Notification[]>
+  +unreadCount(userId: string): Promise<CountResult>
+  +saveDeviceToken(userId: string, token: string): Promise<OkResult>
+  +markRead(id: string, userId: string): Promise<OkResult>
+  +markAllRead(userId: string): Promise<OkResult>
+}
+
+class PrismaService {
+  +reservation: ReservationDelegate
+  +delivery: DeliveryDelegate
+  +shipperTaskOffer: ShipperTaskOfferDelegate
+  +receiverProfile: ReceiverProfileDelegate
+  +volunteerProfile: VolunteerProfileDelegate
+  +kitchenCampaign: KitchenCampaignDelegate
+  +campaignDishStep: CampaignDishStepDelegate
+  +bulkRun: BulkRunDelegate
+  +foodListing: FoodListingDelegate
+}
+
+ReservationsCron "1" --> "1" ReservationsService
+ReservationsCron ..> CronErrorLogger
+DeliveriesCron "1" --> "1" DeliveriesService
+DeliveriesCron ..> CronErrorLogger
+CampaignsCron "1" --> "1" CampaignsService
+CampaignsCron "1" --> "1" DishStepsService
+CampaignsCron ..> CronErrorLogger
+BulkRunsCron "1" --> "1" BulkRunsService
+BulkRunsCron ..> CronErrorLogger
+
+ReservationsService "1" --> "1" TrustService
+ReservationsService "1" --> "1" NotificationsService
+ReservationsService "1" --> "1" PrismaService
+DeliveriesService "1" --> "1" NotificationsService
+DeliveriesService "1" --> "1" PrismaService
+CampaignsService "1" --> "1" NotificationsService
+CampaignsService "1" --> "1" PrismaService
+DishStepsService "1" --> "1" PrismaService
+BulkRunsService "1" --> "1" PrismaService
+@enduml
