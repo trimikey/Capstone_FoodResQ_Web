@@ -565,20 +565,31 @@ export class AuthService {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
     }
 
-    // Find by scanning active tokens and bcrypt-compare against the raw token
-    const activeTokens = await this.prisma.refreshToken.findMany({
-      where: { isRevoked: false, expiresAt: { gt: new Date() } },
+    const tokenHash = this.hashRefreshToken(rawToken);
+    let tokenRecord = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
       include: { user: true },
     });
 
-    const tokenRecord = await (async () => {
-      for (const t of activeTokens) {
-        if (await bcrypt.compare(rawToken, t.tokenHash)) return t;
-      }
-      return null;
-    })();
+    // Token cu da luu bang bcrypt. Chi fallback scan khi lookup SHA-256 khong thay.
+    if (!tokenRecord) {
+      const activeTokens = await this.prisma.refreshToken.findMany({
+        where: { isRevoked: false, expiresAt: { gt: new Date() } },
+        include: { user: true },
+      });
 
-    if (!tokenRecord) throw new UnauthorizedException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      tokenRecord = await (async () => {
+        for (const t of activeTokens) {
+          if (t.tokenHash.length === 64) continue;
+          if (await bcrypt.compare(rawToken, t.tokenHash)) return t;
+        }
+        return null;
+      })();
+    }
+
+    if (!tokenRecord || tokenRecord.isRevoked || tokenRecord.expiresAt <= new Date()) {
+      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
 
     // Rotate: revoke old, issue new
     await this.prisma.refreshToken.update({
@@ -631,7 +642,7 @@ export class AuthService {
       expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`,
     });
 
-    const tokenHash = await bcrypt.hash(rawRefreshToken, BCRYPT_ROUNDS);
+    const tokenHash = this.hashRefreshToken(rawRefreshToken);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_TTL_DAYS);
 
@@ -655,6 +666,10 @@ export class AuthService {
   }
 
   private hashResetToken(token: string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  private hashRefreshToken(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
