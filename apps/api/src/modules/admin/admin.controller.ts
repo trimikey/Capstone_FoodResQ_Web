@@ -75,7 +75,7 @@ export class AdminController {
     @Body() dto: ReviewVerificationDto,
   ) {
     return this.adminService.reviewVerification(
-      type as 'provider' | 'volunteer',
+      type as 'provider' | 'volunteer' | 'receiver',
       id,
       user.id,
       dto,

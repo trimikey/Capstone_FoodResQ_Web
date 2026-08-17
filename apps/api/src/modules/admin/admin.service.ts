@@ -1424,18 +1424,37 @@ export class AdminService {
       orderBy: { createdAt: 'asc' },
     });
 
+    const charityReceivers = await this.prisma.receiverProfile.findMany({
+      where: { isCharityOrg: true, verificationStatus: 'pending' },
+      select: {
+        id: true,
+        organizationName: true,
+        address: true,
+        createdAt: true,
+        user: {
+          select: { id: true, email: true, fullName: true, phone: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
     // Lấy documents từ verification_requests mới nhất theo user.
     // Provider dùng ảnh GPKD; volunteer/shipper dùng ảnh biển số hoặc giấy tờ bổ sung.
     const userIds = [
       ...providers.map((p) => p.user.id),
       ...volunteers.map((v) => v.user.id),
+      ...charityReceivers.map((r) => r.user.id),
     ];
     const verificationDocs = userIds.length
       ? await this.prisma.verificationRequest.findMany({
           where: {
             userId: { in: userIds },
             requestType: {
-              in: ['provider_registration', 'volunteer_chef_cert'],
+              in: [
+                'provider_registration',
+                'volunteer_chef_cert',
+                'charity_registration',
+              ],
             },
           },
           orderBy: { submittedAt: 'desc' },
@@ -1506,6 +1525,32 @@ export class AdminService {
           createdAt: v.createdAt,
         };
       }),
+      ...charityReceivers.map((r) => {
+        const docs =
+          (docsByUser.get(r.user.id) as EvidenceDocs | undefined) ?? {};
+        const evidenceUrls = Array.isArray(docs.evidenceUrls)
+          ? docs.evidenceUrls
+          : [];
+        return {
+          type: 'receiver',
+          profileId: r.id,
+          userId: r.user.id,
+          fullName: r.user.fullName,
+          email: r.user.email,
+          phone: r.user.phone,
+          detail: `Tổ chức từ thiện · ${r.organizationName ?? r.user.fullName} · ${r.address ?? 'chưa có địa chỉ'}`,
+          businessName: r.organizationName ?? r.user.fullName,
+          businessType: 'charity',
+          taxCode: null,
+          address: r.address ?? '',
+          contactPhone: r.user.phone,
+          evidenceUrls,
+          description: null,
+          lng: docs.lng ?? null,
+          lat: docs.lat ?? null,
+          createdAt: r.createdAt,
+        };
+      }),
     ].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
   }
 
@@ -1571,6 +1616,27 @@ export class AdminService {
               }),
             ]
           : []),
+      ]);
+    } else if (type === 'receiver') {
+      const profile = await this.prisma.receiverProfile.findUnique({
+        where: { id: profileId },
+      });
+      if (!profile)
+        throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+      targetUserId = profile.userId;
+      await this.prisma.$transaction([
+        this.prisma.receiverProfile.update({
+          where: { id: profileId },
+          data: {
+            verificationStatus: status,
+            verifiedAt: status === 'approved' ? now : null,
+            verifiedBy: adminUserId,
+          },
+        }),
+        this.prisma.user.update({
+          where: { id: profile.userId },
+          data: { status: status === 'approved' ? 'active' : 'suspended' },
+        }),
       ]);
     } else {
       throw new BadRequestException('Loại hồ sơ không được hỗ trợ.');

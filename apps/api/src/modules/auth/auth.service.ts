@@ -138,6 +138,19 @@ export class AuthService {
       // (soft-check phía client, BE không ép vì có thể NCC cá nhân gửi ảnh CCCD sau).
     }
 
+    if (dto.role === 'receiver' && isCharityOrg) {
+      if (!dto.businessName?.trim() || !dto.address?.trim()) {
+        throw new BadRequestException(
+          'Tổ chức cần nhập tên tổ chức và địa chỉ hoạt động.',
+        );
+      }
+      if (!dto.evidenceUrls || dto.evidenceUrls.length === 0) {
+        throw new BadRequestException(
+          'Tổ chức cần tải lên giấy phép/giấy giới thiệu và giấy tờ người đại diện để admin xác minh.',
+        );
+      }
+    }
+
     if (dto.role === 'volunteer') {
       // Volunteer phải upload ảnh CCCD ở FE (bắt buộc) — dùng cho eKYC:
       // BE so khớp khuôn mặt giữa ảnh CCCD và selfie.
@@ -217,6 +230,7 @@ export class AuthService {
       });
 
       if (dto.role === 'receiver') {
+        const evidenceUrls = dto.evidenceUrls ?? [];
         const rp = await tx.receiverProfile.create({
           data: {
             userId: created.id,
@@ -238,6 +252,23 @@ export class AuthService {
                 updated_at = NOW()
             WHERE id = ${rp.id}::uuid
           `);
+        }
+        if (isCharityOrg) {
+          await tx.verificationRequest.create({
+            data: {
+              userId: created.id,
+              requestType: 'charity_registration',
+              status: 'pending',
+              documents: {
+                organizationName: dto.businessName ?? fullName,
+                address: dto.address ?? null,
+                phone: dto.phone ?? null,
+                lng: dto.lng ?? null,
+                lat: dto.lat ?? null,
+                evidenceUrls,
+              } as never,
+            },
+          });
         }
       } else if (dto.role === 'volunteer') {
         const specialization = dto.volunteerRole;
@@ -330,12 +361,20 @@ export class AuthService {
 
     // Hồ sơ chờ xác minh nằm im tới khi có admin tình cờ mở trang duyệt — báo ngay
     // sau khi transaction commit (báo bên trong transaction thì rollback vẫn gửi nhầm).
-    if (user.role === 'provider' || user.role === 'volunteer') {
+    if (
+      user.role === 'provider' ||
+      user.role === 'volunteer' ||
+      (user.role === 'receiver' && isCharityOrg)
+    ) {
       void this.notifications.notifyAdmins({
         type: 'verification',
         title: 'Hồ sơ mới chờ xác minh',
         body: `${user.fullName} vừa đăng ký tài khoản ${
-          user.role === 'provider' ? 'nhà cung cấp' : 'tình nguyện viên'
+          user.role === 'provider'
+            ? 'nhà cung cấp'
+            : user.role === 'volunteer'
+              ? 'tình nguyện viên'
+              : 'tổ chức từ thiện'
         } và đang chờ duyệt hồ sơ.`,
         data: { userId: user.id, role: user.role },
       });
