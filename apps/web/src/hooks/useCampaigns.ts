@@ -427,7 +427,7 @@ export function useUploadCampaignImage() {
       const { data } = await api.post('/campaigns/upload-image', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      return data.data as { url: string };
+      return (data.data ?? data) as { url: string };
     },
   });
 }

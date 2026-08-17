@@ -1586,13 +1586,37 @@ function ImageUploader({
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'upload' | 'url'>('upload');
   const [url, setUrl] = useState('');
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (value) return;
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    };
+  }, [localPreviewUrl]);
 
   async function onPick(file: File) {
+    const preview = URL.createObjectURL(file);
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return preview;
+    });
     try {
       const res = await upload.mutateAsync(file);
       onChange(res.url);
     } catch (e) {
-      toast.error(errMsg(e, 'Tải ảnh thất bại'));
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      toast.error(errMsg(e, 'Tai anh that bai'));
     }
   }
 
@@ -1605,6 +1629,10 @@ function ImageUploader({
     try {
       const u = new URL(trimmed);
       if (!/^https?:$/.test(u.protocol)) throw new Error();
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       onChange(trimmed);
       setUrl('');
       setMode('upload');
@@ -1628,13 +1656,19 @@ function ImageUploader({
         }}
       />
 
-      {value ? (
+      {value || localPreviewUrl ? (
         <div className="cm-upload-preview">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(value)} alt="Ảnh bìa" />
+          <img src={localPreviewUrl ?? mediaUrl(value ?? '')} alt="Anh bia" />
           <button
             type="button"
-            onClick={() => onChange(null)}
+            onClick={() => {
+              setLocalPreviewUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return null;
+              });
+              onChange(null);
+            }}
             className="cm-upload-preview-remove"
             aria-label="Xoá ảnh"
           >
