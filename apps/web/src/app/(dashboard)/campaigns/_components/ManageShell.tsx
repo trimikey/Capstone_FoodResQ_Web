@@ -7,13 +7,15 @@ import { ReactNode, createContext, useContext, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   useCampaignManageDetail,
+  useStaffingReadiness,
+  useExtendRecruitment,
   useStartCampaign,
   useCompleteCampaign,
   useCancelCampaign,
   type CampaignManageParticipant,
   type DistributionPoint,
+  type StaffingReadiness,
 } from '@/hooks/useCampaigns';
-import { campaignStartWindow } from '@/lib/campaign-schedule';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import { Modal } from '@/components/shared/Modal';
 
@@ -24,8 +26,8 @@ export const ROLE_LABEL: Record<string, string> = {
 };
 
 export const STATUS_META: Record<string, { label: string; chip: string; icon: string }> = {
-  draft: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey', icon: 'pending' },
-  open: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky', icon: 'campaign' },
+  pending_approval: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey', icon: 'pending' },
+  approved: { label: 'Đã duyệt', chip: 'cm-chip cm-chip--sky', icon: 'campaign' },
   in_progress: { label: 'Đang chạy', chip: 'cm-chip cm-chip--mint', icon: 'play_circle' },
   completed: { label: 'Đã hoàn tất', chip: 'cm-chip cm-chip--mint', icon: 'verified' },
   cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--rose', icon: 'cancel' },
@@ -76,6 +78,12 @@ type CampaignData = {
   id: string;
   title: string;
   status: string;
+  recruitmentStatus?: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  operationStartAt?: string;
+  operationEndAt?: string;
+  recruitmentStartAt?: string;
+  recruitmentEndAt?: string;
+  recruitmentBufferHours?: number;
   organizationName?: string | null;
   imageUrls?: string[];
   /** Nhân sự đã tuyển so với ngưỡng tối thiểu do admin cấu hình. */
@@ -166,7 +174,7 @@ export function ManageShell({
 }) {
   const pathname = usePathname();
   const { data: c, isLoading, isError } = useCampaignManageDetail(campaignId);
-  const startCampaign = useStartCampaign();
+  const { data: readiness } = useStaffingReadiness(campaignId);
   const completeCampaign = useCompleteCampaign();
   const cancelCampaign = useCancelCampaign();
   const [actionModal, setActionModal] = useState<
@@ -229,7 +237,7 @@ export function ManageShell({
   }
 
   const heroImage = c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : null;
-  const statusMeta = STATUS_META[c.status];
+  const statusMeta = STATUS_META[c.status] ?? STATUS_META.pending_approval;
   const pendingCount = c.participants?.filter((p) => !p.status || p.status === 'pending' || p.status === 'applied').length ?? 0;
   const distCount = c.distributions?.length ?? 0;
 
@@ -238,14 +246,6 @@ export function ManageShell({
     return `/campaigns/${c!.id}/manage/${NAV_PATH[key]}`;
   }
 
-  async function onStart() {
-    try {
-      await startCampaign.mutateAsync(c!.id);
-      toast.success('Đã bắt đầu chiến dịch');
-    } catch (e) {
-      toast.error(errMsg(e, 'Không thể bắt đầu — kiểm tra trạng thái'));
-    }
-  }
   async function onComplete(payload: {
     actualServings: number;
     earlyEndConfirmation?: 'EARLY_END';
@@ -298,58 +298,23 @@ export function ManageShell({
               <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
               {statusMeta.label}
             </span>
-            {/* Tiến độ tuyển TNV — hiện ngay cạnh nút để tổ chức biết còn thiếu bao
-                nhiêu người mới chạy được, thay vì bấm rồi mới ăn lỗi. */}
-            {c.status === 'open' && c.staffing && c.staffing.needed > 0 && c.staffing.minPercent > 0 && (
+            {c.status === 'approved' && readiness && (
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-md ${
-                  c.staffing.percent >= c.staffing.minPercent
-                    ? 'bg-emerald-100/90 text-emerald-800'
-                    : 'bg-amber-100/90 text-amber-800'
-                }`}
-                title={`Cần tuyển tối thiểu ${c.staffing.minPercent}% để bắt đầu`}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-md ${readiness.ready ? 'bg-emerald-100/90 text-emerald-800' : 'bg-amber-100/90 text-amber-800'}`}
               >
                 <span className="material-symbols-outlined text-[14px]">group</span>
-                {c.staffing.filled}/{c.staffing.needed} TNV · {c.staffing.percent}%
-                <span className="opacity-70">(cần ≥{c.staffing.minPercent}%)</span>
+                {readiness.assignedShiftSlots} phân công · {readiness.confirmedShiftSlots} xác nhận
               </span>
             )}
-            {c.status === 'open' && (() => {
-              // Cùng luật với backend: mở được từ 12h trước mốc bắt đầu (giờ VN)
-              // để kịp các ca chuẩn bị rạng sáng.
-              const win = campaignStartWindow(c);
-              // Ngoài cửa sổ thời gian, còn phải tuyển đủ tỉ lệ TNV tối thiểu.
-              // Kiểm ở FE để nút giải thích được lý do TRƯỚC khi bấm; BE vẫn chặn lại.
-              const st = c.staffing;
-              const understaffed =
-                !!st && st.minPercent > 0 && st.needed > 0 && st.percent < st.minPercent;
-              const canStart = win.canStart && !understaffed;
-              const hint = !win.canStart
-                ? win.message
-                : understaffed
-                  ? `Mới tuyển ${st!.filled}/${st!.needed} TNV (${st!.percent}%) — cần tối thiểu ${st!.minPercent}%`
-                  : '';
-              return (
-                <button
-                  type="button"
-                  onClick={onStart}
-                  disabled={!canStart || startCampaign.isPending}
-                  title={hint || 'Bắt đầu chiến dịch'}
-                  className="px-3 py-1.5 rounded-xl bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-bold inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-[14px]">play_arrow</span>
-                  {startCampaign.isPending
-                    ? 'Đang bắt đầu...'
-                    : canStart
-                      ? 'Bắt đầu'
-                      : understaffed
-                        ? `Thiếu TNV (${st!.percent}%)`
-                        : win.reason === 'too_early'
-                          ? 'Chưa tới giờ'
-                          : 'Quá ngày'}
-                </button>
-              );
-            })()}
+            {c.status === 'approved' && readiness && (
+              <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-neutral-700">
+                {readiness.ready
+                  ? 'Đủ 100% · tự bắt đầu đúng giờ'
+                  : readiness.eligibleToStart
+                    ? `Đạt ${readiness.minimumFillPercent}% · được bắt đầu đúng giờ`
+                    : `Chờ đạt ${readiness.minimumFillPercent}% từng ca/vai trò`}
+              </span>
+            )}
             {c.status === 'in_progress' && (
               <button
                 type="button"
@@ -403,7 +368,7 @@ export function ManageShell({
                 <span className="material-symbols-outlined text-[18px]">edit</span>
                 Chỉnh sửa chiến dịch
               </Link>
-              {c.status === 'in_progress' && (
+              {['pending_approval', 'approved'].includes(c.status) && (
                 <button
                   type="button"
                   onClick={() => setActionModal({ kind: 'cancel' })}
@@ -417,6 +382,9 @@ export function ManageShell({
           </aside>
 
           <main className="cm-manage-main">
+            {c.status === 'approved' && readiness && (
+              <RecruitmentReadinessPanel campaignId={c.id} readiness={readiness} />
+            )}
             <ManageContext.Provider
               value={{
                 campaign: c as CampaignData,
@@ -447,6 +415,158 @@ export function ManageShell({
         />
       )}
     </div>
+  );
+}
+
+const RECRUITMENT_LABEL: Record<string, string> = {
+  scheduled: 'Sắp mở tuyển',
+  open: 'Đang tuyển',
+  staffed: 'Đã đủ nhân sự',
+  expired_understaffed: 'Hết hạn — còn thiếu người',
+  closed_ready: 'Đã đóng tuyển — sẵn sàng',
+};
+
+function toVnLocalInput(date: Date) {
+  return new Date(date.getTime() + 7 * 3600_000).toISOString().slice(0, 16);
+}
+
+function RecruitmentReadinessPanel({
+  campaignId,
+  readiness,
+}: {
+  campaignId: string;
+  readiness: StaffingReadiness;
+}) {
+  const extend = useExtendRecruitment();
+  const startCampaign = useStartCampaign();
+  const [newDeadline, setNewDeadline] = useState('');
+  const [continueRecruiting, setContinueRecruiting] = useState(false);
+  const latest = new Date(
+    new Date(readiness.operationStartAt).getTime() - readiness.recruitmentBufferHours * 3600_000,
+  );
+  const canExtend = latest > new Date(readiness.recruitmentEndAt);
+
+  async function submitExtension() {
+    if (!newDeadline) return toast.error('Chọn hạn tuyển mới.');
+    try {
+      await extend.mutateAsync({ campaignId, recruitmentEndAt: `${newDeadline}:00+07:00` });
+      toast.success('Đã gia hạn thời gian tuyển.');
+      setNewDeadline('');
+    } catch (error) {
+      toast.error(errMsg(error, 'Không thể gia hạn tuyển'));
+    }
+  }
+
+  async function startNow() {
+    try {
+      await startCampaign.mutateAsync(campaignId);
+      toast.success('Chiến dịch đã bắt đầu.');
+    } catch (error) {
+      toast.error(errMsg(error, 'Không thể bắt đầu chiến dịch'));
+    }
+  }
+
+  return (
+    <section className="mb-5 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-extrabold uppercase tracking-wide text-emerald-700">Tiến trình tuyển và vận hành</p>
+          <h2 className="mt-1 text-lg font-extrabold text-neutral-900">{RECRUITMENT_LABEL[readiness.recruitmentStatus]}</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            {readiness.assignedUniqueVolunteers} TNV đã phân công · {readiness.confirmedUniqueVolunteers} đã xác nhận
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {readiness.assignedShiftSlots}/{readiness.requiredShiftSlots} lượt ca đã phân công · {readiness.confirmedShiftSlots}/{readiness.requiredShiftSlots} đã xác nhận
+          </p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${readiness.eligibleToStart ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+          {readiness.ready
+            ? 'Đủ 100% từng ca'
+            : readiness.eligibleToStart
+              ? `Đạt ngưỡng ${readiness.minimumFillPercent}%`
+              : `Chưa đạt ngưỡng ${readiness.minimumFillPercent}%`}
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+        {['Chờ duyệt', 'Mở tuyển', 'Đạt ngưỡng', 'Đóng tuyển', 'Bắt đầu'].map((label, index) => (
+          <div key={label} className="flex items-center gap-2">
+            {index > 0 && <span className="material-symbols-outlined text-neutral-300">arrow_forward</span>}
+            <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-neutral-700">{label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+        <p className="font-extrabold">Ngưỡng {readiness.minimumFillPercent}% được tính riêng cho từng ngày · ca · vai trò.</p>
+        <p className="mt-1">
+          Chỉ người đã bấm xác nhận ca mới được tính. Số tối thiểu được làm tròn lên, nên ca cần 1 người vẫn phải có đủ 1 người xác nhận.
+        </p>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[620px] text-xs">
+          <thead><tr className="border-b text-left text-neutral-500"><th className="p-2">Ngày</th><th className="p-2">Ca</th><th className="p-2">Vai trò</th><th className="p-2">Phân công / xác nhận</th><th className="p-2">Tối thiểu</th><th className="p-2">Trạng thái</th></tr></thead>
+          <tbody>{readiness.matrix.map((row) => (
+            <tr key={`${row.workDate}:${row.shiftId}`} className="border-b last:border-0">
+              <td className="p-2">{new Date(`${row.workDate}T00:00:00+07:00`).toLocaleDateString('vi-VN')}</td>
+              <td className="p-2 font-bold">{row.label}</td>
+              <td className="p-2">{ROLE_LABEL[row.role ?? ''] ?? 'Cần rà soát'}</td>
+              <td className="p-2 font-bold">
+                <span className="text-neutral-800">{row.assigned}/{row.minRequired}</span>
+                <span className="text-neutral-400"> · </span>
+                <span className={row.confirmed >= row.minimumRequired ? 'text-emerald-700' : 'text-amber-700'}>
+                  {row.confirmed}/{row.minRequired}
+                </span>
+              </td>
+              <td className="p-2 font-bold">{row.minimumRequired} người ({readiness.minimumFillPercent}%)</td>
+              <td className={`p-2 font-bold ${row.eligibleToStart ? 'text-emerald-700' : 'text-amber-700'}`}>{row.ready ? 'Đủ 100%' : row.eligibleToStart ? `Đạt ${row.fillPercent}%` : `Thiếu ${Math.max(0, row.minimumRequired - row.confirmed)} để đạt ngưỡng`}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+
+      {!readiness.eligibleToStart && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-extrabold text-amber-900">Chưa thể bắt đầu chiến dịch</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-800">
+            {readiness.matrix.filter((row) => !row.eligibleToStart).map((row) => (
+              <li key={`${row.workDate}:${row.shiftId}:reason`}>
+                {new Date(`${row.workDate}T00:00:00+07:00`).toLocaleDateString('vi-VN')} · {row.label}:{' '}
+                đã phân công {row.assigned}, nhưng mới có {row.confirmed}/{row.minimumRequired} người xác nhận để đạt ngưỡng.
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs font-semibold text-amber-900">
+            Sau khi đủ ngưỡng, nút bắt đầu chỉ được bật từ{' '}
+            {new Date(readiness.operationStartAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.
+          </p>
+        </div>
+      )}
+
+      {readiness.eligibleToStart && !readiness.ready && !continueRecruiting && (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-sm font-extrabold text-emerald-900">Đã đủ điều kiện nhân sự để bắt đầu</p>
+          <p className="mt-1 text-xs text-emerald-800">Tất cả ca/vai trò đã đạt tối thiểu {readiness.minimumFillPercent}% theo cấu hình Admin. Bạn có thể tiếp tục tuyển đến hạn hoặc bắt đầu khi đã tới giờ vận hành.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void startNow()} disabled={!readiness.canStartNow || startCampaign.isPending} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50">
+              {startCampaign.isPending ? 'Đang bắt đầu…' : readiness.canStartNow ? 'Bắt đầu chiến dịch' : 'Chưa tới giờ vận hành'}
+            </button>
+            <button type="button" onClick={() => { setContinueRecruiting(true); toast.success('Chiến dịch sẽ tiếp tục tuyển đến hạn đã đặt.'); }} className="rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-xs font-extrabold text-emerald-800">Tiếp tục tuyển thêm</button>
+          </div>
+        </div>
+      )}
+
+      {canExtend && (
+        <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl bg-amber-50 p-3">
+          <label className="text-xs font-bold text-amber-900">Gia hạn tuyển
+            <input type="datetime-local" value={newDeadline} min={toVnLocalInput(new Date(readiness.recruitmentEndAt))} max={toVnLocalInput(latest)} onChange={(event) => setNewDeadline(event.target.value)} className="cm-input mt-1 block" />
+          </label>
+          <button type="button" onClick={() => void submitExtension()} disabled={extend.isPending} className="rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-extrabold text-white disabled:opacity-50">{extend.isPending ? 'Đang gia hạn…' : 'Gia hạn'}</button>
+          <p className="text-[11px] text-amber-800">Tối đa tới {latest.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}; sau đó phải dời lịch hoặc huỷ.</p>
+        </div>
+      )}
+    </section>
   );
 }
 

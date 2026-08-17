@@ -231,7 +231,7 @@ export interface AdminCampaign {
   scheduledDate: string;
   startTime: string;
   endTime: string;
-  status: 'draft' | 'open' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending_approval' | 'approved' | 'in_progress' | 'completed' | 'cancelled';
   expectedServings: number | null;
   charity: string;
   slotsNeeded: number;
@@ -293,8 +293,8 @@ export function useAdminCampaignDetail(id: string | null) {
 export function useSetCampaignStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { id: string; status: AdminCampaign['status'] }) =>
-      (await api.patch(`/admin/campaigns/${p.id}/status`, { status: p.status })).data.data,
+    mutationFn: async (p: { id: string; status: 'approved' | 'cancelled' }) =>
+      (await api.post(`/admin/campaigns/${p.id}/${p.status === 'approved' ? 'approve' : 'reject'}`)).data.data,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
     },

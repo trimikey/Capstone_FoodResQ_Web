@@ -27,16 +27,40 @@ export default function DistributionPage() {
   // để nguyên thì danh sách hiện trùng tên và React báo lỗi key trùng.
   const APPROVED = ['assigned', 'checked_in', 'in_progress', 'completed'];
   const DISTRIBUTOR_ROLES = ['shipper', 'waiter'];
-  const approvedDistributors = [
-    ...new Map(
-      (c.participants ?? [])
-        .filter((p) => DISTRIBUTOR_ROLES.includes(p.role) && APPROVED.includes(p.status))
-        .map((p) => [
-          p.volunteerId,
-          { volunteerId: p.volunteerId, fullName: p.fullName, role: p.role },
-        ]),
-    ).values(),
-  ];
+  const approvedDistributors = (() => {
+    const byVolunteer = new Map<string, {
+      volunteerId: string;
+      fullName: string;
+      role: string;
+      shifts: Array<{ label: string; start: string; end: string }>;
+    }>();
+    for (const p of c.participants ?? []) {
+      if (!DISTRIBUTOR_ROLES.includes(p.role) || !APPROVED.includes(p.status)) continue;
+      const existing = byVolunteer.get(p.volunteerId);
+      if (existing) {
+        // Người này đã có trong map — thêm ca nếu chưa trùng.
+        if (p.shiftId) {
+          const sh = c.shifts?.find((s) => s.id === p.shiftId);
+          if (sh && !existing.shifts.some((x) => x.start === sh.startTime && x.end === sh.endTime)) {
+            existing.shifts.push({ label: sh.label, start: sh.startTime, end: sh.endTime });
+          }
+        }
+        continue;
+      }
+      const shifts: Array<{ label: string; start: string; end: string }> = [];
+      if (p.shiftId) {
+        const sh = c.shifts?.find((s) => s.id === p.shiftId);
+        if (sh) shifts.push({ label: sh.label, start: sh.startTime, end: sh.endTime });
+      }
+      byVolunteer.set(p.volunteerId, {
+        volunteerId: p.volunteerId,
+        fullName: p.fullName,
+        role: p.role,
+        shifts,
+      });
+    }
+    return [...byVolunteer.values()];
+  })();
 
   // Suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa của các đợt trước).
   const distributed = (c.distributions ?? []).reduce(
@@ -58,7 +82,7 @@ export default function DistributionPage() {
       ? 'report'
       : c.status === 'in_progress'
       ? 'distribute'
-      : c.status === 'open'
+      : c.status === 'approved'
       ? 'recruit'
       : 'plan';
 

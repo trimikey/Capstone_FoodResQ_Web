@@ -90,7 +90,7 @@ export default function SuppliersSection({ campaigns = [] }: Props) {
   const activeSuppliers = suppliers?.filter((s) => (s.activeListingsCount ?? 0) > 0) ?? [];
 
   /** Chiến dịch đang hoạt động để gán */
-  const openCampaigns = campaigns.filter((c) => c.status === 'open' || c.status === 'in_progress');
+  const openCampaigns = campaigns.filter((c) => c.status === 'approved' || c.status === 'in_progress');
 
   /** Map providerId → SentRequestItem (lấy cái mới nhất theo thời gian) */
   const requestByProvider = (sentRequests ?? []).reduce<

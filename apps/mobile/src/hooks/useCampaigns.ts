@@ -4,14 +4,24 @@ import type { CapturedImage } from '@/services/faceCapture';
 
 export type AssignmentRole = 'chef' | 'waiter' | 'shipper';
 
-/** Trạng thái chiến dịch: draft (chờ duyệt) → open (đang tuyển) → in_progress → completed/cancelled. */
+/** Trạng thái vận hành chiến dịch. Tuyển dụng được theo dõi độc lập. */
 export type CampaignStatus =
-  | 'draft'
-  | 'open'
+  | 'pending_approval'
+  | 'approved'
   | 'in_progress'
   | 'completed'
   | 'cancelled'
   | (string & {});
+
+export type RecruitmentStatus =
+  | 'scheduled'
+  | 'open'
+  | 'staffed'
+  | 'expired_understaffed'
+  | 'closed_ready'
+  | (string & {});
+
+export type CampaignShiftPeriod = 'midnight' | 'morning' | 'afternoon' | 'evening';
 
 /** Một suất tình nguyện viên đã được gán vào chiến dịch. */
 export interface CampaignAssignment {
@@ -56,6 +66,8 @@ export interface CampaignShiftSummary {
   endTime: string;
   slotsNeeded: number;
   slotsFilled: number;
+  period?: CampaignShiftPeriod | null;
+  endDayOffset?: number;
 }
 
 /** Chiến dịch bếp ăn — khớp shape GET /campaigns và GET /campaigns/:id. */
@@ -75,6 +87,12 @@ export interface Campaign {
   waiterSlotsFilled: number;
   shipperSlotsFilled: number;
   status: CampaignStatus;
+  recruitmentStatus?: RecruitmentStatus | null;
+  operationStartAt?: string;
+  operationEndAt?: string;
+  recruitmentStartAt?: string;
+  recruitmentEndAt?: string;
+  recruitmentBufferHours?: number;
   expectedServings?: number | null;
   actualServings?: number | null;
   distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
@@ -100,7 +118,7 @@ export interface PledgeDonationInput {
   note?: string;
 }
 
-/** Body POST /campaigns — charity-org tạo chiến dịch bếp ăn (status tự về 'draft', chờ admin duyệt). */
+/** Body POST /campaigns — tạo kế hoạch, định biên theo ca và cửa sổ tuyển riêng. */
 export interface CreateCampaignInput {
   title: string;
   description?: string;
@@ -111,19 +129,21 @@ export interface CreateCampaignInput {
   endDate?: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  recruitmentBufferHours: number;
   chefSlotsNeeded?: number;
   waiterSlotsNeeded?: number;
   shipperSlotsNeeded?: number;
   expectedServings?: number;
   imageUrls?: string[];
-  menuItems?: MenuItem[];
+  menuItems: MenuItem[];
   scheduleItems?: ScheduleItem[];
   supplyItems?: SupplyItem[];
-  shifts?: {
+  shifts: {
     label: string;
-    role?: AssignmentRole;
-    startTime: string;
-    endTime: string;
+    role: AssignmentRole;
+    period: CampaignShiftPeriod;
     slotsNeeded: number;
   }[];
 }
@@ -692,6 +712,8 @@ export interface CampaignTask {
   id: string;
   role: AssignmentRole;
   status: string;
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined' | (string & {});
+  confirmedAt?: string | null;
   shiftId?: string | null;
   checkInTime?: string | null;
   campaign: {
@@ -852,6 +874,25 @@ export function useMyTasks(enabled: boolean = true) {
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
       return res.data.data;
+    },
+  });
+}
+
+/** TNV xác nhận lại ca sau khi tổ chức đã duyệt. Chỉ ca confirmed mới được tính đủ người. */
+export function useConfirmCampaignAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ assignmentId, decision }: { assignmentId: string; decision: 'confirmed' | 'declined' }) => {
+      const res = await apiClient.patch<ApiResponse<CampaignTask>>(
+        endpoints.campaigns.confirmAssignment(assignmentId),
+        { decision },
+      );
+      return res.data.data;
+    },
+    onSuccess: (task) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign', task.campaign.id] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     },
   });
 }

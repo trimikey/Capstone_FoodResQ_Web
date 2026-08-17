@@ -126,10 +126,10 @@ const registerSchema = z.object({
         path: ["providerAddress"],
       });
     }
-    if (!data.evidenceUrls || data.evidenceUrls.length < 2) {
+    if ((data.evidenceUrls?.length ?? 0) < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "To chuc can tai it nhat 2 anh: giay phep/giay gioi thieu va giay to nguoi dai dien.",
+        message: "Tải lên giấy phép/giấy giới thiệu và giấy tờ người đại diện để admin xác minh.",
         path: ["evidenceUrls"],
       });
     }
@@ -506,14 +506,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         businessName: data.storeName || undefined,
         address: data.providerAddress || undefined,
         // Provider verification (P3)
+        ...((data.role === 'provider' || data.role === 'charity') && {
+          evidenceUrls: data.evidenceUrls && data.evidenceUrls.length ? data.evidenceUrls : undefined,
+          ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
+        }),
         ...(data.role === 'provider' && {
           businessType: data.providerBusinessType,
           taxCode: data.taxCode || undefined,
           description: data.providerDescription || undefined,
-        }),
-        ...((data.role === 'provider' || data.role === 'charity') && {
-          evidenceUrls: data.evidenceUrls && data.evidenceUrls.length ? data.evidenceUrls : undefined,
-          ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
         }),
       });
       void res; // tokens không dùng ở nhánh này — provider/charity đăng nhập lại sau
@@ -1299,16 +1299,29 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             </div>
                           )}
 
-                          {/* Provider: ảnh minh chứng (P3) — GPKD + mặt tiền + biển hiệu */}
-                          {selectedRole === "provider" && (() => {
+                          {/* Ảnh minh chứng — NCC: GPKD/mặt tiền; tổ chức: giấy phép + giấy tờ người đại diện. */}
+                          {(selectedRole === "provider" || selectedRole === "charity") && (() => {
                             const evidenceUrls: string[] = (watchRegister("evidenceUrls") ?? []) as string[];
                             const setEvidence = (urls: string[]) =>
                               setRegisterValue("evidenceUrls", urls, { shouldValidate: true });
+                            const isCharity = selectedRole === "charity";
                             return (
                             <div className="space-y-2">
                               <label className="font-semibold text-base text-neutral-500 ml-1">
-                                Anh minh chung (giay phep / mat tien / bien hieu)
+                                {isCharity
+                                  ? "Hồ sơ xác minh tổ chức (2 ảnh bắt buộc)"
+                                  : "Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)"}
                               </label>
+                              {isCharity && (
+                                <p className="text-xs text-neutral-500 ml-1">
+                                  Ảnh đầu là giấy phép hoặc giấy giới thiệu; ảnh thứ hai là giấy tờ của người đại diện.
+                                </p>
+                              )}
+                              {registerErrors.evidenceUrls && (
+                                <p className="text-rose-600 text-sm ml-1">
+                                  {registerErrors.evidenceUrls.message}
+                                </p>
+                              )}
 
                               {/* Danh sách URL đã upload */}
                               <div className="grid grid-cols-3 gap-2">
@@ -1326,9 +1339,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                     >
                                       ✕
                                     </button>
-                                    {idx < 2 && (
+                                    {(idx === 0 || (isCharity && idx === 1)) && (
                                       <span className="absolute bottom-1 left-1 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded">
-                                        GPKD
+                                        {isCharity
+                                          ? idx === 0
+                                            ? 'Giấy phép / giới thiệu'
+                                            : 'Giấy tờ người đại diện'
+                                          : 'GPKD'}
                                       </span>
                                     )}
                                   </div>
@@ -1337,7 +1354,11 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
 
                               <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-neutral-200/60 rounded-xl text-sm font-semibold text-emerald-800 hover:bg-emerald-50 cursor-pointer disabled:opacity-50">
                                 <span className="material-symbols-outlined text-base">add_photo_alternate</span>
-                                {uploadEvidence.isPending ? "Đang upload..." : "Thêm ảnh"}
+                                {uploadEvidence.isPending
+                                  ? "Đang upload..."
+                                  : isCharity
+                                    ? `Thêm ảnh (${evidenceUrls.length}/2 tối thiểu)`
+                                    : "Thêm ảnh"}
                                 <input
                                   type="file"
                                   accept="image/jpeg,image/png,image/webp"
@@ -1746,7 +1767,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               </p>
               {pendingFaceData.role === 'volunteer' && !pendingIdCardPhoto && (
                 <p className="text-[13px] text-rose-600 mt-2 max-w-md font-semibold">
-                  Bạn chưa upload ảnh CCCD ở bước trên — vui lòng bấm "Huỷ" rồi quay lại đăng ký để tải ảnh CCCD.
+                  Bạn chưa upload ảnh CCCD ở bước trên — vui lòng bấm “Huỷ” rồi quay lại đăng ký để tải ảnh CCCD.
                 </p>
               )}
             </div>

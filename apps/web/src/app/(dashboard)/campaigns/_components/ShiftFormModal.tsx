@@ -15,11 +15,12 @@ import { errMsg } from '@/lib/utils';
 interface Props {
   campaignId: string;
   shift?: CampaignShift;
+  readOnly?: boolean;
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: Props) {
+export default function ShiftFormModal({ campaignId, shift, readOnly = false, onClose, onSaved }: Props) {
   const isEdit = !!shift;
   const addShift = useAddShift();
   const updateShift = useUpdateShift();
@@ -111,7 +112,16 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="p-6 space-y-4">
+      {readOnly && (
+        <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+          <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">info</span>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Chiến dịch đã chạy — ca không thể sửa hoặc xoá.
+          </p>
+        </div>
+      )}
+
+      <form onSubmit={onSubmit} className="p-6 space-y-4" onClick={readOnly ? (e) => e.stopPropagation() : undefined}>
         <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
           Tên ca <span className="text-rose-500">*</span>
           <input
@@ -122,6 +132,7 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
             }}
             placeholder="VD: Ca sáng — Sơ chế"
             maxLength={100}
+            disabled={readOnly}
             className={`input-base ${errors.label ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
           />
           {errors.label && (
@@ -137,6 +148,7 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
           <select
             value={role}
             onChange={(e) => setRole(e.target.value)}
+            disabled={readOnly}
             className="input-base"
           >
             <option value="">Tất cả vai trò</option>
@@ -156,6 +168,7 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
                 setStartTime(e.target.value);
                 if (errors.startTime) setErr('startTime', undefined);
               }}
+              disabled={readOnly}
               className={`input-base ${errors.startTime ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
             />
             {errors.startTime && (
@@ -174,6 +187,7 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
                 setEndTime(e.target.value);
                 if (errors.endTime) setErr('endTime', undefined);
               }}
+              disabled={readOnly}
               className={`input-base ${errors.endTime ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
             />
             {errors.endTime && (
@@ -196,6 +210,7 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
               setSlotsNeeded(Number(e.target.value));
               if (errors.slotsNeeded) setErr('slotsNeeded', undefined);
             }}
+            disabled={readOnly}
             className={`input-base ${errors.slotsNeeded ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
           />
           {errors.slotsNeeded && (
@@ -212,11 +227,11 @@ export default function ShiftFormModal({ campaignId, shift, onClose, onSaved }: 
             onClick={onClose}
             className="flex-1 py-3 border border-neutral-200 text-neutral-700 hover:bg-neutral-50 font-bold text-sm rounded-xl"
           >
-            Huỷ
+            {readOnly ? 'Đóng' : 'Huỷ'}
           </button>
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || readOnly}
             className="flex-1 py-3 bg-[#236c2a] hover:bg-[#1a4f1f] text-white font-bold text-sm rounded-xl disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
           >
             {pending ? (

@@ -150,7 +150,7 @@ export default function VolunteerCampaignDetailScreen() {
 
   const sm = statusMeta(c.status);
   const slots = slotProgress(c);
-  const open = canApplyCampaign(c.status);
+  const open = canApplyCampaign(c.status, c.recruitmentStatus);
   const hasShiftSchedule = shifts.length > 0;
   // Chỉ chuyên môn đã xác minh mới được dùng để đăng ký ca.
   const verifiedSpecs = new Set(

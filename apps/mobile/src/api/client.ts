@@ -401,6 +401,7 @@ export const endpoints = {
     // Volunteer: các công việc đã đăng ký
     myTasks: '/campaigns/my-tasks',
     myTaskDetail: (assignmentId: string) => `/campaigns/my-tasks/${assignmentId}`,
+    confirmAssignment: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/confirmation`,
     // Volunteer: chuyển bước công việc (assigned → checked_in → in_progress → completed) + ảnh minh chứng
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
     completeDishStep: (campaignId: string, stepId: string) =>

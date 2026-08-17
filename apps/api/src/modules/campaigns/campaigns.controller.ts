@@ -18,7 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto } from './dto/campaign.dto';
 import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -49,6 +49,21 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Danh sách chiến dịch đã hoàn thành (success stories)' })
   listCompleted() {
     return this.campaignsService.listCompleted();
+  }
+
+  @Get('stats')
+  @Public()
+  @ApiOperation({ summary: 'Thống kê toàn hệ thống: suất ăn, người phục vụ, chiến dịch, tỉ lệ hoàn thành' })
+  getStats() {
+    return this.campaignsService.getSystemStats();
+  }
+
+  @Get('my-stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: thống kê workspace của tôi' })
+  myStats(@CurrentUser() user: User) {
+    return this.campaignsService.getMyStats(user.id);
   }
 
   @Get('my')
@@ -161,10 +176,40 @@ export class CampaignsController {
     return this.campaignsService.startCampaign(id, user.id);
   }
 
+  @Get(':id/staffing-readiness')
+  @ApiOperation({ summary: 'Ma trận đủ người theo từng ngày, ca và vai trò' })
+  staffingReadiness(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getStaffingReadiness(id);
+  }
+
+  @Patch(':id/recruitment/extend')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: gia hạn tuyển trong giới hạn khoảng đệm' })
+  extendRecruitment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ExtendRecruitmentDto,
+  ) {
+    return this.campaignsService.extendRecruitment(id, user.id, dto.recruitmentEndAt);
+  }
+
+  @Patch('assignments/:assignmentId/confirmation')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: xác nhận hoặc từ chối ca đã được tổ chức duyệt' })
+  confirmAssignment(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ConfirmCampaignAssignmentDto,
+  ) {
+    return this.campaignsService.confirmAssignment(assignmentId, user.id, dto.decision);
+  }
+
   @Patch(':id/cancel')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Charity: huỷ chiến dịch đang tuyển (open → cancelled)' })
+  @ApiOperation({ summary: 'Charity: huỷ kế hoạch trước hoặc trong giai đoạn tuyển' })
   cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.campaignsService.cancelCampaign(id, user.id);
   }
@@ -344,16 +389,20 @@ export class CampaignsController {
   @Post('distributions/:distributionId/complete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VOLUNTEER, UserRole.RECEIVER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
       'Shipper được phân công (hoặc tổ chức chủ chiến dịch) xác nhận đã phát xong một đợt',
   })
-  completeDistribution(
+  async completeDistribution(
     @CurrentUser() user: User,
     @Param('distributionId', ParseUUIDPipe) distributionId: string,
     @Body() dto: CompleteDistributionDto,
+    @UploadedFile() photo?: Express.Multer.File,
   ) {
-    return this.campaignsService.completeDistribution(distributionId, user.id, dto);
+    const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.completeDistribution(distributionId, user.id, dto, proofUrl);
   }
 
   @Get('my-distributions')
@@ -562,5 +611,32 @@ export class CampaignsController {
     @Body() dto: AppendSupplyItemDto,
   ) {
     return this.campaignsService.appendSupplyItem(id, user.id, dto);
+  }
+
+  // ── Tổ chức duyệt món QC ────────────────────────────────────────────────
+
+  @Post(':id/dishes/:menuItemId/approve')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món — món đã được chef tick xong' })
+  approveDishFinalStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('menuItemId') menuItemId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId);
+  }
+
+  @Post(':id/dishes/:menuItemId/reject')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món — chef phải làm lại' })
+  rejectDishFinalStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('menuItemId') menuItemId: string,
+    @CurrentUser() user: User,
+    @Body() body: { reason: string },
+  ) {
+    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason);
   }
 }

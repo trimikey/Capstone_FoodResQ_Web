@@ -299,7 +299,7 @@ export default function HistoryPage() {
                     <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 bg-neutral-100 ring-1 ring-neutral-150">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={t.listing.imageUrls[0] ? mediaUrl(t.listing.imageUrls[0]) : fallbackImage(t.listing.category)}
+                        src={mediaUrl(t.listing.imageUrls[0] || fallbackImage(t.listing.category))}
                         alt={t.listing.title}
                         className="w-full h-full object-cover"
                       />
@@ -380,30 +380,38 @@ export default function HistoryPage() {
 
       {/* REPORT MODAL */}
       {reportingItem && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
-              <h3 className="font-extrabold text-neutral-900 text-lg">Báo cáo đơn hàng</h3>
-              <button onClick={() => setReportingItem(null)} className="p-1 hover:bg-neutral-100 rounded-full text-neutral-450 hover:text-neutral-800">
-                <span className="material-symbols-outlined text-[20px]">close</span>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+              <button onClick={() => setReportingItem(null)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">report</span>
+                </div>
+                <h3 className="font-extrabold text-white text-base">Báo cáo đơn hàng</h3>
+              </div>
             </div>
-            <form onSubmit={handleReportSubmit} className="p-6 space-y-4">
-              <div className="space-y-1">
-                <p className="text-xs text-neutral-450 font-bold uppercase">Sản phẩm</p>
-                <p className="text-sm font-bold text-neutral-800">{reportingItem.listing.title} - {reportingItem.listing.provider.businessName}</p>
+            <form onSubmit={handleReportSubmit} className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-neutral-450 font-bold uppercase">Sản phẩm</p>
+                  <p className="text-sm font-bold text-neutral-800">{reportingItem.listing.title} - {reportingItem.listing.provider.businessName}</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-neutral-450 font-bold uppercase">Lý do báo cáo</label>
+                  <textarea
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    placeholder="Ví dụ: Thực phẩm bị hỏng, không nhận được hàng, thái độ phục vụ không tốt..."
+                    rows={4}
+                    className="input-base"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs text-neutral-450 font-bold uppercase">Lý do báo cáo</label>
-                <textarea
-                  value={reportReason}
-                  onChange={(e) => setReportReason(e.target.value)}
-                  placeholder="Ví dụ: Thực phẩm bị hỏng, không nhận được hàng, thái độ phục vụ không tốt..."
-                  rows={4}
-                  className="input-base"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
+              <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-3">
                 <button type="button" onClick={() => setReportingItem(null)} className="flex-1 py-3 border border-neutral-200 text-neutral-700 font-bold text-sm rounded-xl hover:bg-neutral-50 transition-colors">
                   Hủy bỏ
                 </button>
@@ -418,40 +426,48 @@ export default function HistoryPage() {
 
       {/* REVIEW MODAL */}
       {reviewingItem && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
-              <h3 className="font-extrabold text-neutral-900 text-lg">Đánh giá sản phẩm</h3>
-              <button onClick={() => setReviewingItem(null)} className="p-1 hover:bg-neutral-100 rounded-full text-neutral-450 hover:text-neutral-800">
-                <span className="material-symbols-outlined text-[20px]">close</span>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+              <button onClick={() => setReviewingItem(null)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">star</span>
+                </div>
+                <h3 className="font-extrabold text-white text-base">Đánh giá sản phẩm</h3>
+              </div>
             </div>
-            <form onSubmit={handleReviewSubmit} className="p-6 space-y-6">
-              <div className="text-center space-y-2">
-                <p className="text-xs text-neutral-500 font-bold">Bạn đánh giá thế nào về thực phẩm này?</p>
-                <p className="text-base font-extrabold text-neutral-850">{reviewingItem.listing.title}</p>
-                <p className="text-xs text-neutral-450">{reviewingItem.listing.provider.businessName}</p>
+            <form onSubmit={handleReviewSubmit} className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <div className="text-center space-y-2">
+                  <p className="text-xs text-neutral-500 font-bold">Bạn đánh giá thế nào về thực phẩm này?</p>
+                  <p className="text-base font-extrabold text-neutral-850">{reviewingItem.listing.title}</p>
+                  <p className="text-xs text-neutral-450">{reviewingItem.listing.provider.businessName}</p>
+                </div>
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} type="button" onClick={() => setRating(s)} className="p-1 text-amber-400 hover:scale-110 transition-transform">
+                      <span className="material-symbols-outlined text-[36px]" style={{ fontVariationSettings: s <= rating ? "'FILL' 1" : "'FILL' 0" }}>
+                        star
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-neutral-450 font-bold uppercase">Ý kiến đóng góp (Không bắt buộc)</label>
+                  <textarea
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Chia sẻ cảm nghĩ của bạn về chất lượng thực phẩm và trải nghiệm nhận hàng..."
+                    rows={3}
+                    className="input-base"
+                  />
+                </div>
               </div>
-              <div className="flex justify-center gap-2">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button key={s} type="button" onClick={() => setRating(s)} className="p-1 text-amber-400 hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined text-[36px]" style={{ fontVariationSettings: s <= rating ? "'FILL' 1" : "'FILL' 0" }}>
-                      star
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-neutral-450 font-bold uppercase">Ý kiến đóng góp (Không bắt buộc)</label>
-                <textarea
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="Chia sẻ cảm nghĩ của bạn về chất lượng thực phẩm và trải nghiệm nhận hàng..."
-                  rows={3}
-                  className="input-base"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
+              <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-3">
                 <button type="button" onClick={() => setReviewingItem(null)} className="flex-1 py-3 border border-neutral-200 text-neutral-700 font-bold text-sm rounded-xl hover:bg-neutral-50 transition-colors">
                   Hủy bỏ
                 </button>
@@ -465,65 +481,73 @@ export default function HistoryPage() {
       )}
       {/* DETAILS MODAL */}
       {viewingItem && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center bg-neutral-50/50">
-              <h3 className="font-extrabold text-neutral-900 text-lg">Chi tiết đơn hàng</h3>
-              <button onClick={() => setViewingItem(null)} className="p-1 hover:bg-neutral-200 rounded-full text-neutral-500 transition-colors">
-                <span className="material-symbols-outlined text-[20px]">close</span>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+              <button onClick={() => setViewingItem(null)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
-                <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
-                  <img
-                    src={viewingItem.listing.imageUrls[0] ? mediaUrl(viewingItem.listing.imageUrls[0]) : fallbackImage(viewingItem.listing.category)}
-                    alt={viewingItem.listing.title}
-                    className="w-full h-full object-cover"
-                  />
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">receipt_long</span>
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-neutral-900 text-xl">{viewingItem.listing.title}</h4>
-                  <p className="text-sm font-bold text-neutral-500 mt-1">{viewingItem.listing.provider.businessName}</p>
-                  <div className="mt-3">
-                    <span className={`badge ${STATUS_META[viewingItem.status].badge}`}>
-                      {STATUS_META[viewingItem.status].label}
-                    </span>
+                <h3 className="font-extrabold text-white text-base">Chi tiết đơn hàng</h3>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <div className="flex items-start gap-4 pb-6 border-b border-neutral-100">
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-neutral-200">
+                    <img
+                      src={mediaUrl(viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category))}
+                      alt={viewingItem.listing.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-neutral-900 text-xl">{viewingItem.listing.title}</h4>
+                    <p className="text-sm font-bold text-neutral-500 mt-1">{viewingItem.listing.provider.businessName}</p>
+                    <div className="mt-3">
+                      <span className={`badge ${STATUS_META[viewingItem.status].badge}`}>
+                        {STATUS_META[viewingItem.status].label}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                <div>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Mã đơn hàng</p>
-                  <p className="text-sm font-mono text-neutral-800 font-medium">{viewingItem.id.split('-')[0].toUpperCase()}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Ngày tạo</p>
-                  <p className="text-sm text-neutral-800 font-medium">{new Date(viewingItem.createdAt).toLocaleString('vi-VN')}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Số lượng nhận</p>
-                  <p className="text-sm text-neutral-800 font-medium">{formatWeight(viewingItem)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Địa chỉ lấy hàng</p>
-                  <p className="text-sm text-neutral-800 font-medium line-clamp-2" title={viewingItem.listing.pickupAddress}>
-                    {viewingItem.listing.pickupAddress}
-                  </p>
-                </div>
-              </div>
 
-              {(viewingItem.status === 'cancelled' || viewingItem.status === 'no_show') && viewingItem.cancellationReason && (
-                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Lý do huỷ</p>
-                  <p className="text-sm text-neutral-700">{viewingItem.cancellationReason}</p>
+                <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                  <div>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Mã đơn hàng</p>
+                    <p className="text-sm font-mono text-neutral-800 font-medium">{viewingItem.id.split('-')[0].toUpperCase()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Ngày tạo</p>
+                    <p className="text-sm text-neutral-800 font-medium">{new Date(viewingItem.createdAt).toLocaleString('vi-VN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Số lượng nhận</p>
+                    <p className="text-sm text-neutral-800 font-medium">{formatWeight(viewingItem)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Địa chỉ lấy hàng</p>
+                    <p className="text-sm text-neutral-800 font-medium line-clamp-2" title={viewingItem.listing.pickupAddress}>
+                      {viewingItem.listing.pickupAddress}
+                    </p>
+                  </div>
                 </div>
-              )}
+
+                {(viewingItem.status === 'cancelled' || viewingItem.status === 'no_show') && viewingItem.cancellationReason && (
+                  <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Lý do huỷ</p>
+                    <p className="text-sm text-neutral-700">{viewingItem.cancellationReason}</p>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="p-4 bg-neutral-50 border-t border-neutral-150 flex justify-end">
-              <button 
-                onClick={() => setViewingItem(null)} 
+            <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex justify-end">
+              <button
+                onClick={() => setViewingItem(null)}
                 className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
               >
                 Đóng

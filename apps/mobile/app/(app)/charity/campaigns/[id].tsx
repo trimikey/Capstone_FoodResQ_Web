@@ -6,7 +6,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import {
   useCampaignDetail,
-  useStartCampaign,
   useCancelCampaign,
   useCompleteCampaign,
   useConfirmDonation,
@@ -33,11 +32,9 @@ import {
   formatTime,
   charityName,
   slotProgress,
-  canStartCampaign,
   canCompleteCampaign,
   daysUntilUtcDate,
   formatCampaignDateRange,
-  isSameUtcDate,
   ASSIGNMENT_ROLE_LABEL,
 } from '@/utils/campaign';
 import { formatMenuItem, formatSupplyItem } from '@/utils/campaignFormat';
@@ -98,8 +95,8 @@ function MetricTile({
 
 function Lifecycle({ status }: { status: Campaign['status'] }) {
   const steps: { key: Campaign['status']; label: string; icon: any }[] = [
-    { key: 'draft', label: 'Chờ duyệt', icon: 'file-document-outline' },
-    { key: 'open', label: 'Tuyển TNV', icon: 'account-plus-outline' },
+    { key: 'pending_approval', label: 'Chờ duyệt', icon: 'file-document-outline' },
+    { key: 'approved', label: 'Đã duyệt / tuyển TNV', icon: 'account-plus-outline' },
     { key: 'in_progress', label: 'Đang nấu', icon: 'pot-steam-outline' },
     { key: 'completed', label: 'Hoàn tất', icon: 'check-circle-outline' },
   ];
@@ -170,13 +167,12 @@ function assignmentReviewTone(status: string): { color: string; bg: string } {
 export default function CharityCampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
-  const startMut = useStartCampaign();
   const cancelMut = useCancelCampaign();
   const completeMut = useCompleteCampaign();
   const confirmMut = useConfirmDonation();
   const confirmReceiptMut = useConfirmCampaignTransportReceipt();
   const reviewAssignmentMut = useReviewAssignment();
-  const canRequestProviders = c?.status === 'open' || c?.status === 'in_progress';
+  const canRequestProviders = c?.status === 'approved' || c?.status === 'in_progress';
   const { data: providers = [] } = useProviders(canRequestProviders);
   const { data: sentProviderRequests = [] } = useMySentProviderRequests(canRequestProviders);
   const sendProviderRequestMut = useSendProviderRequest();
@@ -240,39 +236,11 @@ export default function CharityCampaignDetailScreen() {
   const totalSlots = slots.reduce((sum, slot) => sum + slot.needed, 0);
   const filledSlots = slots.reduce((sum, slot) => sum + slot.filled, 0);
   const actualServed = c.actualServings ?? c.distributionSummary?.servingsServed ?? null;
-  const startDayOffset = daysUntilUtcDate(c.scheduledDate);
-  const canStartToday = isSameUtcDate(c.scheduledDate);
   const endDayOffset = daysUntilUtcDate(c.endDate ?? c.scheduledDate);
   const isEarlyComplete = (endDayOffset ?? 0) > 0;
-  const startButtonLabel = startDayOffset == null
-    ? 'Bắt đầu chiến dịch'
-    : startDayOffset > 0
-      ? `Bắt đầu sau ${startDayOffset} ngày`
-      : startDayOffset < 0
-        ? 'Đã quá ngày tổ chức'
-        : 'Bắt đầu chiến dịch';
   const eligibleReviewShifts = reviewShiftTarget
     ? shifts.filter((shift) => (!shift.role || shift.role === reviewShiftTarget.role) && shift.slotsFilled < shift.slotsNeeded)
     : [];
-
-  const handleStart = async () => {
-    if (!canStartToday) {
-      Popup.show({
-        type: 'warning',
-        text1: 'Chưa thể bắt đầu',
-        text2: startDayOffset && startDayOffset > 0
-          ? `Chiến dịch chỉ bắt đầu vào ngày ${formatDate(c.scheduledDate)}.`
-          : 'Ngày tổ chức không khớp hôm nay, vui lòng gửi yêu cầu thay đổi lịch nếu cần.',
-      });
-      return;
-    }
-    try {
-      await startMut.mutateAsync(c.id);
-      Popup.show({ type: 'success', text1: 'Đã bắt đầu chiến dịch' });
-    } catch (err) {
-      Popup.show({ type: 'error', text1: 'Không bắt đầu được', text2: getErrorMessage(err) });
-    }
-  };
 
   const handleCancelCampaign = async () => {
     try {
@@ -457,7 +425,7 @@ export default function CharityCampaignDetailScreen() {
           </Button>
         </Section>
 
-        {(c.status === 'open' || c.status === 'in_progress') ? (
+        {(c.status === 'approved' || c.status === 'in_progress') ? (
           <Section title="Nhà cung cấp có thể hỗ trợ">
             {providers.length === 0 ? (
               <Text style={styles.muted}>Chưa có nhà cung cấp active listing phù hợp để gửi yêu cầu.</Text>
@@ -779,26 +747,22 @@ export default function CharityCampaignDetailScreen() {
 
       {/* Footer: hành động theo trạng thái */}
       <View style={styles.footer}>
-        {canStartCampaign(c.status) ? (
+        {c.status === 'approved' ? (
           <View style={styles.footerActions}>
             <Button
               mode="outlined"
               icon="close-circle-outline"
               textColor={COLORS.error}
-              disabled={cancelMut.isPending || startMut.isPending}
+              disabled={cancelMut.isPending}
               onPress={() => setCancelVisible(true)}
               contentStyle={{ height: 48 }}
               style={[styles.footerBtn, styles.cancelBtn]}
             >
               Huỷ
             </Button>
-            <Button
-              mode="contained" icon="play-circle-outline" buttonColor={COLORS.primary}
-              loading={startMut.isPending} disabled={startMut.isPending || cancelMut.isPending || !canStartToday}
-              onPress={handleStart} contentStyle={{ height: 48 }} style={[styles.footerBtn, { flex: 1 }]}
-            >
-              {startButtonLabel}
-            </Button>
+            <View style={[styles.footerBtn, { flex: 1, justifyContent: 'center' }]}>
+              <Text style={styles.footerNote}>Hệ thống tự bắt đầu khi đủ 100% nhân sự đã xác nhận.</Text>
+            </View>
           </View>
         ) : canCompleteCampaign(c.status) ? (
           <Button
@@ -807,7 +771,7 @@ export default function CharityCampaignDetailScreen() {
           >
             Kết thúc & nhập số suất
           </Button>
-        ) : c.status === 'draft' ? (
+        ) : c.status === 'pending_approval' ? (
           <Text style={styles.footerNote}>Chiến dịch đang chờ quản trị viên duyệt.</Text>
         ) : (
           <Text style={styles.footerNote}>
@@ -1174,7 +1138,7 @@ function CampaignChangeDialog({
   const { data: requests = [], isLoading } = useCampaignChangeRequests(campaign.id, visible);
   const submitMut = useSubmitCampaignChange();
   const cancelChangeMut = useCancelCampaignChange();
-  const editable = campaign.status === 'open';
+  const editable = campaign.status === 'approved';
   const hasPending = requests.some((r) => r.status === 'pending');
 
   const [scheduledDate, setScheduledDate] = useState(campaign.scheduledDate.slice(0, 10));

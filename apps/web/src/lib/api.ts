@@ -1,6 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth.store';
-import { translateApiMessage } from '@/lib/utils';
 
 const apiBaseURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
 
@@ -14,11 +13,6 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 type QueuedRequest = {
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
-};
-type ApiErrorPayload = {
-  error?: {
-    message?: string;
-  };
 };
 type RefreshPayload = { data: { accessToken: string; refreshToken: string } };
 
@@ -50,24 +44,13 @@ function getStoredTokens() {
   return { accessToken, refreshToken };
 }
 
-function clearLocalSession() {
+function expireSession() {
   if (typeof window === 'undefined') return;
 
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-  localStorage.removeItem('foodresq-auth');
   useAuthStore.getState().logout();
-}
-
-function redirectToLogin() {
-  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+  if (window.location.pathname !== '/login') {
     window.location.href = '/login';
   }
-}
-
-function expireSession() {
-  clearLocalSession();
-  redirectToLogin();
 }
 
 let refreshPromise: Promise<string> | null = null;
@@ -94,8 +77,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 }
 
 api.interceptors.request.use(async (config) => {
-  const { accessToken } = getStoredTokens();
-  const { refreshToken } = getStoredTokens();
+  const { accessToken, refreshToken } = getStoredTokens();
   const isRefreshRequest = typeof config.url === 'string' && config.url.includes('/auth/refresh');
   let token = accessToken;
 
@@ -113,16 +95,10 @@ let queue: QueuedRequest[] = [];
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
-    const errorPayload = error.response?.data as ApiErrorPayload | undefined;
-    const apiMessage = errorPayload?.error?.message;
-    if (typeof apiMessage === 'string' && errorPayload?.error) {
-      errorPayload.error.message = translateApiMessage(apiMessage);
-    }
-
     const original = error.config as RetryableRequestConfig | undefined;
 
     if (!original || error.response?.status !== 401 || original._retry) {
-      return Promise.reject(error);
+      return Promise.reject(error as Error);
     }
 
     original._retry = true;
@@ -134,31 +110,34 @@ api.interceptors.response.use(
             original.headers.Authorization = `Bearer ${token}`;
             resolve(api(original));
           },
-          reject,
+          reject: (queueError) => {
+            reject(queueError);
+          },
         });
       });
     }
 
     const { refreshToken } = getStoredTokens();
+
     if (!refreshToken) {
       expireSession();
-      return Promise.reject(error);
+      return Promise.reject(error as Error);
     }
 
     try {
       isRefreshing = true;
       const newAccess = await refreshAccessToken(refreshToken);
 
-      queue.forEach(({ resolve }) => resolve(newAccess));
+      queue.forEach(({ resolve: resolveQueued }) => resolveQueued(newAccess));
       queue = [];
 
       original.headers.Authorization = `Bearer ${newAccess}`;
       return api(original);
     } catch (refreshError) {
-      queue.forEach(({ reject }) => reject(refreshError));
+      queue.forEach(({ reject: rejectQueued }) => rejectQueued(refreshError));
       queue = [];
       expireSession();
-      return Promise.reject(refreshError);
+      return Promise.reject(refreshError as Error);
     } finally {
       isRefreshing = false;
     }

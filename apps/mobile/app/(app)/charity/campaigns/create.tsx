@@ -65,6 +65,32 @@ const ROLE_LABEL: Record<AssignmentRole, string> = {
   shipper: 'Giao hàng',
 };
 
+const PERIOD_META = {
+  midnight: { label: 'Ca khuya', time: '00:00-06:00' },
+  morning: { label: 'Ca sáng', time: '06:00-12:00' },
+  afternoon: { label: 'Ca chiều', time: '12:00-18:00' },
+  evening: { label: 'Ca tối', time: '18:00-00:00 (+1 ngày)' },
+} as const;
+
+const OPERATION_PERIODS = [
+  { key: 'midnight', label: 'Khuya', start: '00:00', end: '06:00' },
+  { key: 'morning', label: 'Sáng', start: '06:00', end: '12:00' },
+  { key: 'afternoon', label: 'Chiều', start: '12:00', end: '18:00' },
+  { key: 'evening', label: 'Tối', start: '18:00', end: '23:59' },
+] as const;
+
+function fixedOperationWindow(startTime: string, endTime: string) {
+  const [startHour = 0] = startTime.split(':').map(Number);
+  const [endHour = 0, endMinute = 0] = endTime.split(':').map(Number);
+  const roundedStart = Math.max(0, Math.min(18, Math.floor(startHour / 6) * 6));
+  const rawEnd = Math.ceil((endHour + endMinute / 60) / 6) * 6;
+  const roundedEnd = Math.max(roundedStart + 6, Math.min(24, rawEnd));
+  return {
+    startTime: dateFromTime(`${String(roundedStart).padStart(2, '0')}:00`),
+    endTime: dateFromTime(roundedEnd === 24 ? '23:59' : `${String(roundedEnd).padStart(2, '0')}:00`),
+  };
+}
+
 const MENU_TYPE_OPTIONS = [
   { value: 'breakfast', label: 'Bữa sáng' },
   { value: 'lunch', label: 'Bữa trưa' },
@@ -316,13 +342,6 @@ const CAMPAIGN_SCENARIO_PRESETS: CampaignScenarioPreset[] = [
   },
 ];
 
-function dateWithTime(baseDate: Date, time: string): Date {
-  const [hour = '0', minute = '0'] = time.split(':');
-  const next = new Date(baseDate);
-  next.setHours(Number(hour), Number(minute), 0, 0);
-  return next;
-}
-
 function buildScenarioShifts(preset: CampaignScenarioPreset): CampaignShiftDraft[] {
   const shifts: CampaignShiftDraft[] = [];
   if (preset.chefSlots > 0) {
@@ -552,11 +571,12 @@ export default function CreateCampaignScreen() {
   };
 
   const applyScenarioPreset = (preset: CampaignScenarioPreset) => {
+    const fixedWindow = fixedOperationWindow(preset.startTime, preset.endTime);
     patchDraft({
       title: preset.campaignTitle,
       description: preset.description,
-      startTime: dateWithTime(draft.scheduledDate, preset.startTime),
-      endTime: dateWithTime(draft.scheduledDate, preset.endTime),
+      startTime: fixedWindow.startTime,
+      endTime: fixedWindow.endTime,
       expectedServings: String(preset.expectedServings),
       chefSlots: String(preset.chefSlots),
       waiterSlots: String(preset.waiterSlots),
@@ -629,7 +649,7 @@ export default function CreateCampaignScreen() {
           />
         );
       case 3: {
-        const shiftsForWarning = normalizeCampaignShifts(draft.shifts);
+        const shiftsForWarning = normalizeCampaignShifts(draft.shifts, draft);
         const slotWarnings = getSlotWarnings(draft, shiftsForWarning);
         return (
           <View style={styles.stepStack}>
@@ -894,6 +914,29 @@ function TimeLocationStep({
   patchDraft: ReturnType<typeof useCampaignCreateDraftStore.getState>['patchDraft'];
   applyProfileAddress: () => void;
 }) {
+  const start = toTimeStr(draft.startTime);
+  const end = toTimeStr(draft.endTime);
+  const activeIndexes = OPERATION_PERIODS
+    .map((period, index) => ({ index, active: period.end > start && period.start < end }))
+    .filter((item) => item.active)
+    .map((item) => item.index);
+  const togglePeriod = (index: number) => {
+    let indexes = [...activeIndexes];
+    if (indexes.includes(index)) {
+      if (indexes.length === 1) return;
+      if (index === indexes[0]) indexes = indexes.slice(1);
+      else if (index === indexes[indexes.length - 1]) indexes = indexes.slice(0, -1);
+      else return;
+    } else {
+      const min = Math.min(index, ...(indexes.length ? indexes : [index]));
+      const max = Math.max(index, ...(indexes.length ? indexes : [index]));
+      indexes = Array.from({ length: max - min + 1 }, (_, offset) => min + offset);
+    }
+    const first = OPERATION_PERIODS[indexes[0]];
+    const last = OPERATION_PERIODS[indexes[indexes.length - 1]];
+    patchDraft({ startTime: dateFromTime(first.start), endTime: dateFromTime(last.end) });
+  };
+
   return (
     <FormCard>
       <Field label="Địa chỉ bếp *">
@@ -967,40 +1010,27 @@ function TimeLocationStep({
         </View>
       </Field>
 
-      <View style={styles.rowFields}>
-        <View style={{ flex: 1 }}>
-          <Field label="Giờ bắt đầu *">
-            <PickerButton
-              icon="clock-outline"
-              text={toTimeStr(draft.startTime)}
-              onPress={() =>
-                DateTimePickerAndroid.open({
-                  value: draft.startTime,
-                  mode: 'time',
-                  is24Hour: true,
-                  onChange: (_event, date) => date && patchDraft({ startTime: date }),
-                })
-              }
-            />
-          </Field>
+      <Field label="Ca vận hành liên tiếp *">
+        <View style={styles.rowFields}>
+          {OPERATION_PERIODS.map((period, index) => {
+            const active = activeIndexes.includes(index);
+            return (
+              <Button
+                key={period.key}
+                compact
+                mode={active ? 'contained' : 'outlined'}
+                onPress={() => togglePeriod(index)}
+                style={{ flex: 1 }}
+              >
+                {period.label}
+              </Button>
+            );
+          })}
         </View>
-        <View style={{ flex: 1 }}>
-          <Field label="Giờ kết thúc *">
-            <PickerButton
-              icon="clock-outline"
-              text={toTimeStr(draft.endTime)}
-              onPress={() =>
-                DateTimePickerAndroid.open({
-                  value: draft.endTime,
-                  mode: 'time',
-                  is24Hour: true,
-                  onChange: (_event, date) => date && patchDraft({ endTime: date }),
-                })
-              }
-            />
-          </Field>
-        </View>
-      </View>
+        <Text style={styles.infoBannerText}>
+          Khung cố định: 00–06, 06–12, 12–18, 18–24. Chọn cách quãng sẽ tự điền các ca ở giữa.
+        </Text>
+      </Field>
     </FormCard>
   );
 }
@@ -1095,7 +1125,7 @@ function MenuStep({
       <View style={styles.infoBanner}>
         <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.primary} />
         <Text style={styles.infoBannerText}>
-          Thực đơn là dự kiến và có thể bổ sung sau khi chiến dịch được duyệt. Gợi ý món ăn dựa trên vật phẩm dự kiến cần chuẩn bị.
+          Cần chốt ít nhất một món trước khi gửi duyệt để hệ thống tính nhu cầu chuẩn bị và nhân sự.
         </Text>
       </View>
       <MenuSummaryCard summary={summary} />
@@ -1371,7 +1401,7 @@ function ReviewStep({
 }) {
   const dateText = `${fmtDate(draft.scheduledDate)}${draft.endDate ? ` - ${fmtDate(draft.endDate)}` : ''}`;
   const timeText = `${toTimeStr(draft.startTime)} - ${toTimeStr(draft.endTime)}`;
-  const shifts = normalizeCampaignShifts(draft.shifts);
+  const shifts = normalizeCampaignShifts(draft.shifts, draft);
   const menuItems = normalizeCampaignMenuItems(draft.menuItems);
   const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
   const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
@@ -1425,7 +1455,7 @@ function ReviewStep({
           <ReviewBullet
             key={`${item.label}-${index}`}
             title={item.label}
-            meta={`${item.startTime}-${item.endTime} · ${item.role ? ROLE_LABEL[item.role] : 'Mọi vai trò'} · ${item.slotsNeeded} người`}
+            meta={`${PERIOD_META[item.period].time} · ${ROLE_LABEL[item.role]} · ${item.slotsNeeded} người`}
           />
         ))}
       </ReviewListGroup>

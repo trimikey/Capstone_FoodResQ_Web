@@ -14,12 +14,23 @@ export class CampaignsCron {
     private dishSteps: DishStepsService,
   ) {}
 
-  // Nửa đêm hằng ngày: tự huỷ các chiến dịch 'open' đã qua endDate + endTime
+  /** Mỗi phút: mở/đóng tuyển và tự bắt đầu chiến dịch đủ 100% từng ca. */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleRecruitmentLifecycle() {
+    try {
+      const result = await this.campaigns.advanceRecruitmentLifecycle();
+      if (result.started > 0) this.logger.log(`Auto-started ${result.started} campaign(s)`);
+    } catch (e) {
+      logCronError(this.logger, 'advanceRecruitmentLifecycle', e);
+    }
+  }
+
+  // Nửa đêm: giữ chiến dịch thiếu người ở trạng thái chờ dời lịch/huỷ, không tự huỷ.
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleExpireOverdue() {
     try {
       const n = await this.campaigns.expireOverdueCampaigns();
-      if (n > 0) this.logger.log(`Auto-cancelled ${n} overdue campaign(s)`);
+      if (n > 0) this.logger.log(`Kept ${n} understaffed campaign(s) blocked from starting`);
     } catch (e) {
       logCronError(this.logger, 'expireOverdueCampaigns', e);
     }

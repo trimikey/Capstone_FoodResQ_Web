@@ -1335,41 +1335,45 @@ export default function ReservationDetailsPage() {
       {/* ========================================================================= */}
       {showProof && (
         <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4"
           onClick={() => !submitProofMutation.isPending && setShowProof(false)}
         >
-          <div className="bg-white rounded-3xl w-full max-w-md p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-neutral-900">Xác minh danh tính để hoàn tất</h3>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
               <button
                 onClick={() => !submitProofMutation.isPending && setShowProof(false)}
-                className="text-neutral-400 hover:text-neutral-700"
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <h3 className="font-extrabold text-white text-base pr-8">Xác minh danh tính để hoàn tất</h3>
             </div>
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setProofMode('face')}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'face' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
-              >
-                Khuôn mặt
-              </button>
-              <button
-                onClick={() => setProofMode('id_card')}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'id_card' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
-              >
-                CCCD / CMND
-              </button>
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setProofMode('face')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'face' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+                  >
+                    Khuôn mặt
+                  </button>
+                  <button
+                    onClick={() => setProofMode('id_card')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${proofMode === 'id_card' ? 'bg-emerald-700 text-white border-emerald-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}
+                  >
+                    CCCD / CMND
+                  </button>
+                </div>
+                <CameraCapture
+                  key={proofMode}
+                  mode={proofMode}
+                  hint={proofMode === 'face' ? 'Chụp ảnh khuôn mặt của bạn để đối chiếu với ảnh đã đăng ký' : 'Chụp ảnh CCCD/CMND của bạn'}
+                  confirmLabel="Xác minh & hoàn tất"
+                  busy={submitProofMutation.isPending}
+                  onConfirm={handleSubmitProof}
+                />
+              </div>
             </div>
-            <CameraCapture
-              key={proofMode}
-              mode={proofMode}
-              hint={proofMode === 'face' ? 'Chụp ảnh khuôn mặt của bạn để đối chiếu với ảnh đã đăng ký' : 'Chụp ảnh CCCD/CMND của bạn'}
-              confirmLabel="Xác minh & hoàn tất"
-              busy={submitProofMutation.isPending}
-              onConfirm={handleSubmitProof}
-            />
           </div>
         </div>
       )}
@@ -1377,52 +1381,54 @@ export default function ReservationDetailsPage() {
       {/* Popup xác nhận hủy tìm TNV */}
       {showCancelConfirm && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 bg-black/40 z-[60] flex items-start justify-center pt-[10vh] px-4"
           onClick={() => !cancelDeliveryMutation.isPending && setShowCancelConfirm(false)}
         >
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                <span className="material-symbols-outlined text-amber-600">priority_high</span>
-              </div>
-              <h3 className="text-base font-bold text-neutral-900 flex-1">Hủy tìm tình nguyện viên?</h3>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
               <button
                 onClick={() => !cancelDeliveryMutation.isPending && setShowCancelConfirm(false)}
-                disabled={cancelDeliveryMutation.isPending}
-                aria-label="Đóng"
-                className="text-neutral-400 hover:text-neutral-700 disabled:opacity-40 shrink-0"
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">priority_high</span>
+                </div>
+                <h3 className="font-extrabold text-white text-base">Hủy tìm tình nguyện viên?</h3>
+              </div>
             </div>
-            <p className="text-sm text-neutral-600 leading-relaxed mb-6">
-              Bạn muốn tiếp tục đợi tình nguyện viên giao hàng hay tự đến địa chỉ nhận?
-            </p>
-            <div className="space-y-2">
-              <button
-                onClick={() => setShowCancelConfirm(false)}
-                className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-[18px]">delivery_dining</span>
-                Vẫn tìm tình nguyện viên
-              </button>
-              <button
-                onClick={confirmGoPickup}
-                disabled={cancelDeliveryMutation.isPending}
-                className="w-full py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl text-sm font-bold hover:bg-neutral-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {cancelDeliveryMutation.isPending ? (
-                  <>
-                    <span className="animate-spin border-2 border-neutral-300 border-t-neutral-600 rounded-full w-4 h-4" />
-                    Đang xử lý…
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[18px]">directions_walk</span>
-                    Tự đến lấy trực tiếp
-                  </>
-                )}
-              </button>
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <p className="text-sm text-neutral-600 leading-relaxed">
+                  Bạn muốn tiếp tục đợi tình nguyện viên giao hàng hay tự đến địa chỉ nhận?
+                </p>
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="w-full py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delivery_dining</span>
+                  Vẫn tìm tình nguyện viên
+                </button>
+                <button
+                  onClick={confirmGoPickup}
+                  disabled={cancelDeliveryMutation.isPending}
+                  className="w-full py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl text-sm font-bold hover:bg-neutral-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {cancelDeliveryMutation.isPending ? (
+                    <>
+                      <span className="animate-spin border-2 border-neutral-300 border-t-neutral-600 rounded-full w-4 h-4" />
+                      Đang xử lý…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">directions_walk</span>
+                      Tự đến lấy trực tiếp
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1484,66 +1490,69 @@ function ReservationTimeInfoPopup({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/40 z-[60] flex items-start justify-center pt-[10vh] px-4"
       onClick={onClose}
     >
-      <div
-        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10">
-            <span className="material-symbols-outlined text-[24px] text-primary">
-              schedule
-            </span>
-          </div>
-          <div>
-            <h3 className="font-bold text-lg text-neutral-900">Thông tin nhận hàng</h3>
-            <p className="text-sm text-neutral-500">Đơn của bạn đang chờ xử lý</p>
-          </div>
-        </div>
-
-        {/* Thông tin thời gian */}
-        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
-            <span className="text-sm font-bold text-neutral-900">
-              {new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Thời hạn đến</span>
-            <span className="text-sm font-bold text-rose-600">
-              Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-sm text-neutral-500">Địa điểm</span>
-            <span className="text-sm font-bold text-neutral-900 text-right flex-1">{pickupAddress}</span>
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+          <button onClick={onClose} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
+          </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white text-[20px]">schedule</span>
+            </div>
+            <div>
+              <h3 className="font-extrabold text-white text-base">Thông tin nhận hàng</h3>
+              <p className="text-xs text-white/70">Đơn của bạn đang chờ xử lý</p>
+            </div>
           </div>
         </div>
 
-        {/* Cảnh báo */}
-        <div className="flex items-start gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200">
-          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">
-            warning
-          </span>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
-            <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-              Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
-            </p>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="px-5 py-4 space-y-3">
+            {/* Thông tin thời gian */}
+            <div className="bg-neutral-50 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+                <span className="text-sm font-bold text-neutral-900">
+                  {new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Thời hạn đến</span>
+                <span className="text-sm font-bold text-rose-600">
+                  Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-sm text-neutral-500">Địa điểm</span>
+                <span className="text-sm font-bold text-neutral-900 text-right flex-1">{pickupAddress}</span>
+              </div>
+            </div>
+
+            {/* Cảnh báo */}
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
+              <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">warning</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
+                <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+                  Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
+                </p>
+              </div>
+            </div>
+
+            {/* Button đóng */}
+            <button
+              onClick={onClose}
+              className="w-full py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors"
+            >
+              Đã hiểu
+            </button>
           </div>
         </div>
-
-        {/* Button đóng */}
-        <button
-          onClick={onClose}
-          className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
-        >
-          Đã hiểu
-        </button>
       </div>
     </div>
   );

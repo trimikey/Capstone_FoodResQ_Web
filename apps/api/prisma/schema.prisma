@@ -137,13 +137,40 @@ enum DeliveryStatus {
 }
 
 enum CampaignStatus {
-  draft
-  open
+  pending_approval
+  approved
   in_progress
   completed
   cancelled
 
   @@map("campaign_status")
+}
+
+enum RecruitmentStatus {
+  scheduled
+  open
+  staffed
+  expired_understaffed
+  closed_ready
+
+  @@map("recruitment_status")
+}
+
+enum CampaignShiftPeriod {
+  midnight
+  morning
+  afternoon
+  evening
+
+  @@map("campaign_shift_period")
+}
+
+enum AssignmentConfirmationStatus {
+  pending
+  confirmed
+  declined
+
+  @@map("assignment_confirmation_status")
 }
 
 enum AssignmentRole {
@@ -303,8 +330,8 @@ model ProviderProfile {
   createdAt          DateTime                               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  providerProposals ProviderProposal[] @relation("provider_proposals_created_provider")
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerProposals ProviderProposal[]        @relation("provider_proposals_created_provider")
   foodListings      FoodListing[]
   esgSnapshots      EsgSnapshot[]
   campaignDonations CampaignDonation[]
@@ -336,7 +363,7 @@ model ReceiverProfile {
   createdAt          DateTime                               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
 
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations     Reservation[]
   kitchenCampaigns KitchenCampaign[]
   campaignRequests CampaignProviderRequest[]
@@ -380,7 +407,7 @@ model VolunteerProfile {
   scannedMealHandoffs    MealHandoff[]
   bulkRuns               BulkRun[]
   dishStepsCompleted     CampaignDishStep[]
-  dishStepsQcFailed      CampaignDishStep[] @relation("CampaignDishStep_QCFailure")
+  dishStepsQcFailed      CampaignDishStep[]             @relation("CampaignDishStep_QCFailure")
 
   @@index([userId])
   @@index([isAvailable])
@@ -492,34 +519,34 @@ model Reservation {
 }
 
 model Delivery {
-  id               String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id                String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   /// Reservation gốc (cho luồng đặt suất ăn). NULL khi delivery phục vụ cho campaign (campaign_transports).
-  reservationId    String?                                @unique @map("reservation_id") @db.Uuid
+  reservationId     String?                                @unique @map("reservation_id") @db.Uuid
   /// Nếu delivery này tạo cho CampaignProviderRequest thì tham chiếu tới request đó.
-  providerRequestId String?                               @unique @map("provider_request_id") @db.Uuid
-  shipperId        String?                                @map("shipper_id") @db.Uuid
-  status           DeliveryStatus                         @default(pending_assignment)
-  qcPhotoUrl       String?                                @map("qc_photo_url")
-  qcPhotoAt        DateTime?                              @map("qc_photo_at") @db.Timestamptz
-  pickupProofUrl   String?                                @map("pickup_proof_url")
-  pickupProofAt    DateTime?                              @map("pickup_proof_at") @db.Timestamptz
-  deliveryProofUrl String?                                @map("delivery_proof_url")
-  deliveryProofAt  DateTime?                              @map("delivery_proof_at") @db.Timestamptz
-  pickupLocation   Unsupported("geography(Point, 4326)")? @map("pickup_location")
-  deliveryLocation Unsupported("geography(Point, 4326)")? @map("delivery_location")
-  distanceKm       Decimal?                               @map("distance_km") @db.Decimal(8, 2)
-  assignedAt       DateTime?                              @map("assigned_at") @db.Timestamptz
-  pickedUpAt       DateTime?                              @map("picked_up_at") @db.Timestamptz
-  deliveredAt      DateTime?                              @map("delivered_at") @db.Timestamptz
-  failedReason     String?                                @map("failed_reason")
-  createdAt        DateTime                               @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
+  providerRequestId String?                                @unique @map("provider_request_id") @db.Uuid
+  shipperId         String?                                @map("shipper_id") @db.Uuid
+  status            DeliveryStatus                         @default(pending_assignment)
+  qcPhotoUrl        String?                                @map("qc_photo_url")
+  qcPhotoAt         DateTime?                              @map("qc_photo_at") @db.Timestamptz
+  pickupProofUrl    String?                                @map("pickup_proof_url")
+  pickupProofAt     DateTime?                              @map("pickup_proof_at") @db.Timestamptz
+  deliveryProofUrl  String?                                @map("delivery_proof_url")
+  deliveryProofAt   DateTime?                              @map("delivery_proof_at") @db.Timestamptz
+  pickupLocation    Unsupported("geography(Point, 4326)")? @map("pickup_location")
+  deliveryLocation  Unsupported("geography(Point, 4326)")? @map("delivery_location")
+  distanceKm        Decimal?                               @map("distance_km") @db.Decimal(8, 2)
+  assignedAt        DateTime?                              @map("assigned_at") @db.Timestamptz
+  pickedUpAt        DateTime?                              @map("picked_up_at") @db.Timestamptz
+  deliveredAt       DateTime?                              @map("delivered_at") @db.Timestamptz
+  failedReason      String?                                @map("failed_reason")
+  createdAt         DateTime                               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
 
-  reservation       Reservation?              @relation(fields: [reservationId], references: [id])
-  providerRequest   CampaignProviderRequest?  @relation("DeliveryForProviderRequest", fields: [providerRequestId], references: [id], onDelete: SetNull)
-  shipper           VolunteerProfile?         @relation(fields: [shipperId], references: [id])
+  reservation       Reservation?             @relation(fields: [reservationId], references: [id])
+  providerRequest   CampaignProviderRequest? @relation("DeliveryForProviderRequest", fields: [providerRequestId], references: [id], onDelete: SetNull)
+  shipper           VolunteerProfile?        @relation(fields: [shipperId], references: [id])
   taskOffers        ShipperTaskOffer[]
-  campaignTransport CampaignTransport?        @relation("DeliveryForTransport")
+  campaignTransport CampaignTransport?       @relation("DeliveryForTransport")
 
   @@index([shipperId])
   @@index([status])
@@ -593,34 +620,40 @@ model BulkRunStop {
 }
 
 model KitchenCampaign {
-  id                 String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  charityReceiverId  String                                 @map("charity_receiver_id") @db.Uuid
-  title              String                                 @db.VarChar(255)
-  description        String?
-  kitchenAddress     String                                 @map("kitchen_address")
-  kitchenLocation    Unsupported("geography(Point, 4326)")? @map("kitchen_location")
-  scheduledDate      DateTime                               @map("scheduled_date") @db.Date
+  id                     String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  charityReceiverId      String                                 @map("charity_receiver_id") @db.Uuid
+  title                  String                                 @db.VarChar(255)
+  description            String?
+  kitchenAddress         String                                 @map("kitchen_address")
+  kitchenLocation        Unsupported("geography(Point, 4326)")? @map("kitchen_location")
+  scheduledDate          DateTime                               @map("scheduled_date") @db.Date
   /// Ngày kết thúc (>= scheduledDate). NULL = 1 ngày duy nhất.
-  /// Cron tự chuyển `in_progress` → `completed` sau endDate + endTime.
-  endDate            DateTime?                              @map("end_date") @db.Date
-  startTime          String                                 @map("start_time") @db.VarChar(8)
-  endTime            String                                 @map("end_time") @db.VarChar(8)
-  chefSlotsNeeded    Int                                    @default(0) @map("chef_slots_needed") @db.SmallInt
-  waiterSlotsNeeded  Int                                    @default(0) @map("waiter_slots_needed") @db.SmallInt
-  shipperSlotsNeeded Int                                    @default(0) @map("shipper_slots_needed") @db.SmallInt
-  chefSlotsFilled    Int                                    @default(0) @map("chef_slots_filled") @db.SmallInt
-  waiterSlotsFilled  Int                                    @default(0) @map("waiter_slots_filled") @db.SmallInt
-  shipperSlotsFilled Int                                    @default(0) @map("shipper_slots_filled") @db.SmallInt
-  status             CampaignStatus                         @default(draft)
-  expectedServings   Int?                                   @map("expected_servings")
-  actualServings     Int?                                   @map("actual_servings")
-  imageUrls          Json                                   @default("[]") @map("image_urls")
-  notes              String?
-  menuItems          Json                                   @default("[]") @map("menu_items")
-  scheduleItems      Json                                   @default("[]") @map("schedule_items")
-  supplyItems        Json                                   @default("[]") @map("supply_items")
-  createdAt          DateTime                               @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
+  /// Trường ngày tương thích; cron dùng operationEndAt làm mốc kết thúc chuẩn.
+  endDate                DateTime?                              @map("end_date") @db.Date
+  startTime              String                                 @map("start_time") @db.VarChar(8)
+  endTime                String                                 @map("end_time") @db.VarChar(8)
+  chefSlotsNeeded        Int                                    @default(0) @map("chef_slots_needed") @db.SmallInt
+  waiterSlotsNeeded      Int                                    @default(0) @map("waiter_slots_needed") @db.SmallInt
+  shipperSlotsNeeded     Int                                    @default(0) @map("shipper_slots_needed") @db.SmallInt
+  chefSlotsFilled        Int                                    @default(0) @map("chef_slots_filled") @db.SmallInt
+  waiterSlotsFilled      Int                                    @default(0) @map("waiter_slots_filled") @db.SmallInt
+  shipperSlotsFilled     Int                                    @default(0) @map("shipper_slots_filled") @db.SmallInt
+  status                 CampaignStatus                         @default(pending_approval)
+  operationStartAt       DateTime                               @map("operation_start_at") @db.Timestamptz
+  operationEndAt         DateTime                               @map("operation_end_at") @db.Timestamptz
+  recruitmentStartAt     DateTime                               @map("recruitment_start_at") @db.Timestamptz
+  recruitmentEndAt       DateTime                               @map("recruitment_end_at") @db.Timestamptz
+  recruitmentBufferHours Int                                    @default(24) @map("recruitment_buffer_hours") @db.SmallInt
+  recruitmentStatus      RecruitmentStatus                      @default(scheduled) @map("recruitment_status")
+  expectedServings       Int?                                   @map("expected_servings")
+  actualServings         Int?                                   @map("actual_servings")
+  imageUrls              Json                                   @default("[]") @map("image_urls")
+  notes                  String?
+  menuItems              Json                                   @default("[]") @map("menu_items")
+  scheduleItems          Json                                   @default("[]") @map("schedule_items")
+  supplyItems            Json                                   @default("[]") @map("supply_items")
+  createdAt              DateTime                               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
 
   charityReceiver   ReceiverProfile               @relation(fields: [charityReceiverId], references: [id])
   assignments       CampaignVolunteerAssignment[]
@@ -636,6 +669,8 @@ model KitchenCampaign {
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
+  @@index([status, recruitmentStatus, recruitmentStartAt, recruitmentEndAt], map: "kitchen_campaigns_status_recruitment_window_idx")
+  @@index([status, operationStartAt], map: "kitchen_campaigns_status_operation_start_idx")
   @@index([kitchenLocation], map: "idx_campaign_location", type: Gist)
   @@map("kitchen_campaigns")
 }
@@ -665,39 +700,39 @@ model CampaignDonation {
  * Provider nhận → accept/reject → tạo listing thực phẩm cho chiến dịch.
  */
 model CampaignProviderRequest {
-  id          String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId  String                    @map("campaign_id") @db.Uuid
-  receiverId  String                    @map("receiver_id") @db.Uuid   // charity tổ chức
-  providerId  String                    @map("provider_id") @db.Uuid
-  message     String?                   @db.VarChar(500)
-  status      CampaignRequestStatus      @default(pending)
+  id              String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId      String                @map("campaign_id") @db.Uuid
+  receiverId      String                @map("receiver_id") @db.Uuid // charity tổ chức
+  providerId      String                @map("provider_id") @db.Uuid
+  message         String?               @db.VarChar(500)
+  status          CampaignRequestStatus @default(pending)
   /// Thời hạn hợp tác (số tháng), null = vĩnh viễn
-  durationMonths Int?     @map("duration_months")
+  durationMonths  Int?                  @map("duration_months")
   /// Danh sách ID thực phẩm được chọn (lưu dạng JSON array string)
-  listingIds  String?                   @map("listing_ids") @db.VarChar(1000)
+  listingIds      String?               @map("listing_ids") @db.VarChar(1000)
   /// Ngày TNV đến lấy thực phẩm từ provider — copy từ campaign lúc accept (có thể override).
-  scheduledDate   DateTime? @map("scheduled_date") @db.Date
+  scheduledDate   DateTime?             @map("scheduled_date") @db.Date
   /// Giờ bắt đầu lấy hàng do provider chọn (HH:mm). Default = campaign.startTime.
-  pickupStartTime String?   @map("pickup_start_time") @db.VarChar(8)
+  pickupStartTime String?               @map("pickup_start_time") @db.VarChar(8)
   /// Giờ kết thúc lấy hàng (mặc định = campaign.endTime).
-  pickupEndTime   String?   @map("pickup_end_time") @db.VarChar(8)
+  pickupEndTime   String?               @map("pickup_end_time") @db.VarChar(8)
   /// Nếu true → sau accept, BE tạo delivery record + tìm shipper gần nhất.
-  needsTransport  Boolean   @default(false) @map("needs_transport")
+  needsTransport  Boolean               @default(false) @map("needs_transport")
   /// Chi tiết đơn yêu cầu nguyên liệu do bếp khai (loại thực phẩm, số kg, khung giờ
   /// cần nhận, bán kính tìm, tiêu chuẩn ATVSTP bắt buộc, cam kết phi thương mại).
   /// Để JSONB thay vì tách cột: bộ tiêu chí này còn thay đổi theo nghiệp vụ, thêm/bớt
   /// field không phải migrate lại. Shape xem `DemandDetailsDto`.
-  demandDetails   Json?     @map("demand_details")
-  reviewedAt   DateTime?                @map("reviewed_at") @db.Timestamptz(6)
-  reviewedNote String?                  @map("reviewed_note") @db.VarChar(255)
-  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  demandDetails   Json?                 @map("demand_details")
+  reviewedAt      DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  reviewedNote    String?               @map("reviewed_note") @db.VarChar(255)
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  receiver ReceiverProfile @relation(fields: [receiverId], references: [id])
-  provider ProviderProfile @relation(fields: [providerId], references: [id])
-  transport CampaignTransport?
-  delivery  Delivery? @relation("DeliveryForProviderRequest")
+  campaign         KitchenCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  receiver         ReceiverProfile           @relation(fields: [receiverId], references: [id])
+  provider         ProviderProfile           @relation(fields: [providerId], references: [id])
+  transport        CampaignTransport?
+  delivery         Delivery?                 @relation("DeliveryForProviderRequest")
   ingredientPickup CampaignIngredientPickup?
 
   @@unique([campaignId, providerId])
@@ -728,8 +763,8 @@ model CampaignTransport {
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   providerRequest CampaignProviderRequest @relation(fields: [providerRequestId], references: [id], onDelete: Cascade)
-  delivery        Delivery?              @relation("DeliveryForTransport", fields: [deliveryId], references: [id])
-  receivedByUser  User?                  @relation("CampaignTransportReceipt", fields: [receivedByUserId], references: [id], onDelete: SetNull)
+  delivery        Delivery?               @relation("DeliveryForTransport", fields: [deliveryId], references: [id])
+  receivedByUser  User?                   @relation("CampaignTransportReceipt", fields: [receivedByUserId], references: [id], onDelete: SetNull)
 
   @@index([providerRequestId])
   @@index([status])
@@ -798,6 +833,8 @@ model CampaignVolunteerAssignment {
   distributionProofUrl String?                                @map("distribution_proof_url")
   distributionProofAt  DateTime?                              @map("distribution_proof_at") @db.Timestamptz
   pointsAwarded        Int?                                   @map("points_awarded") @db.SmallInt
+  confirmationStatus   AssignmentConfirmationStatus           @default(pending) @map("confirmation_status")
+  confirmedAt          DateTime?                              @map("confirmed_at") @db.Timestamptz
   notes                String?
   createdAt            DateTime                               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime                               @updatedAt @map("updated_at") @db.Timestamptz
@@ -1184,14 +1221,14 @@ model CampaignExperience {
 }
 
 model CampaignMenuItem {
-  id              String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId      String          @map("campaign_id") @db.Uuid
-  recipeId        String?         @map("recipe_id") @db.Uuid
-  customName      String?         @map("custom_name") @db.VarChar(255)
-  plannedServings Int?            @map("planned_servings")
-  sortOrder       Int             @default(0) @map("sort_order")
-  campaign        KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  recipe          Recipe?         @relation(fields: [recipeId], references: [id])
+  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId      String             @map("campaign_id") @db.Uuid
+  recipeId        String?            @map("recipe_id") @db.Uuid
+  customName      String?            @map("custom_name") @db.VarChar(255)
+  plannedServings Int?               @map("planned_servings")
+  sortOrder       Int                @default(0) @map("sort_order")
+  campaign        KitchenCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipe          Recipe?            @relation(fields: [recipeId], references: [id])
   dishSteps       CampaignDishStep[]
 
   @@index([campaignId])
@@ -1200,18 +1237,21 @@ model CampaignMenuItem {
 }
 
 model CampaignShift {
-  id          String                        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId  String                        @map("campaign_id") @db.Uuid
-  label       String                        @db.VarChar(100)
-  role        AssignmentRole?
-  startTime   String                        @map("start_time") @db.VarChar(8)
-  endTime     String                        @map("end_time") @db.VarChar(8)
-  slotsNeeded Int                           @default(0) @map("slots_needed") @db.SmallInt
-  slotsFilled Int                           @default(0) @map("slots_filled") @db.SmallInt
-  createdAt   DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  campaign    KitchenCampaign               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  assignments CampaignVolunteerAssignment[]
+  id           String                        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId   String                        @map("campaign_id") @db.Uuid
+  label        String                        @db.VarChar(100)
+  role         AssignmentRole?
+  startTime    String                        @map("start_time") @db.VarChar(8)
+  endTime      String                        @map("end_time") @db.VarChar(8)
+  period       CampaignShiftPeriod?
+  endDayOffset Int                           @default(0) @map("end_day_offset") @db.SmallInt
+  needsReview  Boolean                       @default(false) @map("needs_review")
+  slotsNeeded  Int                           @default(0) @map("slots_needed") @db.SmallInt
+  slotsFilled  Int                           @default(0) @map("slots_filled") @db.SmallInt
+  createdAt    DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  campaign     KitchenCampaign               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assignments  CampaignVolunteerAssignment[]
 
   @@index([campaignId])
   @@map("campaign_shifts")
@@ -1236,46 +1276,46 @@ model KitchenSafetyLog {
 }
 
 model MealDistribution {
-  id                  String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId          String                                 @map("campaign_id") @db.Uuid
+  id                     String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId             String                                 @map("campaign_id") @db.Uuid
   /// TNV đứng tên chính cho đợt phát (giữ FK để báo cáo cũ không vỡ).
   /// Khi phân công nhiều shipper thì đây là người đầu tiên trong `assigneeIds`.
-  servedByVolunteerId String                                 @map("served_by_volunteer_id") @db.Uuid
+  servedByVolunteerId    String                                 @map("served_by_volunteer_id") @db.Uuid
   /// Danh sách volunteer_profiles.id của TẤT CẢ shipper được phân công đi phát đợt này.
   /// JSONB array<uuid>. Null/rỗng = chỉ có một người là `servedByVolunteerId`.
-  assigneeIds         Json?                                  @map("assignee_ids")
+  assigneeIds            Json?                                  @map("assignee_ids")
   /// Các điểm phát của đợt: JSONB array<{ label, address, lng?, lat? }>.
   /// Để JSONB thay vì bảng riêng cho nhất quán với `demand_details` — bộ field này
   /// còn thay đổi và không cần truy vấn không gian trên từng điểm.
-  points              Json?
+  points                 Json?
   /// NULL = mới lên kế hoạch (đã điều shipper, chưa đi phát).
   /// Có giá trị = shipper/tổ chức đã xác nhận phát xong.
   /// Thống kê "đã phát" của chiến dịch CHỈ tính các đợt đã xác nhận, nếu không số
   /// liệu bị đội lên ngay lúc lập kế hoạch.
-  completedAt         DateTime?                              @map("completed_at") @db.Timestamptz
+  completedAt            DateTime?                              @map("completed_at") @db.Timestamptz
   /// volunteer_profiles.id của người bấm xác nhận. Không khai relation để khỏi thêm
   /// khoá ngoại thứ hai lên VolunteerProfile — chỉ cần lưu vết ai xác nhận.
-  completedByVolunteerId String?                             @map("completed_by_volunteer_id") @db.Uuid
+  completedByVolunteerId String?                                @map("completed_by_volunteer_id") @db.Uuid
   /// Số suất shipper BÁO CÁO đã phát thực tế (khác `servingsServed` là số tổ chức
   /// lên kế hoạch). Thống kê ưu tiên con số này khi có — kế hoạch và thực tế lệch
   /// nhau là chuyện thường (mưa, ít người tới, hàng hỏng).
-  actualServings      Int?                                   @map("actual_servings")
+  actualServings         Int?                                   @map("actual_servings")
   /// Số người thực nhận do shipper báo.
-  actualPeopleServed  Int?                                   @map("actual_people_served")
+  actualPeopleServed     Int?                                   @map("actual_people_served")
   /// Ghi chú của shipper lúc chốt đợt phát (vd "còn dư 5 suất, đã gửi lại bếp").
-  completionNote      String?                                @map("completion_note")
-  roundLabel          String?                                @map("round_label") @db.VarChar(100)
-  servingsServed      Int                                    @default(0) @map("servings_served")
-  peopleServed        Int                                    @default(0) @map("people_served")
-  leftoverServings    Int                                    @default(0) @map("leftover_servings")
-  location            Unsupported("geography(Point, 4326)")?
-  photoUrl            String?                                @map("photo_url")
-  note                String?
-  distributedAt       DateTime                               @default(now()) @map("distributed_at") @db.Timestamptz(6)
-  campaign            KitchenCampaign                        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  servedBy            VolunteerProfile                       @relation(fields: [servedByVolunteerId], references: [id])
-  feedback            MealFeedback[]
-  handoffs            MealHandoff[]
+  completionNote         String?                                @map("completion_note")
+  roundLabel             String?                                @map("round_label") @db.VarChar(100)
+  servingsServed         Int                                    @default(0) @map("servings_served")
+  peopleServed           Int                                    @default(0) @map("people_served")
+  leftoverServings       Int                                    @default(0) @map("leftover_servings")
+  location               Unsupported("geography(Point, 4326)")?
+  photoUrl               String?                                @map("photo_url")
+  note                   String?
+  distributedAt          DateTime                               @default(now()) @map("distributed_at") @db.Timestamptz(6)
+  campaign               KitchenCampaign                        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  servedBy               VolunteerProfile                       @relation(fields: [servedByVolunteerId], references: [id])
+  feedback               MealFeedback[]
+  handoffs               MealHandoff[]
 
   @@index([campaignId])
   @@index([servedByVolunteerId])
@@ -1309,17 +1349,17 @@ model ReceiverHandoffQr {
 }
 
 model MealHandoff {
-  id                    String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  distributionId        String            @map("distribution_id") @db.Uuid
-  receiverId            String            @map("receiver_id") @db.Uuid
-  scannedByVolunteerId  String            @map("scanned_by_volunteer_id") @db.Uuid
-  qrTokenId             String            @unique @map("qr_token_id") @db.Uuid
-  servedAt              DateTime          @default(now()) @map("served_at") @db.Timestamptz(6)
-  distribution          MealDistribution  @relation(fields: [distributionId], references: [id], onDelete: Cascade)
-  receiver              ReceiverProfile   @relation(fields: [receiverId], references: [id], onDelete: Cascade)
-  scannedBy             VolunteerProfile  @relation(fields: [scannedByVolunteerId], references: [id])
-  qrToken               ReceiverHandoffQr @relation(fields: [qrTokenId], references: [id])
-  feedback              BeneficiaryFeedback?
+  id                   String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  distributionId       String               @map("distribution_id") @db.Uuid
+  receiverId           String               @map("receiver_id") @db.Uuid
+  scannedByVolunteerId String               @map("scanned_by_volunteer_id") @db.Uuid
+  qrTokenId            String               @unique @map("qr_token_id") @db.Uuid
+  servedAt             DateTime             @default(now()) @map("served_at") @db.Timestamptz(6)
+  distribution         MealDistribution     @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  receiver             ReceiverProfile      @relation(fields: [receiverId], references: [id], onDelete: Cascade)
+  scannedBy            VolunteerProfile     @relation(fields: [scannedByVolunteerId], references: [id])
+  qrToken              ReceiverHandoffQr    @relation(fields: [qrTokenId], references: [id])
+  feedback             BeneficiaryFeedback?
 
   @@unique([distributionId, receiverId])
   @@index([receiverId, servedAt])
@@ -1347,34 +1387,34 @@ enum CampaignMenuStepStatus {
 ///   1. Đến `scheduled_time` của khâu đó (so với giờ thực tế).
 ///   2. Khâu trước cùng món đã ở trạng thái `done`.
 model CampaignDishStep {
-  id                        String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  campaignId                String                 @map("campaign_id") @db.Uuid
-  menuItemId                String                 @map("menu_item_id") @db.Uuid
+  id                     String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId             String                 @map("campaign_id") @db.Uuid
+  menuItemId             String                 @map("menu_item_id") @db.Uuid
   /// 1 = Sơ chế, 2 = Nấu, 3 = Trình bày, 4 = Sẵn sàng phát xuất
-  stepOrder                 Int                    @map("step_order") @db.SmallInt
-  stepName                  String                 @map("step_name") @db.VarChar(100)
+  stepOrder              Int                    @map("step_order") @db.SmallInt
+  stepName               String                 @map("step_name") @db.VarChar(100)
   /// Giờ dự kiến bắt đầu trong ngày (HH:mm, giờ VN). Lưu chuỗi để tránh timezone.
-  scheduledTime             String                 @map("scheduled_time") @db.VarChar(8)
-  status                    CampaignMenuStepStatus @default(locked)
-  completedAt               DateTime?              @map("completed_at") @db.Timestamptz
-  completedByVolunteerId    String?                @map("completed_by_volunteer_id") @db.Uuid
-  proofUrl                  String?                @map("proof_url")
-  note                      String?                @db.VarChar(500)
+  scheduledTime          String                 @map("scheduled_time") @db.VarChar(8)
+  status                 CampaignMenuStepStatus @default(locked)
+  completedAt            DateTime?              @map("completed_at") @db.Timestamptz
+  completedByVolunteerId String?                @map("completed_by_volunteer_id") @db.Uuid
+  proofUrl               String?                @map("proof_url")
+  note                   String?                @db.VarChar(500)
   /// Đánh dấu thời điểm server xác nhận khâu đủ điều kiện mở (đến giờ + khâu trư�c done).
   /// Dùng để debug + analytics, không ảnh hưởng logic.
-  openedAt                  DateTime?              @map("opened_at") @db.Timestamptz
+  openedAt               DateTime?              @map("opened_at") @db.Timestamptz
   /// Bếp trưởng / QC đánh dấu khâu này fail chất lượng (ngắt khẩn cấp từ QC step).
   /// Món vẫn chạy tiếp từng phần — các món khác trong campaign không bị ảnh hưởng.
-  qcFailedAt                DateTime?              @map("qc_failed_at") @db.Timestamptz
-  qcFailedByVolunteerId     String?                @map("qc_failed_by_volunteer_id") @db.Uuid
-  qcFailureReason           String?                @map("qc_failure_reason") @db.VarChar(500)
-  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt                 DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+  qcFailedAt             DateTime?              @map("qc_failed_at") @db.Timestamptz
+  qcFailedByVolunteerId  String?                @map("qc_failed_by_volunteer_id") @db.Uuid
+  qcFailureReason        String?                @map("qc_failure_reason") @db.VarChar(500)
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  campaign             KitchenCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  menuItem             CampaignMenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  completedByVolunteer VolunteerProfile?  @relation(fields: [completedByVolunteerId], references: [id], onDelete: SetNull)
-  qcFailedByVolunteer  VolunteerProfile?  @relation("CampaignDishStep_QCFailure", fields: [qcFailedByVolunteerId], references: [id], onDelete: SetNull)
+  campaign             KitchenCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  menuItem             CampaignMenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  completedByVolunteer VolunteerProfile? @relation(fields: [completedByVolunteerId], references: [id], onDelete: SetNull)
+  qcFailedByVolunteer  VolunteerProfile? @relation("CampaignDishStep_QCFailure", fields: [qcFailedByVolunteerId], references: [id], onDelete: SetNull)
 
   @@unique([campaignId, menuItemId, stepOrder])
   @@index([campaignId])
@@ -1386,13 +1426,12 @@ model CampaignDishStep {
 
 /**
  * Danh mục thực phẩm do admin tự quản lý.
- *
  * `food_category` (enum) chỉ có 9 nhóm lớn cố định — quá thô để mô tả thứ thực tế
  * nhận được. Bảng này là lớp CHI TIẾT bên dưới mỗi nhóm, admin thêm/sửa được mà
  * không cần đổi enum hay migrate:
- *   canned_packaged → "Đồ hộp móp méo", "Đồ hộp cận date"
- *   cooked_meal     → "Cơm gà còn dư", "Cháo dinh dưỡng"
- *   fresh_fruit     → "Chuối", "Nho"
+ * canned_packaged → "Đồ hộp móp méo", "Đồ hộp cận date"
+ * cooked_meal     → "Cơm gà còn dư", "Cháo dinh dưỡng"
+ * fresh_fruit     → "Chuối", "Nho"
  */
 /// Nhóm thực phẩm do admin tự tạo (vd "Đồ hộp / đóng gói", "Trái cây tươi").
 model FoodCatalogCategory {

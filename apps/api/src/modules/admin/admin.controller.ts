@@ -6,13 +6,8 @@ import {
   ResolveReportDto,
   SetUserStatusDto,
   SetConfigDto,
-  SetCampaignStatusDto,
-  AdminCreateCampaignDto,
-  AdminUpdateCampaignDto,
-  AssignVolunteerDto,
   AdminCreateUserDto,
   ReviewCampaignChangeDto,
-  ReviewAssignmentDto,
   UpdateListingCategoryDto,
   CreateFoodCatalogItemDto,
   UpdateFoodCatalogItemDto,
@@ -131,60 +126,22 @@ export class AdminController {
     return this.adminService.listVolunteersDetailed();
   }
 
-  @Post('campaigns')
-  @ApiOperation({ summary: 'Admin: tạo chiến dịch' })
-  createCampaign(@Body() dto: AdminCreateCampaignDto) {
-    return this.adminService.adminCreateCampaign(dto);
-  }
-
   @Get('campaigns/:id')
   @ApiOperation({ summary: 'Admin: chi tiết chiến dịch + danh sách TNV' })
   campaignDetail(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.getCampaignDetail(id);
   }
 
-  @Patch('campaigns/:id')
-  @ApiOperation({ summary: 'Admin: sửa chiến dịch' })
-  updateCampaign(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUpdateCampaignDto) {
-    return this.adminService.adminUpdateCampaign(id, dto);
+  @Post('campaigns/:id/approve')
+  @ApiOperation({ summary: 'Admin: duyệt kế hoạch chiến dịch và kích hoạt lịch tuyển' })
+  approveCampaign(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.adminService.setCampaignStatus(id, 'approved', user.id);
   }
 
-  @Patch('campaigns/:id/status')
-  @ApiOperation({ summary: 'Admin: đổi trạng thái chiến dịch' })
-  setCampaignStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Body() dto: SetCampaignStatusDto,
-  ) {
-    return this.adminService.setCampaignStatus(id, dto.status, user.id);
-  }
-
-  @Post('campaigns/:id/assign')
-  @ApiOperation({ summary: 'Admin: gán TNV vào chiến dịch' })
-  assignVolunteer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignVolunteerDto) {
-    return this.adminService.adminAssignVolunteer(id, dto.volunteerId, dto.role, dto.override ?? false);
-  }
-
-  @Delete('assignments/:id')
-  @ApiOperation({ summary: 'Admin: gỡ phân công TNV' })
-  unassignVolunteer(@Param('id', ParseUUIDPipe) id: string) {
-    return this.adminService.adminUnassignVolunteer(id);
-  }
-
-  @Get('campaign-assignments/pending')
-  @ApiOperation({ summary: 'Admin: danh sách đăng ký TNV chờ duyệt' })
-  pendingAssignments() {
-    return this.adminService.listPendingAssignments();
-  }
-
-  @Patch('campaign-assignments/:id/review')
-  @ApiOperation({ summary: 'Admin: duyệt/từ chối đăng ký TNV' })
-  reviewAssignment(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Body() dto: ReviewAssignmentDto,
-  ) {
-    return this.adminService.reviewAssignment(id, dto.decision, user.id, dto.note);
+  @Post('campaigns/:id/reject')
+  @ApiOperation({ summary: 'Admin: từ chối chiến dịch đang chờ duyệt' })
+  rejectCampaign(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.adminService.setCampaignStatus(id, 'cancelled', user.id);
   }
 
   @Get('food-listings')

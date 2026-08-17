@@ -229,7 +229,7 @@ export class DishStepsService {
 
     const campaigns = await this.prisma.kitchenCampaign.findMany({
       where: {
-        status: { in: ['in_progress', 'open'] },
+        status: { in: ['in_progress', 'approved'] },
         scheduledDate: { gte: windowStart, lt: windowEnd },
       },
       select: {
@@ -392,6 +392,81 @@ export class DishStepsService {
         data: { status: 'completed' },
       });
     }
+  }
+
+  /**
+   * Tổ chức duyệt step cuối (sẵn sàng phát xuất) của một món.
+   * Chef đã tick "Sẵn sàng phát xuất" → tổ chức kiểm tra và duyệt.
+   * Sau khi duyệt → món có thể chuyển sang phân phát.
+   */
+  async approveDishFinalStep(
+    campaignId: string,
+    userId: string,
+    menuItemId: string,
+  ) {
+    await this.assertCampaignOwner(campaignId, userId);
+
+    const step = await this.prisma.campaignDishStep.findFirst({
+      where: { campaignId, menuItemId, stepOrder: 4 },
+      include: { menuItem: { select: { customName: true } } },
+    });
+    if (!step) {
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+    }
+    if (step.status !== 'available') {
+      throw new BadRequestException('Bước này chưa được chef tick hoặc đã được duyệt trước đó.');
+    }
+
+    const updated = await this.prisma.campaignDishStep.update({
+      where: { id: step.id },
+      data: {
+        status: 'done',
+      },
+    });
+
+    return { id: updated.id, status: updated.status, menuItemName: step.menuItem.customName };
+  }
+
+  /**
+   * Tổ chức từ chối step cuối của một món (món chưa đạt yêu cầu).
+   * Gửi notification cho chef để làm lại.
+   */
+  async rejectDishFinalStep(
+    campaignId: string,
+    userId: string,
+    menuItemId: string,
+    reason: string,
+  ) {
+    await this.assertCampaignOwner(campaignId, userId);
+
+    const step = await this.prisma.campaignDishStep.findFirst({
+      where: { campaignId, menuItemId, stepOrder: 4 },
+      include: { menuItem: { select: { customName: true } } },
+    });
+    if (!step) {
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+    }
+
+    // Reset về available để chef làm lại
+    const updated = await this.prisma.campaignDishStep.update({
+      where: { id: step.id },
+      data: {
+        status: 'available',
+      },
+    });
+
+    // Gửi notification cho chef để thông báo bị từ chối
+    try {
+      await this.notifications.notifyCampaignOwner(campaignId, {
+        type: 'campaign.qc_failure',
+        title: `Món "${step.menuItem.customName}" chưa được duyệt`,
+        body: `Tổ chức từ chối: ${reason}`,
+      });
+    } catch {
+      // best-effort notification
+    }
+
+    return { id: updated.id, status: updated.status, menuItemName: step.menuItem.customName };
   }
 
   /**
@@ -734,7 +809,7 @@ export class DishStepsService {
           volunteerId: volunteer.id,
           campaign: {
             scheduledDate: { gte: weekStart, lt: weekEnd },
-            status: { in: ['open', 'in_progress', 'completed'] },
+            status: { in: ['approved', 'in_progress', 'completed'] },
           },
         },
         include: {
@@ -797,7 +872,7 @@ export class DishStepsService {
         where: {
           charityReceiverId: receiver.id,
           scheduledDate: { gte: weekStart, lt: weekEnd },
-          status: { in: ['open', 'in_progress', 'completed'] },
+          status: { in: ['approved', 'in_progress', 'completed'] },
         },
         select: { id: true, title: true, scheduledDate: true, status: true },
       });

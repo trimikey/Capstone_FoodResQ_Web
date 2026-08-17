@@ -1,16 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { UserX } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
-import { useMe, useUpdateMe, useTrustHistory, type Me } from '@/hooks/useProfile';
+import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
-import { useUploadImage } from '@/hooks/useUploadImage';
 import { reverseGeocode } from '@/lib/geocode';
-import { mediaUrl } from '@/lib/utils';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
 
@@ -19,9 +16,11 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
   loading: () => <div className="w-full h-full bg-neutral-100 animate-pulse" />,
 });
 
+// Ảnh lưu ở /uploads trên API server → ghép với origin (bỏ đuôi /api/v1)
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 function imgUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  return mediaUrl(path) || null;
+  return path.startsWith('http') ? path : `${API_ORIGIN}${path}`;
 }
 
 const VOL_ROLE_LABEL: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
@@ -72,10 +71,6 @@ const TRUST_REASON_LABEL: Record<string, string> = {
   campaign_completed: 'Tham gia chiến dịch từ thiện',
 };
 
-function getHttpStatus(error: unknown): number | undefined {
-  return (error as { response?: { status?: number } } | null)?.response?.status;
-}
-
 function ContactRow({
   icon,
   iconBg,
@@ -107,37 +102,14 @@ function ContactRow({
 }
 
 export default function ProfilePage() {
-  const { logout, setUser, user: authUser } = useAuthStore();
+  const { logout } = useAuthStore();
   const router = useRouter();
-  const { data: apiMe, isLoading, isError, error } = useMe();
+  const { data: me, isLoading, isError } = useMe();
   const updateMe = useUpdateMe();
-  const uploadAvatar = useUploadImage();
-  const meErrorStatus = getHttpStatus(error);
-  const fallbackMe = useMemo<Me | null>(() => {
-    if (apiMe || !isError || meErrorStatus === 401 || !authUser) return null;
-    return {
-      id: authUser.id,
-      email: authUser.email,
-      phone: null,
-      fullName: authUser.fullName,
-      avatarUrl: authUser.avatarUrl,
-      role: authUser.role,
-      status: authUser.status,
-      trustScore: authUser.trustScore,
-      createdAt: new Date().toISOString(),
-      stats: { kind: authUser.role },
-      volunteer: null,
-      receiver: null,
-      provider: null,
-    };
-  }, [apiMe, authUser, isError, meErrorStatus]);
-  const me = apiMe ?? fallbackMe;
-  const isUsingFallbackProfile = !!fallbackMe && !apiMe;
 
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
-  const { data: faceEnrollment } = useFaceEnrollment(isFaceRole && !isUsingFallbackProfile);
-  const hasFaceEnrollment = !!faceEnrollment?.enrolled;
-  const faceImage = imgUrl(faceEnrollment?.faceImageUrl ?? faceEnrollment?.idCardImageUrl);
+  const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
+  const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
   const [faceImageFailed, setFaceImageFailed] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -146,7 +118,6 @@ export default function ProfilePage() {
   const [editCoords, setEditCoords] = useState<{ lng: number; lat: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [showTrustHistory, setShowTrustHistory] = useState(false);
-  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
   const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
@@ -198,61 +169,17 @@ export default function ProfilePage() {
     setEditForm((prev) => ({ ...prev, address: address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}` }));
   };
 
-  const { data: trustHistory, isLoading: trustLoading } = useTrustHistory(!isUsingFallbackProfile);
-  const editAvatarPreview = imgUrl(editForm.avatarUrl);
-
-  const openAvatarFilePicker = () => {
-    if (!uploadAvatar.isPending) {
-      avatarFileInputRef.current?.click();
-    }
-  };
-
-  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.currentTarget.value = '';
-    if (!file) return;
-
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP.');
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Ảnh đại diện không được vượt quá 5MB.');
-      return;
-    }
-
-    try {
-      const avatarUrl = await uploadAvatar.mutateAsync({ file, kind: 'avatar' });
-      setEditForm((prev) => ({ ...prev, avatarUrl }));
-      toast.success('Đã tải ảnh đại diện lên.');
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Tải ảnh thất bại. Vui lòng thử lại.';
-      toast.error(msg);
-    }
-  };
+  const { data: trustHistory, isLoading: trustLoading } = useTrustHistory();
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const updatedMe = await updateMe.mutateAsync({
+      await updateMe.mutateAsync({
         fullName: editForm.fullName,
         phone: editForm.phone || undefined,
         avatarUrl: editForm.avatarUrl || undefined,
         ...(hasLocationSection && editForm.address.trim() ? { address: editForm.address.trim() } : {}),
         ...(hasLocationSection && editCoords ? { lng: editCoords.lng, lat: editCoords.lat } : {}),
-      });
-      setUser({
-        id: updatedMe.id,
-        email: updatedMe.email,
-        fullName: updatedMe.fullName,
-        role: updatedMe.role,
-        status: updatedMe.status,
-        trustScore: updatedMe.trustScore,
-        avatarUrl: updatedMe.avatarUrl,
       });
       setIsEditModalOpen(false);
       toast.success('Cập nhật hồ sơ cá nhân thành công!');
@@ -270,7 +197,7 @@ export default function ProfilePage() {
     toast.success('Đã đăng xuất tài khoản.');
   };
 
-  if (isLoading && !me) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center py-20">
         <div className="flex flex-col items-center gap-4">
@@ -286,7 +213,7 @@ export default function ProfilePage() {
     );
   }
 
-  if (!me) {
+  if (isError || !me) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center py-20 gap-4">
         <div className="w-20 h-20 rounded-full bg-rose-50 flex items-center justify-center">
@@ -461,13 +388,7 @@ export default function ProfilePage() {
             {/* Actions */}
             <div className="shrink-0 flex flex-col gap-2">
               <button
-                onClick={() => {
-                  if (isUsingFallbackProfile) {
-                    toast.error('Chưa kết nối được máy chủ nên chưa thể chỉnh sửa hồ sơ.');
-                    return;
-                  }
-                  setIsEditModalOpen(true);
-                }}
+                onClick={() => setIsEditModalOpen(true)}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-emerald-900 hover:bg-emerald-50 rounded-2xl font-bold text-sm shadow-lg shadow-black/10 transition-all hover:scale-[1.03] active:scale-95"
               >
                 <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -487,11 +408,6 @@ export default function ProfilePage() {
 
       {/* ── MAIN CONTENT ────────────────────────────────────── */}
       <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12 -mt-6 md:-mt-10 pb-12 md:pb-16">
-        {isUsingFallbackProfile && (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
-            Đang hiển thị hồ sơ cơ bản từ phiên đăng nhập. Dữ liệu thống kê, eKYC và chỉnh sửa sẽ hoạt động lại khi kết nối được API.
-          </div>
-        )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* LEFT: Trust + contact */}
           <div className="lg:col-span-4 space-y-6">
@@ -668,7 +584,7 @@ export default function ProfilePage() {
             {isFaceRole && (
               <div className="bg-white rounded-3xl border-l-4 border-l-emerald-600 border border-neutral-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
-                {hasFaceEnrollment ? (
+                {faceImage ? (
                   <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
                     {faceImage && !faceImageFailed ? (
                       <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
@@ -697,7 +613,7 @@ export default function ProfilePage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-2xl p-3">
-                    <UserX className="h-6 w-6 shrink-0 text-amber-600" aria-hidden="true" />
+                    <span className="material-symbols-outlined text-amber-600 text-[24px]">no_accounts</span>
                     <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
                   </div>
                 )}
@@ -821,19 +737,26 @@ export default function ProfilePage() {
 
       {/* ── EDIT PROFILE MODAL ─────────────────────────────── */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
-              <h3 className="font-extrabold text-neutral-900 text-lg">Chỉnh sửa hồ sơ</h3>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[12vh] px-4" onClick={() => setIsEditModalOpen(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0">
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="p-1.5 hover:bg-neutral-100 rounded-full text-neutral-400 hover:text-neutral-800 transition-colors"
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <h3 className="font-extrabold text-white text-lg pr-8">Chỉnh sửa hồ sơ</h3>
             </div>
 
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto max-h-[calc(85vh-72px)]">
+
+              <form onSubmit={handleEditSubmit} className="px-5 py-4 space-y-3">
               <div className="space-y-1.5 text-left">
                 <label className="text-xs text-neutral-450 font-bold uppercase">Họ và tên</label>
                 <input
@@ -842,7 +765,7 @@ export default function ProfilePage() {
                   minLength={2}
                   value={editForm.fullName}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
 
@@ -852,7 +775,7 @@ export default function ProfilePage() {
                   type="email"
                   disabled
                   value={me.email}
-                  className="w-full border border-neutral-200 bg-neutral-50 text-neutral-500 rounded-xl p-3 text-sm font-semibold cursor-not-allowed"
+                  className="w-full border border-neutral-200 bg-neutral-50 text-neutral-500 rounded-xl px-3 py-2.5 text-sm font-semibold cursor-not-allowed"
                 />
               </div>
 
@@ -863,49 +786,19 @@ export default function ProfilePage() {
                   value={editForm.phone}
                   placeholder="0901234567"
                   onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
 
               <div className="space-y-1.5 text-left">
                 <label className="text-xs text-neutral-450 font-bold uppercase">URL ảnh đại diện (tùy chọn)</label>
                 <input
-                  ref={avatarFileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={handleAvatarFileChange}
-                />
-                <input
                   type="text"
-                  value={uploadAvatar.isPending ? 'Đang tải ảnh lên...' : editForm.avatarUrl}
+                  value={editForm.avatarUrl}
                   placeholder="https://..."
-                  readOnly
-                  disabled={uploadAvatar.isPending}
-                  onClick={openAvatarFilePicker}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openAvatarFilePicker();
-                    }
-                  }}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold cursor-pointer disabled:cursor-wait disabled:bg-neutral-50"
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
-                {editAvatarPreview && (
-                  <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
-                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                      <img src={editAvatarPreview} alt="Ảnh đại diện" className="w-full h-full object-cover" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openAvatarFilePicker}
-                      disabled={uploadAvatar.isPending}
-                      className="text-xs font-bold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
-                    >
-                      Chọn ảnh khác
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Địa chỉ + vị trí: provider = vị trí cửa hàng (điểm lấy hàng), receiver = điểm giao mặc định */}
@@ -922,7 +815,7 @@ export default function ProfilePage() {
                       readOnly
                       value={editForm.address}
                       placeholder="Bấm nút định vị hoặc ghim trên bản đồ"
-                      className="flex-1 border border-neutral-200 bg-neutral-50 rounded-xl p-3 focus:outline-none text-sm font-semibold cursor-default"
+                      className="flex-1 border border-neutral-200 bg-neutral-50 rounded-xl px-3 py-2.5 focus:outline-none text-sm font-semibold cursor-default"
                     />
                     <button
                       type="button"
@@ -962,25 +855,11 @@ export default function ProfilePage() {
               {isFaceRole && (
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
-                  {hasFaceEnrollment ? (
-                    <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
-                      {faceImage && !faceImageFailed ? (
-                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                          <img
-                            src={faceImage}
-                            alt="Khuôn mặt đã đăng ký"
-                            className="w-full h-full object-cover"
-                            onError={(event) => {
-                              event.currentTarget.style.display = 'none';
-                              setFaceImageFailed(true);
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
-                        </div>
-                      )}
+                  {faceImage ? (
+                    <div className="flex items-center gap-3 border border-emerald-200 rounded-xl px-3 py-2.5 bg-emerald-50/50">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                           <span className="material-symbols-outlined text-[18px]">verified_user</span>
@@ -990,15 +869,16 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
-                      <UserX className="h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+                    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
+                      <span className="material-symbols-outlined text-amber-600">no_accounts</span>
                       <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="flex gap-3 pt-2">
+              {/* Footer */}
+              <div className="flex gap-3 pt-2 pb-1">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
@@ -1008,13 +888,16 @@ export default function ProfilePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={updateMe.isPending || uploadAvatar.isPending}
+                  disabled={updateMe.isPending}
                   className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50"
                 >
-                  {uploadAvatar.isPending ? 'Đang tải ảnh...' : updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  {updateMe.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </div>
             </form>
+
+            {/* Scrollable body end */}
+            </div>
           </div>
         </div>
       )}

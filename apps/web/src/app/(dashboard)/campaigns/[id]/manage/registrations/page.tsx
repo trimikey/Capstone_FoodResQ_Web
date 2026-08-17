@@ -56,7 +56,7 @@ export default function RegistrationsPage() {
       ? 'report'
       : c.status === 'in_progress'
       ? 'distribute'
-      : c.status === 'open'
+      : c.status === 'approved'
       ? 'recruit'
       : 'plan';
 
@@ -192,9 +192,9 @@ export default function RegistrationsPage() {
               <button
                 type="button"
                 onClick={onStart}
-                disabled={c.status !== 'open' || !startWindow.canStart || startCampaign.isPending}
+                disabled={c.status !== 'approved' || !startWindow.canStart || startCampaign.isPending}
                 title={
-                  c.status !== 'open'
+                  c.status !== 'approved'
                     ? 'Chỉ bắt đầu khi chiến dịch đang ở trạng thái "Đang tuyển"'
                     : startWindow.canStart
                       ? ''
@@ -289,9 +289,9 @@ export default function RegistrationsPage() {
             </div>
           ) : (
             <div className="px-2 pb-3">
-              {filteredVolunteers.map((p) => (
+              {filteredVolunteers.map((p, idx) => (
                 <RegistrationRow
-                  key={p.id}
+                  key={`${p.id}-${idx}`}
                   p={p}
                   shifts={shifts}
                   decision={decisions[p.id]}
@@ -449,63 +449,84 @@ export default function RegistrationsPage() {
       </aside>
     </div>
     {reviewTarget ? (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-        <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
-          <div className="border-b border-neutral-100 px-5 py-4">
-            <h3 className="text-base font-extrabold text-neutral-900">Chọn ca trước khi duyệt</h3>
-            <p className="mt-1 text-xs text-neutral-500">
-              {reviewTarget.fullName} - {roleLabel(reviewTarget.role)}
-            </p>
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[10vh] px-4">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+          {/* Header */}
+          <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setReviewTarget(null);
+                setSelectedShiftId('');
+              }}
+              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
+              aria-label="Đóng"
+            >
+              <span className="material-symbols-outlined text-white text-[18px]">close</span>
+            </button>
+            <div className="flex items-center gap-3 pr-8">
+              <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-white text-[18px]">event_available</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-white text-base">Chọn ca trước khi duyệt</h3>
+                <p className="mt-0.5 text-xs text-emerald-50 truncate">
+                  {reviewTarget.fullName} - {roleLabel(reviewTarget.role)}
+                </p>
+              </div>
+            </div>
             {reviewTarget.shiftId ? (
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white">
                 <span className="material-symbols-outlined text-[14px]">event_available</span>
                 Ca TNV đã chọn
               </p>
             ) : (
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white">
                 <span className="material-symbols-outlined text-[14px]">assignment</span>
                 Đăng ký vai trò tổng - cần phân ca
               </p>
             )}
           </div>
-          <div className="space-y-2 px-5 py-4">
-            {eligibleShifts.map((s) => (
-              <label
-                key={s.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${
-                  selectedShiftId === s.id ? 'border-emerald-600 bg-emerald-50' : 'border-neutral-200'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="review-shift"
-                  value={s.id}
-                  checked={selectedShiftId === s.id}
-                  onChange={() => setSelectedShiftId(s.id)}
-                  className="h-4 w-4 accent-emerald-700"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-900">
-                    {s.label}
-                    {reviewTarget.shiftId === s.id ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-700">
-                        TNV chọn
-                      </span>
-                    ) : null}
+          <div className="overflow-y-auto flex-1 min-h-0">
+            <div className="px-5 py-4 space-y-3">
+              {eligibleShifts.map((s) => (
+                <label
+                  key={s.id}
+                  className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${
+                    selectedShiftId === s.id ? 'border-emerald-600 bg-emerald-50' : 'border-neutral-200'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="review-shift"
+                    value={s.id}
+                    checked={selectedShiftId === s.id}
+                    onChange={() => setSelectedShiftId(s.id)}
+                    className="h-4 w-4 accent-emerald-700"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-900">
+                      {s.label}
+                      {reviewTarget.shiftId === s.id ? (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-700">
+                          TNV chọn
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      {s.startTime}-{s.endTime} · {s.role ? roleLabel(s.role) : 'Ca chung'} · {s.slotsFilled}/{s.slotsNeeded} đã duyệt
+                    </span>
                   </span>
-                  <span className="block text-xs text-neutral-500">
-                    {s.startTime}-{s.endTime} · {s.role ? roleLabel(s.role) : 'Ca chung'} · {s.slotsFilled}/{s.slotsNeeded} đã duyệt
-                  </span>
-                </span>
-              </label>
-            ))}
-            {eligibleShifts.length === 0 ? (
-              <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.
-              </div>
-            ) : null}
+                </label>
+              ))}
+              {eligibleShifts.length === 0 ? (
+                <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  Không còn ca phù hợp để duyệt tình nguyện viên này. Hãy tăng slot hoặc thêm ca trước.
+                </div>
+              ) : null}
+            </div>
           </div>
-          <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4">
+          <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => {

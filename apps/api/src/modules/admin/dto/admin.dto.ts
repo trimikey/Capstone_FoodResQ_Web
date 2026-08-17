@@ -1,18 +1,4 @@
-import {
-  IsBoolean,
-  IsEnum,
-  IsIn,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { AssignmentRole, ReportStatus, FoodCategory } from '@foodresq/types';
@@ -38,9 +24,7 @@ export class CreateFoodCategoryDto {
 
   @ApiPropertyOptional({ enum: ['ready_to_eat', 'raw_ingredient', 'other'] })
   @IsOptional()
-  @IsIn(['ready_to_eat', 'raw_ingredient', 'other'], {
-    message: 'Nhóm lớn không hợp lệ',
-  })
+  @IsIn(['ready_to_eat', 'raw_ingredient', 'other'], { message: 'Nhóm lớn không hợp lệ' })
   group?: string;
 
   @ApiPropertyOptional()
@@ -109,10 +93,7 @@ export class UpdateFoodCatalogItemDto {
 }
 
 export class ReviewCampaignChangeDto {
-  @ApiProperty({
-    enum: ['approve', 'reject'],
-    description: 'Duyệt hay từ chối yêu cầu thay đổi',
-  })
+  @ApiProperty({ enum: ['approve', 'reject'], description: 'Duyệt hay từ chối yêu cầu thay đổi' })
   @IsIn(['approve', 'reject'])
   decision!: 'approve' | 'reject';
 
@@ -124,10 +105,7 @@ export class ReviewCampaignChangeDto {
 }
 
 export class ReviewAssignmentDto {
-  @ApiProperty({
-    enum: ['approve', 'reject'],
-    description: 'Duyệt hay từ chối đăng ký của TNV',
-  })
+  @ApiProperty({ enum: ['approve', 'reject'], description: 'Duyệt hay từ chối đăng ký của TNV' })
   @IsIn(['approve', 'reject'])
   decision!: 'approve' | 'reject';
 
@@ -139,11 +117,9 @@ export class ReviewAssignmentDto {
 }
 
 export class SetCampaignStatusDto {
-  @ApiProperty({
-    enum: ['draft', 'open', 'in_progress', 'completed', 'cancelled'],
-  })
-  @IsIn(['draft', 'open', 'in_progress', 'completed', 'cancelled'])
-  status!: 'draft' | 'open' | 'in_progress' | 'completed' | 'cancelled';
+  @ApiProperty({ enum: ['approved', 'cancelled'] })
+  @IsIn(['approved', 'cancelled'])
+  status!: 'approved' | 'cancelled';
 }
 
 export class AdminCreateCampaignDto {
@@ -155,110 +131,30 @@ export class AdminCreateCampaignDto {
 
   @ApiProperty() @IsString() @MinLength(5) kitchenAddress!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  @Type(() => Number)
-  lng?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  @Type(() => Number)
-  lat?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(-180) @Max(180) @Type(() => Number) lng?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(-90) @Max(90) @Type(() => Number) lat?: number;
 
-  @ApiProperty({ example: '2026-06-25' })
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  scheduledDate!: string;
-  @ApiProperty({ example: '08:00' })
-  @Matches(/^\d{2}:\d{2}$/)
-  startTime!: string;
+  @ApiProperty({ example: '2026-06-25' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) scheduledDate!: string;
+  @ApiProperty({ example: '08:00' }) @Matches(/^\d{2}:\d{2}$/) startTime!: string;
   @ApiProperty({ example: '12:00' }) @Matches(/^\d{2}:\d{2}$/) endTime!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  chefSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  waiterSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  shipperSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Type(() => Number)
-  expectedServings?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) chefSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) waiterSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) shipperSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Type(() => Number) expectedServings?: number;
 }
 
 export class AdminUpdateCampaignDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MinLength(5)
-  @MaxLength(255)
-  title?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(5) @MaxLength(255) title?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MinLength(5)
-  kitchenAddress?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  scheduledDate?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Matches(/^\d{2}:\d{2}$/)
-  startTime?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Matches(/^\d{2}:\d{2}$/)
-  endTime?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  chefSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  waiterSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(50)
-  @Type(() => Number)
-  shipperSlotsNeeded?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Type(() => Number)
-  expectedServings?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(5) kitchenAddress?: string;
+  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) scheduledDate?: string;
+  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{2}:\d{2}$/) startTime?: string;
+  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{2}:\d{2}$/) endTime?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) chefSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) waiterSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50) @Type(() => Number) shipperSlotsNeeded?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Type(() => Number) expectedServings?: number;
 }
 
 export class AdminCreateUserDto {
@@ -270,17 +166,12 @@ export class AdminCreateUserDto {
   @IsIn(['receiver', 'provider', 'volunteer'])
   role!: 'receiver' | 'provider' | 'volunteer';
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  phone?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() businessName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() address?: string;
 
   @ApiPropertyOptional({ enum: ['chef', 'waiter', 'shipper'] })
-  @IsOptional()
-  @IsIn(['chef', 'waiter', 'shipper'])
+  @IsOptional() @IsIn(['chef', 'waiter', 'shipper'])
   volunteerRole?: 'chef' | 'waiter' | 'shipper';
 }
 
@@ -291,9 +182,7 @@ export class AssignVolunteerDto {
   @IsEnum(AssignmentRole)
   role!: AssignmentRole;
 
-  @ApiPropertyOptional({
-    description: 'Gán vượt chuyên môn (bỏ kiểm tra specialization)',
-  })
+  @ApiPropertyOptional({ description: 'Gán vượt chuyên môn (bỏ kiểm tra specialization)' })
   @IsOptional()
   @IsBoolean()
   override?: boolean;
