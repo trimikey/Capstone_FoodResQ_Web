@@ -356,6 +356,12 @@ const form = useForm<z.infer<typeof schema>>({
 - All passwords hashed with `bcrypt`, rounds ≥ 12
 - JWT secret from env var `JWT_SECRET` — never hardcode
 - File uploads: validate MIME type server-side; store on S3/Cloudflare R2, never local disk in prod
+- **Ảnh upload → Cloudinary BẮT BUỘC**: mọi ảnh người dùng upload (campaign, listing, avatar,
+  verification, QC, experience…) đi qua `StorageService.saveImage()` với thứ tự ưu tiên
+  Cloudinary (`CLOUDINARY_*` env) → Firebase Storage → `./uploads` local (dev-only fallback).
+  KHÔNG trả về đường dẫn `/uploads/...` khi đã có Cloudinary credentials — DB là cloud dùng
+  chung nhưng `./uploads` là disk từng máy, ảnh sẽ vỡ trên máy khác / trên Render.
+  Endpoint upload mới phải gọi StorageService, không tự ghi file.
 - Rate limiting on `/auth/*` endpoints: `@nestjs/throttler` — max 10 req/min
 - CORS: whitelist explicit origins, no wildcard in production
 - Helmet middleware enabled in NestJS `main.ts`

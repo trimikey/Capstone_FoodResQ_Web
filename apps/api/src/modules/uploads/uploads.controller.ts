@@ -61,10 +61,10 @@ export class UploadsController {
       throw new BadRequestException(`kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`);
     }
     // Ảnh listing cần hiển thị đồng nhất trên web + mobile trong môi trường dev
-    // đang dùng DB cloud nhưng filesystem local. Nếu trả /uploads/... thì DB vẫn
-    // còn path sau khi file local mất/đổi máy, receiver sẽ rơi về fallback.
-    // Data URL hơi nặng hơn nhưng bền và render trực tiếp được ở cả <img> lẫn expo-image.
-    if (kind === 'listing') {
+    // đang dùng DB cloud nhưng filesystem local. Có Cloudinary thì lên Cloudinary
+    // (URL bền, mọi máy đều thấy); chưa cấu hình mới rơi về data URL — nặng hơn
+    // nhưng không vỡ ảnh khi đổi máy như /uploads local.
+    if (kind === 'listing' && !this.storage.isCloudinaryConfigured()) {
       return { url: `data:${file.mimetype};base64,${file.buffer.toString('base64')}` };
     }
     const url = await this.storage.saveImage(file, folder);
