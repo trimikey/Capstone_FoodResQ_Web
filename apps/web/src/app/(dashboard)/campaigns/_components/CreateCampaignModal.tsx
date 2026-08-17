@@ -676,7 +676,6 @@ export default function CreateCampaignModal({
           className="cm-create-header-close"
           aria-label="Đóng"
         >
-          <span className="material-symbols-outlined">arrow_back</span>
           Quay lại
         </button>
       </header>
