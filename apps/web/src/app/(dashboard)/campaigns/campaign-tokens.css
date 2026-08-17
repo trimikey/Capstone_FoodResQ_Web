@@ -4153,6 +4153,20 @@ padding: 14px 24px;
   @media (max-width: 768px) {
     .cm-detail-hero-info { padding: 18px 20px; margin-top: 12px; }
   }
+  /* Bản dashboard tô .cm-detail-hero-title/meta màu TRẮNG (đè lên hero tối).
+     Trang công khai lại đặt chúng TRONG thẻ trắng .cm-detail-hero-info →
+     chữ trắng trên nền trắng, mờ không đọc được. Trả về màu mực khi nằm
+     trong thẻ (specificity 2 class nên thắng rule 1 class ở trên). */
+  .cm-detail-hero-info .cm-detail-hero-eyebrow { color: #2a662e; }
+  .cm-detail-hero-info .cm-detail-hero-title {
+    color: var(--cm-ink-900);
+    font-size: 28px;
+    line-height: 1.15;
+  }
+  .cm-detail-hero-info .cm-detail-hero-meta { color: #475569; margin-top: 14px; }
+  @media (max-width: 768px) {
+    .cm-detail-hero-info .cm-detail-hero-title { font-size: 22px; }
+  }
 
   /* === Provider campaign detail === */
   .cm-provider-detail-hero {

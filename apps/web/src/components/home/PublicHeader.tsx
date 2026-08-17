@@ -143,8 +143,10 @@ export default function PublicHeader() {
   return (
     <header 
       className={`fixed left-1/2 -translate-x-1/2 z-[9999] transition-all duration-300 ${
-        isSolid 
-          ? 'top-0 w-full rounded-none bg-white/95 backdrop-blur-md border-b border-neutral-200 shadow-[0_4px_20px_rgba(0,0,0,0.05)]' 
+        isSolid
+          // bg trắng ĐẶC (không /95) — nếu còn hở % trong suốt thì ảnh hero cuộn
+          // bên dưới sẽ lộ xuyên qua navbar, chữ nav lẫn vào ảnh rất khó đọc.
+          ? 'top-0 w-full rounded-none bg-white border-b border-neutral-200 shadow-[0_4px_20px_rgba(0,0,0,0.05)]'
           : 'top-6 w-[95%] max-w-5xl rounded-full bg-transparent border border-transparent shadow-none'
       }`}
     >
