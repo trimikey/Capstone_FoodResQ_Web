@@ -110,6 +110,7 @@ export default function ProfilePage() {
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
+  const [faceImageFailed, setFaceImageFailed] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
@@ -120,6 +121,10 @@ export default function ProfilePage() {
 
   // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
   const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
+
+  useEffect(() => {
+    setFaceImageFailed(false);
+  }, [faceImage]);
 
   useEffect(() => {
     if (me) {
@@ -581,9 +586,23 @@ export default function ProfilePage() {
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
                 {faceImage ? (
                   <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
-                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                      <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                    </div>
+                    {faceImage && !faceImageFailed ? (
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                        <img
+                          src={faceImage}
+                          alt="Khuôn mặt đã đăng ký"
+                          className="w-full h-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                            setFaceImageFailed(true);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                         <span className="material-symbols-outlined text-[18px]">verified_user</span>
@@ -831,9 +850,23 @@ export default function ProfilePage() {
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
                   {faceImage ? (
                     <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
-                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                      </div>
+                      {faceImage && !faceImageFailed ? (
+                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                          <img
+                            src={faceImage}
+                            alt="Khuôn mặt đã đăng ký"
+                            className="w-full h-full object-cover"
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none';
+                              setFaceImageFailed(true);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                           <span className="material-symbols-outlined text-[18px]">verified_user</span>
