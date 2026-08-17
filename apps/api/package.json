@@ -7,7 +7,7 @@
     "build": "pnpm prisma:generate && node ../../node_modules/@nestjs/cli/bin/nest.js build",
     "predev": "node ../../node_modules/typescript/bin/tsc -p ../../packages/types/tsconfig.json",
     "dev": "node ../../node_modules/@nestjs/cli/bin/nest.js start --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/main.js",
     "lint": "node ../../node_modules/eslint/bin/eslint.js \"{src,test}/**/*.ts\" --fix",
     "test": "node ../../node_modules/jest/bin/jest.js",
     "test:e2e": "node ../../node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
