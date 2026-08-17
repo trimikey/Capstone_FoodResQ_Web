@@ -16,3 +16,4 @@ uploads
 *.pyc
 __pycache__
 docs/diagrams/.class-specs-data
+https://capstone-foodresq-web.onrender.com/api/docs

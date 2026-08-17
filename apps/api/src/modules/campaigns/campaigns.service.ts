@@ -32,12 +32,11 @@ const VN_UTC_OFFSET_HOURS = 7;
 
 /**
  * Tổ chức được mở chiến dịch sớm bao nhiêu giờ trước mốc bắt đầu.
- *
- * 12 giờ đủ để mở từ tối hôm trước cho các ca đi chợ / nhận nguyên liệu rạng sáng,
- * nhưng vẫn đủ chặt để không ai bật chiến dịch từ nhiều ngày trước rồi để TNV
- * điểm danh nhầm ngày.
+ * Giá trị mặc định 12 giờ đủ để mở từ tối hôm trước cho các ca đi chợ / nhận
+ * nguyên liệu rạng sáng, nhưng vẫn đủ chặt để không ai bật chiến dịch từ
+ * nhiều ngày trước rồi để TNV điểm danh nhầm ngày.
+ * Giá trị thực tế được đọc từ system_configs `CAMPAIGN_START_LEAD_HOURS`.
  */
-const CAMPAIGN_START_LEAD_HOURS = 12;
 
 /** 95 → "1 giờ 35 phút"; 20 → "20 phút". */
 function formatLateness(minutes: number): string {
@@ -461,12 +460,22 @@ export class CampaignsService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       // INSERT campaign (raw SQL vì cần ST_SetSRID cho geography)
+      // 4 cột operation_start_at / operation_end_at / recruitment_start_at /
+      // recruitment_end_at đã được add trực tiếp vào DB (NOT NULL, no default) nhưng
+      // chưa có trong schema.prisma — Prisma raw SQL không tự fill cho mình nên phải
+      // truyền tường minh, không thì PG báo 23502 not-null violation.
+      //   operation_*        = ngày diễn ra thực sự (scheduledDate + start/end time)
+      //   recruitment_*      = cửa sổ tuyển TNV; mở ngay, đóng sau prep_time_minutes (24h)
+      //   recruitment_buffer = 24 (mặc định trong schema.sql), recruitment_status = 'scheduled'
       const [row] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
         INSERT INTO kitchen_campaigns (
           charity_receiver_id, title, description, kitchen_address, kitchen_location,
           scheduled_date, end_date, start_time, end_time,
           chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
           expected_servings, image_urls, menu_items, schedule_items, supply_items,
+          operation_start_at, operation_end_at,
+          recruitment_start_at, recruitment_end_at,
+          recruitment_buffer_hours, recruitment_status,
           status, created_at, updated_at
         ) VALUES (
           ${receiver.id}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
@@ -477,6 +486,11 @@ export class CampaignsService {
           ${JSON.stringify(menuJson)}::jsonb,
           ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
           ${JSON.stringify(supplyJson)}::jsonb,
+          (${dto.scheduledDate}::date + ${dto.startTime}::time) AT TIME ZONE 'UTC',
+          (${endDateStr}::date + ${dto.endTime}::time) AT TIME ZONE 'UTC',
+          NOW(),
+          NOW() + (INTERVAL '24 hours'),
+          24, 'scheduled',
           'draft'::campaign_status, NOW(), NOW()
         )
         RETURNING id
@@ -1339,6 +1353,8 @@ export class CampaignsService {
             // Danh sách nguyên liệu bếp khai lúc tạo chiến dịch — đây là "số kg đã gửi
             // lúc đầu" mà shipper phải đối chiếu khi lấy hàng.
             supplyItems: true,
+            // Danh sách món ăn — shipper dùng để QC trước khi xác nhận đã lấy hàng.
+            menuItems: true,
             charityReceiver: {
               select: { organizationName: true, user: { select: { fullName: true, phone: true } } },
             },
@@ -1385,7 +1401,11 @@ export class CampaignsService {
           pointsAwarded: assignment.pointsAwarded,
           shift: assignment.shift,
         },
-        campaign: assignment.campaign,
+        campaign: {
+          ...assignment.campaign,
+          // Chuẩn hoá menuItems từ jsonb
+          menuItems: CampaignsService.normalizeMenuItems(assignment.campaign.menuItems as unknown as Prisma.JsonValue),
+        },
         pickupOrders,
         delivery: delivery
           ? {
@@ -1435,7 +1455,11 @@ export class CampaignsService {
         pointsAwarded: assignment.pointsAwarded,
         shift: assignment.shift,
       },
-      campaign: assignment.campaign,
+      campaign: {
+        ...assignment.campaign,
+        // Chuẩn hoá menuItems từ jsonb
+        menuItems: CampaignsService.normalizeMenuItems(assignment.campaign.menuItems as unknown as Prisma.JsonValue),
+      },
       ...detail,
       ...(assignment.role === 'waiter'
         ? {
@@ -2198,6 +2222,10 @@ export class CampaignsService {
       plannedSummary,
       shifts: campaign.shifts,
       menuItemRefs: campaign.menuItemRefs,
+      // Dish steps để tổ chức duyệt QC món (chef tick "Sẵn sàng phát xuất" xong)
+      dishSteps: campaign.status === 'in_progress'
+        ? await this.dishSteps.getStepsForCampaign(id, userId)
+        : [],
     };
   }
 
@@ -2578,19 +2606,22 @@ export class CampaignsService {
       throw new BadRequestException('Chỉ bắt đầu được chiến dịch đang ở trạng thái "Đang tuyển".');
     }
 
+    // Đọc config cho phép chỉnh thời gian báo trước mà không cần deploy
+    const leadHours = await this.systemConfig.getNumber('CAMPAIGN_START_LEAD_HOURS');
+
     // So sánh theo NGÀY GIỜ VIỆT NAM, không phải ngày UTC: VN là UTC+7 nên từ 00:00
     // đến 07:00 giờ VN thì UTC vẫn đang ở ngày hôm trước — chiến dịch đúng ngày vẫn
     // bị chặn, đúng ngay khung giờ các ca chuẩn bị cần mở.
     const now = Date.now();
     const startAt = this.vnDateTimeToUtc(campaign.scheduledDate, campaign.startTime);
     const endOfDay = this.vnDateTimeToUtc(campaign.endDate ?? campaign.scheduledDate, '23:59');
-    const opensAt = startAt - CAMPAIGN_START_LEAD_HOURS * 3600_000;
+    const opensAt = startAt - leadHours * 3600_000;
 
     if (now < opensAt) {
       throw new BadRequestException(
         `Chiến dịch bắt đầu lúc ${campaign.startTime} ngày ` +
           `${new Date(campaign.scheduledDate).toISOString().slice(0, 10)}. ` +
-          `Bạn mở được từ ${CAMPAIGN_START_LEAD_HOURS} giờ trước đó (để kịp các ca chuẩn bị).`,
+          `Bạn mở được từ ${leadHours} giờ trước đó (để kịp các ca chuẩn bị).`,
       );
     }
     if (now > endOfDay) {
@@ -4088,6 +4119,7 @@ export class CampaignsService {
     distributionId: string,
     userId: string,
     report: { actualServings?: number; actualPeopleServed?: number; note?: string } = {},
+    proofPhotoUrl?: string,
   ) {
     const dist = await this.prisma.mealDistribution.findUnique({
       where: { id: distributionId },
@@ -4166,6 +4198,7 @@ export class CampaignsService {
         actualServings,
         actualPeopleServed: actualPeople,
         completionNote: report.note?.trim() || null,
+        ...(proofPhotoUrl ? { photoUrl: proofPhotoUrl } : {}),
       },
     });
     if (claimed.count !== 1) {
@@ -4387,6 +4420,7 @@ export class CampaignsService {
    * cũ hiển thị đúng mà không cần đợi migrate.
    */
   private static normalizeMenuItems(raw: unknown): Array<{
+    id: string;
     name: string;
     type: string;
     plannedServings: number | null;
@@ -4401,12 +4435,14 @@ export class CampaignsService {
         : typeof m.customName === 'string'
           ? m.customName.trim()
           : '';
+      const sortOrder = typeof m.sortOrder === 'number' ? m.sortOrder : i;
       return {
+        id: `menu-${sortOrder}`,
         name,
         type: typeof m.type === 'string' ? m.type.trim() : '',
         plannedServings: m.plannedServings == null ? null : Number(m.plannedServings),
         recipeId: typeof m.recipeId === 'string' ? m.recipeId : null,
-        sortOrder: typeof m.sortOrder === 'number' ? m.sortOrder : i,
+        sortOrder,
       };
     });
   }
@@ -4428,5 +4464,89 @@ export class CampaignsService {
       data: { supplyItems: next as unknown as Prisma.InputJsonValue },
     });
     return { supplyItems: next };
+  }
+
+  /** Thống kê toàn hệ thống — cho trang /campaigns overview. */
+  async getSystemStats() {
+    const [total, completed, active] = await Promise.all([
+      this.prisma.kitchenCampaign.count({ where: {} }),
+      this.prisma.kitchenCampaign.count({ where: { status: 'completed' } }),
+      this.prisma.kitchenCampaign.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+    ]);
+
+    // Suất ăn đã phát: sum(actualServings) của chiến dịch completed
+    const servingsAgg = await this.prisma.kitchenCampaign.aggregate({
+      where: { status: 'completed' },
+      _sum: { actualServings: true },
+    });
+    const mealsServed = Number(servingsAgg._sum?.actualServings ?? 0);
+
+    // Tổng người phục vụ: count volunteers có assignment đã approved/checked_in/in_progress/completed
+    const volunteersAgg = await this.prisma.campaignVolunteerAssignment.groupBy({
+      by: ['volunteerId'],
+      where: {
+        status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+      },
+    });
+    const peopleServed = volunteersAgg.length;
+
+    // Tỉ lệ hoàn thành
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return {
+      mealsServed,
+      peopleServed,
+      completedCampaigns: completed,
+      completionRate,
+      totalCampaigns: total,
+      activeCampaigns: active,
+    };
+  }
+
+  /** Tổ chức duyệt bước "Sẵn sàng phát xuất" của một món (delegate sang DishStepsService). */
+  async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string) {
+    return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId);
+  }
+
+  /** Tổ chức từ chối bước "Sẵn sàng phát xuất" của một món (delegate sang DishStepsService). */
+  async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string) {
+    return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason);
+  }
+
+  async getMyStats(userId: string) {
+    const receiver = await this.prisma.receiverProfile.findUnique({ where: { userId } });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+
+    const where = { charityReceiverId: receiver.id };
+    const completedWhere = { ...where, status: 'completed' as const };
+
+    const [total, completed, active, servingsAgg, distributionsAgg] = await Promise.all([
+      this.prisma.kitchenCampaign.count({ where }),
+      this.prisma.kitchenCampaign.count({ where: completedWhere }),
+      this.prisma.kitchenCampaign.count({ where: { ...where, status: { in: ['open', 'in_progress'] } } }),
+      this.prisma.kitchenCampaign.aggregate({
+        where: completedWhere,
+        _sum: { actualServings: true },
+      }),
+      this.prisma.mealDistribution.aggregate({
+        where: {
+          campaign: where,
+        },
+        _sum: { peopleServed: true },
+      }),
+    ]);
+
+    const mealsServed = Number(servingsAgg._sum?.actualServings ?? 0);
+    const peopleServed = Number(distributionsAgg._sum?.peopleServed ?? 0);
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return {
+      mealsServed,
+      peopleServed,
+      completedCampaigns: completed,
+      completionRate,
+      totalCampaigns: total,
+      activeCampaigns: active,
+    };
   }
 }
