@@ -11,6 +11,19 @@
  * Dùng prefix .cm- (campaign module) để tránh xung đột.
  */
 
+/*
+ * BẮT BUỘC giữ dòng khai báo thứ tự layer dưới đây (trùng thứ tự Tailwind v4).
+ *
+ * Thứ tự cascade layer do LẦN KHAI BÁO ĐẦU TIÊN trong document quyết định. Khi
+ * client-side navigation làm file này được chèn TRƯỚC globals.css (@import
+ * "tailwindcss"), khối `@layer components` bên dưới sẽ vô tình đặt `components`
+ * đứng TRƯỚC `base` → preflight của Tailwind (`* { margin:0; padding:0; border:0 }`
+ * trong layer base) đè lên toàn bộ padding/border của mọi class .cm-* (layer sau
+ * thắng, bất chấp specificity) → vỡ UI /campaigns ngẫu nhiên, reload lại hết.
+ * Khai báo tường minh ở đây thì file nào nạp trước, thứ tự vẫn đúng.
+ */
+@layer theme, base, components, utilities;
+
 @layer components {
   /* === Palette (scoped to .cm-scope) — match landing === */
   .cm-scope {
