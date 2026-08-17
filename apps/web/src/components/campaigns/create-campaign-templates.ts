@@ -191,23 +191,18 @@ export const MENU_TEMPLATES: MenuTemplate[] = [
 ];
 
 export const SHIFT_TEMPLATES: ShiftTemplate[] = [
-  // ── Lấy nguyên liệu (trước giờ sơ chế — đi chợ/nhận hàng tài trợ rồi chở về bếp)
-  { id: 'shift-supply-run', label: 'Lấy nguyên liệu sáng', role: 'shipper', startTime: '04:30', endTime: '06:00', slotsNeeded: 2 },
-  { id: 'shift-supply-receive', label: 'Nhận & kiểm nguyên liệu tại bếp', role: 'chef', startTime: '05:30', endTime: '06:30', slotsNeeded: 2 },
-  // ── Sơ chế
-  { id: 'shift-prep-morning', label: 'Ca sáng — Sơ chế', role: 'chef', startTime: '06:00', endTime: '08:00', slotsNeeded: 4 },
-  { id: 'shift-prep-midday', label: 'Ca trưa — Sơ chế', role: 'chef', startTime: '09:00', endTime: '11:00', slotsNeeded: 3 },
-  // ── Nấu
-  { id: 'shift-cook-morning', label: 'Ca sáng — Nấu', role: 'chef', startTime: '07:00', endTime: '10:00', slotsNeeded: 3 },
-  { id: 'shift-cook-midday', label: 'Ca trưa — Nấu', role: 'chef', startTime: '09:00', endTime: '11:30', slotsNeeded: 4 },
-  { id: 'shift-cook-evening', label: 'Ca tối — Nấu', role: 'chef', startTime: '15:00', endTime: '18:00', slotsNeeded: 3 },
-  // ── Phục vụ
+  { id: 'shift-supply-run', label: 'Giao hàng bữa sáng', role: 'shipper', startTime: '04:30', endTime: '06:00', slotsNeeded: 2 },
+  { id: 'shift-supply-receive', label: 'Đầu bếp bữa sáng', role: 'chef', startTime: '05:30', endTime: '06:30', slotsNeeded: 2 },
+  { id: 'shift-prep-morning', label: 'Đầu bếp bữa sáng', role: 'chef', startTime: '06:00', endTime: '08:00', slotsNeeded: 4 },
+  { id: 'shift-prep-midday', label: 'Đầu bếp bữa trưa', role: 'chef', startTime: '09:00', endTime: '11:00', slotsNeeded: 3 },
+  { id: 'shift-cook-morning', label: 'Đầu bếp bữa sáng', role: 'chef', startTime: '07:00', endTime: '10:00', slotsNeeded: 3 },
+  { id: 'shift-cook-midday', label: 'Đầu bếp bữa trưa', role: 'chef', startTime: '09:00', endTime: '11:30', slotsNeeded: 4 },
+  { id: 'shift-cook-evening', label: 'Đầu bếp bữa tối', role: 'chef', startTime: '15:00', endTime: '18:00', slotsNeeded: 3 },
   { id: 'shift-serve-breakfast', label: 'Phục vụ bữa sáng', role: 'waiter', startTime: '07:30', endTime: '09:30', slotsNeeded: 4 },
   { id: 'shift-serve-lunch', label: 'Phục vụ bữa trưa', role: 'waiter', startTime: '11:00', endTime: '13:30', slotsNeeded: 5 },
   { id: 'shift-serve-dinner', label: 'Phục vụ bữa tối', role: 'waiter', startTime: '17:30', endTime: '20:00', slotsNeeded: 4 },
-  // ── Vận chuyển
-  { id: 'shift-ship-lunch', label: 'Vận chuyển bữa trưa', role: 'shipper', startTime: '11:00', endTime: '13:30', slotsNeeded: 2 },
-  { id: 'shift-ship-dinner', label: 'Vận chuyển bữa tối', role: 'shipper', startTime: '17:30', endTime: '20:00', slotsNeeded: 2 },
+  { id: 'shift-ship-lunch', label: 'Giao hàng bữa trưa', role: 'shipper', startTime: '11:00', endTime: '13:30', slotsNeeded: 2 },
+  { id: 'shift-ship-dinner', label: 'Giao hàng bữa tối', role: 'shipper', startTime: '17:30', endTime: '20:00', slotsNeeded: 2 },
 ];
 
 export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [

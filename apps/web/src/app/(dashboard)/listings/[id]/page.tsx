@@ -800,76 +800,81 @@ function PickupConfirmPopup({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4"
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isUrgent ? 'bg-amber-100' : 'bg-emerald-100'}`}>
-            <span className={`material-symbols-outlined text-[24px] ${isUrgent ? 'text-amber-600' : 'text-emerald-600'}`}>
-              storefront
-            </span>
-          </div>
-          <div>
-            <h3 className="font-bold text-lg text-neutral-900">Xác nhận đặt trước</h3>
-            <p className="text-sm text-neutral-500">Tự đến lấy tại cửa hàng</p>
-          </div>
-        </div>
-
-        {/* Thông tin đơn hàng */}
-        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Món</span>
-            <span className="text-sm font-bold text-neutral-900">{listing.title}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Số lượng</span>
-            <span className="text-sm font-bold text-neutral-900">
-              {quantity} {unit}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
-            <span className="text-sm font-bold text-neutral-900">
-              {new Date(effectiveStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Địa điểm</span>
-            <span className="text-sm font-bold text-neutral-900 text-right max-w-[200px]">{listing.pickupAddress}</span>
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+          <button onClick={onCancel} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
+          </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isUrgent ? 'bg-amber-500/30' : 'bg-white/20'}`}>
+              <span className="material-symbols-outlined text-white text-[18px]">storefront</span>
+            </div>
+            <h3 className="font-extrabold text-white text-base">Xác nhận đặt trước</h3>
           </div>
         </div>
 
-        {/* Cảnh báo thời gian */}
-        <div className={`flex items-start gap-3 p-4 rounded-2xl mb-5 ${isUrgent ? 'bg-rose-50 border border-rose-200' : 'bg-amber-50 border border-amber-200'}`}>
-          <span className={`material-symbols-outlined text-[20px] ${isUrgent ? 'text-rose-600' : 'text-amber-600'}`}>
-            schedule
-          </span>
-          <div className="flex-1">
-            {isUrgent ? (
-              <>
-                <p className="text-sm font-bold text-rose-700">⚠️ Sắp hết giờ nhận hàng!</p>
-                <p className="text-xs text-rose-600 mt-1">
-                  Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-bold text-amber-700">Lưu ý về thời gian</p>
-                <p className="text-xs text-amber-600 mt-1">
-                  Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
-                </p>
-              </>
-            )}
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="px-5 py-4 space-y-3">
+            {/* Thông tin đơn hàng */}
+            <div className="bg-neutral-50 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Món</span>
+                <span className="text-sm font-bold text-neutral-900">{listing.title}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Số lượng</span>
+                <span className="text-sm font-bold text-neutral-900">
+                  {quantity} {unit}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+                <span className="text-sm font-bold text-neutral-900">
+                  {new Date(effectiveStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Địa điểm</span>
+                <span className="text-sm font-bold text-neutral-900 text-right max-w-[200px]">{listing.pickupAddress}</span>
+              </div>
+            </div>
+
+            {/* Cảnh báo thời gian */}
+            <div className={`flex items-start gap-3 p-4 rounded-2xl ${isUrgent ? 'bg-rose-50 border border-rose-200' : 'bg-amber-50 border border-amber-200'}`}>
+              <span className={`material-symbols-outlined text-[20px] ${isUrgent ? 'text-rose-600' : 'text-amber-600'}`}>
+                schedule
+              </span>
+              <div className="flex-1">
+                {isUrgent ? (
+                  <>
+                    <p className="text-sm font-bold text-rose-700">⚠️ Sắp hết giờ nhận hàng!</p>
+                    <p className="text-xs text-rose-600 mt-1">
+                      Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-amber-700">Lưu ý về thời gian</p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      Bạn cần đến trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex gap-3">
+        {/* Footer */}
+        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-3">
           <button
             onClick={onCancel}
             className="flex-1 py-3 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50 transition-colors"
@@ -910,66 +915,73 @@ function TimeInfoPopup({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/40 z-[60] flex items-start justify-center pt-[10vh] px-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10">
-            <span className="material-symbols-outlined text-[24px] text-primary">
-              schedule
-            </span>
-          </div>
-          <div>
-            <h3 className="font-bold text-lg text-neutral-900">Thông tin nhận hàng</h3>
-            <p className="text-sm text-neutral-500">Vui lòng đọc trước khi đặt</p>
-          </div>
-        </div>
-
-        {/* Thông tin thời gian */}
-        <div className="bg-neutral-50 rounded-2xl p-4 mb-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
-            <span className="text-sm font-bold text-neutral-900">
-              {new Date(pickupStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-500">Thời hạn đến</span>
-            <span className="text-sm font-bold text-rose-600">
-              Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-sm text-neutral-500">Địa điểm</span>
-            <span className="text-sm font-bold text-neutral-900 text-right flex-1">{listing.pickupAddress}</span>
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+          <button onClick={onClose} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
+          </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white text-[18px]">schedule</span>
+            </div>
+            <h3 className="font-extrabold text-white text-base">Thông tin nhận hàng</h3>
           </div>
         </div>
 
-        {/* Cảnh báo thời gian */}
-        <div className="flex items-start gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200">
-          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">
-            warning
-          </span>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
-            <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-              Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
-            </p>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="px-5 py-4 space-y-3">
+            {/* Thông tin thời gian */}
+            <div className="bg-neutral-50 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Giờ nhận hàng</span>
+                <span className="text-sm font-bold text-neutral-900">
+                  {new Date(pickupStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(pickupEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">Thời hạn đến</span>
+                <span className="text-sm font-bold text-rose-600">
+                  Trước {new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-sm text-neutral-500">Địa điểm</span>
+                <span className="text-sm font-bold text-neutral-900 text-right flex-1">{listing.pickupAddress}</span>
+              </div>
+            </div>
+
+            {/* Cảnh báo thời gian */}
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
+              <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">
+                warning
+              </span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-amber-700">Lưu ý quan trọng</p>
+                <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+                  Nếu bạn không đến nhận trước <strong>{new Date(deadlineToArrive).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</strong>, đơn đặt sẽ tự động bị hủy để dành suất cho người khác. Bạn cũng sẽ bị trừ điểm uy tín.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Button đóng */}
-        <button
-          onClick={onClose}
-          className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
-        >
-          Đã hiểu
-        </button>
+        {/* Footer */}
+        <div className="shrink-0 px-5 py-3 border-t border-neutral-100">
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
+          >
+            Đã hiểu
+          </button>
+        </div>
       </div>
     </div>
   );

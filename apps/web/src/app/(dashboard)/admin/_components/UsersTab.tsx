@@ -162,10 +162,23 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
   }
 
   return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="p-6 border-b border-neutral-100 flex items-start justify-between gap-3">
-          <div>
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-start justify-center pt-[10vh] px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+          <button onClick={onClose} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center" aria-label="Đóng">
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
+          </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white text-[18px]">person</span>
+            </div>
+            <h3 className="font-extrabold text-white text-base">Thông tin tài khoản</h3>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="px-5 py-4 space-y-5">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`badge ${role.cls}`}>{role.label}</span>
               {verif?.type === 'provider' && verif.businessType && (
@@ -181,124 +194,121 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
                 <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />{st.label}
               </span>
             </div>
-            <h2 className="font-extrabold text-2xl text-neutral-900 mt-1.5">{u.fullName}</h2>
-            <p className="text-sm text-neutral-500 mt-1">Đăng ký lúc {new Date(u.createdAt).toLocaleString('vi-VN')}</p>
-          </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0" aria-label="Đóng">
-            <span className="material-symbols-outlined text-neutral-700">close</span>
-          </button>
-        </div>
-
-        <div className="p-6 space-y-5 max-h-[62vh] overflow-y-auto">
-          <section>
-            <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin liên hệ</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
-              <div><p className="text-[11px] text-neutral-500">Email</p><p className="font-semibold text-neutral-900 break-all">{u.email}</p></div>
-              <div><p className="text-[11px] text-neutral-500">Số điện thoại</p><p className="font-semibold text-neutral-900">{contactPhone || '—'}</p></div>
-              <div>
-                <p className="text-[11px] text-neutral-500">{displayScore.source === 'rating' ? 'Rating cửa hàng' : 'Điểm uy tín'}</p>
-                <p className="font-semibold text-neutral-900">
-                  {displayScore.source === 'rating' ? `${displayScore.value.toFixed(1)}/5.0` : `${u.trustScore}/100 (${displayScore.value.toFixed(1)}/5.0)`}
-                </p>
-              </div>
+            <div>
+              <h2 className="font-extrabold text-2xl text-neutral-900">{u.fullName}</h2>
+              <p className="text-sm text-neutral-500 mt-1">Đăng ký lúc {new Date(u.createdAt).toLocaleString('vi-VN')}</p>
             </div>
-          </section>
 
-          {(u.faceImageUrl || u.idCardImageUrl) && (
             <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {u.faceImageUrl && (
-                  <button type="button" onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={mediaUrl(u.faceImageUrl)} alt="Ảnh khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">Ảnh selfie</span>
-                  </button>
-                )}
-                {u.idCardImageUrl && (
-                  <button type="button" onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={mediaUrl(u.idCardImageUrl)} alt="Ảnh CCCD đã đăng ký" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-neutral-800 text-white text-center py-1 font-bold">CCCD</span>
-                  </button>
-                )}
+              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin liên hệ</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+                <div><p className="text-[11px] text-neutral-500">Email</p><p className="font-semibold text-neutral-900 break-all">{u.email}</p></div>
+                <div><p className="text-[11px] text-neutral-500">Số điện thoại</p><p className="font-semibold text-neutral-900">{contactPhone || '—'}</p></div>
+                <div>
+                  <p className="text-[11px] text-neutral-500">{displayScore.source === 'rating' ? 'Rating cửa hàng' : 'Điểm uy tín'}</p>
+                  <p className="font-semibold text-neutral-900">
+                    {displayScore.source === 'rating' ? `${displayScore.value.toFixed(1)}/5.0` : `${u.trustScore}/100 (${displayScore.value.toFixed(1)}/5.0)`}
+                  </p>
+                </div>
               </div>
             </section>
-          )}
-          {!u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
-              <strong>Chưa đăng ký khuôn mặt (eKYC).</strong> Tài khoản này chưa hoàn tất xác minh khuôn mặt bắt buộc.
-            </div>
-          )}
 
-          {verif?.type === 'provider' && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin doanh nghiệp</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
-                <div className="sm:col-span-2"><p className="text-[11px] text-neutral-500">Tên cửa hàng</p><p className="font-bold text-neutral-900">{verif.businessName || u.fullName}</p></div>
-                <div><p className="text-[11px] text-neutral-500">Mã số thuế</p><p className="font-mono font-semibold text-neutral-900">{verif.taxCode ?? <span className="text-rose-600 italic">Không có (cá nhân/hộ gia đình)</span>}</p></div>
-                <div><p className="text-[11px] text-neutral-500">Liên hệ NCC</p><p className="font-semibold text-neutral-900">{contactPhone || '—'}</p></div>
-                {verif.address && (
-                  <div className="sm:col-span-2">
-                    <p className="text-[11px] text-neutral-500">Địa chỉ</p>
-                    <p className="font-semibold text-neutral-900">{verif.address}</p>
-                    {verif.lng != null && verif.lat != null && (
-                      <a href={`https://www.google.com/maps?q=${verif.lat},${verif.lng}`} target="_blank" rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-1">
-                        <span className="material-symbols-outlined text-sm">map</span>
-                        Mở Google Maps ({verif.lat.toFixed(5)}, {verif.lng.toFixed(5)})
-                      </a>
-                    )}
+            {(u.faceImageUrl || u.idCardImageUrl) && (
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Xác minh khuôn mặt (eKYC)</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {u.faceImageUrl && (
+                    <button type="button" onClick={() => setZoomedImg(mediaUrl(u.faceImageUrl!))}
+                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mediaUrl(u.faceImageUrl)} alt="Ảnh khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                      <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">Ảnh selfie</span>
+                    </button>
+                  )}
+                  {u.idCardImageUrl && (
+                    <button type="button" onClick={() => setZoomedImg(mediaUrl(u.idCardImageUrl!))}
+                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90" title="Bấm để phóng to">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mediaUrl(u.idCardImageUrl)} alt="Ảnh CCCD đã đăng ký" className="w-full h-full object-cover" />
+                      <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-neutral-800 text-white text-center py-1 font-bold">CCCD</span>
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
+            {!u.faceImageUrl && !u.idCardImageUrl && (u.role === 'receiver' || u.role === 'volunteer') && (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+                <strong>Chưa đăng ký khuôn mặt (eKYC).</strong> Tài khoản này chưa hoàn tất xác minh khuôn mặt bắt buộc.
+              </div>
+            )}
+
+            {verif?.type === 'provider' && (
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Thông tin doanh nghiệp</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 rounded-2xl p-4">
+                  <div className="sm:col-span-2"><p className="text-[11px] text-neutral-500">Tên cửa hàng</p><p className="font-bold text-neutral-900">{verif.businessName || u.fullName}</p></div>
+                  <div><p className="text-[11px] text-neutral-500">Mã số thuế</p><p className="font-mono font-semibold text-neutral-900">{verif.taxCode ?? <span className="text-rose-600 italic">Không có (cá nhân/hộ gia đình)</span>}</p></div>
+                  <div><p className="text-[11px] text-neutral-500">Liên hệ NCC</p><p className="font-semibold text-neutral-900">{contactPhone || '—'}</p></div>
+                  {verif.address && (
+                    <div className="sm:col-span-2">
+                      <p className="text-[11px] text-neutral-500">Địa chỉ</p>
+                      <p className="font-semibold text-neutral-900">{verif.address}</p>
+                      {verif.lng != null && verif.lat != null && (
+                        <a href={`https://www.google.com/maps?q=${verif.lat},${verif.lng}`} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline mt-1">
+                          <span className="material-symbols-outlined text-sm">map</span>
+                          Mở Google Maps ({verif.lat.toFixed(5)}, {verif.lng.toFixed(5)})
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  {verif.description && <div className="sm:col-span-2"><p className="text-[11px] text-neutral-500">Mô tả</p><p className="italic text-neutral-800">&ldquo;{verif.description}&rdquo;</p></div>}
+                </div>
+              </section>
+            )}
+
+            {verif?.type === 'provider' && (
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Bằng chứng ({verif.evidenceUrls?.length ?? 0} ảnh)</h3>
+                {!verif.evidenceUrls || verif.evidenceUrls.length === 0 ? (
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
+                    <strong>Không có ảnh minh chứng.</strong> Cân nhắc từ chối vì không đủ điều kiện xác minh.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {verif.evidenceUrls.map((eu: string, i: number) => (
+                      <button type="button" key={eu} onClick={() => setZoomedImg(mediaUrl(eu))}
+                        className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group" title="Bấm để phóng to">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={mediaUrl(eu)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
+                        <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">#{i + 1}</span>
+                        {i === 0 && <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">GPKD / ĐKKD</span>}
+                      </button>
+                    ))}
                   </div>
                 )}
-                {verif.description && <div className="sm:col-span-2"><p className="text-[11px] text-neutral-500">Mô tả</p><p className="italic text-neutral-800">&ldquo;{verif.description}&rdquo;</p></div>}
-              </div>
-            </section>
-          )}
+              </section>
+            )}
 
-          {verif?.type === 'provider' && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Bằng chứng ({verif.evidenceUrls?.length ?? 0} ảnh)</h3>
-              {!verif.evidenceUrls || verif.evidenceUrls.length === 0 ? (
-                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-sm text-rose-800">
-                  <strong>Không có ảnh minh chứng.</strong> Cân nhắc từ chối vì không đủ điều kiện xác minh.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {verif.evidenceUrls.map((eu: string, i: number) => (
-                    <button type="button" key={eu} onClick={() => setZoomedImg(mediaUrl(eu))}
-                      className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200 hover:opacity-90 group" title="Bấm để phóng to">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={mediaUrl(eu)} alt={`evidence-${i + 1}`} className="w-full h-full object-cover" />
-                      <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded">#{i + 1}</span>
-                      {i === 0 && <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-emerald-700 text-white text-center py-1 font-bold">GPKD / ĐKKD</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+            {verif?.type === 'volunteer' && (
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Mô tả năng lực</h3>
+                <div className="bg-neutral-50 rounded-2xl p-4 text-sm text-neutral-800">{verif.detail}</div>
+              </section>
+            )}
 
-          {verif?.type === 'volunteer' && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Mô tả năng lực</h3>
-              <div className="bg-neutral-50 rounded-2xl p-4 text-sm text-neutral-800">{verif.detail}</div>
-            </section>
-          )}
-
-          {verif && (
-            <section>
-              <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Ghi chú cho NCC/TNV (tuỳ chọn, sẽ gửi kèm kết quả)</h3>
-              <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder={verif.type === 'provider' ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.' : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'}
-                className="w-full px-4 py-3 bg-white border-2 border-neutral-200 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-neutral-400 resize-none" />
-            </section>
-          )}
+            {verif && (
+              <section>
+                <h3 className="text-xs font-bold uppercase text-neutral-500 mb-2">Ghi chú cho NCC/TNV (tuỳ chọn, sẽ gửi kèm kết quả)</h3>
+                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder={verif.type === 'provider' ? 'Ví dụ: GPKD rõ, địa chỉ khớp Google Maps. OK duyệt.' : 'Ví dụ: Chuyên môn đầu bếp phù hợp.'}
+                  className="w-full px-4 py-3 bg-white border-2 border-neutral-200 rounded-xl focus:ring-0 focus:border-emerald-600 transition-all font-medium outline-none placeholder:text-neutral-400 resize-none" />
+              </section>
+            )}
+          </div>
         </div>
 
-        <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex gap-3 justify-end">
+        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex gap-3 justify-end">
           <button onClick={onClose} disabled={review.isPending} className="px-5 py-2.5 bg-white border border-neutral-200 text-neutral-700 rounded-full font-bold text-sm hover:bg-neutral-50">Đóng</button>
           {verif ? (
             <>
@@ -322,9 +332,27 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
 
       {zoomedImg && (
         <div role="dialog" aria-modal="true" onClick={(e) => { e.stopPropagation(); setZoomedImg(null); }}
-          className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-6 cursor-zoom-out">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={zoomedImg} alt="zoom" className="max-w-full max-h-full object-contain cursor-default" onClick={(e) => e.stopPropagation()} />
+          className="fixed inset-0 z-[70] flex items-start justify-center pt-[10vh] px-4 bg-black/85 cursor-zoom-out">
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+              <button onClick={() => setZoomedImg(null)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center" aria-label="Đóng">
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
+              </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">image</span>
+                </div>
+                <h3 className="font-extrabold text-white text-base">Ảnh phóng to</h3>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1 min-h-0 bg-black">
+              <div className="px-5 py-4 flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={zoomedImg} alt="zoom" className="max-w-full max-h-[70vh] object-contain" />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
