@@ -15,7 +15,8 @@
     "prisma:migrate": "node ../../node_modules/prisma/build/index.js migrate dev",
     "prisma:studio": "node ../../node_modules/prisma/build/index.js studio",
     "seed": "node prisma/seed.js",
-    "db:refresh": "node prisma/refresh-listings.js"
+    "db:refresh": "node prisma/refresh-listings.js",
+    "trust:refund-early-checkin": "node prisma/refund-early-checkin-penalties.js"
   },
   "dependencies": {
     "@foodresq/types": "workspace:*",
