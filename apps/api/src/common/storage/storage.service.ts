@@ -1,5 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHash, randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { isAbsolute, join, relative, resolve } from 'path';
 
@@ -16,6 +21,8 @@ const EXT_BY_MIME: Record<string, string> = {
 @Injectable()
 export class StorageService {
   private readonly uploadRoot = join(process.cwd(), 'uploads');
+
+  constructor(private readonly config: ConfigService) {}
 
   /**
    * Kiểm tra file upload local còn tồn tại trước khi dùng làm bằng chứng
@@ -51,6 +58,10 @@ export class StorageService {
     }
 
     const safeSubdir = subdir.replace(/[^a-z0-9_-]/gi, '');
+    if (this.shouldUseCloudinary()) {
+      return this.saveToCloudinary(file, safeSubdir, ext);
+    }
+
     const dir = join(this.uploadRoot, safeSubdir);
     await fs.mkdir(dir, { recursive: true });
 
@@ -58,6 +69,86 @@ export class StorageService {
     await fs.writeFile(join(dir, filename), file.buffer);
 
     return `/uploads/${safeSubdir}/${filename}`;
+  }
+
+  private shouldUseCloudinary(): boolean {
+    const cloudName = this.config.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
+    const apiKey = this.config.get<string>('CLOUDINARY_API_KEY')?.trim();
+    const apiSecret = this.config.get<string>('CLOUDINARY_API_SECRET')?.trim();
+    const explicitDriver = this.config.get<string>('STORAGE_DRIVER')?.trim();
+    const hasAnyCloudinaryEnv = !!(cloudName || apiKey || apiSecret);
+
+    if (explicitDriver === 'cloudinary' || hasAnyCloudinaryEnv) {
+      if (!cloudName || !apiKey || !apiSecret) {
+        throw new InternalServerErrorException(
+          'Cloudinary storage is not fully configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET.',
+        );
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  private async saveToCloudinary(
+    file: Express.Multer.File,
+    subdir: string,
+    ext: string,
+  ): Promise<string> {
+    const cloudName = this.config.getOrThrow<string>('CLOUDINARY_CLOUD_NAME');
+    const apiKey = this.config.getOrThrow<string>('CLOUDINARY_API_KEY');
+    const apiSecret = this.config.getOrThrow<string>('CLOUDINARY_API_SECRET');
+    const rootFolder = this.config.get<string>('CLOUDINARY_FOLDER')?.trim() || 'foodresq';
+    const folder = `${rootFolder}/${subdir}`;
+    const publicId = randomUUID();
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const signature = this.signCloudinaryParams(
+      { folder, public_id: publicId, timestamp },
+      apiSecret,
+    );
+
+    const arrayBuffer = file.buffer.buffer.slice(
+      file.buffer.byteOffset,
+      file.buffer.byteOffset + file.buffer.byteLength,
+    ) as ArrayBuffer;
+    const body = new FormData();
+    body.append('file', new Blob([arrayBuffer], { type: file.mimetype }), `${publicId}.${ext}`);
+    body.append('api_key', apiKey);
+    body.append('timestamp', timestamp);
+    body.append('folder', folder);
+    body.append('public_id', publicId);
+    body.append('signature', signature);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      { method: 'POST', body },
+    );
+    const payload = (await response.json().catch(() => null)) as {
+      secure_url?: string;
+      error?: { message?: string };
+    } | null;
+
+    if (!response.ok || !payload?.secure_url) {
+      throw new InternalServerErrorException(
+        payload?.error?.message ?? 'Cloudinary upload failed.',
+      );
+    }
+
+    return payload.secure_url;
+  }
+
+  private signCloudinaryParams(
+    params: Record<string, string>,
+    apiSecret: string,
+  ): string {
+    const toSign = Object.entries(params)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&');
+
+    return createHash('sha1')
+      .update(`${toSign}${apiSecret}`)
+      .digest('hex');
   }
 
   // Chống giả mạo Content-Type từ client: đối chiếu magic bytes của file thật
