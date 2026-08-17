@@ -146,16 +146,16 @@ describe('quantityTotal maximum', () => {
   });
 });
 
-// ─── pickupStartTime ≥ now + 30 min ───────────────────────────────────────────
+// ─── pickupStartTime can start now ────────────────────────────────────────────
 
 describe('pickupStartTime minimum lead time', () => {
-  it('rejects start time less than 30 min from now', () => {
-    assert.ok(errPaths({ pickupStartTime: min(29) }).includes('pickupStartTime'));
+  it('rejects start time in the past', () => {
+    assert.ok(errPaths({ pickupStartTime: min(-2) }).includes('pickupStartTime'));
   });
 
-  it('accepts start time exactly 30 min from now', () => {
+  it('accepts start time at the current time', () => {
     assert.equal(
-      parse({ pickupStartTime: min(30), pickupEndTime: min(60), expiryTime: min(90) }).success,
+      parse({ pickupStartTime: min(0), pickupEndTime: min(60), expiryTime: min(90) }).success,
       true,
     );
   });

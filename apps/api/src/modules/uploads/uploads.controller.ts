@@ -35,7 +35,7 @@ export class UploadsController {
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload 1 ảnh (listing/avatar/verification) → trả về URL phục vụ qua /uploads.' })
+  @ApiOperation({ summary: 'Upload 1 ảnh (listing/avatar/verification) → trả về URL ảnh.' })
   @ApiQuery({ name: 'kind', enum: Object.keys(FOLDER_BY_KIND), required: true })
   @ApiBody({
     schema: {
@@ -59,6 +59,13 @@ export class UploadsController {
     const folder = FOLDER_BY_KIND[kind];
     if (!folder) {
       throw new BadRequestException(`kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`);
+    }
+    // Ảnh listing cần hiển thị đồng nhất trên web + mobile trong môi trường dev
+    // đang dùng DB cloud nhưng filesystem local. Nếu trả /uploads/... thì DB vẫn
+    // còn path sau khi file local mất/đổi máy, receiver sẽ rơi về fallback.
+    // Data URL hơi nặng hơn nhưng bền và render trực tiếp được ở cả <img> lẫn expo-image.
+    if (kind === 'listing') {
+      return { url: `data:${file.mimetype};base64,${file.buffer.toString('base64')}` };
     }
     const url = await this.storage.saveImage(file, folder);
     return { url };

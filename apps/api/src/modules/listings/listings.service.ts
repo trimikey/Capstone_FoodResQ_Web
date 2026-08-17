@@ -12,21 +12,30 @@ import { QueryListingDto } from './dto/query-listing.dto';
 
 const DEFAULT_RADIUS_KM = 5;
 const DEFAULT_LIMIT = 20;
-const LOCAL_UPLOAD_HOSTS = new Set(['10.0.2.2', 'localhost', '127.0.0.1']);
+
+function uploadPathFromPathname(pathname: string): string | null {
+  if (pathname.startsWith('/api/v1/uploads/')) return pathname.replace(/^\/api\/v1/, '');
+  if (pathname.startsWith('/uploads/')) return pathname;
+  return null;
+}
 
 function normalizeListingImageUrls(imageUrls: string[] | undefined): string[] {
   return (imageUrls ?? [])
     .map((value) => {
       const raw = value.trim();
       if (!raw) return '';
-      const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+      const normalizedRaw = raw.startsWith('api/v1/uploads/')
+        ? `/${raw}`
+        : raw.startsWith('uploads/')
+          ? `/${raw}`
+          : raw;
+      const uploadPath = uploadPathFromPathname(normalizedRaw);
       if (uploadPath) return uploadPath;
       if (!/^https?:\/\//i.test(raw)) return raw;
       try {
         const url = new URL(raw);
-        return LOCAL_UPLOAD_HOSTS.has(url.hostname) && url.pathname.startsWith('/uploads/')
-          ? `${url.pathname}${url.search}`
-          : raw;
+        const absoluteUploadPath = uploadPathFromPathname(url.pathname);
+        return absoluteUploadPath ? `${absoluteUploadPath}${url.search}` : raw;
       } catch {
         return raw;
       }
