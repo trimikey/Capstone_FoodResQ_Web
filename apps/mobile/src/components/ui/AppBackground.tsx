@@ -18,13 +18,14 @@ export function AppBackground({ children }: Props) {
       imageStyle={styles.image}
     >
       <View pointerEvents="none" style={styles.overlay} />
-      <ImageBackground
-        pointerEvents="none"
-        source={foodPattern}
-        resizeMode="repeat"
-        style={styles.pattern}
-        imageStyle={styles.patternImage}
-      />
+      <View pointerEvents="none" style={styles.pattern}>
+        <ImageBackground
+          source={foodPattern}
+          resizeMode="repeat"
+          style={StyleSheet.absoluteFill}
+          imageStyle={styles.patternImage}
+        />
+      </View>
       <View pointerEvents="none" style={styles.topPlate} />
       <View pointerEvents="none" style={styles.sideCut} />
       <View pointerEvents="none" style={styles.orangeMark} />

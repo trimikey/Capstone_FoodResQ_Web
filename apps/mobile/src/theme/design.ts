@@ -64,6 +64,7 @@ export const mobileColors = {
   surface: palette.surface,
   surfaceContainerLowest: palette.surface,
   surfaceContainerLow: palette.surfaceMuted,
+  surfaceContainerHighest: palette.surfaceStrong,
   surfaceVariant: palette.surfaceMuted,
   onSurface: palette.text,
   onSurfaceVariant: palette.textMuted,
