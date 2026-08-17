@@ -255,8 +255,8 @@ export function makeCreateListingSchema(now: Date = new Date()) {
       { message: 'Số lượng phải là số nguyên cho đơn vị phần/cái/hộp', path: ['quantityTotal'] }
     )
     .refine(
-      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() + 30 * 60_000,
-      { message: 'Giờ bắt đầu phải ít nhất 30 phút từ bây giờ', path: ['pickupStartTime'] }
+      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() - 60_000,
+      { message: 'Giờ bắt đầu không được ở quá khứ', path: ['pickupStartTime'] }
     )
     .refine(
       (d) => !d.pickupEndTime || !d.pickupStartTime || d.pickupEndTime > d.pickupStartTime,

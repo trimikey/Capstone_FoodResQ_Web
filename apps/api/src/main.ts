@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
@@ -10,13 +11,18 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { corsOriginDelegate } from './common/utils/cors-origins';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    bodyParser: false,
+  });
 
   // Security — cho phép FE (origin khác) load ảnh proof từ /uploads
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
   // Ảnh upload (dev: local disk; prod: chuyển sang S3/R2 — CLAUDE.md §6)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ limit: '10mb', extended: true }));
   app.enableCors({
     origin: corsOriginDelegate,
     credentials: true,
