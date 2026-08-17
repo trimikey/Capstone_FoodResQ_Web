@@ -1590,32 +1590,25 @@ function ImageUploader({
 
   useEffect(() => {
     if (value) return;
-    setLocalPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
+    setLocalPreviewUrl(null);
   }, [value]);
 
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
-    };
-  }, [localPreviewUrl]);
+  function readLocalPreview(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
 
   async function onPick(file: File) {
-    const preview = URL.createObjectURL(file);
-    setLocalPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return preview;
-    });
     try {
+      setLocalPreviewUrl(await readLocalPreview(file));
       const res = await upload.mutateAsync(file);
       onChange(res.url);
     } catch (e) {
-      setLocalPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
+      setLocalPreviewUrl(null);
       toast.error(errMsg(e, 'Tai anh that bai'));
     }
   }
@@ -1629,10 +1622,7 @@ function ImageUploader({
     try {
       const u = new URL(trimmed);
       if (!/^https?:$/.test(u.protocol)) throw new Error();
-      setLocalPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
+      setLocalPreviewUrl(null);
       onChange(trimmed);
       setUrl('');
       setMode('upload');
@@ -1663,10 +1653,7 @@ function ImageUploader({
           <button
             type="button"
             onClick={() => {
-              setLocalPreviewUrl((prev) => {
-                if (prev) URL.revokeObjectURL(prev);
-                return null;
-              });
+              setLocalPreviewUrl(null);
               onChange(null);
             }}
             className="cm-upload-preview-remove"
