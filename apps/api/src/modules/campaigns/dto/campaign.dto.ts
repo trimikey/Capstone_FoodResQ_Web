@@ -403,6 +403,46 @@ export class ConfirmDonationDto {
   note?: string;
 }
 
+/**
+ * Charity phân công SHIPPER đi nhận quyên góp — nhận nhiều người cùng lúc.
+ * Khung giờ lấy hàng phải nằm trong ca trực của TỪNG shipper — service validate
+ * lại, DTO chỉ chặn sai định dạng.
+ */
+export class AssignDonationPickupDto {
+  @ApiProperty({ description: 'DS id bản ghi phân công ca (campaign_volunteer_assignments) — chỉ vai trò Giao hàng', type: [String] })
+  @IsArray({ message: 'assignmentIds phải là mảng' })
+  @ArrayMinSize(1, { message: 'Chọn ít nhất 1 shipper' })
+  @ArrayMaxSize(10, { message: 'Tối đa 10 shipper cho một khoản góp' })
+  @IsUUID('4', { each: true, message: 'assignmentIds phải là UUID' })
+  assignmentIds!: string[];
+
+  @ApiProperty({ example: '2026-08-18', description: 'Ngày lấy hàng — phải trùng ngày trực của TNV' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'pickupDate phải có dạng YYYY-MM-DD' })
+  pickupDate!: string;
+
+  @ApiProperty({ example: '09:00' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'pickupStartTime phải có dạng HH:mm' })
+  pickupStartTime!: string;
+
+  @ApiProperty({ example: '10:30' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'pickupEndTime phải có dạng HH:mm' })
+  pickupEndTime!: string;
+}
+
+/**
+ * Charity phân công shipper CHIẾN DỊCH đi nhận đơn nguyên liệu NCC đã chấp nhận.
+ * Không nhận ngày/giờ — dùng đúng lịch hẹn đã chốt trên đơn; service đối chiếu
+ * ca trực của từng shipper với lịch đó.
+ */
+export class AssignRequestPickupDto {
+  @ApiProperty({ description: 'DS id bản ghi phân công ca (campaign_volunteer_assignments) — chỉ vai trò Giao hàng', type: [String] })
+  @IsArray({ message: 'assignmentIds phải là mảng' })
+  @ArrayMinSize(1, { message: 'Chọn ít nhất 1 shipper' })
+  @ArrayMaxSize(10, { message: 'Tối đa 10 shipper cho một đơn' })
+  @IsUUID('4', { each: true, message: 'assignmentIds phải là UUID' })
+  assignmentIds!: string[];
+}
+
 /** Charity gửi yêu cầu hợp tác đến provider */
 /**
  * Chi tiết "đơn xin thực phẩm" bếp gửi NCC — lưu nguyên khối vào
@@ -440,6 +480,11 @@ export class DemandDetailsDto {
   @Max(100000, { message: 'Số suất dự kiến tối đa 100.000' })
   @Type(() => Number)
   expectedServings?: number;
+
+  @ApiPropertyOptional({ example: '2026-08-19', description: 'NGÀY cần nhận nguyên liệu tại bếp (YYYY-MM-DD)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày cần nhận phải theo định dạng YYYY-MM-DD' })
+  neededDate?: string;
 
   @ApiPropertyOptional({ example: '16:00', description: 'Giờ bắt đầu cần nhận tại bếp (HH:mm)' })
   @IsOptional()

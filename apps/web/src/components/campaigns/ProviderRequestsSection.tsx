@@ -17,6 +17,17 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   expired:   { label: 'Hết hạn', cls: 'bg-neutral-100 text-neutral-500 border border-neutral-200' },
 };
 
+const TRANSPORT_STATUS_LABEL: Record<string, string> = {
+  pending: 'Đang tìm shipper',
+  assigned: 'Shipper đã nhận chuyến',
+  heading_to_provider: 'Shipper đang đến lấy hàng',
+  picked_up: 'Shipper đã lấy hàng',
+  in_transit: 'Đang giao đến bếp',
+  delivered: 'Đã bàn giao — chờ bếp xác nhận',
+  received: 'Giao thành công — bếp đã xác nhận nhận hàng',
+  failed: 'Giao hàng thất bại',
+};
+
 export default function ProviderRequestsSection() {
   const { data: requests, isLoading } = useProviderRequests();
   const review = useReviewProviderRequest();
@@ -132,12 +143,16 @@ function RequestCard({
   loading: boolean;
   compact?: boolean;
 }) {
+  // Đơn ĐÃ XỬ LÝ hiển thị gọn, nhưng NCC vẫn cần tra lại chi tiết thoả thuận
+  // (bếp cần gì, lịch hẹn lấy hàng, ghi chú) — bấm "Chi tiết" để bung ra.
+  const [expanded, setExpanded] = useState(false);
   const meta = STATUS_META[req.status] ?? { label: req.status, cls: 'bg-neutral-100 text-neutral-600' };
   const orgName = req.receiver.organizationName ?? req.receiver.user.fullName;
   const isPending = req.status === 'pending';
   const date = req.createdAt ? new Date(req.createdAt).toLocaleString('vi-VN', {
     day: '2-digit', month: 'short', year: 'numeric',
   }) : '';
+  const showDetails = !compact || expanded;
 
   return (
     <div className="bg-white rounded-xl p-4 border border-neutral-200 shadow-sm space-y-3">
@@ -162,21 +177,68 @@ function RequestCard({
                 </p>
               )}
             </div>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${meta.cls}`}>
-              {meta.label}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${meta.cls}`}>
+                {meta.label}
+              </span>
+              {compact && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-700 hover:underline"
+                >
+                  Chi tiết
+                  <span className="material-symbols-outlined text-[14px]">
+                    {expanded ? 'expand_less' : 'expand_more'}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Chi tiết nhu cầu nguyên liệu bếp khai */}
-      {req.demandDetails && !compact && <DemandDetailsCard d={req.demandDetails} />}
+      {req.demandDetails && showDetails && <DemandDetailsCard d={req.demandDetails} />}
+
+      {/* Lịch hẹn lấy hàng đã chốt (đơn accepted) */}
+      {showDetails && req.status === 'accepted' && (req.scheduledDate || req.pickupStartTime) && (
+        <div className="bg-emerald-50 rounded-lg px-3 py-2 text-sm text-emerald-800 border border-emerald-200">
+          <span className="font-semibold text-[11px] uppercase tracking-wide">Lịch hẹn lấy hàng:</span>{' '}
+          {req.scheduledDate
+            ? new Date(req.scheduledDate).toLocaleDateString('vi-VN', { timeZone: 'UTC' })
+            : ''}
+          {req.pickupStartTime ? ` · ${req.pickupStartTime}${req.pickupEndTime ? `–${req.pickupEndTime}` : ''}` : ''}
+          {req.needsTransport ? ' · Hệ thống tìm TNV giao hàng' : ' · TNV của bếp tự đến lấy'}
+        </div>
+      )}
 
       {/* Lời nhắn */}
-      {req.message && !compact && (
+      {req.message && showDetails && (
         <div className="bg-amber-50 rounded-lg px-3 py-2 text-sm text-neutral-700 border-l-2 border-amber-300">
           <span className="font-semibold text-amber-700 text-[11px] uppercase tracking-wide">Lời nhắn:</span>
           <p className="mt-1">{req.message}</p>
+        </div>
+      )}
+
+      {/* Kết quả giao hàng — NCC biết bếp đã nhận thành công + số lượng thực nhận */}
+      {showDetails && req.transport && (
+        <div
+          className={`rounded-lg px-3 py-2 text-sm border ${
+            req.transport.status === 'received'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : req.transport.status === 'failed'
+                ? 'bg-rose-50 border-rose-200 text-rose-700'
+                : 'bg-sky-50 border-sky-200 text-sky-700'
+          }`}
+        >
+          <span className="font-semibold text-[11px] uppercase tracking-wide">Vận chuyển:</span>{' '}
+          {TRANSPORT_STATUS_LABEL[req.transport.status] ?? req.transport.status}
+          {req.transport.receivedAt && (
+            <> · bếp xác nhận lúc {new Date(req.transport.receivedAt).toLocaleString('vi-VN')}</>
+          )}
+          {req.transport.receiptNote && <p className="mt-1 text-xs">Biên nhận: {req.transport.receiptNote}</p>}
+          {req.transport.failureReason && <p className="mt-1 text-xs">Lý do: {req.transport.failureReason}</p>}
         </div>
       )}
 
@@ -239,11 +301,11 @@ function DemandDetailsCard({ d }: { d: DemandDetails }) {
     d.expectedServings != null
       ? { icon: 'restaurant', label: 'Số suất dự kiến', value: `${d.expectedServings} suất` }
       : null,
-    d.neededFrom || d.neededTo
+    d.neededDate || d.neededFrom || d.neededTo
       ? {
           icon: 'schedule',
           label: 'Cần có mặt tại bếp',
-          value: `${d.neededFrom ?? '—'} → ${d.neededTo ?? '—'}`,
+          value: `${d.neededDate ? `${new Date(`${d.neededDate}T00:00:00Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC' })} · ` : ''}${d.neededFrom ?? '—'} → ${d.neededTo ?? '—'}`,
         }
       : null,
   ].filter((r): r is { icon: string; label: string; value: string } => r !== null);

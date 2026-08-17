@@ -174,6 +174,84 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
         )}
       </div>
 
+      {/* Khoản quyên góp NCC mà tổ chức phân công TNV này đi nhận — khung giờ
+          luôn nằm trong ca trực (BE validate), kèm địa chỉ + SĐT để đi luôn. */}
+      {(t.donationPickups ?? []).length > 0 && (
+        <div className="mt-3 rounded-xl border border-honey-200 bg-honey-50/70 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-honey-800">
+            <span className="material-symbols-outlined text-[15px]">volunteer_activism</span>
+            Đi nhận quyên góp ({(t.donationPickups ?? []).length})
+          </p>
+          <ul className="mt-2 space-y-2">
+            {(t.donationPickups ?? []).map((d) => (
+              <li key={d.id} className="rounded-lg bg-white/80 p-2 text-[11px] text-neutral-600">
+                <p className="text-xs font-bold text-neutral-800">
+                  {d.quantity ? `${d.quantity} ` : ''}
+                  {d.itemName} · từ {d.provider.businessName}
+                </p>
+                <p className="mt-0.5">
+                  <span className="material-symbols-outlined text-[13px] align-text-bottom">schedule</span>{' '}
+                  {d.pickupDate ? `${formatVnDate(d.pickupDate)} · ` : ''}
+                  {d.pickupStartTime}-{d.pickupEndTime}
+                </p>
+                {d.provider.address && (
+                  <p className="mt-0.5">
+                    <span className="material-symbols-outlined text-[13px] align-text-bottom">place</span>{' '}
+                    {d.provider.address}
+                  </p>
+                )}
+                {d.provider.contactPhone && (
+                  <a href={`tel:${d.provider.contactPhone}`} className="mt-0.5 inline-block font-bold text-emerald-700 hover:underline">
+                    <span className="material-symbols-outlined text-[13px] align-text-bottom">call</span>{' '}
+                    {d.provider.contactPhone}
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Đơn nguyên liệu NCC mà tổ chức cử shipper này đi nhận — thay cho vòng
+          tìm shipper hệ thống; khung giờ luôn nằm trong ca trực. */}
+      {(t.requestPickups ?? []).length > 0 && (
+        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-sky-800">
+            <span className="material-symbols-outlined text-[15px]">package_2</span>
+            Đi nhận nguyên liệu NCC ({(t.requestPickups ?? []).length})
+          </p>
+          <ul className="mt-2 space-y-2">
+            {(t.requestPickups ?? []).map((p) => (
+              <li key={p.id} className="rounded-lg bg-white/80 p-2 text-[11px] text-neutral-600">
+                <p className="text-xs font-bold text-neutral-800">
+                  {p.ingredientName ?? 'Nguyên liệu'}
+                  {p.quantityKg != null ? ` · ${p.quantityKg} kg` : ''}
+                  {' · từ '}
+                  {p.provider.businessName}
+                </p>
+                <p className="mt-0.5">
+                  <span className="material-symbols-outlined text-[13px] align-text-bottom">schedule</span>{' '}
+                  {p.pickupDate ? `${formatVnDate(p.pickupDate)} · ` : ''}
+                  {p.pickupStartTime}-{p.pickupEndTime}
+                </p>
+                {p.provider.address && (
+                  <p className="mt-0.5">
+                    <span className="material-symbols-outlined text-[13px] align-text-bottom">place</span>{' '}
+                    {p.provider.address}
+                  </p>
+                )}
+                {p.provider.contactPhone && (
+                  <a href={`tel:${p.provider.contactPhone}`} className="mt-0.5 inline-block font-bold text-emerald-700 hover:underline">
+                    <span className="material-symbols-outlined text-[13px] align-text-bottom">call</span>{' '}
+                    {p.provider.contactPhone}
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Đợt phát tổ chức giao cho shipper này — kèm địa chỉ để đi luôn.
           Đây là nơi shipper quản lý việc phát tận điểm; /deliveries chỉ quản lý các
           đơn `deliveries` (chở hàng), không có dữ liệu của đợt phát. */}

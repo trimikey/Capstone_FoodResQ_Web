@@ -34,18 +34,31 @@ export interface Campaign {
     status: string;
     confirmationStatus?: 'pending' | 'confirmed' | 'declined';
     confirmedAt?: string | null;
+    /** Ngày trực + ca — dùng để lọc TNV đủ điều kiện đi nhận quyên góp. */
+    workDate?: string | null;
+    shiftId?: string | null;
+    shift?: { label: string; startTime: string; endTime: string; endDayOffset?: number } | null;
     volunteer: { user: { fullName: string; avatarUrl: string | null } };
   }[];
-  donations?: {
-    id: string;
-    itemName: string;
-    quantity: string | null;
-    note?: string | null;
-    status: string;
-    provider: { businessName: string };
-    receivedAt?: string | null;
-  }[];
+  donations?: CampaignDonationItem[];
   supplyProgress?: SupplyProgressItem[];
+}
+
+/** 1 khoản NCC hứa góp cho chiến dịch, kèm lịch đi nhận nếu tổ chức đã phân công. */
+export interface CampaignDonationItem {
+  id: string;
+  itemName: string;
+  quantity: string | null;
+  note?: string | null;
+  status: string;
+  createdAt?: string;
+  receivedAt?: string | null;
+  provider: { businessName: string; address?: string | null; contactPhone?: string | null };
+  pickupDate?: string | null;
+  pickupStartTime?: string | null;
+  pickupEndTime?: string | null;
+  /** DS assignment id shipper được cử đi nhận — tra tên qua campaign.assignments. */
+  pickupAssigneeIds?: string[];
 }
 
 export interface SupplyProgressItem {
@@ -135,6 +148,27 @@ export interface MyTask {
     completedAt: string | null;
     points: DistributionPoint[];
   }>;
+  /** Khoản quyên góp NCC mà TNV này được tổ chức phân công đi nhận (trong ca trực). */
+  donationPickups?: Array<{
+    id: string;
+    itemName: string;
+    quantity: string | null;
+    status: string;
+    pickupDate: string | null;
+    pickupStartTime: string | null;
+    pickupEndTime: string | null;
+    provider: { businessName: string; address: string | null; contactPhone: string | null };
+  }>;
+  /** Đơn nguyên liệu NCC mà tổ chức cử shipper này đi nhận (trong ca trực). */
+  requestPickups?: Array<{
+    id: string;
+    ingredientName: string | null;
+    quantityKg: number | null;
+    pickupDate: string | null;
+    pickupStartTime: string | null;
+    pickupEndTime: string | null;
+    provider: { businessName: string; address: string | null; contactPhone: string | null };
+  }>;
 }
 
 export function useCampaigns() {
@@ -211,6 +245,8 @@ export interface CampaignManageParticipant {
   confirmationStatus?: 'pending' | 'confirmed' | 'declined';
   confirmedAt?: string | null;
   shiftId: string | null;
+  /** Ca trực kèm giờ — dùng đối chiếu khung giờ lấy hàng khi phân công shipper. */
+  shift?: { id: string; label: string; role: 'chef' | 'waiter' | 'shipper' | null; startTime: string; endTime: string; endDayOffset?: number } | null;
   /** Ngày TNV đăng ký trực (YYYY-MM-DD) — ca chỉ có giờ nên ngày nằm ở đây. */
   workDate: string | null;
   fullName: string;
@@ -610,6 +646,48 @@ export function useConfirmDonation() {
   });
 }
 
+// Charity: phân công (nhiều) shipper đi nhận quyên góp — BE validate từng người
+// có ca trực phủ trọn khung giờ lấy hàng
+export function useAssignDonationPickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      donationId: string;
+      assignmentIds: string[];
+      pickupDate: string;
+      pickupStartTime: string;
+      pickupEndTime: string;
+    }) =>
+      (
+        await api.patch(`/campaigns/donations/${p.donationId}/assign-pickup`, {
+          assignmentIds: p.assignmentIds,
+          pickupDate: p.pickupDate,
+          pickupStartTime: p.pickupStartTime,
+          pickupEndTime: p.pickupEndTime,
+        })
+      ).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+// Charity: phân công shipper chiến dịch đi nhận đơn nguyên liệu NCC — BE dùng
+// đúng lịch hẹn trên đơn và validate ca trực từng shipper; dừng vòng tìm hệ thống.
+export function useAssignRequestPickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { requestId: string; assignmentIds: string[] }) =>
+      (
+        await api.patch(`/campaigns/requests/${p.requestId}/assign-pickup`, {
+          assignmentIds: p.assignmentIds,
+        })
+      ).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+    },
+  });
+}
+
 // TNV: chuyển bước công việc (kèm ảnh minh chứng tuỳ chọn)
 export function useAdvanceTask() {
   const qc = useQueryClient();
@@ -656,7 +734,15 @@ export interface ProviderRequestItem {
   /// True nếu BE đã tạo delivery + đang tìm TNV giao hàng.
   needsTransport: boolean;
   /// Trạng thái của campaign_transports gắn với request này (nếu có).
-  transport: { id: string; status: 'pending' | 'assigned' | 'delivered' | 'failed'; deliveryId: string | null } | null;
+  transport: {
+    id: string;
+    status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'received' | 'failed';
+    deliveryId: string | null;
+    /** Bếp đã xác nhận nhận hàng lúc nào + biên nhận (gồm số kg thực nhận). */
+    receivedAt?: string | null;
+    receiptNote?: string | null;
+    failureReason?: string | null;
+  } | null;
   receiver: {
     id: string;
     organizationName: string | null;
@@ -710,7 +796,8 @@ export function useReviewProviderRequest() {
 /** Charity: xem danh sách request đã gửi đến provider */
 export interface CampaignTransportItem {
   id: string;
-  status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'received' | 'failed';
+  /** 'cancelled' = tổ chức đã tự phân công shipper chiến dịch, dừng vòng tìm hệ thống. */
+  status: 'pending' | 'assigned' | 'heading_to_provider' | 'picked_up' | 'in_transit' | 'delivered' | 'received' | 'failed' | 'cancelled';
   deliveryId: string | null;
   assignedAt: string | null;
   pickedUpAt: string | null;
@@ -720,6 +807,8 @@ export interface CampaignTransportItem {
   failureReason: string | null;
   receiptNote: string | null;
   receiptPhotoUrl: string | null;
+  /** Shipper đang nhận chuyến (null khi chưa ai nhận). */
+  delivery?: { shipper: { user: { fullName: string; phone: string | null } } | null } | null;
 }
 
 /**
@@ -732,6 +821,8 @@ export interface DemandDetails {
   ingredientName?: string;
   quantityKg?: number;
   expectedServings?: number;
+  /** Ngày bếp cần nhận nguyên liệu (YYYY-MM-DD). */
+  neededDate?: string;
   neededFrom?: string;
   neededTo?: string;
   radiusKm?: number;
@@ -819,9 +910,13 @@ export interface SentRequestItem {
   durationMonths: number | null;
   reviewedAt: string | null;
   reviewedNote: string | null;
+  /** Ngày hẹn lấy hàng (chốt khi NCC chấp nhận đơn). */
+  scheduledDate: string | null;
   pickupStartTime: string | null;
   pickupEndTime: string | null;
   needsTransport: boolean;
+  /** DS assignment id shipper chiến dịch được tổ chức cử đi nhận đơn này. */
+  pickupAssigneeIds?: string[];
   createdAt: string;
   transport: CampaignTransportItem | null;
   provider: {
@@ -846,8 +941,13 @@ export function useSentRequests() {
 export function useConfirmCampaignTransportReceipt() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { campaignId: string; transportId: string }) =>
-      (await api.post(`/campaigns/${p.campaignId}/transports/${p.transportId}/receive`)).data.data,
+    mutationFn: async (p: { campaignId: string; transportId: string; note?: string; receiptPhotoUrl?: string }) =>
+      (
+        await api.post(`/campaigns/${p.campaignId}/transports/${p.transportId}/receive`, {
+          ...(p.note ? { note: p.note } : {}),
+          ...(p.receiptPhotoUrl ? { receiptPhotoUrl: p.receiptPhotoUrl } : {}),
+        })
+      ).data.data,
     onSuccess: (_data, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });

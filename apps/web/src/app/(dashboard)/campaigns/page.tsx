@@ -23,6 +23,7 @@ import { useMe } from '@/hooks/useProfile';
 import { useProviders } from '@/hooks/useProviders';
 import CampaignCard from './_components/CampaignCard';
 import CampaignTaskCard from './_components/CampaignTaskCard';
+import DonationDetailModal from './_components/DonationDetailModal';
 import MyCampaignCard from './_components/MyCampaignCard';
 import CompletedCampaignsSection from './_components/CompletedCampaignsSection';
 import CreateCampaignModal from './_components/CreateCampaignModal';
@@ -671,8 +672,17 @@ function ActiveCard({ c }: { c: Campaign }) {
 }
 
 function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
+  // Bấm vào dòng "hứa góp" → mở chi tiết đơn quyên góp + phân công TNV đi nhận
+  const [selected, setSelected] = useState<{ campaign: Campaign; donation: NonNullable<Campaign['donations']>[number] } | null>(null);
+
   const events = useMemo(() => {
-    const list: Array<{ kind: 'apply' | 'donate' | 'complete'; title: React.ReactNode; time: string; variant: 'mint' | 'ember' | 'sky' | 'honey' }> = [];
+    const list: Array<{
+      kind: 'apply' | 'donate' | 'complete';
+      title: React.ReactNode;
+      time: string;
+      variant: 'mint' | 'ember' | 'sky' | 'honey';
+      donation?: { campaign: Campaign; donation: NonNullable<Campaign['donations']>[number] };
+    }> = [];
     for (const c of campaigns) {
       for (const a of c.assignments ?? []) {
         list.push({
@@ -700,8 +710,13 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
               cho <b>{c.title}</b>
             </>
           ),
-          time: 'Gần đây',
+          time: (d.pickupAssigneeIds ?? []).length > 0
+            ? `Đã phân công ${(d.pickupAssigneeIds ?? []).length} shipper đi nhận`
+            : d.status === 'pledged'
+              ? 'Bấm để xem chi tiết & phân công shipper đi nhận'
+              : 'Gần đây',
           variant: 'honey',
+          donation: { campaign: c, donation: d },
         });
       }
       if (c.status === 'completed') {
@@ -734,7 +749,12 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
       </div>
       <div className="cm-feed">
         {events.map((e, i) => (
-          <div key={i} className="cm-feed-item">
+          <div
+            key={i}
+            className={`cm-feed-item ${e.donation ? 'cursor-pointer hover:bg-neutral-50' : ''}`}
+            onClick={e.donation ? () => setSelected(e.donation!) : undefined}
+            role={e.donation ? 'button' : undefined}
+          >
             <div className={`cm-feed-dot ${e.variant !== 'mint' ? `cm-feed-dot--${e.variant}` : ''}`}>
               <span className="material-symbols-outlined text-[18px]">
                 {e.kind === 'apply' ? 'person_add' : e.kind === 'donate' ? 'inventory_2' : 'verified'}
@@ -744,9 +764,19 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
               <p className="cm-feed-title">{e.title}</p>
               <p className="cm-feed-time">{e.time}</p>
             </div>
+            {e.donation && (
+              <span className="material-symbols-outlined text-[18px] text-neutral-300 self-center">chevron_right</span>
+            )}
           </div>
         ))}
       </div>
+      {selected && (
+        <DonationDetailModal
+          campaign={selected.campaign}
+          donation={selected.donation}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </section>
   );
 }

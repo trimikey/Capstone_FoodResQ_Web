@@ -94,6 +94,8 @@ interface DonationDemandDetails {
   ingredientName?: string;
   quantityKg?: number;
   expectedServings?: number;
+  /** NGÀY bếp cần nhận nguyên liệu (YYYY-MM-DD) — thành scheduled_date khi NCC nhận đơn. */
+  neededDate?: string;
   neededFrom?: string;
   neededTo?: string;
   requireAtvstpCert?: boolean;
@@ -1295,7 +1297,37 @@ export class CampaignsService {
       include: {
         donations: {
           orderBy: { createdAt: 'desc' },
-          select: { id: true, itemName: true, quantity: true, note: true, status: true, provider: { select: { businessName: true } } },
+          select: {
+            id: true,
+            itemName: true,
+            quantity: true,
+            note: true,
+            status: true,
+            createdAt: true,
+            receivedAt: true,
+            pickupDate: true,
+            pickupStartTime: true,
+            pickupEndTime: true,
+            // DS assignment id shipper được cử đi nhận — FE tự tra tên qua
+            // `assignments` bên dưới (JSONB không join được bằng quan hệ).
+            pickupAssigneeIds: true,
+            // NCC kèm địa chỉ + SĐT để tổ chức/TNV liên hệ đi lấy hàng
+            provider: { select: { businessName: true, address: true, contactPhone: true } },
+          },
+        },
+        // TNV đã được duyệt vào ca — nguồn để phân công đi nhận quyên góp
+        // (FE lọc tiếp theo ngày trực + khung giờ trùng ca).
+        assignments: {
+          where: { status: { in: ['assigned', 'checked_in', 'in_progress'] }, shiftId: { not: null } },
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            workDate: true,
+            shiftId: true,
+            shift: { select: { label: true, startTime: true, endTime: true, endDayOffset: true } },
+            volunteer: { select: { user: { select: { fullName: true, avatarUrl: true } } } },
+          },
         },
       },
     });
@@ -1327,9 +1359,80 @@ export class CampaignsService {
       },
     });
 
+    // Khoản quyên góp TNV này được phân công đi nhận — `pickupAssigneeIds` là
+    // JSONB array<uuid> nên lấy theo campaign rồi lọc bằng JS (không join được).
+    const donationPickupRows = await this.prisma.campaignDonation.findMany({
+      where: {
+        campaignId: { in: [...new Set(assignments.map((a) => a.campaignId))] },
+        pickupDate: { not: null },
+      },
+      select: {
+        id: true,
+        itemName: true,
+        quantity: true,
+        status: true,
+        pickupDate: true,
+        pickupStartTime: true,
+        pickupEndTime: true,
+        pickupAssigneeIds: true,
+        provider: { select: { businessName: true, address: true, contactPhone: true } },
+      },
+    });
+    const pickupsByAssignment = new Map<string, typeof donationPickupRows>();
+    for (const d of donationPickupRows) {
+      const ids = Array.isArray(d.pickupAssigneeIds) ? (d.pickupAssigneeIds as string[]) : [];
+      for (const assignmentId of ids) {
+        pickupsByAssignment.set(assignmentId, [...(pickupsByAssignment.get(assignmentId) ?? []), d]);
+      }
+    }
+
+    // Đơn nguyên liệu NCC mà tổ chức cử shipper này đi nhận — cùng cơ chế JSONB.
+    const requestPickupRows = await this.prisma.campaignProviderRequest.findMany({
+      where: {
+        campaignId: { in: [...new Set(assignments.map((a) => a.campaignId))] },
+        status: 'accepted',
+      },
+      select: {
+        id: true,
+        scheduledDate: true,
+        pickupStartTime: true,
+        pickupEndTime: true,
+        pickupAssigneeIds: true,
+        demandDetails: true,
+        provider: { select: { businessName: true, address: true, contactPhone: true } },
+      },
+    });
+    const requestPickupsByAssignment = new Map<string, Array<Record<string, unknown>>>();
+    for (const r of requestPickupRows) {
+      const ids = Array.isArray(r.pickupAssigneeIds) ? (r.pickupAssigneeIds as string[]) : [];
+      if (ids.length === 0) continue;
+      const demand = (r.demandDetails ?? {}) as Record<string, unknown>;
+      const item = {
+        id: r.id,
+        ingredientName: (demand.ingredientName as string | undefined) ?? null,
+        quantityKg: demand.quantityKg == null ? null : Number(demand.quantityKg),
+        pickupDate: r.scheduledDate,
+        pickupStartTime: r.pickupStartTime?.slice(0, 5) ?? null,
+        pickupEndTime: r.pickupEndTime?.slice(0, 5) ?? null,
+        provider: r.provider,
+      };
+      for (const assignmentId of ids) {
+        requestPickupsByAssignment.set(assignmentId, [
+          ...(requestPickupsByAssignment.get(assignmentId) ?? []),
+          item,
+        ]);
+      }
+    }
+
+    const withPickups = <T extends { id: string }>(a: T) => ({
+      ...a,
+      donationPickups: pickupsByAssignment.get(a.id) ?? [],
+      requestPickups: requestPickupsByAssignment.get(a.id) ?? [],
+    });
+
     // Lấy delivery của từng campaign shipper qua campaign_provider_requests → campaign_transports
     const shipperAssignments = assignments.filter((a) => a.role === 'shipper');
-    if (shipperAssignments.length === 0) return assignments;
+    if (shipperAssignments.length === 0) return assignments.map(withPickups);
 
     // Query từng campaign để tránh lỗi "uuid = text" với ANY(text[])
     const deliveryByCampaign = new Map<string, string>();
@@ -1377,7 +1480,7 @@ export class CampaignsService {
     return assignments.map((a) =>
       a.role === 'shipper'
         ? {
-            ...a,
+            ...withPickups(a),
             deliveryId: deliveryByCampaign.get(a.campaignId) ?? null,
             distributions: (distByCampaign.get(a.campaignId) ?? []).map((d) => ({
               id: d.id,
@@ -1390,7 +1493,7 @@ export class CampaignsService {
               points: Array.isArray(d.points) ? (d.points as unknown[]) : [],
             })),
           }
-        : a,
+        : withPickups(a),
     );
   }
 
@@ -2082,7 +2185,7 @@ export class CampaignsService {
             shiftId: true,
             workDate: true,
             checkInTime: true,
-            shift: { select: { id: true, label: true, role: true, startTime: true, endTime: true } },
+            shift: { select: { id: true, label: true, role: true, startTime: true, endTime: true, endDayOffset: true } },
             ingredientProofUrl: true,
             cookedProofUrl: true,
             distributionProofUrl: true,
@@ -2122,7 +2225,13 @@ export class CampaignsService {
             status: true,
             createdAt: true,
             receivedAt: true,
-            provider: { select: { businessName: true } },
+            // Lịch đi nhận + DS shipper được cử — tab "Giao & nhận hàng" cần đủ
+            // để tổ chức biết ai đi nhận và xác nhận số lượng thực nhận.
+            pickupDate: true,
+            pickupStartTime: true,
+            pickupEndTime: true,
+            pickupAssigneeIds: true,
+            provider: { select: { businessName: true, address: true, contactPhone: true } },
           },
         },
         mealDistributions: {
@@ -3460,6 +3569,331 @@ export class CampaignsService {
   }
 
   /**
+   * Tổ chức phân công SHIPPER đi nhận khoản quyên góp đã hứa của NCC — nhận được
+   * NHIỀU shipper cùng lúc (hàng nặng/cồng kềnh cần vài người đi cùng).
+   *
+   * RÀNG BUỘC (chống lệch lịch): chỉ nhận vai trò Giao hàng; TỪNG shipper phải
+   * trực đúng NGÀY và ca phải phủ TRỌN khung giờ lấy hàng — server validate lại
+   * dù FE đã lọc, vì dữ liệu ca có thể đổi giữa lúc mở form và lúc bấm gửi.
+   */
+  async assignDonationPickup(
+    donationId: string,
+    charityUserId: string,
+    dto: { assignmentIds: string[]; pickupDate: string; pickupStartTime: string; pickupEndTime: string },
+  ) {
+    const donation = await this.prisma.campaignDonation.findUnique({
+      where: { id: donationId },
+      include: {
+        campaign: { select: { id: true, charityReceiverId: true, title: true } },
+        provider: { select: { businessName: true, address: true, contactPhone: true } },
+      },
+    });
+    if (!donation) throw new NotFoundException('Không tìm thấy khoản quyên góp.');
+
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: { id: true },
+    });
+    if (!receiver || donation.campaign.charityReceiverId !== receiver.id) {
+      throw new ForbiddenException('Chỉ tổ chức chủ chiến dịch mới phân công được.');
+    }
+    if (donation.status !== 'pledged') {
+      throw new BadRequestException('Chỉ phân công đi nhận khi khoản góp đang chờ nhận hàng.');
+    }
+
+    const assignmentIds = [...new Set(dto.assignmentIds)];
+    const currentIds = Array.isArray(donation.pickupAssigneeIds)
+      ? (donation.pickupAssigneeIds as string[])
+      : [];
+    // Idempotent: cùng lịch + cùng danh sách shipper → không ghi lại, không notify
+    // lần nữa (chặn double-click / bấm phân công nhiều lần gây spam thông báo).
+    const scheduleUnchanged =
+      donation.pickupDate?.toISOString().slice(0, 10) === dto.pickupDate &&
+      donation.pickupStartTime === dto.pickupStartTime &&
+      donation.pickupEndTime === dto.pickupEndTime;
+    if (
+      scheduleUnchanged &&
+      currentIds.length === assignmentIds.length &&
+      assignmentIds.every((id) => currentIds.includes(id))
+    ) {
+      return {
+        id: donationId,
+        pickupDate: donation.pickupDate,
+        pickupStartTime: donation.pickupStartTime,
+        pickupEndTime: donation.pickupEndTime,
+        pickupAssigneeIds: assignmentIds,
+        unchanged: true,
+      };
+    }
+
+    const assignments = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: { id: { in: assignmentIds } },
+      include: {
+        shift: { select: { label: true, startTime: true, endTime: true, endDayOffset: true } },
+        volunteer: { select: { userId: true, user: { select: { fullName: true } } } },
+      },
+    });
+    if (assignments.length !== assignmentIds.length) {
+      throw new NotFoundException('Có phân công TNV không tồn tại.');
+    }
+
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const pickupStart = toMinutes(dto.pickupStartTime);
+    let pickupEnd = toMinutes(dto.pickupEndTime);
+    if (pickupEnd <= pickupStart) pickupEnd += 1440;
+
+    for (const assignment of assignments) {
+      const name = assignment.volunteer.user.fullName;
+      if (assignment.campaignId !== donation.campaign.id) {
+        throw new BadRequestException(`${name} không thuộc chiến dịch này.`);
+      }
+      // Đi nhận hàng là việc của vai trò Giao hàng — chef/phục vụ phải ở bếp.
+      if (assignment.role !== 'shipper') {
+        throw new BadRequestException(`${name} không phải vai trò Giao hàng — chỉ shipper được phân công đi nhận.`);
+      }
+      if (!['assigned', 'checked_in', 'in_progress'].includes(assignment.status)) {
+        throw new BadRequestException(`${name} chưa được duyệt vào ca (hoặc đã kết thúc), không thể phân công.`);
+      }
+      if (!assignment.shift || !assignment.workDate) {
+        throw new BadRequestException(`Phân công của ${name} chưa gắn ca/ngày trực cụ thể.`);
+      }
+      const workDateKey = assignment.workDate.toISOString().slice(0, 10);
+      if (workDateKey !== dto.pickupDate) {
+        throw new BadRequestException(
+          `${name} trực ngày ${workDateKey}, không trùng ngày lấy hàng ${dto.pickupDate}.`,
+        );
+      }
+      // Khung lấy hàng phải nằm trọn trong ca (ca tối có thể vắt qua 00:00)
+      const shiftStart = toMinutes(assignment.shift.startTime);
+      const shiftEnd = toMinutes(assignment.shift.endTime) + (assignment.shift.endDayOffset ?? 0) * 1440;
+      if (pickupStart < shiftStart || pickupEnd > shiftEnd) {
+        throw new BadRequestException(
+          `Khung giờ lấy hàng phải nằm trong ca "${assignment.shift.label}" `
+          + `(${assignment.shift.startTime}-${assignment.shift.endTime}) của ${name}.`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.campaignDonation.update({
+      where: { id: donationId },
+      data: {
+        pickupDate: new Date(`${dto.pickupDate}T00:00:00Z`),
+        pickupStartTime: dto.pickupStartTime,
+        pickupEndTime: dto.pickupEndTime,
+        pickupAssigneeIds: assignmentIds,
+      },
+      select: {
+        id: true,
+        pickupDate: true,
+        pickupStartTime: true,
+        pickupEndTime: true,
+        pickupAssigneeIds: true,
+      },
+    });
+
+    // Lịch không đổi → chỉ báo shipper MỚI; lịch đổi → báo lại tất cả để cập nhật giờ.
+    for (const assignment of assignments) {
+      if (scheduleUnchanged && currentIds.includes(assignment.id)) continue;
+      void this.notifications.notify(assignment.volunteer.userId, {
+        type: 'campaign',
+        title: 'Bạn được phân công đi nhận quyên góp',
+        body:
+          `Nhận ${donation.quantity ?? ''} ${donation.itemName} từ ${donation.provider.businessName} `
+          + `cho chiến dịch "${donation.campaign.title}" — ${dto.pickupDate} `
+          + `${dto.pickupStartTime}-${dto.pickupEndTime} (trong ca "${assignment.shift!.label}").`
+          + (assignments.length > 1 ? ` Đi cùng ${assignments.length - 1} shipper khác.` : '')
+          + (donation.provider.address ? ` Địa chỉ NCC: ${donation.provider.address}.` : '')
+          + (donation.provider.contactPhone ? ` SĐT: ${donation.provider.contactPhone}.` : ''),
+        data: { campaignId: donation.campaign.id, donationId, assignmentId: assignment.id },
+      });
+    }
+
+    // Shipper bị rút khỏi danh sách → báo hủy để không đi nhận nhầm.
+    const removedIds = currentIds.filter((id) => !assignmentIds.includes(id));
+    if (removedIds.length > 0) {
+      const removed = await this.prisma.campaignVolunteerAssignment.findMany({
+        where: { id: { in: removedIds } },
+        select: { id: true, volunteer: { select: { userId: true } } },
+      });
+      for (const assignment of removed) {
+        void this.notifications.notify(assignment.volunteer.userId, {
+          type: 'campaign',
+          title: 'Hủy phân công đi nhận quyên góp',
+          body:
+            `Bạn không còn được phân công đi nhận ${donation.itemName} từ `
+            + `${donation.provider.businessName} cho chiến dịch "${donation.campaign.title}".`,
+          data: { campaignId: donation.campaign.id, donationId, assignmentId: assignment.id },
+        });
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * Tổ chức phân công SHIPPER CỦA CHIẾN DỊCH đi nhận ĐƠN NGUYÊN LIỆU đã được NCC
+   * chấp nhận — thay cho vòng tìm shipper toàn hệ thống (ride-hailing).
+   *
+   * Khung giờ lấy dùng đúng lịch hẹn đã chốt trên đơn (scheduledDate +
+   * pickupStartTime/EndTime); TỪNG shipper phải trực đúng ngày và ca phủ trọn
+   * khung giờ đó. Nếu vòng tìm shipper hệ thống còn đang chạy thì DỪNG nó lại —
+   * hai luồng cùng đi lấy một đơn sẽ giẫm chân nhau.
+   */
+  async assignRequestPickup(requestId: string, charityUserId: string, dto: { assignmentIds: string[] }) {
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId: charityUserId },
+      select: { id: true },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+
+    const request = await this.prisma.campaignProviderRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        campaign: { select: { id: true, title: true } },
+        provider: { select: { businessName: true, address: true, contactPhone: true } },
+        transport: { select: { id: true, status: true, deliveryId: true } },
+      },
+    });
+    if (!request || request.receiverId !== receiver.id) {
+      throw new NotFoundException('Không tìm thấy đơn yêu cầu của tổ chức.');
+    }
+    if (request.status !== 'accepted') {
+      throw new BadRequestException('Chỉ phân công khi NCC đã chấp nhận đơn.');
+    }
+    if (!request.scheduledDate || !request.pickupStartTime || !request.pickupEndTime) {
+      throw new BadRequestException('Đơn chưa có lịch hẹn lấy hàng để đối chiếu ca trực.');
+    }
+
+    const pickupDateKey = request.scheduledDate.toISOString().slice(0, 10);
+    const pickupStartStr = request.pickupStartTime.slice(0, 5);
+    const pickupEndStr = request.pickupEndTime.slice(0, 5);
+
+    const assignmentIds = [...new Set(dto.assignmentIds)];
+    const currentIds = Array.isArray(request.pickupAssigneeIds)
+      ? (request.pickupAssigneeIds as string[])
+      : [];
+    // Idempotent: danh sách không đổi → không ghi lại, không notify lần nữa
+    // (chặn double-click / gửi trùng gây spam thông báo cho shipper).
+    if (
+      currentIds.length === assignmentIds.length &&
+      assignmentIds.every((id) => currentIds.includes(id))
+    ) {
+      return { id: requestId, pickupAssigneeIds: assignmentIds, unchanged: true };
+    }
+    const assignments = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: { id: { in: assignmentIds } },
+      include: {
+        shift: { select: { label: true, startTime: true, endTime: true, endDayOffset: true } },
+        volunteer: { select: { userId: true, user: { select: { fullName: true } } } },
+      },
+    });
+    if (assignments.length !== assignmentIds.length) {
+      throw new NotFoundException('Có phân công TNV không tồn tại.');
+    }
+
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const pickupStart = toMinutes(pickupStartStr);
+    let pickupEnd = toMinutes(pickupEndStr);
+    if (pickupEnd <= pickupStart) pickupEnd += 1440;
+
+    for (const assignment of assignments) {
+      const name = assignment.volunteer.user.fullName;
+      if (assignment.campaignId !== request.campaign.id) {
+        throw new BadRequestException(`${name} không thuộc chiến dịch này.`);
+      }
+      if (assignment.role !== 'shipper') {
+        throw new BadRequestException(`${name} không phải vai trò Giao hàng — chỉ shipper được phân công đi nhận.`);
+      }
+      if (!['assigned', 'checked_in', 'in_progress'].includes(assignment.status)) {
+        throw new BadRequestException(`${name} chưa được duyệt vào ca (hoặc đã kết thúc), không thể phân công.`);
+      }
+      if (!assignment.shift || !assignment.workDate) {
+        throw new BadRequestException(`Phân công của ${name} chưa gắn ca/ngày trực cụ thể.`);
+      }
+      const workDateKey = assignment.workDate.toISOString().slice(0, 10);
+      if (workDateKey !== pickupDateKey) {
+        throw new BadRequestException(
+          `${name} trực ngày ${workDateKey}, không trùng ngày lấy hàng ${pickupDateKey}.`,
+        );
+      }
+      const shiftStart = toMinutes(assignment.shift.startTime);
+      const shiftEnd = toMinutes(assignment.shift.endTime) + (assignment.shift.endDayOffset ?? 0) * 1440;
+      if (pickupStart < shiftStart || pickupEnd > shiftEnd) {
+        throw new BadRequestException(
+          `Khung giờ lấy hàng (${pickupStartStr}-${pickupEndStr}) phải nằm trong ca `
+          + `"${assignment.shift.label}" (${assignment.shift.startTime}-${assignment.shift.endTime}) của ${name}.`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.campaignProviderRequest.update({
+        where: { id: requestId },
+        data: { pickupAssigneeIds: assignmentIds },
+      });
+      // Vòng tìm shipper hệ thống còn chạy → dừng lại, tránh 2 luồng cùng đi lấy.
+      if (request.transport && request.transport.status === 'pending' && request.transport.deliveryId) {
+        await tx.shipperTaskOffer.updateMany({
+          where: { deliveryId: request.transport.deliveryId, status: 'pending' },
+          data: { status: 'expired', respondedAt: new Date() },
+        });
+        await tx.delivery.updateMany({
+          where: { id: request.transport.deliveryId, status: 'pending_assignment' },
+          data: { status: 'failed', failedReason: 'Tổ chức đã tự phân công shipper của chiến dịch đi nhận.' },
+        });
+        await tx.campaignTransport.update({
+          where: { id: request.transport.id },
+          data: { status: 'cancelled', failureReason: 'Tổ chức đã tự phân công shipper của chiến dịch đi nhận.' },
+        });
+      }
+    });
+
+    // Chỉ báo cho shipper MỚI được thêm — người giữ nguyên không bị notify lặp.
+    for (const assignment of assignments) {
+      if (currentIds.includes(assignment.id)) continue;
+      void this.notifications.notify(assignment.volunteer.userId, {
+        type: 'campaign',
+        title: 'Bạn được phân công đi nhận nguyên liệu',
+        body:
+          `Nhận nguyên liệu từ ${request.provider.businessName} cho chiến dịch `
+          + `"${request.campaign.title}" — ${pickupDateKey} ${pickupStartStr}-${pickupEndStr} `
+          + `(trong ca "${assignment.shift!.label}").`
+          + (assignments.length > 1 ? ` Đi cùng ${assignments.length - 1} shipper khác.` : '')
+          + (request.provider.address ? ` Địa chỉ NCC: ${request.provider.address}.` : '')
+          + (request.provider.contactPhone ? ` SĐT: ${request.provider.contactPhone}.` : ''),
+        data: { campaignId: request.campaign.id, providerRequestId: requestId, assignmentId: assignment.id },
+      });
+    }
+
+    // Shipper bị rút khỏi danh sách → báo hủy để không đi nhận nhầm.
+    const removedIds = currentIds.filter((id) => !assignmentIds.includes(id));
+    if (removedIds.length > 0) {
+      const removed = await this.prisma.campaignVolunteerAssignment.findMany({
+        where: { id: { in: removedIds } },
+        select: { id: true, volunteer: { select: { userId: true } } },
+      });
+      for (const assignment of removed) {
+        void this.notifications.notify(assignment.volunteer.userId, {
+          type: 'campaign',
+          title: 'Hủy phân công đi nhận nguyên liệu',
+          body:
+            `Bạn không còn được phân công đi nhận nguyên liệu từ ${request.provider.businessName} `
+            + `cho chiến dịch "${request.campaign.title}" (${pickupDateKey} ${pickupStartStr}-${pickupEndStr}).`,
+          data: { campaignId: request.campaign.id, providerRequestId: requestId, assignmentId: assignment.id },
+        });
+      }
+    }
+
+    return { id: requestId, pickupAssigneeIds: assignmentIds };
+  }
+
+  /**
    * Tổ chức gửi YÊU CẦU thay đổi chiến dịch (giờ/ngày, địa chỉ+vị trí, số slot TNV).
    * Không áp dụng ngay — tạo bản ghi chờ admin duyệt. Chỉ cho gửi khi còn ≥ ngưỡng
    * CAMPAIGN_CHANGE_LOCK_DAYS ngày tới ngày diễn ra, và mỗi chiến dịch chỉ 1 yêu cầu pending.
@@ -3734,6 +4168,13 @@ export class CampaignsService {
     ) {
       throw new BadRequestException('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
     }
+    // Ngày cần nhận không được ở quá khứ (so theo ngày VN).
+    if (dto.demandDetails?.neededDate) {
+      const todayVn = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+      if (dto.demandDetails.neededDate < todayVn) {
+        throw new BadRequestException('Ngày cần nhận nguyên liệu không được ở quá khứ.');
+      }
+    }
 
     // Đóng dấu thời điểm cam kết để sau này còn đối chiếu khi có tranh chấp.
     const demandDetails = dto.demandDetails
@@ -3812,7 +4253,17 @@ export class CampaignsService {
           include: { user: { select: { fullName: true, email: true } } },
         },
         campaign: { select: { id: true, title: true, scheduledDate: true } },
-        transport: { select: { id: true, status: true, deliveryId: true } },
+        // Kèm biên nhận để NCC thấy bếp đã xác nhận nhận bao nhiêu (giao thành công)
+        transport: {
+          select: {
+            id: true,
+            status: true,
+            deliveryId: true,
+            receivedAt: true,
+            receiptNote: true,
+            failureReason: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -3918,8 +4369,14 @@ export class CampaignsService {
       };
     }
 
-    const pickupStart = opts?.pickupTime ?? campaignSnapshot?.startTime ?? null;
-    const pickupEnd = campaignSnapshot?.endTime ?? null;
+    // Ưu tiên NGÀY + KHUNG GIỜ bếp đã khai trong đơn (demandDetails); NCC có thể
+    // đề xuất giờ khác qua opts.pickupTime; cuối cùng mới fallback về giờ chiến dịch.
+    const demand = (request.demandDetails ?? {}) as DonationDemandDetails;
+    const pickupStart = opts?.pickupTime ?? demand.neededFrom ?? campaignSnapshot?.startTime ?? null;
+    const pickupEnd = demand.neededTo ?? campaignSnapshot?.endTime ?? null;
+    const pickupScheduledDate = demand.neededDate
+      ? new Date(`${demand.neededDate}T00:00:00Z`)
+      : campaignSnapshot?.scheduledDate ?? null;
     const needsTransport = action === 'accept' && (opts?.needsTransport ?? true);
     let pickupCoords: { lng: number; lat: number } | null = null;
     if (needsTransport) {
@@ -3943,7 +4400,7 @@ export class CampaignsService {
           status: newStatus,
           reviewedAt: new Date(),
           reviewedNote: note ?? null,
-          scheduledDate: action === 'accept' ? campaignSnapshot!.scheduledDate : null,
+          scheduledDate: action === 'accept' ? pickupScheduledDate : null,
           pickupStartTime: action === 'accept' ? pickupStart : null,
           pickupEndTime: action === 'accept' ? pickupEnd : null,
           needsTransport,
@@ -3990,8 +4447,8 @@ export class CampaignsService {
       select: { userId: true },
     });
     if (receiverUser) {
-      const pickupDateStr = campaignSnapshot
-        ? campaignSnapshot.scheduledDate.toISOString().slice(0, 10)
+      const pickupDateStr = pickupScheduledDate
+        ? pickupScheduledDate.toISOString().slice(0, 10)
         : '';
       const pickupTimeStr = pickupStart ?? '';
       const pickupEndStr = pickupEnd ?? '';
@@ -4052,6 +4509,53 @@ export class CampaignsService {
     },
     pickup: { lng: number; lat: number },
   ): Promise<{ id: string; deliveryId: string }> {
+    // `provider_request_id` là UNIQUE trên CẢ deliveries lẫn campaign_transports.
+    // Đơn thất bại rồi gửi lại → NCC chấp nhận lần 2 sẽ đụng bản ghi cũ (23505),
+    // nên phải TÁI SỬ DỤNG chuyến cũ: reset về trạng thái ban đầu thay vì insert.
+    const existing = await tx.campaignTransport.findUnique({
+      where: { providerRequestId: requestId },
+      select: { id: true, deliveryId: true },
+    });
+    if (existing?.deliveryId) {
+      // Xoá offer cũ: bộ chọn shipper loại trừ người ĐÃ từng được mời cho delivery
+      // này — giữ lại offer expired thì lần tìm mới không mời được ai.
+      await tx.shipperTaskOffer.deleteMany({ where: { deliveryId: existing.deliveryId } });
+      // created_at = NOW() để cửa sổ 4ph30 của cron failUnassignedTimeouts tính lại
+      // từ lần chấp nhận này, không ăn theo lần thất bại trước.
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE deliveries SET
+          status = 'pending_assignment'::delivery_status,
+          shipper_id = NULL,
+          failed_reason = NULL,
+          pickup_location = ST_SetSRID(ST_MakePoint(${pickup.lng}, ${pickup.lat}), 4326)::geography,
+          delivery_location = ST_SetSRID(ST_MakePoint(${campaign.kitchenLng}, ${campaign.kitchenLat}), 4326)::geography,
+          distance_km = ST_Distance(
+            ST_SetSRID(ST_MakePoint(${pickup.lng}, ${pickup.lat}), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(${campaign.kitchenLng}, ${campaign.kitchenLat}), 4326)::geography
+          ) / 1000,
+          created_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${existing.deliveryId}::uuid
+      `);
+      await tx.campaignTransport.update({
+        where: { id: existing.id },
+        data: {
+          status: 'pending',
+          assignedAt: null,
+          pickedUpAt: null,
+          deliveredAt: null,
+          receivedAt: null,
+          failedAt: null,
+          failureReason: null,
+          receivedByUserId: null,
+          receiptNote: null,
+          receiptPhotoUrl: null,
+          lastBroadcastAt: null,
+        },
+      });
+      return { id: existing.id, deliveryId: existing.deliveryId };
+    }
+
     const [transport] = await tx.$queryRaw<{ id: string; delivery_id: string }[]>(Prisma.sql`
       WITH created_delivery AS (
         INSERT INTO deliveries (
@@ -4171,6 +4675,12 @@ export class CampaignsService {
             failureReason: true,
             receiptNote: true,
             receiptPhotoUrl: true,
+            // Ai đang giao — tổ chức cần biết tên/SĐT shipper của chuyến
+            delivery: {
+              select: {
+                shipper: { select: { user: { select: { fullName: true, phone: true } } } },
+              },
+            },
           },
         },
       },

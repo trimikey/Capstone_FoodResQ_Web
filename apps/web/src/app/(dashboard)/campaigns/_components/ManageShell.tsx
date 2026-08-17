@@ -53,12 +53,13 @@ export function daysUntilUtc(input: string | Date | null | undefined, ref = new 
   return Math.round((a - b) / 86_400_000);
 }
 
-type NavKey = 'progress' | 'registrations' | 'distribution' | 'menu' | 'schedule' | 'status';
+type NavKey = 'progress' | 'registrations' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'status';
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'progress', label: 'Tổng quan', icon: 'monitoring' },
   { key: 'registrations', label: 'Đăng ký chờ duyệt', icon: 'pending_actions' },
   { key: 'distribution', label: 'Phân phối suất ăn', icon: 'takeout_dining' },
+  { key: 'logistics', label: 'Giao & nhận hàng', icon: 'local_shipping' },
   { key: 'menu', label: 'Thực đơn & Vật phẩm', icon: 'restaurant_menu' },
   { key: 'schedule', label: 'Lịch trình', icon: 'event' },
   { key: 'status', label: 'Trạng thái', icon: 'flag' },
@@ -68,6 +69,7 @@ const NAV_PATH: Record<NavKey, string | null> = {
   progress: null,
   registrations: 'registrations',
   distribution: 'distribution',
+  logistics: 'logistics',
   menu: 'menu',
   schedule: 'schedule',
   status: 'status',
@@ -118,7 +120,14 @@ type CampaignData = {
     quantity?: string | null;
     note?: string | null;
     status: string;
-    provider?: { businessName?: string | null };
+    createdAt?: string;
+    receivedAt?: string | null;
+    pickupDate?: string | null;
+    pickupStartTime?: string | null;
+    pickupEndTime?: string | null;
+    /** DS assignment id shipper được cử đi nhận — tra tên qua participants. */
+    pickupAssigneeIds?: string[];
+    provider?: { businessName?: string | null; address?: string | null; contactPhone?: string | null };
   }>;
   expectedServings?: number | null;
   actualServings?: number | null;
@@ -187,6 +196,7 @@ export function ManageShell({
     if (!pathname) return 'progress';
     if (pathname.endsWith('/registrations')) return 'registrations';
     if (pathname.endsWith('/distribution')) return 'distribution';
+    if (pathname.endsWith('/logistics')) return 'logistics';
     if (pathname.endsWith('/menu')) return 'menu';
     if (pathname.endsWith('/schedule')) return 'schedule';
     if (pathname.endsWith('/status')) return 'status';
@@ -281,7 +291,19 @@ export function ManageShell({
         {/* Hero */}
         <div className="cm-manage-hero">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={heroImage} alt={c.title} />
+          <img
+            src={heroImage}
+            alt={c.title}
+            // Ảnh cũ lưu /uploads local có thể đã mất file (đổi máy/deploy) —
+            // rơi về ảnh mặc định thay vì icon ảnh vỡ trên hero.
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (img.dataset.fallback !== '1') {
+                img.dataset.fallback = '1';
+                img.src = CAMPAIGN_HERO_FALLBACK;
+              }
+            }}
+          />
           {/* Về danh sách chiến dịch của tổ chức, KHÔNG về trang chi tiết công khai
               của chính chiến dịch đang mở — đó là đi tới, không phải quay lại. */}
           <Link

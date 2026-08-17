@@ -687,6 +687,17 @@ model CampaignDonation {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   receivedAt DateTime? @map("received_at") @db.Timestamptz
 
+  /// Lịch đi nhận hàng do tổ chức đặt. Khung giờ này BẮT BUỘC nằm trong ca trực
+  /// SHIPPER được phân công (validate ở assignDonationPickup) — không để lệch
+  /// giữa giờ đăng ký ca của TNV và giờ hẹn lấy hàng với NCC.
+  pickupDate      DateTime? @map("pickup_date") @db.Date
+  pickupStartTime String?   @map("pickup_start_time") @db.VarChar(5)
+  pickupEndTime   String?   @map("pickup_end_time") @db.VarChar(5)
+  /// DS id bản ghi phân công ca (campaign_volunteer_assignments) được cử đi nhận.
+  /// JSONB array<uuid> — một khoản góp lớn có thể cần NHIỀU shipper đi cùng
+  /// (cùng pattern `assigneeIds` của meal_distributions).
+  pickupAssigneeIds Json @default("[]") @map("pickup_assignee_ids")
+
   campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   provider ProviderProfile @relation(fields: [providerId], references: [id])
 
@@ -723,6 +734,11 @@ model CampaignProviderRequest {
   /// Để JSONB thay vì tách cột: bộ tiêu chí này còn thay đổi theo nghiệp vụ, thêm/bớt
   /// field không phải migrate lại. Shape xem `DemandDetailsDto`.
   demandDetails   Json?                 @map("demand_details")
+  /// DS id bản ghi phân công ca (campaign_volunteer_assignments) mà TỔ CHỨC cử đi
+  /// nhận hàng — thay cho vòng tìm shipper toàn hệ thống. Chỉ nhận shipper có ca
+  /// phủ trọn khung giờ lấy (validate ở assignRequestPickup). JSONB array<uuid>,
+  /// cùng pattern `pickupAssigneeIds` của campaign_donations.
+  pickupAssigneeIds Json                @default("[]") @map("pickup_assignee_ids")
   reviewedAt      DateTime?             @map("reviewed_at") @db.Timestamptz(6)
   reviewedNote    String?               @map("reviewed_note") @db.VarChar(255)
   createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
