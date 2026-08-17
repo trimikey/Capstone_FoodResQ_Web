@@ -2868,9 +2868,7 @@ export class CampaignsService {
       uniqueVolunteers: confirmedVolunteers.size,
       minimumFillPercent,
       eligibleToStart: matrix.length > 0 && matrix.every((row) => row.eligibleToStart),
-      canStartNow: matrix.length > 0
-        && matrix.every((row) => row.eligibleToStart)
-        && new Date() >= campaign.operationStartAt,
+      canStartNow: matrix.length > 0 && matrix.every((row) => row.eligibleToStart),
       ready: matrix.length > 0 && matrix.every((row) => row.ready),
       matrix,
     };
@@ -3027,9 +3025,6 @@ export class CampaignsService {
     const campaign = await this.assertOwner(campaignId, userId);
     if (campaign.status !== 'approved') {
       throw new BadRequestException('Chỉ chiến dịch đã duyệt và chưa bắt đầu mới thực hiện được.');
-    }
-    if (new Date() < campaign.operationStartAt) {
-      throw new BadRequestException('Chưa tới thời gian vận hành của chiến dịch.');
     }
     const readiness = await this.getStaffingReadiness(campaignId);
     if (!readiness.eligibleToStart) {
