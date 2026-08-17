@@ -38,14 +38,18 @@ function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
           <button
             type="button"
             onClick={() => setVal(Number(val) === 1 ? '0' : '1')}
-            className={`relative h-9 w-16 rounded-full border transition-colors ${
+            className={`relative h-9 w-20 rounded-full border px-2 text-[11px] font-extrabold transition-colors ${
               Number(val) === 1 ? 'border-emerald-600 bg-emerald-600' : 'border-neutral-200 bg-neutral-200'
             }`}
             aria-pressed={Number(val) === 1}
+            aria-label={`${cfg.label}: ${Number(val) === 1 ? 'Bật' : 'Tắt'}`}
           >
+            <span className={`absolute inset-y-0 flex items-center ${Number(val) === 1 ? 'left-3 text-white' : 'right-3 text-neutral-500'}`}>
+              {Number(val) === 1 ? 'Bật' : 'Tắt'}
+            </span>
             <span
-              className={`absolute top-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
-                Number(val) === 1 ? 'translate-x-7' : 'translate-x-1'
+              className={`absolute left-1 top-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                Number(val) === 1 ? 'translate-x-11' : 'translate-x-0'
               }`}
             />
           </button>
