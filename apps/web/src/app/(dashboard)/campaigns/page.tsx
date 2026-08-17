@@ -13,6 +13,8 @@ import {
   useCreateCampaign,
   useMyTasks,
   useMyCampaigns,
+  useCampaignStats,
+  useMyCampaignStats,
   type Campaign,
   type MyTask,
 } from '@/hooks/useCampaigns';
@@ -87,6 +89,8 @@ function CampaignsPageInner() {
   const router = useRouter();
 
   const { data, isLoading } = useCampaigns();
+  const globalStats = useCampaignStats();
+  const myStats = useMyCampaignStats(isCharity);
   const { data: vol } = useVolunteerMe(isVolunteer);
   const { data: myTasks } = useMyTasks(!!isVolunteer);
   const { data: myCampaigns } = useMyCampaigns(isCharity);
@@ -296,6 +300,7 @@ function CampaignsPageInner() {
               meName={greetingName}
               greetingSubtitle={greetingSubtitle}
               stats={stats}
+              globalStats={isCharity ? myStats.data : globalStats.data}
               allCampaigns={allCampaigns}
               myTasks={myTasks}
               onCreate={() => setShowForm(true)}
@@ -386,6 +391,7 @@ function OverviewDashboard({
   meName,
   greetingSubtitle,
   stats,
+  globalStats,
   allCampaigns,
   myTasks,
   onCreate,
@@ -398,11 +404,13 @@ function OverviewDashboard({
   meName: string;
   greetingSubtitle: string;
   stats: { active: Campaign[]; drafts: Campaign[]; finished: Campaign[]; pendingApprovals: number; totalVolunteers: number; all: Campaign[] };
+  globalStats?: { mealsServed: number; peopleServed: number; completedCampaigns: number; completionRate: number; totalCampaigns: number; activeCampaigns: number };
   allCampaigns: Campaign[];
   myTasks: MyTask[] | undefined;
   onCreate: () => void;
   onJumpTo: (s: Section) => void;
 }) {
+  const gs = globalStats;
   return (
     <>
       {/* Banner cảnh báo khi tài khoản chưa được admin duyệt */}
@@ -438,38 +446,38 @@ function OverviewDashboard({
         
       </div>
 
-      {/* KPI tiles — impact / higher-level metrics (khác Mine tab stats) */}
+      {/* KPI tiles — impact / higher-level metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KPITile
           label="Suất ăn đã phát"
-          value={Number(stats.all.reduce((s, c) => s + (c.actualServings ?? 0), 0))}
+          value={gs?.mealsServed ?? 0}
           icon="inventory"
           tone="mint"
-          sub="Tất cả chiến dịch"
+          sub={isCharity ? 'Chiến dịch của tổ chức' : 'Tất cả chiến dịch'}
           onClick={() => onJumpTo('mine')}
         />
         <KPITile
           label="Người được phục vụ"
-          value={stats.all.reduce((s, c) => s + (c.distributionSummary?.peopleServed ?? c.peopleServed ?? 0), 0)}
+          value={gs?.peopleServed ?? 0}
           icon="group"
           tone="sky"
-          sub="Tổng cộng đồng"
+          sub={isCharity ? 'Người nhận từ tổ chức' : 'Tổng cộng đồng'}
           onClick={() => onJumpTo('mine')}
         />
         <KPITile
           label="Chiến dịch đã hoàn tất"
-          value={stats.finished.length}
+          value={gs?.completedCampaigns ?? 0}
           icon="verified"
           tone="ink"
-          sub="Thành công"
+          sub={isCharity ? 'Của tổ chức' : 'Thành công'}
           onClick={() => onJumpTo('mine')}
         />
         <KPITile
           label="Tỉ lệ hoàn thành"
-          value={stats.all.length > 0 ? Math.round((stats.finished.length / stats.all.length) * 100) : 0}
+          value={gs?.completionRate ?? 0}
           icon="percent"
           tone="ember"
-          sub={stats.all.length > 0 ? `${Math.round((stats.finished.length / stats.all.length) * 100)}% hoàn thành` : '— chưa có chiến dịch'}
+          sub={gs ? `${gs.completionRate}% hoàn thành` : '— chưa có chiến dịch'}
           onClick={() => onJumpTo('mine')}
         />
       </div>

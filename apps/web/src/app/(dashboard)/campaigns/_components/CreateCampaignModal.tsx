@@ -42,6 +42,40 @@ function tomorrowDateString() {
   return vnTomorrow();
 }
 
+function currentTimeString() {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
+}
+
+function normalizeDraftSchedule(f: CampaignDraftData['f']) {
+  const today = vnToday();
+  const nowTime = currentTimeString();
+
+  if (f.scheduledDate < today) {
+    return {
+      ...f,
+      scheduledDate: today,
+      endDate: f.endDate && f.endDate >= today ? f.endDate : '',
+      startTime: nowTime,
+      endTime: f.endTime > nowTime ? f.endTime : '23:59',
+    };
+  }
+
+  if (f.scheduledDate === today && f.startTime < nowTime) {
+    return {
+      ...f,
+      startTime: nowTime,
+      endTime: f.endTime > nowTime ? f.endTime : '23:59',
+    };
+  }
+
+  return f;
+}
+
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
@@ -143,22 +177,26 @@ export default function CreateCampaignModal({
 
   // Nháp đọc từ localStorage — khôi phục nguyên trạng form đang điền dở.
   const draft = useCampaignDraft<CampaignDraftData>();
-  const [f, setF] = useState(() => draft.restored?.data.f ?? {
-    title: '',
-    description: '',
-    kitchenAddress: '',
-    scheduledDate: tomorrowDateString(),
-    /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
-    endDate: '' as string,
-    startTime: '08:00',
-    endTime: '12:00',
-    chefSlotsNeeded: 2,
-    waiterSlotsNeeded: 3,
-    shipperSlotsNeeded: 2,
-    expectedServings: 100,
-    lng: 106.6297,
-    lat: 10.8231,
-  });
+  const [f, setF] = useState(() =>
+    normalizeDraftSchedule(
+      draft.restored?.data.f ?? {
+        title: '',
+        description: '',
+        kitchenAddress: '',
+        scheduledDate: tomorrowDateString(),
+        /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
+        endDate: '' as string,
+        startTime: '08:00',
+        endTime: '12:00',
+        chefSlotsNeeded: 2,
+        waiterSlotsNeeded: 3,
+        shipperSlotsNeeded: 2,
+        expectedServings: 100,
+        lng: 106.6297,
+        lat: 10.8231,
+      },
+    ),
+  );
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(
@@ -459,6 +497,9 @@ export default function CreateCampaignModal({
       // và tránh hoàn toàn chuyện `new Date('2026-08-12')` bị hiểu là nửa đêm UTC
       // rồi lệch một ngày so với "hôm nay" theo giờ VN.
       if (f.scheduledDate < vnToday()) next.scheduledDate = 'Ngày tổ chức phải từ hôm nay trở đi';
+      else if (f.scheduledDate === vnToday() && f.startTime && f.startTime < currentTimeString()) {
+        next.startTime = 'Không được chọn giờ trong quá khứ';
+      }
     }
     // EndDate (optional) — phải >= scheduledDate và >= hôm nay
     if (f.endDate) {
@@ -968,6 +1009,7 @@ export default function CreateCampaignModal({
                     <input
                       type="time"
                       value={f.startTime}
+                      min={f.scheduledDate === vnToday() ? currentTimeString() : undefined}
                       onChange={(e) => {
                         setF({ ...f, startTime: e.target.value });
                         if (errors.startTime) setErr('startTime', undefined);
@@ -988,6 +1030,11 @@ export default function CreateCampaignModal({
                     />
                   </div>
                   <FieldError message={errors.scheduledDate} />
+                  {f.scheduledDate === vnToday() && !errors.startTime && (
+                    <p className="text-[10px] text-neutral-400 mt-1">
+                      Giờ bắt đầu hôm nay phải từ thời điểm hiện tại trở đi.
+                    </p>
+                  )}
                   <FieldError message={errors.startTime} />
                   <FieldError message={errors.endTime} />
                   {/* Ngày kết thúc (optional) — bỏ trống = 1 ngày duy nhất */}

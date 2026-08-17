@@ -15,6 +15,11 @@ const COLUMNS: Array<{ key: ColumnKey; label: string; icon: string; tone: string
   { key: 'ship', label: 'Vận chuyển', icon: 'local_shipping', tone: 'emerald' },
 ];
 
+/** Ca không được sửa / xoá / thêm khi chiến dịch đã chạy */
+function isReadOnly(status?: string) {
+  return status === 'in_progress' || status === 'completed';
+}
+
 const SHIFT_KEYWORDS: Record<ColumnKey, string[]> = {
   prep: ['sơ chế', 'prep', 'rửa', 'cắt', 'vo gạo', 'chuẩn bị'],
   cook: ['nấu', 'nấu nướng', 'nau', 'cook', 'chế biến', 'xào', 'chiên', 'hấp', 'luộc'],
@@ -84,6 +89,9 @@ export default function SchedulePage() {
     return map;
   }, [items]);
 
+  const campaignStatus = c?.status;
+  const readOnly = isReadOnly(campaignStatus);
+
   async function onDelete(shiftId: string, label: string) {
     if (!confirm(`Xoá ca "${label}"? Hành động không thể hoàn tác.`)) return;
     try {
@@ -125,14 +133,16 @@ export default function SchedulePage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-neutral-700">{dateRangeLabel}</span>
-            <button
-              type="button"
-              onClick={() => setShiftForm({ open: true })}
-              className="cm-manage-cta-primary inline-flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">add</span>
-              Thêm ca
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setShiftForm({ open: true })}
+                className="cm-manage-cta-primary inline-flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                Thêm ca
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -142,14 +152,16 @@ export default function SchedulePage() {
           <div className="cm-mini-empty">
             <span className="material-symbols-outlined text-[32px]">event_busy</span>
             <p className="mt-2">Chưa có lịch trình cho chiến dịch này.</p>
-            <button
-              type="button"
-              onClick={() => setShiftForm({ open: true })}
-              className="cm-manage-cta-primary mt-4 inline-flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">add</span>
-              Thêm ca đầu tiên
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setShiftForm({ open: true })}
+                className="cm-manage-cta-primary mt-4 inline-flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                Thêm ca đầu tiên
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -182,6 +194,7 @@ export default function SchedulePage() {
                         slotsFilled={t.raw?.slotsFilled}
                         slotsNeeded={t.raw?.slotsNeeded}
                         canEdit={!!t.raw}
+                        readOnly={readOnly}
                         onEdit={() => t.raw && setShiftForm({ open: true, shift: t.raw })}
                         onDelete={() => t.raw && onDelete(t.raw.id, t.raw.label)}
                         menuOpen={menuFor === t.id}
@@ -201,6 +214,7 @@ export default function SchedulePage() {
         <ShiftFormModal
           campaignId={c!.id}
           shift={shiftForm.shift}
+          readOnly={readOnly}
           onClose={() => setShiftForm({ open: false })}
         />
       )}
@@ -217,6 +231,7 @@ function ShiftCard({
   slotsFilled,
   slotsNeeded,
   canEdit,
+  readOnly,
   onEdit,
   onDelete,
   menuOpen,
@@ -229,6 +244,7 @@ function ShiftCard({
   slotsFilled?: number;
   slotsNeeded?: number;
   canEdit: boolean;
+  readOnly: boolean;
   onEdit: () => void;
   onDelete: () => void;
   menuOpen: boolean;
@@ -239,7 +255,7 @@ function ShiftCard({
     <div className="cm-kanban-card">
       <div className="flex items-start justify-between gap-2">
         <h4 className="cm-kanban-card-title">{label}</h4>
-        {canEdit && (
+        {canEdit && !readOnly && (
           <div className="relative" ref={menuRef}>
             <button
               type="button"

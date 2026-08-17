@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { useAdvanceTask, type MyTaskDetail, type PickupOrder } from '@/hooks/useCampaigns';
+import { useAdvanceTask, useFlagStepQualityFail, type MyTaskDetail, type PickupOrder, type CampaignMenuItem } from '@/hooks/useCampaigns';
+import { useUpdateDeliveryStatus } from '@/hooks/useDeliveries';
 import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
@@ -274,6 +275,16 @@ export default function ShipperTaskView({ detail, onCheckedIn }: Props) {
         />
       )}
 
+      {/* 4. Kiểm tra món ăn (QC) — chỉ hiện khi shipper đang heading_to_provider */}
+      {delivery && delivery.status === 'heading_to_provider' && (
+        <QCChecklistSection
+          menuItems={campaign.menuItems ?? []}
+          assignmentId={assignment.id}
+          deliveryId={delivery.id}
+          onQCComplete={onCheckedIn}
+        />
+      )}
+
       {/* 5. Các đợt phát tận điểm */}
       {distributions.length === 0 ? (
         <section className="cm-card flex items-center gap-3 p-5">
@@ -447,6 +458,290 @@ function TaskItem({
 
         {action && <div className="shrink-0">{action}</div>}
       </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QC Checklist: khi shipper đang heading_to_provider, kiểm tra món ăn trước khi xác nhận đã lấy
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MEAL_TYPE_LABELS: Record<string, string> = {
+  breakfast: 'Bữa sáng',
+  lunch: 'Bữa trưa',
+  dinner: 'Bữa tối',
+};
+
+function MealGroupLabel({ type }: { type: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+      <span className="material-symbols-outlined text-[13px]">
+        {type === 'breakfast' ? 'wb_twilight' : type === 'lunch' ? 'wb_sunny' : 'nights_stay'}
+      </span>
+      {MEAL_TYPE_LABELS[type] ?? type}
+    </span>
+  );
+}
+
+interface QCChecklistSectionProps {
+  menuItems: CampaignMenuItem[];
+  assignmentId: string;
+  deliveryId: string;
+  onQCComplete: () => void;
+}
+
+function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklistSectionProps) {
+  const updateDelivery = useUpdateDeliveryStatus();
+  const flagFail = useFlagStepQualityFail();
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [failReason, setFailReason] = useState('');
+  const [failingItem, setFailingItem] = useState<CampaignMenuItem | null>(null);
+
+  // Group món theo mẻ (breakfast/lunch/dinner)
+  const groups = menuItems.reduce<Record<string, CampaignMenuItem[]>>((acc, item) => {
+    const type = item.type || 'lunch';
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(item);
+    return acc;
+  }, {});
+
+  const groupOrder = ['breakfast', 'lunch', 'dinner'];
+  const sortedTypes = [
+    ...groupOrder.filter((t) => groups[t]),
+    ...Object.keys(groups).filter((t) => !groupOrder.includes(t)),
+  ];
+
+  const totalItems = menuItems.length;
+  const checkedCount = checkedItems.size;
+  const allChecked = checkedItems.size === totalItems && totalItems > 0;
+
+  function toggleItem(id: string) {
+    setCheckedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleConfirmPickup() {
+    try {
+      // Gọi API chuyển delivery sang qc_completed (shipper đã kiểm tra món xong)
+      await updateDelivery.mutateAsync({ deliveryId, status: 'qc_completed' });
+      toast.success('Đã xác nhận đã lấy hàng. Tiếp tục giao về bếp!');
+      onQCComplete();
+    } catch (e) {
+      toast.error(errMsg(e, 'Xác nhận thất bại'));
+    }
+  }
+
+  async function handleReportFail() {
+    if (!failingItem || !failReason.trim()) {
+      toast.error('Vui lòng nhập lý do không đạt.');
+      return;
+    }
+    try {
+      await flagFail.mutateAsync({
+        campaignId: '', // not used for shipper
+        stepId: failingItem.id,
+        reason: failReason.trim(),
+        photo: undefined,
+      });
+      toast.warning(`Đã báo cáo "${failingItem.name}" không đạt. Tổ chức đã được thông báo.`);
+      setFailingItem(null);
+      setFailReason('');
+    } catch (e) {
+      toast.error(errMsg(e, 'Báo cáo thất bại'));
+    }
+  }
+
+  return (
+    <section className="cm-card p-5">
+      {/* Header */}
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+          <span className="material-symbols-outlined text-[20px]">fact_check</span>
+        </div>
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
+              Việc 4
+            </span>
+            <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">
+              Kiểm tra chất lượng
+            </span>
+          </div>
+          <p className="mt-0.5 font-bold text-neutral-900">Kiểm tra món ăn trước khi lấy</p>
+          <p className="text-xs text-neutral-500 mt-0.5">
+            Đối chiếu với danh sách bên dưới. Nếu món nào không đạt, báo cáo cho tổ chức.
+          </p>
+        </div>
+      </div>
+
+      {/* Progress */}
+      <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-bold text-amber-700">
+            Đã kiểm tra: {checkedCount}/{totalItems} món
+          </span>
+          {allChecked && (
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+              Tất cả đạt
+            </span>
+          )}
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-amber-100">
+          <div
+            className="h-full rounded-full bg-amber-400 transition-all"
+            style={{ width: `${totalItems ? (checkedCount / totalItems) * 100 : 0}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Danh sách món theo mẻ */}
+      {sortedTypes.map((type) => (
+        <div key={type} className="mb-4">
+          <div className="mb-2 flex items-center gap-2">
+            <MealGroupLabel type={type} />
+            <span className="text-[11px] text-neutral-400">
+              ({groups[type].length} món)
+            </span>
+          </div>
+          <div className="space-y-2">
+            {groups[type].map((item) => {
+              const checked = checkedItems.has(item.id);
+              return (
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${
+                    checked
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : 'border-neutral-200 bg-white hover:border-emerald-300'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleItem(item.id)}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 text-sm font-bold transition-colors ${
+                      checked
+                        ? 'border-emerald-500 bg-emerald-500 text-white'
+                        : 'border-neutral-300 text-neutral-400 hover:border-emerald-400 hover:text-emerald-600'
+                    }`}
+                    aria-label={checked ? `Bỏ chọn ${item.name}` : `Chọn ${item.name}`}
+                  >
+                    {checked ? '✓' : ''}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-bold text-sm ${checked ? 'text-emerald-800' : 'text-neutral-900'}`}>
+                      {item.name}
+                    </p>
+                    {item.plannedServings != null && (
+                      <p className="text-[11px] text-neutral-500">
+                        Dự kiến: {item.plannedServings} suất
+                      </p>
+                    )}
+                  </div>
+                  {!checked && (
+                    <button
+                      type="button"
+                      onClick={() => setFailingItem(item)}
+                      className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      Báo lỗi
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Nút hành động */}
+      <div className="mt-4 flex flex-col gap-2 border-t border-neutral-100 pt-4">
+        {allChecked ? (
+          <button
+            type="button"
+            onClick={handleConfirmPickup}
+            disabled={advance.isPending}
+            className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          >
+            {advance.isPending ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                Đang xác nhận...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                Xác nhận đã lấy — giao về bếp
+              </span>
+            )}
+          </button>
+        ) : (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+            <p className="text-xs font-semibold text-amber-700">
+              Kiểm tra tất cả {totalItems} món để xác nhận đã lấy hàng
+            </p>
+          </div>
+        )}
+        <p className="text-[10px] text-center text-neutral-400">
+          Nếu phát hiện món không đạt, bấm "Báo lỗi" để thông báo cho tổ chức xử lý.
+        </p>
+      </div>
+
+      {/* Modal báo lỗi món */}
+      {failingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setFailingItem(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-br from-rose-500 to-rose-600 p-4 text-white">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">warning</span>
+                <p className="font-bold">Báo món không đạt</p>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
+                <p className="text-sm font-bold text-rose-800">{failingItem.name}</p>
+                {failingItem.plannedServings != null && (
+                  <p className="text-xs text-rose-600 mt-0.5">Dự kiến: {failingItem.plannedServings} suất</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 mb-1">
+                  Lý do không đạt <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={failReason}
+                  onChange={(e) => setFailReason(e.target.value)}
+                  rows={3}
+                  placeholder="VD: Món bị ôi, thiếu thành phần, không đúng công thức..."
+                  className="w-full rounded-xl border border-neutral-200 p-3 text-xs focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-200"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFailingItem(null)}
+                  className="flex-1 rounded-xl border border-neutral-200 px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50 transition-colors"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReportFail}
+                  disabled={!failReason.trim() || flagFail.isPending}
+                  className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                >
+                  {flagFail.isPending ? 'Đang gửi...' : 'Báo cáo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
