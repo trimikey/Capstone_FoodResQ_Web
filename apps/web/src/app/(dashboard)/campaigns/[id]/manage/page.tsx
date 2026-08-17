@@ -64,32 +64,61 @@ export default function ManageOverviewPage() {
       ? 'plan'
       : 'plan';
 
+  // 1 TNV đăng ký nhiều ca → nhiều bản ghi assignment. Trang tổng quan gộp các
+  // bản ghi cùng người + vai trò + trạng thái thành 1 hàng, nên duyệt/từ chối
+  // phải xử lý đủ cả nhóm.
+  const isPendingStatus = (p: { status?: string }) =>
+    !p.status || p.status === 'pending' || p.status === 'applied';
+  const volKey = (p: { id: string; role: string; status?: string; volunteerId?: string }) =>
+    `${p.volunteerId ?? p.id}:${p.role}:${isPendingStatus(p) ? 'pending' : p.status}`;
+
+  function groupOf(target: { id: string; role: string; shiftId?: string | null; status?: string; volunteerId?: string }) {
+    if (!target.shiftId) return [target];
+    return (c.participants ?? []).filter((p) => p.shiftId && volKey(p) === volKey(target));
+  }
+
   function decide(assignmentId: string, volunteerName: string, action: 'approved' | 'rejected') {
     const target = c.participants?.find((p) => p.id === assignmentId);
     if (!target) return;
 
-    if (action === 'approved' && c.shifts?.length && !target.shiftId) {
+    const group = groupOf(target);
+    if (action === 'approved' && c.shifts?.length && group.some((g) => !g.shiftId)) {
       toast.error('Đăng ký này chưa gắn ca. Mở trang Đăng ký chờ duyệt để chọn ca trước khi duyệt.');
       return;
     }
 
-    void review.mutateAsync(
-      {
-        campaignId: c.id,
-        assignmentId,
-        action,
-        ...(action === 'approved' && target.shiftId ? { shiftId: target.shiftId } : {}),
-      },
-      {
-        onSuccess: () => {
-          setDecisions((prev) => ({ ...prev, [assignmentId]: action }));
-          toast.success(action === 'approved' ? `Đã duyệt ${volunteerName}` : `Đã từ chối ${volunteerName}`);
-        },
-        onError: (e) => {
-          toast.error(errMsg(e, action === 'approved' ? 'Duyệt thất bại' : 'Từ chối thất bại'));
-        },
-      },
-    );
+    void (async () => {
+      let ok = 0;
+      let firstError: unknown = null;
+      for (const m of group) {
+        try {
+          await review.mutateAsync({
+            campaignId: c.id,
+            assignmentId: m.id,
+            action,
+            ...(action === 'approved' && m.shiftId ? { shiftId: m.shiftId } : {}),
+          });
+          setDecisions((prev) => ({ ...prev, [m.id]: action }));
+          ok += 1;
+        } catch (e) {
+          firstError = e;
+        }
+      }
+      if (ok > 0) {
+        toast.success(
+          action === 'approved'
+            ? group.length > 1
+              ? `Đã duyệt ${ok} ca cho ${volunteerName}`
+              : `Đã duyệt ${volunteerName}`
+            : group.length > 1
+              ? `Đã từ chối ${ok} ca của ${volunteerName}`
+              : `Đã từ chối ${volunteerName}`,
+        );
+      }
+      if (firstError) {
+        toast.error(errMsg(firstError, action === 'approved' ? 'Duyệt thất bại' : 'Từ chối thất bại'));
+      }
+    })();
   }
 
   // Lọc món cần duyệt: step cuối (order=4) đang ở trạng thái "available" (chef đã tick)
@@ -203,7 +232,7 @@ export default function ManageOverviewPage() {
             </h2>
           </div>
           <p className="cm-manage-card-sub mb-4">
-            Chef đã tick "Sẵn sàng phát xuất". Kiểm tra và duyệt để món được phát.
+            Chef đã tick &ldquo;Sẵn sàng phát xuất&rdquo;. Kiểm tra và duyệt để món được phát.
           </p>
           <div className="space-y-3">
             {pendingDishApprovals.map((dish) => (
@@ -275,11 +304,20 @@ export default function ManageOverviewPage() {
 
       {/* Inline quick registrations */}
       {(() => {
-        // Deduplicate participants theo id để tránh duplicate key warning
+        // Deduplicate theo id + gộp các đăng ký pending nhiều ca của cùng TNV
+        // thành 1 hàng (hàng đầu tiên đại diện, các bản ghi sau ẩn đi).
         const seen = new Set<string>();
-        const uniqueParticipants = (c.participants ?? []).filter((p: { id: string }) => {
+        const seenGroups = new Set<string>();
+        const uniqueParticipants = (c.participants ?? []).filter((p) => {
           if (seen.has(p.id)) return false;
           seen.add(p.id);
+          if (p.shiftId) {
+            const k = volKey(p);
+            if (groupOf(p).length > 1) {
+              if (seenGroups.has(k)) return false;
+              seenGroups.add(k);
+            }
+          }
           return true;
         });
         return uniqueParticipants.length > 0 && (
@@ -297,7 +335,9 @@ export default function ManageOverviewPage() {
             </Link>
           </div>
           <div className="px-2 pb-3">
-            {uniqueParticipants.slice(0, 4).map((p: { id: string }, idx: number) => (
+            {uniqueParticipants.slice(0, 4).map((p, idx: number) => {
+                const group = p.shiftId ? groupOf(p) : undefined;
+                return (
                 <RegistrationRow
                   key={`${p.id}-${idx}`}
                   p={p as Parameters<typeof RegistrationRow>[0]['p']}
@@ -305,8 +345,10 @@ export default function ManageOverviewPage() {
                   decision={decisions[p.id]}
                   pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
+                  group={group as Parameters<typeof RegistrationRow>[0]['group']}
                 />
-              ))}
+                );
+              })}
           </div>
         </section>
         );

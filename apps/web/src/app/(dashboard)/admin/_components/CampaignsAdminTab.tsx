@@ -7,8 +7,6 @@ import {
   useAdminCampaigns,
   useSetCampaignStatus,
   useAdminCampaignDetail,
-  useAdminCampaignChangeRequests,
-  useReviewCampaignChange,
   useAdminCharities,
   useAdminVolunteers,
   useCreateAdminCampaign,
@@ -17,7 +15,6 @@ import {
   useUnassignVolunteer,
   type AdminCampaign,
   type AdminCampaignDetail,
-  type AdminCampaignChangeRequest,
 } from '@/hooks/useAdmin';
 import { usePaged, Pagination, Skeleton, Empty } from './admin-shared';
 
@@ -64,102 +61,6 @@ function DetailStat({ icon, label, value }: { icon: string; label: string; value
       <span className="material-symbols-outlined text-[18px] text-neutral-400">{icon}</span>
       <p className="text-[10px] font-bold text-neutral-400 uppercase mt-0.5">{label}</p>
       <p className="text-sm font-extrabold text-neutral-900 mt-0.5">{value}</p>
-    </div>
-  );
-}
-
-function DiffRow({ label, from, to }: { label: string; from: string | number; to: string | number }) {
-  return (
-    <li className="flex items-center gap-1.5 flex-wrap">
-      <span className="material-symbols-outlined text-[14px] text-emerald-600">arrow_right</span>
-      <span className="font-semibold text-neutral-700">{label}:</span>
-      <span className="text-neutral-400 line-through">{from}</span>
-      <span className="material-symbols-outlined text-[13px] text-neutral-400">east</span>
-      <span className="font-bold text-emerald-700">{to}</span>
-    </li>
-  );
-}
-
-function ChangeRequestReviewCard({ r }: { r: AdminCampaignChangeRequest }) {
-  const review = useReviewCampaignChange();
-  const [rejecting, setRejecting] = useState(false);
-  const [note, setNote] = useState('');
-  const c = r.campaign;
-
-  const diffs: { label: string; from: string | number; to: string | number }[] = [];
-  if (r.scheduledDate) diffs.push({ label: 'Ngày', from: new Date(c.scheduledDate).toLocaleDateString('vi-VN'), to: new Date(r.scheduledDate).toLocaleDateString('vi-VN') });
-  if (r.startTime) diffs.push({ label: 'Giờ bắt đầu', from: c.startTime, to: r.startTime });
-  if (r.endTime) diffs.push({ label: 'Giờ kết thúc', from: c.endTime, to: r.endTime });
-  if (r.kitchenAddress) diffs.push({ label: 'Địa chỉ', from: c.kitchenAddress, to: r.kitchenAddress });
-  if (r.chefSlotsNeeded != null) diffs.push({ label: 'Đầu bếp', from: c.chefSlotsNeeded, to: r.chefSlotsNeeded });
-  if (r.waiterSlotsNeeded != null) diffs.push({ label: 'Phục vụ', from: c.waiterSlotsNeeded, to: r.waiterSlotsNeeded });
-  if (r.shipperSlotsNeeded != null) diffs.push({ label: 'Giao hàng', from: c.shipperSlotsNeeded, to: r.shipperSlotsNeeded });
-
-  async function decide(decision: 'approve' | 'reject') {
-    try {
-      await review.mutateAsync({ id: r.id, decision, reviewNote: decision === 'reject' ? note.trim() || undefined : undefined });
-      toast.success(decision === 'approve' ? 'Đã duyệt & áp dụng thay đổi' : 'Đã từ chối yêu cầu');
-      setRejecting(false); setNote('');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
-      toast.error(msg);
-    }
-  }
-
-  return (
-    <div className="bg-white border border-neutral-150 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-bold text-neutral-900 truncate">{c.title}</p>
-          <p className="text-[11px] text-neutral-500 truncate">{c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? '—'}</p>
-        </div>
-        <span className="text-[10px] text-neutral-400 shrink-0">{new Date(r.createdAt).toLocaleDateString('vi-VN')}</span>
-      </div>
-      <ul className="mt-2.5 text-xs space-y-1">
-        {diffs.map((d, i) => <DiffRow key={i} {...d} />)}
-      </ul>
-      {r.reason && <p className="mt-2 text-[11px] text-neutral-500 italic">"{r.reason}"</p>}
-      {rejecting ? (
-        <div className="mt-3 space-y-2">
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lý do từ chối (tuỳ chọn)"
-            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-rose-300" autoFocus />
-          <div className="flex gap-2">
-            <button onClick={() => decide('reject')} disabled={review.isPending}
-              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
-              {review.isPending ? 'Đang xử lý...' : 'Xác nhận từ chối'}
-            </button>
-            <button onClick={() => setRejecting(false)} className="px-3 py-2 text-neutral-400 text-xs">Huỷ</button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3 flex gap-2">
-          <button onClick={() => decide('approve')} disabled={review.isPending}
-            className="flex-1 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
-            Duyệt &amp; áp dụng
-          </button>
-          <button onClick={() => setRejecting(true)} disabled={review.isPending}
-            className="flex-1 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold disabled:opacity-50 transition-colors">
-            Từ chối
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChangeRequestsPanel() {
-  const { data, isLoading } = useAdminCampaignChangeRequests('pending');
-  const requests = data ?? [];
-  if (isLoading || requests.length === 0) return null;
-  return (
-    <div className="bg-honey-50 border border-honey-200 rounded-3xl p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-honey-700">edit_note</span>
-        <h3 className="font-extrabold text-neutral-900">Yêu cầu thay đổi chờ duyệt ({requests.length})</h3>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        {requests.map((r) => <ChangeRequestReviewCard key={r.id} r={r} />)}
-      </div>
     </div>
   );
 }
@@ -409,7 +310,7 @@ export default function CampaignsAdminTab() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Chiến dịch</h2>
-          <p className="text-sm text-neutral-500 mt-1">Duyệt chiến dịch mới và xử lý các yêu cầu thay đổi. Duyệt/từ chối tình nguyện viên do tổ chức từ thiện phụ trách.</p>
+          <p className="text-sm text-neutral-500 mt-1">Duyệt chiến dịch mới. Duyệt/từ chối tình nguyện viên do tổ chức từ thiện phụ trách.</p>
         </div>
       </div>
 
@@ -430,8 +331,6 @@ export default function CampaignsAdminTab() {
           )}
         </div>
       )}
-
-      <ChangeRequestsPanel />
 
       <div className="flex flex-wrap gap-2">
         {[{ v: '', l: 'Tất cả' }, ...CAMPAIGN_STATUS_OPTS.map((s) => ({ v: s, l: CAMPAIGN_STATUS_META[s].label }))].map((opt) => (

@@ -363,10 +363,6 @@ export function ManageShell({
                 <span className="material-symbols-outlined text-[18px]">open_in_new</span>
                 Xem trang công khai
               </Link>
-              <Link href={`/campaigns/${c.id}/edit`} className="cm-manage-nav-item">
-                <span className="material-symbols-outlined text-[18px]">edit</span>
-                Chỉnh sửa chiến dịch
-              </Link>
               {['pending_approval', 'approved'].includes(c.status) && (
                 <button
                   type="button"

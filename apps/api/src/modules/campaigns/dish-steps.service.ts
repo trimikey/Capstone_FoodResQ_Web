@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CampaignDishStep, CampaignMenuStepStatus, Prisma } from '@prisma/client';
+import { CampaignDishStep, CampaignMenuStepStatus } from '@prisma/client';
 import { UserRole } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';

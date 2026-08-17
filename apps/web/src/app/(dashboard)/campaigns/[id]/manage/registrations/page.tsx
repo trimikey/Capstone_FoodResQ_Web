@@ -21,6 +21,9 @@ export default function RegistrationsPage() {
   const [decisions, setDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
   const [reviewTarget, setReviewTarget] = useState<CampaignParticipant | null>(null);
   const [selectedShiftId, setSelectedShiftId] = useState('');
+  // Popup duyệt GỘP: 1 TNV đăng ký nhiều ca → duyệt các ca đã tick trong 1 lần.
+  const [groupTarget, setGroupTarget] = useState<CampaignParticipant[] | null>(null);
+  const [groupChecked, setGroupChecked] = useState<Record<string, boolean>>({});
   const review = useReviewAssignment();
   const startCampaign = useStartCampaign();
 
@@ -60,7 +63,7 @@ export default function RegistrationsPage() {
       ? 'recruit'
       : 'plan';
 
-  const volunteers: CampaignParticipant[] = c.participants ?? [];
+  const volunteers: CampaignParticipant[] = useMemo(() => c.participants ?? [], [c.participants]);
   const filteredVolunteers: CampaignParticipant[] = (() => {
     if (filter === 'all') return volunteers;
     if (filter === 'pending') return volunteers.filter((v) => !v.status || v.status === 'pending' || v.status === 'applied');
@@ -70,6 +73,42 @@ export default function RegistrationsPage() {
   const pendingCount = volunteers.filter(
     (v) => !v.status || v.status === 'pending' || v.status === 'applied',
   ).length;
+
+  // ── Gộp đăng ký cùng TNV ───────────────────────────────────────────────────
+  // 1 TNV đăng ký N ca → BE tạo N bản ghi assignment (mỗi ca chiếm slot riêng).
+  // Hiển thị tách N hàng làm charity tưởng trùng đăng ký, nên gộp các bản ghi
+  // cùng người + cùng vai trò + cùng trạng thái thành 1 hàng; danh sách từng ca
+  // nằm trong phần Chi tiết. Nhóm pending duyệt chung qua 1 popup.
+  const isPendingStatus = (v: CampaignParticipant) =>
+    !v.status || v.status === 'pending' || v.status === 'applied';
+  // Ghép theo hồ sơ TNV + vai trò + trạng thái: trạng thái khác nhau cần hành
+  // động khác nhau nên không trộn chung hàng.
+  const volKey = (v: CampaignParticipant) =>
+    `${(v as { volunteerId?: string }).volunteerId ?? v.id}:${v.role}:${isPendingStatus(v) ? 'pending' : v.status}`;
+  const rowGroups = useMemo(() => {
+    const m = new Map<string, CampaignParticipant[]>();
+    for (const v of volunteers) {
+      if (!v.shiftId) continue;
+      const k = volKey(v);
+      m.set(k, [...(m.get(k) ?? []), v]);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [volunteers]);
+
+  // Chỉ hiện bản ghi ĐẦU TIÊN của mỗi nhóm; các bản còn lại đã gộp vào hàng đó.
+  const displayedVolunteers = useMemo(() => {
+    const shown = new Set<string>();
+    return filteredVolunteers.filter((v) => {
+      if (!v.shiftId) return true;
+      const k = volKey(v);
+      if ((rowGroups.get(k)?.length ?? 0) < 2) return true;
+      if (shown.has(k)) return false;
+      shown.add(k);
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredVolunteers, rowGroups]);
 
   // Cảnh báo ca thiếu người
   const slotWarnings = useMemo(() => {
@@ -136,15 +175,72 @@ export default function RegistrationsPage() {
     );
   }
 
+  /** Duyệt/từ chối lần lượt nhiều bản ghi của cùng 1 TNV (mỗi bản ghi = 1 ca). */
+  async function submitGroup(members: CampaignParticipant[], name: string, action: 'approved' | 'rejected') {
+    let ok = 0;
+    let firstError: unknown = null;
+    for (const m of members) {
+      setDecisions((prev) => ({ ...prev, [m.id]: action }));
+      try {
+        await review.mutateAsync({
+          campaignId: c.id,
+          assignmentId: m.id,
+          action,
+          ...(action === 'approved' && m.shiftId ? { shiftId: m.shiftId } : {}),
+        });
+        ok += 1;
+      } catch (e) {
+        firstError = e;
+        setDecisions((prev) => {
+          const next = { ...prev };
+          delete next[m.id];
+          return next;
+        });
+      }
+    }
+    if (ok > 0) {
+      toast.success(action === 'approved' ? `Đã duyệt ${ok} ca cho ${name}` : `Đã từ chối ${ok} ca của ${name}`);
+    }
+    if (firstError) {
+      toast.error(errMsg(firstError, action === 'approved' ? 'Có ca duyệt thất bại' : 'Có ca từ chối thất bại'));
+    }
+    setGroupTarget(null);
+    setGroupChecked({});
+  }
+
   function decide(id: string, name: string, action: 'approved' | 'rejected') {
+    const target = volunteers.find((v) => v.id === id);
+    if (!target) return;
+    // Nhóm các đăng ký pending-có-ca của cùng TNV; hàng ngoài đại diện cả nhóm
+    // nên từ chối/duyệt phải xử lý đủ mọi thành viên.
+    const group =
+      isPendingStatus(target) && target.shiftId
+        ? rowGroups.get(volKey(target)) ?? [target]
+        : [target];
+
     if (action === 'rejected') {
+      if (group.length > 1) {
+        void submitGroup(group, name, 'rejected');
+        return;
+      }
       submitDecision(id, name, action);
       return;
     }
-    const target = volunteers.find((v) => v.id === id);
-    if (!target) return;
     if (shifts.length === 0) {
       submitDecision(id, name, action);
+      return;
+    }
+    if (group.length > 1) {
+      // Mở popup gộp: tick sẵn các ca còn chỗ, ca đã đủ người thì khoá lại.
+      setGroupTarget(group);
+      setGroupChecked(
+        Object.fromEntries(
+          group.map((m) => {
+            const s = shifts.find((x) => x.id === m.shiftId);
+            return [m.id, !!s && s.slotsFilled < s.slotsNeeded];
+          }),
+        ),
+      );
       return;
     }
     const selectedShift = target.shiftId
@@ -289,7 +385,7 @@ export default function RegistrationsPage() {
             </div>
           ) : (
             <div className="px-2 pb-3">
-              {filteredVolunteers.map((p, idx) => (
+              {displayedVolunteers.map((p, idx) => (
                 <RegistrationRow
                   key={`${p.id}-${idx}`}
                   p={p}
@@ -297,6 +393,7 @@ export default function RegistrationsPage() {
                   decision={decisions[p.id]}
                   pending={review.isPending && review.variables?.assignmentId === p.id}
                   onDecide={decide}
+                  group={p.shiftId ? rowGroups.get(volKey(p)) : undefined}
                 />
               ))}
             </div>
@@ -545,6 +642,110 @@ export default function RegistrationsPage() {
               className="cm-reg-btn cm-reg-btn--approve disabled:opacity-50"
             >
               {review.isPending ? 'Đang duyệt...' : 'Duyệt & phân ca'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {groupTarget ? (
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[10vh] px-4">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+          {/* Header */}
+          <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setGroupTarget(null);
+                setGroupChecked({});
+              }}
+              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
+              aria-label="Đóng"
+            >
+              <span className="material-symbols-outlined text-white text-[18px]">close</span>
+            </button>
+            <div className="flex items-center gap-3 pr-8">
+              <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-white text-[18px]">event_available</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-white text-base">Duyệt {groupTarget.length} ca đã đăng ký</h3>
+                <p className="mt-0.5 text-xs text-emerald-50 truncate">
+                  {groupTarget[0].fullName} - {roleLabel(groupTarget[0].role)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white">
+              <span className="material-symbols-outlined text-[14px]">stacks</span>
+              TNV đăng ký nhiều ca — duyệt chung 1 lần
+            </p>
+          </div>
+          <div className="overflow-y-auto flex-1 min-h-0">
+            <div className="px-5 py-4 space-y-3">
+              {groupTarget.map((m) => {
+                const s = shifts.find((x) => x.id === m.shiftId);
+                const full = !s || s.slotsFilled >= s.slotsNeeded;
+                return (
+                  <label
+                    key={m.id}
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-3 ${
+                      full
+                        ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 opacity-60'
+                        : groupChecked[m.id]
+                          ? 'cursor-pointer border-emerald-600 bg-emerald-50'
+                          : 'cursor-pointer border-neutral-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!groupChecked[m.id]}
+                      disabled={full}
+                      onChange={() => setGroupChecked((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+                      className="h-4 w-4 accent-emerald-700"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-900">
+                        {s ? s.label : 'Ca không còn tồn tại'}
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-emerald-700">
+                          TNV chọn
+                        </span>
+                      </span>
+                      <span className="block text-xs text-neutral-500">
+                        {m.workDate ? `${new Date(m.workDate).toLocaleDateString('vi-VN')} · ` : ''}
+                        {s
+                          ? `${s.startTime}-${s.endTime} · ${s.slotsFilled}/${s.slotsNeeded} đã duyệt${full ? ' · Đã đủ người' : ''}`
+                          : 'Ca này đã bị xoá khỏi lịch trình'}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setGroupTarget(null);
+                setGroupChecked({});
+              }}
+              disabled={review.isPending}
+              className="cm-reg-btn cm-reg-btn--reject disabled:opacity-50"
+            >
+              Huỷ
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const members = groupTarget.filter((m) => groupChecked[m.id]);
+                if (members.length === 0) return;
+                void submitGroup(members, groupTarget[0].fullName, 'approved');
+              }}
+              disabled={review.isPending || groupTarget.every((m) => !groupChecked[m.id])}
+              className="cm-reg-btn cm-reg-btn--approve disabled:opacity-50"
+            >
+              {review.isPending
+                ? 'Đang duyệt...'
+                : `Duyệt ${groupTarget.filter((m) => groupChecked[m.id]).length} ca đã chọn`}
             </button>
           </div>
         </div>

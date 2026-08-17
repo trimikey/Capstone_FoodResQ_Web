@@ -11,7 +11,6 @@ import {
   type Campaign,
 } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
-import ChangeRequestModal from './ChangeRequestModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; chip: string }> = {
@@ -35,7 +34,6 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
   const confirmDon = useConfirmDonation();
   const [servings, setServings] = useState('');
   const [finishing, setFinishing] = useState(false);
-  const [showChange, setShowChange] = useState(false);
   const [confirmingDonationId, setConfirmingDonationId] = useState<string | null>(null);
   const [receiptNote, setReceiptNote] = useState('');
   const st = CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' };
@@ -329,7 +327,6 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
         </div>
       )}
 
-      {showChange && <ChangeRequestModal c={c} onClose={() => setShowChange(false)} />}
     </div>
   );
 }

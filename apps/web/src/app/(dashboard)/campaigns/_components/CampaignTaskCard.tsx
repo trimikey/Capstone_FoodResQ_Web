@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { useCompleteDistribution, type MyTask } from '@/hooks/useCampaigns';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
+import { formatVnDate } from '@/lib/vn-date';
 import { errMsg } from '@/lib/utils';
 import { ROLE_META } from './RoleBadge';
 import { TASK_NEXT } from './CampaignTaskAction';
@@ -68,11 +69,14 @@ function urgencyOf(t: MyTask, now: Date): {
   return { kind: 'normal', isCompleted };
 }
 
-export default function CampaignTaskCard({ t }: { t: MyTask }) {
+export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTask[] }) {
   const rm = ROLE_META[t.role];
   const status = TASK_STATUS_META[t.status] ?? { label: t.status, chip: 'cm-chip cm-chip--ink' };
   const next = TASK_NEXT[t.status]?.(t.role) ?? null;
   const distributions = t.distributions ?? [];
+  // 1 TNV nhận nhiều ca cùng chiến dịch → BE tạo nhiều assignment. Gộp về 1 thẻ,
+  // liệt kê từng ca (mỗi ca có màn nhiệm vụ riêng nên link riêng từng ca).
+  const groupMembers = group && group.length > 1 ? group : null;
   const completeDist = useCompleteDistribution();
   const campaignRunning = t.campaign.status === 'in_progress';
   const urgency = urgencyOf(t, new Date());
@@ -126,6 +130,28 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
         </span>
       </div>
 
+      {groupMembers && (
+        <div className="mt-2 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-2.5">
+          <p className="text-[10px] font-extrabold uppercase tracking-wide text-neutral-500">
+            {groupMembers.length} ca trong chiến dịch này
+          </p>
+          {groupMembers.map((m) => (
+            <div key={m.id} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-neutral-700">
+                <span className="material-symbols-outlined text-[13px]">schedule</span>
+                {m.workDate ? `${formatVnDate(m.workDate)} · ` : ''}
+                {m.shift ? `${m.shift.label} · ${m.shift.startTime}-${m.shift.endTime}` : 'Ca chung'}
+              </span>
+              {!['pending', 'rejected'].includes(m.status) && (
+                <Link href={`/my-tasks/${m.id}`} className="shrink-0 font-bold text-honey-700 hover:underline">
+                  Vào nhiệm vụ →
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Link href={`/campaigns/${t.campaign.id}`} className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-3 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100">
           <span className="material-symbols-outlined text-[15px]">visibility</span>
@@ -133,8 +159,9 @@ export default function CampaignTaskCard({ t }: { t: MyTask }) {
         </Link>
         {/* MỌI vai trò đều có màn nhiệm vụ riêng: bếp có 4 khâu/món, shipper có
             danh sách chuyến & đợt phát theo giờ. Trước đây shipper không có lối vào
-            nên chỉ còn một nút đổi trạng thái chung chung ở cuối thẻ. */}
-        {!['pending', 'rejected'].includes(t.status) && (
+            nên chỉ còn một nút đổi trạng thái chung chung ở cuối thẻ.
+            Thẻ gộp nhiều ca: link nhiệm vụ nằm cạnh từng ca ở khối phía trên. */}
+        {!groupMembers && !['pending', 'rejected'].includes(t.status) && (
           <Link
             href={`/my-tasks/${t.id}`}
             className="inline-flex h-8 items-center justify-center gap-1 rounded-full border border-honey-100 bg-honey-50 px-3 text-[11px] font-bold text-honey-700 transition-colors hover:bg-honey-100"

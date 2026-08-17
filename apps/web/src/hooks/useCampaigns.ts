@@ -88,40 +88,6 @@ export interface CreateCampaignInput {
   }[];
 }
 
-export interface CampaignChangeRequest {
-  id: string;
-  campaignId: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  reason: string | null;
-  scheduledDate: string | null;
-  endDate: string | null;
-  startTime: string | null;
-  endTime: string | null;
-  kitchenAddress: string | null;
-  lng: number | null;
-  lat: number | null;
-  chefSlotsNeeded: number | null;
-  waiterSlotsNeeded: number | null;
-  shipperSlotsNeeded: number | null;
-  reviewNote: string | null;
-  reviewedAt: string | null;
-  createdAt: string;
-}
-
-export interface SubmitCampaignChangeInput {
-  scheduledDate?: string;
-  endDate?: string;
-  startTime?: string;
-  endTime?: string;
-  kitchenAddress?: string;
-  lng?: number;
-  lat?: number;
-  chefSlotsNeeded?: number;
-  waiterSlotsNeeded?: number;
-  shipperSlotsNeeded?: number;
-  reason?: string;
-}
-
 export interface MyTask {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
@@ -129,6 +95,8 @@ export interface MyTask {
   confirmationStatus?: 'pending' | 'confirmed' | 'declined';
   confirmedAt?: string | null;
   shiftId?: string | null;
+  /** Ngày trực của ca — cần khi chiến dịch kéo dài nhiều ngày. */
+  workDate?: string | null;
   shift?: {
     id: string;
     label: string;
@@ -638,40 +606,6 @@ export function useConfirmDonation() {
       const body = typeof p === 'string' ? {} : { note: p.note };
       return (await api.patch(`/campaigns/donations/${donationId}/confirm`, body)).data.data;
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
-  });
-}
-
-// Charity: lịch sử yêu cầu thay đổi của một chiến dịch
-export function useCampaignChangeRequests(campaignId: string, enabled = true) {
-  return useQuery({
-    queryKey: ['campaigns', 'change-requests', campaignId],
-    queryFn: async () =>
-      (await api.get(`/campaigns/${campaignId}/change-requests`)).data.data as CampaignChangeRequest[],
-    enabled,
-    staleTime: 15_000,
-  });
-}
-
-// Charity: gửi yêu cầu thay đổi chiến dịch (chờ admin duyệt)
-export function useSubmitCampaignChange() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { id: string; input: SubmitCampaignChangeInput }) =>
-      (await api.post(`/campaigns/${p.id}/change-requests`, p.input)).data.data,
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['campaigns'] });
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'change-requests', p.id] });
-    },
-  });
-}
-
-// Charity: huỷ yêu cầu thay đổi đang chờ duyệt
-export function useCancelCampaignChange() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (changeRequestId: string) =>
-      (await api.patch(`/campaigns/change-requests/${changeRequestId}/cancel`)).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }

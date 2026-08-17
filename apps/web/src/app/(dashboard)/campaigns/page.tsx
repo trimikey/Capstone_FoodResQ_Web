@@ -1244,8 +1244,20 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
   const isToday = (t: MyTask) =>
     Boolean(t.campaign.scheduledDate?.slice(0, 10) === todayKey);
 
-  const todayTasks = myTasks.filter(isToday);
-  const upcomingTasks = myTasks.filter((t) => !isToday(t));
+  // 1 TNV nhận nhiều ca cùng chiến dịch → BE trả nhiều task giống hệt nhau ngoài
+  // ca trực. Gộp theo chiến dịch + vai trò + trạng thái thành 1 thẻ; thẻ tự liệt
+  // kê các ca bên trong (mỗi ca vẫn có link nhiệm vụ riêng).
+  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}:${t.status}`;
+  const taskGroups = new Map<string, MyTask[]>();
+  for (const t of myTasks) {
+    const k = taskGroupKey(t);
+    taskGroups.set(k, [...(taskGroups.get(k) ?? []), t]);
+  }
+  const dedupedTasks = myTasks.filter((t) => taskGroups.get(taskGroupKey(t))![0].id === t.id);
+  const groupOf = (t: MyTask) => taskGroups.get(taskGroupKey(t));
+
+  const todayTasks = dedupedTasks.filter(isToday);
+  const upcomingTasks = dedupedTasks.filter((t) => !isToday(t));
   const overdueTodayCount = todayTasks.filter((t) => isOverdue(t, now)).length;
 
   return (
@@ -1253,7 +1265,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
       <div className="cm-section-head">
         <h2 className="cm-section-title">
           <span className="material-symbols-outlined text-emerald-600">assignment_ind</span>
-          Việc của tôi ({myTasks.length})
+          Việc của tôi ({dedupedTasks.length})
         </h2>
       </div>
       {myTasks.length === 0 ? (
@@ -1286,7 +1298,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {todayTasks.map((t) => (
-                  <CampaignTaskCard key={t.id} t={t} />
+                  <CampaignTaskCard key={t.id} t={t} group={groupOf(t)} />
                 ))}
               </div>
             </div>
@@ -1300,7 +1312,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {upcomingTasks.map((t) => (
-                  <CampaignTaskCard key={t.id} t={t} />
+                  <CampaignTaskCard key={t.id} t={t} group={groupOf(t)} />
                 ))}
               </div>
             </div>
