@@ -328,65 +328,71 @@ function DeliveryHistoryContent() {
   return (
     <div className="min-h-screen bg-neutral-50/50 pb-24">
       {reporting && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl border border-neutral-200 shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-neutral-100 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-extrabold text-neutral-900">Báo cáo sự cố giao hàng</h2>
-                <p className="text-sm text-neutral-500 mt-1">
-                  Đơn: {historyTitle(reporting)}
-                </p>
-              </div>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center pt-[10vh] px-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
               <button
                 type="button"
                 onClick={closeReport}
-                className="w-9 h-9 rounded-full hover:bg-neutral-100 text-neutral-500 flex items-center justify-center"
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
                 aria-label="Đóng"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <label className="block">
-                <span className="text-xs font-bold text-neutral-500 uppercase">Lý do</span>
-                <select
-                  value={reportReason}
-                  onChange={(e) => setReportReason(e.target.value as ReportReason)}
-                  className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500"
-                >
-                  {REPORT_REASONS.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold text-neutral-500 uppercase">Mô tả sự cố</span>
-                <textarea
-                  value={reportDescription}
-                  onChange={(e) => setReportDescription(e.target.value)}
-                  rows={4}
-                  maxLength={500}
-                  placeholder="Mô tả ngắn gọn sự cố trong quá trình giao hàng..."
-                  className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 resize-none"
-                />
-              </label>
-              <div className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={closeReport}
-                  className="flex-1 py-3 rounded-xl border border-neutral-200 text-neutral-600 text-sm font-bold hover:bg-neutral-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={submitReport}
-                  disabled={reportMutation.isPending}
-                  className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50"
-                >
-                  {reportMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}
-                </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">report</span>
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-extrabold text-white text-base">Báo cáo sự cố giao hàng</h2>
+                  <p className="text-xs text-emerald-50 mt-0.5 truncate">Đơn: {historyTitle(reporting)}</p>
+                </div>
               </div>
+            </div>
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <label className="block">
+                  <span className="text-xs font-bold text-neutral-500 uppercase">Lý do</span>
+                  <select
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value as ReportReason)}
+                    className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500"
+                  >
+                    {REPORT_REASONS.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold text-neutral-500 uppercase">Mô tả sự cố</span>
+                  <textarea
+                    value={reportDescription}
+                    onChange={(e) => setReportDescription(e.target.value)}
+                    rows={4}
+                    maxLength={500}
+                    placeholder="Mô tả ngắn gọn sự cố trong quá trình giao hàng..."
+                    className="mt-1 w-full bg-white border border-neutral-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 resize-none"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-3">
+              <button
+                type="button"
+                onClick={closeReport}
+                className="flex-1 py-3 rounded-xl border border-neutral-200 text-neutral-600 text-sm font-bold hover:bg-neutral-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={submitReport}
+                disabled={reportMutation.isPending}
+                className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50"
+              >
+                {reportMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}
+              </button>
             </div>
           </div>
         </div>

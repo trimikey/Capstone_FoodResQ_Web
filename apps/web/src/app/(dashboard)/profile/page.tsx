@@ -110,6 +110,7 @@ export default function ProfilePage() {
   const isFaceRole = me?.role === UserRole.RECEIVER || me?.role === UserRole.VOLUNTEER;
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
+  const [faceImageFailed, setFaceImageFailed] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
@@ -120,6 +121,10 @@ export default function ProfilePage() {
 
   // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
   const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
+
+  useEffect(() => {
+    setFaceImageFailed(false);
+  }, [faceImage]);
 
   useEffect(() => {
     if (me) {
@@ -581,9 +586,23 @@ export default function ProfilePage() {
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
                 {faceImage ? (
                   <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
-                    <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                      <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
-                    </div>
+                    {faceImage && !faceImageFailed ? (
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
+                        <img
+                          src={faceImage}
+                          alt="Khuôn mặt đã đăng ký"
+                          className="w-full h-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                            setFaceImageFailed(true);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-emerald-700 text-[28px]">verified_user</span>
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 text-emerald-700 font-bold text-sm">
                         <span className="material-symbols-outlined text-[18px]">verified_user</span>
@@ -718,19 +737,26 @@ export default function ProfilePage() {
 
       {/* ── EDIT PROFILE MODAL ─────────────────────────────── */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200 w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-neutral-150 flex justify-between items-center">
-              <h3 className="font-extrabold text-neutral-900 text-lg">Chỉnh sửa hồ sơ</h3>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[12vh] px-4" onClick={() => setIsEditModalOpen(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0">
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="p-1.5 hover:bg-neutral-100 rounded-full text-neutral-400 hover:text-neutral-800 transition-colors"
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
               </button>
+              <h3 className="font-extrabold text-white text-lg pr-8">Chỉnh sửa hồ sơ</h3>
             </div>
 
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto max-h-[calc(85vh-72px)]">
+
+              <form onSubmit={handleEditSubmit} className="px-5 py-4 space-y-3">
               <div className="space-y-1.5 text-left">
                 <label className="text-xs text-neutral-450 font-bold uppercase">Họ và tên</label>
                 <input
@@ -739,7 +765,7 @@ export default function ProfilePage() {
                   minLength={2}
                   value={editForm.fullName}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
 
@@ -749,7 +775,7 @@ export default function ProfilePage() {
                   type="email"
                   disabled
                   value={me.email}
-                  className="w-full border border-neutral-200 bg-neutral-50 text-neutral-500 rounded-xl p-3 text-sm font-semibold cursor-not-allowed"
+                  className="w-full border border-neutral-200 bg-neutral-50 text-neutral-500 rounded-xl px-3 py-2.5 text-sm font-semibold cursor-not-allowed"
                 />
               </div>
 
@@ -760,7 +786,7 @@ export default function ProfilePage() {
                   value={editForm.phone}
                   placeholder="0901234567"
                   onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
 
@@ -771,7 +797,7 @@ export default function ProfilePage() {
                   value={editForm.avatarUrl}
                   placeholder="https://..."
                   onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 text-sm font-semibold"
                 />
               </div>
 
@@ -789,7 +815,7 @@ export default function ProfilePage() {
                       readOnly
                       value={editForm.address}
                       placeholder="Bấm nút định vị hoặc ghim trên bản đồ"
-                      className="flex-1 border border-neutral-200 bg-neutral-50 rounded-xl p-3 focus:outline-none text-sm font-semibold cursor-default"
+                      className="flex-1 border border-neutral-200 bg-neutral-50 rounded-xl px-3 py-2.5 focus:outline-none text-sm font-semibold cursor-default"
                     />
                     <button
                       type="button"
@@ -830,7 +856,7 @@ export default function ProfilePage() {
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
                   {faceImage ? (
-                    <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
+                    <div className="flex items-center gap-3 border border-emerald-200 rounded-xl px-3 py-2.5 bg-emerald-50/50">
                       <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
                         <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
                       </div>
@@ -843,7 +869,7 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl p-3">
+                    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
                       <span className="material-symbols-outlined text-amber-600">no_accounts</span>
                       <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt.</p>
                     </div>
@@ -851,7 +877,8 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              <div className="flex gap-3 pt-2">
+              {/* Footer */}
+              <div className="flex gap-3 pt-2 pb-1">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
@@ -868,6 +895,9 @@ export default function ProfilePage() {
                 </button>
               </div>
             </form>
+
+            {/* Scrollable body end */}
+            </div>
           </div>
         </div>
       )}

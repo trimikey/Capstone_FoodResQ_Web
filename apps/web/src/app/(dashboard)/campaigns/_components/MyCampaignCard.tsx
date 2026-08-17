@@ -249,65 +249,70 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
 
       {confirmingDonation && (
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4"
+          className="fixed inset-0 z-[80] flex items-start justify-center pt-[10vh] px-4 bg-black/40"
           role="dialog"
           aria-modal="true"
           aria-labelledby={`confirm-donation-title-${confirmingDonation.id}`}
           onClick={closeConfirmModal}
         >
           <div
-            className="w-full max-w-md overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-2xl"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Phản hồi provider</p>
-                <h4 id={`confirm-donation-title-${confirmingDonation.id}`} className="mt-1 text-lg font-bold text-neutral-900">
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                disabled={confirmDon.isPending}
+                className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center disabled:opacity-50"
+                aria-label="Đóng"
+              >
+                <span className="material-symbols-outlined text-white text-[18px]">close</span>
+              </button>
+              <div className="flex items-center gap-3 pr-8">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-white text-[18px]">inventory_2</span>
+                </div>
+                <h4 id={`confirm-donation-title-${confirmingDonation.id}`} className="font-extrabold text-white text-base">
                   Xác nhận nhận nguyên liệu
                 </h4>
               </div>
-              <button
-                type="button"
-                onClick={closeConfirmModal}
-                disabled={confirmDon.isPending}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 transition-colors hover:bg-neutral-200 disabled:opacity-50"
-                aria-label="Đóng"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
             </div>
 
-            <div className="space-y-4 px-5 py-5">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-                <p className="text-sm font-bold text-neutral-900">{confirmingDonation.itemName}</p>
-                <p className="mt-1 text-xs text-neutral-600">
-                  {confirmingDonation.quantity ? `${confirmingDonation.quantity} ` : ''}
-                  từ {confirmingDonation.provider.businessName}
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <div className="px-5 py-4 space-y-3">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                  <p className="text-sm font-bold text-neutral-900">{confirmingDonation.itemName}</p>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    {confirmingDonation.quantity ? `${confirmingDonation.quantity} ` : ''}
+                    từ {confirmingDonation.provider.businessName}
+                  </p>
+                </div>
+
+                <label className="block">
+                  <span className="text-xs font-bold text-neutral-700">Ghi chú gửi provider</span>
+                  <textarea
+                    value={receiptNote}
+                    onChange={(e) => setReceiptNote(e.target.value)}
+                    rows={4}
+                    placeholder="Ví dụ: đã nhận đủ số lượng, chất lượng đạt yêu cầu, thời gian giao đúng hẹn..."
+                    className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    autoFocus
+                  />
+                </label>
+                <p className="text-xs leading-relaxed text-neutral-500">
+                  Nội dung này sẽ được lưu vào biên nhận và gửi thông báo cho provider để họ biết kết quả xử lý.
                 </p>
               </div>
-
-              <label className="block">
-                <span className="text-xs font-bold text-neutral-700">Ghi chú gửi provider</span>
-                <textarea
-                  value={receiptNote}
-                  onChange={(e) => setReceiptNote(e.target.value)}
-                  rows={4}
-                  placeholder="Ví dụ: đã nhận đủ số lượng, chất lượng đạt yêu cầu, thời gian giao đúng hẹn..."
-                  className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  autoFocus
-                />
-              </label>
-              <p className="text-xs leading-relaxed text-neutral-500">
-                Nội dung này sẽ được lưu vào biên nhận và gửi thông báo cho provider để họ biết kết quả xử lý.
-              </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-4">
+            <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={closeConfirmModal}
                 disabled={confirmDon.isPending}
-                className="rounded-full px-4 py-2 text-sm font-bold text-neutral-500 transition-colors hover:bg-white hover:text-neutral-700 disabled:opacity-50"
+                className="rounded-full px-4 py-2 text-sm font-bold text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50"
               >
                 Huỷ
               </button>

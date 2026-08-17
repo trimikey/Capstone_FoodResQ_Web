@@ -12,9 +12,15 @@ export function cn(...inputs: ClassValue[]) {
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
+  const normalizeUploadPath = (pathname: string) =>
+    pathname.startsWith('/api/v1/uploads/') ? pathname.replace(/^\/api\/v1/, '') : pathname;
+
   if (path.startsWith('http')) {
     try {
       const url = new URL(path);
+      if (url.pathname.startsWith('/api/v1/uploads/')) {
+        return `${url.origin}${normalizeUploadPath(url.pathname)}${url.search}`;
+      }
       if (
         (url.hostname === '10.0.2.2' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
         url.pathname.startsWith('/uploads/')
@@ -26,7 +32,8 @@ export function mediaUrl(path: string): string {
     }
     return path;
   }
-  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
+  const uploadPath = normalizeUploadPath(path);
+  return uploadPath.startsWith('/uploads') ? `${API_ORIGIN}${uploadPath}` : uploadPath;
 }
 
 // Link điều hướng Google Maps tới một toạ độ
@@ -82,6 +89,37 @@ export const UNIT_LABEL: Record<QuantityUnit, string> = {
 };
 
 /** Trích thông điệp lỗi từ response API (axios) — fallback nếu không có. */
+export function translateApiMessage(message: string): string {
+  const parts = message
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts
+    .map((part) => {
+      const forbidden = /^property ([\w.]+) should not exist$/.exec(part);
+      if (forbidden) return `truong "${forbidden[1]}" khong duoc ho tro o thao tac nay.`;
+
+      const minLength = /^(\w+) must be longer than or equal to (\d+) characters$/.exec(part);
+      if (minLength) return `${minLength[1]} phai co it nhat ${minLength[2]} ky tu.`;
+
+      const maxLength = /^(\w+) must be shorter than or equal to (\d+) characters$/.exec(part);
+      if (maxLength) return `${maxLength[1]} khong duoc vuot qua ${maxLength[2]} ky tu.`;
+
+      if (part === 'Phone must be a valid Vietnamese mobile number') {
+        return 'So dien thoai khong hop le. Vui long nhap so di dong Viet Nam.';
+      }
+      if (part === 'Password must contain at least one uppercase letter and one number') {
+        return 'Mat khau phai co it nhat mot chu hoa va mot chu so.';
+      }
+      if (part === 'Unauthorized') {
+        return 'Ban can dang nhap de thuc hien thao tac nay.';
+      }
+      return part;
+    })
+    .join(', ');
+}
+
 export function errMsg(e: unknown, fallback: string): string {
   return (
     (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback

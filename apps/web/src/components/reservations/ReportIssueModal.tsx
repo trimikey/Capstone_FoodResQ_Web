@@ -83,91 +83,100 @@ export default function ReportIssueModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4"
       onClick={() => !createReport.isPending && onClose()}
     >
       <div
-        className="bg-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-2xl"
+        className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col w-full max-w-md max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3 mb-1">
-          <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined">report</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-base text-neutral-900">Báo cáo vấn đề</h3>
-            <p className="text-xs text-neutral-500 mt-0.5 truncate">{listingTitle}</p>
-          </div>
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
           <button
             onClick={onClose}
             disabled={createReport.isPending}
-            className="text-neutral-400 hover:text-neutral-700 disabled:opacity-50"
+            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors disabled:opacity-50"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
           </button>
+          <div className="flex items-center gap-3 pr-8">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white text-[18px]">report</span>
+            </div>
+            <div>
+              <h3 className="font-extrabold text-white text-base">Báo cáo vấn đề</h3>
+              <p className="text-xs text-white/70 truncate mt-0.5">{listingTitle}</p>
+            </div>
+          </div>
         </div>
 
-        <p className="text-xs text-neutral-500 mt-3 mb-4 leading-relaxed">
-          Báo cáo của bạn sẽ được đội ngũ quản trị xem xét. Các báo cáo có căn cứ sẽ giúp cộng đồng an toàn hơn.
-        </p>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              Báo cáo của bạn sẽ được đội ngũ quản trị xem xét. Các báo cáo có căn cứ sẽ giúp cộng đồng an toàn hơn.
+            </p>
 
-        <p className="text-sm font-bold text-neutral-800 mb-2">Vấn đề bạn gặp phải</p>
-        <div className="space-y-2 mb-4">
-          {REASON_OPTIONS.map((opt) => {
-            const active = reason === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setReason(opt.value)}
-                disabled={createReport.isPending}
-                className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-colors disabled:opacity-50 ${
-                  active
-                    ? 'border-rose-300 bg-rose-50'
-                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
-                }`}
-              >
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                    active ? 'bg-rose-600 text-white' : 'bg-neutral-100 text-neutral-500'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">{opt.icon}</span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className={`font-bold text-sm ${active ? 'text-rose-900' : 'text-neutral-800'}`}>
-                    {opt.label}
-                  </p>
-                  <p className="text-[11px] text-neutral-500 mt-0.5">{opt.hint}</p>
-                </div>
-                {active && (
-                  <span className="material-symbols-outlined text-rose-600 self-center">check_circle</span>
-                )}
-              </button>
-            );
-          })}
+            <p className="text-sm font-bold text-neutral-800">Vấn đề bạn gặp phải</p>
+            <div className="space-y-2">
+              {REASON_OPTIONS.map((opt) => {
+                const active = reason === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setReason(opt.value)}
+                    disabled={createReport.isPending}
+                    className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-colors disabled:opacity-50 ${
+                      active
+                        ? 'border-rose-300 bg-rose-50'
+                        : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        active ? 'bg-rose-600 text-white' : 'bg-neutral-100 text-neutral-500'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{opt.icon}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`font-bold text-sm ${active ? 'text-rose-900' : 'text-neutral-800'}`}>
+                        {opt.label}
+                      </p>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">{opt.hint}</p>
+                    </div>
+                    {active && (
+                      <span className="material-symbols-outlined text-rose-600 self-center">check_circle</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-sm font-bold text-neutral-800">
+              Mô tả chi tiết {reason !== ReportReason.OTHER && <span className="text-neutral-400 font-normal">(tuỳ chọn)</span>}
+            </p>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={
+                selected?.value === ReportReason.SPOILED_FOOD
+                  ? 'VD: Phần cơm có mùi chua, bao bì không kín...'
+                  : selected?.value === ReportReason.NO_SHOW_PROVIDER
+                    ? 'VD: Đến điểm lấy lúc 18h nhưng cửa hàng đóng cửa...'
+                    : 'Mô tả thêm để admin xử lý nhanh hơn'
+              }
+              rows={3}
+              maxLength={1000}
+              disabled={createReport.isPending}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-rose-200 resize-none disabled:opacity-50"
+            />
+          </div>
         </div>
 
-        <p className="text-sm font-bold text-neutral-800 mb-1.5">
-          Mô tả chi tiết {reason !== ReportReason.OTHER && <span className="text-neutral-400 font-normal">(tuỳ chọn)</span>}
-        </p>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={
-            selected?.value === ReportReason.SPOILED_FOOD
-              ? 'VD: Phần cơm có mùi chua, bao bì không kín...'
-              : selected?.value === ReportReason.NO_SHOW_PROVIDER
-                ? 'VD: Đến điểm lấy lúc 18h nhưng cửa hàng đóng cửa, không ai nghe máy...'
-                : 'Mô tả thêm để admin xử lý nhanh hơn'
-          }
-          rows={3}
-          maxLength={1000}
-          disabled={createReport.isPending}
-          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-200 resize-none disabled:opacity-50"
-        />
-
-        <div className="flex gap-2 mt-5">
+        {/* Footer */}
+        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-2">
           <button
             onClick={onClose}
             disabled={createReport.isPending}

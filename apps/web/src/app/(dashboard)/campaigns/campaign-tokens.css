@@ -1671,6 +1671,17 @@ padding: 14px 24px;
     transition: background 140ms ease;
   }
   .cm-modal-footer .cm-btn-cancel:hover { background: rgba(16, 24, 16, 0.05); }
+  .cm-modal-footer .cm-btn-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    line-height: 1;
+  }
+  .cm-modal-footer .cm-btn-back .material-symbols-outlined {
+    display: block;
+    line-height: 1;
+  }
   .cm-modal-footer .cm-btn-submit {
     flex: 2;
     padding: 12px 20px;

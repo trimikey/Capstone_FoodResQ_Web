@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { Modal } from '@/components/shared/Modal';
@@ -47,6 +47,10 @@ export default function CompleteDistributionModal({
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showMap, setShowMap] = useState(true);
+  /** Ảnh bằng chứng phân phát — bắt buộc để tránh shipper bấm chốt mà không đi phát thật. */
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const s = Number(servings);
   const p = Number(people);
@@ -68,6 +72,9 @@ export default function CompleteDistributionModal({
     } else if (!next.servings && p > s) {
       next.people = `Không thể nhiều hơn ${s} suất đã phát`;
     }
+    if (!proofFile) {
+      next.proof = 'Chụp hoặc tải ảnh làm bằng chứng phân phát';
+    }
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -78,6 +85,7 @@ export default function CompleteDistributionModal({
         actualServings: s,
         actualPeopleServed: p,
         note: note.trim() || undefined,
+        proofPhoto: proofFile!,
       });
       toast.success(
         leftover > 0
@@ -89,6 +97,23 @@ export default function CompleteDistributionModal({
     } catch (e) {
       toast.error(errMsg(e, 'Xác nhận thất bại'));
     }
+  }
+
+  function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErrors((prev) => ({ ...prev, proof: 'Chỉ chấp nhận file ảnh (JPG/PNG/WebP).' }));
+      return;
+    }
+    setProofFile(file);
+    setProofPreview(URL.createObjectURL(file));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.proof;
+      return next;
+    });
   }
 
   return (
@@ -170,6 +195,76 @@ export default function CompleteDistributionModal({
             Còn dư {leftover} suất — ghi chú lại cách xử lý (gửi lại bếp, chuyển điểm khác…).
           </p>
         )}
+
+        {/* Ảnh bằng chứng phân phát — bắt buộc để xác minh đợt phát thực sự diễn ra. */}
+        <div className="space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-600">
+            Ảnh bằng chứng phân phát <span className="text-rose-500">*</span>
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handlePickFile}
+          />
+          <div className="flex items-start gap-3">
+            {proofPreview ? (
+              <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-neutral-200">
+                <img src={proofPreview} alt="Ảnh bằng chứng" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProofFile(null);
+                    setProofPreview(null);
+                  }}
+                  className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+                  aria-label="Xoá ảnh"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed transition-colors ${
+                  errors.proof
+                    ? 'border-rose-400 bg-rose-50 text-rose-600'
+                    : 'border-neutral-300 bg-neutral-50 text-neutral-500 hover:border-emerald-400 hover:text-emerald-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[28px]">photo_camera</span>
+                <span className="text-[10px] font-bold">Chụp / tải</span>
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+              >
+                <span className="material-symbols-outlined text-[14px]">add_a_photo</span>
+                {proofFile ? 'Đổi ảnh khác' : 'Chọn ảnh bằng chứng'}
+              </button>
+              <p className="mt-1 text-[11px] text-neutral-500">
+                Bắt buộc: chụp khung cảnh sau khi phát xong để làm bằng chứng cho tổ chức.
+              </p>
+              {proofFile && (
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-neutral-700">
+                  {proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB
+                </p>
+              )}
+            </div>
+          </div>
+          {errors.proof && (
+            <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">error</span>
+              {errors.proof}
+            </p>
+          )}
+        </div>
 
         <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">
           Ghi chú (tuỳ chọn)

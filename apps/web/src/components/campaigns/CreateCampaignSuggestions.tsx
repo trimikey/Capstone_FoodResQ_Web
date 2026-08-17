@@ -210,8 +210,6 @@ function ShiftRow({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-neutral-900 truncate">{shift.label}</p>
           <p className="text-[11px] text-neutral-500 inline-flex items-center gap-2">
-            <span className="material-symbols-outlined text-[12px]">schedule</span>
-            {shift.startTime}–{shift.endTime}
             <span className="material-symbols-outlined text-[12px]">group</span>
             {shift.slotsNeeded} người
           </p>
