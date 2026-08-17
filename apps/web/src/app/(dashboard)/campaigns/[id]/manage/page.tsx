@@ -8,13 +8,20 @@ import {
   RoleProgressBar,
 } from '../../_components/CampaignManageShared';
 import { useManageContext } from '../../_components/ManageShell';
-import { useReviewAssignment, useApproveDishFinalStep, useRejectDishFinalStep, type DishProcessItem } from '@/hooks/useCampaigns';
+import { useReviewAssignment, useApproveDishFinalStep, useRejectDishFinalStep } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 import CampaignPlaybook, {
   type CampaignPhaseKey,
 } from '@/components/campaigns/CampaignPlaybook';
 
-type DishStepForUI = Pick<DishProcessItem, 'id' | 'menuItemId' | 'name' | 'stepOrder' | 'effectiveStatus' | 'scheduledTime'>;
+type DishStepForUI = {
+  id: string;
+  menuItemId: string;
+  name: string;
+  stepOrder: number;
+  effectiveStatus: string;
+  scheduledTime: string | null;
+};
 
 export default function ManageOverviewPage() {
   const { campaign: c } = useManageContext();

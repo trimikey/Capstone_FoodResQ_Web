@@ -1560,9 +1560,10 @@ export interface CampaignSupplyRequested {
 /** Một món ăn trong thực đơn chiến dịch — shipper dùng để QC khi đến lấy hàng. */
 export interface CampaignMenuItem {
   id: string;
-  name: string;
+  name?: string | null;
+  customName?: string | null;
   /** Loại bữa ăn: breakfast | lunch | dinner */
-  type: string;
+  type?: string | null;
   plannedServings: number | null;
 }
 

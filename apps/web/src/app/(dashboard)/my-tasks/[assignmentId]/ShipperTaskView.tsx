@@ -545,7 +545,6 @@ function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklist
         campaignId: '', // not used for shipper
         stepId: failingItem.id,
         reason: failReason.trim(),
-        photo: undefined,
       });
       toast.warning(`Đã báo cáo "${failingItem.name}" không đạt. Tổ chức đã được thông báo.`);
       setFailingItem(null);
@@ -664,10 +663,10 @@ function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklist
           <button
             type="button"
             onClick={handleConfirmPickup}
-            disabled={advance.isPending}
+            disabled={updateDelivery.isPending}
             className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
           >
-            {advance.isPending ? (
+            {updateDelivery.isPending ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
                 Đang xác nhận...

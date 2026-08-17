@@ -86,15 +86,20 @@ function stageOf(status: string): StageKey {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface VolunteerDetail {
+  avatarUrl: string | null;
+  faceImageUrl: string | null;
   rank: string;
   dedicationPoints: number;
+  trustScore: number;
+  phone: string | null;
   avgRating: number;
   isAvailable: boolean;
   vehicleType: string | null;
   vehiclePlate: string | null;
-  specializations: { specialization: string }[];
-  campaignExperiences: { id: string }[];
-  user: {
+  specializations: string[];
+  pastCampaignsCount?: number;
+  campaignExperiences?: { id: string }[];
+  user?: {
     fullName: string;
     avatarUrl: string | null;
     phone: string | null;
@@ -431,7 +436,7 @@ export default function CampaignStatusPage() {
       return {
         ...p,
         shiftLabel: shift ? `${shift.label} · ${shift.startTime}-${shift.endTime}` : undefined,
-        campaignsJoined: p.volunteer?.campaignExperiences?.length,
+        campaignsJoined: p.volunteer?.pastCampaignsCount ?? 0,
       } as Participant;
     });
   }, [c.participants, c.shifts]);
