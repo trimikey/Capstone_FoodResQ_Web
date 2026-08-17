@@ -138,6 +138,7 @@ export default function ProfilePage() {
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole && !isUsingFallbackProfile);
   const hasFaceEnrollment = !!faceEnrollment?.enrolled;
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl ?? faceEnrollment?.idCardImageUrl);
+  const [faceImageFailed, setFaceImageFailed] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
@@ -149,6 +150,10 @@ export default function ProfilePage() {
 
   // Provider sửa vị trí cửa hàng; receiver sửa điểm giao mặc định
   const hasLocationSection = me?.role === UserRole.PROVIDER || me?.role === UserRole.RECEIVER;
+
+  useEffect(() => {
+    setFaceImageFailed(false);
+  }, [faceImage]);
 
   useEffect(() => {
     if (me) {
@@ -665,9 +670,17 @@ export default function ProfilePage() {
                 <h3 className="font-bold text-xs text-neutral-400 uppercase tracking-wider mb-3">Xác minh danh tính</h3>
                 {hasFaceEnrollment ? (
                   <div className="flex items-center gap-3 border border-emerald-100 rounded-2xl p-3 bg-emerald-50/50">
-                    {faceImage ? (
+                    {faceImage && !faceImageFailed ? (
                       <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                        <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                        <img
+                          src={faceImage}
+                          alt="Khuôn mặt đã đăng ký"
+                          className="w-full h-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                            setFaceImageFailed(true);
+                          }}
+                        />
                       </div>
                     ) : (
                       <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
@@ -951,9 +964,17 @@ export default function ProfilePage() {
                   <label className="text-xs text-neutral-450 font-bold uppercase">Khuôn mặt đã đăng ký</label>
                   {hasFaceEnrollment ? (
                     <div className="flex items-center gap-3 border border-emerald-200 rounded-xl p-3 bg-emerald-50/50">
-                      {faceImage ? (
+                      {faceImage && !faceImageFailed ? (
                         <div className="relative w-14 h-14 rounded-xl overflow-hidden border-2 border-emerald-200 bg-emerald-50 shrink-0">
-                          <img src={faceImage} alt="Khuôn mặt đã đăng ký" className="w-full h-full object-cover" />
+                          <img
+                            src={faceImage}
+                            alt="Khuôn mặt đã đăng ký"
+                            className="w-full h-full object-cover"
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none';
+                              setFaceImageFailed(true);
+                            }}
+                          />
                         </div>
                       ) : (
                         <div className="w-14 h-14 rounded-xl border-2 border-emerald-200 bg-emerald-100 shrink-0 flex items-center justify-center">
