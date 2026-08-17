@@ -23,6 +23,8 @@ export interface CreateListingInput {
   storageConditions?: string;
   allergenNotes?: string;
   imageUrls?: string[];
+  dailyStartMinute?: number;
+  dailyEndMinute?: number;
 }
 
 export type UpdateListingInput = Partial<CreateListingInput>;

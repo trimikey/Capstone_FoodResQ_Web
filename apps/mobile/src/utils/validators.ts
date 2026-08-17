@@ -225,6 +225,8 @@ export function makeCreateListingSchema(now: Date = new Date()) {
       weightPerUnitKg: optionalPositive,
       storageConditions: z.string().optional(),
       allergenNotes: z.string().optional(),
+      dailyStartMinute: z.coerce.number().int().min(0).max(1439).optional(),
+      dailyEndMinute: z.coerce.number().int().min(0).max(1439).optional(),
     })
     .refine(
       (d) => {
@@ -255,8 +257,8 @@ export function makeCreateListingSchema(now: Date = new Date()) {
       { message: 'Số lượng phải là số nguyên cho đơn vị phần/cái/hộp', path: ['quantityTotal'] }
     )
     .refine(
-      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() + 30 * 60_000,
-      { message: 'Giờ bắt đầu phải ít nhất 30 phút từ bây giờ', path: ['pickupStartTime'] }
+      (d) => !d.pickupStartTime || d.pickupStartTime.getTime() >= now.getTime() - 60_000,
+      { message: 'Giờ bắt đầu không được ở quá khứ', path: ['pickupStartTime'] }
     )
     .refine(
       (d) => !d.pickupEndTime || !d.pickupStartTime || d.pickupEndTime > d.pickupStartTime,
@@ -265,6 +267,10 @@ export function makeCreateListingSchema(now: Date = new Date()) {
     .refine(
       (d) => !d.expiryTime || !d.pickupEndTime || d.expiryTime >= d.pickupEndTime,
       { message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi', path: ['expiryTime'] }
+    )
+    .refine(
+      (d) => d.dailyStartMinute == null || d.dailyEndMinute == null || d.dailyStartMinute < d.dailyEndMinute,
+      { message: 'Gio mo nhan phai truoc gio dong nhan', path: ['dailyEndMinute'] }
     );
 }
 
