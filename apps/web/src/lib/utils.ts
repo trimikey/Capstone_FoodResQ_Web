@@ -12,9 +12,15 @@ export function cn(...inputs: ClassValue[]) {
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').replace(/\/api\/v1\/?$/, '');
 export function mediaUrl(path: string): string {
   if (!path) return '';
+  const normalizeUploadPath = (pathname: string) =>
+    pathname.startsWith('/api/v1/uploads/') ? pathname.replace(/^\/api\/v1/, '') : pathname;
+
   if (path.startsWith('http')) {
     try {
       const url = new URL(path);
+      if (url.pathname.startsWith('/api/v1/uploads/')) {
+        return `${url.origin}${normalizeUploadPath(url.pathname)}${url.search}`;
+      }
       if (
         (url.hostname === '10.0.2.2' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
         url.pathname.startsWith('/uploads/')
@@ -26,7 +32,8 @@ export function mediaUrl(path: string): string {
     }
     return path;
   }
-  return path.startsWith('/uploads') ? `${API_ORIGIN}${path}` : path;
+  const uploadPath = normalizeUploadPath(path);
+  return uploadPath.startsWith('/uploads') ? `${API_ORIGIN}${uploadPath}` : uploadPath;
 }
 
 // Link điều hướng Google Maps tới một toạ độ
