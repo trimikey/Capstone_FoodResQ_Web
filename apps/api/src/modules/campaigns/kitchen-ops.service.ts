@@ -98,10 +98,14 @@ export class KitchenOpsService {
   // ── Ca làm việc ──────────────────────────────────────────────────────────────
 
   async createShift(campaignId: string, userId: string, dto: CreateShiftDto) {
-    await this.assertCampaignOwner(campaignId, userId);
-    if (dto.endTime <= dto.startTime) {
-      throw new BadRequestException('Giờ kết thúc ca phải sau giờ bắt đầu.');
-    }
+    const campaign = await this.assertCampaignOwner(campaignId, userId);
+    if (campaign.status !== 'pending_approval') throw new BadRequestException('Không thêm ca sau khi chiến dịch đã được gửi duyệt.');
+    const fixed = [
+      ['midnight', '00:00', '06:00', 0], ['morning', '06:00', '12:00', 0],
+      ['afternoon', '12:00', '18:00', 0], ['evening', '18:00', '00:00', 1],
+    ] as const;
+    const period = fixed.find(([, start, end]) => start === dto.startTime && end === dto.endTime);
+    if (!period || !dto.role) throw new BadRequestException('Ca phải thuộc một trong bốn khung cố định và có vai trò cụ thể.');
     return this.prisma.campaignShift.create({
       data: {
         campaignId,
@@ -109,6 +113,8 @@ export class KitchenOpsService {
         role: dto.role ?? null,
         startTime: dto.startTime,
         endTime: dto.endTime,
+        period: period[0],
+        endDayOffset: period[3],
         slotsNeeded: dto.slotsNeeded,
       },
     });
@@ -226,7 +232,7 @@ export class KitchenOpsService {
       include: { charityReceiver: { select: { userId: true } } },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
-    if (!['open', 'in_progress'].includes(campaign.status)) {
+    if (!['approved', 'in_progress'].includes(campaign.status)) {
       throw new BadRequestException('Chỉ ghi nhật ký ATTP khi chiến dịch đang chuẩn bị/diễn ra.');
     }
 
@@ -276,7 +282,7 @@ export class KitchenOpsService {
       select: { status: true },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
-    if (!['open', 'in_progress', 'completed'].includes(campaign.status)) {
+    if (!['approved', 'in_progress', 'completed'].includes(campaign.status)) {
       throw new BadRequestException('Chiến dịch không ở trạng thái cho phép ghi phân phát.');
     }
     if (dto.servingsServed <= 0 || dto.peopleServed <= 0) {

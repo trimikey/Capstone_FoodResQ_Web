@@ -15,8 +15,8 @@ import { errMsg } from '@/lib/utils';
 import { vnToday } from '@/lib/vn-date';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string }> = {
-  draft: { label: 'Chờ duyệt' },
-  open: { label: 'Đang tuyển' },
+  pending_approval: { label: 'Chờ duyệt' },
+  approved: { label: 'Đang tuyển' },
   in_progress: { label: 'Đang diễn ra' },
   completed: { label: 'Hoàn tất' },
   cancelled: { label: 'Bị từ chối / huỷ' },
@@ -34,7 +34,7 @@ export default function ChangeRequestModal({ c, onClose }: { c: Campaign; onClos
   const submit = useSubmitCampaignChange();
   const cancel = useCancelCampaignChange();
 
-  const editable = c.status === 'open';
+  const editable = c.status === 'approved';
   const orig = {
     scheduledDate: c.scheduledDate.slice(0, 10),
     startTime: c.startTime.slice(0, 5),

@@ -18,7 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto } from './dto/campaign.dto';
 import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -161,10 +161,40 @@ export class CampaignsController {
     return this.campaignsService.startCampaign(id, user.id);
   }
 
+  @Get(':id/staffing-readiness')
+  @ApiOperation({ summary: 'Ma trận đủ người theo từng ngày, ca và vai trò' })
+  staffingReadiness(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getStaffingReadiness(id);
+  }
+
+  @Patch(':id/recruitment/extend')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: gia hạn tuyển trong giới hạn khoảng đệm' })
+  extendRecruitment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: ExtendRecruitmentDto,
+  ) {
+    return this.campaignsService.extendRecruitment(id, user.id, dto.recruitmentEndAt);
+  }
+
+  @Patch('assignments/:assignmentId/confirmation')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: xác nhận hoặc từ chối ca đã được tổ chức duyệt' })
+  confirmAssignment(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ConfirmCampaignAssignmentDto,
+  ) {
+    return this.campaignsService.confirmAssignment(assignmentId, user.id, dto.decision);
+  }
+
   @Patch(':id/cancel')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Charity: huỷ chiến dịch đang tuyển (open → cancelled)' })
+  @ApiOperation({ summary: 'Charity: huỷ kế hoạch trước hoặc trong giai đoạn tuyển' })
   cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.campaignsService.cancelCampaign(id, user.id);
   }

@@ -14,7 +14,7 @@ describe('CampaignsService', () => {
   let service: CampaignsService;
   const prisma = {
     volunteerProfile: { findUnique: jest.fn() },
-    kitchenCampaign: { findUnique: jest.fn() },
+    kitchenCampaign: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     // `count` được service gọi khi kiểm tra ca làm — thiếu mock thì 3 test apply() đỏ
     campaignShift: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
     campaignVolunteerAssignment: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
@@ -32,16 +32,24 @@ describe('CampaignsService', () => {
     // đặt lúc khai báo hoặc trong test trước vẫn còn. Đặt lại mặc định ở đây để test
     // "chiến dịch có ca" không rò sang các test không chia ca.
     prisma.campaignShift.findUnique.mockReset();
+    prisma.campaignVolunteerAssignment.findFirst.mockReset();
+    prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
     prisma.campaignVolunteerAssignment.count.mockResolvedValue(0);
     prisma.campaignShift.count.mockResolvedValue(0);
     prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
+    prisma.$queryRaw.mockResolvedValue([]);
     const moduleRef = await Test.createTestingModule({
       providers: [
         CampaignsService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => (k === 'CHECKIN_GPS_RADIUS_M' ? 500 : 0)) } },
+        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => {
+          if (k === 'CHECKIN_GPS_RADIUS_M') return 500;
+          if (k === 'CAMPAIGN_MIN_FILL_PERCENT') return 50;
+          return 0;
+        }) } },
         { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
         { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },
@@ -52,7 +60,10 @@ describe('CampaignsService', () => {
 
   const campaign = {
     id: 'campaign-1',
-    status: 'open',
+    status: 'approved',
+    recruitmentStatus: 'open',
+    recruitmentStartAt: new Date('2000-01-01T00:00:00.000Z'),
+    recruitmentEndAt: new Date('2100-01-01T00:00:00.000Z'),
     scheduledDate: new Date('2099-01-01T00:00:00.000Z'),
     // `apply` chốt hạn đăng ký theo NGÀY KẾT THÚC + giờ kết thúc, nên mock phải có đủ
     // hai trường này — thiếu là ném TypeError thay vì lỗi nghiệp vụ.
@@ -119,7 +130,7 @@ describe('CampaignsService', () => {
         .mockResolvedValueOnce({ startTime: '11:00', endTime: '16:00' });
       prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
       prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([
-        { shift: { label: 'Ca sáng', startTime: '06:00', endTime: '11:00' } },
+        { workDate: campaign.scheduledDate, shift: { label: 'Ca sáng', startTime: '06:00', endTime: '11:00', endDayOffset: 0 } },
       ]);
 
       await expect(
@@ -138,7 +149,7 @@ describe('CampaignsService', () => {
         .mockResolvedValueOnce({ startTime: '10:00', endTime: '16:00' });
       prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
       prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([
-        { shift: { label: 'Ca sơ chế', startTime: '06:00', endTime: '12:00' } },
+        { workDate: campaign.scheduledDate, shift: { label: 'Ca sơ chế', startTime: '06:00', endTime: '12:00', endDayOffset: 0 } },
       ]);
 
       await expect(
@@ -288,7 +299,166 @@ describe('CampaignsService', () => {
 
     expect(prisma.campaignVolunteerAssignment.update).toHaveBeenCalledWith({
       where: { id: 'assignment-1' },
-      data: { status: 'pending', shiftId: null, workDate: campaign.scheduledDate, notes: null },
+      data: {
+        status: 'pending', shiftId: null, workDate: campaign.scheduledDate, notes: null,
+        confirmationStatus: 'pending', confirmedAt: null,
+      },
+    });
+  });
+
+  it.each(['scheduled', 'staffed'] as const)(
+    'cho đăng ký khi trạng thái tuyển là %s và đang nằm trong khung giờ tuyển',
+    async (recruitmentStatus) => {
+      activeVolunteer();
+      prisma.kitchenCampaign.findUnique.mockResolvedValue({
+        ...campaign,
+        recruitmentStatus,
+      });
+      prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.apply('campaign-1', 'user-1', { role: AssignmentRole.CHEF }),
+      ).resolves.toEqual(expect.objectContaining({ message: expect.stringContaining('chờ tổ chức duyệt') }));
+    },
+  );
+
+  it('hiển thị chiến dịch đã duyệt sắp mở tuyển và chiến dịch đã đủ ngưỡng', async () => {
+    prisma.kitchenCampaign.findMany.mockResolvedValue([]);
+
+    await service.listOpen();
+
+    expect(prisma.kitchenCampaign.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        OR: [
+          { status: 'in_progress' },
+          expect.objectContaining({
+            status: 'approved',
+            recruitmentStatus: { in: ['scheduled', 'open', 'staffed'] },
+            recruitmentEndAt: { gt: expect.any(Date) },
+          }),
+        ],
+      },
+    }));
+  });
+
+  describe('vòng đời tuyển tách biệt', () => {
+    const lifecycleCampaign = {
+      ...campaign,
+      operationStartAt: new Date('2099-01-01T00:00:00.000Z'),
+      operationEndAt: new Date('2099-01-01T12:00:00.000Z'),
+      recruitmentStartAt: new Date('2098-12-01T00:00:00.000Z'),
+      recruitmentEndAt: new Date('2098-12-31T00:00:00.000Z'),
+      recruitmentBufferHours: 24,
+      charityReceiver: { userId: 'charity-1' },
+      scheduledDate: new Date('2099-01-01T00:00:00.000Z'),
+      endDate: new Date('2099-01-01T00:00:00.000Z'),
+      shifts: [
+        { id: 'morning-chef', label: 'Ca sáng — Đầu bếp', role: 'chef', period: 'morning', startTime: '06:00', endTime: '12:00', endDayOffset: 0, slotsNeeded: 2, needsReview: false },
+      ],
+      assignments: [
+        { id: 'a-1', volunteerId: 'v-1', shiftId: 'morning-chef', workDate: new Date('2099-01-01T00:00:00.000Z'), role: 'chef', confirmationStatus: 'confirmed', volunteer: { userId: 'user-1' } },
+      ],
+    };
+
+    it('không coi tổng chiến dịch là đủ khi một ca còn thiếu', async () => {
+      prisma.kitchenCampaign.findUnique.mockResolvedValue(lifecycleCampaign);
+      const result = await service.getStaffingReadiness('campaign-1');
+      expect(result.ready).toBe(false);
+      expect(result.eligibleToStart).toBe(true);
+      expect(result.matrix[0]).toEqual(expect.objectContaining({ confirmed: 1, minRequired: 2, minimumRequired: 1, fillPercent: 50, missing: 1 }));
+    });
+
+    it('tách số đã phân công khỏi số tình nguyện viên đã xác nhận', async () => {
+      prisma.kitchenCampaign.findUnique.mockResolvedValue({
+        ...lifecycleCampaign,
+        assignments: [
+          { ...lifecycleCampaign.assignments[0], confirmationStatus: 'pending' },
+        ],
+      });
+
+      const result = await service.getStaffingReadiness('campaign-1');
+
+      expect(result).toEqual(expect.objectContaining({
+        assignedShiftSlots: 1,
+        confirmedShiftSlots: 0,
+        assignedUniqueVolunteers: 1,
+        confirmedUniqueVolunteers: 0,
+        eligibleToStart: false,
+      }));
+      expect(result.matrix[0]).toEqual(expect.objectContaining({ assigned: 1, confirmed: 0 }));
+    });
+
+    it('tự bắt đầu đúng giờ khi từng ca đủ 100%', async () => {
+      const readyCampaign = {
+        ...lifecycleCampaign,
+        assignments: [
+          ...lifecycleCampaign.assignments,
+          { id: 'a-2', volunteerId: 'v-2', shiftId: 'morning-chef', workDate: new Date('2099-01-01T00:00:00.000Z'), role: 'chef', confirmationStatus: 'confirmed', volunteer: { userId: 'user-2' } },
+        ],
+      };
+      prisma.kitchenCampaign.findMany.mockResolvedValue([{ id: 'campaign-1', operationStartAt: readyCampaign.operationStartAt }]);
+      prisma.kitchenCampaign.findUnique.mockResolvedValue(readyCampaign);
+
+      const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
+
+      expect(result.started).toBe(1);
+      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'campaign-1' },
+        data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
+      }));
+    });
+
+    it('đạt ngưỡng tối thiểu nhưng chưa đủ 100% thì chờ tổ chức xác nhận bắt đầu', async () => {
+      prisma.kitchenCampaign.findMany.mockResolvedValue([{ id: 'campaign-1', operationStartAt: lifecycleCampaign.operationStartAt }]);
+      prisma.kitchenCampaign.findUnique.mockResolvedValue(lifecycleCampaign);
+
+      const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
+
+      expect(result.started).toBe(0);
+      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: { recruitmentStatus: 'closed_ready' },
+      }));
+    });
+
+    it('không cho bắt đầu khi một ca/vai trò chưa đạt ngưỡng admin', async () => {
+      const underMinimum = { ...lifecycleCampaign, assignments: [] };
+      prisma.kitchenCampaign.findMany.mockResolvedValue([{ id: 'campaign-1', operationStartAt: underMinimum.operationStartAt }]);
+      prisma.kitchenCampaign.findUnique.mockResolvedValue(underMinimum);
+
+      const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
+
+      expect(result.started).toBe(0);
+      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: { recruitmentStatus: 'expired_understaffed' },
+      }));
+    });
+
+    it('không cho xác nhận ca sau hạn tuyển', async () => {
+      prisma.campaignVolunteerAssignment.findUnique.mockResolvedValue({
+        id: 'a-1', campaignId: 'campaign-1', volunteerId: 'v-1', shiftId: 'morning-chef',
+        role: 'chef', status: 'assigned', confirmationStatus: 'pending',
+        volunteer: { userId: 'user-1' },
+        campaign: { id: 'campaign-1', status: 'approved', recruitmentEndAt: new Date('2000-12-31T00:00:00.000Z') },
+      });
+      prisma.kitchenCampaign.findUnique.mockResolvedValue({
+        status: 'approved', recruitmentEndAt: new Date('2000-12-31T00:00:00.000Z'),
+      });
+
+      await expect(service.confirmAssignment('a-1', 'user-1', 'confirmed'))
+        .rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('chặn gia hạn vượt qua khoảng đệm trước ca đầu tiên', async () => {
+      prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-1' });
+      prisma.kitchenCampaign.findUnique.mockResolvedValue({
+        ...lifecycleCampaign,
+        charityReceiverId: 'receiver-1',
+        recruitmentEndAt: new Date('2098-12-30T00:00:00.000Z'),
+      });
+
+      await expect(service.extendRecruitment(
+        'campaign-1', 'charity-user', '2098-12-31T12:00:00.000Z',
+      )).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

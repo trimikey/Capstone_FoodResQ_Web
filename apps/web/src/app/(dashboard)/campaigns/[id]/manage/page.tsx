@@ -35,7 +35,7 @@ export default function ManageOverviewPage() {
       ? 'report'
       : c.status === 'in_progress'
       ? 'distribute'
-      : c.status === 'open'
+      : c.status === 'approved'
       ? 'recruit'
       : c.status === 'cancelled'
       ? 'plan'

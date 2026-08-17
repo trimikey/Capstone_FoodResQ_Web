@@ -8,7 +8,7 @@ import { errMsg } from '@/lib/utils';
 const DAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
 
 const STATUS_COLOR: Record<string, { label: string; cls: string }> = {
-  open: { label: 'Tuyển', cls: 'bg-sky-100 text-sky-700 border-sky-200' },
+  approved: { label: 'Tuyển', cls: 'bg-sky-100 text-sky-700 border-sky-200' },
   in_progress: { label: 'Đang chạy', cls: 'bg-orange-100 text-orange-700 border-orange-200' },
   completed: { label: 'Hoàn thành', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
 };

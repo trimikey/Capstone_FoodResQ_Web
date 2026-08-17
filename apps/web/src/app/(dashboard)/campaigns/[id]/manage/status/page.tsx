@@ -11,18 +11,18 @@ import { campaignStartWindow } from '@/lib/campaign-schedule';
  * xác nhận + gọi API nằm một chỗ, không nhân bản ở từng trang.
  */
 
-type StageKey = 'draft' | 'open' | 'in_progress' | 'done';
+type StageKey = 'pending_approval' | 'approved' | 'in_progress' | 'done';
 
 const STAGES: Array<{ key: StageKey; label: string; desc: string; icon: string }> = [
-  { key: 'draft', label: 'Chờ duyệt', desc: 'Quản trị viên xem xét yêu cầu tạo chiến dịch.', icon: 'pending' },
-  { key: 'open', label: 'Đang tuyển', desc: 'Chiến dịch công khai, tình nguyện viên đăng ký ca.', icon: 'campaign' },
+  { key: 'pending_approval', label: 'Chờ duyệt', desc: 'Quản trị viên xem xét yêu cầu tạo chiến dịch.', icon: 'pending' },
+  { key: 'approved', label: 'Đang tuyển', desc: 'Chiến dịch công khai, tình nguyện viên đăng ký ca.', icon: 'campaign' },
   { key: 'in_progress', label: 'Đang diễn ra', desc: 'Bếp hoạt động — TNV điểm danh và cập nhật công việc.', icon: 'play_circle' },
   { key: 'done', label: 'Kết thúc', desc: 'Đã hoàn tất hoặc bị huỷ — chỉ còn xem lại số liệu.', icon: 'flag' },
 ];
 
 function stageOf(status: string): StageKey {
-  if (status === 'draft') return 'draft';
-  if (status === 'open') return 'open';
+  if (status === 'pending_approval') return 'pending_approval';
+  if (status === 'approved') return 'approved';
   if (status === 'in_progress') return 'in_progress';
   return 'done';
 }
@@ -143,7 +143,7 @@ export default function CampaignStatusPage() {
                 Kết thúc &amp; nhập số suất
               </button>
             )}
-            {c.status === 'open' && (
+            {c.status === 'approved' && (
               <span className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-100 px-3 py-2 text-xs font-semibold text-neutral-600">
                 <span className="material-symbols-outlined text-[15px]">info</span>
                 {startWindow.canStart
@@ -151,7 +151,7 @@ export default function CampaignStatusPage() {
                   : startWindow.message}
               </span>
             )}
-            {(c.status === 'open' || c.status === 'in_progress') && (
+            {(c.status === 'approved' || c.status === 'in_progress') && (
               <button
                 type="button"
                 onClick={() => openAction('cancel')}

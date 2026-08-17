@@ -43,8 +43,8 @@ export default function MyTasksLayout({ children }: { children: ReactNode }) {
     if (isCharity) {
       const my = myCampaigns ?? [];
       const activeCount =
-        my.filter((c) => c.status === 'open' || c.status === 'in_progress').length +
-        my.filter((c) => c.status === 'draft').length +
+        my.filter((c) => c.status === 'approved' || c.status === 'in_progress').length +
+        my.filter((c) => c.status === 'pending_approval').length +
         my.filter((c) => c.status === 'completed' || c.status === 'cancelled').length;
       entries.push(
         { key: 'mine', label: 'Chiến dịch của tôi', icon: 'inventory_2', badge: activeCount || undefined },

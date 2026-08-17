@@ -18,6 +18,12 @@ export interface Campaign {
   waiterSlotsFilled: number;
   shipperSlotsFilled: number;
   status: string;
+  recruitmentStatus?: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  operationStartAt?: string;
+  operationEndAt?: string;
+  recruitmentStartAt?: string;
+  recruitmentEndAt?: string;
+  recruitmentBufferHours?: number;
   actualServings?: number | null;
   distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
   peopleServed?: number;
@@ -26,6 +32,8 @@ export interface Campaign {
     id: string;
     role: 'chef' | 'waiter' | 'shipper';
     status: string;
+    confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+    confirmedAt?: string | null;
     volunteer: { user: { fullName: string; avatarUrl: string | null } };
   }[];
   donations?: {
@@ -61,23 +69,21 @@ export interface CreateCampaignInput {
   scheduledDate: string;
   /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
   endDate?: string;
-  startTime: string;
-  endTime: string;
-  chefSlotsNeeded?: number;
-  waiterSlotsNeeded?: number;
-  shipperSlotsNeeded?: number;
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  /** Máy chủ tự tính từ giờ đóng tuyển đến giờ bắt đầu ca đầu tiên. */
+  recruitmentBufferHours?: number;
   expectedServings?: number;
   imageUrls?: string[];
-  menuItems?: { name: string; type: string; plannedServings?: number }[];
+  menuItems: { name: string; type: string; plannedServings?: number }[];
   scheduleItems?: { time: string; label: string }[];
   /** Vật phẩm cần thiết — object đầy đủ {name, quantity?, unit?}. */
   supplyItems?: { name: string; quantity?: number; unit?: string }[];
   /** Ca trực cho tình nguyện viên — insert vào bảng campaign_shifts lúc tạo. */
-  shifts?: {
+  shifts: {
     label: string;
-    role?: 'chef' | 'waiter' | 'shipper';
-    startTime: string;
-    endTime: string;
+    role: 'chef' | 'waiter' | 'shipper';
+    period: 'midnight' | 'morning' | 'afternoon' | 'evening';
     slotsNeeded: number;
   }[];
 }
@@ -120,6 +126,8 @@ export interface MyTask {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+  confirmedAt?: string | null;
   shiftId?: string | null;
   shift?: {
     id: string;
@@ -166,6 +174,8 @@ export function useCampaigns() {
     queryKey: ['campaigns', 'open'],
     queryFn: async () => (await api.get('/campaigns')).data.data as Campaign[],
     staleTime: 30_000,
+    // Người dùng đang mở trang Khám phá vẫn nhìn thấy campaign ngay sau khi admin duyệt.
+    refetchInterval: 30_000,
   });
 }
 
@@ -230,6 +240,8 @@ export interface CampaignManageParticipant {
   volunteerId: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+  confirmedAt?: string | null;
   shiftId: string | null;
   /** Ngày TNV đăng ký trực (YYYY-MM-DD) — ca chỉ có giờ nên ngày nằm ở đây. */
   workDate: string | null;
@@ -283,6 +295,9 @@ export interface CampaignExperience {
 }
 
 export interface PublicCampaignDetail extends PublicCampaign {
+  recruitmentStatus: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
   /** Ngày kết thúc của chiến dịch nhiều ngày; null = chỉ diễn ra trong ngày bắt đầu. */
   endDate?: string | null;
   chefSlotsNeeded: number;
@@ -464,7 +479,83 @@ export function useStartCampaign() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => (await api.patch(`/campaigns/${id}/start`)).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: (_data, id) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'staffing-readiness', id] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', id] });
+    },
+  });
+}
+
+export interface StaffingReadiness {
+  recruitmentStatus: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  recruitmentBufferHours: number;
+  operationStartAt: string;
+  operationEndAt: string;
+  requiredShiftSlots: number;
+  assignedShiftSlots: number;
+  confirmedShiftSlots: number;
+  assignedUniqueVolunteers: number;
+  confirmedUniqueVolunteers: number;
+  uniqueVolunteers: number;
+  minimumFillPercent: number;
+  eligibleToStart: boolean;
+  canStartNow: boolean;
+  ready: boolean;
+  matrix: Array<{
+    workDate: string;
+    shiftId: string;
+    label: string;
+    period: 'midnight' | 'morning' | 'afternoon' | 'evening' | null;
+    role: 'chef' | 'waiter' | 'shipper' | null;
+    minRequired: number;
+    minimumRequired: number;
+    fillPercent: number;
+    assigned: number;
+    confirmed: number;
+    missing: number;
+    ready: boolean;
+    eligibleToStart: boolean;
+    needsReview: boolean;
+  }>;
+}
+
+export function useStaffingReadiness(campaignId: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'staffing-readiness', campaignId],
+    queryFn: async () =>
+      (await api.get(`/campaigns/${campaignId}/staffing-readiness`)).data.data as StaffingReadiness,
+    enabled: !!campaignId,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useExtendRecruitment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; recruitmentEndAt: string }) =>
+      (await api.patch(`/campaigns/${p.campaignId}/recruitment/extend`, {
+        recruitmentEndAt: p.recruitmentEndAt,
+      })).data.data,
+    onSuccess: (_data, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'staffing-readiness', p.campaignId] });
+    },
+  });
+}
+
+export function useConfirmCampaignAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { assignmentId: string; decision: 'confirmed' | 'declined' }) =>
+      (await api.patch(`/campaigns/assignments/${p.assignmentId}/confirmation`, {
+        decision: p.decision,
+      })).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+    },
   });
 }
 
@@ -947,6 +1038,9 @@ export interface CampaignShift {
   role: 'chef' | 'waiter' | 'shipper' | null;
   startTime: string;
   endTime: string;
+  period?: 'midnight' | 'morning' | 'afternoon' | 'evening' | null;
+  endDayOffset?: number;
+  needsReview?: boolean;
   slotsNeeded: number;
   slotsFilled: number;
 }
@@ -1483,7 +1577,7 @@ export interface WeeklyScheduleCampaign {
    */
   campaignId?: string;
   title: string;
-  status: 'open' | 'in_progress' | 'completed';
+  status: 'approved' | 'in_progress' | 'completed';
   /** Chỉ có khi isPersonalView=true (TNV) */
   role?: 'chef' | 'waiter' | 'shipper';
   /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */

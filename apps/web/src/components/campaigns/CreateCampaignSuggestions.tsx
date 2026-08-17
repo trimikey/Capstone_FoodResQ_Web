@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  SHIFT_TEMPLATES,
+  MENU_TEMPLATES,
   SCHEDULE_TEMPLATES,
-  SUPPLY_TEMPLATES,
   buildScaledTemplates,
   buildMatchedMenuTemplates,
   getServingsTier,
@@ -269,10 +268,13 @@ function RoleBadge({ role }: { role?: 'chef' | 'waiter' | 'shipper' }) {
 
 export function ScheduleSuggestions({
   expectedServings,
-}: BaseSuggestionsProps) {
+  activeTimeRanges,
+}: BaseSuggestionsProps & {
+  activeTimeRanges?: Array<{ start: string; end: string }>;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
-  const { inserted, track, trackAll } = useInsertedTracker();
+  const { inserted, track, trackAll, untrack } = useInsertedTracker();
 
   // Lịch trình không scale, nhưng vẫn nhận prop để giúp "nhắc" tier cho UX
   // (lịch trình có thể khác nhau giữa quy mô nhỏ và lớn — vd bếp lớn
@@ -290,8 +292,17 @@ export function ScheduleSuggestions({
         });
       }
     }
-    return items;
-  }, [expectedServings]);
+    if (!activeTimeRanges?.length) return items;
+    return items.filter((item) => {
+      const [hour, minute] = item.time.split(':').map(Number);
+      const itemMinute = hour * 60 + minute;
+      return activeTimeRanges.some((range) => {
+        const start = Number(range.start.slice(0, 2)) * 60;
+        const end = range.end === '00:00' ? 1440 : Number(range.end.slice(0, 2)) * 60;
+        return itemMinute >= start && itemMinute < end;
+      });
+    });
+  }, [activeTimeRanges, expectedServings]);
 
   const remaining = schedule.filter((s) => !inserted.has(s.id)).length;
 
@@ -331,9 +342,14 @@ export function ScheduleSuggestions({
                   key={s.id}
                   item={s}
                   used={used}
-                  onInsert={() => {
-                    fireInsert('schedule', s);
-                    track(s.id);
+                  onToggle={() => {
+                    if (used) {
+                      fireRemove('schedule', s);
+                      untrack(s.id);
+                    } else {
+                      fireInsert('schedule', s);
+                      track(s.id);
+                    }
                   }}
                 />
               );
@@ -348,21 +364,22 @@ export function ScheduleSuggestions({
 function ScheduleRow({
   item,
   used,
-  onInsert,
+  onToggle,
 }: {
   item: ScheduleTemplate;
   used: boolean;
-  onInsert: () => void;
+  onToggle: () => void;
 }) {
   return (
     <li>
       <button
         type="button"
-        disabled={used}
-        onClick={onInsert}
+        onClick={onToggle}
+        aria-pressed={used}
+        title={used ? 'Bấm để bỏ mốc này' : 'Bấm để thêm mốc này'}
         className={`w-full text-left rounded-xl border px-3 py-2 flex items-center gap-3 transition-colors ${
           used
-            ? 'border-sky-200 bg-sky-50 opacity-60 cursor-default'
+            ? 'border-sky-300 bg-sky-50 hover:border-rose-300 hover:bg-rose-50/60'
             : 'border-neutral-200 hover:border-sky-300 hover:bg-sky-50/40'
         }`}
       >
@@ -599,15 +616,28 @@ export function MenuSuggestions({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
-  const { inserted, track, trackAll } = useInsertedTracker();
+  const { inserted, track, trackAll, untrack } = useInsertedTracker();
 
   const matched = useMemo(
-    () => buildMatchedMenuTemplates(supplies, expectedServings, currentMenuCount),
+    () => {
+      const suppliedMatches = buildMatchedMenuTemplates(
+        supplies,
+        expectedServings,
+        currentMenuCount,
+      );
+      if (supplies.length > 0) return suppliedMatches;
+
+      const shareIfAdded = Math.max(
+        1,
+        Math.round(Math.max(1, expectedServings) / (currentMenuCount + 1)),
+      );
+      return MENU_TEMPLATES.slice(0, 8).map((item) => ({
+        ...item,
+        plannedServings: shareIfAdded,
+      }));
+    },
     [supplies, expectedServings, currentMenuCount],
   );
-
-  // Nếu chưa nhập vật phẩm → không cho mở, hiển thị nút disabled kèm gợi ý.
-  const disabled = supplies.length === 0;
 
   const remaining = matched.filter((m) => !inserted.has(m.id)).length;
 
@@ -615,32 +645,34 @@ export function MenuSuggestions({
     <div className="block" ref={wrapRef}>
       <button
         type="button"
-        onClick={() => !disabled && setOpen((v) => !v)}
-        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={
-          disabled
-            ? 'Thêm vật phẩm trước để nhận gợi ý món ăn phù hợp'
-            : undefined
-        }
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${TONE_STYLES.teal} disabled:opacity-50 disabled:cursor-not-allowed`}
+        className={`inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${TONE_STYLES.teal}`}
       >
         <span className="material-symbols-outlined text-[16px]">
           {open ? 'close' : 'lightbulb'}
         </span>
         {open
           ? 'Đóng gợi ý'
-          : disabled
-            ? 'Gợi ý món ăn (thêm vật phẩm trước)'
+          : supplies.length === 0
+            ? `Gợi ý thực đơn phổ biến (${matched.length})`
             : `Gợi ý món ăn (${matched.length})`}
       </button>
 
-      {open && !disabled && (
+      {open && (
         <SuggestionPanel
           tone="teal"
-          title="Mẫu món ăn phù hợp với vật phẩm của bạn"
-          subtitle={`Dựa trên ${supplies.length} vật phẩm đã nhập — ${expectedServings} suất của chiến dịch sẽ được chia đều cho các món trong thực đơn.`}
+          title={
+            supplies.length > 0
+              ? 'Món phù hợp với nguyên liệu đã chọn'
+              : 'Thực đơn phổ biến cho bếp cộng đồng'
+          }
+          subtitle={
+            supplies.length > 0
+              ? `Dựa trên ${supplies.length} vật phẩm đã nhập — ${expectedServings} suất sẽ được chia đều cho các món.`
+              : 'Chọn nhanh một món, hoặc thêm nguyên liệu bên dưới để nhận gợi ý sát hơn.'
+          }
           remainingCount={remaining}
           onInsertAll={() => {
             const pending = matched.filter((m) => !inserted.has(m.id));
@@ -663,9 +695,14 @@ export function MenuSuggestions({
                     key={m.id}
                     item={m}
                     used={used}
-                    onInsert={() => {
-                      fireInsert('menu', m);
-                      track(m.id);
+                    onToggle={() => {
+                      if (used) {
+                        fireRemove('menu', m);
+                        untrack(m.id);
+                      } else {
+                        fireInsert('menu', m);
+                        track(m.id);
+                      }
                     }}
                   />
                 );
@@ -693,21 +730,22 @@ const MEAL_TYPE_TONE: Record<MenuTemplate['type'], string> = {
 function MenuRow({
   item,
   used,
-  onInsert,
+  onToggle,
 }: {
   item: MenuTemplate;
   used: boolean;
-  onInsert: () => void;
+  onToggle: () => void;
 }) {
   return (
     <li>
       <button
         type="button"
-        disabled={used}
-        onClick={onInsert}
+        onClick={onToggle}
+        aria-pressed={used}
+        title={used ? 'Bấm để bỏ món này' : 'Bấm để thêm món này'}
         className={`w-full text-left rounded-xl border px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
           used
-            ? 'border-teal-200 bg-teal-50 opacity-60 cursor-default'
+            ? 'border-teal-300 bg-teal-50 hover:border-rose-300 hover:bg-rose-50/60'
             : 'border-neutral-200 hover:border-teal-300 hover:bg-teal-50/40'
         }`}
       >

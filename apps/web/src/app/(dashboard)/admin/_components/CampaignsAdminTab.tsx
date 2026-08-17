@@ -22,13 +22,13 @@ import {
 import { usePaged, Pagination, Skeleton, Empty } from './admin-shared';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'Chờ duyệt', cls: 'bg-honey-100 text-honey-800' },
-  open: { label: 'Đang tuyển', cls: 'bg-sky-100 text-sky-700' },
+  pending_approval: { label: 'Chờ duyệt', cls: 'bg-honey-100 text-honey-800' },
+  approved: { label: 'Đã duyệt', cls: 'bg-sky-100 text-sky-700' },
   in_progress: { label: 'Đang diễn ra', cls: 'bg-honey-100 text-honey-800' },
   completed: { label: 'Hoàn tất', cls: 'bg-emerald-100 text-emerald-800' },
   cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
 };
-const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
+const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['pending_approval', 'approved', 'in_progress', 'completed', 'cancelled'];
 
 const ASSIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
   assigned: { label: 'Đã nhận việc', cls: 'bg-sky-100 text-sky-700' },
@@ -217,18 +217,6 @@ function AssignSection({ campaignId }: { campaignId: string }) {
 
 function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: c, isLoading } = useAdminCampaignDetail(id);
-  const [editing, setEditing] = useState(false);
-  const unassign = useUnassignVolunteer();
-
-  async function removeAssignment(assignmentId: string) {
-    try {
-      await unassign.mutateAsync({ assignmentId, campaignId: id });
-      toast.success('Đã gỡ phân công');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Gỡ thất bại';
-      toast.error(msg);
-    }
-  }
 
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
@@ -239,11 +227,6 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
             {c && <p className="text-xs text-emerald-100 mt-0.5">{c.charity}{c.charityPhone ? ` · ${c.charityPhone}` : ''}</p>}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {c && (
-              <button onClick={() => setEditing(true)} title="Sửa chiến dịch" className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg text-sm font-bold inline-flex items-center gap-1 transition-colors">
-                <span className="material-symbols-outlined text-[18px]">edit</span> Sửa
-              </button>
-            )}
             <button onClick={onClose} className="p-1 hover:bg-white/15 rounded-full"><span className="material-symbols-outlined">close</span></button>
           </div>
         </div>
@@ -282,7 +265,6 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
                 <span className="material-symbols-outlined text-emerald-600">groups</span>
                 Tình nguyện viên ({c.assignments.length})
               </h4>
-              <AssignSection campaignId={c.id} />
               {c.assignments.length === 0 ? (
                 <p className="text-sm text-neutral-400 text-center py-8 bg-neutral-50 rounded-2xl">Chưa có tình nguyện viên</p>
               ) : (
@@ -307,10 +289,6 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
                           <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
                         </span>
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
-                        <button onClick={() => removeAssignment(a.id)} disabled={unassign.isPending} title="Gỡ phân công"
-                          className="w-7 h-7 rounded-full text-neutral-400 hover:bg-rose-50 hover:text-rose-600 inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-50">
-                          <span className="material-symbols-outlined text-[16px]">close</span>
-                        </button>
                       </div>
                     );
                   })}
@@ -320,7 +298,6 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
           </div>
         )}
       </div>
-      {editing && c && <CampaignFormModal mode="edit" campaign={c} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -412,13 +389,12 @@ function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit
 export default function CampaignsAdminTab() {
   const [status, setStatus] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
   const { data, isLoading } = useAdminCampaigns(status || undefined);
   const setCampaignStatus = useSetCampaignStatus();
   const paged = usePaged(data ?? [], 8, status);
-  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'draft');
+  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'pending_approval');
 
-  async function changeStatus(id: string, st: AdminCampaign['status']) {
+  async function changeStatus(id: string, st: 'approved' | 'cancelled') {
     try {
       await setCampaignStatus.mutateAsync({ id, status: st });
       toast.success(`Đã chuyển sang "${CAMPAIGN_STATUS_META[st].label}"`);
@@ -435,10 +411,6 @@ export default function CampaignsAdminTab() {
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Chiến dịch</h2>
           <p className="text-sm text-neutral-500 mt-1">Duyệt chiến dịch mới và xử lý các yêu cầu thay đổi. Duyệt/từ chối tình nguyện viên do tổ chức từ thiện phụ trách.</p>
         </div>
-        <button onClick={() => setShowCreate(true)}
-          className="shrink-0 inline-flex items-center gap-2 px-5 py-3 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-sm font-bold shadow-sm transition-colors">
-          <span className="material-symbols-outlined text-[20px]">add</span> Tạo chiến dịch
-        </button>
       </div>
 
       {pendingCampaigns.length > 0 && (
@@ -450,8 +422,8 @@ export default function CampaignsAdminTab() {
               Mới nhất: <b>{pendingCampaigns[0].title}</b> — {pendingCampaigns[0].charity} · gửi {formatRequestedAt(pendingCampaigns[0].createdAt)}
             </p>
           </div>
-          {status !== 'draft' && (
-            <button onClick={() => setStatus('draft')}
+          {status !== 'pending_approval' && (
+            <button onClick={() => setStatus('pending_approval')}
               className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100">
               Chỉ xem đơn chờ duyệt
             </button>
@@ -523,9 +495,9 @@ export default function CampaignsAdminTab() {
                         <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
                       </td>
                       <td className="px-6 py-4">
-                        {c.status === 'draft' ? (
+                        {c.status === 'pending_approval' ? (
                           <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => changeStatus(c.id, 'open')} disabled={setCampaignStatus.isPending}
+                            <button onClick={() => changeStatus(c.id, 'approved')} disabled={setCampaignStatus.isPending}
                               className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center">
                               Duyệt
                             </button>
@@ -534,15 +506,7 @@ export default function CampaignsAdminTab() {
                               Từ chối
                             </button>
                           </div>
-                        ) : (
-                          <select value={c.status} disabled={setCampaignStatus.isPending}
-                            onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
-                            className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
-                            {CAMPAIGN_STATUS_OPTS.filter((s) => s !== 'draft').map((s) => (
-                              <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
-                            ))}
-                          </select>
-                        )}
+                        ) : <span className="text-xs font-semibold text-neutral-400">Vòng đời tự động</span>}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button onClick={() => setDetailId(c.id)} title="Xem danh sách tình nguyện viên"
@@ -561,7 +525,6 @@ export default function CampaignsAdminTab() {
       )}
 
       {detailId && <CampaignDetailModal id={detailId} onClose={() => setDetailId(null)} />}
-      {showCreate && <CampaignFormModal mode="create" onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

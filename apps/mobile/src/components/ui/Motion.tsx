@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { ViewStyle } from 'react-native';
+import { Platform, View, ViewStyle } from 'react-native';
 import Animated, {
   FadeInDown,
   FadeIn,
@@ -24,6 +24,16 @@ export function FadeInUp({
   duration = 400,
   style,
 }: FadeInUpProps) {
+  // Reanimated entering/layout animations can dispatch a Fabric view command
+  // after Expo Router has already detached the Android screen. In development
+  // builds that race is surfaced as RetryableMountingLayerException (missing
+  // viewState/tag) and replaces the app with the native error screen.
+  // Keep the content mounted normally on Android; iOS can safely retain the
+  // entrance animation.
+  if (Platform.OS === 'android') {
+    return <View style={style}>{children}</View>;
+  }
+
   return (
     <Animated.View
       entering={FadeInDown.duration(duration).delay(delay)}
@@ -41,6 +51,10 @@ export function FadeInView({
   duration = 400,
   style,
 }: FadeInUpProps) {
+  if (Platform.OS === 'android') {
+    return <View style={style}>{children}</View>;
+  }
+
   return (
     <Animated.View
       entering={FadeIn.duration(duration).delay(delay)}

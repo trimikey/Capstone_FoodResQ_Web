@@ -2,8 +2,8 @@ import type { CampaignStatus, Campaign } from '@/hooks/useCampaigns';
 
 /** Nhãn + màu cho trạng thái chiến dịch. */
 export const CAMPAIGN_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: 'Chờ duyệt', color: '#6b7280', bg: '#f3f4f6' },
-  open: { label: 'Đang tuyển', color: '#10b981', bg: '#ecfdf5' },
+  pending_approval: { label: 'Chờ duyệt', color: '#6b7280', bg: '#f3f4f6' },
+  approved: { label: 'Đã duyệt', color: '#10b981', bg: '#ecfdf5' },
   in_progress: { label: 'Đang diễn ra', color: '#2563eb', bg: '#eff6ff' },
   completed: { label: 'Hoàn thành', color: '#059669', bg: '#ecfdf5' },
   cancelled: { label: 'Đã huỷ', color: '#ef4444', bg: '#fef2f2' },
@@ -15,12 +15,12 @@ export function statusMeta(status: CampaignStatus) {
 
 /** Provider chỉ quyên góp được khi chiến dịch đang mở hoặc đang diễn ra. */
 export function canDonate(status: CampaignStatus): boolean {
-  return status === 'open' || status === 'in_progress';
+  return status === 'approved' || status === 'in_progress';
 }
 
-/** TNV chỉ đăng ký được khi chiến dịch đang tuyển hoặc đang diễn ra. */
-export function canApplyCampaign(status: CampaignStatus): boolean {
-  return status === 'open' || status === 'in_progress';
+/** TNV chỉ đăng ký khi chiến dịch đã duyệt và cửa sổ tuyển đang mở. */
+export function canApplyCampaign(status: CampaignStatus, recruitmentStatus?: string | null): boolean {
+  return status === 'approved' && recruitmentStatus === 'open';
 }
 
 /** Trạng thái công việc TNV trong chiến dịch. */
@@ -73,11 +73,6 @@ export function advanceTaskLabel(status: string): string {
     default:
       return 'Cập nhật';
   }
-}
-
-/** Charity chỉ bắt đầu được chiến dịch khi đã duyệt (status 'open'). */
-export function canStartCampaign(status: CampaignStatus): boolean {
-  return status === 'open';
 }
 
 /** Charity chỉ kết thúc được khi chiến dịch đang diễn ra. */

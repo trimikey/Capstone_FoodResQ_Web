@@ -49,7 +49,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const [providerId, setProviderId] = useState('');
 
   const openCampaigns = useMemo(
-    () => campaigns.filter((c) => c.status === 'open' || c.status === 'in_progress'),
+    () => campaigns.filter((c) => c.status === 'approved' || c.status === 'in_progress'),
     [campaigns],
   );
 

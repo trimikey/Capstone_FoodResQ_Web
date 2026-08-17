@@ -56,7 +56,7 @@ export default function RegistrationsPage() {
       ? 'report'
       : c.status === 'in_progress'
       ? 'distribute'
-      : c.status === 'open'
+      : c.status === 'approved'
       ? 'recruit'
       : 'plan';
 
@@ -192,9 +192,9 @@ export default function RegistrationsPage() {
               <button
                 type="button"
                 onClick={onStart}
-                disabled={c.status !== 'open' || !startWindow.canStart || startCampaign.isPending}
+                disabled={c.status !== 'approved' || !startWindow.canStart || startCampaign.isPending}
                 title={
-                  c.status !== 'open'
+                  c.status !== 'approved'
                     ? 'Chỉ bắt đầu khi chiến dịch đang ở trạng thái "Đang tuyển"'
                     : startWindow.canStart
                       ? ''
