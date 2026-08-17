@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useManageContext, STATUS_META } from '../../../_components/ManageShell';
 import { campaignStartWindow } from '@/lib/campaign-schedule';
+import type { VolunteerDetail, CampaignManageParticipant } from '@/hooks/useCampaigns';
 
 /**
  * Trạng thái chiến dịch: đang ở giai đoạn nào, mốc nào đã qua, và còn hành động gì.
@@ -85,43 +86,12 @@ function stageOf(status: string): StageKey {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface VolunteerDetail {
-  rank: string;
-  dedicationPoints: number;
-  avgRating: number;
-  isAvailable: boolean;
-  vehicleType: string | null;
-  vehiclePlate: string | null;
-  specializations: { specialization: string }[];
-  campaignExperiences: { id: string }[];
-  user: {
-    fullName: string;
-    avatarUrl: string | null;
-    phone: string | null;
-    trustScore: number;
-    status: string;
-  };
-}
-
-interface Participant {
-  id: string;
-  volunteerId: string;
-  role: 'chef' | 'waiter' | 'shipper';
-  status: string;
-  shiftId: string | null;
-  workDate: string | null;
-  checkInTime: string | null;
-  checkInLateMinutes: number | null;
-  notes: string | null;
-  fullName: string;
-  avatarUrl: string | null;
-  rank: string;
-  volunteer: VolunteerDetail;
+type Participant = CampaignManageParticipant & {
   /** Tên ca được gán */
   shiftLabel?: string;
-  /** Số chiến dịch đã tham gia (từ volunteerExperiences) */
+  /** Số chiến dịch đã tham gia */
   campaignsJoined?: number;
-}
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -431,9 +401,9 @@ export default function CampaignStatusPage() {
       return {
         ...p,
         shiftLabel: shift ? `${shift.label} · ${shift.startTime}-${shift.endTime}` : undefined,
-        campaignsJoined: p.volunteer?.campaignExperiences?.length,
-      } as Participant;
-    });
+        campaignsJoined: p.volunteer?.pastCampaignsCount,
+      };
+    }) as Participant[];
   }, [c.participants, c.shifts]);
 
   const filteredParticipants = useMemo(() => {
