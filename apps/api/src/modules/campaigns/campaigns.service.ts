@@ -166,6 +166,7 @@ export class CampaignsService {
     shift: { role: string | null; startTime: string; endTime: string } | null,
     assignmentRole: string,
     workDate?: Date | null,
+    allowEarly = false,
   ): { lateMinutes: number } {
     if (shift?.role && shift.role !== assignmentRole) {
       throw new BadRequestException('Ca trực được phân công không phù hợp với vai trò của bạn.');
@@ -186,7 +187,7 @@ export class CampaignsService {
     const scheduledDate = campaign.scheduledDate.toISOString().slice(0, 10);
     const endDate = (campaign.endDate ?? campaign.scheduledDate).toISOString().slice(0, 10);
 
-    if (nowDate < scheduledDate || nowDate > endDate) {
+    if ((!allowEarly && nowDate < scheduledDate) || nowDate > endDate) {
       throw new BadRequestException('Chỉ có thể điểm danh trong khoảng ngày diễn ra chiến dịch.');
     }
 
@@ -195,7 +196,7 @@ export class CampaignsService {
     // người không nằm trong danh sách, tổ chức không đối chiếu được với ai.
     if (workDate) {
       const assigned = this.toDateKey(workDate);
-      if (nowDate !== assigned) {
+      if (nowDate !== assigned && (!allowEarly || nowDate > assigned)) {
         throw new BadRequestException(
           `Bạn đăng ký trực ngày ${assigned}, hôm nay là ${nowDate}. Chỉ điểm danh được đúng ngày trực của mình.`,
         );
@@ -214,7 +215,7 @@ export class CampaignsService {
 
     // Điểm danh sớm hơn giờ mở chiến dịch thì chặn — chỉ áp cho NGÀY BẮT ĐẦU, vì
     // các ngày sau của chiến dịch nhiều ngày đã ở trong thời gian chạy rồi.
-    if (isStartDay && nowTotal < campaignStart) {
+    if (!allowEarly && isStartDay && nowTotal < campaignStart) {
       throw new BadRequestException(
         `Chiến dịch bắt đầu lúc ${campaign.startTime}. Chưa đến giờ điểm danh.`,
       );
@@ -2807,7 +2808,10 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    const minimumFillPercent = await this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT');
+    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+    ]);
     const days = this.campaignDays(campaign.scheduledDate, campaign.endDate ?? campaign.scheduledDate);
     const matrix = days.flatMap((day) => campaign.shifts.map((shift) => {
       const dayKey = this.toDateKey(day);
@@ -2868,7 +2872,9 @@ export class CampaignsService {
       uniqueVolunteers: confirmedVolunteers.size,
       minimumFillPercent,
       eligibleToStart: matrix.length > 0 && matrix.every((row) => row.eligibleToStart),
-      canStartNow: matrix.length > 0 && matrix.every((row) => row.eligibleToStart),
+      canStartNow: matrix.length > 0
+        && matrix.every((row) => row.eligibleToStart)
+        && (allowEarlyStartAndCheckIn === 1 || new Date() >= campaign.operationStartAt),
       ready: matrix.length > 0 && matrix.every((row) => row.ready),
       matrix,
     };
@@ -3032,6 +3038,10 @@ export class CampaignsService {
         `Mỗi ca/vai trò phải đạt tối thiểu ${readiness.minimumFillPercent}% nhân sự đã xác nhận.`,
       );
     }
+    const allowEarlyStart = (await this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN')) === 1;
+    if (!allowEarlyStart && new Date() < campaign.operationStartAt) {
+      throw new BadRequestException('Chưa tới thời gian vận hành của chiến dịch.');
+    }
     await this.prisma.kitchenCampaign.update({
       where: { id: campaignId },
       data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
@@ -3169,7 +3179,8 @@ export class CampaignsService {
       throw new BadRequestException('Cần cả kinh độ và vĩ độ khi điểm danh.');
     }
     if (next === 'checked_in') {
-      lateMinutes = this.evaluateCheckInWindow(a.campaign, a.shift, a.role, a.workDate).lateMinutes;
+      const allowEarly = (await this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN')) === 1;
+      lateMinutes = this.evaluateCheckInWindow(a.campaign, a.shift, a.role, a.workDate, allowEarly).lateMinutes;
 
       // Kiểm tra vị trí: bán kính lấy từ `system_configs` để admin bật/tắt được.
       // Trước đây khối này bị comment kèm "TODO: bỏ comment khi deploy" — nghĩa là

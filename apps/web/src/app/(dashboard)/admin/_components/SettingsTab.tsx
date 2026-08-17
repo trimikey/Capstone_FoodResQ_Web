@@ -9,6 +9,7 @@ function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
   const setConfig = useSetConfig();
   const [val, setVal] = useState(String(cfg.value));
   const dirty = Number(val) !== cfg.value;
+  const isToggle = cfg.min === 0 && cfg.max === 1 && cfg.unit === '0/1';
 
   async function save() {
     const n = Number(val);
@@ -33,17 +34,34 @@ function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
         <p className="text-[11px] text-neutral-400 mt-1">Khoảng cho phép: {cfg.min}–{cfg.max} {cfg.unit} · mặc định {cfg.default}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <div className="relative">
-          <input
-            type="number"
-            value={val}
-            min={cfg.min}
-            max={cfg.max}
-            onChange={(e) => setVal(e.target.value)}
-            className="w-24 bg-white border border-neutral-200 rounded-xl py-2.5 pl-3 pr-10 text-sm font-bold text-neutral-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-neutral-400 font-medium pointer-events-none">{cfg.unit}</span>
-        </div>
+        {isToggle ? (
+          <button
+            type="button"
+            onClick={() => setVal(Number(val) === 1 ? '0' : '1')}
+            className={`relative h-9 w-16 rounded-full border transition-colors ${
+              Number(val) === 1 ? 'border-emerald-600 bg-emerald-600' : 'border-neutral-200 bg-neutral-200'
+            }`}
+            aria-pressed={Number(val) === 1}
+          >
+            <span
+              className={`absolute top-1 h-7 w-7 rounded-full bg-white shadow transition-transform ${
+                Number(val) === 1 ? 'translate-x-7' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        ) : (
+          <div className="relative">
+            <input
+              type="number"
+              value={val}
+              min={cfg.min}
+              max={cfg.max}
+              onChange={(e) => setVal(e.target.value)}
+              className="w-24 bg-white border border-neutral-200 rounded-xl py-2.5 pl-3 pr-10 text-sm font-bold text-neutral-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-neutral-400 font-medium pointer-events-none">{cfg.unit}</span>
+          </div>
+        )}
         <button
           onClick={save}
           disabled={!dirty || setConfig.isPending}
