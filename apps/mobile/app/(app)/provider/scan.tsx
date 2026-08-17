@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { notifyError, notifySuccess, selectionFeedback } from '@/services/haptics';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
+import { UNIT_LABELS } from '@/utils/listingFormat';
 
 export default function ScanQrScreen() {
   const { user } = useAuth();
@@ -133,7 +134,10 @@ export default function ScanQrScreen() {
 
           <SurfaceCard style={styles.matchInfo}>
             <Row label="Món" value={result.listing.title} />
-            <Row label="Số lượng" value={`${result.quantity} ${result.listing.quantityUnit}`} />
+            <Row
+              label="Số lượng"
+              value={`${result.quantity} ${UNIT_LABELS[result.listing.quantityUnit] ?? result.listing.quantityUnit}`}
+            />
             {r.idCardNumber ? <Row label="CCCD" value={r.idCardNumber} /> : null}
           </SurfaceCard>
 

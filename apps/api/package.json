@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "prebuild": "tsc -p ../../packages/types/tsconfig.json",
     "build": "nest build",
+    "predev": "tsc -p ../../packages/types/tsconfig.json",
     "dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
