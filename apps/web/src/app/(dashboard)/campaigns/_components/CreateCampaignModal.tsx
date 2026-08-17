@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { type CreateCampaignInput, useUploadCampaignImage } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
-import { errMsg } from '@/lib/utils';
+import { errMsg, mediaUrl } from '@/lib/utils';
 import {
   MenuSuggestions,
   SupplySuggestions,
@@ -586,5 +586,5 @@ function Summary({ label, value }: { label: string; value: string }) {
 function ImageUploader({ value, onChange }: { value: string | null; onChange: (value: string | null) => void }) {
   const upload = useUploadCampaignImage();
   const ref = useRef<HTMLInputElement>(null);
-  return <div className="flex items-center gap-3">{value && <img src={value} alt="Ảnh chiến dịch" className="h-20 w-28 rounded-xl object-cover" />}<button type="button" className="cm-repeat-add" disabled={upload.isPending} onClick={() => ref.current?.click()}>{upload.isPending ? 'Đang tải…' : value ? 'Đổi ảnh' : 'Tải ảnh lên'}</button>{value && <button type="button" className="text-xs font-bold text-rose-600" onClick={() => onChange(null)}>Xoá</button>}<input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const result = await upload.mutateAsync(file); onChange(result.url); } catch (error) { toast.error(errMsg(error, 'Tải ảnh thất bại')); } event.target.value = ''; }} /></div>;
+  return <div className="flex items-center gap-3">{value && <img src={mediaUrl(value)} alt="Ảnh chiến dịch" className="h-20 w-28 rounded-xl object-cover" />}<button type="button" className="cm-repeat-add" disabled={upload.isPending} onClick={() => ref.current?.click()}>{upload.isPending ? 'Đang tải…' : value ? 'Đổi ảnh' : 'Tải ảnh lên'}</button>{value && <button type="button" className="text-xs font-bold text-rose-600" onClick={() => onChange(null)}>Xoá</button>}<input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const result = await upload.mutateAsync(file); onChange(result.url); } catch (error) { toast.error(errMsg(error, 'Tải ảnh thất bại')); } event.target.value = ''; }} /></div>;
 }

@@ -72,6 +72,7 @@ const NAV_PATH: Record<NavKey, string | null> = {
   schedule: 'schedule',
   status: 'status',
 };
+const CAMPAIGN_HERO_FALLBACK = '/vn-pho.jpg';
 
 // ─── Campaign data type ────────────────────────────────────────────────────────
 type CampaignData = {
@@ -236,7 +237,7 @@ export function ManageShell({
     );
   }
 
-  const heroImage = c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : null;
+  const heroImage = c.imageUrls?.[0] ? mediaUrl(c.imageUrls[0]) : CAMPAIGN_HERO_FALLBACK;
   const statusMeta = STATUS_META[c.status] ?? STATUS_META.pending_approval;
   const pendingCount = c.participants?.filter((p) => !p.status || p.status === 'pending' || p.status === 'applied').length ?? 0;
   const distCount = c.distributions?.length ?? 0;
@@ -279,10 +280,8 @@ export function ManageShell({
       <div className="cm-manage-page">
         {/* Hero */}
         <div className="cm-manage-hero">
-          {heroImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={heroImage} alt={c.title} />
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={heroImage} alt={c.title} />
           {/* Về danh sách chiến dịch của tổ chức, KHÔNG về trang chi tiết công khai
               của chính chiến dịch đang mở — đó là đi tới, không phải quay lại. */}
           <Link
