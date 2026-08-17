@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { mediaUrl } from '@/lib/utils';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 
@@ -22,6 +23,12 @@ export default function ShipperSidebar() {
   const router = useRouter();
   const auth = useAuthStore();
   const { data: me } = useMe();
+  const avatarSrc = mediaUrl(me?.avatarUrl ?? '');
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarSrc]);
 
   function handleLogout() {
     auth.logout();
@@ -87,9 +94,17 @@ export default function ShipperSidebar() {
         {me?.fullName && (
           <div className="flex items-center gap-3 border-t border-neutral-200 px-5 py-4">
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#4e9853] to-[#2a662e] font-bold text-white">
-              {me.avatarUrl ? (
+              {avatarSrc && !avatarFailed ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={mediaUrl(me.avatarUrl)} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none';
+                    setAvatarFailed(true);
+                  }}
+                />
               ) : (
                 <span>{me.fullName.charAt(0).toUpperCase()}</span>
               )}

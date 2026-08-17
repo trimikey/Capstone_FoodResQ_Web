@@ -225,7 +225,10 @@ export default function PublicHeader() {
                       src={avatarSrc}
                       alt={currentUserName}
                       className="w-full h-full object-cover"
-                      onError={() => setAvatarFailed(true)}
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none';
+                        setAvatarFailed(true);
+                      }}
                     />
                   ) : (
                     <span className="font-bold text-xs text-[#236c2a]">
