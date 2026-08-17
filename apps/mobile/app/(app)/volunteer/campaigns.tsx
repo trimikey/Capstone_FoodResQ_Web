@@ -14,6 +14,7 @@ import {
   type CampaignTask,
 } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
+import { AppBackground } from '@/components/ui/AppBackground';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
@@ -169,53 +170,55 @@ export default function VolunteerCampaignsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Chiến dịch bếp ăn" />
-      <View style={styles.hero}>
-        <Text style={styles.heroKicker}>Volunteer kitchen</Text>
-        <Text style={styles.heroTitle}>Chọn ca bếp ăn và theo dõi việc của bạn</Text>
-      </View>
-      <View style={styles.segmentWrap}>
-        <SegmentedButtons
-          value={segment}
-          onValueChange={(v) => setSegment(v as Segment)}
-          buttons={[
-            { value: 'open', label: 'Đang mở', icon: 'charity' },
-            { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
-          ]}
-          theme={{ colors: { secondaryContainer: COLORS.purpleContainer, onSecondaryContainer: COLORS.purple } }}
-        />
-      </View>
+      <AppBackground>
+        <ScreenHeader title="Chiến dịch bếp ăn" />
+        <View style={styles.hero}>
+          <Text style={styles.heroKicker}>Volunteer kitchen</Text>
+          <Text style={styles.heroTitle}>Chọn ca bếp ăn và theo dõi việc của bạn</Text>
+        </View>
+        <View style={styles.segmentWrap}>
+          <SegmentedButtons
+            value={segment}
+            onValueChange={(v) => setSegment(v as Segment)}
+            buttons={[
+              { value: 'open', label: 'Đang mở', icon: 'charity' },
+              { value: 'tasks', label: 'Việc của tôi', icon: 'clipboard-check-outline' },
+            ]}
+            theme={{ colors: { secondaryContainer: COLORS.purpleContainer, onSecondaryContainer: COLORS.purple } }}
+          />
+        </View>
 
-      {segment === 'open' ? (
-        <FlashList
-          data={openQuery.data ?? []}
-          keyExtractor={(item: Campaign) => item.id}
-          renderItem={({ item }: { item: Campaign }) => (
-            <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
-          )}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={renderOpenEmpty}
-          refreshing={openQuery.isRefetching}
-          onRefresh={() => openQuery.refetch()}
-        />
-      ) : (
-        <FlashList
-          data={tasksQuery.data ?? []}
-          keyExtractor={(item: CampaignTask) => item.id}
-          renderItem={({ item }: { item: CampaignTask }) => (
-            <TaskCard
-              task={item}
-              advancing={advanceMut.isPending}
-              onAdvance={() => handleAdvance(item)}
-              onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={renderTasksEmpty}
-          refreshing={tasksQuery.isRefetching}
-          onRefresh={() => tasksQuery.refetch()}
-        />
-      )}
+        {segment === 'open' ? (
+          <FlashList
+            data={openQuery.data ?? []}
+            keyExtractor={(item: Campaign) => item.id}
+            renderItem={({ item, index }: { item: Campaign; index: number }) => (
+              <CampaignCard campaign={item} index={index} onPress={() => openCampaignDetail(item.id, 'open')} />
+            )}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={renderOpenEmpty}
+            refreshing={openQuery.isRefetching}
+            onRefresh={() => openQuery.refetch()}
+          />
+        ) : (
+          <FlashList
+            data={tasksQuery.data ?? []}
+            keyExtractor={(item: CampaignTask) => item.id}
+            renderItem={({ item }: { item: CampaignTask }) => (
+              <TaskCard
+                task={item}
+                advancing={advanceMut.isPending}
+                onAdvance={() => handleAdvance(item)}
+                onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
+              />
+            )}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={renderTasksEmpty}
+            refreshing={tasksQuery.isRefetching}
+            onRefresh={() => tasksQuery.refetch()}
+          />
+        )}
+      </AppBackground>
     </SafeAreaView>
   );
 }

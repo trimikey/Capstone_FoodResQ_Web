@@ -1,27 +1,28 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, type PressableProps, type ViewStyle } from 'react-native';
+import { StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { InteractiveScale } from '@/components/ui/Motion';
 import { mobileColors as COLORS, elevation, radius } from '@/theme/design';
 
 interface Props extends Omit<PressableProps, 'style'> {
   children: ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   tone?: 'default' | 'mint' | 'coral';
 }
 
 export function SurfaceCard({ children, style, tone = 'default', ...props }: Props) {
   return (
-    <Pressable
+    <InteractiveScale
       {...props}
-      style={({ pressed }) => [
+      pressedScale={0.988}
+      style={[
         styles.card,
         tone === 'mint' && styles.mint,
         tone === 'coral' && styles.coral,
-        pressed && styles.pressed,
         style,
       ]}
     >
       {children}
-    </Pressable>
+    </InteractiveScale>
   );
 }
 
@@ -41,10 +42,5 @@ const styles = StyleSheet.create({
   coral: {
     backgroundColor: COLORS.coral,
     borderColor: '#f4d6c9',
-  },
-  pressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.995 }],
-    ...elevation.pressed,
   },
 });

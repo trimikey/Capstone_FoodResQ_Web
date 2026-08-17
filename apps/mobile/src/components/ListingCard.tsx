@@ -1,9 +1,9 @@
-import { Pressable, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Text, Icon } from 'react-native-paper';
 import type { Listing } from '../hooks/useListings';
-import { AppImage } from './ui/AppImage';
-import { FadeInUp } from './ui/Motion';
-import { StatusBadge } from './ui/StatusBadge';
+import { AppImage } from '@/components/ui/AppImage';
+import { FadeInUp, InteractiveScale } from '@/components/ui/Motion';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 import {
   categoryLabel,
@@ -26,9 +26,10 @@ export function ListingCard({ listing, onPress, index = 0 }: Props) {
 
   return (
     <FadeInUp delay={Math.min(index, 8) * 40} style={styles.wrap}>
-      <Pressable
+      <InteractiveScale
         onPress={onPress}
-        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        style={styles.card}
+        pressedScale={0.982}
         accessibilityRole="button"
       >
         <View style={styles.imageWrap}>
@@ -80,7 +81,7 @@ export function ListingCard({ listing, onPress, index = 0 }: Props) {
             </View>
           </View>
         </View>
-      </Pressable>
+      </InteractiveScale>
     </FadeInUp>
   );
 }
@@ -99,10 +100,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
     ...elevation.card,
-  },
-  cardPressed: {
-    transform: [{ scale: 0.992 }],
-    opacity: 0.94,
   },
   imageWrap: { height: 112, backgroundColor: COLORS.outlineVariant },
   image: { width: '100%', height: '100%' },

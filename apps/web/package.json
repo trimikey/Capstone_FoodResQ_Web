@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node ../../node_modules/next/dist/bin/next dev --port 3000",
+    "dev": "node ../../node_modules/next/dist/bin/next dev --hostname 0.0.0.0 --port 3000",
     "build": "node ../../node_modules/next/dist/bin/next build",
     "start": "node ../../node_modules/next/dist/bin/next start",
     "lint": "node ../../node_modules/eslint/bin/eslint.js src --ext .ts,.tsx",

@@ -36,10 +36,21 @@ function apiOriginForBrowser(): string {
 export function mediaUrl(path: string): string {
   const value = path.trim();
   if (!value) return '';
-  if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+  if (value.startsWith('data:') || value.startsWith('blob:')) {
     return value;
   }
   const origin = apiOriginForBrowser();
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if (url.pathname.startsWith('/uploads/')) {
+        return `${origin}${url.pathname}${url.search}${url.hash}`;
+      }
+    } catch {
+      return value;
+    }
+    return value;
+  }
   if (value.startsWith('/api/v1/uploads')) {
     return `${origin}${value.replace(/^\/api\/v1/, '')}`;
   }

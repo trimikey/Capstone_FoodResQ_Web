@@ -22,6 +22,7 @@ import { useListings, type Listing } from '@/hooks/useListings';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useUpdateLocation, useVolunteerMe } from '@/hooks/useVolunteer';
 import { ListingsMapView, type DeliveryMapRoute } from '@/components/ListingsMapView';
+import { AppBackground } from '@/components/ui/AppBackground';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup, Toast } from '@/components/ui/AppPopup';
@@ -97,7 +98,6 @@ function offerDetails(offer: TaskOffer) {
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
-  useDeliveryOfferSocket();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,
@@ -628,137 +628,139 @@ export default function VolunteerOffersScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader
-        title="Đơn cần giao"
-        right={
-          <View style={[styles.headerStatus, volunteer?.isAvailable ? styles.headerStatusOn : styles.headerStatusOff]}>
-            <MaterialCommunityIcons
-              name={volunteer?.isAvailable ? 'access-point' : 'access-point-off'}
-              size={14}
-              color={volunteer?.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
-            />
-            <Text
-              style={[
-                styles.headerStatusText,
-                volunteer?.isAvailable ? styles.headerStatusTextOn : styles.headerStatusTextOff,
-              ]}
-            >
-              {volunteer?.isAvailable ? 'Đang nhận' : 'Đang tắt'}
+      <AppBackground>
+        <ScreenHeader
+          title="Đơn cần giao"
+          right={
+            <View style={[styles.headerStatus, volunteer?.isAvailable ? styles.headerStatusOn : styles.headerStatusOff]}>
+              <MaterialCommunityIcons
+                name={volunteer?.isAvailable ? 'access-point' : 'access-point-off'}
+                size={14}
+                color={volunteer?.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
+              />
+              <Text
+                style={[
+                  styles.headerStatusText,
+                  volunteer?.isAvailable ? styles.headerStatusTextOn : styles.headerStatusTextOff,
+                ]}
+              >
+                {volunteer?.isAvailable ? 'Đang nhận' : 'Đang tắt'}
+              </Text>
+            </View>
+          }
+        />
+        <View style={styles.dispatchHero}>
+          <View style={styles.dispatchTop}>
+            <View style={styles.dispatchIcon}>
+              <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
+            </View>
+            <View style={styles.dispatchCopy}>
+              <Text style={styles.dispatchKicker}>Shipper dispatch</Text>
+              <Text style={styles.dispatchTitle}>
+                {activeOffer ? 'Có đơn cần phản hồi ngay' : volunteer?.isAvailable ? 'Đang quét đơn gần bạn' : 'Bật nhận đơn để bắt đầu'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.dispatchStats}>
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{offers.length}</Text>
+              <Text style={styles.dispatchStatLabel}>lời mời</Text>
+            </View>
+            <View style={styles.dispatchDivider} />
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{queueOffers.length}</Text>
+              <Text style={styles.dispatchStatLabel}>hàng chờ</Text>
+            </View>
+            <View style={styles.dispatchDivider} />
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{mapListings.length}</Text>
+              <Text style={styles.dispatchStatLabel}>điểm gần</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.locationBar}>
+          <View style={styles.locationIcon}>
+            <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.blue} />
+          </View>
+          <View style={styles.locationContent}>
+            <Text style={styles.locationLabel}>Vị trí hiện tại</Text>
+            <Text style={styles.locationValue} numberOfLines={2}>
+              {locationStatus}
+            </Text>
+            <Text style={styles.locationHint} numberOfLines={2}>
+              {locationHint}
             </Text>
           </View>
-        }
-      />
-      <View style={styles.dispatchHero}>
-        <View style={styles.dispatchTop}>
-          <View style={styles.dispatchIcon}>
-            <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
-          </View>
-          <View style={styles.dispatchCopy}>
-            <Text style={styles.dispatchKicker}>Shipper dispatch</Text>
-            <Text style={styles.dispatchTitle}>
-              {activeOffer ? 'Có đơn cần phản hồi ngay' : volunteer?.isAvailable ? 'Đang quét đơn gần bạn' : 'Bật nhận đơn để bắt đầu'}
-            </Text>
-          </View>
         </View>
-        <View style={styles.dispatchStats}>
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{offers.length}</Text>
-            <Text style={styles.dispatchStatLabel}>lời mời</Text>
+        <View style={styles.bulkEntry}>
+          <View style={styles.bulkEntryIcon}>
+            <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.amber} />
           </View>
-          <View style={styles.dispatchDivider} />
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{queueOffers.length}</Text>
-            <Text style={styles.dispatchStatLabel}>hàng chờ</Text>
-          </View>
-          <View style={styles.dispatchDivider} />
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{mapListings.length}</Text>
-            <Text style={styles.dispatchStatLabel}>điểm gần</Text>
-          </View>
-        </View>
-      </View>
-      <View style={styles.locationBar}>
-        <View style={styles.locationIcon}>
-          <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.blue} />
-        </View>
-        <View style={styles.locationContent}>
-          <Text style={styles.locationLabel}>Vị trí hiện tại</Text>
-          <Text style={styles.locationValue} numberOfLines={2}>
-            {locationStatus}
-          </Text>
-          <Text style={styles.locationHint} numberOfLines={2}>
-            {locationHint}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.bulkEntry}>
-        <View style={styles.bulkEntryIcon}>
-          <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={COLORS.amber} />
-        </View>
-        <View style={styles.bulkEntryText}>
-          <Text style={styles.bulkEntryTitle}>Giao sỉ nhiều điểm</Text>
-          <Text style={styles.bulkEntrySub} numberOfLines={2}>
-            Nhận từ 10 phần, lấy tại provider rồi phát dọc tuyến.
-          </Text>
-        </View>
-        <Button
-          mode="contained-tonal"
-          compact
-          onPress={() => router.push('/(app)/volunteer/bulk')}
-          buttonColor={COLORS.amberContainer}
-          textColor={COLORS.onAmberContainer}
-          labelStyle={styles.bulkEntryActionLabel}
-        >
-          Mở
-        </Button>
-      </View>
-      {needsFaceEnrollment ? (
-        <View style={styles.faceBanner}>
-          <View style={styles.faceBannerIcon}>
-            <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.purple} />
-          </View>
-          <View style={styles.faceBannerText}>
-            <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
-            <Text style={styles.faceBannerSub} numberOfLines={2}>
-              Cập nhật để bật nhận đơn và xác minh khi giao nhận.
+          <View style={styles.bulkEntryText}>
+            <Text style={styles.bulkEntryTitle}>Giao sỉ nhiều điểm</Text>
+            <Text style={styles.bulkEntrySub} numberOfLines={2}>
+              Nhận từ 10 phần, lấy tại provider rồi phát dọc tuyến.
             </Text>
           </View>
           <Button
             mode="contained-tonal"
             compact
-            onPress={() => setFacePromptVisible(true)}
-            buttonColor={COLORS.purpleContainer}
-            textColor={COLORS.purple}
-            labelStyle={styles.faceBannerActionLabel}
-            style={styles.faceBannerAction}
+            onPress={() => router.push('/(app)/volunteer/bulk')}
+            buttonColor={COLORS.amberContainer}
+            textColor={COLORS.onAmberContainer}
+            labelStyle={styles.bulkEntryActionLabel}
           >
-            Cập nhật
+            Mở
           </Button>
         </View>
-      ) : null}
-      {offers.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-          {renderEmpty()}
-        </ScrollView>
-      ) : (
-        <FlashList
-          data={queueOffers}
-          keyExtractor={(item: TaskOffer, index) => item.id ?? `${item.deliveryId}-${index}`}
-          renderItem={renderItem}
-          extraData={{ actingId, deferredIds, activeOfferId: activeOffer?.id, renderNow }}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={renderListHeader}
-          refreshing={isRefetching}
-          onRefresh={refreshNearbyData}
+        {needsFaceEnrollment ? (
+          <View style={styles.faceBanner}>
+            <View style={styles.faceBannerIcon}>
+              <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.purple} />
+            </View>
+            <View style={styles.faceBannerText}>
+              <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
+              <Text style={styles.faceBannerSub} numberOfLines={2}>
+                Cập nhật để bật nhận đơn và xác minh khi giao nhận.
+              </Text>
+            </View>
+            <Button
+              mode="contained-tonal"
+              compact
+              onPress={() => setFacePromptVisible(true)}
+              buttonColor={COLORS.purpleContainer}
+              textColor={COLORS.purple}
+              labelStyle={styles.faceBannerActionLabel}
+              style={styles.faceBannerAction}
+            >
+              Cập nhật
+            </Button>
+          </View>
+        ) : null}
+        {offers.length === 0 ? (
+          <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+            {renderEmpty()}
+          </ScrollView>
+        ) : (
+          <FlashList
+            data={queueOffers}
+            keyExtractor={(item: TaskOffer, index) => item.id ?? `${item.deliveryId}-${index}`}
+            renderItem={renderItem}
+            extraData={{ actingId, deferredIds, activeOfferId: activeOffer?.id, renderNow }}
+            contentContainerStyle={styles.list}
+            ListHeaderComponent={renderListHeader}
+            refreshing={isRefetching}
+            onRefresh={refreshNearbyData}
+          />
+        )}
+        {renderOfferSheet()}
+        <FaceEnrollmentPrompt
+          visible={facePromptVisible}
+          busy={enrollFace.isPending}
+          onDismiss={() => setFacePromptVisible(false)}
+          onEnroll={handleEnrollFace}
         />
-      )}
-      {renderOfferSheet()}
-      <FaceEnrollmentPrompt
-        visible={facePromptVisible}
-        busy={enrollFace.isPending}
-        onDismiss={() => setFacePromptVisible(false)}
-        onEnroll={handleEnrollFace}
-      />
+      </AppBackground>
     </SafeAreaView>
   );
 }

@@ -1,12 +1,33 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import {
+  type AppNotification,
   useNotifications,
   useUnreadCount,
   useMarkAllRead,
   useNotificationSocket,
 } from '@/hooks/useNotifications';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function notificationHref(n: AppNotification): string | null {
+  const rawLink = typeof n.data?.link === 'string' ? n.data.link.trim() : '';
+  if (rawLink) {
+    if (/^https?:\/\//i.test(rawLink) || rawLink.startsWith('/')) return rawLink;
+    if (UUID_RE.test(rawLink)) return `/campaigns/${rawLink}`;
+    return `/${rawLink.replace(/^\/+/, '')}`;
+  }
+
+  const assignmentId = typeof n.data?.assignmentId === 'string' ? n.data.assignmentId.trim() : '';
+  if (UUID_RE.test(assignmentId)) return `/my-tasks/${assignmentId}`;
+
+  const campaignId = typeof n.data?.campaignId === 'string' ? n.data.campaignId.trim() : '';
+  if (UUID_RE.test(campaignId)) return `/campaigns/${campaignId}`;
+
+  return null;
+}
 
 export default function NotificationBell({ variant = 'header' }: { variant?: 'header' | 'sidebar' }) {
   useNotificationSocket(); // mở kết nối real-time
@@ -55,15 +76,29 @@ export default function NotificationBell({ variant = 'header' }: { variant?: 'he
               {items.length === 0 ? (
                 <div className="p-6 text-center text-xs text-neutral-400">Chưa có thông báo</div>
               ) : (
-                items.map((n) => (
-                  <div key={n.id} className={`p-3.5 ${n.isRead ? '' : 'bg-emerald-50/40'}`}>
-                    <p className="text-sm font-bold text-neutral-800 leading-snug">{n.title}</p>
-                    <p className="text-xs text-neutral-500 mt-0.5 leading-normal">{n.body}</p>
-                    <p className="text-[10px] text-neutral-400 mt-1">
-                      {new Date(n.createdAt).toLocaleString('vi-VN')}
-                    </p>
-                  </div>
-                ))
+                items.map((n) => {
+                  const href = notificationHref(n);
+                  const content = (
+                    <>
+                      <p className="text-sm font-bold text-neutral-800 leading-snug">{n.title}</p>
+                      <p className="text-xs text-neutral-500 mt-0.5 leading-normal">{n.body}</p>
+                      <p className="text-[10px] text-neutral-400 mt-1">
+                        {new Date(n.createdAt).toLocaleString('vi-VN')}
+                      </p>
+                    </>
+                  );
+                  const className = `block p-3.5 text-left transition-colors hover:bg-neutral-50 ${n.isRead ? '' : 'bg-emerald-50/40'}`;
+
+                  return href ? (
+                    <Link key={n.id} href={href} onClick={() => setOpen(false)} className={className}>
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={n.id} className={className}>
+                      {content}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

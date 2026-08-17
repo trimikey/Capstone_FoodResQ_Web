@@ -20,6 +20,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { RecipesModule } from './modules/recipes/recipes.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { BulkRunsModule } from './modules/bulk-runs/bulk-runs.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { BulkRunsModule } from './modules/bulk-runs/bulk-runs.module';
     RecipesModule,
     UploadsModule,
     BulkRunsModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
