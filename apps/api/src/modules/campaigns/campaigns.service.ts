@@ -541,9 +541,6 @@ export class CampaignsService {
           recruitment_start_at, recruitment_end_at, recruitment_buffer_hours, recruitment_status,
           chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
           expected_servings, image_urls, menu_items, schedule_items, supply_items,
-          operation_start_at, operation_end_at,
-          recruitment_start_at, recruitment_end_at,
-          recruitment_buffer_hours, recruitment_status,
           status, created_at, updated_at
         ) VALUES (
           ${receiver.id}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
@@ -556,12 +553,7 @@ export class CampaignsService {
           ${JSON.stringify(menuJson)}::jsonb,
           ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
           ${JSON.stringify(supplyJson)}::jsonb,
-          (${dto.scheduledDate}::date + ${dto.startTime}::time) AT TIME ZONE 'UTC',
-          (${endDateStr}::date + ${dto.endTime}::time) AT TIME ZONE 'UTC',
-          NOW(),
-          NOW() + (INTERVAL '24 hours'),
-          24, 'scheduled',
-          'draft'::campaign_status, NOW(), NOW()
+          'pending_approval'::campaign_status, NOW(), NOW()
         )
         RETURNING id
       `);
@@ -4902,7 +4894,7 @@ export class CampaignsService {
     const [total, completed, active] = await Promise.all([
       this.prisma.kitchenCampaign.count({ where: {} }),
       this.prisma.kitchenCampaign.count({ where: { status: 'completed' } }),
-      this.prisma.kitchenCampaign.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+      this.prisma.kitchenCampaign.count({ where: { status: { in: ['approved', 'in_progress'] } } }),
     ]);
 
     // Suất ăn đã phát: sum(actualServings) của chiến dịch completed
@@ -4954,7 +4946,7 @@ export class CampaignsService {
     const [total, completed, active, servingsAgg, distributionsAgg] = await Promise.all([
       this.prisma.kitchenCampaign.count({ where }),
       this.prisma.kitchenCampaign.count({ where: completedWhere }),
-      this.prisma.kitchenCampaign.count({ where: { ...where, status: { in: ['open', 'in_progress'] } } }),
+      this.prisma.kitchenCampaign.count({ where: { ...where, status: { in: ['approved', 'in_progress'] } } }),
       this.prisma.kitchenCampaign.aggregate({
         where: completedWhere,
         _sum: { actualServings: true },
