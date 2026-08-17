@@ -1523,7 +1523,7 @@ export default function CreateCampaignModal({
             <button
               type="button"
               onClick={() => setStep((s) => (s === 3 ? 2 : 1))}
-              className="cm-btn-cancel"
+              className="cm-btn-cancel cm-btn-back"
             >
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
               Quay lại
