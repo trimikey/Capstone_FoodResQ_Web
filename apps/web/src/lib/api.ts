@@ -20,6 +20,24 @@ type ApiErrorPayload = {
     message?: string;
   };
 };
+type RefreshPayload = { data: { accessToken: string; refreshToken: string } };
+
+function jwtExpiresSoon(token: string, skewSeconds = 30): boolean {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return true;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json =
+      typeof window === 'undefined'
+        ? Buffer.from(normalized, 'base64').toString('utf8')
+        : atob(normalized);
+    const exp = (JSON.parse(json) as { exp?: number }).exp;
+    if (!exp) return true;
+    return exp * 1000 <= Date.now() + skewSeconds * 1000;
+  } catch {
+    return true;
+  }
+}
 
 function getStoredTokens() {
   if (typeof window === 'undefined') {
@@ -52,9 +70,40 @@ function expireSession() {
   redirectToLogin();
 }
 
-api.interceptors.request.use((config) => {
+let refreshPromise: Promise<string> | null = null;
+
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post<RefreshPayload>(`${apiBaseURL}/auth/refresh`, { refreshToken })
+      .then(({ data }) => {
+        const newAccess = data.data.accessToken;
+        const newRefresh = data.data.refreshToken;
+        useAuthStore.getState().setTokens(newAccess, newRefresh);
+        return newAccess;
+      })
+      .catch((error) => {
+        expireSession();
+        throw error;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+api.interceptors.request.use(async (config) => {
   const { accessToken } = getStoredTokens();
-  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+  const { refreshToken } = getStoredTokens();
+  const isRefreshRequest = typeof config.url === 'string' && config.url.includes('/auth/refresh');
+  let token = accessToken;
+
+  if (!isRefreshRequest && token && jwtExpiresSoon(token) && refreshToken) {
+    token = await refreshAccessToken(refreshToken);
+  }
+
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
@@ -96,17 +145,9 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    isRefreshing = true;
-
     try {
-      const { data } = await axios.post<{ data: { accessToken: string; refreshToken: string } }>(
-        `${apiBaseURL}/auth/refresh`,
-        { refreshToken },
-      );
-
-      const newAccess = data.data.accessToken;
-      const newRefresh = data.data.refreshToken;
-      useAuthStore.getState().setTokens(newAccess, newRefresh);
+      isRefreshing = true;
+      const newAccess = await refreshAccessToken(refreshToken);
 
       queue.forEach(({ resolve }) => resolve(newAccess));
       queue = [];
