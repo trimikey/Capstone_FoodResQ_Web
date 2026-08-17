@@ -266,7 +266,7 @@ export default function CreateDistributionModal({
           ) : (
             <>
               <div
-                className={`max-h-40 overflow-y-auto rounded-xl border divide-y divide-neutral-100 ${
+                className={`max-h-56 overflow-y-auto rounded-xl border divide-y divide-neutral-100 ${
                   errors.assignees ? 'border-rose-500 ring-1 ring-rose-200' : 'border-neutral-200'
                 }`}
               >
@@ -275,7 +275,7 @@ export default function CreateDistributionModal({
                   return (
                     <label
                       key={v.volunteerId}
-                      className={`flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition-colors ${
+                      className={`flex cursor-pointer items-start gap-2.5 px-3 py-2.5 transition-colors ${
                         checked ? 'bg-emerald-50' : 'hover:bg-neutral-50'
                       }`}
                     >
@@ -283,29 +283,39 @@ export default function CreateDistributionModal({
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleAssignee(v.volunteerId)}
-                        className="h-4 w-4 shrink-0 accent-emerald-600"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-800">
-                        {v.fullName}
-                      </span>
-                      {/* Ca trực — tổ chức cần biết giờ TNV làm việc để chọn thời gian phát khớp ca. */}
-                      {v.shifts && v.shifts.length > 0 && (
-                        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600" title={v.shifts.map((s) => `${s.label}: ${s.start}–${s.end}`).join('\n')}>
-                          {v.shifts.length === 1
-                            ? `${v.shifts[0].label} · ${v.shifts[0].start}–${v.shifts[0].end}`
-                            : `${v.shifts.length} ca`}
+                      {/* 2 dòng: tên đầy đủ + vai trò, bên dưới liệt kê chi tiết từng ca.
+                          Bố cục 1 hàng trước đây để pill ca chiếm hết ngang, tên bị
+                          truncate còn "S..". */}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-semibold text-neutral-800">{v.fullName}</span>
+                          {/* Nhãn vai trò: phân biệt ai đi điểm xa (shipper) và ai phát tại chỗ (phục vụ). */}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              v.role === 'waiter'
+                                ? 'bg-violet-100 text-violet-700'
+                                : 'bg-teal-100 text-teal-700'
+                            }`}
+                          >
+                            {v.role === 'waiter' ? 'Phục vụ' : 'Giao hàng'}
+                          </span>
                         </span>
-                      )}
-                      {/* Nhãn vai trò: tổ chức cần phân biệt ai đi điểm xa (shipper)
-                          và ai phát tại chỗ (phục vụ) khi chọn người. */}
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          v.role === 'waiter'
-                            ? 'bg-violet-100 text-violet-700'
-                            : 'bg-teal-100 text-teal-700'
-                        }`}
-                      >
-                        {v.role === 'waiter' ? 'Phục vụ' : 'Giao hàng'}
+                        {/* Ca trực — tổ chức cần biết giờ TNV làm việc để chọn giờ phát khớp ca. */}
+                        {v.shifts && v.shifts.length > 0 && (
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            {v.shifts.map((s, i) => (
+                              <span
+                                key={`${s.label}-${s.start}-${i}`}
+                                className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600"
+                              >
+                                <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                {s.label} · {s.start}–{s.end}
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </span>
                     </label>
                   );

@@ -98,6 +98,8 @@ interface Props {
 
 export default function CreateCampaignModal({ onClose, onSubmit, pending }: Props) {
   const [step, setStep] = useState<Step>(1);
+  // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
+  const [confirmedReview, setConfirmedReview] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [kitchenAddress, setKitchenAddress] = useState('');
@@ -341,6 +343,17 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // Form không có nút submit ở bước 1–4 → nhấn Enter trong ô nhập sẽ kích hoạt
+    // implicit submission và GỬI LUÔN, bỏ qua bước kiểm tra. Chưa ở bước 5 thì
+    // Enter chỉ được hiểu là "Tiếp tục".
+    if (step !== 5) {
+      nextStep();
+      return;
+    }
+    // Bắt xác nhận đã xem kỹ — chiến dịch KHÔNG chỉnh sửa được sau khi đăng.
+    if (!confirmedReview) {
+      return toast.error('Vui lòng tick xác nhận đã kiểm tra kỹ thông tin trước khi gửi.');
+    }
     for (const candidate of [1, 2, 3, 4] as Step[]) {
       const error = validate(candidate);
       if (error) {
@@ -563,10 +576,38 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
               </Block>
             </>}
 
-            {step === 5 && <><Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /></Block><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Sau khi admin duyệt, hệ thống tự mở/đóng tuyển. Chiến dịch tự bắt đầu đúng giờ nếu tất cả ca đã đủ người xác nhận; không có nút bắt đầu thủ công.</div></>}
+            {step === 5 && <>
+              <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /></Block>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Sau khi admin duyệt, hệ thống tự mở/đóng tuyển. Chiến dịch tự bắt đầu đúng giờ nếu tất cả ca đã đủ người xác nhận; không có nút bắt đầu thủ công.</div>
+              {/* Cảnh báo + cam kết bắt buộc: đăng lên là KHÔNG chỉnh sửa được nữa
+                  (tính năng chỉnh sửa chiến dịch đã bị gỡ) — bắt tổ chức xem kỹ. */}
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                <p className="flex items-center gap-2 text-sm font-extrabold text-amber-900">
+                  <span className="material-symbols-outlined text-[20px]">warning</span>
+                  Xem xét kỹ trước khi đăng
+                </p>
+                <p className="mt-1.5 text-sm text-amber-900">
+                  Chiến dịch <b>không thể chỉnh sửa sau khi đăng lên</b>. Hãy rà soát lại tên,
+                  thực đơn, số suất, địa điểm, ngày giờ vận hành và lịch tuyển ở trên — nếu sai
+                  bạn sẽ phải huỷ chiến dịch và tạo lại từ đầu.
+                </p>
+                <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={confirmedReview}
+                    onChange={(e) => setConfirmedReview(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-amber-600"
+                  />
+                  <span className="text-sm font-bold text-amber-900">
+                    Tôi đã kiểm tra kỹ toàn bộ thông tin và hiểu rằng chiến dịch không thể
+                    chỉnh sửa sau khi đăng.
+                  </span>
+                </label>
+              </div>
+            </>}
           </div></div>
 
-          <div className="cm-modal-footer"><button type="button" onClick={onClose} className="cm-btn-cancel">Huỷ</button>{step > 1 && <button type="button" onClick={() => setStep((step - 1) as Step)} className="cm-btn-cancel cm-btn-back"><span className="material-symbols-outlined text-[18px]">arrow_back</span>Quay lại</button>}{step < 5 ? <button type="button" onClick={nextStep} className="cm-btn-submit">Tiếp tục<span className="material-symbols-outlined text-[18px]">arrow_forward</span></button> : <button type="submit" disabled={pending} className="cm-btn-submit">{pending ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button>}</div>
+          <div className="cm-modal-footer"><button type="button" onClick={onClose} className="cm-btn-cancel">Huỷ</button>{step > 1 && <button type="button" onClick={() => setStep((step - 1) as Step)} className="cm-btn-cancel cm-btn-back"><span className="material-symbols-outlined text-[18px]">arrow_back</span>Quay lại</button>}{step < 5 ? <button type="button" onClick={nextStep} className="cm-btn-submit">Tiếp tục<span className="material-symbols-outlined text-[18px]">arrow_forward</span></button> : <button type="submit" disabled={pending || !confirmedReview} className="cm-btn-submit" title={!confirmedReview ? 'Tick xác nhận đã kiểm tra kỹ thông tin trước khi gửi' : ''}>{pending ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button>}</div>
         </form>
       </div>
     </div>
