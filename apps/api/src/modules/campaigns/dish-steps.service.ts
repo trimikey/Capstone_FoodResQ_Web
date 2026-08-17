@@ -3,6 +3,7 @@ import { CampaignDishStep, CampaignMenuStepStatus } from '@prisma/client';
 import { UserRole } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/common/storage/storage.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 
 /**
@@ -81,7 +82,17 @@ export class DishStepsService {
     private prisma: PrismaService,
     private storage: StorageService,
     private notifications: NotificationsService,
+    private systemConfig: SystemConfigService,
   ) {}
+
+  /**
+   * Toggle test/vận hành sớm của admin (CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN):
+   * bật thì các khâu nấu KHÔNG phải chờ đến giờ dự kiến — chỉ còn ràng buộc
+   * "khâu trước hoàn thành" (và duyệt ảnh QC cho khâu 4).
+   */
+  private async allowEarlySteps(): Promise<boolean> {
+    return (await this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN')) === 1;
+  }
 
   /** Khẳng định `userId` là TNV có phân công chef/waiter đang hoạt động trong campaign. */
   private async assertAssignedVolunteer(campaignId: string, userId: string) {
@@ -202,9 +213,11 @@ export class DishStepsService {
     prevStepDone: boolean,
     isFirstStep: boolean,
     campaign: CampaignTiming,
+    /** true (toggle admin bật) = bỏ ràng buộc "đến giờ dự kiến" — dùng để test. */
+    ignoreSchedule = false,
   ): CampaignMenuStepStatus {
     if (step.status === 'done') return 'done';
-    const onTime = Date.now() >= stepDueAtUtc(campaign, step.scheduledTime).getTime();
+    const onTime = ignoreSchedule || Date.now() >= stepDueAtUtc(campaign, step.scheduledTime).getTime();
     const prevOk = isFirstStep || prevStepDone;
     if (onTime && prevOk) return 'available';
     return 'locked';
@@ -216,6 +229,7 @@ export class DishStepsService {
    */
   async autoOpenAvailableSteps(): Promise<number> {
     const nowMs = Date.now();
+    const earlyOk = await this.allowEarlySteps();
     // Cửa sổ ngày VN: hôm qua → hôm nay. Chiến dịch qua đêm (18:00 hôm qua →
     // 12:00 trưa nay) có `scheduledDate` là HÔM QUA nhưng vẫn đang chạy, nên chỉ
     // lấy đúng ngày hôm nay sẽ bỏ sót. Điều kiện đến-giờ thật sự do
@@ -262,7 +276,8 @@ export class DishStepsService {
       for (const s of steps) {
         const timing = timingById.get(s.campaignId);
         // Bỏ qua nếu không tra được campaign — không đủ dữ liệu để neo ngày.
-        const onTime = timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime).getTime() : false;
+        // Toggle test của admin bật → coi như luôn đến giờ.
+        const onTime = earlyOk || (timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime).getTime() : false);
         // Chỉ mở nếu đến giờ VÀ khâu trước đã done.
         if (onTime && prevDone && s.status === 'locked') {
           toOpen.push({ id: s.id });
@@ -330,7 +345,8 @@ export class DishStepsService {
     const prevOk =
       prevStep?.status === 'done' &&
       (step.stepOrder !== 4 || prevStep.reviewStatus === 'approved');
-    const effective = this.computeEffectiveStatus(step, prevOk, step.stepOrder === 1, campaignTiming);
+    const earlyOk = await this.allowEarlySteps();
+    const effective = this.computeEffectiveStatus(step, prevOk, step.stepOrder === 1, campaignTiming, earlyOk);
     if (effective === 'locked') {
       throw new BadRequestException(
         step.stepOrder === 4 && prevStep?.status === 'done' && prevStep.reviewStatus !== 'approved'
@@ -384,7 +400,7 @@ export class DishStepsService {
       if (nextStep && nextStep.status !== 'done') {
         const now = Math.floor((Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000) / 60_000) % (24 * 60);
         const scheduled = vnHhmmToTotalMinutes(nextStep.scheduledTime);
-        if (now >= scheduled) {
+        if (earlyOk || now >= scheduled) {
           await this.prisma.campaignDishStep.update({
             where: { id: nextStep.id },
             data: { status: 'available', openedAt: new Date() },
@@ -476,7 +492,11 @@ export class DishStepsService {
           where: { id: campaignId },
           select: { scheduledDate: true, endDate: true, startTime: true, endTime: true },
         });
-        if (campaignTiming && Date.now() >= stepDueAtUtc(campaignTiming, finalStep.scheduledTime).getTime()) {
+        const earlyOk = await this.allowEarlySteps();
+        if (
+          earlyOk ||
+          (campaignTiming && Date.now() >= stepDueAtUtc(campaignTiming, finalStep.scheduledTime).getTime())
+        ) {
           await this.prisma.campaignDishStep.update({
             where: { id: finalStep.id },
             data: { status: 'available', openedAt: new Date() },
@@ -880,6 +900,7 @@ export class DishStepsService {
         safetyLogs,
       };
     }
+    const earlyOk = await this.allowEarlySteps();
     return {
       dishes: reloaded.map((mi) => {
         const stepsWithStatus = mi.dishSteps.map((s, idx) => {
@@ -892,6 +913,7 @@ export class DishStepsService {
             prevOk,
             idx === 0,
             campaignTiming,
+            earlyOk,
           );
           return { ...s, effectiveStatus: effective };
         });
