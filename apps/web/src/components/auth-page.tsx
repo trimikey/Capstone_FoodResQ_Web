@@ -126,6 +126,13 @@ const registerSchema = z.object({
         path: ["providerAddress"],
       });
     }
+    if ((data.evidenceUrls?.length ?? 0) < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Tải lên giấy phép/giấy giới thiệu và giấy tờ người đại diện để admin xác minh.",
+        path: ["evidenceUrls"],
+      });
+    }
   } else if (data.role === "volunteer") {
     if (!data.volunteerRole) {
       ctx.addIssue({
@@ -160,7 +167,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Receiver: sau khi đăng ký thành công → bước chụp khuôn mặt (eKYC) rồi mới vào app
@@ -500,12 +506,14 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         businessName: data.storeName || undefined,
         address: data.providerAddress || undefined,
         // Provider verification (P3)
+        ...((data.role === 'provider' || data.role === 'charity') && {
+          evidenceUrls: data.evidenceUrls && data.evidenceUrls.length ? data.evidenceUrls : undefined,
+          ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
+        }),
         ...(data.role === 'provider' && {
           businessType: data.providerBusinessType,
           taxCode: data.taxCode || undefined,
           description: data.providerDescription || undefined,
-          evidenceUrls: data.evidenceUrls && data.evidenceUrls.length ? data.evidenceUrls : undefined,
-          ...(geoCoords ? { lng: geoCoords.lng, lat: geoCoords.lat } : {}),
         }),
       });
       void res; // tokens không dùng ở nhánh này — provider/charity đăng nhập lại sau
@@ -525,7 +533,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
         setRegisterStep(1);
         resetLoginForm();
         resetRegisterForm();
-        setUploadedFile(null);
         setPendingIdCardPhoto(null);
         setSuccessMessage(null);
       }, 2200);
@@ -670,7 +677,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 onClick={() => {
                   setActiveTab("login");
                   setRegisterStep(1);
-                  setUploadedFile(null);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
@@ -685,7 +691,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                 onClick={() => {
                   setActiveTab("register");
                   setRegisterStep(1);
-                  setUploadedFile(null);
                   setErrorMessage(null);
                   setSuccessMessage(null);
                 }}
@@ -1156,6 +1161,77 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             )}
                           </div>
 
+                          {selectedRole === "charity" && (() => {
+                            const evidenceUrls: string[] = (watchRegister("evidenceUrls") ?? []) as string[];
+                            const setEvidence = (urls: string[]) =>
+                              setRegisterValue("evidenceUrls", urls, { shouldValidate: true });
+                            return (
+                              <div className="space-y-2">
+                                <label className="font-semibold text-base text-neutral-500 ml-1">
+                                  Ảnh giấy tờ xác minh tổ chức
+                                </label>
+                                <p className="text-xs text-neutral-500 ml-1">
+                                  Tải ít nhất 2 ảnh: giấy phép/giấy giới thiệu tổ chức và giấy tờ người đại diện.
+                                </p>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                  {evidenceUrls.map((u: string, idx: number) => (
+                                    <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
+                                      <img src={mediaUrl(u)} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setEvidence(evidenceUrls.filter((_, i) => i !== idx))
+                                        }
+                                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-black/80"
+                                        aria-label="Xóa ảnh"
+                                      >
+                                        x
+                                      </button>
+                                      {idx < 2 && (
+                                        <span className="absolute bottom-1 left-1 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded">
+                                          {idx === 0 ? "Tổ chức" : "Đại diện"}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-neutral-200/60 rounded-xl text-sm font-semibold text-emerald-800 hover:bg-emerald-50 cursor-pointer disabled:opacity-50">
+                                  <span className="material-symbols-outlined text-base">add_photo_alternate</span>
+                                  {uploadEvidence.isPending ? "Đang upload..." : "Thêm ảnh"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    multiple
+                                    className="hidden"
+                                    disabled={isSubmitting || uploadEvidence.isPending}
+                                    onChange={async (e) => {
+                                      const files = Array.from(e.target.files ?? []);
+                                      if (!files.length) return;
+                                      try {
+                                        const urls: string[] = [];
+                                        for (const f of files) {
+                                          const u = await uploadEvidence.uploadVerificationImage(f);
+                                          urls.push(u);
+                                        }
+                                        setEvidence([...evidenceUrls, ...urls]);
+                                        toast.success(`Đã upload ${urls.length} ảnh.`);
+                                      } catch {
+                                        toast.error("Upload ảnh thất bại. Vui lòng thử lại.");
+                                      } finally {
+                                        e.target.value = "";
+                                      }
+                                    }}
+                                  />
+                                </label>
+                                {registerErrors.evidenceUrls && (
+                                  <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.evidenceUrls.message}</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           {/* Provider: loại hình kinh doanh (P3) */}
                           {selectedRole === "provider" && (
                             <div className="space-y-1.5">
@@ -1223,16 +1299,29 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             </div>
                           )}
 
-                          {/* Provider: ảnh minh chứng (P3) — GPKD + mặt tiền + biển hiệu */}
-                          {selectedRole === "provider" && (() => {
+                          {/* Ảnh minh chứng — NCC: GPKD/mặt tiền; tổ chức: giấy phép + giấy tờ người đại diện. */}
+                          {(selectedRole === "provider" || selectedRole === "charity") && (() => {
                             const evidenceUrls: string[] = (watchRegister("evidenceUrls") ?? []) as string[];
                             const setEvidence = (urls: string[]) =>
                               setRegisterValue("evidenceUrls", urls, { shouldValidate: true });
+                            const isCharity = selectedRole === "charity";
                             return (
                             <div className="space-y-2">
                               <label className="font-semibold text-base text-neutral-500 ml-1">
-                                Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)
+                                {isCharity
+                                  ? "Hồ sơ xác minh tổ chức (2 ảnh bắt buộc)"
+                                  : "Ảnh minh chứng (giấy phép / mặt tiền / biển hiệu)"}
                               </label>
+                              {isCharity && (
+                                <p className="text-xs text-neutral-500 ml-1">
+                                  Ảnh đầu là giấy phép hoặc giấy giới thiệu; ảnh thứ hai là giấy tờ của người đại diện.
+                                </p>
+                              )}
+                              {registerErrors.evidenceUrls && (
+                                <p className="text-rose-600 text-sm ml-1">
+                                  {registerErrors.evidenceUrls.message}
+                                </p>
+                              )}
 
                               {/* Danh sách URL đã upload */}
                               <div className="grid grid-cols-3 gap-2">
@@ -1250,9 +1339,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                     >
                                       ✕
                                     </button>
-                                    {idx === 0 && (
+                                    {(idx === 0 || (isCharity && idx === 1)) && (
                                       <span className="absolute bottom-1 left-1 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded">
-                                        GPKD
+                                        {isCharity
+                                          ? idx === 0
+                                            ? 'Giấy phép / giới thiệu'
+                                            : 'Giấy tờ người đại diện'
+                                          : 'GPKD'}
                                       </span>
                                     )}
                                   </div>
@@ -1261,7 +1354,11 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
 
                               <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-neutral-200/60 rounded-xl text-sm font-semibold text-emerald-800 hover:bg-emerald-50 cursor-pointer disabled:opacity-50">
                                 <span className="material-symbols-outlined text-base">add_photo_alternate</span>
-                                {uploadEvidence.isPending ? "Đang upload..." : "Thêm ảnh"}
+                                {uploadEvidence.isPending
+                                  ? "Đang upload..."
+                                  : isCharity
+                                    ? `Thêm ảnh (${evidenceUrls.length}/2 tối thiểu)`
+                                    : "Thêm ảnh"}
                                 <input
                                   type="file"
                                   accept="image/jpeg,image/png,image/webp"
@@ -1287,6 +1384,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                   }}
                                 />
                               </label>
+                              {registerErrors.evidenceUrls && (
+                                <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.evidenceUrls.message}</p>
+                              )}
                             </div>
                             );
                           })()}
@@ -1349,38 +1449,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             )}
                           </div>
 
-                          {/* Business License Upload */}
-                          <div className="space-y-1.5">
-                            <label className="font-semibold text-base text-neutral-500 ml-1">
-                              {selectedRole === "charity" ? "Giấy phép hoạt động (Ảnh chụp)" : "Giấy phép kinh doanh (Ảnh chụp)"}
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="file"
-                                id="license-upload"
-                                accept="image/*"
-                                onChange={(e) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    setUploadedFile(e.target.files[0].name);
-                                  }
-                                }}
-                                className="hidden"
-                                disabled={isSubmitting}
-                              />
-                              <label
-                                htmlFor="license-upload"
-                                className="border-2 border-dashed border-neutral-200/50 rounded-xl p-6 flex flex-col items-center justify-center bg-neutral-100 hover:bg-neutral-200-high hover:border-primary/50 transition-all cursor-pointer group text-center"
-                              >
-                                <span className="material-symbols-outlined text-outline-variant group-hover:text-emerald-800 mb-2 transition-colors">
-                                  cloud_upload
-                                </span>
-                                <span className="text-neutral-500 font-semibold text-base">
-                                  {uploadedFile ? uploadedFile : "Nhấn để tải lên hoặc kéo thả tệp"}
-                                </span>
-                                <span className="text-outline-variant text-xs mt-1">PNG, JPG tối đa 5MB</span>
-                              </label>
-                            </div>
-                          </div>
                         </div>
                       )}
 
@@ -1699,7 +1767,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
               </p>
               {pendingFaceData.role === 'volunteer' && !pendingIdCardPhoto && (
                 <p className="text-[13px] text-rose-600 mt-2 max-w-md font-semibold">
-                  Bạn chưa upload ảnh CCCD ở bước trên — vui lòng bấm "Huỷ" rồi quay lại đăng ký để tải ảnh CCCD.
+                  Bạn chưa upload ảnh CCCD ở bước trên — vui lòng bấm “Huỷ” rồi quay lại đăng ký để tải ảnh CCCD.
                 </p>
               )}
             </div>

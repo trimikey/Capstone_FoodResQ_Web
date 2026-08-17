@@ -117,9 +117,9 @@ export class ReviewAssignmentDto {
 }
 
 export class SetCampaignStatusDto {
-  @ApiProperty({ enum: ['draft', 'open', 'in_progress', 'completed', 'cancelled'] })
-  @IsIn(['draft', 'open', 'in_progress', 'completed', 'cancelled'])
-  status!: 'draft' | 'open' | 'in_progress' | 'completed' | 'cancelled';
+  @ApiProperty({ enum: ['approved', 'cancelled'] })
+  @IsIn(['approved', 'cancelled'])
+  status!: 'approved' | 'cancelled';
 }
 
 export class AdminCreateCampaignDto {

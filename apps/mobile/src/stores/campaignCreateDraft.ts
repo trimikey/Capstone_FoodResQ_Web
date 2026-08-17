@@ -53,9 +53,10 @@ export type CampaignCreateDraftPatch = Partial<CampaignCreateDraft>;
 
 export function createInitialCampaignDraft(): CampaignCreateDraft {
   const now = new Date();
-  const scheduledDate = new Date(now.getTime() + 24 * 3600_000);
+  // Chừa đủ thời gian tuyển và khoảng đệm mặc định 24 giờ trước vận hành.
+  const scheduledDate = new Date(now.getTime() + 7 * 24 * 3600_000);
   const startTime = new Date(scheduledDate);
-  startTime.setHours(8, 0, 0, 0);
+  startTime.setHours(6, 0, 0, 0);
   const endTime = new Date(scheduledDate);
   endTime.setHours(12, 0, 0, 0);
 

@@ -17,10 +17,11 @@ import {
   MinLength,
   ValidateNested,
   ArrayMaxSize,
+  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
-import { AssignmentRole, FoodCategory } from '@foodresq/types';
+import { AssignmentRole, CampaignShiftPeriod, FoodCategory } from '@foodresq/types';
 
 export class MenuItemDto {
   @ApiProperty({ example: 'Cơm thịt kho tàu' })
@@ -84,19 +85,15 @@ export class ShiftInputDto {
   @MinLength(2, { message: 'Tên ca tối thiểu 2 ký tự' })
   @MaxLength(100, { message: 'Tên ca tối đa 100 ký tự' })
   label!: string;
-  @ApiPropertyOptional({ enum: AssignmentRole, description: 'Ca dành cho vai trò nào (bỏ trống = chung)' })
-  @IsOptional()
+  @ApiProperty({ enum: AssignmentRole, description: 'Vai trò cần tuyển trong ca' })
   @IsEnum(AssignmentRole, { message: 'Vai trò ca không hợp lệ (chỉ chấp nhận: chef / waiter / shipper)' })
-  role?: AssignmentRole;
-  @ApiProperty({ example: '06:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 06:00)' })
-  startTime!: string;
-  @ApiProperty({ example: '10:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 10:00)' })
-  endTime!: string;
+  role!: AssignmentRole;
+  @ApiProperty({ enum: CampaignShiftPeriod, example: CampaignShiftPeriod.MORNING })
+  @IsEnum(CampaignShiftPeriod, { message: 'Ca chỉ nhận: midnight / morning / afternoon / evening' })
+  period!: CampaignShiftPeriod;
   @ApiProperty({ example: 4 })
   @IsInt({ message: 'Số người cần phải là số nguyên' })
-  @Min(0, { message: 'Số người cần không được âm' })
+  @Min(1, { message: 'Mỗi định biên ca phải cần ít nhất 1 người' })
   @Max(100, { message: 'Số người cần tối đa 100' })
   @Type(() => Number)
   slotsNeeded!: number;
@@ -148,13 +145,25 @@ export class CreateCampaignDto {
   @IsDateString({}, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
   endDate?: string;
 
-  @ApiProperty({ example: '08:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ bắt đầu phải đúng định dạng HH:mm (vd: 08:00)' })
-  startTime!: string;
+  @ApiProperty({ example: '2026-06-01T00:00:00+07:00' })
+  @IsDateString({}, { message: 'Thời gian mở tuyển không hợp lệ' })
+  recruitmentStartAt!: string;
 
-  @ApiProperty({ example: '12:00' })
-  @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm (vd: 12:00)' })
-  endTime!: string;
+  @ApiProperty({ example: '2026-06-19T00:00:00+07:00' })
+  @IsDateString({}, { message: 'Thời gian đóng tuyển không hợp lệ' })
+  recruitmentEndAt!: string;
+
+  @ApiPropertyOptional({
+    example: 24,
+    deprecated: true,
+    description: 'Không cần gửi. Máy chủ tự tính từ thời gian đóng tuyển đến giờ bắt đầu ca đầu tiên.',
+  })
+  @IsOptional()
+  @IsInt({ message: 'Khoảng đệm tuyển phải là số nguyên' })
+  @Min(6, { message: 'Khoảng đệm tuyển tối thiểu 6 giờ' })
+  @Max(48, { message: 'Khoảng đệm tuyển tối đa 48 giờ' })
+  @Type(() => Number)
+  recruitmentBufferHours?: number;
 
   @ApiPropertyOptional({ example: 3 })
   @IsOptional()
@@ -195,13 +204,13 @@ export class CreateCampaignDto {
   @IsString({ each: true, message: 'Mỗi URL ảnh phải là chuỗi' })
   imageUrls?: string[];
 
-  @ApiPropertyOptional({ type: [MenuItemDto], description: 'Thực đơn trong ngày' })
-  @IsOptional()
+  @ApiProperty({ type: [MenuItemDto], description: 'Thực đơn bắt buộc của chiến dịch' })
   @IsArray({ message: 'Thực đơn phải là mảng' })
+  @ArrayMinSize(1, { message: 'Chiến dịch phải có ít nhất một món' })
   @ArrayMaxSize(20, { message: 'Thực đơn tối đa 20 món' })
   @ValidateNested({ each: true })
   @Type(() => MenuItemDto)
-  menuItems?: MenuItemDto[];
+  menuItems!: MenuItemDto[];
 
   @ApiPropertyOptional({ type: [ScheduleItemDto], description: 'Lịch trình hoạt động' })
   @IsOptional()
@@ -238,13 +247,25 @@ export class CreateCampaignDto {
   @Type(() => SupplyItemDto)
   supplyItems?: SupplyItemDto[];
 
-  @ApiPropertyOptional({ type: [ShiftInputDto], description: 'Ca trực cho tình nguyện viên (tạo trước cùng chiến dịch)' })
-  @IsOptional()
+  @ApiProperty({ type: [ShiftInputDto], description: 'Định biên theo ca cố định và vai trò' })
   @IsArray({ message: 'Ca trực phải là mảng' })
+  @ArrayMinSize(1, { message: 'Chiến dịch phải có ít nhất một định biên ca' })
   @ArrayMaxSize(10, { message: 'Tối đa 10 ca trực' })
   @ValidateNested({ each: true })
   @Type(() => ShiftInputDto)
-  shifts?: ShiftInputDto[];
+  shifts!: ShiftInputDto[];
+}
+
+export class ExtendRecruitmentDto {
+  @ApiProperty({ example: '2026-06-19T12:00:00+07:00' })
+  @IsDateString({}, { message: 'Hạn tuyển mới không hợp lệ' })
+  recruitmentEndAt!: string;
+}
+
+export class ConfirmCampaignAssignmentDto {
+  @ApiProperty({ enum: ['confirmed', 'declined'] })
+  @IsIn(['confirmed', 'declined'])
+  decision!: 'confirmed' | 'declined';
 }
 
 export class ApplyCampaignDto {

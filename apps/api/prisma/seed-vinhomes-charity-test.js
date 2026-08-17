@@ -116,7 +116,7 @@ async function upsertCampaign(receiverId) {
           shipper_slots_needed = ${CAMPAIGN.shipperSlotsNeeded},
           expected_servings = ${CAMPAIGN.expectedServings},
           supply_items = ${JSON.stringify(CAMPAIGN.supplyItems)}::jsonb,
-          status = 'open'::campaign_status,
+          status = 'approved'::campaign_status,
           updated_at = NOW()
       WHERE id = ${existing.id}::uuid
     `);
@@ -135,7 +135,7 @@ async function upsertCampaign(receiverId) {
       ${CAMPAIGN.date}::date, ${CAMPAIGN.startTime}, ${CAMPAIGN.endTime},
       ${CAMPAIGN.chefSlotsNeeded}, ${CAMPAIGN.waiterSlotsNeeded}, ${CAMPAIGN.shipperSlotsNeeded},
       ${CAMPAIGN.expectedServings}, ${JSON.stringify(CAMPAIGN.supplyItems)}::jsonb,
-      'open'::campaign_status, NOW(), NOW()
+      'approved'::campaign_status, NOW(), NOW()
     )
     RETURNING id::text
   `);

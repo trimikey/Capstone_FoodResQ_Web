@@ -159,39 +159,38 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col w-full max-w-lg max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-neutral-200">
-          <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-lg text-neutral-900">Gia hạn & bổ sung</h3>
-            <p className="text-sm text-neutral-500 truncate mt-0.5">{listing.title}</p>
-          </div>
+        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-700 transition-colors p-1"
+            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
             aria-label="Đóng"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-white text-[18px]">close</span>
           </button>
+          <h3 className="font-extrabold text-white text-base pr-8">Gia hạn & bổ sung</h3>
+          <p className="text-xs text-white/70 mt-0.5 truncate">{listing.title}</p>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs (sticky above body scroll) */}
         {defaultMode === 'both' && (
-          <div className="flex border-b border-neutral-200 bg-neutral-50">
+          <div className="shrink-0 flex border-b border-neutral-200 bg-neutral-50">
             <TabBtn active={tab === 'extend_time'} onClick={() => setTab('extend_time')} icon="schedule" label="Gia hạn giờ" />
             <TabBtn active={tab === 'add_quantity'} onClick={() => setTab('add_quantity')} icon="add_circle" label="Thêm số lượng" />
             <TabBtn active={tab === 'both'} onClick={() => setTab('both')} icon="bolt" label="Cả hai" />
           </div>
         )}
 
-        {/* Body */}
-        <div className="p-5 space-y-5 overflow-y-auto">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="p-5 space-y-5">
           {/* Tổng quan nhanh */}
           <div className="grid grid-cols-3 gap-3 text-center">
             <Stat icon="inventory_2" label="Còn lại" value={`${remaining}`} unit={unit} />
@@ -300,8 +299,11 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
           )}
         </div>
 
+        {/* Scrollable body end */}
+        </div>
+
         {/* Footer */}
-        <div className="flex gap-2 p-4 border-t border-neutral-200 bg-neutral-50">
+        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-semibold text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg"

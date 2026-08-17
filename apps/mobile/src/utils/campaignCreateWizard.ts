@@ -1,4 +1,4 @@
-import type { CreateCampaignInput } from '@/hooks/useCampaigns';
+import type { AssignmentRole, CampaignShiftPeriod, CreateCampaignInput } from '@/hooks/useCampaigns';
 import type {
   CampaignCreateDraft,
   CampaignMenuDraft,
@@ -68,11 +68,33 @@ export type NormalizedCampaignSupplyItem = {
 
 export type NormalizedCampaignShift = {
   label: string;
-  role?: CampaignShiftDraft['role'];
-  startTime: string;
-  endTime: string;
+  role: AssignmentRole;
+  period: CampaignShiftPeriod;
   slotsNeeded: number;
 };
+
+const FIXED_PERIODS: { period: CampaignShiftPeriod; label: string; start: number; end: number }[] = [
+  { period: 'midnight', label: 'Ca khuya', start: 0, end: 6 },
+  { period: 'morning', label: 'Ca sáng', start: 6, end: 12 },
+  { period: 'afternoon', label: 'Ca chiều', start: 12, end: 18 },
+  { period: 'evening', label: 'Ca tối', start: 18, end: 24 },
+];
+
+function hourOf(time: string): number {
+  const [hour = '0', minute = '0'] = time.split(':');
+  return Number(hour) + Number(minute) / 60;
+}
+
+function selectedPeriods(draft: CampaignCreateDraft) {
+  const start = hourOf(toTimeStr(draft.startTime));
+  const end = hourOf(toTimeStr(draft.endTime));
+  return FIXED_PERIODS.filter((item) => item.end > start && item.start < end);
+}
+
+function periodForShift(shift: CampaignShiftDraft): CampaignShiftPeriod | null {
+  const start = hourOf(shift.startTime);
+  return FIXED_PERIODS.find((item) => start >= item.start && start < item.end)?.period ?? null;
+}
 
 export function normalizeCampaignMenuItems(items: CampaignMenuDraft[]): NormalizedCampaignMenuItem[] {
   return items
@@ -114,16 +136,39 @@ export function normalizeCampaignSupplyItems(items: CampaignSupplyDraft[]): Norm
     }));
 }
 
-export function normalizeCampaignShifts(items: CampaignShiftDraft[]): NormalizedCampaignShift[] {
-  return items
-    .filter((item) => item.label.trim())
-    .map((item) => ({
-      label: item.label.trim(),
-      role: item.role,
-      startTime: item.startTime,
-      endTime: item.endTime,
-      slotsNeeded: item.slotsNeeded,
-    }));
+export function normalizeCampaignShifts(
+  items: CampaignShiftDraft[],
+  draft?: CampaignCreateDraft,
+): NormalizedCampaignShift[] {
+  if (!draft) return [];
+  const selected = selectedPeriods(draft);
+  const totals: Record<string, number> = {};
+  for (const item of items) {
+    const period = periodForShift(item);
+    if (!period || !item.role || item.slotsNeeded < 1 || !selected.some((p) => p.period === period)) continue;
+    const key = `${period}:${item.role}`;
+    totals[key] = (totals[key] ?? 0) + item.slotsNeeded;
+  }
+
+  const roleDefaults: Record<AssignmentRole, number> = {
+    chef: toInt(draft.chefSlots),
+    waiter: toInt(draft.waiterSlots),
+    shipper: toInt(draft.shipperSlots),
+  };
+  const hasCustomForPeriod = (period: CampaignShiftPeriod) =>
+    Object.keys(totals).some((key) => key.startsWith(`${period}:`));
+
+  const result: NormalizedCampaignShift[] = [];
+  for (const fixed of selected) {
+    for (const role of ['chef', 'waiter', 'shipper'] as AssignmentRole[]) {
+      const slotsNeeded = totals[`${fixed.period}:${role}`]
+        ?? (hasCustomForPeriod(fixed.period) ? 0 : roleDefaults[role]);
+      if (slotsNeeded > 0) {
+        result.push({ label: `${fixed.label} - ${role}`, period: fixed.period, role, slotsNeeded });
+      }
+    }
+  }
+  return result;
 }
 
 export function getCampaignStepError(step: number, draft: CampaignCreateDraft): string | null {
@@ -145,6 +190,14 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
     if (toTimeStr(draft.endTime) <= toTimeStr(draft.startTime)) {
       return 'Giờ kết thúc phải sau giờ bắt đầu.';
     }
+    const periods = selectedPeriods(draft);
+    if (periods.length === 0) return 'Vui lòng chọn ít nhất một ca vận hành cố định.';
+    const operationStart = new Date(
+      `${toDateStr(draft.scheduledDate)}T${pad(periods[0].start)}:00:00+07:00`,
+    );
+    if (operationStart.getTime() - Date.now() <= 24 * 3600_000) {
+      return 'Ca đầu tiên phải cách hiện tại hơn 24 giờ để còn thời gian tuyển và khoảng đệm.';
+    }
     if (draft.endDate && toDateStr(draft.endDate) < toDateStr(draft.scheduledDate)) {
       return 'Ngày kết thúc phải bằng hoặc sau ngày tổ chức.';
     }
@@ -159,14 +212,14 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
     }
     if (!expected || expected < 1) return 'Số suất ăn dự kiến tối thiểu là 1.';
     if (expected > 100000) return 'Số suất ăn dự kiến tối đa 100.000.';
-    const shifts = normalizeCampaignShifts(draft.shifts);
-    if (shifts.length > 10) return 'Tối đa 10 ca trực hợp lệ.';
+    const shifts = normalizeCampaignShifts(draft.shifts, draft);
+    if (!shifts.length) return 'Cần ít nhất một vị trí Chef, Waiter hoặc Shipper trong các ca đã chọn.';
+    if (shifts.length > 12) return 'Tối đa 12 tổ hợp ca và vai trò.';
     const invalidShift = draft.shifts.find(
       (item) =>
         (item.label.trim() && item.label.trim().length < 2) ||
         item.label.trim().length > 100 ||
         (item.label.trim() && (!item.startTime || !item.endTime)) ||
-        (item.startTime && item.endTime && item.endTime <= item.startTime) ||
         (item.label.trim() && item.slotsNeeded < 1) ||
         item.slotsNeeded > 100,
     );
@@ -197,6 +250,7 @@ export function getCampaignStepError(step: number, draft: CampaignCreateDraft): 
 
   if (step === 5) {
     const menuItems = normalizeCampaignMenuItems(draft.menuItems);
+    if (!menuItems.length) return 'Chiến dịch phải có ít nhất một món trong thực đơn.';
     if (menuItems.length > 20) return 'Thực đơn tối đa 20 món hợp lệ.';
     const invalidMenu = draft.menuItems.find(
       (item) =>
@@ -241,9 +295,18 @@ export function hasCampaignDraftData(draft: CampaignCreateDraft): boolean {
 
 export function buildCampaignPayload(draft: CampaignCreateDraft): CreateCampaignInput {
   const menuItems = normalizeCampaignMenuItems(draft.menuItems);
-  const shifts = normalizeCampaignShifts(draft.shifts);
+  const shifts = normalizeCampaignShifts(draft.shifts, draft);
   const scheduleItems = normalizeCampaignScheduleItems(draft.scheduleItems);
   const supplyItems = normalizeCampaignSupplyItems(draft.supplyItems);
+  const periods = selectedPeriods(draft);
+  const first = periods[0];
+  const last = periods[periods.length - 1];
+  const startTime = `${pad(first.start)}:00`;
+  const endTime = last.end === 24 ? '00:00' : `${pad(last.end)}:00`;
+  const operationDate = toDateStr(draft.scheduledDate);
+  const operationStart = new Date(`${operationDate}T${startTime}:00+07:00`);
+  const recruitmentEnd = new Date(operationStart.getTime() - 24 * 3600_000);
+  const recruitmentStart = new Date();
 
   return {
     title: draft.title.trim(),
@@ -252,16 +315,19 @@ export function buildCampaignPayload(draft: CampaignCreateDraft): CreateCampaign
     lng: draft.address!.lng,
     scheduledDate: toDateStr(draft.scheduledDate),
     ...(draft.endDate ? { endDate: toDateStr(draft.endDate) } : {}),
-    startTime: toTimeStr(draft.startTime),
-    endTime: toTimeStr(draft.endTime),
+    startTime,
+    endTime,
+    recruitmentStartAt: recruitmentStart.toISOString(),
+    recruitmentEndAt: recruitmentEnd.toISOString(),
+    recruitmentBufferHours: 24,
     chefSlotsNeeded: toInt(draft.chefSlots),
     waiterSlotsNeeded: toInt(draft.waiterSlots),
     shipperSlotsNeeded: toInt(draft.shipperSlots),
     expectedServings: toInt(draft.expectedServings),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
     ...(draft.imageUrl ? { imageUrls: [draft.imageUrl] } : {}),
-    ...(menuItems.length ? { menuItems } : {}),
-    ...(shifts.length ? { shifts } : {}),
+    menuItems,
+    shifts,
     ...(scheduleItems.length ? { scheduleItems } : {}),
     ...(supplyItems.length ? { supplyItems } : {}),
   };

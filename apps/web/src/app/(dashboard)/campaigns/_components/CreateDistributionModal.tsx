@@ -21,7 +21,16 @@ interface Props {
    * (phát tại chỗ). BE áp cùng quy tắc cho `assigneeVolunteerIds`; đầu bếp không
    * thuộc danh sách này vì họ phải ở bếp.
    */
-  volunteers: Array<{ volunteerId: string; fullName: string; role: string }>;
+  volunteers: Array<{
+    volunteerId: string;
+    fullName: string;
+    role: string;
+    /**
+     * Các ca trực TNV đã đăng ký (campaign_shifts). Một người có thể nhận nhiều ca —
+     * thời gian phân phát phải rơi vào MỘT trong các ca này. Rỗng = chưa đăng ký ca nào.
+     */
+    shifts?: Array<{ label: string; start: string; end: string }>;
+  }>;
   /** Số suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa). null = chưa đặt mục tiêu. */
   remainingServings: number | null;
   /** Toạ độ bếp — mốc mở bản đồ khi ghim điểm phát. Null thì rơi về trung tâm TP.HCM. */
@@ -73,6 +82,21 @@ function findTooClosePair(
   return null;
 }
 
+/** So sánh thời gian HH:mm — t nằm trong [start, end] (bao gồm cả hai đầu). */
+function timeInWindow(t: string, start: string, end: string): boolean {
+  const toMin = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  };
+  const tv = toMin(t);
+  const sv = toMin(start);
+  const ev = toMin(end);
+  if (!Number.isFinite(tv) || !Number.isFinite(sv) || !Number.isFinite(ev)) return true;
+  // Ca qua đêm (vd 22:00–02:00): chia thành hai đoạn [sv, 24:00) và [00:00, ev].
+  if (sv <= ev) return tv >= sv && tv <= ev;
+  return tv >= sv || tv <= ev;
+}
+
 export default function CreateDistributionModal({
   campaignId,
   onClose,
@@ -88,8 +112,7 @@ export default function CreateDistributionModal({
   const [mapOpenIndex, setMapOpenIndex] = useState<number | null>(null);
   const [roundLabel, setRoundLabel] = useState('');
   const [servings, setServings] = useState<string>('');
-  const [people, setPeople] = useState<string>('');
-  const [leftover, setLeftover] = useState<string>('0');
+  const [distributionTime, setDistributionTime] = useState('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -105,27 +128,32 @@ export default function CreateDistributionModal({
   function validate(): CreateDistributionInput | null {
     const next: Record<string, string> = {};
     const s = Number(servings);
-    const p = Number(people);
-    const l = Number(leftover || '0');
     if (!servings.trim() || !Number.isFinite(s) || s < 1 || !Number.isInteger(s)) {
       next.servings = 'Vui lòng nhập số nguyên ≥ 1';
     }
-    if (!people.trim() || !Number.isFinite(p) || p < 1 || !Number.isInteger(p)) {
-      next.people = 'Vui lòng nhập số nguyên ≥ 1';
-    }
-    if (leftover.trim() && (!Number.isFinite(l) || l < 0 || !Number.isInteger(l))) {
-      next.leftover = 'Số suất thừa phải là số nguyên ≥ 0';
-    }
-    // Mỗi người nhận ít nhất 1 suất — 10 suất mà ghi 25 người là số liệu sai.
-    if (!next.servings && !next.people && p > s) {
-      next.people = `Không thể nhiều hơn số suất đã phát (${s})`;
-    }
-    // Không vượt số suất chiến dịch đăng ký. Suất thừa cùng mẻ nấu nên tính chung.
-    if (!next.servings && !next.leftover && remainingServings != null && s + l > remainingServings) {
-      next.servings = `Chỉ còn ${remainingServings} suất — đang ghi ${s} phát + ${l} thừa`;
+    // Không vượt số suất chiến dịch còn lại để phân phát.
+    if (!next.servings && remainingServings != null && s > remainingServings) {
+      next.servings = `Chỉ còn ${remainingServings} suất để phân phát`;
     }
     if (assignees.length === 0) {
       next.assignees = 'Chọn ít nhất một người phụ trách đi phát';
+    }
+    if (!distributionTime.trim()) {
+      next.distributionTime = 'Vui lòng chọn thời gian phân phát';
+    } else if (assignees.length > 0) {
+      // Thời gian phân phát phải nằm TRONG ca trực của ÍT NHẤT một người được chọn —
+      // không thì shipper nhận lệnh lúc họ đang ngoài ca, dẫn tới trễ hoặc bỏ đơn.
+      const outside = assignees.filter((id) => {
+        const v = volunteers.find((x) => x.volunteerId === id);
+        const shifts = v?.shifts ?? [];
+        // TNV chưa đăng ký ca nào thì không ràng buộc (ca cũ đã bị xoá hoặc dữ liệu thiếu).
+        if (shifts.length === 0) return false;
+        return !shifts.some((sh) => timeInWindow(distributionTime, sh.start, sh.end));
+      });
+      if (outside.length > 0) {
+        const names = outside.map((id) => volunteers.find((v) => v.volunteerId === id)?.fullName || id);
+        next.distributionTime = `Thời gian này ngoài ca trực của: ${names.join(', ')}`;
+      }
     }
     if (roundLabel.trim().length > 100) {
       next.roundLabel = 'Tên đợt tối đa 100 ký tự';
@@ -162,22 +190,27 @@ export default function CreateDistributionModal({
 
     setErrors(next);
     if (Object.keys(next).length > 0) return null;
+    const timeNote = `Thời gian phân phát: ${distributionTime}`;
+    const mergedNote = [timeNote, note.trim()].filter(Boolean).join(' • ');
+
     return {
       // Người đầu tiên trong danh sách đứng tên chính cho đợt phát.
       servedByVolunteerId: assignees[0],
       assigneeVolunteerIds: assignees,
       points: cleanPoints.length > 0 ? cleanPoints : undefined,
       servingsServed: s,
-      peopleServed: p,
-      leftoverServings: l,
+      peopleServed: s,
+      leftoverServings: 0,
       roundLabel: roundLabel.trim() || undefined,
-      note: note.trim() || undefined,
+      note: mergedNote || undefined,
     };
   }
 
   function toggleAssignee(id: string) {
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     if (errors.assignees) setErr('assignees', undefined);
+    // Đổi người phụ trách làm thay đổi ca trực ràng buộc giờ phát → xoá lỗi cũ.
+    if (errors.distributionTime) setErr('distributionTime', undefined);
   }
 
   function patchPoint(i: number, patch: Partial<PointRow>) {
@@ -191,11 +224,11 @@ export default function CreateDistributionModal({
     if (!payload) return;
     try {
       await create.mutateAsync({ campaignId, input: payload });
-      toast.success('Đã ghi nhận đợt phát');
+      toast.success('Đã gửi yêu cầu phân phát');
       onCreated?.();
       onClose();
     } catch (err) {
-      toast.error(errMsg(err, 'Ghi nhận đợt phát thất bại'));
+      toast.error(errMsg(err, 'Gửi yêu cầu phân phát thất bại'));
     }
   }
 
@@ -208,9 +241,9 @@ export default function CreateDistributionModal({
       <div className="bg-brand-gradient px-6 py-5 text-white shrink-0">
         <h3 className="font-extrabold text-lg flex items-center gap-2">
           <span className="material-symbols-outlined">takeout_dining</span>
-          Ghi nhận đợt phát
+          Đưa yêu cầu phân phát
         </h3>
-        <p className="text-xs text-white/80 mt-1">Số liệu sẽ cộng dồn vào thống kê chiến dịch</p>
+        <p className="text-xs text-white/80 mt-1">Chọn người phụ trách và số suất cần phân phát</p>
       </div>
 
       {/* Bố cục 2 cột: trái = ai đi phát & phát ở đâu, phải = số liệu ghi nhận.
@@ -255,6 +288,14 @@ export default function CreateDistributionModal({
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-800">
                         {v.fullName}
                       </span>
+                      {/* Ca trực — tổ chức cần biết giờ TNV làm việc để chọn thời gian phát khớp ca. */}
+                      {v.shifts && v.shifts.length > 0 && (
+                        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600" title={v.shifts.map((s) => `${s.label}: ${s.start}–${s.end}`).join('\n')}>
+                          {v.shifts.length === 1
+                            ? `${v.shifts[0].label} · ${v.shifts[0].start}–${v.shifts[0].end}`
+                            : `${v.shifts.length} ca`}
+                        </span>
+                      )}
                       {/* Nhãn vai trò: tổ chức cần phân biệt ai đi điểm xa (shipper)
                           và ai phát tại chỗ (phục vụ) khi chọn người. */}
                       <span
@@ -427,7 +468,7 @@ export default function CreateDistributionModal({
         {remainingServings != null && (
           <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
             <span className="material-symbols-outlined text-[14px]">inventory</span>
-            Còn {remainingServings} suất được ghi nhận (đã trừ các đợt trước).
+            Còn {remainingServings} suất có thể đưa đi phân phát.
           </p>
         )}
 
@@ -446,63 +487,44 @@ export default function CreateDistributionModal({
           {errors.roundLabel && <p className="text-[11px] text-rose-600 font-semibold">{errors.roundLabel}</p>}
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
-            Số suất đã phát <span className="text-rose-500">*</span>
-            <input
-              type="number"
-              min={0}
-              value={servings}
-              onChange={(e) => {
-                setServings(e.target.value);
-                if (errors.servings) setErr('servings', undefined);
-              }}
-              placeholder="VD: 150"
-              className={`input-base ${errors.servings ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
-            />
-            {errors.servings && (
-              <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
-                <span className="material-symbols-outlined text-[13px]">error</span>
-                {errors.servings}
-              </p>
-            )}
-          </label>
-
-          <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
-            Số người nhận <span className="text-rose-500">*</span>
-            <input
-              type="number"
-              min={0}
-              value={people}
-              onChange={(e) => {
-                setPeople(e.target.value);
-                if (errors.people) setErr('people', undefined);
-              }}
-              placeholder="VD: 150"
-              className={`input-base ${errors.people ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
-            />
-            {errors.people && (
-              <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
-                <span className="material-symbols-outlined text-[13px]">error</span>
-                {errors.people}
-              </p>
-            )}
-          </label>
-        </div>
+        <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
+          Thời gian phân phát <span className="text-rose-500">*</span>
+          <input
+            type="time"
+            value={distributionTime}
+            onChange={(e) => {
+              setDistributionTime(e.target.value);
+              if (errors.distributionTime) setErr('distributionTime', undefined);
+            }}
+            className={`input-base ${errors.distributionTime ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+          />
+          {errors.distributionTime && (
+            <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">error</span>
+              {errors.distributionTime}
+            </p>
+          )}
+        </label>
 
         <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
-          Số suất thừa (mặc định 0)
+          Số suất cần phân phát <span className="text-rose-500">*</span>
           <input
             type="number"
             min={0}
-            value={leftover}
+            value={servings}
             onChange={(e) => {
-              setLeftover(e.target.value);
-              if (errors.leftover) setErr('leftover', undefined);
+              setServings(e.target.value);
+              if (errors.servings) setErr('servings', undefined);
             }}
-            className={`input-base ${errors.leftover ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+            placeholder="VD: 150"
+            className={`input-base ${errors.servings ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
           />
-          {errors.leftover && <p className="text-[11px] text-rose-600 font-semibold">{errors.leftover}</p>}
+          {errors.servings && (
+            <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">error</span>
+              {errors.servings}
+            </p>
+          )}
         </label>
 
         <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
@@ -515,7 +537,7 @@ export default function CreateDistributionModal({
             }}
             maxLength={500}
             rows={2}
-            placeholder="VD: Phát tại cổng trường tiểu học A, 12:00–13:00"
+            placeholder="VD: Phát tại cổng trường tiểu học A"
             className={`input-base ${errors.note ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
           />
           {errors.note && <p className="text-[11px] text-rose-600 font-semibold">{errors.note}</p>}
@@ -539,12 +561,12 @@ export default function CreateDistributionModal({
             {create.isPending ? (
               <>
                 <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                Đang lưu...
+                Đang gửi...
               </>
             ) : (
               <>
                 <span className="material-symbols-outlined text-[16px]">check</span>
-                Lưu đợt phát
+                Gửi yêu cầu phân phát
               </>
             )}
           </button>

@@ -120,6 +120,13 @@ export default function PublicHeader() {
   // Lấy cờ tổ chức từ thiện để thay link "Tìm thực phẩm" thành "Chiến dịch"
   const { data: me } = useMe(isAuthed);
   const isCharityOrg = !!me?.receiver?.isCharityOrg;
+  const currentUserName = me?.fullName ?? user?.fullName ?? '';
+  const avatarSrc = mediaUrl(me?.avatarUrl ?? user?.avatarUrl ?? '');
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarSrc]);
 
   // Charity: nav chính = Chiến dịch; khác: Cửa hàng (provider) hoặc Tìm thực phẩm
   const foodNavLink = isProvider
@@ -212,12 +219,20 @@ export default function PublicHeader() {
                 className="relative z-50 flex items-center gap-2 cursor-pointer hover:bg-neutral-100/50 p-1 rounded-full transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-[#faf9f8] flex items-center justify-center border border-neutral-200 overflow-hidden">
-                  {user!.avatarUrl ? (
+                  {avatarSrc && !avatarFailed ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={mediaUrl(user!.avatarUrl)} alt={user!.fullName} className="w-full h-full object-cover" />
+                    <img
+                      src={avatarSrc}
+                      alt={currentUserName}
+                      className="w-full h-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none';
+                        setAvatarFailed(true);
+                      }}
+                    />
                   ) : (
                     <span className="font-bold text-xs text-[#236c2a]">
-                      {user!.fullName.charAt(0).toUpperCase()}
+                      {currentUserName.charAt(0).toUpperCase()}
                     </span>
                   )}
                 </div>

@@ -2,7 +2,7 @@
 
 import '../campaign-tokens.css';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import PublicHeader from '@/components/home/PublicHeader';
@@ -52,8 +52,8 @@ const PROOF_KIND: Record<string, string> = {
 };
 
 const STATUS_META: Record<string, { label: string; chip: string }> = {
-  draft: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
-  open: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
+  pending_approval: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
+  approved: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
   in_progress: { label: 'Đang diễn ra', chip: 'cm-chip cm-chip--mint' },
   completed: { label: 'Hoàn tất', chip: 'cm-chip cm-chip--mint' },
   cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--rose' },
@@ -124,6 +124,12 @@ export default function CampaignPublicDetailPage() {
   const [formDay, setFormDay] = useState<string | null>(null);
   const [formPhone, setFormPhone] = useState('');
   const [formConsent, setFormConsent] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
 
@@ -157,8 +163,20 @@ export default function CampaignPublicDetailPage() {
   const st = c ? (STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' }) : null;
 
   // Đã qua ngày diễn ra (hết ngày tổ chức) → không còn nhận đăng ký
-  const isPast = c ? new Date(c.scheduledDate).setHours(23, 59, 59, 999) < Date.now() : false;
-  const canRegister = !isCompleted && !isPast;
+  const isPast = c ? new Date(c.scheduledDate).setHours(23, 59, 59, 999) < nowMs : false;
+  const recruitmentStartMs = c ? new Date(c.recruitmentStartAt).getTime() : null;
+  const recruitmentEndMs = c ? new Date(c.recruitmentEndAt).getTime() : null;
+  const recruitmentNotStarted = c?.status === 'approved'
+    && recruitmentStartMs !== null
+    && nowMs < recruitmentStartMs;
+  const recruitmentEnded = c?.status === 'approved'
+    && recruitmentEndMs !== null
+    && nowMs >= recruitmentEndMs;
+  const canRegister = c?.status === 'approved'
+    && !isPast
+    && !recruitmentNotStarted
+    && !recruitmentEnded
+    && ['scheduled', 'open', 'staffed'].includes(c.recruitmentStatus);
 
   const slots = c
     ? (['chef', 'waiter', 'shipper'] as AssignmentRole[]).map((role) => ({
@@ -369,7 +387,7 @@ export default function CampaignPublicDetailPage() {
                 <div className="cm-detail-hero-actions">
                   <span className={`${st.chip} backdrop-blur-md`}>
                     <span className="material-symbols-outlined text-[14px]">
-                      {c.status === 'open'
+                      {c.status === 'approved'
                         ? 'campaign'
                         : c.status === 'in_progress'
                           ? 'play_circle'
@@ -575,6 +593,19 @@ export default function CampaignPublicDetailPage() {
                 )}
 
                 {/* ─── Form đăng ký (mở rộng theo mockup) ─── */}
+                {recruitmentNotStarted && recruitmentStartMs !== null && (
+                  <div className="cm-card p-6 text-center">
+                    <span className="material-symbols-outlined text-amber-600 text-[44px]">schedule</span>
+                    <p className="font-extrabold text-neutral-900 mt-2">Chiến dịch sắp mở tuyển</p>
+                    <p className="text-sm text-neutral-500 mt-1">
+                      Đã được admin phê duyệt. Bạn có thể đăng ký từ{' '}
+                      {new Date(recruitmentStartMs).toLocaleString('vi-VN', {
+                        hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
+                      })}.
+                    </p>
+                  </div>
+                )}
+
                 {canRegister && (
                   <form onSubmit={submitRegistration} className="cm-form-card">
                     <h2 className="cm-form-card-title">Đăng ký tham gia</h2>
@@ -938,6 +969,16 @@ export default function CampaignPublicDetailPage() {
                   </div>
                 )}
 
+                {!isCompleted && !isPast && recruitmentEnded && (
+                  <div className="cm-card p-6 text-center">
+                    <span className="material-symbols-outlined text-neutral-400 text-[44px]">person_off</span>
+                    <p className="font-extrabold text-neutral-900 mt-2">Đã đóng tuyển</p>
+                    <p className="text-sm text-neutral-500 mt-1">
+                      Chiến dịch không còn nhận đăng ký tình nguyện viên.
+                    </p>
+                  </div>
+                )}
+
                 {/* ─── Stats line (only when completed) ─── */}
                 {isCompleted && (
                   <section className="cm-form-card">
@@ -1079,7 +1120,7 @@ function ScheduleTab({
     ? 'report'
     : c.status === 'in_progress'
     ? 'distribute'
-    : c.status === 'open'
+    : c.status === 'approved'
     ? 'recruit'
     : 'plan';
 
@@ -1349,7 +1390,7 @@ function DistributionRow({ d }: { d: CampaignDistribution }) {
             {d.leftoverServings > 0 ? ` · còn dư ${d.leftoverServings}` : ''}
           </p>
           <p className="text-[11px] text-neutral-400 mt-0.5">Phụ trách: {d.servedBy}</p>
-          {d.note && <p className="text-xs text-neutral-600 mt-1 italic">"{d.note}"</p>}
+          {d.note && <p className="text-xs text-neutral-600 mt-1 italic">“{d.note}”</p>}
         </div>
       </div>
       {d.feedback.length > 0 && (

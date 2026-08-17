@@ -18,6 +18,12 @@ export interface Campaign {
   waiterSlotsFilled: number;
   shipperSlotsFilled: number;
   status: string;
+  recruitmentStatus?: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  operationStartAt?: string;
+  operationEndAt?: string;
+  recruitmentStartAt?: string;
+  recruitmentEndAt?: string;
+  recruitmentBufferHours?: number;
   actualServings?: number | null;
   distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
   peopleServed?: number;
@@ -26,6 +32,8 @@ export interface Campaign {
     id: string;
     role: 'chef' | 'waiter' | 'shipper';
     status: string;
+    confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+    confirmedAt?: string | null;
     volunteer: { user: { fullName: string; avatarUrl: string | null } };
   }[];
   donations?: {
@@ -61,23 +69,21 @@ export interface CreateCampaignInput {
   scheduledDate: string;
   /** Ngày kết thúc (>= scheduledDate). Bỏ trống = 1 ngày duy nhất. */
   endDate?: string;
-  startTime: string;
-  endTime: string;
-  chefSlotsNeeded?: number;
-  waiterSlotsNeeded?: number;
-  shipperSlotsNeeded?: number;
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  /** Máy chủ tự tính từ giờ đóng tuyển đến giờ bắt đầu ca đầu tiên. */
+  recruitmentBufferHours?: number;
   expectedServings?: number;
   imageUrls?: string[];
-  menuItems?: { name: string; type: string; plannedServings?: number }[];
+  menuItems: { name: string; type: string; plannedServings?: number }[];
   scheduleItems?: { time: string; label: string }[];
   /** Vật phẩm cần thiết — object đầy đủ {name, quantity?, unit?}. */
   supplyItems?: { name: string; quantity?: number; unit?: string }[];
   /** Ca trực cho tình nguyện viên — insert vào bảng campaign_shifts lúc tạo. */
-  shifts?: {
+  shifts: {
     label: string;
-    role?: 'chef' | 'waiter' | 'shipper';
-    startTime: string;
-    endTime: string;
+    role: 'chef' | 'waiter' | 'shipper';
+    period: 'midnight' | 'morning' | 'afternoon' | 'evening';
     slotsNeeded: number;
   }[];
 }
@@ -120,6 +126,8 @@ export interface MyTask {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+  confirmedAt?: string | null;
   shiftId?: string | null;
   shift?: {
     id: string;
@@ -166,6 +174,8 @@ export function useCampaigns() {
     queryKey: ['campaigns', 'open'],
     queryFn: async () => (await api.get('/campaigns')).data.data as Campaign[],
     staleTime: 30_000,
+    // Người dùng đang mở trang Khám phá vẫn nhìn thấy campaign ngay sau khi admin duyệt.
+    refetchInterval: 30_000,
   });
 }
 
@@ -230,6 +240,8 @@ export interface CampaignManageParticipant {
   volunteerId: string;
   role: 'chef' | 'waiter' | 'shipper';
   status: string;
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
+  confirmedAt?: string | null;
   shiftId: string | null;
   /** Ngày TNV đăng ký trực (YYYY-MM-DD) — ca chỉ có giờ nên ngày nằm ở đây. */
   workDate: string | null;
@@ -237,6 +249,7 @@ export interface CampaignManageParticipant {
   avatarUrl: string | null;
   rank: string;
   checkInTime: string | null;
+  checkInLateMinutes: number | null;
   notes: string | null;
   createdAt: string;
   volunteer: VolunteerDetail;
@@ -283,6 +296,9 @@ export interface CampaignExperience {
 }
 
 export interface PublicCampaignDetail extends PublicCampaign {
+  recruitmentStatus: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
   /** Ngày kết thúc của chiến dịch nhiều ngày; null = chỉ diễn ra trong ngày bắt đầu. */
   endDate?: string | null;
   chefSlotsNeeded: number;
@@ -399,6 +415,34 @@ export function useMyCampaigns(enabled = true) {
   });
 }
 
+export interface CampaignStats {
+  mealsServed: number;
+  peopleServed: number;
+  completedCampaigns: number;
+  completionRate: number;
+  totalCampaigns: number;
+  activeCampaigns: number;
+}
+
+/** Thống kê toàn hệ thống — suất ăn, người phục vụ, chiến dịch, tỉ lệ. */
+export function useCampaignStats() {
+  return useQuery({
+    queryKey: ['campaigns', 'stats'],
+    queryFn: async () => (await api.get('/campaigns/stats')).data.data as CampaignStats,
+    staleTime: 60_000,
+  });
+}
+
+/** Thống kê workspace của charity hiện tại. */
+export function useMyCampaignStats(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-stats'],
+    queryFn: async () => (await api.get('/campaigns/my-stats')).data.data as CampaignStats,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
 export function useMyTasks(enabled = true) {
   return useQuery({
     queryKey: ['campaigns', 'my-tasks'],
@@ -427,7 +471,7 @@ export function useUploadCampaignImage() {
       const { data } = await api.post('/campaigns/upload-image', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      return data.data as { url: string };
+      return (data.data ?? data) as { url: string };
     },
   });
 }
@@ -464,7 +508,83 @@ export function useStartCampaign() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => (await api.patch(`/campaigns/${id}/start`)).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: (_data, id) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'staffing-readiness', id] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', id] });
+    },
+  });
+}
+
+export interface StaffingReadiness {
+  recruitmentStatus: 'scheduled' | 'open' | 'staffed' | 'expired_understaffed' | 'closed_ready';
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  recruitmentBufferHours: number;
+  operationStartAt: string;
+  operationEndAt: string;
+  requiredShiftSlots: number;
+  assignedShiftSlots: number;
+  confirmedShiftSlots: number;
+  assignedUniqueVolunteers: number;
+  confirmedUniqueVolunteers: number;
+  uniqueVolunteers: number;
+  minimumFillPercent: number;
+  eligibleToStart: boolean;
+  canStartNow: boolean;
+  ready: boolean;
+  matrix: Array<{
+    workDate: string;
+    shiftId: string;
+    label: string;
+    period: 'midnight' | 'morning' | 'afternoon' | 'evening' | null;
+    role: 'chef' | 'waiter' | 'shipper' | null;
+    minRequired: number;
+    minimumRequired: number;
+    fillPercent: number;
+    assigned: number;
+    confirmed: number;
+    missing: number;
+    ready: boolean;
+    eligibleToStart: boolean;
+    needsReview: boolean;
+  }>;
+}
+
+export function useStaffingReadiness(campaignId: string) {
+  return useQuery({
+    queryKey: ['campaigns', 'staffing-readiness', campaignId],
+    queryFn: async () =>
+      (await api.get(`/campaigns/${campaignId}/staffing-readiness`)).data.data as StaffingReadiness,
+    enabled: !!campaignId,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useExtendRecruitment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; recruitmentEndAt: string }) =>
+      (await api.patch(`/campaigns/${p.campaignId}/recruitment/extend`, {
+        recruitmentEndAt: p.recruitmentEndAt,
+      })).data.data,
+    onSuccess: (_data, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'staffing-readiness', p.campaignId] });
+    },
+  });
+}
+
+export function useConfirmCampaignAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { assignmentId: string; decision: 'confirmed' | 'declined' }) =>
+      (await api.patch(`/campaigns/assignments/${p.assignmentId}/confirmation`, {
+        decision: p.decision,
+      })).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns'] });
+    },
   });
 }
 
@@ -854,6 +974,8 @@ export function useCampaignManageDetail(id: string) {
 export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'participants'> {
   participants: CampaignManageParticipant[];
   menuItemRefs?: Array<{ id: string; customName: string; plannedServings: number | null; recipeId: string | null; sortOrder: number }>;
+  /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng phát xuất" từ chef */
+  dishSteps?: DishProcessItem[];
   /**
    * Nhân sự đã tuyển so với ngưỡng tối thiểu (`CAMPAIGN_MIN_FILL_PERCENT` do admin
    * chỉnh). Chưa đạt `minPercent` thì BE chặn bắt đầu chiến dịch.
@@ -895,12 +1017,18 @@ export function useCompleteDistribution() {
       actualServings?: number;
       actualPeopleServed?: number;
       note?: string;
-    }) =>
-      (await api.post(`/campaigns/distributions/${p.distributionId}/complete`, {
-        actualServings: p.actualServings,
-        actualPeopleServed: p.actualPeopleServed,
-        note: p.note,
-      })).data.data,
+      /** Ảnh bằng chứng phân phát (multipart field `photo`). */
+      proofPhoto?: File;
+    }) => {
+      const form = new FormData();
+      if (p.actualServings != null) form.append('actualServings', String(p.actualServings));
+      if (p.actualPeopleServed != null) form.append('actualPeopleServed', String(p.actualPeopleServed));
+      if (p.note) form.append('note', p.note);
+      if (p.proofPhoto) form.append('photo', p.proofPhoto);
+      return (await api.post(`/campaigns/distributions/${p.distributionId}/complete`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })).data.data;
+    },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-distributions'] });
@@ -947,6 +1075,9 @@ export interface CampaignShift {
   role: 'chef' | 'waiter' | 'shipper' | null;
   startTime: string;
   endTime: string;
+  period?: 'midnight' | 'morning' | 'afternoon' | 'evening' | null;
+  endDayOffset?: number;
+  needsReview?: boolean;
   slotsNeeded: number;
   slotsFilled: number;
 }
@@ -1185,6 +1316,8 @@ export interface MyTaskDetail {
     status: string;
     /** Nguyên liệu bếp khai lúc tạo chiến dịch — bảng đối chiếu khi shipper lấy hàng. */
     supplyItems?: CampaignSupplyRequested[];
+    /** Danh sách món ăn của chiến dịch — shipper dùng để QC trước khi xác nhận đã lấy hàng. */
+    menuItems?: CampaignMenuItem[];
     charityReceiver: { organizationName: string | null; user: { fullName: string; phone: string | null } };
   };
   /** Shipper: các đơn nguyên liệu của chiến dịch cần đi lấy tại NCC. */
@@ -1233,6 +1366,84 @@ export function useMyTaskDetail(assignmentId: string, enabled = true) {
 }
 
 /** Đơn nguyên liệu trong Trung tâm giao hàng — gom từ mọi chiến dịch shipper đang nhận ca. */
+export interface TaskDetail {
+  id: string;
+  role: 'chef' | 'waiter' | 'shipper';
+  status: string;
+  shift: MyTaskDetail['assignment']['shift'];
+  taskList: string[];
+  chainStatus: Array<{
+    role: 'chef' | 'waiter' | 'shipper';
+    label: string;
+    total: number;
+    completed: number;
+    inProgress: number;
+    done: boolean;
+  }>;
+  blockedBy: { role: 'chef' | 'waiter' | 'shipper'; label: string } | null;
+  ingredientProofUrl: string | null;
+  cookedProofUrl: string | null;
+  distributionProofUrl: string | null;
+  pointsAwarded: number | null;
+  campaign: MyTaskDetail['campaign'] & {
+    scheduleItems: Array<{ time: string; label: string }>;
+    menuItems: Array<{ id: string; customName: string | null; plannedServings: number | null }>;
+    donationsReceived: Array<{ id: string; itemName: string; quantity: string | null }>;
+  };
+}
+
+export function useTask(assignmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'task-detail', assignmentId],
+    queryFn: async () => {
+      const { data } = await api.get(`/campaigns/my-tasks/${assignmentId}`);
+      const detail = data.data as MyTaskDetail & {
+        dishes?: Array<{ id?: string; customName?: string | null; plannedServings?: number | null; name?: string | null }>;
+      };
+      const chainLabels = {
+        chef: 'Dau bep',
+        waiter: 'Phuc vu',
+        shipper: 'Giao hang',
+      } as const;
+
+      return {
+        id: detail.assignment.id,
+        role: detail.assignment.role,
+        status: detail.assignment.status,
+        shift: detail.assignment.shift,
+        taskList: [] as string[],
+        chainStatus: (['chef', 'waiter', 'shipper'] as const).map((role) => ({
+          role,
+          label: chainLabels[role],
+          total: role === detail.assignment.role ? 1 : 0,
+          completed: role === detail.assignment.role && detail.assignment.status === 'completed' ? 1 : 0,
+          inProgress: role === detail.assignment.role && ['checked_in', 'in_progress'].includes(detail.assignment.status) ? 1 : 0,
+          done: role === detail.assignment.role && detail.assignment.status === 'completed',
+        })),
+        blockedBy: null as TaskDetail['blockedBy'],
+        ingredientProofUrl: detail.assignment.ingredientProofUrl,
+        cookedProofUrl: detail.assignment.cookedProofUrl,
+        distributionProofUrl: detail.assignment.distributionProofUrl,
+        pointsAwarded: detail.assignment.pointsAwarded,
+        campaign: {
+          ...detail.campaign,
+          scheduleItems: [] as Array<{ time: string; label: string }>,
+          menuItems: ((detail.dishes ?? []) as Array<{ id?: string; customName?: string | null; plannedServings?: number | null; name?: string | null }>).map((dish, idx) => ({
+            id: dish.id ?? String(idx),
+            customName: dish.customName ?? dish.name ?? null,
+            plannedServings: dish.plannedServings ?? null,
+          })),
+          donationsReceived: [] as Array<{ id: string; itemName: string; quantity: string | null }>,
+        },
+      } satisfies TaskDetail;
+    },
+    enabled: enabled && !!assignmentId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export interface MyPickupOrder extends PickupOrder {
   assignmentId: string | null;
   /** Đã điểm danh tại bếp của chiến dịch này chưa — điều kiện để xác nhận lấy hàng. */
@@ -1403,11 +1614,51 @@ export function useSetDishStepTimes() {
   });
 }
 
+// Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món
+export function useApproveDishFinalStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; menuItemId: string }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/dishes/${p.menuItemId}/approve`);
+      return data.data as { id: string; status: string; menuItemName: string };
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
+// Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món
+export function useRejectDishFinalStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; menuItemId: string; reason: string }) => {
+      const { data } = await api.post(`/campaigns/${p.campaignId}/dishes/${p.menuItemId}/reject`, { reason: p.reason });
+      return data.data as { id: string; status: string; menuItemName: string };
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
 /** Nguyên liệu charity khai báo lúc đăng ký campaign — lưu ở `Campaign.supplyItems`. */
 export interface CampaignSupplyRequested {
   name: string;
   unit: string | null;
   quantity: number | null;
+}
+
+/** Một món ăn trong thực đơn chiến dịch — shipper dùng để QC khi đến lấy hàng. */
+export interface CampaignMenuItem {
+  id: string;
+  name?: string | null;
+  customName?: string | null;
+  /** Loại bữa ăn: breakfast | lunch | dinner */
+  type?: string | null;
+  plannedServings: number | null;
 }
 
 /** Bếp trưởng / TNV: danh sách thực phẩm đang có sẵn cho campaign (đã received). */
@@ -1483,7 +1734,7 @@ export interface WeeklyScheduleCampaign {
    */
   campaignId?: string;
   title: string;
-  status: 'open' | 'in_progress' | 'completed';
+  status: 'approved' | 'in_progress' | 'completed';
   /** Chỉ có khi isPersonalView=true (TNV) */
   role?: 'chef' | 'waiter' | 'shipper';
   /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */

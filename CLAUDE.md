@@ -23,7 +23,7 @@ git push origin --delete <branch-name>
 # Xóa local (đang ở branch khác)
 git branch -d <branch-name>
 ```
-
+https://capstone-foodresq-web.onrender.com/api/docs
 - Không để branch cũ tồn tại sau khi merge — gây rác và nhầm lẫn khi `git branch` / `git fetch`.
 - Nếu cần rollback, dùng `git revert` trên `master`, không reopen branch cũ.
 
