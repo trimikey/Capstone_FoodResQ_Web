@@ -395,6 +395,81 @@ export class DishStepsService {
   }
 
   /**
+   * Tổ chức duyệt step cuối (sẵn sàng phát xuất) của một món.
+   * Chef đã tick "Sẵn sàng phát xuất" → tổ chức kiểm tra và duyệt.
+   * Sau khi duyệt → món có thể chuyển sang phân phát.
+   */
+  async approveDishFinalStep(
+    campaignId: string,
+    userId: string,
+    menuItemId: string,
+  ) {
+    await this.assertCampaignOwner(campaignId, userId);
+
+    const step = await this.prisma.campaignDishStep.findFirst({
+      where: { campaignId, menuItemId, stepOrder: 4 },
+      include: { menuItem: { select: { customName: true } } },
+    });
+    if (!step) {
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+    }
+    if (step.status !== 'available') {
+      throw new BadRequestException('Bước này chưa được chef tick hoặc đã được duyệt trước đó.');
+    }
+
+    const updated = await this.prisma.campaignDishStep.update({
+      where: { id: step.id },
+      data: {
+        status: 'done',
+      },
+    });
+
+    return { id: updated.id, status: updated.status, menuItemName: step.menuItem.customName };
+  }
+
+  /**
+   * Tổ chức từ chối step cuối của một món (món chưa đạt yêu cầu).
+   * Gửi notification cho chef để làm lại.
+   */
+  async rejectDishFinalStep(
+    campaignId: string,
+    userId: string,
+    menuItemId: string,
+    reason: string,
+  ) {
+    await this.assertCampaignOwner(campaignId, userId);
+
+    const step = await this.prisma.campaignDishStep.findFirst({
+      where: { campaignId, menuItemId, stepOrder: 4 },
+      include: { menuItem: { select: { customName: true } } },
+    });
+    if (!step) {
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+    }
+
+    // Reset về available để chef làm lại
+    const updated = await this.prisma.campaignDishStep.update({
+      where: { id: step.id },
+      data: {
+        status: 'available',
+      },
+    });
+
+    // Gửi notification cho chef để thông báo bị từ chối
+    try {
+      await this.notifications.notifyCampaignOwner(campaignId, {
+        type: 'campaign.qc_failure',
+        title: `Món "${step.menuItem.customName}" chưa được duyệt`,
+        body: `Tổ chức từ chối: ${reason}`,
+      });
+    } catch {
+      // best-effort notification
+    }
+
+    return { id: updated.id, status: updated.status, menuItemName: step.menuItem.customName };
+  }
+
+  /**
    * Nguyên liệu / thực phẩm đang có sẵn cho chiến dịch — gồm 2 nguồn:
    *
    *  1. `requested` — từ `Campaign.supplyItems` (charity khai báo lúc đăng ký).

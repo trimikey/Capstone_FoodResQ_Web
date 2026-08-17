@@ -51,6 +51,21 @@ export class CampaignsController {
     return this.campaignsService.listCompleted();
   }
 
+  @Get('stats')
+  @Public()
+  @ApiOperation({ summary: 'Thống kê toàn hệ thống: suất ăn, người phục vụ, chiến dịch, tỉ lệ hoàn thành' })
+  getStats() {
+    return this.campaignsService.getSystemStats();
+  }
+
+  @Get('my-stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: thống kê workspace của tôi' })
+  myStats(@CurrentUser() user: User) {
+    return this.campaignsService.getMyStats(user.id);
+  }
+
   @Get('my')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
@@ -374,16 +389,20 @@ export class CampaignsController {
   @Post('distributions/:distributionId/complete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VOLUNTEER, UserRole.RECEIVER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
       'Shipper được phân công (hoặc tổ chức chủ chiến dịch) xác nhận đã phát xong một đợt',
   })
-  completeDistribution(
+  async completeDistribution(
     @CurrentUser() user: User,
     @Param('distributionId', ParseUUIDPipe) distributionId: string,
     @Body() dto: CompleteDistributionDto,
+    @UploadedFile() photo?: Express.Multer.File,
   ) {
-    return this.campaignsService.completeDistribution(distributionId, user.id, dto);
+    const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.completeDistribution(distributionId, user.id, dto, proofUrl);
   }
 
   @Get('my-distributions')
@@ -592,5 +611,32 @@ export class CampaignsController {
     @Body() dto: AppendSupplyItemDto,
   ) {
     return this.campaignsService.appendSupplyItem(id, user.id, dto);
+  }
+
+  // ── Tổ chức duyệt món QC ────────────────────────────────────────────────
+
+  @Post(':id/dishes/:menuItemId/approve')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món — món đã được chef tick xong' })
+  approveDishFinalStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('menuItemId') menuItemId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId);
+  }
+
+  @Post(':id/dishes/:menuItemId/reject')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món — chef phải làm lại' })
+  rejectDishFinalStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('menuItemId') menuItemId: string,
+    @CurrentUser() user: User,
+    @Body() body: { reason: string },
+  ) {
+    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason);
   }
 }
