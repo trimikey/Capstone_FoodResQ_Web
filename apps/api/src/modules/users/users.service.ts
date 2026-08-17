@@ -72,9 +72,7 @@ export class UsersService {
         select: {
           rank: true,
           dedicationPoints: true,
-          specializations: {
-            select: { specialization: true, isVerified: true },
-          },
+          specializations: { select: { specialization: true, isVerified: true } },
         },
       });
       if (vp) {
@@ -86,7 +84,7 @@ export class UsersService {
       }
     }
 
-    // Nếu là người nhận → kèm cờ tổ chức từ thiện để FE hiển thị nhãn đúng
+    // Nếu là người nhận → kèm cờ tổ chức từ thiện + địa chỉ/toạ độ điểm giao
     let receiver: {
       isCharityOrg: boolean;
       organizationName: string | null;
@@ -95,7 +93,7 @@ export class UsersService {
       lat: number | null;
     } | null = null;
     if (user.role === 'receiver') {
-      const rows = await this.prisma.$queryRaw<
+      const [rp] = await this.prisma.$queryRaw<
         {
           is_charity_org: boolean;
           organization_name: string | null;
@@ -107,10 +105,8 @@ export class UsersService {
         SELECT is_charity_org, organization_name, address,
                ST_X(location::geometry) AS lng,
                ST_Y(location::geometry) AS lat
-        FROM receiver_profiles
-        WHERE user_id = ${userId}::uuid
+        FROM receiver_profiles WHERE user_id = ${userId}::uuid
       `);
-      const rp = rows[0];
       if (rp) {
         receiver = {
           isCharityOrg: rp.is_charity_org,
@@ -131,8 +127,8 @@ export class UsersService {
       contactPhone: string | null;
       taxCode: string | null;
       isVerified: boolean;
-      avgRating: number | null;
       verificationStatus: string;
+      avgRating: number | null;
       lng: number | null;
       lat: number | null;
     } | null = null;
@@ -187,84 +183,66 @@ export class UsersService {
    */
   async updateMe(userId: string, dto: UpdateMeDto) {
     try {
-      const user = await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
-          ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
-          ...(dto.avatarUrl !== undefined
-            ? { avatarUrl: dto.avatarUrl || null }
-            : {}),
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          fullName: true,
-          avatarUrl: true,
-          role: true,
-          status: true,
-          trustScore: true,
-        },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: {
+            ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
+            ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+            ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl || null } : {}),
+          },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            avatarUrl: true,
+            role: true,
+            status: true,
+            trustScore: true,
+          },
+        });
 
-      const hasLocationUpdate =
-        dto.address !== undefined ||
-        dto.lng !== undefined ||
-        dto.lat !== undefined;
-      if (hasLocationUpdate) {
-        if (user.role !== 'provider' && user.role !== 'receiver') {
-          throw new BadRequestException(
-            'Vai trò hiện tại không hỗ trợ cập nhật địa chỉ.',
-          );
-        }
-        if (
-          (dto.lng !== undefined || dto.lat !== undefined) &&
-          (dto.lng === undefined || dto.lat === undefined)
-        ) {
-          throw new BadRequestException(
-            'Cần cung cấp đầy đủ cả kinh độ và vĩ độ.',
-          );
-        }
+        // Địa chỉ + toạ độ nằm ở bảng profile theo role (location là geography → raw SQL).
+        const hasCoords = dto.lng != null && dto.lat != null;
+        if (dto.address === undefined && !hasCoords) return user;
 
-        const address = dto.address?.trim();
+        const table =
+          user.role === 'provider'
+            ? Prisma.raw('provider_profiles')
+            : user.role === 'receiver'
+              ? Prisma.raw('receiver_profiles')
+              : null;
+        if (!table) return user;
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE ${table}
+          SET ${dto.address !== undefined ? Prisma.sql`address = ${dto.address},` : Prisma.empty}
+              ${hasCoords ? Prisma.sql`location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
+              updated_at = NOW()
+          WHERE user_id = ${userId}::uuid
+        `);
+
+        // Listing dùng địa chỉ và ghim riêng để receiver/bản đồ đọc trực tiếp. Đồng bộ
+        // các tin còn mở cùng transaction; các tin lịch sử giữ nguyên điểm lấy hàng lúc đó.
         if (user.role === 'provider') {
-          if (address !== undefined) {
-            await this.prisma.providerProfile.update({
-              where: { userId },
-              data: { address },
-            });
-          }
-          if (dto.lng !== undefined && dto.lat !== undefined) {
-            await this.prisma.$executeRaw(Prisma.sql`
-              UPDATE provider_profiles
-              SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
-              WHERE user_id = ${userId}::uuid
-            `);
-          }
-        } else {
-          if (address !== undefined) {
-            await this.prisma.receiverProfile.update({
-              where: { userId },
-              data: { address },
-            });
-          }
-          if (dto.lng !== undefined && dto.lat !== undefined) {
-            await this.prisma.$executeRaw(Prisma.sql`
-              UPDATE receiver_profiles
-              SET location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography
-              WHERE user_id = ${userId}::uuid
-            `);
-          }
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE food_listings AS fl
+            SET ${dto.address !== undefined ? Prisma.sql`pickup_address = ${dto.address},` : Prisma.empty}
+                ${hasCoords ? Prisma.sql`pickup_location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
+                updated_at = NOW()
+            FROM provider_profiles AS pp
+            WHERE fl.provider_id = pp.id
+              AND pp.user_id = ${userId}::uuid
+              AND fl.status IN ('draft', 'active', 'fully_reserved')
+              AND fl.deleted_at IS NULL
+          `);
         }
-      }
 
-      return user;
+        return user;
+      });
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new BadRequestException('Số điện thoại đã được sử dụng.');
       }
       throw e;
@@ -392,13 +370,7 @@ export class UsersService {
       select: { id: true },
     });
     if (!receiver) {
-      return {
-        kind: 'receiver',
-        kgSaved: 0,
-        completedCount: 0,
-        cancelledCount: 0,
-        providersHelped: 0,
-      };
+      return { kind: 'receiver', kgSaved: 0, completedCount: 0, cancelledCount: 0, providersHelped: 0 };
     }
 
     const [row] = await this.prisma.$queryRaw<
@@ -459,9 +431,7 @@ export class UsersService {
     // Khuyến nghị phục hồi: +2 mỗi đơn hoàn tất → cần bao nhiêu đơn để thoát suspended
     const RESTRICT_THRESHOLD = 60;
     const pointsNeeded =
-      current.trustScore < RESTRICT_THRESHOLD
-        ? RESTRICT_THRESHOLD - current.trustScore + 1
-        : 0;
+      current.trustScore < RESTRICT_THRESHOLD ? RESTRICT_THRESHOLD - current.trustScore + 1 : 0;
     const rescuesNeeded = pointsNeeded > 0 ? Math.ceil(pointsNeeded / 2) : 0;
 
     return {
@@ -478,39 +448,22 @@ export class UsersService {
   }
 
   async getFaceEnrollmentStatus(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
 
     if (user?.role === 'volunteer') {
       const v = await this.prisma.volunteerProfile.findUnique({
         where: { userId },
-        select: {
-          faceImageUrl: true,
-          faceDescriptor: true,
-          idCardImageUrl: true,
-        },
+        select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
       });
-      if (!v)
-        throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-      return {
-        enrolled: v.faceDescriptor !== null,
-        faceImageUrl: v.faceImageUrl,
-        idCardImageUrl: v.idCardImageUrl,
-      };
+      if (!v) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+      return { enrolled: v.faceDescriptor !== null, faceImageUrl: v.faceImageUrl, idCardImageUrl: v.idCardImageUrl };
     }
 
     const receiver = await this.prisma.receiverProfile.findUnique({
       where: { userId },
-      select: {
-        faceImageUrl: true,
-        faceDescriptor: true,
-        idCardImageUrl: true,
-      },
+      select: { faceImageUrl: true, faceDescriptor: true, idCardImageUrl: true },
     });
-    if (!receiver)
-      throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ người nhận.');
 
     return {
       enrolled: receiver.faceDescriptor !== null,
@@ -530,16 +483,11 @@ export class UsersService {
     selfiePhoto?: Express.Multer.File,
   ) {
     if (!idCardPhoto && !selfiePhoto) {
-      throw new BadRequestException(
-        'Cần ít nhất một ảnh selfie hoặc ảnh CCCD.',
-      );
+      throw new BadRequestException('Cần ít nhất một ảnh selfie hoặc ảnh CCCD.');
     }
 
     // Chỉ người nhận & tình nguyện viên cần đăng ký khuôn mặt
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     if (user?.role !== 'receiver' && user?.role !== 'volunteer') {
       throw new BadRequestException('Vai trò này không cần đăng ký khuôn mặt.');
     }
@@ -577,12 +525,8 @@ export class UsersService {
     }
 
     const [idCardUrl, faceUrl] = await Promise.all([
-      idCardPhoto
-        ? this.storage.saveImage(idCardPhoto, 'id-cards')
-        : Promise.resolve(null),
-      selfiePhoto
-        ? this.storage.saveImage(selfiePhoto, 'faces')
-        : Promise.resolve(null),
+      idCardPhoto ? this.storage.saveImage(idCardPhoto, 'id-cards') : Promise.resolve(null),
+      selfiePhoto ? this.storage.saveImage(selfiePhoto, 'faces') : Promise.resolve(null),
     ]);
 
     // Ưu tiên descriptor từ selfie (chất lượng tốt hơn chân dung in trên thẻ)
@@ -592,15 +536,9 @@ export class UsersService {
       faceDescriptor: selfieDescriptor ?? idCardDescriptor!,
     };
     if (user.role === 'volunteer') {
-      await this.prisma.volunteerProfile.update({
-        where: { userId },
-        data: faceData,
-      });
+      await this.prisma.volunteerProfile.update({ where: { userId }, data: faceData });
     } else {
-      await this.prisma.receiverProfile.update({
-        where: { userId },
-        data: faceData,
-      });
+      await this.prisma.receiverProfile.update({ where: { userId }, data: faceData });
     }
 
     return {
@@ -717,8 +655,7 @@ export class UsersService {
       pickupEndTime: r.pickup_end_time.toISOString(),
       pickupAddress: r.pickup_address,
       status: r.status,
-      weightPerUnitKg:
-        r.weight_per_unit_kg != null ? Number(r.weight_per_unit_kg) : null,
+      weightPerUnitKg: r.weight_per_unit_kg != null ? Number(r.weight_per_unit_kg) : null,
     }));
   }
 }

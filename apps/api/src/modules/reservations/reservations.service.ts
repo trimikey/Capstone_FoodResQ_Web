@@ -68,6 +68,20 @@ export class ReservationsService {
     }).format(d);
   }
 
+  /** Ngày YYYY-MM-DD theo giờ VN — so cửa sổ ngày khi có daily window. */
+  private dateKeyVN(d: Date): string {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).formatToParts(d);
+    const y = parts.find((p) => p.type === 'year')?.value ?? '1970';
+    const m = parts.find((p) => p.type === 'month')?.value ?? '01';
+    const day = parts.find((p) => p.type === 'day')?.value ?? '01';
+    return `${y}-${m}-${day}`;
+  }
+
   async create(receiverUserId: string, dto: CreateReservationDto) {
     // 1. Load receiver profile
     const receiver = await this.prisma.receiverProfile.findUnique({
@@ -146,28 +160,44 @@ export class ReservationsService {
       // lúc 2h sáng (cửa hàng chưa mở) thì QR hết hạn trước khi mở cửa → bị đánh
       // no_show oan. Vì vậy chặn từ đầu, báo rõ khung giờ cho người dùng.
       const nowTs = new Date();
-      if (nowTs < listingRow.pickup_start_time) {
-        throw new BadRequestException(
-          `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
-        );
-      }
+      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
+      const hasDailyWindow = dayStart != null && dayEnd != null;
+
       if (nowTs > listingRow.pickup_end_time || nowTs > listingRow.expiry_time) {
         throw new BadRequestException(
           'Đã quá giờ nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
         );
       }
 
-      // Khung giờ MỞ CỬA TRONG NGÀY (vd 07:00–21:00). Khác với mốc bắt đầu/hạn lấy ở
-      // trên: tin kéo dài nhiều ngày vẫn phải đóng nhận ngoài giờ cửa hàng làm việc,
-      // nếu không người nhận đặt lúc 3h sáng rồi không ai giao được.
-      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
-      if (dayStart != null && dayEnd != null) {
+      if (hasDailyWindow) {
+        // Khi provider có khai báo giờ mở/đóng hằng ngày, daily window là thẩm quyền
+        // cho GIỜ trong ngày. Mốc absolute chỉ giữ vai trò giới hạn khoảng NGÀY và hạn
+        // cứng, để các listing cũ từng lưu lệch UTC không bị chặn oan.
+        const today = this.dateKeyVN(nowTs);
+        const startDate = this.dateKeyVN(listingRow.pickup_start_time);
+        const endDate = this.dateKeyVN(listingRow.pickup_end_time);
+        if (today < startDate) {
+          throw new BadRequestException(
+            `Chưa đến ngày nhận hàng. Cửa hàng nhận từ ${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}.`,
+          );
+        }
+        if (today > endDate) {
+          throw new BadRequestException(
+            'Đã quá ngày nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
+          );
+        }
+
         const nowMinute = this.minuteOfDayVN(nowTs);
         if (nowMinute < dayStart || nowMinute >= dayEnd) {
           throw new BadRequestException(
             `Ngoài giờ nhận hàng của cửa hàng (${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}). Vui lòng quay lại trong khung giờ này.`,
           );
         }
+      } else if (nowTs < listingRow.pickup_start_time) {
+        // Tin cũ không có daily window vẫn dùng đúng mốc tuyệt đối đã lưu.
+        throw new BadRequestException(
+          `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
+        );
       }
 
       if (listingRow.quantity_remaining < dto.quantity) {

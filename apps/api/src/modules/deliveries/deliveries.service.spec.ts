@@ -336,4 +336,37 @@ describe('DeliveriesService', () => {
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('giao hàng hoàn tất ngay cả khi QR gốc đã hết hạn — chỉ so khớp mã', async () => {
+    // Hồi quy QR 30 phút cho pickup: đơn giao thường lâu hơn nhiều. Nếu ai đó
+    // thêm check qrExpiresAt vào luồng delivered thì giao hàng đang đi sẽ
+    // fail oan tại cửa người nhận dù đã quét đúng mã.
+    prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1', dedicationPoints: 10 });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 'delivery-1',
+      shipperId: 'shipper-1',
+      status: 'in_transit',
+      reservationId: 'reservation-1',
+      reservation: {
+        id: 'reservation-1',
+        qrToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa712b905e',
+        qrExpiresAt: new Date(Date.now() - 60_000),
+        receiver: { userId: 'receiver-user-1' },
+      },
+    });
+    prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'completed' });
+    prisma.volunteerProfile.update.mockResolvedValue({});
+    prisma.dedicationPointsHistory.create.mockResolvedValue({});
+    prisma.delivery.update.mockResolvedValue({ id: 'delivery-1', status: 'delivered' });
+    prisma.$transaction.mockImplementation(async (input: unknown) => {
+      if (typeof input === 'function') return (input as (tx: typeof prisma) => Promise<unknown>)(prisma);
+      return Promise.all(input as Promise<unknown>[]);
+    });
+
+    await expect(
+      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', undefined, '712b905e'),
+    ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
+
+    expect(prisma.reservation.update).toHaveBeenCalled();
+  });
 });

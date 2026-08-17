@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { $Enums } from '@prisma/client';
 import { TrustScoreReason } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
@@ -58,7 +59,7 @@ export class TrustService {
         data: {
           userId,
           delta,
-          reason,
+          reason: reason as $Enums.TrustScoreReason,
           referenceType,
           referenceId,
           scoreBefore: user.trustScore,
