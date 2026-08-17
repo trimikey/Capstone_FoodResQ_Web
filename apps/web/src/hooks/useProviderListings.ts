@@ -14,9 +14,6 @@ export interface ProviderListing {
   pickupStartTime: string;
   pickupEndTime: string;
   expiryTime: string;
-  /** Giờ mở/đóng nhận hàng trong ngày — phút từ 00:00 giờ VN; null = không giới hạn */
-  dailyStartMinute?: number | null;
-  dailyEndMinute?: number | null;
   pickupAddress: string;
   /** Tọa độ điểm lấy hàng (do service `findByProvider` của BE trả về). */
   lng: number | null;
@@ -46,9 +43,6 @@ export interface CreateListingInput {
   storageConditions?: string;
   allergenNotes?: string;
   maxPerReservation: number;
-  /** Giờ mở/đóng nhận hàng trong ngày — phút từ 00:00 giờ VN (7:00 → 420) */
-  dailyStartMinute?: number;
-  dailyEndMinute?: number;
   /** Bắt buộc ít nhất 1 ảnh — khớp ràng buộc @ArrayNotEmpty phía BE */
   imageUrls: string[];
   isSurpriseBag?: boolean;

@@ -48,8 +48,7 @@ function formatDistance(m: number): string {
 }
 
 export default function ListingCard({ listing }: Props) {
-  // Trạng thái khung giờ tự cập nhật — người dùng đang xem danh sách lúc cửa hàng
-  // đóng nhận thì thẻ phải đổi ngay, không để họ bấm vào rồi mới biết.
+  // Chỉ khoảng Bắt đầu lấy → Hạn lấy Provider đã chọn quyết định có thể đặt hay không.
   const { notYetOpen, closed, minutesLeft } = usePickupWindow(
     listing.pickupStartTime,
     listing.pickupEndTime,

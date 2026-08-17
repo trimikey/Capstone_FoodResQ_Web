@@ -16,7 +16,7 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
-import { minuteToHHmm } from '@/lib/listing-form';
+import { formatVietnamDateTime } from '@/lib/listing-form';
 import { Modal } from '@/components/shared/Modal';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
 import PendingRequestsBanner from '@/components/provider/PendingRequestsBanner';
@@ -468,14 +468,7 @@ function PostingItem({
           >
             <span className="material-symbols-outlined text-[13px]">schedule</span>
             Đến hết{' '}
-            {new Date(listing.pickupEndTime).toLocaleString('vi-VN', {
-              hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
-            })}
-            {listing.dailyStartMinute != null && listing.dailyEndMinute != null && (
-              <span className="text-neutral-400">
-                {' '}· mở {minuteToHHmm(listing.dailyStartMinute)}–{minuteToHHmm(listing.dailyEndMinute)}
-              </span>
-            )}
+            {formatVietnamDateTime(listing.pickupEndTime).replace(/\/\d{4} /, ' ')}
           </span>
         </div>
 

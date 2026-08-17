@@ -623,7 +623,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
             <h1 className="font-bold text-4xl text-emerald-400 italic tracking-tight">FoodResQ</h1>
             <div className="h-1 w-16 bg-emerald-100 rounded-full mt-2"></div>
           </div>
-đầu bếp
           <h2 className="font-bold text-4xl mb-6 leading-tight">Mọi bữa ăn đều đáng trân trọng.</h2>
           <p className="font-medium text-lg opacity-90 leading-relaxed">
             Tham gia cùng hàng ngàn người hàng xóm chia sẻ thực phẩm dư thừa, giảm thiểu lãng phí và xây dựng một cộng đồng gắn kết hơn.
