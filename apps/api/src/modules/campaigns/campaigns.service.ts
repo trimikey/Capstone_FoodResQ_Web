@@ -223,6 +223,11 @@ export class CampaignsService {
 
     // Mốc phải có mặt: giờ ca trực (nếu có), không thì giờ bắt đầu chiến dịch.
     const dueTotal = shift ? toMinutes(shift.startTime) : campaignStart;
+    const assignedDate = workDate ? this.toDateKey(workDate) : scheduledDate;
+    if (allowEarly && (nowDate < assignedDate || (nowDate === assignedDate && nowTotal < dueTotal))) {
+      return { lateMinutes: 0 };
+    }
+
     let lateMinutes = nowTotal - dueTotal;
 
     // Chiến dịch qua đêm: sau nửa đêm, `nowTotal` nhỏ hơn mốc do đã sang ngày mới.
