@@ -55,6 +55,22 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     [campaigns],
   );
 
+  // Nguyên liệu tổ chức đã khai lúc TẠO chiến dịch (supplyItems) — hiện ra để bấm
+  // là điền vào đơn, khỏi nhớ/gõ lại tên + số kg. Dữ liệu cũ có thể là mảng string.
+  const selectedCampaign = openCampaigns.find((c) => c.id === campaignId) ?? null;
+  const campaignSupplies = useMemo(() => {
+    const raw = (selectedCampaign?.supplyItems ?? []) as Array<
+      string | { name?: string; quantity?: number | null; unit?: string | null }
+    >;
+    return raw
+      .map((s) =>
+        typeof s === 'string'
+          ? { name: s, quantity: null as number | null, unit: null as string | null }
+          : { name: s.name ?? '', quantity: s.quantity ?? null, unit: s.unit ?? null },
+      )
+      .filter((s) => s.name.trim().length > 0);
+  }, [selectedCampaign]);
+
   const { data: matchResult, isLoading: matching } = useSupplierMatches(campaignId || null, {
     radiusKm,
     category: category || undefined,
@@ -212,6 +228,58 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               </p>
             )}
           </Field>
+
+          {/* Nguyên liệu chiến dịch cần — bấm 1 mục để điền nhanh tên + số kg */}
+          {campaignId && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
+                <span className="material-symbols-outlined text-[15px]">nutrition</span>
+                Nguyên liệu chiến dịch này cần
+              </p>
+              {campaignSupplies.length === 0 ? (
+                <p className="text-[11px] text-neutral-500">
+                  Chiến dịch chưa khai vật phẩm/nguyên liệu lúc tạo — nhập tay ở ô bên dưới.
+                </p>
+              ) : (
+                <>
+                  <p className="mb-2 text-[11px] text-neutral-500">
+                    Bấm một mục để điền vào đơn — dễ đối chiếu NCC nào đang có đúng thứ bếp cần.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {campaignSupplies.map((s, i) => {
+                      const active =
+                        ingredientName.trim().toLowerCase() === s.name.trim().toLowerCase();
+                      return (
+                        <button
+                          key={`${s.name}-${i}`}
+                          type="button"
+                          onClick={() => {
+                            setIngredientName(s.name);
+                            // Chỉ tự điền số lượng khi đơn vị là kg (hoặc không ghi đơn vị)
+                            if (s.quantity != null && (!s.unit || /kg/i.test(s.unit))) {
+                              setQuantityKg(String(s.quantity));
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            active
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
+                              : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
+                          }`}
+                        >
+                          {s.name}
+                          {s.quantity != null && (
+                            <span className={active ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
+                              {s.quantity} {s.unit || 'kg'}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <Field label="Phân loại thực phẩm cần hỗ trợ">
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="inp">
