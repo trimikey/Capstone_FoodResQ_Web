@@ -15,12 +15,12 @@ import { formatVnDate } from '@/lib/vn-date';
 import { errMsg } from '@/lib/utils';
 
 const TRANSPORT_LABEL: Record<string, string> = {
-  pending: 'Đang tìm shipper hệ thống',
+  pending: 'Chờ shipper chiến dịch đi nhận',
   assigned: 'Shipper đã nhận chuyến',
   heading_to_provider: 'Shipper đang đến NCC',
   picked_up: 'Đã lấy thực phẩm',
   in_transit: 'Đang giao đến bếp',
-  delivered: 'Chờ bếp xác nhận',
+  delivered: 'Hàng đã về bếp — chờ bếp xác nhận',
   received: 'Bếp đã xác nhận nhận hàng',
   failed: 'Giao hàng thất bại',
   cancelled: 'Đã chuyển sang shipper chiến dịch đi nhận',
@@ -254,7 +254,10 @@ function TransportRow({
         <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-700 space-y-1">
           <p className="flex items-center gap-1.5 font-bold">
             <span className="material-symbols-outlined text-[15px]">local_shipping</span>
-            {TRANSPORT_LABEL[transport.status] ?? transport.status}
+            {/* Đơn cũ còn delivery pool thì 'pending' nghĩa là đang tìm hệ thống */}
+            {transport.status === 'pending' && transport.deliveryId
+              ? 'Đang tìm shipper hệ thống'
+              : TRANSPORT_LABEL[transport.status] ?? transport.status}
           </p>
           {shipperName ? (
             <p>
@@ -269,7 +272,11 @@ function TransportRow({
               )}
             </p>
           ) : transport.status === 'pending' ? (
-            <p className="text-neutral-500">Hệ thống đang mời tuần tự shipper gần NCC nhất.</p>
+            <p className="text-neutral-500">
+              {transport.deliveryId
+                ? 'Hệ thống đang mời tuần tự shipper gần NCC nhất.'
+                : 'Phân công shipper chiến dịch bên dưới — shipper lấy hàng xong sẽ chụp ảnh xác nhận số kg trong màn nhiệm vụ.'}
+            </p>
           ) : null}
           {transport.failureReason && (
             <p className="text-rose-600">Lý do thất bại: {transport.failureReason}</p>

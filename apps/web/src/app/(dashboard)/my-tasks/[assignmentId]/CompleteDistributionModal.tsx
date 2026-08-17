@@ -25,7 +25,6 @@ interface Props {
   campaignId: string;
   roundLabel: string | null;
   plannedServings: number;
-  plannedPeople: number;
   points: DistributionPoint[];
   onClose: () => void;
   onDone: () => void;
@@ -36,14 +35,12 @@ export default function CompleteDistributionModal({
   campaignId,
   roundLabel,
   plannedServings,
-  plannedPeople,
   points,
   onClose,
   onDone,
 }: Props) {
   const complete = useCompleteDistribution();
   const [servings, setServings] = useState(String(plannedServings));
-  const [people, setPeople] = useState(String(Math.min(plannedPeople, plannedServings)));
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showMap, setShowMap] = useState(true);
@@ -53,7 +50,6 @@ export default function CompleteDistributionModal({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const s = Number(servings);
-  const p = Number(people);
   const leftover = Number.isFinite(s) ? Math.max(0, plannedServings - s) : 0;
   const pinned = points.filter(
     (pt): pt is DistributionPoint & { lng: number; lat: number } =>
@@ -67,11 +63,6 @@ export default function CompleteDistributionModal({
     } else if (s > plannedServings) {
       next.servings = `Không thể vượt ${plannedServings} suất đã nhận`;
     }
-    if (!people.trim() || !Number.isInteger(p) || p < 0) {
-      next.people = 'Nhập số nguyên ≥ 0';
-    } else if (!next.servings && p > s) {
-      next.people = `Không thể nhiều hơn ${s} suất đã phát`;
-    }
     if (!proofFile) {
       next.proof = 'Chụp hoặc tải ảnh làm bằng chứng phân phát';
     }
@@ -79,11 +70,11 @@ export default function CompleteDistributionModal({
     if (Object.keys(next).length > 0) return;
 
     try {
+      // QUY TẮC: 1 suất = 1 người — BE tự ép số người = số suất, không gửi riêng.
       await complete.mutateAsync({
         distributionId,
         campaignId,
         actualServings: s,
-        actualPeopleServed: p,
         note: note.trim() || undefined,
         proofPhoto: proofFile!,
       });
@@ -152,42 +143,28 @@ export default function CompleteDistributionModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">
-            Số suất đã phát <span className="text-rose-500">*</span>
-            <input
-              type="number"
-              min={0}
-              max={plannedServings}
-              value={servings}
-              onChange={(e) => {
-                setServings(e.target.value);
-                setErrors((p2) => ({ ...p2, servings: '' }));
-              }}
-              className={`input-base ${errors.servings ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
-            />
-            {errors.servings && (
-              <p className="text-[11px] font-semibold normal-case text-rose-600">{errors.servings}</p>
-            )}
-          </label>
-
-          <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">
-            Số người nhận <span className="text-rose-500">*</span>
-            <input
-              type="number"
-              min={0}
-              value={people}
-              onChange={(e) => {
-                setPeople(e.target.value);
-                setErrors((p2) => ({ ...p2, people: '' }));
-              }}
-              className={`input-base ${errors.people ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
-            />
-            {errors.people && (
-              <p className="text-[11px] font-semibold normal-case text-rose-600">{errors.people}</p>
-            )}
-          </label>
-        </div>
+        <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">
+          Số suất đã phát <span className="text-rose-500">*</span>
+          <input
+            type="number"
+            min={0}
+            max={plannedServings}
+            value={servings}
+            onChange={(e) => {
+              setServings(e.target.value);
+              setErrors((p2) => ({ ...p2, servings: '' }));
+            }}
+            className={`input-base ${errors.servings ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
+          />
+          {errors.servings && (
+            <p className="text-[11px] font-semibold normal-case text-rose-600">{errors.servings}</p>
+          )}
+          {/* 1 suất = 1 người — không còn ô nhập số người riêng, tránh số liệu lệch */}
+          <p className="text-[11px] font-semibold normal-case text-neutral-500">
+            Mỗi suất phát cho đúng 1 người — hệ thống tự ghi{' '}
+            <b>{Number.isInteger(s) && s >= 0 ? s : 0} người nhận</b> theo số suất.
+          </p>
+        </label>
 
         {leftover > 0 && (
           <p className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">

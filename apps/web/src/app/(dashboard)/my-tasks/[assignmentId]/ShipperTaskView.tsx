@@ -369,7 +369,6 @@ export default function ShipperTaskView({ detail, onCheckedIn }: Props) {
           campaignId={campaign.id}
           roundLabel={closing.roundLabel}
           plannedServings={closing.servingsServed}
-          plannedPeople={closing.peopleServed}
           points={closing.points}
           onClose={() => setClosing(null)}
           onDone={onCheckedIn}

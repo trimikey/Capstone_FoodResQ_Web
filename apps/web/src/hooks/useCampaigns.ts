@@ -1049,16 +1049,15 @@ export function useCompleteDistribution() {
     mutationFn: async (p: {
       distributionId: string;
       campaignId?: string;
-      /** Số suất THỰC PHÁT — bỏ trống thì BE lấy đúng số đã lên kế hoạch. */
+      /** Số suất THỰC PHÁT — bỏ trống thì BE lấy đúng số đã lên kế hoạch.
+       *  Số người KHÔNG gửi nữa: 1 suất = 1 người, BE tự ép bằng số suất. */
       actualServings?: number;
-      actualPeopleServed?: number;
       note?: string;
       /** Ảnh bằng chứng phân phát (multipart field `photo`). */
       proofPhoto?: File;
     }) => {
       const form = new FormData();
       if (p.actualServings != null) form.append('actualServings', String(p.actualServings));
-      if (p.actualPeopleServed != null) form.append('actualPeopleServed', String(p.actualPeopleServed));
       if (p.note) form.append('note', p.note);
       if (p.proofPhoto) form.append('photo', p.proofPhoto);
       return (await api.post(`/campaigns/distributions/${p.distributionId}/complete`, form, {

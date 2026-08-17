@@ -103,6 +103,9 @@ type CampaignData = {
     roundLabel?: string | null;
     servingsServed: number;
     peopleServed: number;
+    /** Số THỰC TẾ shipper báo lúc chốt — FE ưu tiên hiển thị khi completedAt có giá trị. */
+    actualServings?: number | null;
+    actualPeopleServed?: number | null;
     leftoverServings: number;
     /** TNV đứng tên chính — người đầu tiên trong `assignees`. */
     servedBy: string;

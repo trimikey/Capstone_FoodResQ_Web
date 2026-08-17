@@ -355,7 +355,6 @@ function DistTab({ campaignId, canAdd }: { campaignId: string; canAdd: boolean }
 
   const [roundLabel, setRound] = useState('');
   const [servings, setServings] = useState('');
-  const [people, setPeople] = useState('');
   const [leftover, setLeftover] = useState('');
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<File | undefined>();
@@ -364,15 +363,16 @@ function DistTab({ campaignId, canAdd }: { campaignId: string; canAdd: boolean }
   const [fbComment, setFbComment] = useState('');
 
   async function doAdd() {
-    if (!servings || !people) { toast.error('Nhập số suất & số người.'); return; }
+    if (!servings) { toast.error('Nhập số suất đã phát.'); return; }
     try {
+      // QUY TẮC: 1 suất = 1 người — số người luôn bằng số suất, không nhập tay.
       await create.mutateAsync({
         campaignId, roundLabel: roundLabel || undefined,
-        servingsServed: Number(servings), peopleServed: Number(people),
+        servingsServed: Number(servings), peopleServed: Number(servings),
         leftoverServings: leftover ? Number(leftover) : undefined, note: note || undefined, photo,
       });
       toast.success('Đã ghi đợt phân phát.');
-      setRound(''); setServings(''); setPeople(''); setLeftover(''); setNote(''); setPhoto(undefined);
+      setRound(''); setServings(''); setLeftover(''); setNote(''); setPhoto(undefined);
     } catch (e) { toast.error(errMsg(e, 'Ghi phân phát thất bại')); }
   }
 
@@ -407,10 +407,10 @@ function DistTab({ campaignId, canAdd }: { campaignId: string; canAdd: boolean }
         <div className="bg-white rounded-2xl border border-neutral-150 p-4 space-y-2">
           <input className="input-base !py-1.5 text-sm" placeholder="Tên đợt (VD: Đợt 1 - 11h)" value={roundLabel} onChange={(e) => setRound(e.target.value)} />
           <div className="flex gap-2">
-            <input type="number" min={0} className="input-base !py-1.5 text-sm flex-1" placeholder="Số suất" value={servings} onChange={(e) => setServings(e.target.value)} />
-            <input type="number" min={0} className="input-base !py-1.5 text-sm flex-1" placeholder="Số người" value={people} onChange={(e) => setPeople(e.target.value)} />
+            <input type="number" min={0} className="input-base !py-1.5 text-sm flex-1" placeholder="Số suất (= số người)" value={servings} onChange={(e) => setServings(e.target.value)} />
             <input type="number" min={0} className="input-base !py-1.5 text-sm flex-1" placeholder="Thừa" value={leftover} onChange={(e) => setLeftover(e.target.value)} />
           </div>
+          <p className="text-[11px] text-neutral-400">Mỗi suất phát cho đúng 1 người — số người nhận tự ghi bằng số suất.</p>
           <input className="input-base !py-1.5 text-sm" placeholder="Ghi chú" value={note} onChange={(e) => setNote(e.target.value)} />
           <div className="flex items-center gap-2">
             <label className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-neutral-300 text-xs text-neutral-500 cursor-pointer">

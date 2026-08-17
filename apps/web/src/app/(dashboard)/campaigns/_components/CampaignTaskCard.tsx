@@ -249,6 +249,13 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
               </li>
             ))}
           </ul>
+          {/* Đồng bộ với luồng đi phát: shipper tự xác nhận hoàn thành — nút chụp
+              ảnh + số kg thực nhận nằm trong màn nhiệm vụ ("Vào nhiệm vụ"). */}
+          <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-sky-700">
+            <span className="material-symbols-outlined text-[13px]">photo_camera</span>
+            Lấy hàng xong, bấm &quot;Vào nhiệm vụ&quot; để chụp ảnh xác nhận số kg thực nhận — bếp
+            sẽ chốt và báo NCC.
+          </p>
         </div>
       )}
 

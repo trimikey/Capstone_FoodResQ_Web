@@ -143,11 +143,13 @@ export default function DistributionPage() {
     }
     const rows = [
       ['Đợt', 'Thời gian', 'Số suất', 'Người nhận', 'Phụ trách', 'Còn dư'],
+      // Đợt đã chốt xuất số THỰC TẾ shipper báo (1 suất = 1 người); đợt đang
+      // chờ vẫn là số kế hoạch.
       ...list.map((d) => [
         d.roundLabel || `Đợt #${d.id.slice(0, 6)}`,
         new Date(d.distributedAt).toLocaleString('vi-VN'),
-        String(d.servingsServed),
-        String(d.peopleServed),
+        String(d.completedAt ? (d.actualServings ?? d.servingsServed) : d.servingsServed),
+        String(d.completedAt ? (d.actualPeopleServed ?? d.peopleServed) : d.peopleServed),
         d.servedBy,
         String(d.leftoverServings ?? 0),
       ]),
@@ -349,8 +351,12 @@ export default function DistributionPage() {
                             {new Date(d.distributedAt).toLocaleDateString('vi-VN')}
                           </p>
                         </td>
-                        <td className="font-extrabold">{d.servingsServed}</td>
-                        <td>{d.peopleServed}</td>
+                        {/* Đợt đã chốt hiển thị số THỰC TẾ shipper báo (1 suất = 1 người);
+                            đợt đang chờ là số kế hoạch. */}
+                        <td className="font-extrabold">
+                          {d.completedAt ? (d.actualServings ?? d.servingsServed) : d.servingsServed}
+                        </td>
+                        <td>{d.completedAt ? (d.actualPeopleServed ?? d.peopleServed) : d.peopleServed}</td>
                         <td>
                           <div className="flex items-center gap-2">
                             <span className="cm-dist-table-avatar">{initials}</span>

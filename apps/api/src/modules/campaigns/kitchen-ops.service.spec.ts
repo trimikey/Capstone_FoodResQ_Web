@@ -67,21 +67,25 @@ describe('KitchenOpsService', () => {
         campaignId: 'campaign-1',
         servedByVolunteerId: 'waiter-1',
         servingsServed: 20,
-        peopleServed: 18,
+        // 1 suất = 1 người: số người bị ép bằng số suất, bỏ qua giá trị client gửi
+        peopleServed: 20,
       }),
     }));
     expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a distribution where people served exceeds portions', async () => {
+  it('forces people served to equal portions even when client sends a mismatch', async () => {
     allowWaiter();
     prisma.kitchenCampaign.findUnique.mockResolvedValue({ status: 'in_progress' });
+    prisma.mealDistribution.create.mockResolvedValue({ id: 'distribution-1' });
 
-    await expect(service.createDistribution('campaign-1', 'user-1', {
+    await service.createDistribution('campaign-1', 'user-1', {
       servingsServed: 10,
       peopleServed: 11,
-    })).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.mealDistribution.create).not.toHaveBeenCalled();
+    });
+    expect(prisma.mealDistribution.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ servingsServed: 10, peopleServed: 10 }),
+    }));
   });
 
   it('rejects one-sided distribution coordinates', async () => {

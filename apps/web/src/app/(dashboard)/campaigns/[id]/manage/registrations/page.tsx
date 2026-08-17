@@ -795,7 +795,10 @@ function DistributionRowInline({ d }: { d: NonNullable<ReturnType<typeof useMana
           {d.leftoverServings > 0 ? ` · còn dư ${d.leftoverServings}` : ''}
         </p>
       </div>
-      <span className="cm-dist-portions">{d.servingsServed} suất</span>
+      {/* Đợt đã chốt hiện số THỰC TẾ shipper báo (1 suất = 1 người); đợt chờ là kế hoạch */}
+      <span className="cm-dist-portions">
+        {d.completedAt ? (d.actualServings ?? d.servingsServed) : d.servingsServed} suất
+      </span>
       <div className="cm-dist-actions">
         <button
           type="button"
