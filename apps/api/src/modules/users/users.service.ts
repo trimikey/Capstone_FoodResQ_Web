@@ -183,46 +183,64 @@ export class UsersService {
    */
   async updateMe(userId: string, dto: UpdateMeDto) {
     try {
-      const user = await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
-          ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
-          ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl || null } : {}),
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          fullName: true,
-          avatarUrl: true,
-          role: true,
-          status: true,
-          trustScore: true,
-        },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: {
+            ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
+            ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+            ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl || null } : {}),
+          },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            avatarUrl: true,
+            role: true,
+            status: true,
+            trustScore: true,
+          },
+        });
 
-      // Địa chỉ + toạ độ nằm ở bảng profile theo role (location là geography → raw SQL)
-      const hasCoords = dto.lng != null && dto.lat != null;
-      if (dto.address !== undefined || hasCoords) {
+        // Địa chỉ + toạ độ nằm ở bảng profile theo role (location là geography → raw SQL).
+        const hasCoords = dto.lng != null && dto.lat != null;
+        if (dto.address === undefined && !hasCoords) return user;
+
         const table =
           user.role === 'provider'
             ? Prisma.raw('provider_profiles')
             : user.role === 'receiver'
               ? Prisma.raw('receiver_profiles')
               : null;
-        if (table) {
-          await this.prisma.$executeRaw(Prisma.sql`
-            UPDATE ${table}
-            SET ${dto.address !== undefined ? Prisma.sql`address = ${dto.address},` : Prisma.empty}
-                ${hasCoords ? Prisma.sql`location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
+        if (!table) return user;
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE ${table}
+          SET ${dto.address !== undefined ? Prisma.sql`address = ${dto.address},` : Prisma.empty}
+              ${hasCoords ? Prisma.sql`location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
+              updated_at = NOW()
+          WHERE user_id = ${userId}::uuid
+        `);
+
+        // Listing dùng địa chỉ và ghim riêng để receiver/bản đồ đọc trực tiếp. Đồng bộ
+        // các tin còn mở cùng transaction; các tin lịch sử giữ nguyên điểm lấy hàng lúc đó.
+        if (user.role === 'provider') {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE food_listings AS fl
+            SET ${dto.address !== undefined ? Prisma.sql`pickup_address = ${dto.address},` : Prisma.empty}
+                ${hasCoords ? Prisma.sql`pickup_location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,` : Prisma.empty}
                 updated_at = NOW()
-            WHERE user_id = ${userId}::uuid
+            FROM provider_profiles AS pp
+            WHERE fl.provider_id = pp.id
+              AND pp.user_id = ${userId}::uuid
+              AND fl.status IN ('draft', 'active', 'fully_reserved')
+              AND fl.deleted_at IS NULL
           `);
         }
-      }
 
-      return user;
+        return user;
+      });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new BadRequestException('Số điện thoại đã được sử dụng.');

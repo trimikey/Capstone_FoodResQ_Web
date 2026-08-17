@@ -153,10 +153,16 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
     expiry_time: new Date(Date.now() + 172_800_000),
   };
 
+  const transactionClient = {
+    $executeRaw: jest.fn(),
+    $queryRaw: jest.fn(),
+    receiverProfile: { update: jest.fn() },
+  };
   const prisma = {
     receiverProfile: { findUnique: jest.fn() },
     reservation: { findFirst: jest.fn() },
     $queryRaw: jest.fn(),
+    $transaction: jest.fn(),
   };
   const lock = { release: jest.fn() };
   let service: ReservationsService;
@@ -183,22 +189,195 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
     );
   };
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof transactionClient) => unknown) =>
+      callback(transactionClient),
+    );
+    transactionClient.$queryRaw.mockResolvedValue([{ id: 'reservation-1', qr_token: 'qr-token' }]);
+  });
 
   it('chặn đặt khi đang ngoài giờ mở cửa của tin', async () => {
-    // Khung 00:00–00:01 nên mọi thời điểm thực tế đều nằm ngoài
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
+    // Khung 00:00–00:01 nên 16:33 giờ VN phải bị chặn.
     service = build({ start: 0, end: 1 });
 
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
       .rejects.toThrow(/Ngoài giờ nhận hàng/);
   });
 
-  it('không áp ràng buộc khi tin cũ chưa khai báo khung giờ ngày', async () => {
+  it('cho đặt trong daily window khi pickupStartTime cũ bị lưu muộn hơn', async () => {
+    jest.useFakeTimers();
+    // 16:33 ngày 17/08 giờ VN — trong khung provider đặt 14:45–21:44.
+    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
+    service = build({ start: 885, end: 1304 });
+    // Timestamp cũ bị lệch: UI/API trước đây coi 22:00 VN mới là lúc mở.
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        ...listingBase,
+        pickup_start_time: new Date('2026-08-17T15:00:00.000Z'),
+        pickup_end_time: new Date('2026-08-18T22:00:00.000Z'),
+        daily_start_minute: 885,
+        daily_end_minute: 1304,
+      },
+    ]);
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .resolves.toMatchObject({ reservationId: 'reservation-1', qrToken: 'qr-token' });
+  });
+
+  it('giữ mốc tuyệt đối cho tin cũ chưa khai báo khung giờ ngày', async () => {
     service = build({ start: null, end: null });
 
-    // Đi qua được bước kiểm giờ → dừng ở bước sau, KHÔNG phải lỗi "ngoài giờ"
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
-      .rejects.not.toThrow(/Ngoài giờ nhận hàng/);
+      .resolves.toMatchObject({ reservationId: 'reservation-1' });
+  });
+
+  afterEach(() => jest.useRealTimers());
+});
+
+describe('ReservationsService — thời hạn QR theo cấu hình admin', () => {
+  const transactionClient = {
+    $executeRaw: jest.fn(),
+    $queryRaw: jest.fn(),
+    receiverProfile: { update: jest.fn() },
+  };
+  const prisma = {
+    receiverProfile: { findUnique: jest.fn(), updateMany: jest.fn() },
+    providerProfile: { findUnique: jest.fn() },
+    reservation: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn(),
+  };
+  const lock = { release: jest.fn() };
+
+  const createService = (qrValidMinutes: number) => {
+    const systemConfig = {
+      getNumber: jest.fn(async (key: string) =>
+        key === 'QR_VALIDITY_MINUTES' ? qrValidMinutes : 3,
+      ),
+    };
+    const service = new ReservationsService(
+      prisma as never,
+      {} as never,
+      { acquire: jest.fn().mockResolvedValue(lock) } as never,
+      {} as never,
+      {} as never,
+      systemConfig as never,
+      { notify: jest.fn() } as never,
+      { applyDelta: jest.fn() } as never,
+      { add: jest.fn() } as never,
+    );
+    return { service, systemConfig };
+  };
+
+  const prepareCreate = () => {
+    prisma.receiverProfile.findUnique.mockResolvedValue({
+      id: 'receiver-1',
+      isCharityOrg: false,
+      faceDescriptor: [1],
+      reservationsToday: 0,
+    });
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([{
+      id: 'listing-1',
+      quantity_remaining: 10,
+      status: 'active',
+      max_per_reservation: 3,
+      pickup_start_time: new Date('2026-08-16T00:00:00.000Z'),
+      pickup_end_time: new Date('2026-08-18T23:59:00.000Z'),
+      expiry_time: new Date('2026-08-18T23:59:00.000Z'),
+      daily_start_minute: null,
+      daily_end_minute: null,
+    }]);
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof transactionClient) => unknown) =>
+      callback(transactionClient),
+    );
+    transactionClient.$queryRaw.mockResolvedValue([{ id: 'reservation-1', qr_token: 'qr-token' }]);
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-17T09:00:00.000Z'));
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it.each([15, 45])('lưu và trả đúng hạn QR %i phút do admin cấu hình', async (qrValidMinutes) => {
+    prepareCreate();
+    const { service, systemConfig } = createService(qrValidMinutes);
+    const expectedExpiresAt = new Date('2026-08-17T09:00:00.000Z');
+    expectedExpiresAt.setMinutes(expectedExpiresAt.getMinutes() + qrValidMinutes);
+
+    const result = await service.create(
+      'receiver-user-1',
+      { listingId: 'listing-1', quantity: 1 } as never,
+    );
+
+    expect(result).toMatchObject({
+      reservationId: 'reservation-1',
+      qrToken: 'qr-token',
+      qrExpiresAt: expectedExpiresAt,
+    });
+    expect(systemConfig.getNumber).toHaveBeenCalledWith('QR_VALIDITY_MINUTES');
+
+    const insertQuery = transactionClient.$queryRaw.mock.calls[0][0] as { values: unknown[] };
+    expect(insertQuery.values).toContain(expectedExpiresAt.toISOString());
+  });
+
+  it('từ chối quét QR tự đến lấy đã quá hạn và tự đóng đơn', async () => {
+    const { service } = createService(30);
+    const expiredReservation = {
+      id: 'reservation-1',
+      bulkRunStopId: null,
+      status: 'confirmed',
+      qrExpiresAt: new Date('2026-08-17T08:59:59.000Z'),
+    };
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(expiredReservation)
+      .mockResolvedValueOnce({ quantity: 1, listingId: 'listing-1', receiverId: 'receiver-1' });
+    prisma.$transaction.mockResolvedValue([]);
+
+    await expect(service.scanQr('a'.repeat(64), 'provider-user-1'))
+      .rejects.toThrow('Mã QR đã hết hạn');
+
+    expect(prisma.reservation.update).toHaveBeenCalledWith({
+      where: { id: 'reservation-1' },
+      data: { status: 'expired' },
+    });
+  });
+
+  it('cho quét QR tự đến lấy còn hạn', async () => {
+    const { service } = createService(30);
+    prisma.reservation.findUnique.mockResolvedValue({
+      id: 'reservation-1',
+      bulkRunStopId: null,
+      status: 'confirmed',
+      qrExpiresAt: new Date('2026-08-17T09:00:01.000Z'),
+      quantity: 1,
+      listing: { providerId: 'provider-1', title: 'Bánh mì', quantityUnit: 'phần' },
+      receiver: {
+        userId: 'receiver-user-1',
+        faceImageUrl: null,
+        idCardImageUrl: null,
+        idCardNumber: null,
+        faceDescriptor: [1],
+        user: { fullName: 'Người nhận', phone: '0900000000', avatarUrl: null },
+      },
+    });
+    prisma.providerProfile.findUnique.mockResolvedValue({ id: 'provider-1' });
+
+    await expect(service.scanQr('a'.repeat(64), 'provider-user-1'))
+      .resolves.toMatchObject({ id: 'reservation-1', status: 'confirmed' });
+
+    expect(prisma.reservation.update).not.toHaveBeenCalled();
   });
 });
 
