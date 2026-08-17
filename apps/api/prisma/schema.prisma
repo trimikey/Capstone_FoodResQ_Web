@@ -1424,6 +1424,12 @@ model CampaignDishStep {
   qcFailedAt             DateTime?              @map("qc_failed_at") @db.Timestamptz
   qcFailedByVolunteerId  String?                @map("qc_failed_by_volunteer_id") @db.Uuid
   qcFailureReason        String?                @map("qc_failure_reason") @db.VarChar(500)
+  /// Duyệt ảnh khâu QC (stepOrder=3) bởi TỔ CHỨC: chef chụp ảnh xong → 'pending';
+  /// tổ chức duyệt → 'approved' (mới mở được khâu 4); từ chối → 'rejected' + khâu 3
+  /// quay về available để chef chụp lại.
+  reviewStatus           String?                @map("review_status") @db.VarChar(20)
+  reviewedAt             DateTime?              @map("reviewed_at") @db.Timestamptz
+  reviewNote             String?                @map("review_note") @db.VarChar(500)
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 

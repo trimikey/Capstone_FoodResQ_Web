@@ -882,6 +882,12 @@ function DishProcessBoard({
             onTick={() => onTick(step)}
             pending={pending}
             prevStepDone={idx === 0 || dish.steps[idx - 1]?.effectiveStatus === 'done'}
+            // Khâu 4 bị giữ vì ảnh QC (khâu 3) chưa được tổ chức duyệt
+            awaitingQcReview={
+              step.stepOrder === 4 &&
+              dish.steps[idx - 1]?.effectiveStatus === 'done' &&
+              dish.steps[idx - 1]?.reviewStatus !== 'approved'
+            }
             myAvatarUrl={myAvatarUrl}
             myName={myName}
             onEmergencyBreak={
@@ -902,6 +908,7 @@ function StepCell({
   onTick,
   pending,
   prevStepDone,
+  awaitingQcReview,
   myAvatarUrl,
   myName,
   onEmergencyBreak,
@@ -911,6 +918,8 @@ function StepCell({
   onTick: () => void;
   pending: boolean;
   prevStepDone: boolean;
+  /** true khi khâu 4 bị giữ vì ảnh QC chưa được tổ chức duyệt. */
+  awaitingQcReview?: boolean;
   myAvatarUrl: string | null;
   myName: string;
   onEmergencyBreak?: () => void;
@@ -1017,27 +1026,52 @@ function StepCell({
       )}
 
       {isDone ? (
-        <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold">
-          {completedBy?.user.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={mediaUrl(completedBy.user.avatarUrl)} alt="" className="w-5 h-5 rounded-full object-cover" />
-          ) : myAvatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={mediaUrl(myAvatarUrl)} alt="" className="w-5 h-5 rounded-full object-cover" />
-          ) : (
-            <span className="w-5 h-5 rounded-full bg-emerald-200 flex items-center justify-center text-[10px]">
-              {(completedByLabel ?? 'B').charAt(0).toUpperCase()}
-            </span>
+        <>
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold">
+            {completedBy?.user.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl(completedBy.user.avatarUrl)} alt="" className="w-5 h-5 rounded-full object-cover" />
+            ) : myAvatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl(myAvatarUrl)} alt="" className="w-5 h-5 rounded-full object-cover" />
+            ) : (
+              <span className="w-5 h-5 rounded-full bg-emerald-200 flex items-center justify-center text-[10px]">
+                {(completedByLabel ?? 'B').charAt(0).toUpperCase()}
+              </span>
+            )}
+            <span>{completedByLabel} đã xong</span>
+          </div>
+          {/* Khâu QC: ảnh phải được TỔ CHỨC duyệt thì khâu 4 mới mở */}
+          {isQCStep && step.reviewStatus === 'pending' && (
+            <p className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5 text-[11px] font-bold text-amber-800 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">hourglass_top</span>
+              Chờ tổ chức duyệt ảnh
+            </p>
           )}
-          <span>{completedByLabel} đã xong</span>
-        </div>
+          {isQCStep && step.reviewStatus === 'approved' && (
+            <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">verified</span>
+              Tổ chức đã duyệt ảnh
+            </p>
+          )}
+        </>
       ) : isLocked ? (
         <p className="text-[11px] text-neutral-500 flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">lock</span>
-          {!prevStepDone ? 'Chờ khâu trước hoàn thành' : `Chờ đến ${step.scheduledTime}`}
+          {awaitingQcReview
+            ? 'Chờ tổ chức duyệt ảnh QC'
+            : !prevStepDone
+              ? 'Chờ khâu trước hoàn thành'
+              : `Chờ đến ${step.scheduledTime}`}
         </p>
       ) : (
         <div className="flex flex-col gap-1.5 mt-1">
+          {/* Khâu QC bị tổ chức từ chối → hiện lý do để chef chỉnh và chụp lại */}
+          {isQCStep && step.reviewStatus === 'rejected' && (
+            <p className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1.5 text-[11px] font-semibold text-rose-700">
+              Tổ chức từ chối ảnh QC{step.reviewNote ? `: ${step.reviewNote}` : ''} — kiểm tra lại món và chụp ảnh mới.
+            </p>
+          )}
           <button
             type="button"
             onClick={onTick}

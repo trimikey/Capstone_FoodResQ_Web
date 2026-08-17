@@ -2422,9 +2422,11 @@ export class CampaignsService {
       plannedSummary,
       shifts: campaign.shifts,
       menuItemRefs: campaign.menuItemRefs,
-      // Dish steps để tổ chức duyệt QC món (chef tick "Sẵn sàng phát xuất" xong)
+      // Dish steps để tổ chức theo dõi quy trình bếp + duyệt ảnh QC.
+      // getStepsForCampaign trả {dishes, cookingTeam, safetyLogs} — FE khai báo
+      // dishSteps là DishProcessItem[] nên chỉ lấy .dishes.
       dishSteps: campaign.status === 'in_progress'
-        ? await this.dishSteps.getStepsForCampaign(id, userId)
+        ? (await this.dishSteps.getStepsForCampaign(id, userId)).dishes
         : [],
     };
   }

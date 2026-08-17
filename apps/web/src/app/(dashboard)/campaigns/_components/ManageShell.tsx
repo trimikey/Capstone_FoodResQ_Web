@@ -13,6 +13,7 @@ import {
   useCompleteCampaign,
   useCancelCampaign,
   type CampaignManageParticipant,
+  type DishProcessItem,
   type DistributionPoint,
   type StaffingReadiness,
 } from '@/hooks/useCampaigns';
@@ -53,11 +54,12 @@ export function daysUntilUtc(input: string | Date | null | undefined, ref = new 
   return Math.round((a - b) / 86_400_000);
 }
 
-type NavKey = 'progress' | 'registrations' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'status';
+type NavKey = 'progress' | 'registrations' | 'kitchen' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'status';
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'progress', label: 'Tổng quan', icon: 'monitoring' },
   { key: 'registrations', label: 'Đăng ký chờ duyệt', icon: 'pending_actions' },
+  { key: 'kitchen', label: 'Quy trình bếp', icon: 'skillet' },
   { key: 'distribution', label: 'Phân phối suất ăn', icon: 'takeout_dining' },
   { key: 'logistics', label: 'Giao & nhận hàng', icon: 'local_shipping' },
   { key: 'menu', label: 'Thực đơn & Vật phẩm', icon: 'restaurant_menu' },
@@ -68,6 +70,7 @@ const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
 const NAV_PATH: Record<NavKey, string | null> = {
   progress: null,
   registrations: 'registrations',
+  kitchen: 'kitchen',
   distribution: 'distribution',
   logistics: 'logistics',
   menu: 'menu',
@@ -154,6 +157,8 @@ type CampaignData = {
   supplyItems?:
     | string[]
     | Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  /** Quy trình bếp: món + 4 khâu + ảnh bằng chứng (chỉ có khi in_progress). */
+  dishSteps?: DishProcessItem[];
   scheduledDate?: string;
   endDate?: string | null;
   startTime?: string;
@@ -195,6 +200,7 @@ export function ManageShell({
   const activeKey: NavKey = useMemo(() => {
     if (!pathname) return 'progress';
     if (pathname.endsWith('/registrations')) return 'registrations';
+    if (pathname.endsWith('/kitchen')) return 'kitchen';
     if (pathname.endsWith('/distribution')) return 'distribution';
     if (pathname.endsWith('/logistics')) return 'logistics';
     if (pathname.endsWith('/menu')) return 'menu';
@@ -458,6 +464,10 @@ function RecruitmentReadinessPanel({
   const startCampaign = useStartCampaign();
   const [newDeadline, setNewDeadline] = useState('');
   const [continueRecruiting, setContinueRecruiting] = useState(false);
+  // Bảng ma trận ngày·ca·vai trò có thể rất dài — mặc định thu gọn thành 1 dòng
+  // tóm tắt, bấm "Xem chi tiết từng ca" mới xổ bảng đầy đủ.
+  const [showMatrix, setShowMatrix] = useState(false);
+  const shiftsEligible = readiness.matrix.filter((row) => row.eligibleToStart).length;
   const latest = new Date(
     new Date(readiness.operationStartAt).getTime() - readiness.recruitmentBufferHours * 3600_000,
   );
@@ -514,34 +524,63 @@ function RecruitmentReadinessPanel({
         ))}
       </div>
 
-      <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-        <p className="font-extrabold">Ngưỡng {readiness.minimumFillPercent}% được tính riêng cho từng ngày · ca · vai trò.</p>
-        <p className="mt-1">
-          Chỉ người đã bấm xác nhận ca mới được tính. Số tối thiểu được làm tròn lên, nên ca cần 1 người vẫn phải có đủ 1 người xác nhận.
-        </p>
-      </div>
+      {/* Tóm tắt ma trận ca — bấm mới xổ bảng chi tiết (danh sách có thể rất dài) */}
+      <button
+        type="button"
+        onClick={() => setShowMatrix((v) => !v)}
+        className="mt-4 flex w-full flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-left text-xs transition-colors hover:bg-neutral-100"
+      >
+        <span className="material-symbols-outlined text-[18px] text-emerald-700">table_rows</span>
+        <span className="font-extrabold text-neutral-800">Chi tiết từng ngày · ca · vai trò</span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+            shiftsEligible === readiness.matrix.length
+              ? 'bg-emerald-100 text-emerald-800'
+              : 'bg-amber-100 text-amber-800'
+          }`}
+        >
+          {shiftsEligible}/{readiness.matrix.length} ca đạt ngưỡng
+        </span>
+        <span className="ml-auto inline-flex items-center gap-0.5 font-bold text-emerald-700">
+          {showMatrix ? 'Thu gọn' : 'Xem chi tiết'}
+          <span className="material-symbols-outlined text-[16px]">
+            {showMatrix ? 'expand_less' : 'expand_more'}
+          </span>
+        </span>
+      </button>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[620px] text-xs">
-          <thead><tr className="border-b text-left text-neutral-500"><th className="p-2">Ngày</th><th className="p-2">Ca</th><th className="p-2">Vai trò</th><th className="p-2">Phân công / xác nhận</th><th className="p-2">Tối thiểu</th><th className="p-2">Trạng thái</th></tr></thead>
-          <tbody>{readiness.matrix.map((row) => (
-            <tr key={`${row.workDate}:${row.shiftId}`} className="border-b last:border-0">
-              <td className="p-2">{new Date(`${row.workDate}T00:00:00+07:00`).toLocaleDateString('vi-VN')}</td>
-              <td className="p-2 font-bold">{row.label}</td>
-              <td className="p-2">{ROLE_LABEL[row.role ?? ''] ?? 'Cần rà soát'}</td>
-              <td className="p-2 font-bold">
-                <span className="text-neutral-800">{row.assigned}/{row.minRequired}</span>
-                <span className="text-neutral-400"> · </span>
-                <span className={row.confirmed >= row.minimumRequired ? 'text-emerald-700' : 'text-amber-700'}>
-                  {row.confirmed}/{row.minRequired}
-                </span>
-              </td>
-              <td className="p-2 font-bold">{row.minimumRequired} người ({readiness.minimumFillPercent}%)</td>
-              <td className={`p-2 font-bold ${row.eligibleToStart ? 'text-emerald-700' : 'text-amber-700'}`}>{row.ready ? 'Đủ 100%' : row.eligibleToStart ? `Đạt ${row.fillPercent}%` : `Thiếu ${Math.max(0, row.minimumRequired - row.confirmed)} để đạt ngưỡng`}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
+      {showMatrix && (
+        <>
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            <p className="font-extrabold">Ngưỡng {readiness.minimumFillPercent}% được tính riêng cho từng ngày · ca · vai trò.</p>
+            <p className="mt-1">
+              Chỉ người đã bấm xác nhận ca mới được tính. Số tối thiểu được làm tròn lên, nên ca cần 1 người vẫn phải có đủ 1 người xác nhận.
+            </p>
+          </div>
+
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[620px] text-xs">
+              <thead><tr className="border-b text-left text-neutral-500"><th className="p-2">Ngày</th><th className="p-2">Ca</th><th className="p-2">Vai trò</th><th className="p-2">Phân công / xác nhận</th><th className="p-2">Tối thiểu</th><th className="p-2">Trạng thái</th></tr></thead>
+              <tbody>{readiness.matrix.map((row) => (
+                <tr key={`${row.workDate}:${row.shiftId}`} className="border-b last:border-0">
+                  <td className="p-2">{new Date(`${row.workDate}T00:00:00+07:00`).toLocaleDateString('vi-VN')}</td>
+                  <td className="p-2 font-bold">{row.label}</td>
+                  <td className="p-2">{ROLE_LABEL[row.role ?? ''] ?? 'Cần rà soát'}</td>
+                  <td className="p-2 font-bold">
+                    <span className="text-neutral-800">{row.assigned}/{row.minRequired}</span>
+                    <span className="text-neutral-400"> · </span>
+                    <span className={row.confirmed >= row.minimumRequired ? 'text-emerald-700' : 'text-amber-700'}>
+                      {row.confirmed}/{row.minRequired}
+                    </span>
+                  </td>
+                  <td className="p-2 font-bold">{row.minimumRequired} người ({readiness.minimumFillPercent}%)</td>
+                  <td className={`p-2 font-bold ${row.eligibleToStart ? 'text-emerald-700' : 'text-amber-700'}`}>{row.ready ? 'Đủ 100%' : row.eligibleToStart ? `Đạt ${row.fillPercent}%` : `Thiếu ${Math.max(0, row.minimumRequired - row.confirmed)} để đạt ngưỡng`}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {!readiness.eligibleToStart && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">

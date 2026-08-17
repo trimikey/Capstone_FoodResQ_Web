@@ -27,6 +27,8 @@ export interface Campaign {
   actualServings?: number | null;
   distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
   peopleServed?: number;
+  /** Nguyên liệu/vật phẩm khai lúc tạo chiến dịch — BE trả nguyên JSONB (bản cũ có thể là string[]). */
+  supplyItems?: Array<string | { name?: string; quantity?: number | null; unit?: string | null }>;
   charityReceiver?: { organizationName: string | null; user: { fullName: string } };
   assignments?: {
     id: string;
@@ -1229,6 +1231,11 @@ export interface DishStep {
   /// Step vẫn tồn tại trong flow (không xoá); UI hiển thị banner đỏ.
   qcFailedAt?: string | null;
   qcFailureReason?: string | null;
+  /// Duyệt ảnh khâu QC (stepOrder=3) bởi tổ chức — 'pending' sau khi chef chụp,
+  /// 'approved' mới mở khâu 4, 'rejected' kèm reviewNote để chef chụp lại.
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
   qcFailedByVolunteer?: {
     user: { fullName: string; avatarUrl: string | null };
   } | null;
@@ -1642,6 +1649,33 @@ export function useSetDishStepTimes() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'public', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
+/**
+ * Tổ chức: duyệt / từ chối ẢNH khâu QC (khâu 3) chef đã tải lên.
+ * Duyệt xong khâu 4 "Sẵn sàng phát xuất" mới mở; từ chối → khâu QC về lại
+ * available để chef chụp lại (reason bắt buộc khi reject).
+ */
+export function useReviewQcStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      campaignId: string;
+      stepId: string;
+      action: 'approve' | 'reject';
+      reason?: string;
+    }) => {
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/review`,
+        { action: p.action, reason: p.reason },
+      );
+      return data.data as { id: string; reviewStatus: string; dishName: string };
+    },
+    onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
     },

@@ -269,7 +269,9 @@ export class DishStepsService {
         }
         // prevDone cho vòng lặp kế tiếp dựa trên DB status hiện tại
         // (không tính các step vừa push vào toOpen vì chưa commit).
-        prevDone = s.status === 'done';
+        // Khâu QC (3) done nhưng ảnh chưa được tổ chức duyệt → khâu 4 vẫn khoá.
+        prevDone =
+          s.status === 'done' && (s.stepOrder !== 3 || s.reviewStatus === 'approved');
       }
     }
 
@@ -319,15 +321,21 @@ export class DishStepsService {
       throw new NotFoundException('Không tìm thấy chiến dịch.');
     }
 
-    // Tính lại trạng thái hiệu lực (đến giờ + khâu trước done?)
+    // Tính lại trạng thái hiệu lực (đến giờ + khâu trước done?). Khâu 4 còn đòi
+    // thêm: ảnh QC khâu 3 phải được TỔ CHỨC duyệt rồi mới được làm.
     const prevStep = await this.prisma.campaignDishStep.findFirst({
       where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder - 1 },
-      select: { status: true },
+      select: { status: true, reviewStatus: true },
     });
-    const effective = this.computeEffectiveStatus(step, prevStep?.status === 'done', step.stepOrder === 1, campaignTiming);
+    const prevOk =
+      prevStep?.status === 'done' &&
+      (step.stepOrder !== 4 || prevStep.reviewStatus === 'approved');
+    const effective = this.computeEffectiveStatus(step, prevOk, step.stepOrder === 1, campaignTiming);
     if (effective === 'locked') {
       throw new BadRequestException(
-        'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
+        step.stepOrder === 4 && prevStep?.status === 'done' && prevStep.reviewStatus !== 'approved'
+          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng phát xuất.'
+          : 'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
       );
     }
     if (step.status === 'done') {
@@ -336,6 +344,7 @@ export class DishStepsService {
 
     const proofUrl = await this.storage.saveImage(proof, 'dish-step-proofs');
 
+    const isQcStep = step.stepOrder === 3;
     const updated = await this.prisma.campaignDishStep.update({
       where: { id: stepId },
       data: {
@@ -345,22 +354,42 @@ export class DishStepsService {
         proofUrl,
         note: note ?? null,
         openedAt: step.openedAt ?? new Date(),
+        // Khâu QC: ảnh vừa up phải chờ tổ chức duyệt (kể cả khi chụp lại sau khi bị từ chối)
+        ...(isQcStep ? { reviewStatus: 'pending', reviewedAt: null, reviewNote: null } : {}),
       },
     });
 
-    // Tự động mở khoá step kế tiếp (nếu đã đến giờ).
-    const nextStep = await this.prisma.campaignDishStep.findFirst({
-      where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder + 1 },
-      select: { id: true, scheduledTime: true, status: true },
-    });
-    if (nextStep && nextStep.status !== 'done') {
-      const now = Math.floor((Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000) / 60_000) % (24 * 60);
-      const scheduled = vnHhmmToTotalMinutes(nextStep.scheduledTime);
-      if (now >= scheduled) {
-        await this.prisma.campaignDishStep.update({
-          where: { id: nextStep.id },
-          data: { status: 'available', openedAt: new Date() },
-        });
+    if (isQcStep) {
+      // Báo tổ chức vào duyệt ảnh QC — khâu 4 bị khoá cho tới khi duyệt.
+      const menuItem = await this.prisma.campaignMenuItem.findUnique({
+        where: { id: step.menuItemId },
+        select: { customName: true, recipe: { select: { name: true } } },
+      });
+      const dishName = menuItem?.customName ?? menuItem?.recipe?.name ?? 'Món chưa đặt tên';
+      await this.notifications.notifyCampaignOwner(campaignId, {
+        type: 'campaign',
+        title: `Ảnh QC món "${dishName}" đang chờ duyệt`,
+        body:
+          `Bếp đã hoàn tất khâu QC và tải ảnh lên. Vào tab "Quy trình bếp" để duyệt — `
+          + `món chỉ được chuyển sang "Sẵn sàng phát xuất" sau khi bạn duyệt ảnh.`,
+        data: { campaignId, stepId, menuItemId: step.menuItemId },
+      });
+    } else {
+      // Tự động mở khoá step kế tiếp (nếu đã đến giờ). Khâu sau QC không tự mở —
+      // phải chờ tổ chức duyệt ảnh (reviewQcStep sẽ mở).
+      const nextStep = await this.prisma.campaignDishStep.findFirst({
+        where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder + 1 },
+        select: { id: true, scheduledTime: true, status: true },
+      });
+      if (nextStep && nextStep.status !== 'done') {
+        const now = Math.floor((Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000) / 60_000) % (24 * 60);
+        const scheduled = vnHhmmToTotalMinutes(nextStep.scheduledTime);
+        if (now >= scheduled) {
+          await this.prisma.campaignDishStep.update({
+            where: { id: nextStep.id },
+            data: { status: 'available', openedAt: new Date() },
+          });
+        }
       }
     }
 
@@ -392,6 +421,104 @@ export class DishStepsService {
         data: { status: 'completed' },
       });
     }
+  }
+
+  /**
+   * TỔ CHỨC duyệt / từ chối ẢNH khâu QC (stepOrder=3) mà chef đã tải lên.
+   *
+   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng phát xuất" được mở
+   *    (tự mở luôn nếu đã đến giờ); báo chef.
+   *  - reject:  reviewStatus='rejected' + lưu lý do; khâu 3 quay về `available`
+   *    để chef chụp lại (chụp lại xong tự về 'pending' chờ duyệt lần nữa); báo chef.
+   */
+  async reviewQcStep(
+    campaignId: string,
+    userId: string,
+    stepId: string,
+    action: 'approve' | 'reject',
+    reason?: string,
+  ) {
+    await this.assertCampaignOwner(campaignId, userId);
+
+    const step = await this.prisma.campaignDishStep.findUnique({
+      where: { id: stepId },
+      include: {
+        menuItem: { select: { customName: true, recipe: { select: { name: true } } } },
+        completedByVolunteer: { select: { userId: true } },
+      },
+    });
+    if (!step || step.campaignId !== campaignId) {
+      throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
+    }
+    if (step.stepOrder !== 3) {
+      throw new BadRequestException('Chỉ khâu QC (khâu 3) mới cần tổ chức duyệt ảnh.');
+    }
+    if (step.status !== 'done' || step.reviewStatus !== 'pending') {
+      throw new BadRequestException('Khâu này không ở trạng thái chờ duyệt ảnh.');
+    }
+
+    const dishName = step.menuItem.customName ?? step.menuItem.recipe?.name ?? 'Món chưa đặt tên';
+    const chefUserId = step.completedByVolunteer?.userId ?? null;
+
+    if (action === 'approve') {
+      const updated = await this.prisma.campaignDishStep.update({
+        where: { id: stepId },
+        data: { reviewStatus: 'approved', reviewedAt: new Date(), reviewNote: null },
+      });
+
+      // Mở luôn khâu 4 nếu đã đến giờ — chef không phải chờ cron.
+      const finalStep = await this.prisma.campaignDishStep.findFirst({
+        where: { menuItemId: step.menuItemId, stepOrder: 4 },
+        select: { id: true, scheduledTime: true, status: true },
+      });
+      if (finalStep && finalStep.status === 'locked') {
+        const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
+          where: { id: campaignId },
+          select: { scheduledDate: true, endDate: true, startTime: true, endTime: true },
+        });
+        if (campaignTiming && Date.now() >= stepDueAtUtc(campaignTiming, finalStep.scheduledTime).getTime()) {
+          await this.prisma.campaignDishStep.update({
+            where: { id: finalStep.id },
+            data: { status: 'available', openedAt: new Date() },
+          });
+        }
+      }
+
+      if (chefUserId) {
+        void this.notifications.notify(chefUserId, {
+          type: 'campaign',
+          title: `Ảnh QC món "${dishName}" đã được duyệt`,
+          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng phát xuất" khi đến giờ.',
+          data: { campaignId, stepId, menuItemId: step.menuItemId },
+        });
+      }
+      return { id: updated.id, reviewStatus: updated.reviewStatus, dishName };
+    }
+
+    // reject
+    const trimmed = reason?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Vui lòng nhập lý do từ chối để chef biết cần chụp/kiểm tra lại gì.');
+    }
+    const updated = await this.prisma.campaignDishStep.update({
+      where: { id: stepId },
+      data: {
+        reviewStatus: 'rejected',
+        reviewedAt: new Date(),
+        reviewNote: trimmed,
+        // Trả khâu 3 về available để chef làm lại — ảnh cũ vẫn giữ để đối chiếu.
+        status: 'available',
+      },
+    });
+    if (chefUserId) {
+      void this.notifications.notify(chefUserId, {
+        type: 'campaign',
+        title: `Ảnh QC món "${dishName}" bị từ chối`,
+        body: `Tổ chức từ chối ảnh QC: ${trimmed}. Vui lòng kiểm tra lại món và chụp ảnh mới.`,
+        data: { campaignId, stepId, menuItemId: step.menuItemId },
+      });
+    }
+    return { id: updated.id, reviewStatus: updated.reviewStatus, dishName };
   }
 
   /**
@@ -757,9 +884,12 @@ export class DishStepsService {
       dishes: reloaded.map((mi) => {
         const stepsWithStatus = mi.dishSteps.map((s, idx) => {
           const prev = mi.dishSteps[idx - 1];
+          // Khâu 4 chỉ mở khi khâu QC (3) done VÀ ảnh đã được tổ chức duyệt.
+          const prevOk =
+            prev?.status === 'done' && (prev.stepOrder !== 3 || prev.reviewStatus === 'approved');
           const effective = this.computeEffectiveStatus(
             s,
-            prev?.status === 'done',
+            prevOk,
             idx === 0,
             campaignTiming,
           );
