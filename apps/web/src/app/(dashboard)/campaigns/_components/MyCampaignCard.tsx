@@ -15,8 +15,8 @@ import ChangeRequestModal from './ChangeRequestModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; chip: string }> = {
-  draft: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
-  open: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
+  pending_approval: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
+  approved: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
   in_progress: { label: 'Đang diễn ra', chip: 'cm-chip cm-chip--mint' },
   completed: { label: 'Hoàn tất', chip: 'cm-chip cm-chip--mint' },
   cancelled: { label: 'Bị từ chối / huỷ', chip: 'cm-chip cm-chip--rose' },
@@ -134,14 +134,14 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
         </Link>
       </div>
 
-      {c.status === 'draft' && (
+      {c.status === 'pending_approval' && (
         <p className="text-[11px] text-honey-700 mt-3 flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
           Đang chờ quản trị viên duyệt
         </p>
       )}
 
-      {c.status === 'open' &&
+      {c.status === 'approved' &&
         (overdue ? (
           <div className="mt-3 space-y-2">
             <p className="text-[11px] text-rose-600 flex items-center gap-1">

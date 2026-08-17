@@ -6,14 +6,9 @@ import { useMyCampaigns } from '@/hooks/useCampaigns';
 export function CampaignUrgentAlerts() {
   const { data: campaigns } = useMyCampaigns();
 
-  // Tìm campaign trạng thái "open" mà có slot trống cần tuyển gấp
+  // Trạng thái tuyển là nguồn sự thật; không suy ra thiếu người từ tổng toàn chiến dịch.
   const urgent = (campaigns ?? []).filter((c) => {
-    if (c.status !== 'open') return false;
-    const totalNeeded =
-      c.chefSlotsNeeded + c.waiterSlotsNeeded + c.shipperSlotsNeeded;
-    const totalFilled =
-      c.chefSlotsFilled + c.waiterSlotsFilled + c.shipperSlotsFilled;
-    return totalFilled < totalNeeded;
+    return c.status === 'approved' && c.recruitmentStatus === 'open';
   });
 
   if (urgent.length === 0) return null;

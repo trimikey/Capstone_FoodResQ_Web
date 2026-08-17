@@ -10,6 +10,7 @@ import {
   useCampaigns,
   useMyTasks,
   useAdvanceTask,
+  useConfirmCampaignAssignment,
   type Campaign,
   type CampaignTask,
 } from '@/hooks/useCampaigns';
@@ -52,6 +53,7 @@ export default function VolunteerCampaignsScreen() {
   const openQuery = useCampaigns();
   const tasksQuery = useMyTasks(user?.role === 'volunteer');
   const advanceMut = useAdvanceTask();
+  const confirmMut = useConfirmCampaignAssignment();
 
   useFocusEffect(
     useCallback(() => {
@@ -213,7 +215,18 @@ export default function VolunteerCampaignsScreen() {
             <TaskCard
               task={item}
               advancing={advanceMut.isPending}
+              confirming={confirmMut.isPending}
               onAdvance={() => handleAdvance(item)}
+              onConfirm={(decision) => confirmMut.mutate(
+                { assignmentId: item.id, decision },
+                {
+                  onSuccess: () => Popup.show({
+                    type: 'success',
+                    text1: decision === 'confirmed' ? 'Đã xác nhận tham gia' : 'Đã từ chối ca',
+                  }),
+                  onError: (error) => Popup.show({ type: 'error', text1: 'Không cập nhật được', text2: getErrorMessage(error) }),
+                },
+              )}
               onOpen={() => openTaskDetail(item.id)}
             />
           )}
@@ -231,18 +244,23 @@ export default function VolunteerCampaignsScreen() {
 function TaskCard({
   task,
   advancing,
+  confirming,
   onAdvance,
+  onConfirm,
   onOpen,
 }: {
   task: CampaignTask;
   advancing: boolean;
+  confirming: boolean;
   onAdvance: () => void;
+  onConfirm: (decision: 'confirmed' | 'declined') => void;
   onOpen: () => void;
 }) {
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
   const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter';
+  const needsConfirmation = task.status === 'assigned' && task.confirmationStatus === 'pending';
 
   return (
     <View style={styles.taskCard}>
@@ -295,7 +313,16 @@ function TaskCard({
         })}
       </View>
 
-      {hasRoleSpecificTask ? (
+      {needsConfirmation ? (
+        <View style={styles.confirmActions}>
+          <Button mode="outlined" disabled={confirming} onPress={() => onConfirm('declined')} style={{ flex: 1 }}>
+            Từ chối
+          </Button>
+          <Button mode="contained" loading={confirming} disabled={confirming} onPress={() => onConfirm('confirmed')} style={{ flex: 1 }}>
+            Xác nhận ca
+          </Button>
+        </View>
+      ) : hasRoleSpecificTask ? (
         <Button
           mode="contained"
           icon={task.role === 'chef' ? 'chef-hat' : 'silverware-fork-knife'}
@@ -366,6 +393,7 @@ const styles = StyleSheet.create({
   },
   taskHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, marginBottom: spacing.md },
   taskTitle: { flex: 1, fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24 },
+  confirmActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 5 },
   metaText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant },
   timeline: { marginTop: spacing.md, marginBottom: spacing.sm, borderRadius: radius.xl, padding: spacing.md, backgroundColor: COLORS.indigoContainer },

@@ -41,7 +41,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 const STATUS_META: Record<string, { label: string; icon: string }> = {
   all: { label: 'Tất cả', icon: 'apps' },
-  open: { label: 'Đang tuyển', icon: 'campaign' },
+  approved: { label: 'Đang tuyển', icon: 'campaign' },
   in_progress: { label: 'Đang diễn ra', icon: 'play_circle' },
   completed: { label: 'Đã hoàn tất', icon: 'verified' },
 };
@@ -174,8 +174,8 @@ function CampaignsPageInner() {
   // === Aggregate stats for greeting / KPI ===
   const stats = useMemo(() => {
     const my = myCampaigns ?? [];
-    const active = my.filter((c) => c.status === 'open' || c.status === 'in_progress');
-    const drafts = my.filter((c) => c.status === 'draft');
+    const active = my.filter((c) => c.status === 'approved' || c.status === 'in_progress');
+    const drafts = my.filter((c) => c.status === 'pending_approval');
     const finished = my.filter((c) => c.status === 'completed' || c.status === 'cancelled');
     const pendingApprovals = my.reduce((sum, c) => {
       const pending = (c.assignments ?? []).filter((a) => a.status === 'pending').length;
@@ -554,7 +554,7 @@ function OverviewDashboard({
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             {allCampaigns
-              .filter((c) => c.status === 'open')
+              .filter((c) => c.status === 'approved')
               .slice(0, 4)
               .map((c) => (
                 <CampaignCard

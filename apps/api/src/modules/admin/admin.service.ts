@@ -220,7 +220,7 @@ export class AdminService {
     // Chờ duyệt lên đầu: đây là việc admin PHẢI xử lý, không nên nằm lẫn giữa
     // các chiến dịch đã xong. Trong mỗi nhóm vẫn giữ thứ tự mới gửi trước.
     const sorted = [...rows].sort((a, b) => {
-      const pending = (s: string) => (s === 'draft' ? 0 : 1);
+      const pending = (s: string) => (s === 'pending_approval' ? 0 : 1);
       const byPending = pending(a.status) - pending(b.status);
       if (byPending !== 0) return byPending;
       return b.createdAt.getTime() - a.createdAt.getTime();
@@ -372,18 +372,32 @@ export class AdminService {
 
     const lng = dto.lng ?? 106.6297;
     const lat = dto.lat ?? 10.8231;
+    const operationStartAt = new Date(`${dto.scheduledDate}T${dto.startTime}:00+07:00`);
+    let operationEndAt = new Date(`${dto.scheduledDate}T${dto.endTime}:00+07:00`);
+    if (operationEndAt <= operationStartAt) {
+      operationEndAt = new Date(operationEndAt.getTime() + 86_400_000);
+    }
+    const recruitmentEndAt = new Date(operationStartAt.getTime() - 24 * 3600_000);
+    const recruitmentStartAt = new Date(Math.min(Date.now(), recruitmentEndAt.getTime() - 3600_000));
+    if (recruitmentEndAt <= new Date()) {
+      throw new BadRequestException('Chiến dịch phải cách hiện tại hơn 24 giờ để có thời gian tuyển.');
+    }
     const [row] = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
       INSERT INTO kitchen_campaigns (
         charity_receiver_id, title, description, kitchen_address, kitchen_location,
-        scheduled_date, start_time, end_time,
+        scheduled_date, end_date, start_time, end_time,
+        operation_start_at, operation_end_at,
+        recruitment_start_at, recruitment_end_at, recruitment_buffer_hours, recruitment_status,
         chef_slots_needed, waiter_slots_needed, shipper_slots_needed,
         expected_servings, status, created_at, updated_at
       ) VALUES (
         ${dto.charityReceiverId}::uuid, ${dto.title}, ${dto.description ?? null}, ${dto.kitchenAddress},
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-        ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
+        ${dto.scheduledDate}::date, ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
+        ${operationStartAt}, ${operationEndAt},
+        ${recruitmentStartAt}, ${recruitmentEndAt}, 24, 'open'::recruitment_status,
         ${dto.chefSlotsNeeded ?? 0}, ${dto.waiterSlotsNeeded ?? 0}, ${dto.shipperSlotsNeeded ?? 0},
-        ${dto.expectedServings ?? null}, 'open'::campaign_status, NOW(), NOW()
+        ${dto.expectedServings ?? null}, 'approved'::campaign_status, NOW(), NOW()
       )
       RETURNING id
     `);
@@ -575,7 +589,7 @@ export class AdminService {
 
   /** Admin đổi trạng thái chiến dịch (giám sát: mở/đang chạy/hoàn tất/huỷ). */
   async setCampaignStatus(id: string, status: string, _userId: string) {
-    const allowed = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
+    const allowed = ['approved', 'cancelled'];
     if (!allowed.includes(status)) throw new BadRequestException('Trạng thái không hợp lệ.');
     const campaign = await this.prisma.kitchenCampaign.findUnique({
       where: { id },
@@ -583,10 +597,23 @@ export class AdminService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    await this.prisma.kitchenCampaign.update({ where: { id }, data: { status: status as never } });
+    if (campaign.status !== 'pending_approval') {
+      throw new BadRequestException('Admin chỉ được duyệt hoặc từ chối chiến dịch đang chờ duyệt.');
+    }
+    if (status === 'approved' && new Date() >= campaign.recruitmentEndAt) {
+      throw new BadRequestException('Thời gian tuyển đã hết; tổ chức cần cập nhật lịch trước khi được duyệt.');
+    }
+
+    const recruitmentStatus = status === 'approved'
+      ? (new Date() >= campaign.recruitmentStartAt ? 'open' : 'scheduled')
+      : campaign.recruitmentStatus;
+    await this.prisma.kitchenCampaign.update({
+      where: { id },
+      data: { status: status as never, recruitmentStatus },
+    });
 
     const STATUS_VN: Record<string, string> = {
-      draft: 'nháp', open: 'đang tuyển', in_progress: 'đang diễn ra', completed: 'đã hoàn tất', cancelled: 'đã huỷ',
+      pending_approval: 'chờ duyệt', approved: 'đã duyệt', in_progress: 'đang diễn ra', completed: 'đã hoàn tất', cancelled: 'đã huỷ',
     };
     void this.notifications.notify(campaign.charityReceiver.userId, {
       type: 'campaign',
@@ -650,6 +677,22 @@ export class AdminService {
       return { id, status: 'rejected' };
     }
 
+    if (cr.startTime !== null && cr.startTime !== campaign.startTime) {
+      throw new BadRequestException('Dời lịch chỉ được đổi ngày; giờ vận hành được suy ra từ các ca cố định.');
+    }
+    if (cr.endTime !== null && cr.endTime !== campaign.endTime) {
+      throw new BadRequestException('Dời lịch chỉ được đổi ngày; giờ vận hành được suy ra từ các ca cố định.');
+    }
+    if (cr.chefSlotsNeeded !== null && cr.chefSlotsNeeded < campaign.chefSlotsNeeded) {
+      throw new BadRequestException('Không được hạ định biên Chef sau khi chiến dịch đã được duyệt.');
+    }
+    if (cr.waiterSlotsNeeded !== null && cr.waiterSlotsNeeded < campaign.waiterSlotsNeeded) {
+      throw new BadRequestException('Không được hạ định biên Waiter sau khi chiến dịch đã được duyệt.');
+    }
+    if (cr.shipperSlotsNeeded !== null && cr.shipperSlotsNeeded < campaign.shipperSlotsNeeded) {
+      throw new BadRequestException('Không được hạ định biên Shipper sau khi chiến dịch đã được duyệt.');
+    }
+
     // approve: kiểm tra lại slot không nhỏ hơn số đã có người (tại thời điểm duyệt)
     if (cr.chefSlotsNeeded !== null && cr.chefSlotsNeeded < campaign.chefSlotsFilled) {
       throw new BadRequestException('Số slot Đầu bếp đề xuất nhỏ hơn số đã có người — không thể duyệt.');
@@ -678,6 +721,47 @@ export class AdminService {
     if (cr.waiterSlotsNeeded !== null) data.waiterSlotsNeeded = cr.waiterSlotsNeeded;
     if (cr.shipperSlotsNeeded !== null) data.shipperSlotsNeeded = cr.shipperSlotsNeeded;
 
+    const scheduleChanged = cr.scheduledDate !== null || cr.endDate !== null
+      || cr.startTime !== null || cr.endTime !== null;
+    let scheduleDayDelta = 0;
+    if (scheduleChanged) {
+      const startDate = (cr.scheduledDate ?? campaign.scheduledDate).toISOString().slice(0, 10);
+      const endDate = (cr.endDate ?? campaign.endDate ?? cr.scheduledDate ?? campaign.scheduledDate)
+        .toISOString().slice(0, 10);
+      const startTime = cr.startTime ?? campaign.startTime;
+      const endTime = cr.endTime ?? campaign.endTime;
+      const operationStartAt = new Date(`${startDate}T${startTime}:00+07:00`);
+      let operationEndAt = new Date(`${endDate}T${endTime}:00+07:00`);
+      if (operationEndAt <= operationStartAt || endTime === '00:00') {
+        operationEndAt = new Date(operationEndAt.getTime() + 86_400_000);
+      }
+      const recruitmentEndAt = new Date(
+        operationStartAt.getTime() - campaign.recruitmentBufferHours * 3600_000,
+      );
+      if (recruitmentEndAt <= new Date()) {
+        throw new BadRequestException(
+          `Lịch mới phải còn đủ ít nhất ${campaign.recruitmentBufferHours} giờ đệm sau khi đóng tuyển.`,
+        );
+      }
+      data.operationStartAt = operationStartAt;
+      data.operationEndAt = operationEndAt;
+      data.recruitmentStartAt = new Date();
+      data.recruitmentEndAt = recruitmentEndAt;
+      data.recruitmentStatus = 'open';
+      const oldDateOnly = Date.UTC(
+        campaign.scheduledDate.getUTCFullYear(),
+        campaign.scheduledDate.getUTCMonth(),
+        campaign.scheduledDate.getUTCDate(),
+      );
+      const nextScheduledDate = cr.scheduledDate ?? campaign.scheduledDate;
+      const nextDateOnly = Date.UTC(
+        nextScheduledDate.getUTCFullYear(),
+        nextScheduledDate.getUTCMonth(),
+        nextScheduledDate.getUTCDate(),
+      );
+      scheduleDayDelta = Math.round((nextDateOnly - oldDateOnly) / 86_400_000);
+    }
+
     await this.prisma.$transaction(async (tx) => {
       if (Object.keys(data).length > 0) {
         await tx.kitchenCampaign.update({ where: { id: campaign.id }, data });
@@ -689,6 +773,23 @@ export class AdminService {
               updated_at = NOW()
           WHERE id = ${campaign.id}::uuid
         `);
+      }
+      if (scheduleChanged) {
+        if (scheduleDayDelta !== 0) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE campaign_volunteer_assignments
+            SET work_date = work_date + (${scheduleDayDelta} * INTERVAL '1 day')
+            WHERE campaign_id = ${campaign.id}::uuid
+              AND work_date IS NOT NULL
+          `);
+        }
+        await tx.campaignVolunteerAssignment.updateMany({
+          where: {
+            campaignId: campaign.id,
+            status: { in: ['assigned', 'checked_in', 'in_progress'] },
+          },
+          data: { confirmationStatus: 'pending', confirmedAt: null },
+        });
       }
       await tx.campaignChangeRequest.update({
         where: { id },
@@ -702,6 +803,20 @@ export class AdminService {
       body: `Thay đổi cho chiến dịch "${campaign.title}" đã được duyệt và áp dụng.`,
       data: { campaignId: campaign.id, changeRequestId: id, status: 'approved' },
     });
+    if (scheduleChanged) {
+      const affected = await this.prisma.campaignVolunteerAssignment.findMany({
+        where: { campaignId: campaign.id, status: { in: ['assigned', 'checked_in', 'in_progress'] } },
+        select: { volunteer: { select: { userId: true } } },
+      });
+      for (const recipient of new Set(affected.map((item) => item.volunteer.userId))) {
+        void this.notifications.notify(recipient, {
+          type: 'campaign',
+          title: 'Lịch chiến dịch đã thay đổi',
+          body: `Chiến dịch "${campaign.title}" đã dời lịch. Bạn cần xác nhận lại ca mới để được tính vào định biên.`,
+          data: { campaignId: campaign.id, changeRequestId: id, requiresReconfirmation: true },
+        });
+      }
+    }
 
     return this.getCampaignDetail(campaign.id);
   }

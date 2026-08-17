@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
 import { useManageContext, STATUS_META } from '../../../_components/ManageShell';
 import { campaignStartWindow } from '@/lib/campaign-schedule';
 import type { VolunteerDetail, CampaignManageParticipant } from '@/hooks/useCampaigns';
@@ -13,73 +12,18 @@ import type { VolunteerDetail, CampaignManageParticipant } from '@/hooks/useCamp
  * xác nhận + gọi API nằm một chỗ, không nhân bản ở từng trang.
  */
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-type StageKey = 'draft' | 'open' | 'in_progress' | 'done';
-type VolFilter = 'all' | 'chef' | 'waiter' | 'shipper' | 'pending' | 'removed';
-
-const ROLE_ICON: Record<string, string> = {
-  chef: 'skillet',
-  waiter: 'room_service',
-  shipper: 'local_shipping',
-};
-
-const ROLE_LABEL_VN: Record<string, string> = {
-  chef: 'Đầu bếp',
-  waiter: 'Phục vụ',
-  shipper: 'Giao hàng',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Chờ duyệt',
-  applied: 'Đã đăng ký',
-  assigned: 'Đã duyệt',
-  checked_in: 'Đã điểm danh',
-  in_progress: 'Đang làm',
-  completed: 'Hoàn thành',
-  absent: 'Vắng mặt',
-  cancelled: 'Đã rời',
-  rejected: 'Từ chối',
-  no_show: 'Không đến',
-};
-
-const STATUS_TONE: Record<string, 'mint' | 'sky' | 'honey' | 'rose' | 'neutral'> = {
-  pending: 'honey',
-  applied: 'honey',
-  assigned: 'sky',
-  checked_in: 'sky',
-  in_progress: 'mint',
-  completed: 'mint',
-  absent: 'rose',
-  cancelled: 'neutral',
-  rejected: 'rose',
-  no_show: 'rose',
-};
-
-const TONE_COLORS = {
-  mint: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  sky: 'bg-sky-50 text-sky-700 border-sky-200',
-  honey: 'bg-amber-50 text-amber-700 border-amber-200',
-  rose: 'bg-rose-50 text-rose-700 border-rose-200',
-  neutral: 'bg-neutral-100 text-neutral-500 border-neutral-200',
-};
-
-const RANK_COLORS: Record<string, string> = {
-  'TNV Vàng': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  'TNV Bạc': 'bg-neutral-200 text-neutral-700 border-neutral-400',
-  'TNV Đồng': 'bg-orange-100 text-orange-700 border-orange-300',
-};
+type StageKey = 'pending_approval' | 'approved' | 'in_progress' | 'done';
 
 const STAGES: Array<{ key: StageKey; label: string; desc: string; icon: string }> = [
-  { key: 'draft', label: 'Chờ duyệt', desc: 'Quản trị viên xem xét yêu cầu tạo chiến dịch.', icon: 'pending' },
-  { key: 'open', label: 'Đang tuyển', desc: 'Chiến dịch công khai, tình nguyện viên đăng ký ca.', icon: 'campaign' },
+  { key: 'pending_approval', label: 'Chờ duyệt', desc: 'Quản trị viên xem xét yêu cầu tạo chiến dịch.', icon: 'pending' },
+  { key: 'approved', label: 'Đang tuyển', desc: 'Chiến dịch công khai, tình nguyện viên đăng ký ca.', icon: 'campaign' },
   { key: 'in_progress', label: 'Đang diễn ra', desc: 'Bếp hoạt động — TNV điểm danh và cập nhật công việc.', icon: 'play_circle' },
   { key: 'done', label: 'Kết thúc', desc: 'Đã hoàn tất hoặc bị huỷ — chỉ còn xem lại số liệu.', icon: 'flag' },
 ];
 
 function stageOf(status: string): StageKey {
-  if (status === 'draft') return 'draft';
-  if (status === 'open') return 'open';
+  if (status === 'pending_approval') return 'pending_approval';
+  if (status === 'approved') return 'approved';
   if (status === 'in_progress') return 'in_progress';
   return 'done';
 }
@@ -380,8 +324,6 @@ function VolunteerDetailModal({
 
 export default function CampaignStatusPage() {
   const { campaign: c, openAction } = useManageContext();
-  const [volFilter, setVolFilter] = useState<VolFilter>('all');
-  const [selectedVol, setSelectedVol] = useState<Participant | null>(null);
   const meta = STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink', icon: 'help' };
   const current = stageOf(c.status);
   const currentIndex = STAGES.findIndex((s) => s.key === current);
@@ -426,7 +368,6 @@ export default function CampaignStatusPage() {
 
   return (
     <div className="space-y-4">
-      {/* ── Trạng thái chiến dịch ──────────────────────────────────────────── */}
       <section className="cm-manage-card">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -477,7 +418,6 @@ export default function CampaignStatusPage() {
         </ol>
       </section>
 
-      {/* ── Số liệu nhanh ─────────────────────────────────────────────────── */}
       <section className="cm-manage-card">
         <h2 className="cm-manage-card-title">
           <span className="material-symbols-outlined text-[20px]">insights</span>
@@ -505,7 +445,6 @@ export default function CampaignStatusPage() {
         )}
       </section>
 
-      {/* ── Hành động ────────────────────────────────────────────────────── */}
       <section className="cm-manage-card">
         <h2 className="cm-manage-card-title">
           <span className="material-symbols-outlined text-[20px]">bolt</span>
@@ -529,15 +468,15 @@ export default function CampaignStatusPage() {
                 Kết thúc &amp; nhập số suất
               </button>
             )}
-            {c.status === 'open' && (
+            {c.status === 'approved' && (
               <span className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-100 px-3 py-2 text-xs font-semibold text-neutral-600">
                 <span className="material-symbols-outlined text-[15px]">info</span>
                 {startWindow.canStart
-                  ? 'Đã tới giờ — bấm "Bắt đầu" ở đầu trang quản lý.'
+                  ? 'Đã tới giờ — bấm “Bắt đầu” ở đầu trang quản lý.'
                   : startWindow.message}
               </span>
             )}
-            {(c.status === 'open' || c.status === 'in_progress') && (
+            {(c.status === 'approved' || c.status === 'in_progress') && (
               <button
                 type="button"
                 onClick={() => openAction('cancel')}
@@ -557,230 +496,9 @@ export default function CampaignStatusPage() {
           </div>
         )}
       </section>
-
-      {/* ── Chi tiết Tình nguyện viên ────────────────────────────────────── */}
-      <section className="cm-manage-card !p-0">
-        <div className="px-5 pt-5 pb-3">
-          <h2 className="cm-manage-card-title !mb-1">
-            <span className="material-symbols-outlined">group</span>
-            Chi tiết tình nguyện viên
-          </h2>
-          <p className="cm-manage-card-sub !mt-0">
-            Theo dõi điểm danh, ca trực, năng lực và trạng thái từng người.
-          </p>
-
-          {/* Filter tabs */}
-          <div className="cm-mini-tabs mt-3 flex flex-wrap gap-1">
-            {(
-              [
-                { key: 'all', label: `Tất cả (${filterCounts.all})` },
-                { key: 'pending', label: `Chờ duyệt (${filterCounts.pending})` },
-                { key: 'chef', label: `Đầu bếp (${filterCounts.chef})` },
-                { key: 'waiter', label: `Phục vụ (${filterCounts.waiter})` },
-                { key: 'shipper', label: `Giao hàng (${filterCounts.shipper})` },
-                ...(filterCounts.removed > 0 ? [{ key: 'removed' as const, label: `Đã rời (${filterCounts.removed})` }] : []),
-              ] as { key: VolFilter; label: string }[]
-            ).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={volFilter === t.key}
-                onClick={() => setVolFilter(t.key)}
-                className={`cm-mini-tab ${volFilter === t.key ? '!bg-[#236c2a] !text-white !border-[#236c2a] ' : ''} ${
-                  t.key === 'removed' ? '!border-rose-200 !text-rose-700' : ''
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Table */}
-        {participants.length === 0 ? (
-          <div className="cm-mini-empty pb-6">
-            <span className="material-symbols-outlined">person_off</span>
-            Chưa có tình nguyện viên nào đăng ký.
-          </div>
-        ) : filteredParticipants.length === 0 ? (
-          <div className="cm-mini-empty pb-6">
-            <span className="material-symbols-outlined">search_off</span>
-            Không có tình nguyện viên nào khớp bộ lọc.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-y border-neutral-100 bg-neutral-50 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                  <th className="px-4 py-2.5 text-left">Tình nguyện viên</th>
-                  <th className="px-2 py-2.5 text-center">Vai trò</th>
-                  <th className="px-2 py-2.5 text-center">Xếp hạng</th>
-                  <th className="px-2 py-2.5 text-center">Trạng thái</th>
-                  <th className="px-2 py-2.5 text-center">Ca trực</th>
-                  <th className="px-2 py-2.5 text-center">Điểm danh</th>
-                  <th className="px-2 py-2.5 text-center">Điểm cống hiến</th>
-                  <th className="px-2 py-2.5 text-center">Trust</th>
-                  <th className="px-4 py-2.5 text-center">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredParticipants.map((p) => {
-                  const tone = STATUS_TONE[p.status] ?? 'neutral';
-                  const v = p.volunteer;
-                  return (
-                    <tr
-                      key={p.id}
-                      className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/60 transition-colors"
-                    >
-                      {/* Tên + avatar */}
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedVol(p)}
-                          className="flex items-center gap-2.5 text-left hover:opacity-80 transition-opacity"
-                        >
-                          {p.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={p.avatarUrl} alt={p.fullName} className="w-8 h-8 rounded-full object-cover shrink-0" />
-                          ) : (
-                            <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0">
-                              {p.fullName.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                          <div className="min-w-0">
-                            <p className="font-bold text-neutral-900 truncate max-w-[120px]">{p.fullName}</p>
-                            {v?.phone && (
-                              <p className="text-[10px] text-neutral-400 truncate max-w-[120px]">{v.phone}</p>
-                            )}
-                          </div>
-                        </button>
-                      </td>
-
-                      {/* Vai trò */}
-                      <td className="px-2 py-3 text-center">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-600">
-                          <span className="material-symbols-outlined text-[11px]">{ROLE_ICON[p.role]}</span>
-                          {ROLE_LABEL_VN[p.role]}
-                        </span>
-                      </td>
-
-                      {/* Xếp hạng */}
-                      <td className="px-2 py-3 text-center">
-                        <span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${
-                          RANK_COLORS[p.rank] ?? 'bg-neutral-100 text-neutral-600 border-neutral-300'
-                        }`}>
-                          {p.rank || 'Mới'}
-                        </span>
-                      </td>
-
-                      {/* Trạng thái */}
-                      <td className="px-2 py-3 text-center">
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${TONE_COLORS[tone]}`}>
-                          {STATUS_LABEL[p.status] ?? p.status}
-                        </span>
-                      </td>
-
-                      {/* Ca trực */}
-                      <td className="px-2 py-3 text-center">
-                        {p.shiftLabel ? (
-                          <span className="text-[11px] text-neutral-700 max-w-[100px] truncate block" title={p.shiftLabel}>
-                            {p.shiftLabel}
-                          </span>
-                        ) : p.workDate ? (
-                          <span className="text-[11px] text-neutral-400">
-                            {new Date(p.workDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
-                          </span>
-                        ) : (
-                          <span className="text-neutral-300">—</span>
-                        )}
-                      </td>
-
-                      {/* Điểm danh */}
-                      <td className="px-2 py-3 text-center">
-                        {p.checkInTime ? (
-                          <div>
-                            <span className={`text-[11px] font-bold ${
-                              checkInTone(p.checkInTime) === 'mint' ? 'text-emerald-600' :
-                              checkInTone(p.checkInTime) === 'honey' ? 'text-amber-600' : 'text-rose-600'
-                            }`}>
-                              {new Date(p.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            {p.checkInLateMinutes != null && p.checkInLateMinutes > 0 && (
-                              <p className="text-[9px] text-rose-500">Trễ {p.checkInLateMinutes}m</p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-neutral-400">Chưa</span>
-                        )}
-                      </td>
-
-                      {/* Điểm cống hiến */}
-                      <td className="px-2 py-3 text-center">
-                        <span className={`text-[12px] font-bold ${dedicationColor(v?.dedicationPoints ?? 0)}`}>
-                          {(v?.dedicationPoints ?? 0) > 0 ? String(v?.dedicationPoints) : '—'}
-                        </span>
-                      </td>
-
-                      {/* Trust score */}
-                      <td className="px-2 py-3 text-center">
-                        <span className={`text-[12px] font-bold ${trustColor(v?.trustScore ?? 100)}`}>
-                          {v?.trustScore ?? '—'}
-                        </span>
-                      </td>
-
-                      {/* Thao tác */}
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedVol(p)}
-                          className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
-                        >
-                          Chi tiết →
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Legend */}
-        <div className="px-5 pb-4">
-          <p className="text-[10px] text-neutral-400 flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> Đã điểm danh / Hoàn thành
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-sky-400 inline-block" /> Đã duyệt / Đang chờ
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Chờ duyệt
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> Vắng mặt / Không đến
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-neutral-300 inline-block" /> Đã rời / Từ chối
-            </span>
-          </p>
-        </div>
-      </section>
-
-      {/* Volunteer Detail Modal */}
-      {selectedVol && (
-        <VolunteerDetailModal
-          p={selectedVol}
-          shift={selectedShift}
-          onClose={() => setSelectedVol(null)}
-        />
-      )}
     </div>
   );
 }
-
-// ─── Stat helper ────────────────────────────────────────────────────────────
 
 function Stat({
   label,

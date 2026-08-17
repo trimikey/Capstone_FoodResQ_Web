@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAdvanceTask, type MyTask } from '@/hooks/useCampaigns';
+import { useAdvanceTask, useConfirmCampaignAssignment, type MyTask } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 
 export const TASK_NEXT: Record<
@@ -45,17 +45,55 @@ function getCheckInLocation(): Promise<{ lng: number; lat: number }> {
 
 /** Vì sao chưa thao tác được — backend chỉ nhận cập nhật khi chiến dịch `in_progress`. */
 const BLOCKED_REASON: Record<string, string> = {
-  draft: 'Chiến dịch đang chờ quản trị viên duyệt.',
-  open: 'Chiến dịch chưa bắt đầu — chờ tổ chức bấm “Bắt đầu chiến dịch”.',
+  pending_approval: 'Chiến dịch đang chờ quản trị viên duyệt.',
+  approved: 'Chiến dịch sẽ tự bắt đầu đúng giờ khi đã đủ nhân sự từng ca.',
   completed: 'Chiến dịch đã kết thúc — không cập nhật được nữa.',
   cancelled: 'Chiến dịch đã bị huỷ.',
 };
 
 export function CampaignTaskAction({ t, className }: { t: MyTask; className?: string }) {
   const advance = useAdvanceTask();
+  const confirmation = useConfirmCampaignAssignment();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isLocating, setIsLocating] = useState(false);
   const next = TASK_NEXT[t.status]?.(t.role) ?? null;
+
+  if (t.status === 'assigned' && t.confirmationStatus === 'pending') {
+    return (
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={confirmation.isPending}
+          onClick={async () => {
+            try {
+              await confirmation.mutateAsync({ assignmentId: t.id, decision: 'declined' });
+              toast.success('Đã từ chối ca. Vị trí sẽ được mở lại để tuyển người khác.');
+            } catch (error) {
+              toast.error(errMsg(error, 'Không thể từ chối ca'));
+            }
+          }}
+          className="rounded-xl border border-neutral-300 px-3 py-2 text-xs font-bold text-neutral-700 disabled:opacity-50"
+        >
+          Từ chối ca
+        </button>
+        <button
+          type="button"
+          disabled={confirmation.isPending}
+          onClick={async () => {
+            try {
+              await confirmation.mutateAsync({ assignmentId: t.id, decision: 'confirmed' });
+              toast.success('Đã xác nhận tham gia ca.');
+            } catch (error) {
+              toast.error(errMsg(error, 'Không thể xác nhận ca'));
+            }
+          }}
+          className="rounded-xl bg-[#236c2a] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+        >
+          Xác nhận tham gia
+        </button>
+      </div>
+    );
+  }
 
   // Trước đây nút chỉ nhìn vào trạng thái CÔNG VIỆC, nên chiến dịch đã kết thúc mà
   // công việc còn dở vẫn hiện "Điểm danh tại bếp" — bấm vào chỉ nhận toast lỗi từ BE.

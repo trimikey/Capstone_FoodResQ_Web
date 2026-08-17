@@ -22,13 +22,13 @@ import {
 import { usePaged, Pagination, Skeleton, Empty } from './admin-shared';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'Chờ duyệt', cls: 'bg-honey-100 text-honey-800' },
-  open: { label: 'Đang tuyển', cls: 'bg-sky-100 text-sky-700' },
+  pending_approval: { label: 'Chờ duyệt', cls: 'bg-honey-100 text-honey-800' },
+  approved: { label: 'Đã duyệt', cls: 'bg-sky-100 text-sky-700' },
   in_progress: { label: 'Đang diễn ra', cls: 'bg-honey-100 text-honey-800' },
   completed: { label: 'Hoàn tất', cls: 'bg-emerald-100 text-emerald-800' },
   cancelled: { label: 'Đã huỷ', cls: 'bg-rose-100 text-rose-700' },
 };
-const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['draft', 'open', 'in_progress', 'completed', 'cancelled'];
+const CAMPAIGN_STATUS_OPTS: AdminCampaign['status'][] = ['pending_approval', 'approved', 'in_progress', 'completed', 'cancelled'];
 
 const ASSIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
   assigned: { label: 'Đã nhận việc', cls: 'bg-sky-100 text-sky-700' },
@@ -217,122 +217,87 @@ function AssignSection({ campaignId }: { campaignId: string }) {
 
 function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: c, isLoading } = useAdminCampaignDetail(id);
-  const [editing, setEditing] = useState(false);
-  const unassign = useUnassignVolunteer();
-
-  async function removeAssignment(assignmentId: string) {
-    try {
-      await unassign.mutateAsync({ assignmentId, campaignId: id });
-      toast.success('Đã gỡ phân công');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Gỡ thất bại';
-      toast.error(msg);
-    }
-  }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
-          <button onClick={onClose} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[18px]">close</span>
-          </button>
-          <div className="flex items-center gap-3 pr-8">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-white text-[18px]">campaign</span>
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-3xl border border-neutral-150 w-full max-w-2xl my-8 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-[#166534] px-6 py-5 text-white flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-extrabold text-lg truncate">{c?.title ?? 'Chi tiết chiến dịch'}</p>
+            {c && <p className="text-xs text-emerald-100 mt-0.5">{c.charity}{c.charityPhone ? ` · ${c.charityPhone}` : ''}</p>}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={onClose} className="p-1 hover:bg-white/15 rounded-full"><span className="material-symbols-outlined">close</span></button>
+          </div>
+        </div>
+
+        {isLoading || !c ? (
+          <div className="p-6"><Skeleton /></div>
+        ) : (
+          <div className="p-6 space-y-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <DetailStat icon="event" label="Ngày" value={new Date(c.scheduledDate).toLocaleDateString('vi-VN')} />
+              <DetailStat icon="schedule" label="Giờ" value={`${c.startTime}–${c.endTime}`} />
+              <DetailStat icon="restaurant" label="Suất dự kiến" value={c.expectedServings != null ? String(c.expectedServings) : '—'} />
+              <DetailStat icon="flag" label="Trạng thái" value={CAMPAIGN_STATUS_META[c.status]?.label ?? c.status} />
             </div>
-            <div className="min-w-0">
-              <h3 className="font-extrabold text-white text-base truncate">{c?.title ?? 'Chi tiết chiến dịch'}</h3>
-              {c && <p className="text-xs text-emerald-50 mt-0.5 truncate">{c.charity}{c.charityPhone ? ` · ${c.charityPhone}` : ''}</p>}
+            <p className="text-sm text-neutral-600 flex items-start gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-emerald-600 mt-0.5">place</span>{c.kitchenAddress}
+            </p>
+            {c.description && <p className="text-sm text-neutral-500 bg-neutral-50 rounded-xl p-3">{c.description}</p>}
+
+            <div className="grid grid-cols-3 gap-3">
+              {(['chef', 'waiter', 'shipper'] as const).map((r) => {
+                const rm = ROLE_META_ADMIN[r];
+                const s = c.slots[r];
+                return (
+                  <div key={r} className="border border-neutral-150 rounded-2xl p-3 text-center">
+                    <span className={`material-symbols-outlined text-[20px] ${rm.cls} rounded-lg p-1`}>{rm.icon}</span>
+                    <p className="text-xs font-bold text-neutral-700 mt-1.5">{rm.label}</p>
+                    <p className="text-sm font-extrabold text-neutral-900">{s.filled}/{s.needed}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div>
+              <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">groups</span>
+                Tình nguyện viên ({c.assignments.length})
+              </h4>
+              {c.assignments.length === 0 ? (
+                <p className="text-sm text-neutral-400 text-center py-8 bg-neutral-50 rounded-2xl">Chưa có tình nguyện viên</p>
+              ) : (
+                <div className="space-y-2">
+                  {c.assignments.map((a) => {
+                    const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
+                    const st = ASSIGN_STATUS_META[a.status] ?? { label: a.status, cls: 'bg-neutral-100 text-neutral-600' };
+                    return (
+                      <div key={a.id} className="flex items-center gap-3 border border-neutral-150 rounded-2xl p-3">
+                        <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
+                          {a.fullName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-sm text-neutral-900 truncate">{a.fullName}</p>
+                          <p className="text-[11px] text-neutral-500">
+                            {a.phone ?? 'Không có SĐT'}
+                            {a.checkInTime && ` · điểm danh ${new Date(a.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`}
+                            {a.pointsAwarded != null && ` · +${a.pointsAwarded}đ`}
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 shrink-0 ${rm.cls}`}>
+                          <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
+                        </span>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
-          {c && (
-            <button
-              onClick={() => setEditing(true)}
-              title="Sửa chiến dịch"
-              className="absolute top-3 right-14 px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[14px]">edit</span> Sửa
-            </button>
-          )}
-        </div>
-
-        <div className="overflow-y-auto flex-1 min-h-0">
-          {isLoading || !c ? (
-            <div className="px-5 py-4"><Skeleton /></div>
-          ) : (
-            <div className="px-5 py-4 space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <DetailStat icon="event" label="Ngày" value={new Date(c.scheduledDate).toLocaleDateString('vi-VN')} />
-                <DetailStat icon="schedule" label="Giờ" value={`${c.startTime}–${c.endTime}`} />
-                <DetailStat icon="restaurant" label="Suất dự kiến" value={c.expectedServings != null ? String(c.expectedServings) : '—'} />
-                <DetailStat icon="flag" label="Trạng thái" value={CAMPAIGN_STATUS_META[c.status]?.label ?? c.status} />
-              </div>
-              <p className="text-sm text-neutral-600 flex items-start gap-1.5">
-                <span className="material-symbols-outlined text-[16px] text-emerald-600 mt-0.5">place</span>{c.kitchenAddress}
-              </p>
-              {c.description && <p className="text-sm text-neutral-500 bg-neutral-50 rounded-xl p-3">{c.description}</p>}
-
-              <div className="grid grid-cols-3 gap-3">
-                {(['chef', 'waiter', 'shipper'] as const).map((r) => {
-                  const rm = ROLE_META_ADMIN[r];
-                  const s = c.slots[r];
-                  return (
-                    <div key={r} className="border border-neutral-150 rounded-2xl p-3 text-center">
-                      <span className={`material-symbols-outlined text-[20px] ${rm.cls} rounded-lg p-1`}>{rm.icon}</span>
-                      <p className="text-xs font-bold text-neutral-700 mt-1.5">{rm.label}</p>
-                      <p className="text-sm font-extrabold text-neutral-900">{s.filled}/{s.needed}</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div>
-                <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-emerald-600">groups</span>
-                  Tình nguyện viên ({c.assignments.length})
-                </h4>
-                <AssignSection campaignId={c.id} />
-                {c.assignments.length === 0 ? (
-                  <p className="text-sm text-neutral-400 text-center py-8 bg-neutral-50 rounded-2xl">Chưa có tình nguyện viên</p>
-                ) : (
-                  <div className="space-y-2">
-                    {c.assignments.map((a) => {
-                      const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
-                      const st = ASSIGN_STATUS_META[a.status] ?? { label: a.status, cls: 'bg-neutral-100 text-neutral-600' };
-                      return (
-                        <div key={a.id} className="flex items-center gap-3 border border-neutral-150 rounded-2xl p-3">
-                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
-                            {a.fullName.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-bold text-sm text-neutral-900 truncate">{a.fullName}</p>
-                            <p className="text-[11px] text-neutral-500">
-                              {a.phone ?? 'Không có SĐT'}
-                              {a.checkInTime && ` · điểm danh ${new Date(a.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`}
-                              {a.pointsAwarded != null && ` · +${a.pointsAwarded}đ`}
-                            </p>
-                          </div>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 shrink-0 ${rm.cls}`}>
-                            <span className="material-symbols-outlined text-[13px]">{rm.icon}</span>{rm.label}
-                          </span>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
-                          <button onClick={() => removeAssignment(a.id)} disabled={unassign.isPending} title="Gỡ phân công"
-                            className="w-7 h-7 rounded-full text-neutral-400 hover:bg-rose-50 hover:text-rose-600 inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-50">
-                            <span className="material-symbols-outlined text-[16px]">close</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
-      {editing && c && <CampaignFormModal mode="edit" campaign={c} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -379,52 +344,42 @@ function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-start justify-center pt-[10vh] px-4" onClick={onClose}>
-      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4 bg-brand-gradient relative shrink-0 rounded-t-2xl">
-          <button type="button" onClick={onClose} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[18px]">close</span>
-          </button>
-          <div className="flex items-center gap-3 pr-8">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-white text-[18px]">{mode === 'create' ? 'add_circle' : 'edit'}</span>
-            </div>
-            <h3 className="font-extrabold text-white text-base">{mode === 'create' ? 'Tạo chiến dịch' : 'Sửa chiến dịch'}</h3>
-          </div>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 shadow-2xl overflow-hidden">
+        <div className="bg-[#166534] px-6 py-5 text-white flex items-center gap-3">
+          <span className="material-symbols-outlined">{mode === 'create' ? 'add_circle' : 'edit'}</span>
+          <h3 className="font-extrabold text-lg">{mode === 'create' ? 'Tạo chiến dịch' : 'Sửa chiến dịch'}</h3>
         </div>
-        <div className="overflow-y-auto flex-1 min-h-0">
-          <div className="px-5 py-4 space-y-3">
-            {mode === 'create' && (
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Tổ chức / Người nhận (chủ chiến dịch) *</label>
-                <select value={f.charityReceiverId} onChange={(e) => setF({ ...f, charityReceiverId: e.target.value })} className="input-base mt-1" required>
-                  <option value="">— Chọn tổ chức —</option>
-                  {(charities ?? []).map((ch) => (
-                    <option key={ch.id} value={ch.id}>{ch.name}{ch.isCharityOrg ? ' (tổ chức)' : ''}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Tiêu đề *" className="input-base" required minLength={5} />
-            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Mô tả" rows={2} className="input-base" />
-            <input value={f.kitchenAddress} onChange={(e) => setF({ ...f, kitchenAddress: e.target.value })} placeholder="Địa chỉ bếp *" className="input-base" required minLength={5} />
-            <div className="grid grid-cols-3 gap-3">
-              <input type="date" value={f.scheduledDate} onChange={(e) => setF({ ...f, scheduledDate: e.target.value })} className="input-base" required />
-              <input type="time" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} className="input-base" required />
-              <input type="time" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} className="input-base" required />
+        <div className="p-6 space-y-4">
+          {mode === 'create' && (
+            <div>
+              <label className="text-xs font-bold text-neutral-500">Tổ chức / Người nhận (chủ chiến dịch) *</label>
+              <select value={f.charityReceiverId} onChange={(e) => setF({ ...f, charityReceiverId: e.target.value })} className="input-base mt-1" required>
+                <option value="">— Chọn tổ chức —</option>
+                {(charities ?? []).map((ch) => (
+                  <option key={ch.id} value={ch.id}>{ch.name}{ch.isCharityOrg ? ' (tổ chức)' : ''}</option>
+                ))}
+              </select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <label className="text-xs font-bold text-honey-700 block">Đầu bếp<input type="number" min={0} value={f.chefSlotsNeeded} onChange={(e) => setF({ ...f, chefSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-              <label className="text-xs font-bold text-sky-700 block">Phục vụ<input type="number" min={0} value={f.waiterSlotsNeeded} onChange={(e) => setF({ ...f, waiterSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-              <label className="text-xs font-bold text-emerald-700 block">Giao hàng<input type="number" min={0} value={f.shipperSlotsNeeded} onChange={(e) => setF({ ...f, shipperSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-            </div>
-            <label className="text-xs font-bold text-neutral-500 block">Suất ăn dự kiến<input type="number" min={0} value={f.expectedServings} onChange={(e) => setF({ ...f, expectedServings: Number(e.target.value) })} className="input-base mt-1" /></label>
+          )}
+          <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Tiêu đề *" className="input-base" required minLength={5} />
+          <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Mô tả" rows={2} className="input-base" />
+          <input value={f.kitchenAddress} onChange={(e) => setF({ ...f, kitchenAddress: e.target.value })} placeholder="Địa chỉ bếp *" className="input-base" required minLength={5} />
+          <div className="grid grid-cols-3 gap-3">
+            <input type="date" value={f.scheduledDate} onChange={(e) => setF({ ...f, scheduledDate: e.target.value })} className="input-base" required />
+            <input type="time" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} className="input-base" required />
+            <input type="time" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} className="input-base" required />
           </div>
-        </div>
-        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex gap-3">
-          <button type="button" onClick={onClose} className="flex-1 py-3 border border-neutral-200 text-neutral-700 font-bold text-sm rounded-xl hover:bg-neutral-50 transition-colors">Huỷ</button>
-          <button type="submit" disabled={pending} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-colors">{pending ? 'Đang lưu...' : (mode === 'create' ? 'Tạo chiến dịch' : 'Lưu thay đổi')}</button>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="text-xs font-bold text-honey-700 block">Đầu bếp<input type="number" min={0} value={f.chefSlotsNeeded} onChange={(e) => setF({ ...f, chefSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
+            <label className="text-xs font-bold text-sky-700 block">Phục vụ<input type="number" min={0} value={f.waiterSlotsNeeded} onChange={(e) => setF({ ...f, waiterSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
+            <label className="text-xs font-bold text-emerald-700 block">Giao hàng<input type="number" min={0} value={f.shipperSlotsNeeded} onChange={(e) => setF({ ...f, shipperSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
+          </div>
+          <label className="text-xs font-bold text-neutral-500 block">Suất ăn dự kiến<input type="number" min={0} value={f.expectedServings} onChange={(e) => setF({ ...f, expectedServings: Number(e.target.value) })} className="input-base mt-1" /></label>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 py-3 border border-neutral-200 text-neutral-700 font-bold text-sm rounded-xl hover:bg-neutral-50 transition-colors">Huỷ</button>
+            <button type="submit" disabled={pending} className="flex-1 py-3 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-colors">{pending ? 'Đang lưu...' : (mode === 'create' ? 'Tạo chiến dịch' : 'Lưu thay đổi')}</button>
+          </div>
         </div>
       </form>
     </div>
@@ -434,13 +389,12 @@ function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit
 export default function CampaignsAdminTab() {
   const [status, setStatus] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
   const { data, isLoading } = useAdminCampaigns(status || undefined);
   const setCampaignStatus = useSetCampaignStatus();
   const paged = usePaged(data ?? [], 8, status);
-  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'draft');
+  const pendingCampaigns = (data ?? []).filter((c) => c.status === 'pending_approval');
 
-  async function changeStatus(id: string, st: AdminCampaign['status']) {
+  async function changeStatus(id: string, st: 'approved' | 'cancelled') {
     try {
       await setCampaignStatus.mutateAsync({ id, status: st });
       toast.success(`Đã chuyển sang "${CAMPAIGN_STATUS_META[st].label}"`);
@@ -457,10 +411,6 @@ export default function CampaignsAdminTab() {
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Chiến dịch</h2>
           <p className="text-sm text-neutral-500 mt-1">Duyệt chiến dịch mới và xử lý các yêu cầu thay đổi. Duyệt/từ chối tình nguyện viên do tổ chức từ thiện phụ trách.</p>
         </div>
-        <button onClick={() => setShowCreate(true)}
-          className="shrink-0 inline-flex items-center gap-2 px-5 py-3 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-sm font-bold shadow-sm transition-colors">
-          <span className="material-symbols-outlined text-[20px]">add</span> Tạo chiến dịch
-        </button>
       </div>
 
       {pendingCampaigns.length > 0 && (
@@ -472,8 +422,8 @@ export default function CampaignsAdminTab() {
               Mới nhất: <b>{pendingCampaigns[0].title}</b> — {pendingCampaigns[0].charity} · gửi {formatRequestedAt(pendingCampaigns[0].createdAt)}
             </p>
           </div>
-          {status !== 'draft' && (
-            <button onClick={() => setStatus('draft')}
+          {status !== 'pending_approval' && (
+            <button onClick={() => setStatus('pending_approval')}
               className="shrink-0 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100">
               Chỉ xem đơn chờ duyệt
             </button>
@@ -545,9 +495,9 @@ export default function CampaignsAdminTab() {
                         <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${st.cls}`}>{st.label}</span>
                       </td>
                       <td className="px-6 py-4">
-                        {c.status === 'draft' ? (
+                        {c.status === 'pending_approval' ? (
                           <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => changeStatus(c.id, 'open')} disabled={setCampaignStatus.isPending}
+                            <button onClick={() => changeStatus(c.id, 'approved')} disabled={setCampaignStatus.isPending}
                               className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center">
                               Duyệt
                             </button>
@@ -556,15 +506,7 @@ export default function CampaignsAdminTab() {
                               Từ chối
                             </button>
                           </div>
-                        ) : (
-                          <select value={c.status} disabled={setCampaignStatus.isPending}
-                            onChange={(e) => changeStatus(c.id, e.target.value as AdminCampaign['status'])}
-                            className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
-                            {CAMPAIGN_STATUS_OPTS.filter((s) => s !== 'draft').map((s) => (
-                              <option key={s} value={s}>{CAMPAIGN_STATUS_META[s].label}</option>
-                            ))}
-                          </select>
-                        )}
+                        ) : <span className="text-xs font-semibold text-neutral-400">Vòng đời tự động</span>}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button onClick={() => setDetailId(c.id)} title="Xem danh sách tình nguyện viên"
@@ -583,7 +525,6 @@ export default function CampaignsAdminTab() {
       )}
 
       {detailId && <CampaignDetailModal id={detailId} onClose={() => setDetailId(null)} />}
-      {showCreate && <CampaignFormModal mode="create" onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

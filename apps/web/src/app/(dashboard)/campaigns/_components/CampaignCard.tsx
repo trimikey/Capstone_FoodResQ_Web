@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { AssignmentRole } from '@foodresq/types';
@@ -31,7 +31,35 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
   const [item, setItem] = useState(availableSupply[0]?.name ?? '');
   const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const selectedSupply = availableSupply.find((s) => s.name === item) ?? availableSupply[0];
+
+  // Tự mở nút đăng ký khi đến giờ mà không bắt người dùng tải lại trang.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const recruitmentStartMs = c.recruitmentStartAt ? new Date(c.recruitmentStartAt).getTime() : null;
+  const recruitmentEndMs = c.recruitmentEndAt ? new Date(c.recruitmentEndAt).getTime() : null;
+  const recruitmentNotStarted = c.status === 'approved'
+    && recruitmentStartMs !== null
+    && nowMs < recruitmentStartMs;
+  const recruitmentEnded = c.status === 'approved'
+    && recruitmentEndMs !== null
+    && nowMs >= recruitmentEndMs;
+  const recruitmentUnavailable = c.status !== 'approved'
+    || recruitmentNotStarted
+    || recruitmentEnded
+    || !['scheduled', 'open', 'staffed'].includes(c.recruitmentStatus ?? 'open');
+  const recruitmentStartLabel = recruitmentStartMs === null
+    ? null
+    : new Date(recruitmentStartMs).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
 
   const dateStr = new Date(c.scheduledDate).toLocaleDateString('vi-VN', {
     weekday: 'short',
@@ -90,6 +118,12 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
             <span className="material-symbols-outlined text-[18px] text-emerald-600">soup_kitchen</span>
             <span className="cm-chip cm-chip--ink">{dateStr}</span>
             {overdue && <span className="cm-chip cm-chip--rose">Đã qua ngày</span>}
+            {recruitmentNotStarted && (
+              <span className="cm-chip cm-chip--honey">Sắp mở tuyển</span>
+            )}
+            {!recruitmentNotStarted && c.recruitmentStatus === 'staffed' && (
+              <span className="cm-chip cm-chip--mint">Đủ ngưỡng · vẫn tuyển</span>
+            )}
           </div>
           <h3 className="font-extrabold text-neutral-900 text-base leading-snug line-clamp-2 group-hover:text-emerald-700 transition-colors">
             {c.title}
@@ -123,6 +157,8 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           applying={applying}
           overdue={overdue}
           disabled={disabled}
+          recruitmentUnavailable={recruitmentUnavailable}
+          recruitmentNotStarted={recruitmentNotStarted}
         />
         <Slot
           role={AssignmentRole.WAITER}
@@ -133,6 +169,8 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           applying={applying}
           overdue={overdue}
           disabled={disabled}
+          recruitmentUnavailable={recruitmentUnavailable}
+          recruitmentNotStarted={recruitmentNotStarted}
         />
         <Slot
           role={AssignmentRole.SHIPPER}
@@ -143,6 +181,8 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           applying={applying}
           overdue={overdue}
           disabled={disabled}
+          recruitmentUnavailable={recruitmentUnavailable}
+          recruitmentNotStarted={recruitmentNotStarted}
         />
       </div>
 
@@ -150,6 +190,13 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
         <p className="text-[11px] text-rose-600 mt-3 flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">event_busy</span>
           Đã qua ngày diễn ra — chiến dịch không còn nhận đăng ký.
+        </p>
+      )}
+
+      {!overdue && recruitmentNotStarted && recruitmentStartLabel && (
+        <p className="text-[11px] text-amber-700 mt-3 flex items-center gap-1">
+          <span className="material-symbols-outlined text-[14px]">schedule</span>
+          Đã được duyệt · mở đăng ký lúc {recruitmentStartLabel}.
         </p>
       )}
 
@@ -324,6 +371,8 @@ function Slot({
   applying,
   overdue,
   disabled,
+  recruitmentUnavailable,
+  recruitmentNotStarted,
 }: {
   role: AssignmentRole;
   filled: number;
@@ -333,6 +382,8 @@ function Slot({
   applying: boolean;
   overdue?: boolean;
   disabled?: boolean;
+  recruitmentUnavailable?: boolean;
+  recruitmentNotStarted?: boolean;
 }) {
   if (needed <= 0) return null;
   const full = filled >= needed;
@@ -361,11 +412,25 @@ function Slot({
         <button
           type="button"
           onClick={() => onApply(role)}
-          disabled={full || applying || overdue || disabled}
-          title={disabled ? 'Tài khoản đang chờ admin duyệt' : undefined}
+          disabled={full || applying || overdue || disabled || recruitmentUnavailable}
+          title={disabled
+            ? 'Tài khoản đang chờ admin duyệt'
+            : recruitmentNotStarted
+              ? 'Chiến dịch chưa đến giờ mở tuyển'
+              : recruitmentUnavailable
+                ? 'Chiến dịch hiện không nhận đăng ký'
+                : undefined}
           className="mt-2.5 w-full py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed bg-[#236c2a] hover:bg-[#1a4f1f] text-white transition-colors"
         >
-          {disabled ? 'Chờ duyệt' : overdue ? 'Hết hạn' : full ? 'Đã đủ' : 'Đăng ký'}
+          {disabled
+            ? 'Chờ duyệt'
+            : overdue || (recruitmentUnavailable && !recruitmentNotStarted)
+              ? 'Hết tuyển'
+              : recruitmentNotStarted
+                ? 'Sắp mở'
+                : full
+                  ? 'Đã đủ'
+                  : 'Đăng ký'}
         </button>
       )}
     </div>

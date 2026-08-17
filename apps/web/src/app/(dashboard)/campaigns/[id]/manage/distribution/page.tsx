@@ -82,7 +82,7 @@ export default function DistributionPage() {
       ? 'report'
       : c.status === 'in_progress'
       ? 'distribute'
-      : c.status === 'open'
+      : c.status === 'approved'
       ? 'recruit'
       : 'plan';
 

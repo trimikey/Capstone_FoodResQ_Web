@@ -51,7 +51,7 @@ async function main() {
     if (dup) {
       // làm mới ngày + mở lại để luôn còn hạn
       await prisma.$executeRaw(Prisma.sql`
-        UPDATE kitchen_campaigns SET scheduled_date=${c.date}::date, status='open'::campaign_status, updated_at=NOW() WHERE id=${dup.id}::uuid`);
+        UPDATE kitchen_campaigns SET scheduled_date=${c.date}::date, status='approved'::campaign_status, updated_at=NOW() WHERE id=${dup.id}::uuid`);
       console.log('  ↻ refresh:', c.title);
       continue;
     }
@@ -66,7 +66,7 @@ async function main() {
         ST_SetSRID(ST_MakePoint(${c.lng}, ${c.lat}), 4326)::geography,
         ${c.date}::date, ${c.start}, ${c.end},
         ${c.chef}, ${c.waiter}, ${c.shipper}, ${c.servings},
-        'open'::campaign_status, NOW(), NOW())`);
+        'approved'::campaign_status, NOW(), NOW())`);
     created++;
     console.log('  · campaign:', c.title);
   }

@@ -229,7 +229,7 @@ export class DishStepsService {
 
     const campaigns = await this.prisma.kitchenCampaign.findMany({
       where: {
-        status: { in: ['in_progress', 'open'] },
+        status: { in: ['in_progress', 'approved'] },
         scheduledDate: { gte: windowStart, lt: windowEnd },
       },
       select: {
@@ -809,7 +809,7 @@ export class DishStepsService {
           volunteerId: volunteer.id,
           campaign: {
             scheduledDate: { gte: weekStart, lt: weekEnd },
-            status: { in: ['open', 'in_progress', 'completed'] },
+            status: { in: ['approved', 'in_progress', 'completed'] },
           },
         },
         include: {
@@ -872,7 +872,7 @@ export class DishStepsService {
         where: {
           charityReceiverId: receiver.id,
           scheduledDate: { gte: weekStart, lt: weekEnd },
-          status: { in: ['open', 'in_progress', 'completed'] },
+          status: { in: ['approved', 'in_progress', 'completed'] },
         },
         select: { id: true, title: true, scheduledDate: true, status: true },
       });
