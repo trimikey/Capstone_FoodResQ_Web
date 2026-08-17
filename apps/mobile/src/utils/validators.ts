@@ -225,6 +225,8 @@ export function makeCreateListingSchema(now: Date = new Date()) {
       weightPerUnitKg: optionalPositive,
       storageConditions: z.string().optional(),
       allergenNotes: z.string().optional(),
+      dailyStartMinute: z.coerce.number().int().min(0).max(1439).optional(),
+      dailyEndMinute: z.coerce.number().int().min(0).max(1439).optional(),
     })
     .refine(
       (d) => {
@@ -265,6 +267,10 @@ export function makeCreateListingSchema(now: Date = new Date()) {
     .refine(
       (d) => !d.expiryTime || !d.pickupEndTime || d.expiryTime >= d.pickupEndTime,
       { message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi', path: ['expiryTime'] }
+    )
+    .refine(
+      (d) => d.dailyStartMinute == null || d.dailyEndMinute == null || d.dailyStartMinute < d.dailyEndMinute,
+      { message: 'Gio mo nhan phai truoc gio dong nhan', path: ['dailyEndMinute'] }
     );
 }
 

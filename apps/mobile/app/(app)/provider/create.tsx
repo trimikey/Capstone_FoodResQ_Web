@@ -52,6 +52,11 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 const UNIT_KEYS = Object.keys(UNIT_LABELS);
 const DISCRETE_UNITS = ['portion', 'item', 'box'];
+const CREATE_STEPS = [
+  { key: 1, label: 'Th\u00f4ng tin', icon: 'food-apple-outline' },
+  { key: 2, label: 'S\u1ed1 l\u01b0\u1ee3ng & gi\u1edd', icon: 'clock-outline' },
+  { key: 3, label: '\u1ea2nh & \u0111\u1ecba \u0111i\u1ec3m', icon: 'map-marker-radius-outline' },
+] as const;
 
 // FoodResQ chỉ hoạt động ở VN — ép cứng timezone này cho picker thay vì để
 // nó tự lấy timezone hệ thống của máy. Nếu thiết bị test tắt "Automatic
@@ -71,6 +76,20 @@ const vnDateTimeFormatter = new Intl.DateTimeFormat('vi-VN', {
 
 function fmtDateTime(d: Date): string {
   return vnDateTimeFormatter.format(d).replace(',', '');
+}
+
+function fmtMinute(minute?: number): string {
+  if (minute == null || !Number.isFinite(minute)) return '--:--';
+  const normalized = Math.max(0, Math.min(1439, Math.trunc(minute)));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(Math.floor(normalized / 60))}:${p(normalized % 60)}`;
+}
+
+function dateFromMinute(minute?: number): Date {
+  const d = new Date();
+  const normalized = minute ?? 7 * 60;
+  d.setHours(Math.floor(normalized / 60), normalized % 60, 0, 0);
+  return d;
 }
 
 /** Mở picker chọn ngày rồi giờ (Android), trả Date đã chọn. */
@@ -94,6 +113,18 @@ function openDateTimePicker(current: Date, onPick: (d: Date) => void) {
   });
 }
 
+function openTimePicker(currentMinute: number | undefined, onPick: (minute: number) => void) {
+  DateTimePickerAndroid.open({
+    value: dateFromMinute(currentMinute),
+    mode: 'time',
+    is24Hour: true,
+    onChange: (_e, d) => {
+      if (!d) return;
+      onPick(d.getHours() * 60 + d.getMinutes());
+    },
+  });
+}
+
 export default function CreateListingScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -110,6 +141,7 @@ export default function CreateListingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [locatingPickup, setLocatingPickup] = useState(false);
   const [pickupLocationSource, setPickupLocationSource] = useState<'profile' | 'current' | null>(null);
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
   const isEdit = !!editId;
   const editingIsPublished = !!editingListing && editingListing.status !== 'draft';
 
@@ -154,6 +186,8 @@ export default function CreateListingScreen() {
       weightPerUnitKg: undefined,
       storageConditions: '',
       allergenNotes: '',
+      dailyStartMinute: 7 * 60,
+      dailyEndMinute: 21 * 60,
     },
   });
 
@@ -174,6 +208,8 @@ export default function CreateListingScreen() {
       weightPerUnitKg: editingListing.weightPerUnitKg ?? undefined,
       storageConditions: editingListing.storageConditions ?? '',
       allergenNotes: editingListing.allergenNotes ?? '',
+      dailyStartMinute: editingListing.dailyStartMinute ?? 7 * 60,
+      dailyEndMinute: editingListing.dailyEndMinute ?? 21 * 60,
     });
     setCoords({ lat: editingListing.lat, lng: editingListing.lng });
     setImageUrls(editingListing.imageUrls ?? []);
@@ -186,6 +222,8 @@ export default function CreateListingScreen() {
   const pickupStart = watch('pickupStartTime');
   const pickupEnd = watch('pickupEndTime');
   const expiry = watch('expiryTime');
+  const dailyStartMinute = watch('dailyStartMinute');
+  const dailyEndMinute = watch('dailyEndMinute');
   const profileProvider = profile?.provider ?? user?.provider ?? null;
   const storePickup = useMemo(
     () => profileProvider?.address && profileProvider.lat != null && profileProvider.lng != null
@@ -263,8 +301,8 @@ export default function CreateListingScreen() {
     if (!storePickup) {
       Popup.show({
         type: 'warning',
-        text1: 'Chưa có địa chỉ cửa hàng',
-        text2: 'Vui lòng cập nhật địa chỉ và toạ độ trong hồ sơ trước.',
+        text1: 'Ch\u01b0a c\u00f3 \u0111\u1ecba ch\u1ec9 c\u1eeda h\u00e0ng',
+        text2: 'Vui l\u00f2ng c\u1eadp nh\u1eadt \u0111\u1ecba ch\u1ec9 v\u00e0 to\u1ea1 \u0111\u1ed9 trong h\u1ed3 s\u01a1 tr\u01b0\u1edbc.',
       });
       return;
     }
@@ -280,8 +318,8 @@ export default function CreateListingScreen() {
       if (!result.coords) {
         Popup.show({
           type: 'warning',
-          text1: 'Không lấy được vị trí hiện tại',
-          text2: 'Vui lòng bật định vị hoặc chọn địa chỉ trên bản đồ.',
+          text1: 'Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i',
+          text2: 'Vui l\u00f2ng b\u1eadt \u0111\u1ecbnh v\u1ecb ho\u1eb7c ch\u1ecdn \u0111\u1ecba ch\u1ec9 tr\u00ean b\u1ea3n \u0111\u1ed3.',
         });
         return;
       }
@@ -293,6 +331,40 @@ export default function CreateListingScreen() {
     } finally {
       setLocatingPickup(false);
     }
+  };
+
+  const goNext = async () => {
+    if (activeStep === 1) {
+      const ok = await trigger(['title', 'categories', 'categoryOtherLabel', 'description']);
+      if (!ok) {
+        Popup.show({ type: 'warning', text1: 'C\u1ea7n ho\u00e0n t\u1ea5t th\u00f4ng tin m\u00f3n \u0103n' });
+        return;
+      }
+    }
+    if (activeStep === 2) {
+      const ok = await trigger([
+        'quantityTotal',
+        'quantityUnit',
+        'maxPerReservation',
+        'weightPerUnitKg',
+        'pickupStartTime',
+        'pickupEndTime',
+        'expiryTime',
+        'dailyStartMinute',
+        'dailyEndMinute',
+        'storageConditions',
+        'allergenNotes',
+      ]);
+      if (!ok || !pickupStart || !pickupEnd || !expiry) {
+        Popup.show({
+          type: 'warning',
+          text1: 'C\u1ea7n ho\u00e0n t\u1ea5t s\u1ed1 l\u01b0\u1ee3ng v\u00e0 th\u1eddi gian',
+          text2: 'Ch\u1ecdn \u0111\u1ee7 b\u1eaft \u0111\u1ea7u l\u1ea5y, h\u1ea1n l\u1ea5y, h\u1ea1n s\u1eed d\u1ee5ng v\u00e0 khung gi\u1edd m\u1edf c\u1eeda trong ng\u00e0y.',
+        });
+        return;
+      }
+    }
+    setActiveStep((prev) => (prev === 1 ? 2 : 3));
   };
 
   const onInvalid = (errs: FieldErrors<CreateListingFormInput>) => {
@@ -344,6 +416,8 @@ export default function CreateListingScreen() {
       ...(form.storageConditions ? { storageConditions: form.storageConditions } : {}),
       ...(form.allergenNotes ? { allergenNotes: form.allergenNotes } : {}),
       ...(imageUrls.length ? { imageUrls } : {}),
+      dailyStartMinute: form.dailyStartMinute,
+      dailyEndMinute: form.dailyEndMinute,
     };
     const updatePayload: UpdateListingInput = editingIsPublished
       ? {
@@ -404,6 +478,11 @@ export default function CreateListingScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {!editingIsPublished ? (
+            <StepProgress activeStep={activeStep} />
+          ) : null}
+
+          {(editingIsPublished || activeStep === 3) ? (
           <Section
             icon="image-multiple-outline"
             title="Ảnh món ăn"
@@ -456,6 +535,7 @@ export default function CreateListingScreen() {
               ) : null}
             </View>
           </Section>
+          ) : null}
 
           {editingIsPublished ? (
             <View style={styles.lockNotice}>
@@ -466,7 +546,7 @@ export default function CreateListingScreen() {
             </View>
           ) : null}
 
-          {!editingIsPublished ? (
+          {!editingIsPublished && activeStep === 1 ? (
             <Section icon="food-apple-outline" title="Thông tin thực phẩm">
               <Field label="Tiêu đề *" error={errors.title?.message}>
                 <Controller control={control} name="title" render={({ field: { onChange, value } }) => (
@@ -547,7 +627,7 @@ export default function CreateListingScreen() {
             </Section>
           ) : null}
 
-          {!editingIsPublished ? (
+          {!editingIsPublished && activeStep === 2 ? (
             <Section icon="scale-balance" title="Số lượng">
               <Field
                 label="Số lượng *"
@@ -630,7 +710,7 @@ export default function CreateListingScreen() {
             </Section>
           ) : null}
 
-          {!editingIsPublished ? (
+          {!editingIsPublished && activeStep === 2 ? (
             <Section
               icon="clock-outline"
               title="Thời gian nhận"
@@ -699,10 +779,48 @@ export default function CreateListingScreen() {
                   <Text style={styles.nowBtnText}>Hiện tại</Text>
                 </Pressable>
               </Field>
+
+              <View style={styles.inlinePanel}>
+                <View style={styles.inlinePanelHead}>
+                  <MaterialCommunityIcons name="store-clock-outline" size={18} color={COLORS.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inlinePanelTitle}>Gi\u1edd m\u1edf c\u1eeda nh\u1eadn h\u00e0ng trong ng\u00e0y</Text>
+                    <Text style={styles.inlinePanelHelper}>Ng\u01b0\u1eddi nh\u1eadn ch\u1ec9 \u0111\u1eb7t/l\u1ea5y trong khung n\u00e0y m\u1ed7i ng\u00e0y, t\u01b0\u01a1ng t\u1ef1 web c\u1eeda h\u00e0ng.</Text>
+                  </View>
+                </View>
+                <View style={[styles.rowFields, compactLayout && styles.rowFieldsStacked]}>
+                  <View style={styles.rowField}>
+                    <Field label="M\u1edf nh\u1eadn t\u1eeb *" error={errors.dailyStartMinute?.message}>
+                      <TimeButton
+                        label="M\u1edf nh\u1eadn"
+                        value={dailyStartMinute}
+                        onPress={() => openTimePicker(dailyStartMinute, (minute) => {
+                          setValue('dailyStartMinute', minute, { shouldValidate: true });
+                          trigger('dailyEndMinute');
+                        })}
+                        hasError={!!errors.dailyStartMinute}
+                      />
+                    </Field>
+                  </View>
+                  <View style={styles.rowField}>
+                    <Field label="\u0110\u00f3ng nh\u1eadn l\u00fac *" error={errors.dailyEndMinute?.message}>
+                      <TimeButton
+                        label="\u0110\u00f3ng nh\u1eadn"
+                        value={dailyEndMinute}
+                        onPress={() => openTimePicker(dailyEndMinute, (minute) => {
+                          setValue('dailyEndMinute', minute, { shouldValidate: true });
+                          trigger('dailyEndMinute');
+                        })}
+                        hasError={!!errors.dailyEndMinute}
+                      />
+                    </Field>
+                  </View>
+                </View>
+              </View>
             </Section>
           ) : null}
 
-          {!editingIsPublished ? (
+          {!editingIsPublished && activeStep === 3 ? (
             <Section
               icon="map-marker-radius-outline"
               title="Địa chỉ lấy hàng"
@@ -786,7 +904,8 @@ export default function CreateListingScreen() {
             </Section>
           ) : null}
 
-          <Section icon="shield-check-outline" title="Ghi chú an toàn">
+          {(editingIsPublished || activeStep === 2) ? (
+          <Section icon="shield-check-outline" title="Ghi ch\u00fa an to\u00e0n">
             <Field label="Mô tả (tuỳ chọn)" helper="Ghi tình trạng món, cách đóng gói hoặc thời điểm nấu.">
               <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
                 <TextInput
@@ -831,12 +950,27 @@ export default function CreateListingScreen() {
               )} />
             </Field>
           </Section>
+          ) : null}
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          {!editingIsPublished && activeStep > 1 ? (
+            <Button
+              mode="outlined"
+              onPress={() => setActiveStep((prev) => (prev === 3 ? 2 : 1))}
+              disabled={submitting || uploading}
+              textColor={COLORS.onSurface}
+              style={styles.backStepBtn}
+              contentStyle={styles.submitContent}
+              labelStyle={styles.submitLabel}
+              icon="arrow-left"
+            >
+              Quay l\u1ea1i
+            </Button>
+          ) : null}
           <Button
             mode="contained"
-            onPress={handleSubmit(onSubmit, onInvalid)}
+            onPress={!editingIsPublished && activeStep < 3 ? goNext : handleSubmit(onSubmit, onInvalid)}
             loading={submitting}
             disabled={submitting || uploading}
             buttonColor={COLORS.primary}
@@ -845,8 +979,9 @@ export default function CreateListingScreen() {
             labelStyle={styles.submitLabel}
             accessibilityLabel="Tạo tin thực phẩm"
             accessibilityState={{ disabled: submitting || uploading, busy: submitting }}
+            icon={!editingIsPublished && activeStep < 3 ? 'arrow-right' : undefined}
           >
-            {isEdit ? 'Lưu thay đổi' : 'Tạo tin'}
+            {!editingIsPublished && activeStep < 3 ? 'Ti\u1ebfp t\u1ee5c' : isEdit ? 'L?u thay ??i' : 'T?o tin'}
           </Button>
           <Text style={styles.footerHint} numberOfLines={2}>
             {isEdit ? 'Lưu xong sẽ quay lại danh sách tin.' : 'Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.'}
@@ -941,6 +1076,32 @@ export default function CreateListingScreen() {
   );
 }
 
+function StepProgress({ activeStep }: { activeStep: 1 | 2 | 3 }) {
+  return (
+    <View style={styles.stepper}>
+      {CREATE_STEPS.map((step, index) => {
+        const done = step.key < activeStep;
+        const active = step.key === activeStep;
+        return (
+          <View key={step.key} style={styles.stepperItem}>
+            <View style={[styles.stepCircle, active && styles.stepCircleActive, done && styles.stepCircleDone]}>
+              <MaterialCommunityIcons
+                name={done ? 'check' : step.icon}
+                size={17}
+                color={active || done ? '#ffffff' : COLORS.onSurfaceVariant}
+              />
+            </View>
+            <Text style={[styles.stepLabel, active && styles.stepLabelActive]} numberOfLines={1}>
+              {step.label}
+            </Text>
+            {index < CREATE_STEPS.length - 1 ? <View style={styles.stepLine} /> : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function Section({
   icon,
   title,
@@ -1030,6 +1191,37 @@ function DateButton({
   );
 }
 
+function TimeButton({
+  label,
+  value,
+  onPress,
+  hasError,
+}: {
+  label: string;
+  value: number | undefined;
+  onPress: () => void;
+  hasError?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.dateBtn, hasError && styles.dateBtnError]}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${fmtMinute(value)}`}
+    >
+      <View style={styles.dateIcon}>
+        <MaterialCommunityIcons name="clock-outline" size={19} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.dateLabel}>{label}</Text>
+        <Text style={styles.dateText}>{fmtMinute(value)}</Text>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   formArea: { flex: 1 },
@@ -1043,6 +1235,43 @@ const styles = StyleSheet.create({
   headerTitle: { fontWeight: '800', color: COLORS.onSurface },
   headerSub: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
   content: { padding: spacing.lg, gap: spacing.md },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    padding: spacing.md,
+    gap: 6,
+  },
+  stepperItem: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+  },
+  stepCircleActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  stepCircleDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  stepLabel: { flex: 1, minWidth: 0, fontSize: 12, color: COLORS.onSurfaceVariant, fontWeight: '700' },
+  stepLabelActive: { color: COLORS.primary, fontWeight: '900' },
+  stepLine: { width: 16, height: 1, backgroundColor: COLORS.outline },
+  inlinePanel: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surfaceContainerLow,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  inlinePanelHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  inlinePanelTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
+  inlinePanelHelper: { marginTop: 2, fontSize: 12, lineHeight: 17, color: COLORS.onSurfaceVariant },
   section: {
     backgroundColor: COLORS.surface,
     borderRadius: radius.lg,
@@ -1192,6 +1421,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   submitBtn: { borderRadius: radius.md },
+  backStepBtn: { borderRadius: radius.md, marginBottom: 8, borderColor: COLORS.outline },
   submitContent: { minHeight: 50 },
   submitLabel: { fontSize: 16, fontWeight: '800' },
   footerHint: { marginTop: 7, fontSize: 12, lineHeight: 16, color: COLORS.onSurfaceVariant, textAlign: 'center' },
