@@ -621,16 +621,18 @@ export class DishStepsService {
     const teamAssignments = await this.prisma.campaignVolunteerAssignment.findMany({
       where: { campaignId, role: 'chef', status: { not: 'cancelled' } },
       select: {
+        id: true,
         volunteer: {
           select: {
             id: true,
             user: { select: { id: true, fullName: true, avatarUrl: true } },
           },
         },
-        shift: { select: { label: true, startTime: true, endTime: true } },
+        shift: { select: { id: true, label: true, startTime: true, endTime: true } },
       },
     });
     const cookingTeam = teamAssignments.map((a) => ({
+      assignmentId: a.id,
       volunteerId: a.volunteer.id,
       userId: a.volunteer.user.id,
       fullName: a.volunteer.user.fullName,

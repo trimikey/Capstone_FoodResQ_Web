@@ -228,6 +228,8 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="recipes/create" options={{ href: null }} />
       {/* Volunteer: chi tiết chiến dịch (đăng ký vai trò) — route push, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/campaigns/[id]" options={{ href: null }} />
+      {/* Volunteer: màn tác nghiệp riêng theo assignment cho chef/waiter */}
+      <Tabs.Screen name="volunteer/tasks/[assignmentId]" options={{ href: null }} />
     </Tabs>
   );
 }

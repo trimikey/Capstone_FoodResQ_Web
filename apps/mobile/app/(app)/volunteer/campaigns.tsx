@@ -129,6 +129,13 @@ export default function VolunteerCampaignsScreen() {
     });
   };
 
+  const openTaskDetail = (assignmentId: string) => {
+    router.push({
+      pathname: '/volunteer/tasks/[assignmentId]',
+      params: { assignmentId },
+    });
+  };
+
   const renderOpenEmpty = () => {
     if (openQuery.isLoading) {
       return <ScreenState kind="loading" title="Đang tải chiến dịch" />;
@@ -207,7 +214,7 @@ export default function VolunteerCampaignsScreen() {
               task={item}
               advancing={advanceMut.isPending}
               onAdvance={() => handleAdvance(item)}
-              onOpen={() => openCampaignDetail(item.campaign.id, 'tasks')}
+              onOpen={() => openTaskDetail(item.id)}
             />
           )}
           contentContainerStyle={styles.list}
@@ -235,7 +242,7 @@ function TaskCard({
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
-  const hasKitchenOps = task.role === 'chef' || task.role === 'waiter';
+  const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter';
 
   return (
     <View style={styles.taskCard}>
@@ -288,7 +295,18 @@ function TaskCard({
         })}
       </View>
 
-      {canAdvance ? (
+      {hasRoleSpecificTask ? (
+        <Button
+          mode="contained"
+          icon={task.role === 'chef' ? 'chef-hat' : 'silverware-fork-knife'}
+          buttonColor={COLORS.primary}
+          onPress={onOpen}
+          style={styles.taskBtn}
+          contentStyle={{ height: 44 }}
+        >
+          Vào nhiệm vụ
+        </Button>
+      ) : canAdvance ? (
         <Button
           mode="contained"
           icon={assignmentStepRequiresPhotoIcon(task.status)}
@@ -304,19 +322,6 @@ function TaskCard({
       ) : (
         <Text style={styles.doneNote}>Bạn đã hoàn thành công việc này. Cảm ơn bạn!</Text>
       )}
-
-      {hasKitchenOps ? (
-        <Button
-          mode="outlined"
-          icon={task.role === 'chef' ? 'clipboard-pulse-outline' : 'silverware-fork-knife'}
-          textColor={COLORS.purple}
-          onPress={onOpen}
-          style={styles.kitchenBtn}
-          contentStyle={{ height: 42 }}
-        >
-          {task.role === 'chef' ? 'Ghi nhật ký ATTP' : 'Ghi phân phát'}
-        </Button>
-      ) : null}
     </View>
   );
 }
