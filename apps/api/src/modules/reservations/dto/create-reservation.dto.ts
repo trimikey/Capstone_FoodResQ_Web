@@ -33,4 +33,13 @@ export class CreateReservationDto {
   @IsOptional()
   @IsBoolean()
   requestDelivery?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'URL ảnh bằng chứng khó di chuyển (bệnh, gãy chân…) — BẮT BUỘC khi requestDelivery=true; shipper xem trước khi nhận đơn.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  deliveryEvidenceUrl?: string;
 }

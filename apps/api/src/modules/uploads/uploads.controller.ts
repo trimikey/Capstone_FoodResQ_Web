@@ -23,6 +23,8 @@ const FOLDER_BY_KIND: Record<string, string> = {
   listing: 'listings',
   avatar: 'avatars',
   verification: 'verifications',
+  // Ảnh bằng chứng khó di chuyển khi đặt đơn cần TNV giao tận nơi
+  'delivery-evidence': 'delivery-evidence',
 };
 
 @ApiTags('Uploads')

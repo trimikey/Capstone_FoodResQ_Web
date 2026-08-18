@@ -501,6 +501,9 @@ model Reservation {
   cancelledAt            DateTime?               @map("cancelled_at") @db.Timestamptz
   cancellationReason     String?                 @map("cancellation_reason")
   receiverNotes          String?                 @map("receiver_notes")
+  /// Ảnh bằng chứng người nhận khó di chuyển (bệnh, gãy chân…) — BẮT BUỘC khi
+  /// yêu cầu TNV giao tận nơi; shipper xem ảnh trong popup lời mời trước khi nhận.
+  deliveryEvidenceUrl    String?                 @map("delivery_evidence_url")
   trustPenaltyApplied    Boolean                 @default(false) @map("trust_penalty_applied")
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
