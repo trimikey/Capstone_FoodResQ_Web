@@ -4,8 +4,7 @@ export type UploadKind = 'listing' | 'avatar';
 
 /**
  * Upload 1 ảnh local lên backend (multipart) → trả về URL tuyệt đối (https/http).
- * Backend lưu vào ./uploads và serve qua /uploads; hoạt động cho mọi kiểu đăng nhập
- * (không phụ thuộc phiên Firebase Auth).
+ * Backend ưu tiên object storage và fallback /uploads local; hoạt động cho mọi kiểu đăng nhập.
  */
 export async function uploadImageToBackend(localUri: string, kind: UploadKind): Promise<string> {
   const name = localUri.split('/').pop() || `image_${kind}.jpg`;
@@ -26,7 +25,7 @@ export async function uploadImageToBackend(localUri: string, kind: UploadKind): 
 
 /**
  * Upload ảnh minh chứng trong lúc đăng ký tài khoản, trước khi người dùng có JWT.
- * Backend lưu vào verifications/ và trả URL dùng cho evidenceUrls của /auth/register.
+ * Backend trả URL dùng cho evidenceUrls của /auth/register.
  */
 export async function uploadRegisterEvidenceToBackend(localUri: string): Promise<string> {
   const name = localUri.split('/').pop() || 'register_evidence.jpg';

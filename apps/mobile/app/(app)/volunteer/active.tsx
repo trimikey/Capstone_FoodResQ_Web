@@ -272,6 +272,12 @@ export default function VolunteerActiveScreen() {
   const [photoReview, setPhotoReview] = useState<PhotoReviewState | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrScanning, setQrScanning] = useState(false);
+  // Lỗi hiển thị NGAY TRONG sheet: Popup (Paper Portal) bị container của
+  // BottomSheetModal đè lên nên popup lỗi khi sheet đang mở là vô hình.
+  const [qrError, setQrError] = useState<string | null>(null);
+  // Chặn camera bắn nhiều lần trước khi state `busy` kịp render (state là async,
+  // ref là đồng bộ) — tránh gọi API xác nhận trùng lặp.
+  const qrSubmittingRef = useRef(false);
   const [torch, setTorch] = useState(false);
   const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
 
@@ -301,6 +307,7 @@ export default function VolunteerActiveScreen() {
   };
   const openQrSheet = () => {
     setQrToken('');
+    setQrError(null);
     setQrScannerOpen(false);
     setTorch(false);
     qrSheetRef.current?.present();
@@ -430,9 +437,10 @@ export default function VolunteerActiveScreen() {
 
   const submitQrToken = async (tokenOverride?: string) => {
     if (!delivery) return;
+    if (qrSubmittingRef.current) return;
     const token = (tokenOverride ?? qrToken).trim();
     if (!token) {
-      Popup.show({ type: 'warning', text1: 'Nhập mã người nhận', text2: 'Mã QR nằm trên màn nhận hàng của receiver.' });
+      setQrError('Nhập hoặc quét mã QR trên màn nhận hàng của người nhận.');
       void notifyWarning();
       return;
     }
@@ -443,7 +451,9 @@ export default function VolunteerActiveScreen() {
       distanceLabel: formatKm(delivery.distanceKm),
     };
     try {
+      qrSubmittingRef.current = true;
       setQrScanning(true);
+      setQrError(null);
       await updateStatus.mutateAsync({ deliveryId: delivery.id, status: 'delivered' as DeliveryStatus, qrToken: token });
       qrSheetRef.current?.dismiss();
       setQrToken('');
@@ -452,12 +462,11 @@ export default function VolunteerActiveScreen() {
       setDeliveredSummary(snapshot);
     } catch (e: any) {
       void notifyError();
-      Popup.show({
-        type: 'error',
-        text1: 'Không xác nhận được mã',
-        text2: e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.',
-      });
+      // Không dùng Popup ở đây: sheet đang mở sẽ che popup (Paper Portal nằm
+      // dưới container BottomSheetModal) — hiện lỗi inline trong sheet.
+      setQrError(e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.');
     } finally {
+      qrSubmittingRef.current = false;
       setQrScanning(false);
     }
   };
@@ -898,12 +907,21 @@ export default function VolunteerActiveScreen() {
           <BottomSheetTextInput
             placeholder="Dán hoặc nhập mã QR"
             value={qrToken}
-            onChangeText={setQrToken}
+            onChangeText={(value) => {
+              setQrToken(value);
+              if (qrError) setQrError(null);
+            }}
             autoCapitalize="none"
             editable={!busy}
             style={styles.qrInput}
             accessibilityLabel="Mã QR người nhận"
           />
+          {qrError ? (
+            <View style={styles.qrErrorRow}>
+              <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.error} />
+              <Text style={styles.qrErrorText}>{qrError}</Text>
+            </View>
+          ) : null}
           <View style={styles.sheetActions}>
             <Button onPress={() => qrSheetRef.current?.dismiss()} textColor={COLORS.onSurfaceVariant} disabled={busy}>
               Đóng
@@ -1099,6 +1117,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: COLORS.onSurface,
   },
+  qrErrorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 },
+  qrErrorText: { flex: 1, fontSize: 13, lineHeight: 18, color: COLORS.error },
   scanToggle: { alignSelf: 'flex-start', borderRadius: 999 },
   scannerBox: {
     width: '100%',
