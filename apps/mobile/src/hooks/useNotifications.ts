@@ -95,6 +95,18 @@ function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignI
   void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
 }
 
+function refreshReservationQueries(qc: ReturnType<typeof useQueryClient>, n: AppNotification) {
+  const reservationId = notificationString(n, 'reservationId');
+  if (!reservationId) return;
+
+  void qc.invalidateQueries({ queryKey: ['reservations'] });
+  void qc.invalidateQueries({ queryKey: ['reservation', reservationId] });
+  void qc.invalidateQueries({ queryKey: ['delivery-tracking', reservationId] });
+  void qc.refetchQueries({ queryKey: ['reservations'], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['reservation', reservationId], type: 'active' });
+  void qc.refetchQueries({ queryKey: ['delivery-tracking', reservationId], type: 'active' });
+}
+
 /** Danh sách 50 thông báo gần nhất. GET /notifications/my */
 export function useNotifications() {
   return useQuery({
@@ -219,6 +231,7 @@ export function useNotificationSocket() {
         void qc.invalidateQueries({ queryKey: ['notifications'] });
         const campaignId = notificationCampaignId(n);
         if (campaignId) refreshCampaignQueries(qc, campaignId, n);
+        if (n.type === 'reservation') refreshReservationQueries(qc, n);
         // Khi admin duyệt/từ chối hồ sơ → làm mới auth để user.status cập nhật ngay,
         // màn hình "Chờ xác minh" tự chuyển sang giao diện chính mà không cần bấm "Kiểm tra lại".
         if (n.type === 'verification') {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable, Linking, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
@@ -7,7 +7,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
 import { QRDisplay } from '@/components/QRDisplay';
 import { RatingDialog } from '@/components/RatingDialog';
-import { PickupProofDialog } from '@/components/PickupProofDialog';
 import { ReportDialog } from '@/components/ReportDialog';
 import { DeliveryTrackingCard } from '@/components/DeliveryTrackingCard';
 import { Popup } from '@/components/ui/AppPopup';
@@ -53,13 +52,33 @@ export default function OrderDetailScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [ratingVisible, setRatingVisible] = useState(false);
   const [justRatedScore, setJustRatedScore] = useState<number | null>(null);
-  const [proofVisible, setProofVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [reportTarget, setReportTarget] = useState<{
     type: ReportTargetType;
     id: string;
     title: string;
   } | null>(null);
+  const completedHandledRef = useRef(false);
+  const lastStatusRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const previousStatus = lastStatusRef.current;
+    const currentStatus = order?.status;
+    lastStatusRef.current = currentStatus;
+
+    if (!order || completedHandledRef.current) return;
+    if (currentStatus !== 'picked_up' && currentStatus !== 'completed') return;
+    if (previousStatus !== 'confirmed' && previousStatus !== 'picked_up') return;
+
+    completedHandledRef.current = true;
+    Popup.show({
+      type: 'success',
+      text1: 'Đã nhận hàng thành công',
+      text2: 'Đơn đã hoàn tất. Mã QR không còn hiệu lực.',
+    });
+    const timeout = setTimeout(() => router.replace('/(app)/orders'), 1000);
+    return () => clearTimeout(timeout);
+  }, [order?.id, order?.status]);
 
   const onSubmitRating = (score: number, comment?: string) => {
     if (!id) return;
@@ -317,19 +336,6 @@ export default function OrderDetailScreen() {
             Huỷ đơn
           </Button>
         </StickyActionBar>
-      ) : order.status === 'picked_up' ? (
-        <StickyActionBar>
-          <Button
-            mode="contained"
-            icon="face-recognition"
-            buttonColor={COLORS.primary}
-            onPress={() => setProofVisible(true)}
-            style={styles.actionBtn}
-            labelStyle={{ fontSize: 15, fontWeight: '700' }}
-          >
-            Xác minh nhận hàng
-          </Button>
-        </StickyActionBar>
       ) : completed && !alreadyRated ? (
         <StickyActionBar>
           <Button
@@ -351,16 +357,6 @@ export default function OrderDetailScreen() {
         submitting={rateMut.isPending}
         onDismiss={() => setRatingVisible(false)}
         onSubmit={onSubmitRating}
-      />
-
-      <PickupProofDialog
-        visible={proofVisible}
-        reservationId={id!}
-        onDismiss={() => setProofVisible(false)}
-        onCompleted={() => {
-          setProofVisible(false);
-          refetch();
-        }}
       />
 
       <ReportDialog
