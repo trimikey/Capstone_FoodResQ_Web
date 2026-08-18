@@ -32,6 +32,10 @@ import { Spinner } from '@/components/shared/Spinner';
 import { OfferCountdown } from '@/components/deliveries/OfferPopup';
 
 const QrScanModal = dynamic(() => import('@/components/deliveries/QrScanModal'), { ssr: false });
+const HandoverConfirmModal = dynamic(
+  () => import('@/components/deliveries/HandoverConfirmModal'),
+  { ssr: false },
+);
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -146,6 +150,9 @@ export default function DeliveriesPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [pendingNext, setPendingNext] = useState<string | null>(null);
   const [qrScanOpen, setQrScanOpen] = useState(false); // modal quét QR người nhận (bước hoàn tất)
+  // Mã QR đã quét đúng, đang chờ shipper ĐỐI CHIẾU người nhận rồi mới bàn giao
+  // (cùng luật với đơn tự đến lấy: quét trúng mã chưa chắc đúng người cầm máy).
+  const [handoverToken, setHandoverToken] = useState<string | null>(null);
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
@@ -217,6 +224,7 @@ export default function DeliveriesPage() {
     try {
       await updateStatus.mutateAsync({ deliveryId: d.id, status: step.next, photo, qrToken });
       setQrScanOpen(false);
+      setHandoverToken(null);
       toast.success(step.next === 'delivered' ? 'Giao hàng hoàn tất! +5 điểm cống hiến 🎉' : 'Đã cập nhật trạng thái');
     } catch (err: unknown) {
       const msg =
@@ -255,8 +263,24 @@ export default function DeliveriesPage() {
           title="Quét mã của người nhận"
           hint={`Nhờ ${active.reservation?.receiver?.user.fullName ?? 'người nhận'} mở trang theo dõi đơn và đưa mã QR để xác nhận bàn giao đúng người.`}
           busy={updateStatus.isPending}
-          onResult={(token) => void advance(active, undefined, token)}
+          // Quét xong KHÔNG hoàn tất ngay: mở bước đối chiếu người nhận trước.
+          // Đơn của chiến dịch không có hồ sơ người nhận nên vẫn chốt thẳng.
+          onResult={(token) => {
+            setQrScanOpen(false);
+            if (active.reservation) setHandoverToken(token);
+            else void advance(active, undefined, token);
+          }}
           onClose={() => setQrScanOpen(false)}
+        />
+      )}
+
+      {/* Đối chiếu người nhận rồi mới bàn giao — giống bước quét QR đơn tự đến lấy */}
+      {handoverToken && active && (
+        <HandoverConfirmModal
+          delivery={active}
+          busy={updateStatus.isPending}
+          onConfirm={() => void advance(active, undefined, handoverToken)}
+          onCancel={() => setHandoverToken(null)}
         />
       )}
       {pickingUp && (
@@ -701,6 +725,33 @@ export default function DeliveriesPage() {
                       </a>
                     )}
                   </div>
+
+                  {/* Bằng chứng người nhận khó di chuyển — xem trước khi nhận đơn */}
+                  {o.delivery.reservation?.deliveryEvidenceUrl && (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
+                        <span className="material-symbols-outlined text-[16px]">accessible</span>
+                        Bằng chứng người nhận khó di chuyển
+                      </p>
+                      <a
+                        href={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Bấm để xem ảnh gốc"
+                        className="mt-2 block"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
+                          alt="Bằng chứng khó di chuyển của người nhận"
+                          className="h-32 w-full rounded-xl border border-amber-200 object-cover"
+                        />
+                      </a>
+                      <p className="mt-1.5 text-[11px] text-amber-800">
+                        Xem ảnh (bệnh/chấn thương) — thấy hợp lệ hãy bấm nhận đơn.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Xem trước lộ trình lấy → giao */}
                   {o.delivery.coords?.pickupLat != null &&

@@ -1181,9 +1181,19 @@ export class DeliveriesService {
       include: {
         reservation: {
           include: {
-            listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+            listing: {
+              select: { title: true, pickupAddress: true, imageUrls: true, quantityUnit: true },
+            },
             receiver: {
-              select: { address: true, user: { select: { fullName: true, phone: true } } },
+              select: {
+                address: true,
+                // Ảnh đã đăng ký + CCCD: shipper đối chiếu đúng người trước khi
+                // bàn giao, giống bước provider quét QR cho đơn tự đến lấy.
+                faceImageUrl: true,
+                idCardImageUrl: true,
+                idCardNumber: true,
+                user: { select: { fullName: true, phone: true } },
+              },
             },
           },
         },
