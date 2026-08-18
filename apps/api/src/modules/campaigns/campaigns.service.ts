@@ -2768,9 +2768,17 @@ export class CampaignsService {
       statuses?: AssignmentStatus[];
       /** true = thông điệp cho tổ chức đang duyệt (thay vì cho TNV đăng ký). */
       orgView?: boolean;
+      /**
+       * Client dùng để truy vấn. Gọi TRONG `$transaction` thì PHẢI truyền `tx`:
+       * query bằng client ngoài sẽ xin thêm một connection từ pool trong khi
+       * transaction vẫn đang giữ connection của nó — đủ vài lượt duyệt đồng thời
+       * là cạn pool, transaction quá hạn 5s và ném P2028.
+       */
+      client?: Prisma.TransactionClient;
     },
   ): Promise<void> {
-    const target = await this.prisma.campaignShift.findUnique({
+    const db = opts?.client ?? this.prisma;
+    const target = await db.campaignShift.findUnique({
       where: { id: shiftId },
       select: { startTime: true, endTime: true, endDayOffset: true },
     });
@@ -2784,7 +2792,7 @@ export class CampaignsService {
     ));
     const rangeStart = new Date(targetDay.getTime() - 86_400_000);
     const rangeEnd = new Date(targetDay.getTime() + 86_400_000);
-    const held = await this.prisma.campaignVolunteerAssignment.findMany({
+    const held = await db.campaignVolunteerAssignment.findMany({
       where: {
         volunteerId,
         shiftId: { not: null },
@@ -4803,6 +4811,8 @@ export class CampaignsService {
           excludeAssignmentId: assignmentId,
           statuses: ['assigned', 'checked_in', 'in_progress', 'completed'],
           orgView: true,
+          // Đang trong $transaction → dùng chính tx, không mượn connection khác.
+          client: tx,
         });
       }
 
