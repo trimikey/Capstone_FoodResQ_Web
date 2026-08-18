@@ -185,6 +185,7 @@ function HandoverConfirmModal({
   const reservation = delivery.reservation;
   const receiver = reservation?.receiver;
   const registeredPhoto = receiver?.faceImageUrl ?? receiver?.idCardImageUrl ?? null;
+  const deliveryEvidenceUrl = reservation?.deliveryEvidenceUrl ?? null;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
@@ -193,52 +194,64 @@ function HandoverConfirmModal({
           <Text style={styles.successTitle}>Đối chiếu người nhận</Text>
           <Text style={styles.successSub}>Mã QR đã đúng — kiểm tra người trước mặt bạn</Text>
 
-          <View style={styles.handoverPhotoWrap}>
-            {registeredPhoto ? (
-              <AppImage source={{ uri: registeredPhoto }} style={styles.handoverPhoto} />
-            ) : (
-              <View style={styles.handoverNoPhoto}>
-                <MaterialCommunityIcons name="camera-off-outline" size={34} color={COLORS.warning} />
-                <Text style={styles.handoverNoPhotoText}>Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân</Text>
-              </View>
-            )}
-            {registeredPhoto ? <Text style={styles.handoverPhotoLabel}>Ảnh đã đăng ký</Text> : null}
-          </View>
-
-          <View style={styles.successDivider} />
-
-          <View style={styles.successDetails}>
-            <View style={styles.successRow}>
-              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
-              <Text style={styles.successRowText}>{receiver?.user.fullName ?? '—'}</Text>
+          <ScrollView
+            style={styles.handoverScroll}
+            contentContainerStyle={styles.handoverScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.handoverPhotoWrap}>
+              {registeredPhoto ? (
+                <AppImage source={{ uri: registeredPhoto }} style={styles.handoverPhoto} />
+              ) : (
+                <View style={styles.handoverNoPhoto}>
+                  <MaterialCommunityIcons name="camera-off-outline" size={34} color={COLORS.warning} />
+                  <Text style={styles.handoverNoPhotoText}>Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân</Text>
+                </View>
+              )}
+              {registeredPhoto ? <Text style={styles.handoverPhotoLabel}>Ảnh đã đăng ký</Text> : null}
             </View>
-            {receiver?.user.phone ? (
-              <View style={styles.successRow}>
-                <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.teal} />
-                <Text style={styles.successRowText}>{receiver.user.phone}</Text>
-              </View>
-            ) : null}
-            {receiver?.idCardNumber ? (
-              <View style={styles.successRow}>
-                <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.indigo} />
-                <Text style={styles.successRowText}>CCCD: {receiver.idCardNumber}</Text>
+
+            {deliveryEvidenceUrl ? (
+              <View style={styles.handoverEvidence}>
+                <View style={styles.handoverEvidenceTitleRow}>
+                  <MaterialCommunityIcons name="image-text" size={17} color="#78350f" />
+                  <Text style={styles.handoverEvidenceLabel}>Ảnh lý do cần shipper giao</Text>
+                </View>
+                <AppImage source={{ uri: deliveryEvidenceUrl }} style={styles.handoverEvidenceImage} />
+                <Text style={styles.handoverEvidenceHint}>
+                  Kiểm tra ảnh bằng chứng người nhận khó di chuyển trước khi bàn giao.
+                </Text>
               </View>
             ) : null}
-            <View style={styles.successRow}>
-              <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
-              <Text style={styles.successRowText} numberOfLines={2}>
-                {reservation?.listing.title ?? '—'}
-                {reservation?.quantity != null ? ` · ${reservation.quantity} phần` : ''}
-              </Text>
-            </View>
-          </View>
 
-          {reservation?.deliveryEvidenceUrl ? (
-            <View style={styles.handoverEvidence}>
-              <Text style={styles.handoverEvidenceLabel}>Bằng chứng người nhận khó di chuyển</Text>
-              <AppImage source={{ uri: reservation.deliveryEvidenceUrl }} style={styles.handoverEvidenceImage} />
+            <View style={styles.successDivider} />
+
+            <View style={styles.successDetails}>
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
+                <Text style={styles.successRowText}>{receiver?.user.fullName ?? '—'}</Text>
+              </View>
+              {receiver?.user.phone ? (
+                <View style={styles.successRow}>
+                  <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.teal} />
+                  <Text style={styles.successRowText}>{receiver.user.phone}</Text>
+                </View>
+              ) : null}
+              {receiver?.idCardNumber ? (
+                <View style={styles.successRow}>
+                  <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.indigo} />
+                  <Text style={styles.successRowText}>CCCD: {receiver.idCardNumber}</Text>
+                </View>
+              ) : null}
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
+                <Text style={styles.successRowText} numberOfLines={2}>
+                  {reservation?.listing.title ?? '—'}
+                  {reservation?.quantity != null ? ` · ${reservation.quantity} phần` : ''}
+                </Text>
+              </View>
             </View>
-          ) : null}
+          </ScrollView>
 
           <View style={styles.handoverActions}>
             <Button
@@ -1305,6 +1318,8 @@ const styles = StyleSheet.create({
   successBtn: { borderRadius: 14, width: '100%', marginTop: 4 },
   successBtnContent: { paddingVertical: 8 },
   // ── Đối chiếu người nhận trước khi bàn giao ──
+  handoverScroll: { alignSelf: 'stretch', maxHeight: 430 },
+  handoverScrollContent: { alignItems: 'center', gap: 12, paddingBottom: 4 },
   handoverPhotoWrap: { alignItems: 'center', gap: 6, marginTop: 4 },
   handoverPhoto: {
     width: 132,
@@ -1335,8 +1350,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffbeb',
     gap: 6,
   },
+  handoverEvidenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   handoverEvidenceLabel: { fontSize: 11, fontWeight: '800', color: '#78350f' },
-  handoverEvidenceImage: { width: '100%', height: 120, borderRadius: radius.sm },
+  handoverEvidenceImage: { width: '100%', height: 150, borderRadius: radius.sm },
+  handoverEvidenceHint: { fontSize: 11, lineHeight: 15, color: '#92400e' },
   handoverActions: { flexDirection: 'row', gap: spacing.sm, width: '100%', marginTop: 6 },
   handoverBtn: { flex: 1, borderRadius: 14 },
   reviewOverlay: {
