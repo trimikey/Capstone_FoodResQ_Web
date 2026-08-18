@@ -33,6 +33,7 @@ export function RegistrationRow({
   decision,
   pending,
   onDecide,
+  group,
 }: {
   p: RegistrationParticipant;
   shifts?: RegistrationShiftSummary[];
@@ -40,6 +41,8 @@ export function RegistrationRow({
   /** Đang gửi mutation (disable nút để chặn click 2 lần). */
   pending?: boolean;
   onDecide: (id: string, name: string, action: 'approved' | 'rejected') => void;
+  /** Các đăng ký chờ duyệt của CÙNG một TNV (gồm cả p) — gộp 1 hàng, duyệt chung 1 lần. */
+  group?: RegistrationParticipant[];
 }) {
   const [open, setOpen] = useState(false);
   const roleKey = p.role as keyof typeof ROLE_LABEL;
@@ -55,9 +58,21 @@ export function RegistrationRow({
   // Ca chỉ có giờ; với chiến dịch nhiều ngày phải kèm NGÀY TRỰC, không thì không biết
   // người này nhận buổi nào.
   const workDayText = p.workDate ? `${formatVnDate(p.workDate)} · ` : '';
-  const shiftText = shift
-    ? `${workDayText}${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
-    : 'Đăng ký vai trò tổng';
+  // 1 TNV đăng ký nhiều ca → BE tạo nhiều bản ghi, nhưng hiển thị gộp 1 hàng.
+  // Dòng tóm tắt chỉ ghi số ca; danh sách đầy đủ từng ca nằm trong phần Chi tiết.
+  const groupMembers = group && group.length > 1 ? group : null;
+  const memberShiftText = (m: RegistrationParticipant) => {
+    const s = m.shiftId ? shifts?.find((x) => x.id === m.shiftId) : null;
+    const day = m.workDate ? `${formatVnDate(m.workDate)} · ` : '';
+    return s
+      ? `${day}${s.label} · ${s.startTime}-${s.endTime} · ${s.slotsFilled}/${s.slotsNeeded}`
+      : 'Vai trò tổng';
+  };
+  const shiftText = groupMembers
+    ? `${groupMembers.length} ca đã đăng ký — bấm Chi tiết để xem từng ca`
+    : shift
+      ? `${workDayText}${shift.label} · ${shift.startTime}-${shift.endTime} · ${shift.slotsFilled}/${shift.slotsNeeded}`
+      : 'Đăng ký vai trò tổng';
   const detail = hasVolunteerDetail(p) ? p.volunteer : null;
   const phoneText = detail?.phone || null;
   const ratingText = detail?.avgRating == null ? 'Chưa có rating' : `${detail.avgRating.toFixed(1)}/5`;
@@ -137,10 +152,19 @@ export function RegistrationRow({
 
         {open && (
           <div className="cm-reg-review-grid">
-            <span>
-              <b>Ca đăng ký</b>
-              {shiftText}
-            </span>
+            {groupMembers ? (
+              groupMembers.map((m, i) => (
+                <span key={m.id}>
+                  <b>Ca {i + 1}</b>
+                  {memberShiftText(m)}
+                </span>
+              ))
+            ) : (
+              <span>
+                <b>Ca đăng ký</b>
+                {shiftText}
+              </span>
+            )}
             <span>
               <b>Liên hệ</b>
               {phoneText ? (

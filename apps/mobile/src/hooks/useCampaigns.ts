@@ -980,16 +980,16 @@ export function useCampaignSupplies(campaignId?: string) {
 export function useCompleteAssignedDistribution() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, actualPeopleServed, note }: {
+    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note }: {
       distributionId: string;
       campaignId: string;
       actualServings: number;
-      actualPeopleServed: number;
       note?: string;
     }) => {
+      // 1 suất = 1 người — BE tự ghi actualPeopleServed = actualServings.
       const res = await apiClient.post<ApiResponse<AssignedDistribution>>(
         endpoints.campaigns.completeDistribution(distributionId),
-        { actualServings, actualPeopleServed, ...(note ? { note } : {}) }
+        { actualServings, ...(note ? { note } : {}) }
       );
       return res.data.data;
     },

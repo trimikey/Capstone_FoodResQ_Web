@@ -30,6 +30,8 @@ const FOLDER_BY_KIND: Record<string, string> = {
   listing: 'listings',
   avatar: 'avatars',
   verification: 'verifications',
+  // Ảnh bằng chứng khó di chuyển khi đặt đơn cần TNV giao tận nơi
+  'delivery-evidence': 'delivery-evidence',
 };
 
 @ApiTags('Uploads')
@@ -44,7 +46,7 @@ export class UploadsController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Upload 1 ảnh (listing/avatar/verification) → trả về URL phục vụ qua /uploads.',
+      'Upload 1 ảnh (listing/avatar/verification/delivery-evidence) → trả về URL ảnh.',
   })
   @ApiQuery({ name: 'kind', enum: Object.keys(FOLDER_BY_KIND), required: true })
   @ApiBody({
@@ -71,6 +73,13 @@ export class UploadsController {
       throw new BadRequestException(
         `kind phải là một trong: ${Object.keys(FOLDER_BY_KIND).join(', ')}`,
       );
+    }
+    // Ảnh listing cần hiển thị đồng nhất trên web + mobile trong môi trường dev
+    // đang dùng DB cloud nhưng filesystem local. Có Cloudinary thì lên Cloudinary
+    // (URL bền, mọi máy đều thấy); chưa cấu hình mới rơi về data URL — nặng hơn
+    // nhưng không vỡ ảnh khi đổi máy như /uploads local.
+    if (kind === 'listing' && !this.storage.isCloudinaryConfigured()) {
+      return { url: `data:${file.mimetype};base64,${file.buffer.toString('base64')}` };
     }
     const url = await this.storage.saveImage(file, folder);
     return { url };

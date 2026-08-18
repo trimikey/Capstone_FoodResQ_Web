@@ -23,6 +23,7 @@ import { useMe } from '@/hooks/useProfile';
 import { useProviders } from '@/hooks/useProviders';
 import CampaignCard from './_components/CampaignCard';
 import CampaignTaskCard from './_components/CampaignTaskCard';
+import DonationDetailModal from './_components/DonationDetailModal';
 import MyCampaignCard from './_components/MyCampaignCard';
 import CompletedCampaignsSection from './_components/CompletedCampaignsSection';
 import CreateCampaignModal from './_components/CreateCampaignModal';
@@ -671,8 +672,17 @@ function ActiveCard({ c }: { c: Campaign }) {
 }
 
 function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
+  // Bấm vào dòng "hứa góp" → mở chi tiết đơn quyên góp + phân công TNV đi nhận
+  const [selected, setSelected] = useState<{ campaign: Campaign; donation: NonNullable<Campaign['donations']>[number] } | null>(null);
+
   const events = useMemo(() => {
-    const list: Array<{ kind: 'apply' | 'donate' | 'complete'; title: React.ReactNode; time: string; variant: 'mint' | 'ember' | 'sky' | 'honey' }> = [];
+    const list: Array<{
+      kind: 'apply' | 'donate' | 'complete';
+      title: React.ReactNode;
+      time: string;
+      variant: 'mint' | 'ember' | 'sky' | 'honey';
+      donation?: { campaign: Campaign; donation: NonNullable<Campaign['donations']>[number] };
+    }> = [];
     for (const c of campaigns) {
       for (const a of c.assignments ?? []) {
         list.push({
@@ -700,8 +710,13 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
               cho <b>{c.title}</b>
             </>
           ),
-          time: 'Gần đây',
+          time: (d.pickupAssigneeIds ?? []).length > 0
+            ? `Đã phân công ${(d.pickupAssigneeIds ?? []).length} shipper đi nhận`
+            : d.status === 'pledged'
+              ? 'Bấm để xem chi tiết & phân công shipper đi nhận'
+              : 'Gần đây',
           variant: 'honey',
+          donation: { campaign: c, donation: d },
         });
       }
       if (c.status === 'completed') {
@@ -734,7 +749,12 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
       </div>
       <div className="cm-feed">
         {events.map((e, i) => (
-          <div key={i} className="cm-feed-item">
+          <div
+            key={i}
+            className={`cm-feed-item ${e.donation ? 'cursor-pointer hover:bg-neutral-50' : ''}`}
+            onClick={e.donation ? () => setSelected(e.donation!) : undefined}
+            role={e.donation ? 'button' : undefined}
+          >
             <div className={`cm-feed-dot ${e.variant !== 'mint' ? `cm-feed-dot--${e.variant}` : ''}`}>
               <span className="material-symbols-outlined text-[18px]">
                 {e.kind === 'apply' ? 'person_add' : e.kind === 'donate' ? 'inventory_2' : 'verified'}
@@ -744,9 +764,19 @@ function ActivityFeed({ campaigns }: { campaigns: Campaign[] }) {
               <p className="cm-feed-title">{e.title}</p>
               <p className="cm-feed-time">{e.time}</p>
             </div>
+            {e.donation && (
+              <span className="material-symbols-outlined text-[18px] text-neutral-300 self-center">chevron_right</span>
+            )}
           </div>
         ))}
       </div>
+      {selected && (
+        <DonationDetailModal
+          campaign={selected.campaign}
+          donation={selected.donation}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </section>
   );
 }
@@ -1244,8 +1274,20 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
   const isToday = (t: MyTask) =>
     Boolean(t.campaign.scheduledDate?.slice(0, 10) === todayKey);
 
-  const todayTasks = myTasks.filter(isToday);
-  const upcomingTasks = myTasks.filter((t) => !isToday(t));
+  // 1 TNV nhận nhiều ca cùng chiến dịch → BE trả nhiều task giống hệt nhau ngoài
+  // ca trực. Gộp theo chiến dịch + vai trò + trạng thái thành 1 thẻ; thẻ tự liệt
+  // kê các ca bên trong (mỗi ca vẫn có link nhiệm vụ riêng).
+  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}:${t.status}`;
+  const taskGroups = new Map<string, MyTask[]>();
+  for (const t of myTasks) {
+    const k = taskGroupKey(t);
+    taskGroups.set(k, [...(taskGroups.get(k) ?? []), t]);
+  }
+  const dedupedTasks = myTasks.filter((t) => taskGroups.get(taskGroupKey(t))![0].id === t.id);
+  const groupOf = (t: MyTask) => taskGroups.get(taskGroupKey(t));
+
+  const todayTasks = dedupedTasks.filter(isToday);
+  const upcomingTasks = dedupedTasks.filter((t) => !isToday(t));
   const overdueTodayCount = todayTasks.filter((t) => isOverdue(t, now)).length;
 
   return (
@@ -1253,7 +1295,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
       <div className="cm-section-head">
         <h2 className="cm-section-title">
           <span className="material-symbols-outlined text-emerald-600">assignment_ind</span>
-          Việc của tôi ({myTasks.length})
+          Việc của tôi ({dedupedTasks.length})
         </h2>
       </div>
       {myTasks.length === 0 ? (
@@ -1286,7 +1328,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {todayTasks.map((t) => (
-                  <CampaignTaskCard key={t.id} t={t} />
+                  <CampaignTaskCard key={t.id} t={t} group={groupOf(t)} />
                 ))}
               </div>
             </div>
@@ -1300,7 +1342,7 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {upcomingTasks.map((t) => (
-                  <CampaignTaskCard key={t.id} t={t} />
+                  <CampaignTaskCard key={t.id} t={t} group={groupOf(t)} />
                 ))}
               </div>
             </div>

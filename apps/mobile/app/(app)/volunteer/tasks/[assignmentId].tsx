@@ -430,7 +430,6 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const complete = useCompleteAssignedDistribution();
   const [closing, setClosing] = useState<AssignedDistribution | null>(null);
   const [actualServings, setActualServings] = useState('');
-  const [actualPeople, setActualPeople] = useState('');
   const [note, setNote] = useState('');
 
   const dishes = detail.dishes ?? [];
@@ -442,28 +441,26 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const openClose = (distribution: AssignedDistribution) => {
     setClosing(distribution);
     setActualServings(String(distribution.servingsServed));
-    setActualPeople(String(Math.min(distribution.peopleServed, distribution.servingsServed)));
     setNote('');
   };
 
   const submitClose = async () => {
     if (!closing) return;
     const servings = parseNonNegativeInt(actualServings);
-    const people = parseNonNegativeInt(actualPeople);
-    if (servings == null || people == null || servings > closing.servingsServed || people > servings) {
+    if (servings == null || servings > closing.servingsServed) {
       Popup.show({
         type: 'warning',
         text1: 'Số liệu không hợp lệ',
-        text2: `Số suất không vượt ${closing.servingsServed}; số người không vượt số suất thực phát.`,
+        text2: `Số suất thực phát không vượt ${closing.servingsServed} (số đã lên kế hoạch).`,
       });
       return;
     }
     try {
+      // QUY TẮC: 1 suất = 1 người — BE tự ghi số người = số suất, không gửi riêng.
       await complete.mutateAsync({
         distributionId: closing.id,
         campaignId: detail.campaign.id,
         actualServings: servings,
-        actualPeopleServed: people,
         note: note.trim() || undefined,
       });
       void notifySuccess();
@@ -570,9 +567,10 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         <Dialog visible={!!closing} onDismiss={() => !complete.isPending && setClosing(null)}>
           <Dialog.Title>Chốt đợt phát</Dialog.Title>
           <Dialog.Content style={styles.dialogBody}>
-            <Text style={styles.muted}>Kế hoạch: {closing?.servingsServed ?? 0} suất · {closing?.peopleServed ?? 0} người</Text>
+            <Text style={styles.muted}>Kế hoạch: {closing?.servingsServed ?? 0} suất</Text>
             <TextInput mode="outlined" label="Số suất thực phát *" value={actualServings} onChangeText={setActualServings} keyboardType="number-pad" />
-            <TextInput mode="outlined" label="Số người thực nhận *" value={actualPeople} onChangeText={setActualPeople} keyboardType="number-pad" />
+            {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
+            <Text style={styles.muted}>Mỗi suất phát cho đúng 1 người — hệ thống tự ghi số người nhận bằng số suất.</Text>
             <TextInput mode="outlined" label="Ghi chú" value={note} onChangeText={setNote} multiline numberOfLines={3} />
           </Dialog.Content>
           <Dialog.Actions>

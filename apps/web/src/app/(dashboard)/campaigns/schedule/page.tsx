@@ -174,11 +174,14 @@ function ScheduleChip({
   campaign,
   isPersonal,
 }: {
-  campaign: { id: string; campaignId?: string; title: string; status: string; role?: string; shift?: { label: string; startTime: string; endTime: string } | null };
+  campaign: { id: string; campaignId?: string; title: string; status: string; role?: string; assignmentStatus?: string; shift?: { label: string; startTime: string; endTime: string } | null };
   isPersonal: boolean;
 }) {
   const statusMeta = STATUS_COLOR[campaign.status] ?? { label: campaign.status, cls: 'bg-neutral-100 text-neutral-600 border-neutral-200' };
   const roleMeta = campaign.role ? (ROLE_COLOR[campaign.role] ?? { label: campaign.role, cls: 'bg-neutral-100 text-neutral-600 border-neutral-200' }) : null;
+  // Đăng ký còn chờ tổ chức duyệt — chưa phải ca chính thức, hiển thị mờ + badge
+  // riêng để TNV không tưởng mình đã được nhận (BE đã loại ca bị từ chối/hủy).
+  const isPendingApproval = isPersonal && campaign.assignmentStatus === 'pending';
 
   const href = isPersonal
     ? `/campaigns/${campaign.campaignId ?? campaign.id}`
@@ -188,7 +191,9 @@ function ScheduleChip({
     <Link
       href={href}
       title={isPersonal ? 'Xem chi tiết chiến dịch' : 'Mở trang quản lý chiến dịch'}
-      className="block p-2 rounded-xl border bg-white hover:border-emerald-300 hover:shadow-sm transition-all text-left"
+      className={`block p-2 rounded-xl border bg-white hover:border-emerald-300 hover:shadow-sm transition-all text-left ${
+        isPendingApproval ? 'border-dashed border-amber-300 opacity-75' : ''
+      }`}
     >
       {campaign.shift && (
         <div className="flex items-center gap-1 mb-1">
@@ -207,9 +212,15 @@ function ScheduleChip({
             {roleMeta.label}
           </span>
         )}
-        <span className={`inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${statusMeta.cls}`}>
-          {statusMeta.label}
-        </span>
+        {isPendingApproval ? (
+          <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-200">
+            Chờ duyệt
+          </span>
+        ) : (
+          <span className={`inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${statusMeta.cls}`}>
+            {statusMeta.label}
+          </span>
+        )}
       </div>
     </Link>
   );

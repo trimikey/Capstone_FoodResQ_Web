@@ -5,6 +5,8 @@ export const createReservationSchema = z.object({
   quantity: z.number().positive().max(10),
   receiverNotes: z.string().max(500).optional(),
   requestDelivery: z.boolean().optional(),
+  /** Ảnh bằng chứng khó di chuyển — bắt buộc khi requestDelivery (BE chặn nếu thiếu). */
+  deliveryEvidenceUrl: z.string().max(2048).optional(),
 });
 
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;

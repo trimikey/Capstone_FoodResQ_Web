@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,10 +16,11 @@ import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import {
-  createListingSchema,
+  makeCreateListingSchema,
   type CreateListingFormInput,
 } from '@/utils/validators';
 import { useAuth } from '@/hooks/useAuth';
+import { useMyProfile } from '@/hooks/useProfile';
 import { useListingDetail } from '@/hooks/useListings';
 import {
   useCreateListing,
@@ -28,6 +29,7 @@ import {
   type UpdateListingInput,
 } from '@/hooks/useProviderListings';
 import { getCurrentCoords, type Coords } from '@/services/geolocation';
+import { reverseGeocode } from '@/services/geocoding';
 import {
   captureAndUploadListingImage,
   pickAndUploadListingImages,
@@ -56,9 +58,24 @@ const CREATE_STEPS = [
   { key: 3, label: '\u1ea2nh & \u0111\u1ecba \u0111i\u1ec3m', icon: 'map-marker-radius-outline' },
 ] as const;
 
+// FoodResQ chỉ hoạt động ở VN — ép cứng timezone này cho picker thay vì để
+// nó tự lấy timezone hệ thống của máy. Nếu thiết bị test tắt "Automatic
+// timezone" hoặc set sai vùng, giờ chọn trên picker sẽ lệch đúng bằng độ
+// lệch đó so với giờ VN thực tế (bug đã gặp: chọn ~22:38 tối nhưng bị lưu
+// thành 22:38 UTC thay vì quy đổi đúng sang 15:38 UTC).
+const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+const vnDateTimeFormatter = new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: VN_TIMEZONE,
+});
+
 function fmtDateTime(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return vnDateTimeFormatter.format(d).replace(',', '');
 }
 
 function fmtMinute(minute?: number): string {
@@ -80,12 +97,14 @@ function openDateTimePicker(current: Date, onPick: (d: Date) => void) {
   DateTimePickerAndroid.open({
     value: current,
     mode: 'date',
+    timeZoneName: VN_TIMEZONE,
     onChange: (_e, date) => {
       if (!date) return;
       DateTimePickerAndroid.open({
         value: date,
         mode: 'time',
         is24Hour: true,
+        timeZoneName: VN_TIMEZONE,
         onChange: (_e2, dt) => {
           if (dt) onPick(dt);
         },
@@ -112,6 +131,7 @@ export default function CreateListingScreen() {
   const compactLayout = width < 390;
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const { user } = useAuth();
+  const { data: profile } = useMyProfile(user?.role === 'provider');
   const createListing = useCreateListing();
   const updateListing = useUpdateListing();
   const { data: editingListing } = useListingDetail(editId ?? '');
@@ -119,6 +139,8 @@ export default function CreateListingScreen() {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [locatingPickup, setLocatingPickup] = useState(false);
+  const [pickupLocationSource, setPickupLocationSource] = useState<'profile' | 'current' | null>(null);
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
   const isEdit = !!editId;
   const editingIsPublished = !!editingListing && editingListing.status !== 'draft';
@@ -137,6 +159,7 @@ export default function CreateListingScreen() {
       ? 'Sửa thông tin phụ'
       : 'Sửa tin nháp'
     : 'Đăng tin mới';
+  const createListingFormSchema = useMemo(() => makeCreateListingSchema(), []);
 
   const {
     control,
@@ -147,7 +170,7 @@ export default function CreateListingScreen() {
     trigger,
     formState: { errors },
   } = useForm<CreateListingFormInput>({
-    resolver: zodResolver(createListingSchema),
+    resolver: zodResolver(createListingFormSchema),
     defaultValues: {
       title: '',
       categories: [] as string[],
@@ -167,10 +190,6 @@ export default function CreateListingScreen() {
       dailyEndMinute: 21 * 60,
     },
   });
-
-  useEffect(() => {
-    getCurrentCoords().then(({ coords }) => setCoords(coords));
-  }, []);
 
   useEffect(() => {
     if (!editingListing) return;
@@ -196,10 +215,6 @@ export default function CreateListingScreen() {
     setImageUrls(editingListing.imageUrls ?? []);
   }, [editingListing, reset]);
 
-  if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
-  }
-
   const categories = watch('categories');
   const categoryOtherLabel = watch('categoryOtherLabel');
   const quantityUnit = watch('quantityUnit');
@@ -209,6 +224,29 @@ export default function CreateListingScreen() {
   const expiry = watch('expiryTime');
   const dailyStartMinute = watch('dailyStartMinute');
   const dailyEndMinute = watch('dailyEndMinute');
+  const profileProvider = profile?.provider ?? user?.provider ?? null;
+  const storePickup = useMemo(
+    () => profileProvider?.address && profileProvider.lat != null && profileProvider.lng != null
+      ? { address: profileProvider.address, lat: profileProvider.lat, lng: profileProvider.lng }
+      : null,
+    [profileProvider?.address, profileProvider?.lat, profileProvider?.lng]
+  );
+
+  useEffect(() => {
+    if (storePickup) return;
+    getCurrentCoords().then(({ coords }) => setCoords(coords));
+  }, [storePickup]);
+
+  useEffect(() => {
+    if (isEdit || pickupAddress || !storePickup) return;
+    setValue('pickupAddress', storePickup.address, { shouldValidate: true });
+    setCoords({ lat: storePickup.lat, lng: storePickup.lng });
+    setPickupLocationSource('profile');
+  }, [isEdit, pickupAddress, setValue, storePickup]);
+
+  if (user && user.role !== 'provider') {
+    return <Redirect href="/(app)/home" />;
+  }
 
   const openCategorySheet = () => {
     setPendingCategories(categories ?? []);
@@ -257,6 +295,42 @@ export default function CreateListingScreen() {
 
   const removeImage = (url: string) => {
     setImageUrls((prev) => prev.filter((item) => item !== url));
+  };
+
+  const useProfilePickupLocation = () => {
+    if (!storePickup) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Ch\u01b0a c\u00f3 \u0111\u1ecba ch\u1ec9 c\u1eeda h\u00e0ng',
+        text2: 'Vui l\u00f2ng c\u1eadp nh\u1eadt \u0111\u1ecba ch\u1ec9 v\u00e0 to\u1ea1 \u0111\u1ed9 trong h\u1ed3 s\u01a1 tr\u01b0\u1edbc.',
+      });
+      return;
+    }
+    setValue('pickupAddress', storePickup.address, { shouldValidate: true });
+    setCoords({ lat: storePickup.lat, lng: storePickup.lng });
+    setPickupLocationSource('profile');
+  };
+
+  const useCurrentPickupLocation = async () => {
+    try {
+      setLocatingPickup(true);
+      const result = await getCurrentCoords();
+      if (!result.coords) {
+        Popup.show({
+          type: 'warning',
+          text1: 'Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i',
+          text2: 'Vui l\u00f2ng b\u1eadt \u0111\u1ecbnh v\u1ecb ho\u1eb7c ch\u1ecdn \u0111\u1ecba ch\u1ec9 tr\u00ean b\u1ea3n \u0111\u1ed3.',
+        });
+        return;
+      }
+      const { lat, lng } = result.coords;
+      const address = (await reverseGeocode(lat, lng)) || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      setValue('pickupAddress', address, { shouldValidate: true });
+      setCoords({ lat, lng });
+      setPickupLocationSource('current');
+    } finally {
+      setLocatingPickup(false);
+    }
   };
 
   const goNext = async () => {
@@ -646,7 +720,7 @@ export default function CreateListingScreen() {
             <Section
               icon="clock-outline"
               title="Thời gian nhận"
-              helper="Giờ bắt đầu phải cách hiện tại ít nhất 30 phút. Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
+              helper="Có thể bắt đầu nhận ngay hiện tại. Chọn khung giờ đủ rộng để người nhận hoặc shipper tới lấy."
             >
               <Field label="Giờ bắt đầu lấy *" error={errors.pickupStartTime?.message}>
                 <DateButton
@@ -759,6 +833,65 @@ export default function CreateListingScreen() {
               helper="Chọn gợi ý địa chỉ để hệ thống lưu đúng toạ độ."
             >
               <Field label="Địa chỉ lấy hàng *">
+                <View style={styles.pickupOptionRow}>
+                  <Pressable
+                    onPress={useProfilePickupLocation}
+                    disabled={!storePickup}
+                    style={({ pressed }) => [
+                      styles.pickupOptionBtn,
+                      pickupLocationSource === 'profile' && styles.pickupOptionBtnActive,
+                      !storePickup && styles.pickupOptionBtnDisabled,
+                      pressed && storePickup && styles.pressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Dùng địa chỉ cửa hàng đã đăng ký"
+                    accessibilityState={{ selected: pickupLocationSource === 'profile', disabled: !storePickup }}
+                  >
+                    <MaterialCommunityIcons
+                      name="store-marker-outline"
+                      size={18}
+                      color={pickupLocationSource === 'profile' ? COLORS.onPrimary : COLORS.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.pickupOptionText,
+                        pickupLocationSource === 'profile' && styles.pickupOptionTextActive,
+                        !storePickup && styles.pickupOptionTextDisabled,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      Địa chỉ hồ sơ
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={useCurrentPickupLocation}
+                    disabled={locatingPickup}
+                    style={({ pressed }) => [
+                      styles.pickupOptionBtn,
+                      pickupLocationSource === 'current' && styles.pickupOptionBtnActive,
+                      locatingPickup && styles.pickupOptionBtnDisabled,
+                      pressed && !locatingPickup && styles.pressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Dùng vị trí hiện tại"
+                    accessibilityState={{ selected: pickupLocationSource === 'current', disabled: locatingPickup, busy: locatingPickup }}
+                  >
+                    <MaterialCommunityIcons
+                      name={locatingPickup ? 'progress-clock' : 'crosshairs-gps'}
+                      size={18}
+                      color={pickupLocationSource === 'current' ? COLORS.onPrimary : COLORS.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.pickupOptionText,
+                        pickupLocationSource === 'current' && styles.pickupOptionTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {locatingPickup ? 'Đang lấy...' : 'Vị trí hiện tại'}
+                    </Text>
+                  </Pressable>
+                </View>
                 <AddressPicker
                   initialCoords={coords}
                   value={
@@ -769,6 +902,7 @@ export default function CreateListingScreen() {
                   onChange={({ address, lat, lng }) => {
                     setValue('pickupAddress', address, { shouldValidate: true });
                     setCoords({ lat, lng });
+                    setPickupLocationSource(null);
                   }}
                   error={errors.pickupAddress?.message}
                 />
@@ -1247,6 +1381,44 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   nowBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '700' },
+  pickupOptionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  pickupOptionBtn: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+  },
+  pickupOptionBtnActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+  },
+  pickupOptionBtnDisabled: {
+    opacity: 0.55,
+  },
+  pickupOptionText: {
+    flexShrink: 1,
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  pickupOptionTextActive: {
+    color: COLORS.onPrimary,
+  },
+  pickupOptionTextDisabled: {
+    color: COLORS.onSurfaceVariant,
+  },
+  pressed: { opacity: 0.72 },
   footer: {
     borderTopWidth: 1,
     borderTopColor: COLORS.outline,

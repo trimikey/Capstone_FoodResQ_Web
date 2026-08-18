@@ -1,6 +1,9 @@
 'use client';
 
-import '../campaign-tokens.css';
+// Dùng CHUNG một stylesheet cm-* với dashboard — trước đây mỗi route một bản copy
+// đã lệch nhau, client-side navigation nạp cả hai → bản nạp sau đè bản kia, vỡ UI
+// ngẫu nhiên (reload lại hết). Không tạo lại file cm-* riêng cho route này.
+import '../../(dashboard)/campaigns/campaign-tokens.css';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';

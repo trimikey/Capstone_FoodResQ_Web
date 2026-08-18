@@ -68,25 +68,53 @@ export interface ListingQuery {
 
 export const LISTING_PAGE_SIZE = 6;
 
+function uploadPathFromPathname(pathname: string): string | null {
+  if (pathname.startsWith('/api/v1/uploads/')) return pathname.replace(/^\/api\/v1/, '');
+  if (pathname.startsWith('/uploads/')) return pathname;
+  return null;
+}
+
+function listingImageValues(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(listingImageValues);
+  }
+
+  if (typeof value !== 'string') return [];
+
+  const raw = value.trim();
+  if (!raw) return [];
+
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [raw];
+}
+
 export function normalizeImageUrl(value: string): string {
   const raw = value.trim();
   if (!raw) return raw;
 
-  const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+  const normalizedRaw = raw.startsWith('api/v1/uploads/')
+    ? `/${raw}`
+    : raw.startsWith('uploads/')
+      ? `/${raw}`
+      : raw;
+  const uploadPath = uploadPathFromPathname(normalizedRaw);
   if (uploadPath) return `${API_ORIGIN}${uploadPath}`;
 
   if (/^https?:\/\//i.test(raw)) {
     try {
       const imageUrl = new URL(raw);
-      const apiUrl = new URL(API_ORIGIN);
-      if (
-        (imageUrl.hostname === '10.0.2.2' || imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
-        apiUrl.hostname !== imageUrl.hostname
-      ) {
-        imageUrl.protocol = apiUrl.protocol;
-        imageUrl.hostname = apiUrl.hostname;
-        imageUrl.port = apiUrl.port;
-      }
+      const absoluteUploadPath = uploadPathFromPathname(imageUrl.pathname);
+      if (absoluteUploadPath) return `${API_ORIGIN}${absoluteUploadPath}${imageUrl.search}`;
       return imageUrl.toString();
     } catch {
       return raw;
@@ -99,9 +127,7 @@ export function normalizeImageUrl(value: string): string {
 export function normalizeListingImages<T extends Listing>(listing: T): T {
   return {
     ...listing,
-    imageUrls: Array.isArray(listing.imageUrls)
-      ? listing.imageUrls.map(normalizeImageUrl).filter(Boolean)
-      : [],
+    imageUrls: listingImageValues(listing.imageUrls).map(normalizeImageUrl).filter(Boolean),
   };
 }
 

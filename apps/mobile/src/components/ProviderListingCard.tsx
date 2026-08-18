@@ -9,7 +9,6 @@ import type { ProviderListing } from '../hooks/useProviderListings';
 import type { ExtendListingMode } from './ExtendListingModal';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
-/** Nhãn + màu cho trạng thái tin (ListingStatus). */
 export function listingStatusDisplay(status?: string): {
   label: string;
   tone: StatusTone;
@@ -30,7 +29,7 @@ export function listingStatusDisplay(status?: string): {
     case 'cancelled':
       return { label: 'Đã huỷ', tone: 'danger', bg: COLORS.errorContainer, fg: COLORS.onErrorContainer };
     default:
-      return { label: status ?? '—', tone: 'neutral', bg: COLORS.neutralContainer, fg: COLORS.onNeutralContainer };
+      return { label: status ?? '-', tone: 'neutral', bg: COLORS.neutralContainer, fg: COLORS.onNeutralContainer };
   }
 }
 
@@ -44,10 +43,7 @@ export function ProviderListingCard({ listing, onPress, onExtend }: Props) {
   const sd = listingStatusDisplay(listing.status);
   const canExtend = listing.status === 'active' || listing.status === 'fully_reserved';
   return (
-    <SurfaceCard
-      onPress={onPress}
-      style={styles.card}
-    >
+    <SurfaceCard onPress={onPress} style={styles.card}>
       <View style={styles.imageWrap}>
         <AppImage source={{ uri: listing.imageUrls?.[0] }} style={styles.image} />
         <View style={styles.statusFloat}>

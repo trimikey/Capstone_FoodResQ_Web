@@ -285,12 +285,10 @@ export class KitchenOpsService {
     if (!['approved', 'in_progress', 'completed'].includes(campaign.status)) {
       throw new BadRequestException('Chiến dịch không ở trạng thái cho phép ghi phân phát.');
     }
-    if (dto.servingsServed <= 0 || dto.peopleServed <= 0) {
-      throw new BadRequestException('Số suất và số người nhận phải lớn hơn 0.');
+    if (dto.servingsServed <= 0) {
+      throw new BadRequestException('Số suất phải lớn hơn 0.');
     }
-    if (dto.peopleServed > dto.servingsServed) {
-      throw new BadRequestException('Số người nhận không thể lớn hơn số suất đã phát.');
-    }
+    // QUY TẮC: 1 suất = 1 người nhận — số người ép bằng số suất, không tin client.
     if ((dto.leftoverServings ?? 0) < 0) {
       throw new BadRequestException('Số suất còn dư không được âm.');
     }
@@ -304,10 +302,17 @@ export class KitchenOpsService {
         servedByVolunteerId: volunteer.id,
         roundLabel: dto.roundLabel ?? null,
         servingsServed: dto.servingsServed,
-        peopleServed: dto.peopleServed,
+        peopleServed: dto.servingsServed,
         leftoverServings: dto.leftoverServings ?? 0,
         photoUrl: photoUrl ?? null,
         note: dto.note ?? null,
+        // Waiter ghi HẬU KIỂM một đợt đã phát xong ngoài thực địa — bản ghi này
+        // là số thực tế luôn, phải đánh dấu đã chốt ngay để lọt vào thống kê
+        // "đã phát" (thống kê chỉ tính đợt completedAt != null).
+        completedAt: new Date(),
+        completedByVolunteerId: volunteer.id,
+        actualServings: dto.servingsServed,
+        actualPeopleServed: dto.servingsServed,
       },
     });
 
@@ -333,6 +338,10 @@ export class KitchenOpsService {
     });
     return rows.map((r) => ({
       ...r,
+      // Đợt đã chốt hiển thị số THỰC TẾ shipper/waiter báo (1 suất = 1 người);
+      // đợt còn kế hoạch giữ nguyên số kế hoạch.
+      servingsServed: r.completedAt ? (r.actualServings ?? r.servingsServed) : r.servingsServed,
+      peopleServed: r.completedAt ? (r.actualPeopleServed ?? r.peopleServed) : r.peopleServed,
       servedByName: r.servedBy.user.fullName,
       feedbackCount: r._count.feedback,
     }));
@@ -340,16 +349,24 @@ export class KitchenOpsService {
 
   /** Tổng hợp số liệu phân phát của chiến dịch (cho dashboard). */
   async distributionSummary(campaignId: string) {
-    const agg = await this.prisma.mealDistribution.aggregate({
-      where: { campaignId },
-      _sum: { servingsServed: true, peopleServed: true, leftoverServings: true },
-      _count: true,
+    // CHỈ tính đợt đã chốt (completedAt != null) — đợt mới lên kế hoạch chưa có
+    // suất nào tới tay người dân. Ưu tiên số thực tế; _sum không COALESCE được
+    // actual ?? planned nên phải findMany + reduce.
+    const rows = await this.prisma.mealDistribution.findMany({
+      where: { campaignId, completedAt: { not: null } },
+      select: {
+        servingsServed: true,
+        peopleServed: true,
+        leftoverServings: true,
+        actualServings: true,
+        actualPeopleServed: true,
+      },
     });
     return {
-      rounds: agg._count,
-      totalServings: agg._sum.servingsServed ?? 0,
-      totalPeople: agg._sum.peopleServed ?? 0,
-      totalLeftover: agg._sum.leftoverServings ?? 0,
+      rounds: rows.length,
+      totalServings: rows.reduce((s, r) => s + (r.actualServings ?? r.servingsServed), 0),
+      totalPeople: rows.reduce((s, r) => s + (r.actualPeopleServed ?? r.peopleServed), 0),
+      totalLeftover: rows.reduce((s, r) => s + r.leftoverServings, 0),
     };
   }
 

@@ -11,6 +11,19 @@
  * Dùng prefix .cm- (campaign module) để tránh xung đột.
  */
 
+/*
+ * BẮT BUỘC giữ dòng khai báo thứ tự layer dưới đây (trùng thứ tự Tailwind v4).
+ *
+ * Thứ tự cascade layer do LẦN KHAI BÁO ĐẦU TIÊN trong document quyết định. Khi
+ * client-side navigation làm file này được chèn TRƯỚC globals.css (@import
+ * "tailwindcss"), khối `@layer components` bên dưới sẽ vô tình đặt `components`
+ * đứng TRƯỚC `base` → preflight của Tailwind (`* { margin:0; padding:0; border:0 }`
+ * trong layer base) đè lên toàn bộ padding/border của mọi class .cm-* (layer sau
+ * thắng, bất chấp specificity) → vỡ UI /campaigns ngẫu nhiên, reload lại hết.
+ * Khai báo tường minh ở đây thì file nào nạp trước, thứ tự vẫn đúng.
+ */
+@layer theme, base, components, utilities;
+
 @layer components {
   /* === Palette (scoped to .cm-scope) — match landing === */
   .cm-scope {
@@ -3789,7 +3802,7 @@ padding: 14px 24px;
     z-index: 400;
     display: grid;
     place-items: center;
-    padding: clamp(12px, 2vw, 28px);
+    padding: clamp(16px, 4vh, 48px) clamp(12px, 2vw, 28px);
     background: rgba(16, 24, 16, 0.58);
     backdrop-filter: blur(4px);
   }
@@ -3797,8 +3810,8 @@ padding: 14px 24px;
   .cm-create-modal {
     position: relative;
     width: min(1180px, 100%);
-    height: min(900px, calc(100dvh - 32px));
-    max-height: calc(100dvh - 32px);
+    height: min(880px, calc(100dvh - 2 * clamp(16px, 4vh, 48px)));
+    max-height: calc(100dvh - 2 * clamp(16px, 4vh, 48px));
     overflow: hidden;
     border: 1px solid var(--cm-rule);
     border-radius: 20px;
@@ -4080,5 +4093,254 @@ padding: 14px 24px;
       animation-iteration-count: 1 !important;
       transition-duration: 150ms !important;
     }
+  }
+}
+
+/*
+ * === Route công khai (app/campaigns/[id] + ProviderCampaignDetail) ===
+ * Chuyển từ app/campaigns/campaign-tokens.css sang đây để CHỈ CÒN MỘT stylesheet
+ * cm-* trong toàn app. Hai file trùng class từng gây vỡ UI ngẫu nhiên: sau khi
+ * điều hướng client-side, Next giữ CSS chunk của mọi route đã ghé — cùng tên
+ * class + cùng specificity + cùng @layer ⇒ file nạp SAU thắng, còn reload thì
+ * chỉ nạp CSS route hiện tại nên "tự hết lỗi". KHÔNG tạo lại file cm-* thứ hai.
+ */
+@layer components {
+  .cm-modal-cover-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .cm-modal-cover-eyebrow {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #f4d894;
+    margin-bottom: 6px;
+  }
+  .cm-modal-cover-sub {
+    font-size: 13px;
+    color: rgba(251, 249, 248, 0.75);
+    margin-top: 4px;
+  }
+  .cm-modal-cover-edit {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(8px);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 14px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 3;
+    transition: background 140ms ease;
+  }
+  .cm-modal-cover-edit:hover { background: rgba(255, 255, 255, 0.28); }
+
+  .cm-detail-hero-info {
+    background: var(--cm-paper);
+    border: 1px solid var(--cm-rule);
+    border-radius: 20px;
+    padding: 24px 28px;
+    margin-top: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 768px) {
+    .cm-detail-hero-info { padding: 18px 20px; margin-top: 12px; }
+  }
+  /* Bản dashboard tô .cm-detail-hero-title/meta màu TRẮNG (đè lên hero tối).
+     Trang công khai lại đặt chúng TRONG thẻ trắng .cm-detail-hero-info →
+     chữ trắng trên nền trắng, mờ không đọc được. Trả về màu mực khi nằm
+     trong thẻ (specificity 2 class nên thắng rule 1 class ở trên). */
+  .cm-detail-hero-info .cm-detail-hero-eyebrow { color: #2a662e; }
+  .cm-detail-hero-info .cm-detail-hero-title {
+    color: var(--cm-ink-900);
+    font-size: 28px;
+    line-height: 1.15;
+  }
+  .cm-detail-hero-info .cm-detail-hero-meta { color: #475569; margin-top: 14px; }
+  @media (max-width: 768px) {
+    .cm-detail-hero-info .cm-detail-hero-title { font-size: 22px; }
+  }
+
+  /* === Provider campaign detail === */
+  .cm-provider-detail-hero {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #2a662e 0%, #1e4d21 100%);
+    padding: 36px 40px;
+    color: white;
+    box-shadow: 0 12px 32px -12px rgba(42, 102, 46, 0.35);
+  }
+  .cm-provider-detail-hero-deco {
+    position: absolute;
+    right: -30px;
+    bottom: -50px;
+    opacity: 0.12;
+    pointer-events: none;
+    color: white;
+  }
+  .cm-provider-detail-hero-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+  .cm-provider-detail-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    color: #2a662e;
+    padding: 14px 22px;
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 14px;
+    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.15);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    flex-shrink: 0;
+  }
+  .cm-provider-detail-cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.2);
+  }
+  .cm-provider-detail-back {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    z-index: 3;
+    background: rgba(16, 24, 16, 0.55);
+    backdrop-filter: blur(8px);
+    color: white;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 140ms ease;
+  }
+  .cm-provider-detail-back:hover { background: rgba(16, 24, 16, 0.8); }
+
+  .cm-provider-card {
+    background: var(--cm-paper);
+    border: 1px solid var(--cm-rule);
+    border-radius: 20px;
+    padding: 22px 26px;
+  }
+  .cm-provider-card-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #dcfce7;
+    color: #2a662e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cm-provider-card-empty {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: #f0fdf4;
+    border: 1px dashed #bbf7d0;
+    border-radius: 12px;
+  }
+  .cm-provider-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 18px;
+  }
+  .cm-provider-card-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #f0fdf4;
+    color: #2a662e;
+    border: 1px solid #bbf7d0;
+  }
+  .cm-provider-card-cta:hover { background: #dcfce7; }
+  .cm-provider-card-stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: #dcfce7;
+    color: #2a662e;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .cm-provider-card-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--cm-rule);
+  }
+  @media (min-width: 768px) {
+    .cm-provider-card-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  .cm-provider-card-stat {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--cm-rule);
+    border-radius: 14px;
+    background: #fbf9f8;
+  }
+  .cm-provider-card-stat-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: white;
+    color: #2a662e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid var(--cm-rule);
+  }
+  .cm-provider-donate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    background: #2a662e;
+    color: white;
+    transition: background 0.15s ease;
+  }
+  .cm-provider-donate-btn:hover:not(:disabled) { background: #1e4d21; }
+  .cm-provider-donate-btn:disabled {
+    background: #e5e7eb;
+    color: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: 640px) {
+    .cm-provider-detail-hero { padding: 24px 20px; }
+    .cm-provider-card { padding: 18px 18px; }
+    .cm-provider-card-grid { grid-template-columns: 1fr; }
   }
 }

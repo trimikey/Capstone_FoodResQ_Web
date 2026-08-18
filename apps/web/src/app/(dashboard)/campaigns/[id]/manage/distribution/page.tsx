@@ -73,6 +73,21 @@ export default function DistributionPage() {
       : null;
   const [filter, setFilter] = useState<FilterKey>('all');
   const [createOpen, setCreateOpen] = useState(false);
+
+  // "Đi phát" chỉ mở khi có món đã qua đủ quy trình bếp: chef hoàn tất khâu 4
+  // "Sẵn sàng phát xuất" (sau khi tổ chức duyệt ảnh QC). Chưa món nào sẵn sàng
+  // → khoá nút Tạo đợt mới, rê chuột hiện lý do. Chiến dịch completed (dữ liệu
+  // cũ có thể không còn dishSteps) thì không chặn.
+  const readyDishes = (c.dishSteps ?? []).filter((d) =>
+    d.steps.some((s) => s.stepOrder === 4 && s.effectiveStatus === 'done'),
+  );
+  const dishesNotReady = c.status === 'in_progress' && readyDishes.length === 0;
+  const createDisabled = !['in_progress', 'completed'].includes(c.status) || dishesNotReady;
+  const createDisabledReason = !['in_progress', 'completed'].includes(c.status)
+    ? 'Chỉ ghi đợt khi chiến dịch đang diễn ra hoặc đã hoàn tất'
+    : dishesNotReady
+      ? 'Món chưa sẵn sàng — cần chef hoàn tất "Sẵn sàng phát xuất" (sau khi tổ chức duyệt ảnh QC) rồi mới tạo đợt phát.'
+      : '';
   /** Đợt đang mở xem đủ danh sách điểm phát (chỉ một đợt tại một thời điểm). */
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -128,11 +143,13 @@ export default function DistributionPage() {
     }
     const rows = [
       ['Đợt', 'Thời gian', 'Số suất', 'Người nhận', 'Phụ trách', 'Còn dư'],
+      // Đợt đã chốt xuất số THỰC TẾ shipper báo (1 suất = 1 người); đợt đang
+      // chờ vẫn là số kế hoạch.
       ...list.map((d) => [
         d.roundLabel || `Đợt #${d.id.slice(0, 6)}`,
         new Date(d.distributedAt).toLocaleString('vi-VN'),
-        String(d.servingsServed),
-        String(d.peopleServed),
+        String(d.completedAt ? (d.actualServings ?? d.servingsServed) : d.servingsServed),
+        String(d.completedAt ? (d.actualPeopleServed ?? d.peopleServed) : d.peopleServed),
         d.servedBy,
         String(d.leftoverServings ?? 0),
       ]),
@@ -178,16 +195,19 @@ export default function DistributionPage() {
                 <span className="material-symbols-outlined text-[16px]">download</span>
                 Xuất báo cáo
               </button>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                disabled={!['in_progress', 'completed'].includes(c.status)}
-                className="cm-manage-cta-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!['in_progress', 'completed'].includes(c.status) ? 'Chỉ ghi đợt khi chiến dịch đang diễn ra hoặc đã hoàn tất' : ''}
-              >
-                <span className="material-symbols-outlined text-[16px]">add</span>
-                Tạo đợt mới
-              </button>
+              {/* span bọc ngoài vì button disabled không bắn sự kiện hover → title
+                  đặt trên span để tooltip "món chưa sẵn sàng" vẫn hiện được. */}
+              <span title={createDisabledReason}>
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(true)}
+                  disabled={createDisabled}
+                  className="cm-manage-cta-primary inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Tạo đợt mới
+                </button>
+              </span>
             </div>
           </div>
 
@@ -331,8 +351,12 @@ export default function DistributionPage() {
                             {new Date(d.distributedAt).toLocaleDateString('vi-VN')}
                           </p>
                         </td>
-                        <td className="font-extrabold">{d.servingsServed}</td>
-                        <td>{d.peopleServed}</td>
+                        {/* Đợt đã chốt hiển thị số THỰC TẾ shipper báo (1 suất = 1 người);
+                            đợt đang chờ là số kế hoạch. */}
+                        <td className="font-extrabold">
+                          {d.completedAt ? (d.actualServings ?? d.servingsServed) : d.servingsServed}
+                        </td>
+                        <td>{d.completedAt ? (d.actualPeopleServed ?? d.peopleServed) : d.peopleServed}</td>
                         <td>
                           <div className="flex items-center gap-2">
                             <span className="cm-dist-table-avatar">{initials}</span>

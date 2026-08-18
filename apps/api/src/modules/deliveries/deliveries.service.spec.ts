@@ -4,6 +4,7 @@ import {
   OFFER_EXPIRY_SECONDS,
   MAX_OFFERS_PER_DELIVERY,
   ASSIGNMENT_TIMEOUT_MS,
+  maxOffersPerDelivery,
 } from './deliveries.service';
 
 describe('hằng số vòng đời mời shipper', () => {
@@ -14,6 +15,20 @@ describe('hằng số vòng đời mời shipper', () => {
     // quota, đơn treo hơn 3 phút rồi failed trong khi có shipper ở 3km đang online.
     expect(MAX_OFFERS_PER_DELIVERY * OFFER_EXPIRY_SECONDS * 1000)
       .toBeGreaterThanOrEqual(ASSIGNMENT_TIMEOUT_MS);
+  });
+
+  it('giữ được ngân sách thời gian với mọi cửa sổ admin cấu hình (10–120s)', () => {
+    for (const seconds of [10, 15, 30, 60, 90, 120]) {
+      expect(maxOffersPerDelivery(seconds) * seconds * 1000)
+        .toBeGreaterThanOrEqual(ASSIGNMENT_TIMEOUT_MS);
+    }
+  });
+
+  it('cửa sổ dài vẫn cho mời ít nhất 2 người — không bao giờ chỉ mời đúng 1', () => {
+    // 120s: ceil(270/120) = 3 lượt. Nếu cửa sổ ≥ ASSIGNMENT_TIMEOUT thì ceil ra 1,
+    // người đầu không phản hồi là đơn chết mà chưa ai khác được mời.
+    expect(maxOffersPerDelivery(120)).toBeGreaterThanOrEqual(2);
+    expect(maxOffersPerDelivery(600)).toBeGreaterThanOrEqual(2);
   });
 });
 

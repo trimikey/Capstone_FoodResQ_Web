@@ -36,19 +36,18 @@ function staticSourceForPath(path: string): number | null {
   return STATIC_IMAGE_BY_PATH[normalized] ?? null;
 }
 
+function uploadPathFromPathname(pathname: string): string | null {
+  if (pathname.startsWith('/api/v1/uploads/')) return pathname.replace(/^\/api\/v1/, '');
+  if (pathname.startsWith('/uploads/')) return pathname;
+  return null;
+}
+
 function rewriteLocalhostUrl(value: string): string {
   if (!/^https?:\/\//.test(value)) return value;
   try {
     const imageUrl = new URL(value);
-    const apiUrl = new URL(API_ORIGIN);
-    if (
-      (imageUrl.hostname === '10.0.2.2' || imageUrl.hostname === 'localhost' || imageUrl.hostname === '127.0.0.1') &&
-      apiUrl.hostname !== imageUrl.hostname
-    ) {
-      imageUrl.protocol = apiUrl.protocol;
-      imageUrl.hostname = apiUrl.hostname;
-      imageUrl.port = apiUrl.port;
-    }
+    const uploadPath = uploadPathFromPathname(imageUrl.pathname);
+    if (uploadPath) return `${API_ORIGIN}${uploadPath}${imageUrl.search}`;
     return imageUrl.toString();
   } catch {
     return value;
@@ -72,7 +71,12 @@ function resolveUri(uri?: string | null): ImageSource | null {
     return { uri: rewriteLocalhostUrl(raw) };
   }
 
-  const uploadPath = raw.startsWith('/uploads/') ? raw : raw.startsWith('uploads/') ? `/${raw}` : null;
+  const normalizedRaw = raw.startsWith('api/v1/uploads/')
+    ? `/${raw}`
+    : raw.startsWith('uploads/')
+      ? `/${raw}`
+      : raw;
+  const uploadPath = uploadPathFromPathname(normalizedRaw);
   if (uploadPath) return { uri: `${API_ORIGIN}${uploadPath}` };
 
   const bundled = staticSourceForPath(raw);
@@ -99,21 +103,37 @@ export function foodFallbackSourceForCategory(category?: string | null): ImageSo
  * Thay cho <Image> của react-native (không cache, không transition).
  * Docs: https://docs.expo.dev/versions/latest/sdk/image/
  */
+const MAX_LOAD_RETRIES = 2;
+
 export function AppImage({ source, fallbackSource, onError, ...props }: AppImageProps) {
-  const [failedSourceKey, setFailedSourceKey] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<{ sourceKey: string | null; attempt: number; failed: boolean }>({
+    sourceKey: null,
+    attempt: 0,
+    failed: false,
+  });
   const resolvedSource = useMemo(() => resolveSource(source), [source]);
   const resolvedFallback = useMemo(() => resolveSource(fallbackSource), [fallbackSource]);
   const sourceKey = JSON.stringify(resolvedSource ?? null);
-  const failed = failedSourceKey === sourceKey;
+  const attempt = loadState.sourceKey === sourceKey ? loadState.attempt : 0;
+  const failed = loadState.sourceKey === sourceKey && loadState.failed;
 
   return (
     <Image
+      // Đổi key để ép expo-image tải lại từ đầu thay vì giữ trạng thái lỗi cũ.
+      key={`${sourceKey}-${attempt}`}
       contentFit="cover"
       transition={250}
       cachePolicy="memory-disk"
       source={(failed ? resolvedFallback : resolvedSource) ?? resolvedFallback}
       onError={(event) => {
-        setFailedSourceKey(sourceKey);
+        // Ảnh thật của provider đôi khi lỗi tải THOÁNG QUA (mạng chậm, ảnh vừa
+        // upload xong CDN/proxy chưa kịp phục vụ) — không được khoá cứng về ảnh
+        // placeholder ngay lần lỗi đầu, phải thử lại vài lần trước khi bỏ cuộc.
+        if (typeof resolvedSource !== 'number' && attempt < MAX_LOAD_RETRIES) {
+          setLoadState({ sourceKey, attempt: attempt + 1, failed: false });
+          return;
+        }
+        setLoadState({ sourceKey, attempt, failed: true });
         onError?.(event);
       }}
       {...props}

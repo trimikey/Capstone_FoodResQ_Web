@@ -1,5 +1,8 @@
 nodeLinker: hoisted
 
+overrides:
+  pretty-format: 29.7.0
+
 packages:
   - 'apps/*'
   - 'packages/*'

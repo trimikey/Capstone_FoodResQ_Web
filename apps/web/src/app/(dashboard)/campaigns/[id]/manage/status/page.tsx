@@ -539,13 +539,6 @@ export default function CampaignStatusPage() {
                 Huỷ chiến dịch
               </button>
             )}
-            <Link
-              href={`/campaigns/${c.id}/edit`}
-              className="cm-manage-cta-secondary inline-flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">edit</span>
-              Yêu cầu thay đổi
-            </Link>
           </div>
         )}
       </section>

@@ -26,6 +26,7 @@ import {
   formatDistance,
   formatPickupWindow,
   quantityLabel,
+  vnDayStartMs,
 } from '@/utils/listingFormat';
 import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
 import { AppImage } from '@/components/ui/AppImage';
@@ -63,13 +64,10 @@ function isExpiringSoon(listing: Listing): boolean {
 }
 
 function isToday(listing: Listing): boolean {
-  const start = new Date(listing.pickupStartTime);
-  const end = new Date(listing.pickupEndTime);
-  const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const tomorrowStart = new Date(todayStart);
-  tomorrowStart.setDate(todayStart.getDate() + 1);
+  const start = new Date(listing.pickupStartTime).getTime();
+  const end = new Date(listing.pickupEndTime).getTime();
+  const todayStart = vnDayStartMs(Date.now());
+  const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
   return start < tomorrowStart && end >= todayStart;
 }
 

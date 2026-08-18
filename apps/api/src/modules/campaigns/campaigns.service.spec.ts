@@ -754,15 +754,14 @@ describe('CampaignsService.createDistribution', () => {
 
   const base = { servingsServed: 50, peopleServed: 40 };
 
-  it('ghi nhận được đợt phát hợp lệ', async () => {
+  it('ghi nhận được đợt phát hợp lệ — số người luôn ÉP BẰNG số suất (1 suất = 1 người)', async () => {
     const r = await service.createDistribution('campaign-1', 'user-1', base);
-    expect(r).toEqual(expect.objectContaining({ servingsServed: 50, peopleServed: 40 }));
+    expect(r).toEqual(expect.objectContaining({ servingsServed: 50, peopleServed: 50 }));
   });
 
-  it('số người nhận KHÔNG được lớn hơn số suất — mỗi người ít nhất 1 suất', async () => {
-    await expect(
-      service.createDistribution('campaign-1', 'user-1', { servingsServed: 10, peopleServed: 25 }),
-    ).rejects.toThrow('không thể lớn hơn số suất đã phát');
+  it('client gửi số người lệch vẫn bị ép bằng số suất — không tin client', async () => {
+    const r = await service.createDistribution('campaign-1', 'user-1', { servingsServed: 10, peopleServed: 25 });
+    expect(r).toEqual(expect.objectContaining({ servingsServed: 10, peopleServed: 10 }));
   });
 
   it('không phát vượt số suất chiến dịch đăng ký', async () => {

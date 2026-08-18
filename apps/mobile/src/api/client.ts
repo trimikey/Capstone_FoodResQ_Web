@@ -37,7 +37,8 @@ function isAndroidEmulator(): boolean {
 
 // Dev URL strategy:
 // - Android emulator: 10.0.2.2 points to the host machine.
-// - Physical devices: use EXPO_PUBLIC_API_URL, which should be the host LAN IP.
+// - Physical devices: reuse the Metro LAN host, so changing Wi-Fi does not require editing .env.
+// - EXPO_PUBLIC_API_URL remains an explicit override for non-dev builds or manual testing.
 // - iOS simulator fallback: localhost.
 function getApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -46,11 +47,16 @@ function getApiUrl(): string {
     return replaceUrlHost(envUrl ?? DEFAULT_API_URL, ANDROID_EMULATOR_HOST);
   }
 
+  const metroApiUrl = __DEV__ ? getMetroApiUrl() : null;
+  if (metroApiUrl) {
+    return metroApiUrl;
+  }
+
   if (envUrl) {
     return envUrl;
   }
 
-  return (__DEV__ && getMetroApiUrl()) || DEFAULT_API_URL;
+  return DEFAULT_API_URL;
 }
 
 export const API_URL = getApiUrl();

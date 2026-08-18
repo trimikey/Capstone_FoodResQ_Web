@@ -24,6 +24,7 @@ import { useListings, type Listing } from '@/hooks/useListings';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useUpdateLocation, useVolunteerMe } from '@/hooks/useVolunteer';
 import { ListingsMapView, type DeliveryMapRoute } from '@/components/ListingsMapView';
+import { AppImage } from '@/components/ui/AppImage';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup, Toast } from '@/components/ui/AppPopup';
@@ -367,6 +368,20 @@ export default function VolunteerOffersScreen() {
             value={details.dropoffAddress}
           />
         </View>
+
+        {/* Bằng chứng người nhận khó di chuyển — xem trước khi quyết định nhận đơn */}
+        {offer.delivery.reservation?.deliveryEvidenceUrl ? (
+          <View style={styles.evidenceBox}>
+            <Text style={styles.evidenceTitle}>Bằng chứng người nhận khó di chuyển</Text>
+            <AppImage
+              source={{ uri: offer.delivery.reservation.deliveryEvidenceUrl }}
+              style={styles.evidenceImage}
+            />
+            <Text style={styles.evidenceHint}>
+              Xem ảnh (bệnh/chấn thương) — thấy hợp lệ hãy nhận đơn.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.priorityMetaRow}>
           <CountdownMetaPill
@@ -1303,6 +1318,17 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...elevation.card,
   },
+  evidenceBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+    padding: spacing.md,
+    gap: 6,
+  },
+  evidenceTitle: { fontSize: 12, fontWeight: '800', color: '#78350f' },
+  evidenceImage: { width: '100%', height: 140, borderRadius: radius.sm },
+  evidenceHint: { fontSize: 11, color: '#92400e' },
   priorityTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   priorityIcon: {
     width: 48,

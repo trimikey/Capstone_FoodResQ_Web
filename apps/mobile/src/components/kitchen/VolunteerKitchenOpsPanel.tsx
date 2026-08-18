@@ -70,7 +70,6 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
   const [safetyPhoto, setSafetyPhoto] = useState<CapturedImage | null>(null);
   const [roundLabel, setRoundLabel] = useState('');
   const [servingsServed, setServingsServed] = useState('');
-  const [peopleServed, setPeopleServed] = useState('');
   const [leftoverServings, setLeftoverServings] = useState('');
   const [distributionNote, setDistributionNote] = useState('');
   const [distributionPhoto, setDistributionPhoto] = useState<CapturedImage | null>(null);
@@ -97,7 +96,6 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
   const resetDistributionForm = () => {
     setRoundLabel('');
     setServingsServed('');
-    setPeopleServed('');
     setLeftoverServings('');
     setDistributionNote('');
     setDistributionPhoto(null);
@@ -138,9 +136,8 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
 
   const submitDistribution = async () => {
     const servings = parseNonNegativeInt(servingsServed);
-    const people = parseNonNegativeInt(peopleServed);
     const leftover = leftoverServings.trim() ? parseNonNegativeInt(leftoverServings) : undefined;
-    if (servings == null || people == null || leftover === null) {
+    if (servings == null || leftover === null) {
       Popup.show({ type: 'warning', text1: 'Số liệu không hợp lệ', text2: 'Nhập số nguyên không âm cho các trường số.' });
       return;
     }
@@ -150,11 +147,12 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
     }
     try {
       const { coords } = await getCurrentCoords();
+      // QUY TẮC: 1 suất = 1 người — số người luôn bằng số suất, không nhập tay.
       await createDistribution.mutateAsync({
         campaignId,
         roundLabel: roundLabel.trim() || undefined,
         servingsServed: servings,
-        peopleServed: people,
+        peopleServed: servings,
         leftoverServings: leftover,
         ...(coords ? { lng: coords.lng, lat: coords.lat } : {}),
         note: distributionNote.trim() || undefined,
@@ -324,11 +322,11 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
           <Dialog.ScrollArea>
             <ScrollView contentContainerStyle={styles.dialogBody}>
               <TextInput mode="outlined" label="Tên đợt" value={roundLabel} onChangeText={setRoundLabel} dense />
+              {/* 1 suất = 1 người — bỏ ô "Người nhận" riêng, số người tự ghi bằng số suất */}
               <View style={styles.inputGrid}>
-                <TextInput mode="outlined" label="Suất phát" value={servingsServed} onChangeText={setServingsServed} keyboardType="number-pad" dense style={styles.inputHalf} />
-                <TextInput mode="outlined" label="Người nhận" value={peopleServed} onChangeText={setPeopleServed} keyboardType="number-pad" dense style={styles.inputHalf} />
+                <TextInput mode="outlined" label="Suất phát (= người nhận)" value={servingsServed} onChangeText={setServingsServed} keyboardType="number-pad" dense style={styles.inputHalf} />
+                <TextInput mode="outlined" label="Suất dư" value={leftoverServings} onChangeText={setLeftoverServings} keyboardType="number-pad" dense style={styles.inputHalf} />
               </View>
-              <TextInput mode="outlined" label="Suất dư" value={leftoverServings} onChangeText={setLeftoverServings} keyboardType="number-pad" dense />
               <TextInput mode="outlined" label="Ghi chú" value={distributionNote} onChangeText={setDistributionNote} multiline numberOfLines={3} />
               <PhotoPicker photo={distributionPhoto} onCamera={() => handlePickPhoto('distribution', true)} onLibrary={() => handlePickPhoto('distribution', false)} />
             </ScrollView>

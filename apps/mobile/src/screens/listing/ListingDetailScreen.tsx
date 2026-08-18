@@ -25,6 +25,8 @@ import {
   formatPickupWindow,
 } from '@/utils/listingFormat';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { captureImage, pickImageFromLibrary, type CapturedImage } from '@/services/faceCapture';
+import { uploadImageToBackend } from '@/services/imageUpload';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StickyActionBar } from '@/components/ui/StickyActionBar';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
@@ -43,6 +45,10 @@ export default function ListingDetailScreen({ id }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState('');
   const [requestDelivery, setRequestDelivery] = useState(false);
+  // Ảnh bằng chứng khó di chuyển — BẮT BUỘC khi bật "Giao tận nơi" (BE chặn nếu thiếu).
+  // Shipper xem ảnh này trong popup lời mời trước khi nhận đơn.
+  const [evidence, setEvidence] = useState<CapturedImage | null>(null);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -111,16 +117,50 @@ export default function ListingDetailScreen({ id }: Props) {
     setQuantity(1);
     setNotes('');
     setRequestDelivery(false);
+    setEvidence(null);
     setDialogVisible(true);
   };
 
-  const confirmReservation = () => {
+  const pickEvidence = async (fromCamera: boolean) => {
+    try {
+      const image = fromCamera
+        ? await captureImage('id_card', 'proof')
+        : await pickImageFromLibrary('proof');
+      if (image) setEvidence(image);
+    } catch (err: any) {
+      Popup.show({ type: 'error', text1: 'Không lấy được ảnh', text2: err?.message ?? 'Vui lòng thử lại.' });
+    }
+  };
+
+  const confirmReservation = async () => {
+    // Giao tận nơi dành cho người khó di chuyển → bắt buộc ảnh bằng chứng.
+    if (requestDelivery && !evidence) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Cần ảnh bằng chứng',
+        text2: 'Tải ảnh giấy khám bệnh / chấn thương để tình nguyện viên xem trước khi nhận đơn.',
+      });
+      return;
+    }
+    let deliveryEvidenceUrl: string | undefined;
+    if (requestDelivery && evidence) {
+      try {
+        setUploadingEvidence(true);
+        deliveryEvidenceUrl = await uploadImageToBackend(evidence.uri, 'delivery-evidence');
+      } catch (err: any) {
+        Popup.show({ type: 'error', text1: 'Tải ảnh thất bại', text2: err?.message ?? 'Vui lòng thử lại.' });
+        return;
+      } finally {
+        setUploadingEvidence(false);
+      }
+    }
     createMut.mutate(
       {
         listingId: listing.id,
         quantity,
         receiverNotes: notes.trim() || undefined,
         requestDelivery,
+        deliveryEvidenceUrl,
       },
       {
         onSuccess: (res) => {
@@ -265,7 +305,7 @@ export default function ListingDetailScreen({ id }: Props) {
             <View style={styles.switchRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.switchLabel}>Giao tận nơi</Text>
-                <Text style={styles.switchHint}>Yêu cầu shipper giao đến bạn</Text>
+                <Text style={styles.switchHint}>Dành cho người khó di chuyển</Text>
               </View>
               <Switch
                 value={requestDelivery}
@@ -273,6 +313,27 @@ export default function ListingDetailScreen({ id }: Props) {
                 color={COLORS.primary}
               />
             </View>
+
+            {/* Ảnh bằng chứng khó di chuyển — bắt buộc khi giao tận nơi */}
+            {requestDelivery ? (
+              <View style={styles.evidenceBox}>
+                <Text style={styles.evidenceTitle}>Ảnh bằng chứng khó di chuyển *</Text>
+                <Text style={styles.evidenceHint}>
+                  Giấy khám bệnh, ảnh chấn thương… Tình nguyện viên xem ảnh này trước khi nhận đơn.
+                </Text>
+                <View style={styles.evidenceActions}>
+                  <Button compact mode="outlined" icon="camera" onPress={() => pickEvidence(true)}>
+                    Chụp
+                  </Button>
+                  <Button compact mode="outlined" icon="image" onPress={() => pickEvidence(false)}>
+                    Chọn ảnh
+                  </Button>
+                </View>
+                {evidence ? (
+                  <Text style={styles.evidenceOk}>✓ Đã chọn ảnh bằng chứng</Text>
+                ) : null}
+              </View>
+            ) : null}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDialogVisible(false)} textColor={COLORS.onSurfaceVariant}>
@@ -281,8 +342,8 @@ export default function ListingDetailScreen({ id }: Props) {
             <Button
               mode="contained"
               buttonColor={COLORS.primary}
-              loading={createMut.isPending}
-              disabled={createMut.isPending}
+              loading={createMut.isPending || uploadingEvidence}
+              disabled={createMut.isPending || uploadingEvidence}
               onPress={confirmReservation}
             >
               Xác nhận đặt
@@ -362,4 +423,17 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   switchLabel: { fontSize: 15, fontWeight: '600', color: COLORS.onSurface },
   switchHint: { fontSize: 12, color: COLORS.onSurfaceVariant },
+  evidenceBox: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+    gap: 6,
+  },
+  evidenceTitle: { fontSize: 13, fontWeight: '700', color: '#78350f' },
+  evidenceHint: { fontSize: 11, lineHeight: 16, color: '#92400e' },
+  evidenceActions: { flexDirection: 'row', gap: spacing.sm, marginTop: 2 },
+  evidenceOk: { fontSize: 12, fontWeight: '700', color: '#15803d' },
 });

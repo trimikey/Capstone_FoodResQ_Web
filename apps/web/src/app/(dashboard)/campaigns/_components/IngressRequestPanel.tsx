@@ -9,6 +9,7 @@ import {
   type Campaign,
   type SupplierMatch,
 } from '@/hooks/useCampaigns';
+import { useProviderListings } from '@/hooks/useProviders';
 
 /**
  * "Đơn xin thực phẩm đầu vào" — bếp khai nhu cầu nguyên liệu rồi gửi thẳng tới NCC
@@ -40,6 +41,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const [ingredientName, setIngredientName] = useState('');
   const [quantityKg, setQuantityKg] = useState('');
   const [expectedServings, setExpectedServings] = useState('');
+  const [neededDate, setNeededDate] = useState('');
   const [neededFrom, setNeededFrom] = useState('');
   const [neededTo, setNeededTo] = useState('');
   const [radiusKm, setRadiusKm] = useState(5);
@@ -52,6 +54,22 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     () => campaigns.filter((c) => c.status === 'approved' || c.status === 'in_progress'),
     [campaigns],
   );
+
+  // Nguyên liệu tổ chức đã khai lúc TẠO chiến dịch (supplyItems) — hiện ra để bấm
+  // là điền vào đơn, khỏi nhớ/gõ lại tên + số kg. Dữ liệu cũ có thể là mảng string.
+  const selectedCampaign = openCampaigns.find((c) => c.id === campaignId) ?? null;
+  const campaignSupplies = useMemo(() => {
+    const raw = (selectedCampaign?.supplyItems ?? []) as Array<
+      string | { name?: string; quantity?: number | null; unit?: string | null }
+    >;
+    return raw
+      .map((s) =>
+        typeof s === 'string'
+          ? { name: s, quantity: null as number | null, unit: null as string | null }
+          : { name: s.name ?? '', quantity: s.quantity ?? null, unit: s.unit ?? null },
+      )
+      .filter((s) => s.name.trim().length > 0);
+  }, [selectedCampaign]);
 
   const { data: matchResult, isLoading: matching } = useSupplierMatches(campaignId || null, {
     radiusKm,
@@ -69,6 +87,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     setIngredientName('');
     setQuantityKg('');
     setExpectedServings('');
+    setNeededDate('');
     setNeededFrom('');
     setNeededTo('');
     setRadiusKm(5);
@@ -85,6 +104,12 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     if (neededFrom && neededTo && neededTo <= neededFrom) {
       return toast.error('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
     }
+    if ((neededFrom || neededTo) && !neededDate) {
+      return toast.error('Vui lòng chọn ngày cần nhận nguyên liệu.');
+    }
+    if (neededDate && neededDate < new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)) {
+      return toast.error('Ngày cần nhận không được ở quá khứ.');
+    }
 
     const qty = Number(quantityKg);
     const servings = Number(expectedServings);
@@ -99,6 +124,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
           quantityKg: quantityKg && Number.isFinite(qty) && qty > 0 ? qty : undefined,
           expectedServings:
             expectedServings && Number.isFinite(servings) && servings > 0 ? servings : undefined,
+          neededDate: neededDate || undefined,
           neededFrom: neededFrom || undefined,
           neededTo: neededTo || undefined,
           radiusKm,
@@ -183,6 +209,11 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               onChange={(e) => {
                 setCampaignId(e.target.value);
                 setProviderId('');
+                // Gợi ý sẵn ngày nhận = ngày diễn ra chiến dịch (đổi được).
+                const picked = openCampaigns.find((c) => c.id === e.target.value);
+                if (picked?.scheduledDate) {
+                  setNeededDate((prev) => prev || picked.scheduledDate.slice(0, 10));
+                }
               }}
               className="inp"
             >
@@ -197,6 +228,58 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               </p>
             )}
           </Field>
+
+          {/* Nguyên liệu chiến dịch cần — bấm 1 mục để điền nhanh tên + số kg */}
+          {campaignId && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
+                <span className="material-symbols-outlined text-[15px]">nutrition</span>
+                Nguyên liệu chiến dịch này cần
+              </p>
+              {campaignSupplies.length === 0 ? (
+                <p className="text-[11px] text-neutral-500">
+                  Chiến dịch chưa khai vật phẩm/nguyên liệu lúc tạo — nhập tay ở ô bên dưới.
+                </p>
+              ) : (
+                <>
+                  <p className="mb-2 text-[11px] text-neutral-500">
+                    Bấm một mục để điền vào đơn — dễ đối chiếu NCC nào đang có đúng thứ bếp cần.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {campaignSupplies.map((s, i) => {
+                      const active =
+                        ingredientName.trim().toLowerCase() === s.name.trim().toLowerCase();
+                      return (
+                        <button
+                          key={`${s.name}-${i}`}
+                          type="button"
+                          onClick={() => {
+                            setIngredientName(s.name);
+                            // Chỉ tự điền số lượng khi đơn vị là kg (hoặc không ghi đơn vị)
+                            if (s.quantity != null && (!s.unit || /kg/i.test(s.unit))) {
+                              setQuantityKg(String(s.quantity));
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            active
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
+                              : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
+                          }`}
+                        >
+                          {s.name}
+                          {s.quantity != null && (
+                            <span className={active ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
+                              {s.quantity} {s.unit || 'kg'}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <Field label="Phân loại thực phẩm cần hỗ trợ">
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="inp">
@@ -262,8 +345,14 @@ export default function IngressRequestPanel({ campaigns }: Props) {
             </Field>
           </div>
 
-          <Field label="Khung giờ cần nhận tại bếp">
-            <div className="flex items-center gap-2">
+          <Field label="Ngày & khung giờ cần nhận tại bếp">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={neededDate}
+                onChange={(e) => setNeededDate(e.target.value)}
+                className="inp"
+              />
               <input
                 type="time"
                 value={neededFrom}
@@ -278,6 +367,9 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                 className="inp"
               />
             </div>
+            <p className="mt-1 text-[11px] text-neutral-400">
+              Ngày + giờ này sẽ thành lịch hẹn lấy hàng khi NCC chấp nhận đơn.
+            </p>
           </Field>
 
           <div>
@@ -484,59 +576,145 @@ function MatchList({
   }
 
   return (
-    <div className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
-      {matches.map((m, idx) => {
-        const isSelected = m.providerId === selectedId;
-        return (
-          <button
-            key={m.providerId}
-            type="button"
-            onClick={() => onSelect(m.providerId)}
-            className={`w-full rounded-xl border p-3 text-left transition-all ${
-              isSelected
-                ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-200'
-                : 'border-neutral-200 bg-white hover:border-emerald-300'
-            }`}
-          >
-            <div className="flex items-start gap-2">
-              <span
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                  isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-neutral-300'
-                }`}
-              >
-                {isSelected && <span className="material-symbols-outlined text-[13px] text-white">check</span>}
+    <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+      {matches.map((m, idx) => (
+        <MatchRow
+          key={m.providerId}
+          m={m}
+          isNearest={idx === 0}
+          isSelected={m.providerId === selectedId}
+          onSelect={() => onSelect(m.providerId)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 1 NCC trong danh sách gợi ý. Bấm thẻ để chọn; "Xem nguyên liệu" xổ danh sách
+ * tin đăng thật của NCC (tên món, số lượng còn, khung giờ lấy) để bếp biết họ
+ * đang có gì trước khi gửi đơn.
+ */
+function MatchRow({
+  m,
+  isNearest,
+  isSelected,
+  onSelect,
+}: {
+  m: SupplierMatch;
+  isNearest: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const [showListings, setShowListings] = useState(false);
+  const { data: listings, isLoading: loadingListings } = useProviderListings(
+    showListings ? m.providerId : null,
+  );
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition-all ${
+        isSelected
+          ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-200'
+          : 'border-neutral-200 bg-white hover:border-emerald-300'
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <span
+          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+            isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-neutral-300'
+          }`}
+        >
+          {isSelected && <span className="material-symbols-outlined text-[13px] text-white">check</span>}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate font-bold text-neutral-900">{m.businessName}</p>
+            {isNearest && (
+              <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                Gần nhất
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <p className="truncate font-bold text-neutral-900">{m.businessName}</p>
-                  {idx === 0 && (
-                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                      Gần nhất
-                    </span>
-                  )}
-                  {m.isVerified && (
-                    <span className="material-symbols-outlined text-[14px] text-sky-500" title="Đã xác minh">
-                      verified
-                    </span>
-                  )}
-                </div>
-                {m.address && <p className="truncate text-xs text-neutral-400">{m.address}</p>}
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-neutral-600">
-                  <span className="font-bold text-emerald-700">{m.distanceKm} km</span>
-                  <span>{m.listingCount} tin đăng</span>
-                  {m.estimatedKg > 0 && <span>≥ {m.estimatedKg} kg</span>}
-                  {m.avgRating != null && (
-                    <span className="flex items-center gap-0.5">
-                      <span className="material-symbols-outlined text-[12px] text-amber-500">star</span>
-                      {m.avgRating.toFixed(1)}
-                    </span>
-                  )}
-                </div>
-              </div>
+            )}
+            {m.isVerified && (
+              <span className="material-symbols-outlined text-[14px] text-sky-500" title="Đã xác minh">
+                verified
+              </span>
+            )}
+          </div>
+          {m.address && <p className="truncate text-xs text-neutral-400">{m.address}</p>}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-neutral-600">
+            <span className="font-bold text-emerald-700">{m.distanceKm} km</span>
+            <span>{m.listingCount} tin đăng</span>
+            {m.estimatedKg > 0 && <span>≥ {m.estimatedKg} kg</span>}
+            {m.avgRating != null && (
+              <span className="flex items-center gap-0.5">
+                <span className="material-symbols-outlined text-[12px] text-amber-500">star</span>
+                {m.avgRating.toFixed(1)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowListings((v) => !v);
+              }}
+              className="ml-auto inline-flex items-center gap-0.5 font-bold text-emerald-700 hover:underline"
+            >
+              Xem nguyên liệu
+              <span className="material-symbols-outlined text-[14px]">
+                {showListings ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+          </div>
+
+          {showListings && (
+            <div className="mt-2 space-y-1.5 rounded-lg border border-neutral-100 bg-neutral-50 p-2">
+              {loadingListings ? (
+                <p className="text-[11px] text-neutral-400">Đang tải tin đăng…</p>
+              ) : (listings ?? []).length === 0 ? (
+                <p className="text-[11px] text-neutral-400">NCC chưa có tin đăng khả dụng.</p>
+              ) : (
+                (listings ?? []).map((item) => {
+                  const start = new Date(item.pickupStartTime);
+                  const end = new Date(item.pickupEndTime);
+                  const fmtTime = (d: Date) =>
+                    d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div key={item.id} className="rounded-md bg-white px-2 py-1.5 text-[11px]">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2">
+                        <span className="font-bold text-neutral-800">{item.title}</span>
+                        <span className="text-neutral-500">
+                          {item.quantityRemaining} {item.quantityUnit}
+                          {item.weightPerUnitKg != null ? ` · ~${item.weightPerUnitKg} kg/phần` : ''}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-neutral-500">
+                        <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px]">
+                          {FOOD_CATEGORY_LABEL[item.category as FoodCategory] ?? item.category}
+                        </span>
+                        <span>
+                          <span className="material-symbols-outlined text-[11px] align-text-bottom">schedule</span>{' '}
+                          {start.toLocaleDateString('vi-VN', { day: '2-digit', month: 'short' })} ·{' '}
+                          {fmtTime(start)}–{fmtTime(end)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          </button>
-        );
-      })}
+          )}
+        </div>
+      </div>
     </div>
   );
 }

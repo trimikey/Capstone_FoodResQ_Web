@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useUpdateListing, type ProviderListing } from '@/hooks/useProviderListings';
 import { UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
+import { formatVietnamDateTime, toIso, toLocalInputSingle } from '@/lib/listing-form';
 
 type Mode = 'extend_time' | 'add_quantity' | 'both';
 
@@ -16,11 +17,9 @@ interface Props {
   defaultMode?: Mode;
 }
 
-/** Convert Date → value cho input datetime-local (giờ địa phương) */
+/** Convert timestamp đã lưu về input datetime-local theo giờ Việt Nam. */
 function toLocalInputValue(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toLocalInputSingle(iso);
 }
 
 function addHours(iso: string, hours: number): string {
@@ -65,7 +64,7 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
       toast.error('Vui lòng chọn giờ kết thúc nhận mới.');
       return;
     }
-    const endDate = new Date(newEndTime);
+    const endDate = new Date(toIso(newEndTime));
     if (endDate <= new Date(listing.pickupEndTime)) {
       toast.error('Giờ kết thúc phải sau giờ hiện tại.');
       return;
@@ -74,8 +73,8 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
       await updateListing.mutateAsync({
         id: listing.id,
         input: {
-          pickupEndTime: endDate.toISOString(),
-          expiryTime: new Date(newExpiry).toISOString(),
+          pickupEndTime: toIso(newEndTime),
+          expiryTime: toIso(newExpiry),
         },
       });
       toast.success('Đã gia hạn thời gian nhận hàng.');
@@ -126,7 +125,7 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
       toast.error('Vui lòng chọn giờ kết thúc nhận mới.');
       return;
     }
-    const endDate = new Date(newEndTime);
+    const endDate = new Date(toIso(newEndTime));
     if (endDate <= new Date(listing.pickupEndTime)) {
       toast.error('Giờ kết thúc phải sau giờ hiện tại.');
       return;
@@ -139,8 +138,8 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
       await updateListing.mutateAsync({
         id: listing.id,
         input: {
-          pickupEndTime: endDate.toISOString(),
-          expiryTime: new Date(newExpiry).toISOString(),
+          pickupEndTime: toIso(newEndTime),
+          expiryTime: toIso(newExpiry),
           quantityTotal: total + addQty,
         },
       });
@@ -195,7 +194,7 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
           <div className="grid grid-cols-3 gap-3 text-center">
             <Stat icon="inventory_2" label="Còn lại" value={`${remaining}`} unit={unit} />
             <Stat icon="shopping_bag" label="Đã đặt" value={`${reserved}`} unit={unit} />
-            <Stat icon="schedule" label="Hết hạn" value={new Date(listing.pickupEndTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })} small />
+            <Stat icon="schedule" label="Hết hạn" value={formatVietnamDateTime(listing.pickupEndTime).replace(/\/\d{4} /, ' ')} small />
           </div>
 
           {/* Gia hạn giờ */}

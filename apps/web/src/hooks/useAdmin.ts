@@ -345,64 +345,6 @@ export function useUpdateListingCategory() {
   });
 }
 
-export interface AdminCampaignChangeRequest {
-  id: string;
-  campaignId: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  reason: string | null;
-  scheduledDate: string | null;
-  startTime: string | null;
-  endTime: string | null;
-  kitchenAddress: string | null;
-  lng: number | null;
-  lat: number | null;
-  chefSlotsNeeded: number | null;
-  waiterSlotsNeeded: number | null;
-  shipperSlotsNeeded: number | null;
-  reviewNote: string | null;
-  reviewedAt: string | null;
-  createdAt: string;
-  campaign: {
-    id: string;
-    title: string;
-    status: string;
-    scheduledDate: string;
-    startTime: string;
-    endTime: string;
-    kitchenAddress: string;
-    chefSlotsNeeded: number;
-    waiterSlotsNeeded: number;
-    shipperSlotsNeeded: number;
-    chefSlotsFilled: number;
-    waiterSlotsFilled: number;
-    shipperSlotsFilled: number;
-    charityReceiver: { organizationName: string | null; user: { fullName: string } } | null;
-  };
-}
-
-export function useAdminCampaignChangeRequests(status = 'pending') {
-  return useQuery({
-    queryKey: ['admin', 'campaign-change-requests', status],
-    queryFn: async () =>
-      (await api.get('/admin/campaign-change-requests', { params: status ? { status } : {} }))
-        .data.data as AdminCampaignChangeRequest[],
-    staleTime: 15_000,
-  });
-}
-
-export function useReviewCampaignChange() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { id: string; decision: 'approve' | 'reject'; reviewNote?: string }) =>
-      (await api.patch(`/admin/campaign-change-requests/${p.id}`, { decision: p.decision, reviewNote: p.reviewNote }))
-        .data.data,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaign-change-requests'] });
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
-    },
-  });
-}
-
 export interface PendingAssignment {
   id: string;
   role: 'chef' | 'waiter' | 'shipper';

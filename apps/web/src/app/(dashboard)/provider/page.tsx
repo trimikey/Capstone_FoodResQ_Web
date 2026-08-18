@@ -16,7 +16,7 @@ import {
 import { useMe } from '@/hooks/useProfile';
 import { QuantityUnit } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
-import { minuteToHHmm } from '@/lib/listing-form';
+import { formatVietnamDateTime } from '@/lib/listing-form';
 import { Modal } from '@/components/shared/Modal';
 import { useProviderEsg } from '@/hooks/useEsg';
 import ExtendListingModal from '@/components/listings/ExtendListingModal';
@@ -36,13 +36,6 @@ type StatusFilter = 'all' | 'open' | 'draft' | 'closed';
 const FILTER_LABELS: Record<StatusFilter, string> = {
   open: 'Đang mở', draft: 'Nháp', all: 'Tất cả', closed: 'Đã đóng',
 };
-
-const QUICK_LINKS = [
-  { href: '/provider/orders',    icon: 'local_shipping',  label: 'Theo dõi đơn' },
-  { href: '/provider/requests',  icon: 'inventory',       label: 'Yêu cầu giao sỉ' },
-  { href: '/provider/campaigns', icon: 'campaign',        label: 'Chiến dịch' },
-  { href: '/profile',            icon: 'settings',        label: 'Cài đặt hồ sơ' },
-];
 
 export default function ProviderDashboardPage() {
   const router = useRouter();
@@ -194,28 +187,9 @@ export default function ProviderDashboardPage() {
       {/* ── Main body ────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex lg:overflow-hidden max-w-6xl mx-auto w-full px-4 sm:px-6 py-4 gap-4">
 
-        {/* Left sidebar */}
+        {/* Left sidebar — khối "Điều hướng nhanh" đã bỏ (trùng với sidebar chính) */}
         <aside className="hidden lg:flex flex-col w-60 shrink-0 gap-3 overflow-y-auto">
           <PendingRequestsBanner />
-
-          {/* Quick nav */}
-          <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
-            <p className="px-4 pt-3 pb-2 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-              Điều hướng nhanh
-            </p>
-            {QUICK_LINKS.map(({ href, icon, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-[#236c2a] transition-colors group"
-              >
-                <span className="material-symbols-outlined text-[18px] text-neutral-400 group-hover:text-[#236c2a] transition-colors">
-                  {icon}
-                </span>
-                <span className="font-medium">{label}</span>
-              </Link>
-            ))}
-          </div>
 
           {/* Trust indicator */}
           {stats?.completionRate != null && (
@@ -469,14 +443,7 @@ function PostingItem({
           >
             <span className="material-symbols-outlined text-[13px]">schedule</span>
             Đến hết{' '}
-            {new Date(listing.pickupEndTime).toLocaleString('vi-VN', {
-              hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
-            })}
-            {listing.dailyStartMinute != null && listing.dailyEndMinute != null && (
-              <span className="text-neutral-400">
-                {' '}· mở {minuteToHHmm(listing.dailyStartMinute)}–{minuteToHHmm(listing.dailyEndMinute)}
-              </span>
-            )}
+            {formatVietnamDateTime(listing.pickupEndTime).replace(/\/\d{4} /, ' ')}
           </span>
         </div>
 

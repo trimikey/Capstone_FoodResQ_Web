@@ -10,9 +10,6 @@ export interface ListingItem {
   quantityUnit: string;
   pickupStartTime: string;
   pickupEndTime: string;
-  /** Giờ mở/đóng nhận hàng trong ngày — phút từ 00:00 giờ VN; null = không giới hạn */
-  dailyStartMinute?: number | null;
-  dailyEndMinute?: number | null;
   pickupAddress: string;
   storageConditions: string | null;
   allergenNotes: string | null;

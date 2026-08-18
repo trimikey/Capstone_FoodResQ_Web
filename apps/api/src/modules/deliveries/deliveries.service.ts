@@ -17,9 +17,11 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { TrustService } from '@/modules/trust/trust.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 
-// Cửa sổ phản hồi của shipper. Theo mô hình gọi xe (mời lần lượt từng người,
-// đếm ngược ngắn) — để 2 phút thì một tài khoản không phản hồi chặn trọn 2 phút
-// của hàng đợi.
+// Cửa sổ phản hồi của shipper (giá trị MẶC ĐỊNH). Theo mô hình gọi xe (mời lần
+// lượt từng người, đếm ngược ngắn) — để 2 phút thì một tài khoản không phản hồi
+// chặn trọn 2 phút của hàng đợi.
+// Admin chỉnh được qua system_configs `SHIPPER_OFFER_EXPIRY_SECONDS`; luôn đọc
+// bằng `offerExpirySeconds()` chứ đừng dùng thẳng hằng số này khi tạo lời mời.
 export const OFFER_EXPIRY_SECONDS = 15;
 const BROADCAST_RADIUS_M = 5000; // 5km
 // Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
@@ -27,12 +29,16 @@ const DELIVERY_STALL_HOURS = 6;
 // Tìm shipper tối đa 4 phút 30 giây — quá hạn không ai nhận thì đóng đơn,
 // báo người nhận "không có tình nguyện viên nào nhận, vui lòng đặt lại".
 export const ASSIGNMENT_TIMEOUT_MS = 270 * 1000;
-// SUY RA từ hai hằng số trên, không đặt tay: trần số lượt phải đủ lấp kín cửa sổ
-// tìm kiếm. Đặt cứng 5 với cửa sổ 15s thì quota cạn sau 75s, đơn nằm im hơn 3 phút
-// còn lại dù vẫn còn shipper hợp lệ chưa được mời.
-export const MAX_OFFERS_PER_DELIVERY = Math.ceil(
-  ASSIGNMENT_TIMEOUT_MS / (OFFER_EXPIRY_SECONDS * 1000),
-);
+/**
+ * Trần số lượt mời — SUY RA từ cửa sổ phản hồi, không đặt tay: phải đủ lấp kín
+ * cửa sổ tìm kiếm. Đặt cứng 5 với cửa sổ 15s thì quota cạn sau 75s, đơn nằm im
+ * hơn 3 phút còn lại dù vẫn còn shipper hợp lệ chưa được mời.
+ * Tối thiểu 2 lượt: cửa sổ dài (vd 120s) vẫn phải cho mời được người kế tiếp.
+ */
+export function maxOffersPerDelivery(expirySeconds: number): number {
+  return Math.max(2, Math.ceil(ASSIGNMENT_TIMEOUT_MS / (expirySeconds * 1000)));
+}
+export const MAX_OFFERS_PER_DELIVERY = maxOffersPerDelivery(OFFER_EXPIRY_SECONDS);
 
 interface NearbyShipper {
   id: string;
@@ -69,6 +75,16 @@ export class DeliveriesService {
   /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
   async saveProofPhoto(photo: Express.Multer.File): Promise<string> {
     return this.storage.saveImage(photo, 'delivery-proofs');
+  }
+
+  /**
+   * Cửa sổ phản hồi lời mời — đọc LIVE từ system_configs để admin chỉnh ở
+   * /admin/configs là có hiệu lực ngay. Trước đây dùng thẳng hằng số 15s nên
+   * ô cấu hình "Hết hạn lời mời shipper" hoàn toàn vô tác dụng.
+   */
+  private async offerExpirySeconds(): Promise<number> {
+    const seconds = await this.systemConfig.getNumber('SHIPPER_OFFER_EXPIRY_SECONDS');
+    return seconds > 0 ? seconds : OFFER_EXPIRY_SECONDS;
   }
 
   private normalizeQrToken(qrToken: string): string {
@@ -244,11 +260,16 @@ export class DeliveriesService {
     }
   }
 
-  private async notifyTaskOffer(shipper: NearbyShipper, deliveryId: string, expiresAt: Date) {
+  private async notifyTaskOffer(
+    shipper: NearbyShipper,
+    deliveryId: string,
+    expiresAt: Date,
+    expirySeconds: number,
+  ) {
     void this.notifQueue.add(
       'delivery-offer-timeout',
       { shipperId: shipper.id, deliveryId, expiresAt },
-      { delay: OFFER_EXPIRY_SECONDS * 1000, removeOnComplete: true },
+      { delay: expirySeconds * 1000, removeOnComplete: true },
     );
     this.gateway.emitToUser(shipper.user_id, 'delivery:offer', { deliveryId });
   }
@@ -303,7 +324,10 @@ export class DeliveriesService {
     const shipper = shippers[0];
     if (!shipper) return null;
 
-    const expiresAt = new Date(now.getTime() + OFFER_EXPIRY_SECONDS * 1000);
+    // Cửa sổ phản hồi + trần số lượt đều theo cấu hình LIVE của admin.
+    const expirySeconds = await this.offerExpirySeconds();
+    const maxOffers = maxOffersPerDelivery(expirySeconds);
+    const expiresAt = new Date(now.getTime() + expirySeconds * 1000);
     const inserted = await this.prisma.$executeRaw(Prisma.sql`
       INSERT INTO shipper_task_offers (delivery_id, shipper_id, status, expires_at)
       SELECT ${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz
@@ -324,12 +348,12 @@ export class DeliveriesService {
           SELECT COUNT(*)
           FROM shipper_task_offers
           WHERE delivery_id = ${deliveryId}::uuid
-        ) < ${MAX_OFFERS_PER_DELIVERY}
+        ) < ${maxOffers}
       ON CONFLICT (delivery_id, shipper_id) DO NOTHING
     `);
     if (inserted !== 1) return null;
 
-    await this.notifyTaskOffer(shipper, deliveryId, expiresAt);
+    await this.notifyTaskOffer(shipper, deliveryId, expiresAt, expirySeconds);
     return shipper;
   }
 
@@ -1157,9 +1181,19 @@ export class DeliveriesService {
       include: {
         reservation: {
           include: {
-            listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
+            listing: {
+              select: { title: true, pickupAddress: true, imageUrls: true, quantityUnit: true },
+            },
             receiver: {
-              select: { address: true, user: { select: { fullName: true, phone: true } } },
+              select: {
+                address: true,
+                // Ảnh đã đăng ký + CCCD: shipper đối chiếu đúng người trước khi
+                // bàn giao, giống bước provider quét QR cho đơn tự đến lấy.
+                faceImageUrl: true,
+                idCardImageUrl: true,
+                idCardNumber: true,
+                user: { select: { fullName: true, phone: true } },
+              },
             },
           },
         },

@@ -46,8 +46,6 @@ export function dateTimeFormValue(date: string, time: string): string {
 
 export function dateTimeDisplay(form: { pickupEndDate?: string; pickupEndTime?: string }): string {
   if (!form.pickupEndDate || !form.pickupEndTime) return '—';
-  const iso = combineToIso(form.pickupEndDate, form.pickupEndTime);
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  const [year, month, day] = form.pickupEndDate.split('-');
+  return `${day}/${month}/${year}, ${form.pickupEndTime}`;
 }

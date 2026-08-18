@@ -14,7 +14,6 @@ import { DateTimeField, dateTimeDisplay } from '@/components/forms/date-time-fie
 import {
   buildForm,
   combineToIso,
-  hhmmToMinute,
   DEFAULT_CATEGORIES,
   DEFAULT_UNITS,
   type ListingForm,
@@ -157,8 +156,6 @@ export default function ProviderCreateListingPage() {
       storageConditions: form.storageConditions.trim() || undefined,
       allergenNotes: form.allergenNotes.trim() || undefined,
       maxPerReservation: Number(form.maxPerReservation),
-      dailyStartMinute: hhmmToMinute(form.dailyStart) ?? undefined,
-      dailyEndMinute: hhmmToMinute(form.dailyEnd) ?? undefined,
       imageUrls: [form.imageUrl.trim()], // đã chặn rỗng ở trên
     };
     try {
@@ -173,35 +170,25 @@ export default function ProviderCreateListingPage() {
     }
   }
 
-  const validations = useMemo(() => {
-    // Giờ mở phải trước giờ đóng. BE cũng chặn, nhưng chặn ngay ở bước 2 thì NCC
-    // không phải đi hết 3 bước mới biết sai.
-    const dailyStartMin = hhmmToMinute(form.dailyStart);
-    const dailyEndMin = hhmmToMinute(form.dailyEnd);
-    const dailyOk = dailyStartMin != null && dailyEndMin != null && dailyStartMin < dailyEndMin;
-
-    return {
-      step1: form.title.trim().length >= 5 && form.title.trim().length > 0,
-      step2:
-        Number(form.quantityTotal) > 0 &&
-        Number(form.maxPerReservation) > 0 &&
-        Boolean(form.pickupStartDate) &&
-        Boolean(form.pickupStartTime) &&
-        Boolean(form.pickupEndDate) &&
-        Boolean(form.pickupEndTime) &&
-        Boolean(form.expiryDate) &&
-        Boolean(form.expiryTime) &&
-        dailyOk,
-      dailyOk,
-      // Ảnh là BẮT BUỘC: tin không ảnh gần như không ai đặt, và người nhận không có
-      // cách nào đánh giá thực phẩm trước khi tới lấy.
-      step3:
-        form.pickupAddress.trim().length > 0 &&
-        form.lng != null &&
-        form.lat != null &&
-        form.imageUrl.trim().length > 0,
-    };
-  }, [form]);
+  const validations = useMemo(() => ({
+    step1: form.title.trim().length >= 5 && form.title.trim().length > 0,
+    step2:
+      Number(form.quantityTotal) > 0 &&
+      Number(form.maxPerReservation) > 0 &&
+      Boolean(form.pickupStartDate) &&
+      Boolean(form.pickupStartTime) &&
+      Boolean(form.pickupEndDate) &&
+      Boolean(form.pickupEndTime) &&
+      Boolean(form.expiryDate) &&
+      Boolean(form.expiryTime),
+    // Ảnh là BẮT BUỘC: tin không ảnh gần như không ai đặt, và người nhận không có
+    // cách nào đánh giá thực phẩm trước khi tới lấy.
+    step3:
+      form.pickupAddress.trim().length > 0 &&
+      form.lng != null &&
+      form.lat != null &&
+      form.imageUrl.trim().length > 0,
+  }), [form]);
 
   const isAnyPending = createListing.isPending || uploadImage.isPending;
 
@@ -501,35 +488,6 @@ export default function ProviderCreateListingPage() {
               />
             </div>
 
-            {/* Khung giờ MỞ CỬA trong ngày — khác với mốc bắt đầu/hạn lấy ở trên.
-                Tin kéo dài nhiều ngày mà không có khung này thì người nhận đặt được
-                lúc 3h sáng, tới nơi thì cửa hàng đóng. */}
-            <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <p className="text-sm font-bold text-neutral-800">Giờ mở cửa nhận hàng trong ngày</p>
-              <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-                Mỗi ngày chỉ nhận trong khung này. Ví dụ 07:00–21:00: sau 21:00 nút đặt tự khoá,
-                sáng hôm sau 07:00 mở lại — cho tới khi hết &ldquo;Hạn lấy&rdquo; ở trên.
-              </p>
-              <div className="grid grid-cols-2 gap-4 mt-3 max-w-md">
-                <Field label="Mở nhận từ" required>
-                  <input
-                    type="time"
-                    value={form.dailyStart}
-                    onChange={(e) => set('dailyStart', e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#236c2a]/30"
-                  />
-                </Field>
-                <Field label="Đóng nhận lúc" required>
-                  <input
-                    type="time"
-                    value={form.dailyEnd}
-                    onChange={(e) => set('dailyEnd', e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#236c2a]/30"
-                  />
-                </Field>
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <Field label="Bảo quản" hint="VD: Giữ lạnh / Giữ nóng / Đông lạnh">
                 <input
@@ -697,7 +655,6 @@ export default function ProviderCreateListingPage() {
                       if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
                       if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
                       if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
-                      if (!validations.dailyOk) missing.push('Giờ mở cửa phải trước giờ đóng cửa');
                     }
                     toast.error(
                       missing.length > 0

@@ -501,6 +501,9 @@ model Reservation {
   cancelledAt            DateTime?               @map("cancelled_at") @db.Timestamptz
   cancellationReason     String?                 @map("cancellation_reason")
   receiverNotes          String?                 @map("receiver_notes")
+  /// Ảnh bằng chứng người nhận khó di chuyển (bệnh, gãy chân…) — BẮT BUỘC khi
+  /// yêu cầu TNV giao tận nơi; shipper xem ảnh trong popup lời mời trước khi nhận.
+  deliveryEvidenceUrl    String?                 @map("delivery_evidence_url")
   trustPenaltyApplied    Boolean                 @default(false) @map("trust_penalty_applied")
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
@@ -687,6 +690,17 @@ model CampaignDonation {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   receivedAt DateTime? @map("received_at") @db.Timestamptz
 
+  /// Lịch đi nhận hàng do tổ chức đặt. Khung giờ này BẮT BUỘC nằm trong ca trực
+  /// SHIPPER được phân công (validate ở assignDonationPickup) — không để lệch
+  /// giữa giờ đăng ký ca của TNV và giờ hẹn lấy hàng với NCC.
+  pickupDate      DateTime? @map("pickup_date") @db.Date
+  pickupStartTime String?   @map("pickup_start_time") @db.VarChar(5)
+  pickupEndTime   String?   @map("pickup_end_time") @db.VarChar(5)
+  /// DS id bản ghi phân công ca (campaign_volunteer_assignments) được cử đi nhận.
+  /// JSONB array<uuid> — một khoản góp lớn có thể cần NHIỀU shipper đi cùng
+  /// (cùng pattern `assigneeIds` của meal_distributions).
+  pickupAssigneeIds Json @default("[]") @map("pickup_assignee_ids")
+
   campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   provider ProviderProfile @relation(fields: [providerId], references: [id])
 
@@ -723,6 +737,11 @@ model CampaignProviderRequest {
   /// Để JSONB thay vì tách cột: bộ tiêu chí này còn thay đổi theo nghiệp vụ, thêm/bớt
   /// field không phải migrate lại. Shape xem `DemandDetailsDto`.
   demandDetails   Json?                 @map("demand_details")
+  /// DS id bản ghi phân công ca (campaign_volunteer_assignments) mà TỔ CHỨC cử đi
+  /// nhận hàng — thay cho vòng tìm shipper toàn hệ thống. Chỉ nhận shipper có ca
+  /// phủ trọn khung giờ lấy (validate ở assignRequestPickup). JSONB array<uuid>,
+  /// cùng pattern `pickupAssigneeIds` của campaign_donations.
+  pickupAssigneeIds Json                @default("[]") @map("pickup_assignee_ids")
   reviewedAt      DateTime?             @map("reviewed_at") @db.Timestamptz(6)
   reviewedNote    String?               @map("reviewed_note") @db.VarChar(255)
   createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1408,6 +1427,12 @@ model CampaignDishStep {
   qcFailedAt             DateTime?              @map("qc_failed_at") @db.Timestamptz
   qcFailedByVolunteerId  String?                @map("qc_failed_by_volunteer_id") @db.Uuid
   qcFailureReason        String?                @map("qc_failure_reason") @db.VarChar(500)
+  /// Duyệt ảnh khâu QC (stepOrder=3) bởi TỔ CHỨC: chef chụp ảnh xong → 'pending';
+  /// tổ chức duyệt → 'approved' (mới mở được khâu 4); từ chối → 'rejected' + khâu 3
+  /// quay về available để chef chụp lại.
+  reviewStatus           String?                @map("review_status") @db.VarChar(20)
+  reviewedAt             DateTime?              @map("reviewed_at") @db.Timestamptz
+  reviewNote             String?                @map("review_note") @db.VarChar(500)
   createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 

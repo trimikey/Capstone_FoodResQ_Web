@@ -15,6 +15,27 @@ const DEV_MOBILE_ORIGINS = [
   'http://10.0.2.2:3001',
 ];
 
+function isPrivateNetworkHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '10.0.2.2' ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
+
+function isAllowedDevOrigin(origin: string): boolean {
+  if (process.env['NODE_ENV'] === 'production') return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' && isPrivateNetworkHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Danh sách origin được phép, đọc từ env `ALLOWED_ORIGINS` (ngăn cách bởi dấu phẩy). */
 export function allowedOrigins(): string[] {
   const raw = process.env['ALLOWED_ORIGINS'];
@@ -40,7 +61,7 @@ export function corsOriginDelegate(
   origin: string | undefined,
   callback: (err: Error | null, allow?: boolean) => void,
 ): void {
-  if (!origin || allowedOrigins().includes(origin)) {
+  if (!origin || allowedOrigins().includes(origin) || isAllowedDevOrigin(origin)) {
     callback(null, true);
     return;
   }

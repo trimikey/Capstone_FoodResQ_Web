@@ -23,6 +23,7 @@ import {
   Matches,
   MaxLength,
   ArrayMaxSize,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
@@ -49,6 +50,17 @@ class SetStepTimesDto {
 
 /** Body khi QC step bị đánh dấu fail (ngắt khẩn cấp). */
 class FlagStepFailureDto {
+  @IsString()
+  @MaxLength(500, { message: 'Lý do tối đa 500 ký tự' })
+  @IsOptional()
+  reason?: string;
+}
+
+/** Body khi tổ chức duyệt / từ chối ảnh khâu QC. */
+class ReviewQcStepDto {
+  @IsIn(['approve', 'reject'], { message: 'action phải là approve hoặc reject' })
+  action!: 'approve' | 'reject';
+
   @IsString()
   @MaxLength(500, { message: 'Lý do tối đa 500 ký tự' })
   @IsOptional()
@@ -110,6 +122,24 @@ export class DishStepsController {
     @Body('note') note?: string,
   ) {
     return this.service.completeStep(campaignId, user.id, stepId, proof, note);
+  }
+
+  /**
+   * Tổ chức: duyệt / từ chối ẢNH khâu QC chef đã tải lên.
+   * Duyệt xong khâu 4 "Sẵn sàng phát xuất" mới mở; từ chối thì khâu QC quay về
+   * available để chef chụp lại (kèm lý do bắt buộc).
+   */
+  @Post('dish-steps/:stepId/review')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức duyệt/từ chối ảnh khâu QC — duyệt xong mới mở "Sẵn sàng phát xuất"' })
+  reviewQcStep(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Param('stepId', ParseUUIDPipe) stepId: string,
+    @CurrentUser() user: User,
+    @Body() dto: ReviewQcStepDto,
+  ) {
+    return this.service.reviewQcStep(campaignId, user.id, stepId, dto.action, dto.reason);
   }
 
   /**

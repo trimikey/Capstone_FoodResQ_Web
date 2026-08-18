@@ -16,11 +16,16 @@ const MEAL_TABS: Array<{ key: MealTab; label: string; icon: string }> = [
 
 const NUTRITION_TAGS = ['High Protein', 'Ít đường', 'Vitamins', 'GLUTEN-FREE', 'Lactose-Free'];
 
+/** Số vật phẩm hiện sẵn khi thu gọn — còn lại ẩn sau nút "Xem tất cả". */
+const SUPPLY_PREVIEW_COUNT = 5;
+
 export default function MenuPage() {
   const { campaign: c } = useManageContext();
   const [meal, setMeal] = useState<MealTab>('lunch');
   const [addSupplyOpen, setAddSupplyOpen] = useState(false);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+  // Danh sách vật phẩm có thể rất dài — mặc định thu gọn, bấm "Xem tất cả" mới xổ hết.
+  const [showAllSupplies, setShowAllSupplies] = useState(false);
   const setMealMutation = useSetMenuItemMeal();
 
   async function assignMeal(index: number, type: string) {
@@ -264,22 +269,38 @@ export default function MenuPage() {
                 Chưa có vật phẩm nào được liệt kê.
               </div>
             ) : (
-              <ul className="space-y-2">
-                {supplies.map((it) => (
-                  <li key={it.id} className="cm-ingredient-row">
-                    <div className="cm-ingredient-info">
-                      <p className="cm-ingredient-name">{it.name}</p>
-                      <p className="cm-ingredient-meta">
-                        {it.need > 0
-                          ? `Cần ${it.need}${it.unit ? ` ${it.unit}` : ''}`
-                          : it.unit
-                            ? `Đơn vị: ${it.unit}`
-                            : 'Chưa ghi rõ số lượng'}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="space-y-2">
+                  {(showAllSupplies ? supplies : supplies.slice(0, SUPPLY_PREVIEW_COUNT)).map((it) => (
+                    <li key={it.id} className="cm-ingredient-row">
+                      <div className="cm-ingredient-info">
+                        <p className="cm-ingredient-name">{it.name}</p>
+                        <p className="cm-ingredient-meta">
+                          {it.need > 0
+                            ? `Cần ${it.need}${it.unit ? ` ${it.unit}` : ''}`
+                            : it.unit
+                              ? `Đơn vị: ${it.unit}`
+                              : 'Chưa ghi rõ số lượng'}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {supplies.length > SUPPLY_PREVIEW_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSupplies((v) => !v)}
+                    className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-200 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {showAllSupplies ? 'expand_less' : 'expand_more'}
+                    </span>
+                    {showAllSupplies
+                      ? 'Thu gọn'
+                      : `Xem tất cả ${supplies.length} vật phẩm (+${supplies.length - SUPPLY_PREVIEW_COUNT})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </section>
