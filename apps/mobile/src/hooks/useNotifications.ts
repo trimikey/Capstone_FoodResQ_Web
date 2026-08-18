@@ -45,10 +45,9 @@ function formatOfferPopup(offer: TaskOffer) {
     `Khoảng cách: ${formatKm(delivery.distanceKm)}`,
     `Lấy: ${pickup}`,
     `Giao: ${destination}`,
-    // Popup toast chỉ hiện được chữ — nhắc shipper mở danh sách để XEM ẢNH
-    // bằng chứng trước khi nhận (ảnh hiển thị ở thẻ đơn trong màn Lời mời).
+    // Ảnh bằng chứng hiển thị ngay dưới phần chữ này (xem `imageUrl` lúc show).
     ...(reservation?.deliveryEvidenceUrl
-      ? ['⚠ Người nhận khó di chuyển — xem ảnh bằng chứng trong danh sách trước khi nhận.']
+      ? ['⚠ Người nhận khó di chuyển — xem ảnh bằng chứng bên dưới trước khi nhận.']
       : []),
   ].join('\n');
 }
@@ -238,6 +237,12 @@ export function useNotificationSocket() {
             text1: 'Có đơn giao mới',
             text2: formatOfferPopup(offer),
             duration: 0,
+            // Người nhận khai khó di chuyển → cho shipper XEM ẢNH bằng chứng
+            // ngay trong popup, thấy hợp lệ mới bấm nhận (giống bản web).
+            imageUrl: offer.delivery.reservation?.deliveryEvidenceUrl ?? undefined,
+            imageCaption: offer.delivery.reservation?.deliveryEvidenceUrl
+              ? 'Bằng chứng người nhận khó di chuyển'
+              : undefined,
             secondaryAction: {
               label: 'Bỏ qua',
               onPress: async () => {
