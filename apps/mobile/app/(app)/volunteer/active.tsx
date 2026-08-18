@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+﻿import { useCallback, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl, Pressable, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, ActivityIndicator } from 'react-native-paper';
@@ -26,6 +26,7 @@ import { Redirect } from 'expo-router';
 import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ReportDialog } from '@/components/ReportDialog';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { FadeInUp } from '@/components/ui/Motion';
@@ -165,6 +166,107 @@ function DeliveredSuccessModal({ summary, onDismiss }: { summary: DeliveredSumma
   );
 }
 
+/**
+ * Bước cuối: mã QR đã đúng, ĐỐI CHIẾU người nhận (ảnh đã đăng ký + thông tin)
+ * rồi mới bàn giao — quét trúng mã chưa chắc đúng người cầm máy. Cùng luật với
+ * bản web và với bước provider quét QR ở đơn tự đến lấy.
+ */
+function HandoverConfirmModal({
+  delivery,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  delivery: ActiveDelivery;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const reservation = delivery.reservation;
+  const receiver = reservation?.receiver;
+  const registeredPhoto = receiver?.faceImageUrl ?? receiver?.idCardImageUrl ?? null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.successOverlay}>
+        <View style={styles.successCard}>
+          <Text style={styles.successTitle}>Đối chiếu người nhận</Text>
+          <Text style={styles.successSub}>Mã QR đã đúng — kiểm tra người trước mặt bạn</Text>
+
+          <View style={styles.handoverPhotoWrap}>
+            {registeredPhoto ? (
+              <AppImage source={{ uri: registeredPhoto }} style={styles.handoverPhoto} />
+            ) : (
+              <View style={styles.handoverNoPhoto}>
+                <MaterialCommunityIcons name="camera-off-outline" size={34} color={COLORS.warning} />
+                <Text style={styles.handoverNoPhotoText}>Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân</Text>
+              </View>
+            )}
+            {registeredPhoto ? <Text style={styles.handoverPhotoLabel}>Ảnh đã đăng ký</Text> : null}
+          </View>
+
+          <View style={styles.successDivider} />
+
+          <View style={styles.successDetails}>
+            <View style={styles.successRow}>
+              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
+              <Text style={styles.successRowText}>{receiver?.user.fullName ?? '—'}</Text>
+            </View>
+            {receiver?.user.phone ? (
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.teal} />
+                <Text style={styles.successRowText}>{receiver.user.phone}</Text>
+              </View>
+            ) : null}
+            {receiver?.idCardNumber ? (
+              <View style={styles.successRow}>
+                <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.indigo} />
+                <Text style={styles.successRowText}>CCCD: {receiver.idCardNumber}</Text>
+              </View>
+            ) : null}
+            <View style={styles.successRow}>
+              <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
+              <Text style={styles.successRowText} numberOfLines={2}>
+                {reservation?.listing.title ?? '—'}
+                {reservation?.quantity != null ? ` · ${reservation.quantity} phần` : ''}
+              </Text>
+            </View>
+          </View>
+
+          {reservation?.deliveryEvidenceUrl ? (
+            <View style={styles.handoverEvidence}>
+              <Text style={styles.handoverEvidenceLabel}>Bằng chứng người nhận khó di chuyển</Text>
+              <AppImage source={{ uri: reservation.deliveryEvidenceUrl }} style={styles.handoverEvidenceImage} />
+            </View>
+          ) : null}
+
+          <View style={styles.handoverActions}>
+            <Button
+              mode="outlined"
+              onPress={onCancel}
+              disabled={busy}
+              textColor={COLORS.onSurface}
+              style={styles.handoverBtn}
+            >
+              Chưa đúng người
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={COLORS.primary}
+              onPress={onConfirm}
+              loading={busy}
+              disabled={busy}
+              style={styles.handoverBtn}
+            >
+              Bàn giao
+            </Button>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 type RouteTarget = {
   key: 'pickup' | 'dropoff';
   title: string;
@@ -274,6 +376,9 @@ export default function VolunteerActiveScreen() {
   const [qrScanning, setQrScanning] = useState(false);
   const [torch, setTorch] = useState(false);
   const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
+  // Mã QR đã quét đúng, đang chờ shipper ĐỐI CHIẾU người nhận rồi mới bàn giao —
+  // quét trúng mã chưa chắc đúng người cầm máy (giống luật của đơn tự đến lấy).
+  const [handoverToken, setHandoverToken] = useState<string | null>(null);
 
   const delivery = data ?? null;
   const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
@@ -436,6 +541,20 @@ export default function VolunteerActiveScreen() {
       void notifyWarning();
       return;
     }
+    // Đơn của người nhận → bắt buộc đối chiếu ảnh/thông tin trước khi bàn giao.
+    // Chuyến giao cho bếp chiến dịch không có hồ sơ người nhận nên chốt thẳng.
+    if (delivery.reservation) {
+      qrSheetRef.current?.dismiss();
+      setQrScannerOpen(false);
+      setHandoverToken(token);
+      return;
+    }
+    await finalizeHandover(token);
+  };
+
+  /** Goi API chot ban giao - chay SAU khi da doi chieu (hoac don chien dich). */
+  const finalizeHandover = async (token: string) => {
+    if (!delivery) return;
     const snapshot = {
       title: delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao',
       recipient: delivery.reservation?.receiver?.user.fullName ?? delivery.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch',
@@ -448,6 +567,7 @@ export default function VolunteerActiveScreen() {
       qrSheetRef.current?.dismiss();
       setQrToken('');
       setQrScannerOpen(false);
+      setHandoverToken(null);
       void notifySuccess();
       setDeliveredSummary(snapshot);
     } catch (e: any) {
@@ -930,6 +1050,16 @@ export default function VolunteerActiveScreen() {
         onDismiss={() => setReportVisible(false)}
       />
 
+      {/* Đối chiếu người nhận sau khi quét đúng QR — xác nhận rồi mới bàn giao */}
+      {handoverToken && delivery ? (
+        <HandoverConfirmModal
+          delivery={delivery}
+          busy={qrScanning || updateStatus.isPending}
+          onConfirm={() => void finalizeHandover(handoverToken)}
+          onCancel={() => setHandoverToken(null)}
+        />
+      ) : null}
+
       <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
       <PhotoReviewModal
         state={photoReview}
@@ -1174,6 +1304,41 @@ const styles = StyleSheet.create({
   pointsText: { color: COLORS.warning, fontWeight: '800' },
   successBtn: { borderRadius: 14, width: '100%', marginTop: 4 },
   successBtnContent: { paddingVertical: 8 },
+  // ── Đối chiếu người nhận trước khi bàn giao ──
+  handoverPhotoWrap: { alignItems: 'center', gap: 6, marginTop: 4 },
+  handoverPhoto: {
+    width: 132,
+    height: 132,
+    borderRadius: radius.lg,
+    borderWidth: 3,
+    borderColor: COLORS.primaryContainer,
+  },
+  handoverNoPhoto: {
+    width: '100%',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+    alignItems: 'center',
+    gap: 6,
+  },
+  handoverNoPhotoText: { fontSize: 12, fontWeight: '700', color: '#92400e', textAlign: 'center' },
+  handoverPhotoLabel: { fontSize: 11, fontWeight: '800', color: COLORS.primary },
+  handoverEvidence: {
+    width: '100%',
+    marginTop: 4,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+    gap: 6,
+  },
+  handoverEvidenceLabel: { fontSize: 11, fontWeight: '800', color: '#78350f' },
+  handoverEvidenceImage: { width: '100%', height: 120, borderRadius: radius.sm },
+  handoverActions: { flexDirection: 'row', gap: spacing.sm, width: '100%', marginTop: 6 },
+  handoverBtn: { flex: 1, borderRadius: 14 },
   reviewOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',

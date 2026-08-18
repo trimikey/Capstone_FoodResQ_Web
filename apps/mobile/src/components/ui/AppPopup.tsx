@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { Portal, Dialog, Button, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { create } from 'zustand';
+import { AppImage } from '@/components/ui/AppImage';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 export type PopupType = 'success' | 'error' | 'info' | 'warning';
@@ -15,6 +16,13 @@ export interface PopupOptions {
   text2?: string;
   /** ms tự đóng; 0/undefined → không tự đóng (chỉ đóng khi bấm OK). Mặc định 2800. */
   duration?: number;
+  /**
+   * Ảnh minh hoạ hiển thị trong popup (vd bằng chứng người nhận khó di chuyển).
+   * Chỉ popup giữa màn dùng — toast ngắn bỏ qua.
+   */
+  imageUrl?: string | null;
+  /** Chú thích dưới ảnh. */
+  imageCaption?: string;
   primaryAction?: {
     label: string;
     onPress: () => void | Promise<void>;
@@ -25,9 +33,14 @@ export interface PopupOptions {
   };
 }
 
-interface PopupState extends Required<Omit<PopupOptions, 'text2' | 'primaryAction' | 'secondaryAction'>> {
+interface PopupState
+  extends Required<
+    Omit<PopupOptions, 'text2' | 'primaryAction' | 'secondaryAction' | 'imageUrl' | 'imageCaption'>
+  > {
   visible: boolean;
   text2?: string;
+  imageUrl?: string | null;
+  imageCaption?: string;
   primaryAction?: PopupOptions['primaryAction'];
   secondaryAction?: PopupOptions['secondaryAction'];
   show: (o: PopupOptions) => void;
@@ -47,10 +60,19 @@ const usePopupStore = create<PopupState>((set) => ({
       text1: o.text1 ?? '',
       text2: o.text2,
       duration: o.duration ?? 2800,
+      imageUrl: o.imageUrl,
+      imageCaption: o.imageCaption,
       primaryAction: o.primaryAction,
       secondaryAction: o.secondaryAction,
     }),
-  hide: () => set({ visible: false, primaryAction: undefined, secondaryAction: undefined }),
+  hide: () =>
+    set({
+      visible: false,
+      imageUrl: undefined,
+      imageCaption: undefined,
+      primaryAction: undefined,
+      secondaryAction: undefined,
+    }),
 }));
 
 interface ToastState extends Required<Pick<PopupOptions, 'type' | 'text1' | 'duration'>> {
@@ -104,7 +126,18 @@ const META: Record<PopupType, { icon: string; color: string }> = {
  * `duration` ms; người dùng cũng có thể bấm OK để đóng ngay.
  */
 export function AppPopupHost() {
-  const { visible, type, text1, text2, duration, primaryAction, secondaryAction, hide } = usePopupStore();
+  const {
+    visible,
+    type,
+    text1,
+    text2,
+    duration,
+    imageUrl,
+    imageCaption,
+    primaryAction,
+    secondaryAction,
+    hide,
+  } = usePopupStore();
 
   useEffect(() => {
     if (!visible || !duration) return;
@@ -141,6 +174,13 @@ export function AppPopupHost() {
             <Text variant="bodyMedium" style={[styles.message, text2.includes('\n') && styles.messageList]}>
               {text2}
             </Text>
+          ) : null}
+          {/* Ảnh minh hoạ (bằng chứng khó di chuyển / ảnh người nhận) */}
+          {imageUrl ? (
+            <View style={styles.imageWrap}>
+              <AppImage source={{ uri: imageUrl }} style={styles.image} />
+              {imageCaption ? <Text style={styles.imageCaption}>{imageCaption}</Text> : null}
+            </View>
           ) : null}
         </Dialog.Content>
         <Dialog.Actions>
@@ -192,6 +232,16 @@ const styles = StyleSheet.create({
   title: { textAlign: 'center', fontWeight: '700', color: COLORS.onSurface },
   message: { textAlign: 'center', color: COLORS.onSurfaceVariant, marginTop: spacing.sm },
   messageList: { textAlign: 'left', alignSelf: 'stretch' },
+  imageWrap: { alignSelf: 'stretch', marginTop: spacing.md, gap: 6 },
+  image: {
+    width: '100%',
+    height: 160,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+  },
+  imageCaption: { fontSize: 11, textAlign: 'center', color: COLORS.onSurfaceVariant },
   okLabel: { fontWeight: '700' },
   toastWrap: { bottom: 78 },
   toast: { borderRadius: radius.md },
