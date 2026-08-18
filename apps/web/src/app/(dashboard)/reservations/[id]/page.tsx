@@ -849,12 +849,12 @@ export default function ReservationDetailsPage() {
                     </span>
                     <span className="font-bold text-neutral-800">
                       {(() => {
+                        // Lấy được NGAY từ bây giờ (hoặc chờ tới giờ mở cửa) — không cộng thêm 30 phút.
                         const now = Date.now();
-                        const thirtyMinMs = 30 * 60 * 1000;
                         const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
                         const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
-                        const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
-                        return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} -   `;
+                        const effectiveStart = Math.max(now, pickupStart);
+                        return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
                       })()}
                     </span>
                   </div>
@@ -1096,11 +1096,11 @@ export default function ReservationDetailsPage() {
                         <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Giờ nhận</p>
                         <p className="text-xs font-bold text-emerald-700">
                           {(() => {
+                            // Lấy được NGAY từ bây giờ (hoặc chờ tới giờ mở cửa) — không cộng thêm 30 phút.
                             const now = Date.now();
-                            const thirtyMinMs = 30 * 60 * 1000;
                             const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
                             const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
-                            const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+                            const effectiveStart = Math.max(now, pickupStart);
                             return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
                           })()}
                         </p>
@@ -1146,11 +1146,11 @@ export default function ReservationDetailsPage() {
                       </span>
                       <span className="font-bold text-neutral-800">
                         {(() => {
+                          // Lấy được NGAY từ bây giờ (hoặc chờ tới giờ mở cửa) — không cộng thêm 30 phút.
                           const now = Date.now();
-                          const thirtyMinMs = 30 * 60 * 1000;
                           const pickupStart = new Date(reservation.listing.pickupStartTime ?? reservation.createdAt).getTime();
                           const pickupEnd = new Date(reservation.listing.pickupEndTime ?? reservation.createdAt).getTime();
-                          const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+                          const effectiveStart = Math.max(now, pickupStart);
                           return `${new Date(effectiveStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(pickupEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
                         })()}
                       </span>
@@ -1477,16 +1477,17 @@ function ReservationTimeInfoPopup({
   onClose: () => void;
 }) {
   const now = Date.now();
-  const thirtyMinMs = 30 * 60 * 1000;
+  /** Khớp system_configs QR_VALIDITY_MINUTES — QR sống 30 phút kể từ lúc đặt. */
+  const qrValidityMs = 30 * 60 * 1000;
 
   const pickupStart = new Date(pickupStartTime).getTime();
   const pickupEnd = new Date(pickupEndTime).getTime();
 
-  // Giờ bắt đầu = max(giờ hiện tại + 30p, pickupStartTime)
-  const effectiveStart = Math.max(now + thirtyMinMs, pickupStart);
+  // Đến lấy được NGAY (hoặc chờ tới giờ mở cửa) — không đẩy giờ nhận lên +30 phút.
+  const effectiveStart = Math.max(now, pickupStart);
 
-  // Thời hạn đến = giờ hiện tại + 30 phút
-  const deadlineToArrive = now + thirtyMinMs;
+  // Thời hạn đến = QR hết hạn = bây giờ + 30 phút, nhưng không quá giờ đóng cửa.
+  const deadlineToArrive = Math.min(now + qrValidityMs, pickupEnd);
 
   return (
     <div
