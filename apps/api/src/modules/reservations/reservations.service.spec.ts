@@ -143,14 +143,19 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
  * Tin kéo dài nhiều ngày mà thiếu ràng buộc này sẽ cho đặt lúc 3h sáng.
  */
 describe('ReservationsService.create — khung giờ mở cửa trong ngày', () => {
+  // Mốc thời gian GIẢ dùng chung cho CẢ fixture lẫn đồng hồ test. Bản cũ lấy
+  // Date.now() THẬT lúc load file còn test đóng băng đồng hồ ở 17/08/2026 —
+  // từ 19/08/2026 trở đi, (now thật − 24h) rơi sang NGÀY SAU mốc giả nên test
+  // lạc vào nhánh "Chưa đến ngày nhận hàng" và fail theo... lịch.
+  const FAKE_NOW = new Date('2026-08-17T09:33:00.000Z');
   const listingBase = {
     id: 'listing-1',
     quantity_remaining: 10,
     status: 'active',
     max_per_reservation: 3,
-    pickup_start_time: new Date(Date.now() - 86_400_000),
-    pickup_end_time: new Date(Date.now() + 86_400_000),
-    expiry_time: new Date(Date.now() + 172_800_000),
+    pickup_start_time: new Date(FAKE_NOW.getTime() - 86_400_000),
+    pickup_end_time: new Date(FAKE_NOW.getTime() + 86_400_000),
+    expiry_time: new Date(FAKE_NOW.getTime() + 172_800_000),
   };
 
   const transactionClient = {
@@ -191,6 +196,10 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Đóng băng đồng hồ cho MỌI test trong describe — fixture ở trên neo theo
+    // FAKE_NOW nên test nào chạy bằng giờ thật sẽ lệch ngày và fail theo lịch.
+    jest.useFakeTimers();
+    jest.setSystemTime(FAKE_NOW);
     prisma.$transaction.mockImplementation(async (callback: (tx: typeof transactionClient) => unknown) =>
       callback(transactionClient),
     );
@@ -198,8 +207,6 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
   });
 
   it('chặn đặt khi đang ngoài giờ mở cửa của tin', async () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
     // Khung 00:00–00:01 nên 16:33 giờ VN phải bị chặn.
     service = build({ start: 0, end: 1 });
 
@@ -208,9 +215,7 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
   });
 
   it('cho đặt trong daily window khi pickupStartTime cũ bị lưu muộn hơn', async () => {
-    jest.useFakeTimers();
-    // 16:33 ngày 17/08 giờ VN — trong khung provider đặt 14:45–21:44.
-    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
+    // 16:33 ngày 17/08 giờ VN (FAKE_NOW) — trong khung provider đặt 14:45–21:44.
     service = build({ start: 885, end: 1304 });
     // Timestamp cũ bị lệch: UI/API trước đây coi 22:00 VN mới là lúc mở.
     prisma.$queryRaw.mockResolvedValue([
