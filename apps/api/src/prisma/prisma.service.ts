@@ -54,7 +54,17 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
-    super();
+    super({
+      // Timeout mặc định của interactive transaction là 5s — quá sát khi DB ở
+      // Singapore và mỗi query là một round-trip qua WAN: transaction 4-5 query
+      // (vd cron advanceRecruitmentLifecycle) chỉ cần mạng chậm nhẹ là vượt hạn
+      // vài trăm ms và chết P2028. Nới lên 20s (kèm 10s chờ lấy connection);
+      // transaction của app đều ngắn về số lệnh nên không lo giữ lock lâu.
+      transactionOptions: {
+        maxWait: 10_000,
+        timeout: 20_000,
+      },
+    });
     const logger = new Logger(PrismaService.name);
 
     const extended = this.$extends({
