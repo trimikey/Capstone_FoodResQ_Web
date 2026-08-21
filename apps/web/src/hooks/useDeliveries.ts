@@ -445,3 +445,42 @@ export function useUpdateDeliveryStatus() {
     },
   });
 }
+
+// ─── Lịch rảnh hằng tuần của TNV (lưới 7 ngày × 4 ca) ────────────────────────
+// Đây là KHAI BÁO Ý ĐỊNH để lọc/gợi ý ca, KHÔNG phải cam kết nhận việc:
+// TNV vẫn phải tự đăng ký ca và tổ chức vẫn phải duyệt như cũ.
+
+export type ShiftPeriod = 'midnight' | 'morning' | 'afternoon' | 'evening';
+
+export interface AvailabilitySlot {
+  /** 1 = Thứ 2 … 7 = Chủ nhật (ISO-8601). */
+  dayOfWeek: number;
+  period: ShiftPeriod;
+}
+
+export interface WeeklyAvailability {
+  slots: AvailabilitySlot[];
+  /** Lần cập nhật gần nhất — dùng nhắc TNV rà lại khi lịch đã cũ. */
+  updatedAt: string | null;
+}
+
+export function useMyWeeklyAvailability(enabled = true) {
+  return useQuery({
+    queryKey: ['volunteers', 'weekly-availability'],
+    queryFn: async () =>
+      (await api.get('/volunteers/me/weekly-availability')).data.data as WeeklyAvailability,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useSetMyWeeklyAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (slots: AvailabilitySlot[]) =>
+      (await api.put('/volunteers/me/weekly-availability', { slots })).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['volunteers', 'weekly-availability'] });
+    },
+  });
+}

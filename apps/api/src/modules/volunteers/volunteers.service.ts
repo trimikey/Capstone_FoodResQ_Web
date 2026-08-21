@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { SetAvailabilityDto } from './dto/set-availability.dto';
+import { SetWeeklyAvailabilityDto } from './dto/weekly-availability.dto';
 
 @Injectable()
 export class VolunteersService {
@@ -120,5 +121,67 @@ export class VolunteersService {
     }
 
     return { ok: true };
+  }
+
+  /**
+   * Lịch rảnh hằng tuần TNV tự khai (lưới 7 ngày × 4 ca).
+   *
+   * Dùng raw SQL thay vì Prisma model: bảng vừa được thêm, môi trường dev có thể
+   * chưa chạy `prisma generate` xong. Truy vấn vẫn tham số hoá đầy đủ.
+   */
+  async getMyWeeklyAvailability(userId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const rows = await this.prisma.$queryRaw<
+      { day_of_week: number; period: string; updated_at: Date }[]
+    >(Prisma.sql`
+      SELECT day_of_week, period::text AS period, updated_at
+      FROM volunteer_availability
+      WHERE volunteer_id = ${volunteer.id}::uuid
+      ORDER BY day_of_week, period
+    `);
+
+    return {
+      slots: rows.map((r) => ({ dayOfWeek: r.day_of_week, period: r.period })),
+      // Lịch rảnh rất nhanh lỗi thời (khai rảnh sáng T7 rồi đi làm thêm mà không sửa)
+      // — FE hiển thị mốc này để nhắc TNV rà lại.
+      updatedAt: rows.reduce<Date | null>(
+        (latest, r) => (!latest || r.updated_at > latest ? r.updated_at : latest),
+        null,
+      ),
+    };
+  }
+
+  /** Ghi đè TOÀN BỘ lịch rảnh — đơn giản hơn diff từng ô và luôn khớp với UI lưới. */
+  async setMyWeeklyAvailability(userId: string, dto: SetWeeklyAvailabilityDto) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    // Khử trùng lặp: cùng một ô gửi hai lần sẽ vi phạm ràng buộc UNIQUE.
+    const unique = new Map<string, { dayOfWeek: number; period: string }>();
+    for (const slot of dto.slots) {
+      unique.set(`${slot.dayOfWeek}:${slot.period}`, slot);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM volunteer_availability WHERE volunteer_id = ${volunteer.id}::uuid
+      `);
+      for (const slot of unique.values()) {
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO volunteer_availability (volunteer_id, day_of_week, period, created_at, updated_at)
+          VALUES (${volunteer.id}::uuid, ${slot.dayOfWeek}, ${slot.period}::campaign_shift_period, NOW(), NOW())
+        `);
+      }
+    });
+
+    return { ok: true, count: unique.size };
   }
 }
