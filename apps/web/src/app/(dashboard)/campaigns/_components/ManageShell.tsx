@@ -685,7 +685,15 @@ function AvailableVolunteersHint({
         period,
         message: note.trim() || undefined,
       });
-      toast.success(`Đã gửi lời mời tới ${res.invited} tình nguyện viên.`);
+      // Lịch rảnh sửa được bất cứ lúc nào nên danh sách đang mở có thể đã cũ — nói rõ
+      // ai bị bỏ qua, đừng để tổ chức tưởng đã mời đủ số người mình chọn.
+      if (res.skipped > 0) {
+        toast.warning(
+          `Đã mời ${res.invited} người. ${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh nên không được mời.`,
+        );
+      } else {
+        toast.success(`Đã gửi lời mời tới ${res.invited} tình nguyện viên.`);
+      }
       setPicked(new Set());
       setNote('');
     } catch (e) {

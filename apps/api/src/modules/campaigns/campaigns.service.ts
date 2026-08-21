@@ -3109,12 +3109,28 @@ export class CampaignsService {
       throw new BadRequestException('Chưa chọn tình nguyện viên nào để mời.');
     }
 
-    const volunteers = await this.prisma.volunteerProfile.findMany({
-      where: { id: { in: dto.volunteerIds }, user: { status: 'active' } },
-      select: { id: true, userId: true },
-    });
+    // Kiểm tra LẠI lịch rảnh ngay trước khi gửi, không tin danh sách tổ chức đang mở.
+    // Danh sách gợi ý được cache 60s và TNV có thể bỏ tick bất cứ lúc nào, nên nếu chỉ
+    // dựa vào volunteerIds thì sẽ gửi lời mời cho đúng khung họ vừa báo bận.
+    const isoDow = new Date(`${dto.workDate}T00:00:00+07:00`).getUTCDay();
+    const dayOfWeek = isoDow === 0 ? 7 : isoDow;
+    const volunteers = await this.prisma.$queryRaw<{ id: string; userId: string }[]>(Prisma.sql`
+      SELECT vp.id, vp.user_id AS "userId"
+      FROM volunteer_profiles vp
+      JOIN users u ON u.id = vp.user_id
+      JOIN volunteer_availability va
+        ON va.volunteer_id = vp.id
+       AND va.day_of_week = ${dayOfWeek}
+       AND va.period = ${dto.period}::campaign_shift_period
+      WHERE vp.id IN (${Prisma.join(dto.volunteerIds.map((id) => Prisma.sql`${id}::uuid`))})
+        AND u.status = 'active'
+    `);
+    const skipped = dto.volunteerIds.length - volunteers.length;
     if (volunteers.length === 0) {
-      throw new BadRequestException('Không tìm thấy tình nguyện viên hợp lệ trong danh sách đã chọn.');
+      throw new BadRequestException(
+        'Những người bạn chọn vừa bỏ khung giờ này khỏi lịch rảnh (hoặc tài khoản bị khoá). '
+        + 'Vui lòng tải lại danh sách để xem ai còn rảnh.',
+      );
     }
 
     const periodLabel = SHIFT_PERIODS[dto.period as CampaignShiftPeriod]?.label ?? dto.period;
@@ -3133,7 +3149,8 @@ export class CampaignsService {
       });
     }
 
-    return { invited: volunteers.length };
+    // Báo rõ số người bị bỏ qua để tổ chức biết danh sách đã cũ, không tưởng đã mời đủ.
+    return { invited: volunteers.length, skipped };
   }
 
   /** Mức sẵn sàng được tính theo từng ngày + ca + vai trò, chỉ tính người đã xác nhận. */

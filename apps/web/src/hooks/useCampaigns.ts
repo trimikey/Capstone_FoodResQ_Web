@@ -1927,6 +1927,8 @@ export function useInviteVolunteers(campaignId: string) {
     }) =>
       (await api.post(`/campaigns/${campaignId}/invite-volunteers`, input)).data.data as {
         invited: number;
+        /** Số người bị bỏ qua vì vừa bỏ khung giờ này khỏi lịch rảnh / bị khoá tài khoản. */
+        skipped: number;
       },
   });
 }

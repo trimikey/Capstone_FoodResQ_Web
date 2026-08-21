@@ -220,6 +220,18 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
             {' · '}Phục vụ {Math.min(c.waiterSlotsFilled, c.waiterSlotsNeeded)}/{c.waiterSlotsNeeded}
             {' · '}Giao hàng {Math.min(c.shipperSlotsFilled, c.shipperSlotsNeeded)}/{c.shipperSlotsNeeded}
           </p>
+          {/* Lối vào tìm/mời TNV. Bảng định biên (nơi có nút "Ai rảnh khung này?") nằm
+              trong trang Quản lý nên rất khó tự tìm ra — chỉ đường thẳng từ đây khi ca
+              còn trống, đúng lúc tổ chức cần. */}
+          {slotsFilled < slotsNeeded && c.status === 'approved' && (
+            <Link
+              href={`/campaigns/${c.id}/manage`}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:text-sky-900"
+            >
+              <span className="material-symbols-outlined text-[14px]">person_search</span>
+              Tìm &amp; mời tình nguyện viên
+            </Link>
+          )}
         </div>
       )}
 
