@@ -274,6 +274,11 @@ export default function ReservationDetailsPage() {
   // nào để quét, phải ẩn panel QR thay vì để nó quay "đang chờ TNV quét mã".
   // Kèm cả lúc vừa hết giờ tìm TNV: BE huỷ đơn qua cron 30s nên có khoảng trễ, nếu
   // không tính vào đây thì thẻ trái báo "không tìm được TNV" mà thẻ phải vẫn mời quét mã.
+  // Đơn THỰC SỰ đã đóng (server đã chốt trạng thái) — khác với `isOrderClosed` vốn
+  // tính cả lúc vừa hết giờ tìm TNV mà cron chưa kịp huỷ. Ở khoảnh khắc đó người dùng
+  // VẪN chuyển sang tự đến lấy được, nên không được coi là đã đóng hẳn.
+  const isReservationClosed =
+    !isMock && ['cancelled', 'expired', 'no_show'].includes(liveStatus ?? '');
   const isOrderClosed = !isMock && (
     ['cancelled', 'expired', 'no_show'].includes(liveStatus ?? '')
     || (countdownExpired && realDeliveryStatus === 'pending_assignment')
@@ -539,7 +544,7 @@ export default function ReservationDetailsPage() {
                   <div className="absolute top-[9px] left-0 right-0 h-1 bg-neutral-100 rounded-full z-0">
                     <div
                       className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                      style={{ width: `${((useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2)) / 3) * 100}%` }}
+                      style={{ width: isReservationClosed ? '0%' : `${((useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2)) / 3) * 100}%` }}
                     />
                   </div>
 
@@ -551,7 +556,11 @@ export default function ReservationDetailsPage() {
                       { label: 'Đang giao', desc: 'Đang vận chuyển' },
                       { label: 'Hoàn tất', desc: 'Giao thành công' }
                     ].map((step, idx) => {
-                      const activeIdx = useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2);
+                      // Đơn đã đóng: chỉ giữ bước "Đã nhận" (đơn từng được tạo), các bước
+                      // sau để xám — tô xanh sẽ trông như chuyến giao vẫn đang chạy.
+                      const activeIdx = isReservationClosed
+                        ? 0
+                        : useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2);
                       const isCompleted = idx <= activeIdx;
                       return (
                         <div key={idx} className="flex flex-col items-center">
@@ -686,7 +695,26 @@ export default function ReservationDetailsPage() {
               )}
 
               {/* Volunteer Shipper Details Card */}
-              {useRealDelivery && !realShipper ? (
+              {/* Đơn đã huỷ/hết hạn mà chưa từng có TNV nhận → KHÔNG quay spinner "đang
+                  tìm" nữa. Trước đây chỉ tắt khi chuyến giao bị cancelled, còn trường hợp
+                  chuyến giao FAILED (hết 4m30 không ai nhận) rồi đơn mới bị huỷ thì panel
+                  vẫn chạy, mâu thuẫn với thẻ "Đơn đã huỷ" ngay bên cạnh. */}
+              {isReservationClosed && !realShipper ? (
+                <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-neutral-400 text-[24px]">person_off</span>
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-neutral-800">Không có tình nguyện viên nhận đơn</h5>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        Chuyến giao đã kết thúc. Bạn có thể đặt lại suất ăn khác.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : useRealDelivery && !realShipper ? (
                 /* Đơn thật chưa có tình nguyện viên nhận → không hiện shipper giả */
                 <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
                   <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
