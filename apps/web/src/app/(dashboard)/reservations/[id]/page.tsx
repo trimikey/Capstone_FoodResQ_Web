@@ -8,7 +8,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm, mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { haversineKm, mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
@@ -657,7 +657,7 @@ export default function ReservationDetailsPage() {
                     className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono font-bold tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 transition-colors max-w-full"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                    <span>{reservation.qrToken.slice(-8).toUpperCase()}</span>
+                    <span>{pickupCodeFromQrToken(reservation.qrToken)}</span>
                   </button>
                 )}
 
@@ -895,8 +895,11 @@ export default function ReservationDetailsPage() {
                       {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
                     </span>
                   </div>
+                  {/* Mã THAM CHIẾU đơn (dùng khi liên hệ hỗ trợ) — KHÁC mã nhận hàng ở
+                      khối QR phía trên. Ghi rõ để người dùng không đọc nhầm mã này cho
+                      cửa hàng nhập, vì backend đối chiếu theo đuôi mã QR. */}
                   <div className="flex items-center justify-between text-neutral-500">
-                    <span>Mã đơn hàng:</span>
+                    <span>Mã đơn (tra cứu):</span>
                     <span className="font-bold text-neutral-800">{reservation.listing.orderId || `#${reservation.id.slice(0, 8).toUpperCase()}`}</span>
                   </div>
                   <div className="flex items-center justify-between text-neutral-500">

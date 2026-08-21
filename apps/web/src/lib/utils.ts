@@ -125,3 +125,19 @@ export function errMsg(e: unknown, fallback: string): string {
     (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? fallback
   );
 }
+
+/**
+ * Mã nhận hàng đọc-được từ QR token — dùng khi camera hỏng hoặc QR mờ.
+ *
+ * Backend nhận 6–16 ký tự CUỐI của qrToken (xem resolveReservationByShortQrCode),
+ * nên đây phải là phần đuôi chứ không phải mã đơn hàng (#xxxxx lấy từ id đơn) —
+ * đọc nhầm mã đơn thì nhà cung cấp nhập vào sẽ báo "mã không hợp lệ".
+ *
+ * Cắt 8 ký tự cho đủ phân biệt, in hoa và chia đôi cho dễ đọc to: "A1B2 C3D4".
+ */
+export function pickupCodeFromQrToken(qrToken: string | null | undefined): string | null {
+  const token = (qrToken ?? '').trim();
+  if (token.length < 8) return null;
+  const tail = token.slice(-8).toUpperCase();
+  return `${tail.slice(0, 4)} ${tail.slice(4)}`;
+}

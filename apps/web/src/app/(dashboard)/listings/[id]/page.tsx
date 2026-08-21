@@ -9,7 +9,7 @@ import { useCreateReservation } from '@/hooks/useReservation';
 import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
-import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { usePickupWindow } from '@/hooks/usePickupWindow';
 import {
@@ -401,6 +401,38 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="p-4 bg-white rounded-3xl border border-outline-variant/20 shadow-md">
                   <QRCodeSVG value={reservationResult.qrToken} size={220} level="H" includeMargin />
                 </div>
+
+                {/* Mã chữ dự phòng: camera hỏng / QR mờ thì đọc mã này cho nhà cung cấp
+                    nhập tay. PHẢI là đuôi qrToken — backend đối chiếu theo đuôi token,
+                    đọc nhầm "mã đơn hàng" (#xxxxx lấy từ id đơn) sẽ báo mã không hợp lệ. */}
+                {pickupCodeFromQrToken(reservationResult.qrToken) && (
+                  <div className="w-full rounded-2xl border border-outline-variant/20 bg-surface-container-high/40 p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                      Hoặc đọc mã nhận hàng
+                    </p>
+                    <div className="mt-1.5 flex items-center justify-center gap-2">
+                      <span className="font-mono text-2xl font-extrabold tracking-[0.2em] text-on-surface">
+                        {pickupCodeFromQrToken(reservationResult.qrToken)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(
+                            (pickupCodeFromQrToken(reservationResult.qrToken) ?? '').replace(/\s/g, ''),
+                          );
+                          toast.success('Đã sao chép mã nhận hàng.');
+                        }}
+                        className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container"
+                        aria-label="Sao chép mã"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                      </button>
+                    </div>
+                    <p className="mt-1 text-[11px] text-on-surface-variant/80">
+                      Dùng khi cửa hàng không quét được mã QR.
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <p className="font-label-lg text-sm text-on-surface font-bold">Trình mã QR cho nhà cung cấp</p>
