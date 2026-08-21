@@ -1397,6 +1397,78 @@ export class CampaignsService {
     return campaigns.map((campaign) => this.withSupplyProgress(campaign));
   }
 
+  /**
+   * Lời mời nhận ca mà TNV đang có (đọc từ notifications, chưa đọc).
+   *
+   * Không tạo bảng riêng: lời mời vốn CHỈ là thông báo, không phải phân công. Ở đây
+   * chỉ lọc lại và bồi thêm dữ liệu ca để TNV bấm một chạm là đăng ký được.
+   * Đã lọc bỏ lời mời cho ca mà TNV đã đăng ký rồi, hoặc chiến dịch đã đóng.
+   */
+  async getMyShiftInvites(userId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+
+    const rows = await this.prisma.notification.findMany({
+      where: { userId, type: 'campaign', isRead: false },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { id: true, body: true, data: true, createdAt: true },
+    });
+
+    const invites = rows
+      .map((n) => ({ notification: n, data: n.data as Record<string, unknown> }))
+      .filter((r) => r.data?.kind === 'shift_invite' && typeof r.data.campaignId === 'string');
+    if (invites.length === 0) return [];
+
+    const campaigns = await this.prisma.kitchenCampaign.findMany({
+      where: {
+        id: { in: [...new Set(invites.map((i) => i.data.campaignId as string))] },
+        status: { in: ['approved', 'in_progress'] },
+      },
+      select: { id: true, title: true, kitchenAddress: true, recruitmentEndAt: true },
+    });
+    const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+
+    // Ca đã đăng ký rồi thì không mời lại — TNV bấm "Nhận ca" sẽ bị chặn ở apply().
+    const taken = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        volunteerId: volunteer.id,
+        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'] },
+      },
+      select: { campaignId: true, shiftId: true, workDate: true },
+    });
+    const takenKeys = new Set(
+      taken.map((a) => `${a.campaignId}:${a.shiftId ?? ''}:${this.toDateKey(a.workDate ?? new Date(0))}`),
+    );
+
+    return invites.flatMap((i) => {
+      const campaign = campaignById.get(i.data.campaignId as string);
+      if (!campaign) return [];
+      const shiftId = typeof i.data.shiftId === 'string' ? i.data.shiftId : null;
+      const workDate = typeof i.data.workDate === 'string' ? i.data.workDate : null;
+      if (!workDate) return [];
+      if (takenKeys.has(`${campaign.id}:${shiftId ?? ''}:${workDate}`)) return [];
+      // Hết hạn tuyển thì lời mời cũng vô nghĩa.
+      if (new Date() >= campaign.recruitmentEndAt) return [];
+
+      return [{
+        notificationId: i.notification.id,
+        campaignId: campaign.id,
+        campaignTitle: campaign.title,
+        kitchenAddress: campaign.kitchenAddress,
+        workDate,
+        period: typeof i.data.period === 'string' ? i.data.period : null,
+        shiftId,
+        message: i.notification.body,
+        invitedAt: i.notification.createdAt,
+        recruitmentEndAt: campaign.recruitmentEndAt,
+      }];
+    });
+  }
+
   /** Việc của tình nguyện viên: các campaign đã đăng ký + vai trò + trạng thái. */
   async myAssignments(userId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId } });
@@ -3099,7 +3171,7 @@ export class CampaignsService {
   async inviteVolunteersToShift(
     campaignId: string,
     userId: string,
-    dto: { volunteerIds: string[]; workDate: string; period: string; message?: string },
+    dto: { volunteerIds: string[]; workDate: string; period: string; message?: string; shiftId?: string },
   ) {
     const campaign = await this.assertOwner(campaignId, userId);
     if (!['approved', 'in_progress'].includes(campaign.status)) {
@@ -3145,7 +3217,14 @@ export class CampaignsService {
           `Chiến dịch "${campaign.title}" đang cần người cho ${periodLabel} ngày ${dateLabel} `
           + `— khung giờ bạn đã khai là rảnh.${note ? ` Lời nhắn từ tổ chức: ${note}` : ''} `
           + 'Mở chiến dịch để đăng ký nếu bạn sắp xếp được.',
-        data: { campaignId, workDate: dto.workDate, period: dto.period, kind: 'shift_invite' },
+        data: {
+          campaignId,
+          workDate: dto.workDate,
+          period: dto.period,
+          shiftId: dto.shiftId ?? null,
+          campaignTitle: campaign.title,
+          kind: 'shift_invite',
+        },
       });
     }
 

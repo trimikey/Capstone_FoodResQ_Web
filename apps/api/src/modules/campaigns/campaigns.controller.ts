@@ -85,6 +85,14 @@ export class CampaignsController {
     return this.campaignsService.getMyIntakeHistory(user.id);
   }
 
+  @Get('my-shift-invites')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: lời mời nhận ca đang chờ phản hồi' })
+  myShiftInvites(@CurrentUser() user: User) {
+    return this.campaignsService.getMyShiftInvites(user.id);
+  }
+
   @Get('my-tasks')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)

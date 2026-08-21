@@ -1054,6 +1054,13 @@ export class InviteVolunteersDto {
   })
   period!: string;
 
+  // Gửi kèm để TNV bấm "Nhận ca" là đăng ký được ngay đúng ca đó. Thiếu shiftId thì
+  // họ phải tự mò lại trong danh sách ca của chiến dịch — lời mời mất gần hết tác dụng.
+  @ApiPropertyOptional({ description: 'Ca cụ thể được mời (để TNV đăng ký một chạm)' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ca trực không hợp lệ' })
+  shiftId?: string;
+
   @ApiPropertyOptional({ example: 'Bếp đang thiếu 2 đầu bếp ca sáng, mong bạn hỗ trợ.' })
   @IsOptional()
   @IsString({ message: 'Lời nhắn phải là chuỗi' })

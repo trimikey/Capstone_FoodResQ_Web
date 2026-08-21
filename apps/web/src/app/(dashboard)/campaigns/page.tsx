@@ -31,6 +31,7 @@ import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
 import IntakeHistorySection from './_components/IntakeHistorySection';
+import ShiftInvitesSection from './_components/ShiftInvitesSection';
 import type { Section } from './_components/CharitySidebar';
 import { useAuthStore } from '@/stores/auth.store';
 import Pagination from '@/components/shared/Pagination';
@@ -331,7 +332,13 @@ function CampaignsPageInner() {
 
           {/* ═════ TASKS (volunteer) ═════ */}
           {!searching && section === 'tasks' && isVolunteer && (
-            <TasksSection myTasks={myTasks ?? []} />
+            <div className="space-y-5">
+              {/* Lời mời nhận ca đặt TRÊN danh sách việc: đây là thứ đang chờ TNV phản
+                  hồi, còn danh sách dưới là việc đã nhận. Dùng chuyên môn đầu tiên làm
+                  vai trò đăng ký — tổ chức mời theo đúng vai trò mà ca đang thiếu. */}
+              {myRoles[0] && <ShiftInvitesSection role={myRoles[0] as AssignmentRole} />}
+              <TasksSection myTasks={myTasks ?? []} />
+            </div>
           )}
 
           {/* ═════ BROWSE (community) ═════ */}

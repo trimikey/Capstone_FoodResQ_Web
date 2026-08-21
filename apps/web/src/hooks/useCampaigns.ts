@@ -1923,6 +1923,8 @@ export function useInviteVolunteers(campaignId: string) {
       volunteerIds: string[];
       workDate: string;
       period: string;
+      /** Ca cụ thể — để TNV nhận lời mời là đăng ký một chạm. */
+      shiftId?: string;
       message?: string;
     }) =>
       (await api.post(`/campaigns/${campaignId}/invite-volunteers`, input)).data.data as {
@@ -1962,5 +1964,29 @@ export function useMyIntakeHistory(enabled = true) {
     queryFn: async () => (await api.get('/campaigns/my-intake-history')).data.data as IntakeHistory,
     enabled,
     staleTime: 60_000,
+  });
+}
+
+/** Volunteer: lời mời nhận ca do tổ chức gửi, đang chờ phản hồi. */
+export interface ShiftInvite {
+  notificationId: string;
+  campaignId: string;
+  campaignTitle: string;
+  kitchenAddress: string;
+  workDate: string;
+  period: string | null;
+  /** Có shiftId thì bấm "Nhận ca" là đăng ký thẳng, không phải tự mò lại danh sách ca. */
+  shiftId: string | null;
+  message: string;
+  invitedAt: string;
+  recruitmentEndAt: string;
+}
+
+export function useMyShiftInvites(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'shift-invites'],
+    queryFn: async () => (await api.get('/campaigns/my-shift-invites')).data.data as ShiftInvite[],
+    enabled,
+    staleTime: 30_000,
   });
 }

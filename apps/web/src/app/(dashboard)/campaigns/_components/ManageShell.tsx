@@ -588,6 +588,7 @@ function RecruitmentReadinessPanel({
                         workDate={row.workDate}
                         period={row.period}
                         role={row.role ?? undefined}
+                        shiftId={row.shiftId}
                       />
                     )}
                   </td>
@@ -662,11 +663,14 @@ function AvailableVolunteersHint({
   workDate,
   period,
   role,
+  shiftId,
 }: {
   campaignId: string;
   workDate: string;
   period: string;
   role?: string;
+  /** Gửi kèm lời mời để TNV bấm "Nhận ca" là đăng ký đúng ca này ngay. */
+  shiftId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -683,6 +687,7 @@ function AvailableVolunteersHint({
         volunteerIds: [...picked],
         workDate,
         period,
+        shiftId,
         message: note.trim() || undefined,
       });
       // Lịch rảnh sửa được bất cứ lúc nào nên danh sách đang mở có thể đã cũ — nói rõ
