@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { AssignmentRole } from '@foodresq/types';
-import { useMyShiftInvites, useApplyCampaign, type ShiftInvite } from '@/hooks/useCampaigns';
+import { useMyShiftInvites, useAcceptShiftInvite, type ShiftInvite } from '@/hooks/useCampaigns';
 import { useMarkRead } from '@/hooks/useNotifications';
 import { errMsg } from '@/lib/utils';
 
@@ -26,13 +25,14 @@ function formatDay(dateKey: string) {
 /**
  * Lời mời nhận ca do tổ chức gửi.
  *
- * "Nhận ca" ở đây KHÔNG phải tổ chức gán người: chính TNV bấm, và hệ thống tạo một
- * đăng ký chờ tổ chức duyệt — giống hệt như tự vào chiến dịch đăng ký. Lời mời chỉ
- * rút ngắn đường đi, không bỏ qua bước duyệt nào.
+ * "Nhận ca" đưa TNV VÀO THẲNG ca, không qua bước tổ chức duyệt lại: tổ chức đã chủ
+ * động chọn đích danh người này khi gửi lời mời, TNV bấm nhận là bên còn lại đồng ý.
+ * (Đăng ký tự phát vẫn giữ luồng chờ duyệt vì lúc đó tổ chức chưa biết người đăng ký.)
  */
-export default function ShiftInvitesSection({ role }: { role: AssignmentRole }) {
+// Vai trò lấy từ chính ca được mời (backend đọc shift.role) nên không cần truyền vào.
+export default function ShiftInvitesSection() {
   const { data: invites, isLoading } = useMyShiftInvites();
-  const apply = useApplyCampaign();
+  const accept_ = useAcceptShiftInvite();
   const markRead = useMarkRead();
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -41,17 +41,13 @@ export default function ShiftInvitesSection({ role }: { role: AssignmentRole }) 
   async function accept(invite: ShiftInvite) {
     setBusyId(invite.notificationId);
     try {
-      await apply.mutateAsync({
-        id: invite.campaignId,
-        role,
-        shiftId: invite.shiftId ?? undefined,
-        workDate: invite.workDate,
+      const res = await accept_.mutateAsync({
+        campaignId: invite.campaignId,
+        notificationId: invite.notificationId,
       });
-      // Đăng ký xong thì lời mời hết vai trò — đánh dấu đã đọc để không hiện lại.
-      await markRead.mutateAsync(invite.notificationId);
-      toast.success('Đã gửi đăng ký ca. Chờ tổ chức duyệt là bạn vào ca.');
+      toast.success(`Bạn đã vào ca ${res.shiftLabel}. Hẹn gặp bạn tại bếp!`);
     } catch (e) {
-      toast.error(errMsg(e, 'Không đăng ký được ca này'));
+      toast.error(errMsg(e, 'Không nhận được ca này'));
     } finally {
       setBusyId(null);
     }
@@ -124,7 +120,7 @@ export default function ShiftInvitesSection({ role }: { role: AssignmentRole }) 
           </div>
 
           <p className="mt-1.5 text-[10px] italic text-neutral-500">
-            Bấm nhận là gửi đăng ký chờ tổ chức duyệt — bạn vẫn chủ động, không bị xếp ca tự động.
+            Bấm nhận là bạn vào ca ngay, không phải chờ duyệt lại — vì tổ chức đã chọn đích danh bạn.
           </p>
         </div>
       ))}

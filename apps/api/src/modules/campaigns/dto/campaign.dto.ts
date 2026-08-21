@@ -1067,3 +1067,10 @@ export class InviteVolunteersDto {
   @MaxLength(300, { message: 'Lời nhắn tối đa 300 ký tự' })
   message?: string;
 }
+
+/** TNV chấp nhận một lời mời nhận ca cụ thể. */
+export class AcceptShiftInviteDto {
+  @ApiProperty({ description: 'Id thông báo lời mời — dùng để xác thực lời mời có thật' })
+  @IsUUID('4', { message: 'Lời mời không hợp lệ' })
+  notificationId!: string;
+}

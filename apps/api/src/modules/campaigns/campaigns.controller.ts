@@ -18,7 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, AssignDonationPickupDto, AssignRequestPickupDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto, CancelCampaignDto, InviteVolunteersDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, AssignDonationPickupDto, AssignRequestPickupDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto, CancelCampaignDto, InviteVolunteersDto, AcceptShiftInviteDto } from './dto/campaign.dto';
 import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -83,6 +83,21 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Charity: lịch sử nguyên liệu đã nhận, nhóm theo từng chiến dịch' })
   myIntakeHistory(@CurrentUser() user: User) {
     return this.campaignsService.getMyIntakeHistory(user.id);
+  }
+
+  @Post(':id/accept-invite')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary:
+      'Volunteer: nhận lời mời của tổ chức → vào thẳng ca (tổ chức đã chọn đích danh nên không duyệt lại)',
+  })
+  acceptShiftInvite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: AcceptShiftInviteDto,
+  ) {
+    return this.campaignsService.acceptShiftInvite(id, user.id, dto.notificationId);
   }
 
   @Get('my-shift-invites')

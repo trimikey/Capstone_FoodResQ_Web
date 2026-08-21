@@ -334,9 +334,8 @@ function CampaignsPageInner() {
           {!searching && section === 'tasks' && isVolunteer && (
             <div className="space-y-5">
               {/* Lời mời nhận ca đặt TRÊN danh sách việc: đây là thứ đang chờ TNV phản
-                  hồi, còn danh sách dưới là việc đã nhận. Dùng chuyên môn đầu tiên làm
-                  vai trò đăng ký — tổ chức mời theo đúng vai trò mà ca đang thiếu. */}
-              {myRoles[0] && <ShiftInvitesSection role={myRoles[0] as AssignmentRole} />}
+                  hồi, còn danh sách dưới là việc đã nhận. */}
+              <ShiftInvitesSection />
               <TasksSection myTasks={myTasks ?? []} />
             </div>
           )}

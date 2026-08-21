@@ -1469,6 +1469,155 @@ export class CampaignsService {
     });
   }
 
+  /**
+   * TNV chấp nhận lời mời → vào THẲNG ca, không qua bước tổ chức duyệt lại.
+   *
+   * Lý do bỏ bước duyệt: tổ chức đã CHỦ ĐỘNG chọn đích danh người này khi gửi lời mời,
+   * TNV bấm nhận là bên còn lại đồng ý — hai bên đã đồng thuận thì bắt tổ chức duyệt
+   * thêm lần nữa chỉ làm chậm việc lấp ca đang thiếu người. (Đăng ký TỰ PHÁT vẫn giữ
+   * nguyên luồng chờ duyệt, vì lúc đó tổ chức chưa biết người đăng ký là ai.)
+   *
+   * Đổi lại phải xác thực chặt: chỉ chấp nhận khi có lời mời THẬT còn hiệu lực gửi
+   * đúng người, đúng ca, đúng ngày — nếu không ai cũng tự đẩy mình vào ca được.
+   */
+  async acceptShiftInvite(campaignId: string, userId: string, notificationId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true, user: { select: { fullName: true, status: true } } },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    if (volunteer.user.status !== 'active') {
+      throw new ForbiddenException('Tài khoản của bạn đang bị hạn chế.');
+    }
+
+    // 1) Lời mời phải có thật, thuộc về chính người này và chưa dùng.
+    const invite = await this.prisma.notification.findFirst({
+      where: { id: notificationId, userId, isRead: false },
+      select: { id: true, data: true },
+    });
+    const data = (invite?.data ?? {}) as Record<string, unknown>;
+    if (!invite || data.kind !== 'shift_invite' || data.campaignId !== campaignId) {
+      throw new BadRequestException('Lời mời không hợp lệ hoặc đã được sử dụng.');
+    }
+    const shiftId = typeof data.shiftId === 'string' ? data.shiftId : null;
+    const workDateKey = typeof data.workDate === 'string' ? data.workDate : null;
+    if (!shiftId || !workDateKey) {
+      throw new BadRequestException('Lời mời thiếu thông tin ca. Vui lòng vào chiến dịch đăng ký thủ công.');
+    }
+
+    // 2) Chiến dịch và ca phải còn nhận người.
+    const campaign = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: {
+        id: true, title: true, status: true, recruitmentEndAt: true,
+        scheduledDate: true, endDate: true,
+        charityReceiver: { select: { userId: true } },
+      },
+    });
+    if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    if (!['approved', 'in_progress'].includes(campaign.status)) {
+      throw new BadRequestException('Chiến dịch không còn nhận tình nguyện viên.');
+    }
+    if (new Date() >= campaign.recruitmentEndAt) {
+      throw new BadRequestException('Đã hết hạn nhận người cho chiến dịch này.');
+    }
+
+    const shift = await this.prisma.campaignShift.findUnique({ where: { id: shiftId } });
+    if (!shift || shift.campaignId !== campaignId) {
+      throw new BadRequestException('Ca trực không thuộc chiến dịch này.');
+    }
+    if (!shift.role) {
+      throw new BadRequestException('Ca này chưa gán vai trò cụ thể — vui lòng đăng ký thủ công.');
+    }
+
+    const workDate = this.campaignDays(
+      campaign.scheduledDate,
+      campaign.endDate ?? campaign.scheduledDate,
+    ).find((d) => this.toDateKey(d) === workDateKey);
+    if (!workDate) {
+      throw new BadRequestException('Ngày trực không nằm trong thời gian diễn ra chiến dịch.');
+    }
+
+    const shiftEndDate = new Date(workDate);
+    shiftEndDate.setUTCDate(shiftEndDate.getUTCDate() + (shift.endDayOffset ?? 0));
+    if (Date.now() > this.vnDateTimeToUtc(shiftEndDate, shift.endTime)) {
+      throw new BadRequestException('Ca này đã qua giờ diễn ra.');
+    }
+
+    // 3) Không nhận hai ca chồng giờ, kể cả ở chiến dịch khác.
+    await this.assertShiftNotOverlapping(campaignId, volunteer.id, shift.id, workDate);
+
+    const alreadyIn = await this.prisma.campaignVolunteerAssignment.findFirst({
+      where: {
+        campaignId, volunteerId: volunteer.id, shiftId: shift.id, workDate,
+        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'] },
+      },
+      select: { id: true },
+    });
+    if (alreadyIn) {
+      throw new ConflictException('Bạn đã có mặt trong ca này rồi.');
+    }
+
+    const slot = SLOT_FIELD[shift.role];
+    await this.prisma.$transaction(async (tx) => {
+      // Khoá hàng ca để hai người cùng bấm nhận không vượt quá số chỗ.
+      await tx.$queryRaw(Prisma.sql`
+        SELECT id FROM campaign_shifts WHERE id = ${shift.id}::uuid FOR UPDATE
+      `);
+      const takenThatDay = await tx.campaignVolunteerAssignment.count({
+        where: {
+          shiftId: shift.id,
+          workDate,
+          status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+        },
+      });
+      if (takenThatDay >= shift.slotsNeeded) {
+        throw new ConflictException('Ca này vừa đủ người trước khi bạn kịp nhận.');
+      }
+
+      await tx.campaignVolunteerAssignment.create({
+        data: {
+          campaignId,
+          volunteerId: volunteer.id,
+          role: shift.role as never,
+          shiftId: shift.id,
+          workDate,
+          // Cả hai bên đã đồng ý → vào thẳng trạng thái đã xếp và đã xác nhận.
+          status: 'assigned',
+          confirmationStatus: 'confirmed',
+          confirmedAt: new Date(),
+          notes: 'Nhận qua lời mời của tổ chức',
+        },
+      });
+      await tx.kitchenCampaign.update({
+        where: { id: campaignId },
+        data: { [slot.filled]: { increment: 1 } },
+      });
+      await tx.campaignShift.update({
+        where: { id: shift.id },
+        data: { slotsFilled: { increment: 1 } },
+      });
+      await tx.notification.update({
+        where: { id: invite.id },
+        data: { isRead: true, readAt: new Date() },
+      });
+    });
+
+    await this.refreshRecruitmentStatus(campaignId);
+
+    const roleVN = ROLE_VN[shift.role] ?? shift.role;
+    void this.notifications.notify(campaign.charityReceiver.userId, {
+      type: 'campaign',
+      title: 'Tình nguyện viên đã nhận lời mời',
+      body:
+        `${volunteer.user.fullName} đã nhận ca ${roleVN} (${shift.label}) ngày `
+        + `${workDateKey} của chiến dịch "${campaign.title}". Người này đã được xếp vào ca.`,
+      data: { campaignId, shiftId: shift.id, workDate: workDateKey, kind: 'invite_accepted' },
+    });
+
+    return { ok: true, shiftLabel: shift.label, workDate: workDateKey };
+  }
+
   /** Việc của tình nguyện viên: các campaign đã đăng ký + vai trò + trạng thái. */
   async myAssignments(userId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId } });

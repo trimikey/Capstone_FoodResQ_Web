@@ -1990,3 +1990,24 @@ export function useMyShiftInvites(enabled = true) {
     staleTime: 30_000,
   });
 }
+
+/**
+ * Volunteer: nhận lời mời → vào THẲNG ca, không chờ tổ chức duyệt lại.
+ * Tổ chức đã chọn đích danh khi mời, TNV bấm nhận là hai bên đã đồng thuận.
+ */
+export function useAcceptShiftInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; notificationId: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/accept-invite`, {
+        notificationId: p.notificationId,
+      })).data.data as { ok: boolean; shiftLabel: string; workDate: string },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
+  });
+}
