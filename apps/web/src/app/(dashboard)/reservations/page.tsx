@@ -114,7 +114,9 @@ export default function ReservationsPage() {
   // Thống kê lấy từ server trên toàn bộ đơn — nếu tính từ `reservations` thì con số
   // sẽ nhảy mỗi khi chuyển trang vì chỉ phản ánh trang đang xem.
   const stats = {
+    allOrders: data?.counts?.allOrders ?? 0,
     completed: data?.counts?.completed ?? 0,
+    cancelled: data?.counts?.cancelled ?? 0,
     missed: data?.counts?.noShow ?? 0,
     portions: data?.counts?.portionsSaved ?? 0,
   };
@@ -179,18 +181,47 @@ export default function ReservationsPage() {
           )}
         </div>
 
-        {/* Thống kê nhanh — tab lịch sử */}
+        {/* Thống kê nhanh — tab lịch sử.
+            Bỏ thẻ "Số phần đã cứu" riêng: mỗi đơn thường 1 phần nên nó trùng số với
+            "Đã nhận" và trông như lỗi. Số phần giờ là dòng phụ ngay dưới "Đã nhận".
+            Thêm "Đã huỷ" — trước đây danh sách có đơn huỷ mà không thẻ nào đếm. */}
         {tab === 'history' && !isLoading && !isError && filtered.length > 0 && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { icon: 'verified', label: 'Đã nhận', value: stats.completed, cls: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
-              { icon: 'inventory_2', label: 'Số phần đã cứu', value: stats.portions, cls: 'text-sky-700 bg-sky-50 border-sky-100' },
-              { icon: 'person_off', label: 'Không đến', value: stats.missed, cls: 'text-rose-700 bg-rose-50 border-rose-100' },
+              {
+                icon: 'receipt_long',
+                label: 'Tổng đơn',
+                value: stats.allOrders,
+                sub: 'Từ trước tới nay',
+                cls: 'text-neutral-700 bg-neutral-50 border-neutral-200',
+              },
+              {
+                icon: 'verified',
+                label: 'Đã nhận',
+                value: stats.completed,
+                sub: `${stats.portions} phần thực phẩm`,
+                cls: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+              },
+              {
+                icon: 'cancel',
+                label: 'Đã huỷ',
+                value: stats.cancelled,
+                sub: 'Bạn huỷ hoặc hệ thống huỷ',
+                cls: 'text-amber-700 bg-amber-50 border-amber-100',
+              },
+              {
+                icon: 'person_off',
+                label: 'Không đến',
+                value: stats.missed,
+                sub: 'Quá hạn mà không nhận',
+                cls: 'text-rose-700 bg-rose-50 border-rose-100',
+              },
             ].map((s) => (
               <div key={s.label} className={`rounded-2xl border p-4 ${s.cls}`}>
                 <span className="material-symbols-outlined text-[20px]">{s.icon}</span>
                 <p className="text-2xl font-extrabold mt-1 leading-none">{s.value}</p>
                 <p className="text-[11px] font-semibold opacity-80 mt-1">{s.label}</p>
+                <p className="text-[10px] opacity-60 mt-0.5">{s.sub}</p>
               </div>
             ))}
           </div>
