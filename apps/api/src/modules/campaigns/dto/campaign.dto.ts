@@ -29,10 +29,12 @@ export class MenuItemDto {
   @MinLength(1, { message: 'Tên món không được để trống' })
   @MaxLength(120, { message: 'Tên món tối đa 120 ký tự' })
   name!: string;
-  @ApiProperty({ example: 'Món chính' })
-  @IsString({ message: 'Loại món phải là chuỗi' })
-  @MaxLength(60, { message: 'Loại món tối đa 60 ký tự' })
-  type!: string;
+  // Toàn hệ thống (trang quản lý thực đơn, gom món theo bữa cho shipper) đọc `type`
+  // như enum bữa ăn. Trước đây đây là chuỗi tự do 60 ký tự nên gửi "Món chính" vẫn
+  // qua, và mọi món rơi vào nhóm "Chưa phân bữa" — phải sửa tay từng món sau đó.
+  @ApiProperty({ enum: ['breakfast', 'lunch', 'dinner'], example: 'lunch' })
+  @IsIn(['breakfast', 'lunch', 'dinner'], { message: 'Bữa ăn chỉ nhận: breakfast / lunch / dinner' })
+  type!: 'breakfast' | 'lunch' | 'dinner';
   @ApiPropertyOptional({ example: 150, description: 'Số suất dự kiến cho món này' })
   @IsOptional()
   @IsInt({ message: 'Số suất dự kiến phải là số nguyên' })
@@ -67,8 +69,11 @@ export class SupplyItemDto {
   name!: string;
   @ApiPropertyOptional({ example: 10 })
   @IsOptional()
-  @IsNumber({ allowNaN: false }, { message: 'Số lượng phải là số' })
+  // allowInfinity mặc định là true: 1e400 → Infinity → JSON.stringify ghi thành null,
+  // mất số lượng mục tiêu nên NCC không quyên góp vào vật phẩm đó được nữa.
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Số lượng phải là số' })
   @Min(0, { message: 'Số lượng không được âm' })
+  @Max(100000, { message: 'Số lượng tối đa 100.000' })
   @Type(() => Number)
   quantity?: number;
   @ApiPropertyOptional({ example: 'kg' })
@@ -132,8 +137,11 @@ export class CreateCampaignDto {
   @Type(() => Number)
   lat!: number;
 
+  // BẮT BUỘC dạng YYYY-MM-DD: service nối chuỗi `${scheduledDate}T00:00:00Z`, nên một
+  // ISO datetime đầy đủ (@IsDateString vẫn cho qua) tạo ra Invalid Date và ném RangeError
+  // → 500 thay vì 400. SubmitCampaignChangeDto đã dùng @Matches, create thì chưa đổi.
   @ApiProperty({ example: '2026-06-20' })
-  @IsDateString({}, { message: 'Ngày tổ chức phải đúng định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày tổ chức phải đúng định dạng YYYY-MM-DD' })
   scheduledDate!: string;
 
   @ApiPropertyOptional({
@@ -142,7 +150,7 @@ export class CreateCampaignDto {
       'Ngày kết thúc campaign (>= scheduledDate). Bỏ trống = 1 ngày duy nhất (mặc định = scheduledDate). Cron sẽ tự động chuyển sang trạng thái "Đã hoàn tất" sau endDate + endTime.',
   })
   @IsOptional()
-  @IsDateString({}, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày kết thúc phải đúng định dạng YYYY-MM-DD' })
   endDate?: string;
 
   @ApiProperty({ example: '2026-06-01T00:00:00+07:00' })
@@ -202,6 +210,7 @@ export class CreateCampaignDto {
   @IsArray({ message: 'Danh sách ảnh phải là mảng' })
   @ArrayMaxSize(10, { message: 'Tối đa 10 ảnh' })
   @IsString({ each: true, message: 'Mỗi URL ảnh phải là chuỗi' })
+  @MaxLength(500, { each: true, message: 'URL ảnh tối đa 500 ký tự' })
   imageUrls?: string[];
 
   @ApiProperty({ type: [MenuItemDto], description: 'Thực đơn bắt buộc của chiến dịch' })
@@ -254,6 +263,14 @@ export class CreateCampaignDto {
   @ValidateNested({ each: true })
   @Type(() => ShiftInputDto)
   shifts!: ShiftInputDto[];
+}
+
+export class CancelCampaignDto {
+  @ApiPropertyOptional({ description: 'Lý do huỷ — lưu vào chiến dịch và gửi kèm thông báo cho TNV / NCC' })
+  @IsOptional()
+  @IsString({ message: 'Lý do huỷ phải là chuỗi' })
+  @MaxLength(500, { message: 'Lý do huỷ tối đa 500 ký tự' })
+  reason?: string;
 }
 
 export class ExtendRecruitmentDto {
@@ -347,9 +364,12 @@ export class AddExperienceDto {
 }
 
 export class CompleteCampaignDto {
+  // Có trần như mọi trường suất khác: con số này cộng thẳng vào thống kê công khai
+  // ở trang chủ, gõ nhầm 2 tỷ là homepage hiện 2 tỷ suất (hoặc tràn INTEGER → 500).
   @ApiProperty({ example: 150, description: 'Số suất ăn thực tế đã phục vụ' })
   @IsInt({ message: 'Số suất phải là số nguyên' })
   @Min(0, { message: 'Số suất không được âm' })
+  @Max(100000, { message: 'Số suất thực tế tối đa 100.000' })
   @Type(() => Number)
   actualServings!: number;
 
@@ -881,9 +901,11 @@ export class CreateShiftDto {
   @Matches(/^\d{2}:\d{2}$/, { message: 'Giờ kết thúc phải đúng định dạng HH:mm' })
   endTime!: string;
 
+  // Min 1 giống ShiftInputDto lúc tạo chiến dịch: ca cần 0 người luôn được tính là
+  // "đã đủ 100%", đẩy chiến dịch qua điều kiện đủ người bằng một ca ma.
   @ApiProperty({ example: 4 })
   @IsInt({ message: 'Số người cần phải là số nguyên' })
-  @Min(0)
+  @Min(1, { message: 'Mỗi ca phải cần ít nhất 1 người' })
   @Max(100)
   @Type(() => Number)
   slotsNeeded!: number;
@@ -915,7 +937,7 @@ export class UpdateShiftDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
-  @Min(0)
+  @Min(1, { message: 'Mỗi ca phải cần ít nhất 1 người' })
   @Max(100)
   @Type(() => Number)
   slotsNeeded?: number;
@@ -929,10 +951,10 @@ export class AppendMenuItemDto {
   @MaxLength(120)
   name!: string;
 
-  @ApiProperty({ example: 'lunch' })
-  @IsString()
-  @MaxLength(60)
-  type!: string;
+  // Cùng lý do với MenuItemDto.type: chuỗi tự do làm món biến mất khỏi cả 3 tab bữa ăn.
+  @ApiProperty({ enum: ['breakfast', 'lunch', 'dinner'], example: 'lunch' })
+  @IsIn(['breakfast', 'lunch', 'dinner'], { message: 'Bữa ăn chỉ nhận: breakfast / lunch / dinner' })
+  type!: 'breakfast' | 'lunch' | 'dinner';
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -1010,4 +1032,31 @@ export class ReviewProviderRequestDto {
   @IsBoolean({ message: 'needsTransport phải là boolean' })
   @Transform(({ value }) => (value === undefined ? true : value))
   needsTransport?: boolean;
+}
+
+/** Tổ chức mời TNV (đã khai rảnh khung này) vào một ca cụ thể. */
+export class InviteVolunteersDto {
+  @ApiProperty({ type: [String], description: 'Danh sách volunteerId muốn mời' })
+  @IsArray({ message: 'Danh sách tình nguyện viên phải là mảng' })
+  @ArrayMinSize(1, { message: 'Chọn ít nhất một tình nguyện viên để mời' })
+  // Một ca thực tế chỉ cần vài người; mời hàng loạt là spam thông báo.
+  @ArrayMaxSize(30, { message: 'Mỗi lần mời tối đa 30 người' })
+  @IsUUID('4', { each: true, message: 'ID tình nguyện viên không hợp lệ' })
+  volunteerIds!: string[];
+
+  @ApiProperty({ example: '2026-08-27' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trực phải theo định dạng YYYY-MM-DD' })
+  workDate!: string;
+
+  @ApiProperty({ enum: ['midnight', 'morning', 'afternoon', 'evening'] })
+  @IsIn(['midnight', 'morning', 'afternoon', 'evening'], {
+    message: 'Ca chỉ nhận: midnight / morning / afternoon / evening',
+  })
+  period!: string;
+
+  @ApiPropertyOptional({ example: 'Bếp đang thiếu 2 đầu bếp ca sáng, mong bạn hỗ trợ.' })
+  @IsOptional()
+  @IsString({ message: 'Lời nhắn phải là chuỗi' })
+  @MaxLength(300, { message: 'Lời nhắn tối đa 300 ký tự' })
+  message?: string;
 }

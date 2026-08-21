@@ -293,8 +293,11 @@ export function useAdminCampaignDetail(id: string | null) {
 export function useSetCampaignStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { id: string; status: 'approved' | 'cancelled' }) =>
-      (await api.post(`/admin/campaigns/${p.id}/${p.status === 'approved' ? 'approve' : 'reject'}`)).data.data,
+    mutationFn: async (p: { id: string; status: 'approved' | 'cancelled'; reason?: string }) =>
+      (await api.post(
+        `/admin/campaigns/${p.id}/${p.status === 'approved' ? 'approve' : 'reject'}`,
+        p.status === 'cancelled' && p.reason?.trim() ? { reason: p.reason.trim() } : {},
+      )).data.data,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
     },
@@ -445,49 +448,11 @@ export function useAdminVolunteers(role?: string) {
   });
 }
 
-export function useCreateAdminCampaign() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: CreateCampaignInput) => (await api.post('/admin/campaigns', input)).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] }),
-  });
-}
-
-export function useUpdateAdminCampaign() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { id: string; input: Partial<CreateCampaignInput> }) =>
-      (await api.patch(`/admin/campaigns/${p.id}`, p.input)).data.data,
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaign', p.id] });
-    },
-  });
-}
-
-export function useAssignVolunteer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { campaignId: string; volunteerId: string; role: string; override?: boolean }) =>
-      (await api.post(`/admin/campaigns/${p.campaignId}/assign`, { volunteerId: p.volunteerId, role: p.role, override: p.override })).data.data,
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaign', p.campaignId] });
-    },
-  });
-}
-
-export function useUnassignVolunteer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { assignmentId: string; campaignId: string }) =>
-      (await api.delete(`/admin/assignments/${p.assignmentId}`)).data.data,
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaigns'] });
-      void qc.invalidateQueries({ queryKey: ['admin', 'campaign', p.campaignId] });
-    },
-  });
-}
+// Bốn hook admin tạo/sửa chiến dịch và gán/gỡ TNV đã được gỡ bỏ: backend không hề
+// đăng ký các route đó (POST /admin/campaigns, PATCH /admin/campaigns/:id,
+// POST /admin/campaigns/:id/assign, DELETE /admin/assignments/:id) nên mọi lời gọi
+// đều 404. Việc duyệt TNV thuộc về tổ chức chủ chiến dịch, còn đổi lịch đi qua luồng
+// yêu cầu thay đổi (change request) — vốn tính lại mốc thời gian và ca trực đúng cách.
 
 export function useReviewUserVerification() {
   const qc = useQueryClient();

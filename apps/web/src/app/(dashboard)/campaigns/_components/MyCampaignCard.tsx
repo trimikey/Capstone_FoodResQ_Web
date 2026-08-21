@@ -18,8 +18,29 @@ const CAMPAIGN_STATUS_META: Record<string, { label: string; chip: string }> = {
   approved: { label: 'Đang tuyển', chip: 'cm-chip cm-chip--sky' },
   in_progress: { label: 'Đang diễn ra', chip: 'cm-chip cm-chip--mint' },
   completed: { label: 'Hoàn tất', chip: 'cm-chip cm-chip--mint' },
-  cancelled: { label: 'Bị từ chối / huỷ', chip: 'cm-chip cm-chip--rose' },
+  cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--rose' },
 };
+
+/** Prefix backend ghi vào `notes` khi admin từ chối duyệt — dùng để phân biệt với tự huỷ. */
+const REJECTION_PREFIX = 'Từ chối duyệt:';
+
+const RECRUITMENT_STATUS_HINT: Record<string, string> = {
+  scheduled: 'Chưa mở tuyển',
+  open: 'Đang mở tuyển',
+  staffed: 'Đã đủ người',
+  expired_understaffed: 'Hết hạn tuyển — chưa đủ người',
+  closed_ready: 'Đã chốt danh sách',
+};
+
+function formatVnShort(value: string) {
+  return new Date(value).toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
   pledged: { label: 'Đã hứa góp', cls: 'badge-honey' },
@@ -27,7 +48,7 @@ const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
   cancelled: { label: 'Đã huỷ', cls: 'badge-neutral' },
 };
 
-export default function MyCampaignCard({ c }: { c: Campaign }) {
+export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Campaign; allowEarlyStart?: boolean }) {
   const start = useStartCampaign();
   const cancelCampaign = useCancelCampaign();
   const complete = useCompleteCampaign();
@@ -36,14 +57,53 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
   const [finishing, setFinishing] = useState(false);
   const [confirmingDonationId, setConfirmingDonationId] = useState<string | null>(null);
   const [receiptNote, setReceiptNote] = useState('');
-  const st = CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' };
+  const rejectionReason = c.status === 'cancelled' && c.notes?.startsWith(REJECTION_PREFIX)
+    ? c.notes.slice(REJECTION_PREFIX.length).trim()
+    : null;
+  const st = rejectionReason !== null
+    ? { label: 'Bị từ chối', chip: 'cm-chip cm-chip--rose' }
+    : CAMPAIGN_STATUS_META[c.status] ?? { label: c.status, chip: 'cm-chip cm-chip--ink' };
   const confirmingDonation = c.donations?.find((d) => d.id === confirmingDonationId) ?? null;
+
+  // Tiến độ tuyển TNV — con số quản lý cần thấy ngay mà không phải mở trang Quản lý.
+  const slotsNeeded = c.chefSlotsNeeded + c.waiterSlotsNeeded + c.shipperSlotsNeeded;
+  const slotsFilled = Math.min(
+    c.chefSlotsFilled + c.waiterSlotsFilled + c.shipperSlotsFilled,
+    slotsNeeded,
+  );
+  const showRecruitment = (c.status === 'approved' || c.status === 'in_progress') && slotsNeeded > 0;
+  const recruitmentHint = (() => {
+    if (c.status !== 'approved') return null;
+    if (c.recruitmentStatus === 'scheduled' && c.recruitmentStartAt) {
+      return `Mở tuyển ${formatVnShort(c.recruitmentStartAt)}`;
+    }
+    if (c.recruitmentStatus === 'open' && c.recruitmentEndAt) {
+      return `Đóng tuyển ${formatVnShort(c.recruitmentEndAt)}`;
+    }
+    return RECRUITMENT_STATUS_HINT[c.recruitmentStatus ?? ''] ?? null;
+  })();
 
   // Đã qua ngày diễn ra (so theo lịch UTC, đồng bộ với backend daysUntil)
   const overdue = (() => {
     const [yy, mm, dd] = c.scheduledDate.slice(0, 10).split('-').map(Number);
     const now = new Date();
     return Date.UTC(yy, mm - 1, dd) < Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  })();
+
+  // Đã tới giờ vận hành chưa — điều kiện BE bắt buộc để bấm "Bắt đầu chiến dịch",
+  // TRỪ KHI admin bật "Cho phép bắt đầu/điểm danh sớm" trong Cài đặt hệ thống.
+  const reachedOperationTime = c.operationStartAt
+    ? Date.now() >= new Date(c.operationStartAt).getTime()
+    : overdue;
+  const canShowStart = reachedOperationTime || allowEarlyStart;
+
+  // Đã qua ngày kết thúc theo lịch chưa (so theo ngày, khớp với BE) — quyết định
+  // việc kết thúc có bị coi là "kết thúc sớm" hay không.
+  const campaignEndReached = (() => {
+    const endKey = (c.endDate ?? c.scheduledDate).slice(0, 10);
+    const [yy, mm, dd] = endKey.split('-').map(Number);
+    const now = new Date();
+    return Date.UTC(yy, mm - 1, dd) <= Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   })();
 
   async function doConfirm(donationId: string) {
@@ -75,7 +135,10 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
   async function doCancel() {
     if (!window.confirm('Huỷ chiến dịch quá hạn này? Hành động không thể hoàn tác.')) return;
     try {
-      await cancelCampaign.mutateAsync(c.id);
+      await cancelCampaign.mutateAsync({
+        id: c.id,
+        reason: 'Quá ngày vận hành mà chiến dịch chưa bắt đầu được.',
+      });
       toast.success('Đã huỷ chiến dịch quá hạn');
     } catch (e) {
       toast.error(errMsg(e, 'Huỷ thất bại'));
@@ -86,6 +149,17 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
     const n = Number(servings);
     if (Number.isNaN(n) || n < 0) {
       toast.error('Nhập số suất ăn hợp lệ');
+      return;
+    }
+    if (n > 100000) {
+      toast.error('Số suất thực tế tối đa 100.000');
+      return;
+    }
+    // Kết thúc TRƯỚC ngày kết thúc theo lịch là "kết thúc sớm" — BE bắt buộc kèm xác
+    // nhận và lý do. Widget gọn trên card không có chỗ nhập lý do nên đẩy sang trang
+    // quản lý (modal ở đó có sẵn); trước đây bấm ở đây luôn báo lỗi chung chung.
+    if (!campaignEndReached) {
+      toast.info('Chiến dịch chưa tới ngày kết thúc — hãy vào trang Quản lý để xác nhận kết thúc sớm kèm lý do.');
       return;
     }
     try {
@@ -109,11 +183,56 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
           <span className="material-symbols-outlined text-[14px]">event</span>
           {formatCampaignRange(c)}
         </span>
-        <span className="inline-flex items-center gap-1 truncate flex-1 min-w-0">
+        {c.expectedServings != null && (
+          <span className="inline-flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">restaurant</span>
+            {c.expectedServings} suất
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1 truncate flex-1 min-w-0" title={c.kitchenAddress}>
           <span className="material-symbols-outlined text-[14px]">place</span>
           {c.kitchenAddress}
         </span>
       </div>
+
+      {/* Tiến độ tuyển tình nguyện viên — chiến dịch chỉ tự bắt đầu khi đủ người */}
+      {showRecruitment && (
+        <div className="mt-3 rounded-xl bg-neutral-50 border border-neutral-100 p-2.5">
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-bold text-neutral-700 inline-flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">group</span>
+              Tuyển TNV {slotsFilled}/{slotsNeeded}
+            </span>
+            {recruitmentHint && (
+              <span className={`font-semibold ${c.recruitmentStatus === 'expired_understaffed' ? 'text-rose-600' : 'text-neutral-500'}`}>
+                {recruitmentHint}
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 h-1.5 rounded-full bg-neutral-200 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${slotsFilled >= slotsNeeded ? 'bg-emerald-500' : 'bg-sky-500'}`}
+              style={{ width: `${Math.round((slotsFilled / slotsNeeded) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-neutral-500">
+            Bếp {Math.min(c.chefSlotsFilled, c.chefSlotsNeeded)}/{c.chefSlotsNeeded}
+            {' · '}Phục vụ {Math.min(c.waiterSlotsFilled, c.waiterSlotsNeeded)}/{c.waiterSlotsNeeded}
+            {' · '}Giao hàng {Math.min(c.shipperSlotsFilled, c.shipperSlotsNeeded)}/{c.shipperSlotsNeeded}
+          </p>
+        </div>
+      )}
+
+      {/* Lý do admin từ chối — tổ chức cần biết sai gì để tạo lại cho đúng */}
+      {rejectionReason !== null && (
+        <div className="mt-3 rounded-xl bg-rose-50 border border-rose-100 p-2.5 text-[11px] text-rose-700">
+          <p className="font-bold inline-flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">block</span>
+            Quản trị viên từ chối duyệt
+          </p>
+          <p className="mt-0.5">{rejectionReason || 'Không có lý do được ghi lại.'}</p>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mt-3">
         <Link
@@ -155,7 +274,11 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
               {cancelCampaign.isPending ? 'Đang huỷ...' : 'Huỷ chiến dịch quá hạn'}
             </button>
           </div>
-        ) : (
+        ) : canShowStart ? (
+          // BE chỉ cho bắt đầu khi ĐÃ tới giờ vận hành và đủ người xác nhận. Trước đây
+          // nút hiện cho mọi chiến dịch approved nên bấm lúc nào cũng nhận lỗi "Chưa
+          // tới thời gian vận hành"; giờ chỉ hiện đúng lúc, còn điều kiện đủ người
+          // vẫn do BE kiểm (báo lỗi kèm số người còn thiếu).
           <button
             type="button"
             onClick={doStart}
@@ -164,6 +287,13 @@ export default function MyCampaignCard({ c }: { c: Campaign }) {
           >
             {start.isPending ? 'Đang bắt đầu...' : 'Bắt đầu chiến dịch'}
           </button>
+        ) : (
+          <p className="mt-3 flex items-center gap-1 text-[11px] text-neutral-500">
+            <span className="material-symbols-outlined text-[14px]">schedule</span>
+            {c.operationStartAt
+              ? `Tự bắt đầu lúc ${formatVnShort(c.operationStartAt)} khi đủ người xác nhận`
+              : 'Chiến dịch sẽ tự bắt đầu khi tới giờ và đủ người xác nhận'}
+          </p>
         ))}
 
       {c.status === 'in_progress' &&

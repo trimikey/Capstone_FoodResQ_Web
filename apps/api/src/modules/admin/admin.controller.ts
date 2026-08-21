@@ -13,6 +13,7 @@ import {
   UpdateFoodCatalogItemDto,
   CreateFoodCategoryDto,
   UpdateFoodCategoryDto,
+  RejectCampaignDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -139,9 +140,13 @@ export class AdminController {
   }
 
   @Post('campaigns/:id/reject')
-  @ApiOperation({ summary: 'Admin: từ chối chiến dịch đang chờ duyệt' })
-  rejectCampaign(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.adminService.setCampaignStatus(id, 'cancelled', user.id);
+  @ApiOperation({ summary: 'Admin: từ chối chiến dịch đang chờ duyệt (kèm lý do gửi cho tổ chức)' })
+  rejectCampaign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: RejectCampaignDto,
+  ) {
+    return this.adminService.setCampaignStatus(id, 'cancelled', user.id, dto.reason);
   }
 
   @Get('food-listings')

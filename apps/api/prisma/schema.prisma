@@ -397,6 +397,7 @@ model VolunteerProfile {
 
   user                   User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   specializations        VolunteerSpecializationEntry[]
+  availability           VolunteerAvailability[]
   deliveries             Delivery[]
   campaignAssignments    CampaignVolunteerAssignment[]
   dedicationPointHistory DedicationPointsHistory[]
@@ -504,6 +505,10 @@ model Reservation {
   /// Ảnh bằng chứng người nhận khó di chuyển (bệnh, gãy chân…) — BẮT BUỘC khi
   /// yêu cầu TNV giao tận nơi; shipper xem ảnh trong popup lời mời trước khi nhận.
   deliveryEvidenceUrl    String?                 @map("delivery_evidence_url")
+  /// Điểm giao do người đặt chọn riêng cho đơn này (đang nằm viện, ở nhà người thân…).
+  /// NULL = giao về địa chỉ mặc định trong hồ sơ người nhận.
+  deliveryAddress        String?                 @map("delivery_address")
+  deliveryLocation       Unsupported("geography(Point, 4326)")? @map("delivery_location")
   trustPenaltyApplied    Boolean                 @default(false) @map("trust_penalty_applied")
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
@@ -620,6 +625,25 @@ model BulkRunStop {
 
   @@index([runId])
   @@map("bulk_run_stops")
+}
+
+/// Khung giờ TNV tự khai là rảnh, lặp lại hằng tuần (lưới 7 ngày × 4 ca).
+/// Chỉ dùng để LỌC / GỢI Ý — không tự động phân công.
+model VolunteerAvailability {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId String              @map("volunteer_id") @db.Uuid
+  /// 1 = Thứ 2 … 7 = Chủ nhật (ISO-8601, khớp EXTRACT(ISODOW FROM date)).
+  dayOfWeek   Int                 @map("day_of_week") @db.SmallInt
+  period      CampaignShiftPeriod
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([volunteerId, dayOfWeek, period], map: "volunteer_availability_unique_cell")
+  @@index([dayOfWeek, period], map: "idx_volunteer_availability_slot")
+  @@index([volunteerId], map: "idx_volunteer_availability_volunteer")
+  @@map("volunteer_availability")
 }
 
 model KitchenCampaign {

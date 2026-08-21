@@ -2,19 +2,19 @@
 
 import './campaign-tokens.css';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AssignmentRole, UserRole } from '@foodresq/types';
 import { toast } from 'sonner';
 import {
   useCampaigns,
-  useApplyCampaign,
   useCreateCampaign,
   useMyTasks,
   useMyCampaigns,
   useCampaignStats,
   useMyCampaignStats,
+  useCampaignCreateConstraints,
   type Campaign,
   type MyTask,
 } from '@/hooks/useCampaigns';
@@ -30,6 +30,7 @@ import CreateCampaignModal from './_components/CreateCampaignModal';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
+import IntakeHistorySection from './_components/IntakeHistorySection';
 import type { Section } from './_components/CharitySidebar';
 import { useAuthStore } from '@/stores/auth.store';
 import Pagination from '@/components/shared/Pagination';
@@ -95,7 +96,10 @@ function CampaignsPageInner() {
   const { data: vol } = useVolunteerMe(isVolunteer);
   const { data: myTasks } = useMyTasks(!!isVolunteer);
   const { data: myCampaigns } = useMyCampaigns(isCharity);
-  const apply = useApplyCampaign();
+  // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì tổ chức được bấm Bắt đầu trước
+  // giờ vận hành — card phải biết cấu hình này mới hiện đúng nút.
+  const { data: campaignConstraints } = useCampaignCreateConstraints(isCharity);
+  // Đăng ký ca thực hiện ở trang chi tiết (cần chọn ca + ngày) — xem handleApply.
   const create = useCreateCampaign();
 
   const [showForm, setShowForm] = useState(false);
@@ -105,11 +109,20 @@ function CampaignsPageInner() {
   // Sidebar giờ do (dashboard)/campaigns/layout.tsx render (pattern /provider).
   // Khi user bấm "Tạo chiến dịch" trên sidebar → layout dispatch custom event,
   // page lắng nghe và mở CreateCampaignModal tương ứng.
+  // Tài khoản tổ chức chưa được admin duyệt thì không mở form tạo chiến dịch —
+  // BE cũng đã chặn (ActiveAccountGuard), đây là lớp chặn sớm cho UX.
+  const openCreateForm = useCallback(() => {
+    if (!isAccountActive) {
+      toast.error('Tài khoản của bạn đang chờ quản trị viên duyệt — chưa thể tạo chiến dịch.');
+      return;
+    }
+    setShowForm(true);
+  }, [isAccountActive]);
+
   useEffect(() => {
-    const onOpenCreate = () => setShowForm(true);
-    window.addEventListener('campaigns:open-create', onOpenCreate);
-    return () => window.removeEventListener('campaigns:open-create', onOpenCreate);
-  }, []);
+    window.addEventListener('campaigns:open-create', openCreateForm);
+    return () => window.removeEventListener('campaigns:open-create', openCreateForm);
+  }, [openCreateForm]);
 
   // Đọc tab hiện tại từ query string ?tab=orders|history; mặc định overview.
   // Dùng URL param làm source of truth — tránh re-render lặp khi switch tab browser.
@@ -219,16 +232,13 @@ function CampaignsPageInner() {
     return entries;
   }, [isCharity, isProvider, isVolunteer, stats, myTasks]);
 
-  async function handleApply(id: string, role: AssignmentRole) {
-    try {
-      await apply.mutateAsync({ id, role });
-      toast.success(`Đã gửi đăng ký vai trò ${ROLE_LABEL[role]} — chờ quản trị viên duyệt`);
-    } catch (e: unknown) {
-      const msg =
-        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Đăng ký thất bại';
-      toast.error(msg);
-    }
+  // Mọi chiến dịch đều bắt buộc có ít nhất một ca (BE chặn tạo nếu không), mà đăng ký
+  // theo ca thì cần cả shiftId lẫn ngày trực — thông tin card này không có. Trước đây
+  // nút bấm gọi thẳng API với mỗi {id, role} nên LUÔN nhận 400 "vui lòng đăng ký trực
+  // tiếp theo từng ca". Giờ đưa TNV sang trang chi tiết, nơi có bảng chọn ca + ngày.
+  function handleApply(id: string, role: AssignmentRole) {
+    toast.info(`Chọn ca và ngày trực cho vai trò ${ROLE_LABEL[role]} ở trang chiến dịch.`);
+    router.push(`/campaigns/${id}?role=${role}`);
   }
 
   const greetingName = me?.receiver?.organizationName ?? me?.fullName?.split(' ')[0] ?? 'bạn';
@@ -286,7 +296,7 @@ function CampaignsPageInner() {
               isAccountActive={isAccountActive}
               myRoles={myRoles}
               onApply={handleApply}
-              applying={apply.isPending}
+              applying={false}
               onClear={() => setSearch('')}
             />
           )}
@@ -304,7 +314,7 @@ function CampaignsPageInner() {
               globalStats={isCharity ? myStats.data : globalStats.data}
               allCampaigns={allCampaigns}
               myTasks={myTasks}
-              onCreate={() => setShowForm(true)}
+              onCreate={openCreateForm}
               onJumpTo={handleSetSection}
             />
           )}
@@ -313,7 +323,8 @@ function CampaignsPageInner() {
           {!searching && section === 'mine' && isCharity && (
             <MineTabbedSection
               stats={stats}
-              onCreate={() => setShowForm(true)}
+              allowEarlyStart={campaignConstraints?.allowEarlyStart ?? false}
+              onCreate={openCreateForm}
               onJumpTo={handleSetSection}
             />
           )}
@@ -337,7 +348,7 @@ function CampaignsPageInner() {
               isAccountActive={isAccountActive}
               myRoles={myRoles}
               onApply={handleApply}
-              applying={apply.isPending}
+              applying={false}
             />
           )}
           {!searching && section === 'suppliers' && isCharity && (
@@ -349,9 +360,9 @@ function CampaignsPageInner() {
           {!searching && section === 'orders' && isCharity && (
             <EmbeddedTab source="reservations" title="Đơn nhận của tôi" />
           )}
-          {!searching && section === 'history' && isCharity && (
-            <EmbeddedTab source="history" title="Lịch sử đơn hàng" />
-          )}
+          {/* Tổ chức nhận hàng qua quyên góp/yêu cầu NCC chứ không đặt chỗ, nên tab này
+              KHÔNG dùng lại trang lịch sử đặt chỗ của người nhận cá nhân (luôn rỗng). */}
+          {!searching && section === 'history' && isCharity && <IntakeHistorySection />}
         </main>
       </div>
 
@@ -415,7 +426,7 @@ function OverviewDashboard({
   return (
     <>
       {/* Banner cảnh báo khi tài khoản chưa được admin duyệt */}
-      {!isAccountActive && (isVolunteer || isProvider) && (
+      {!isAccountActive && (isVolunteer || isProvider || isCharity) && (
         <div className="cm-alert">
           <div className="cm-alert-icon">
             <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
@@ -427,7 +438,9 @@ function OverviewDashboard({
             <p className="cm-alert-sub">
               {isVolunteer
                 ? 'Bạn có thể khám phá chiến dịch nhưng chưa thể đăng ký tham gia cho đến khi admin phê duyệt hồ sơ tình nguyện viên.'
-                : 'Bạn có thể xem chiến dịch nhưng chưa thể hứa góp nguyên liệu cho đến khi admin phê duyệt hồ sơ nhà cung cấp.'}
+                : isProvider
+                  ? 'Bạn có thể xem chiến dịch nhưng chưa thể hứa góp nguyên liệu cho đến khi admin phê duyệt hồ sơ nhà cung cấp.'
+                  : 'Admin đang xác minh giấy tờ tổ chức của bạn. Trong thời gian chờ, bạn có thể xem trang nhưng chưa thể tạo chiến dịch hay thao tác quản lý.'}
             </p>
           </div>
         </div>
@@ -955,10 +968,13 @@ function StatsSection({
 /** Số chiến dịch mỗi trang ở tab "Chiến dịch của tôi". */
 const MINE_PER_PAGE = 8;
 
-type MineTab = 'all' | 'running' | 'pending' | 'finished';
+type MineTab = 'all' | 'recruiting' | 'running' | 'pending' | 'finished';
 
 const MINE_TABS: Array<{ key: MineTab; label: string; icon: string }> = [
   { key: 'all', label: 'Tất cả', icon: 'apps' },
+  // "Đang tuyển" (approved) tách khỏi "Đang chạy" (in_progress): giai đoạn tuyển
+  // quân là lúc tổ chức cần theo dõi sát nhất — gộp chung làm mờ mất tiến độ.
+  { key: 'recruiting', label: 'Đang tuyển', icon: 'how_to_reg' },
   { key: 'running', label: 'Đang chạy', icon: 'play_circle' },
   { key: 'pending', label: 'Chờ duyệt', icon: 'pending_actions' },
   { key: 'finished', label: 'Đã kết thúc', icon: 'verified' },
@@ -966,10 +982,12 @@ const MINE_TABS: Array<{ key: MineTab; label: string; icon: string }> = [
 
 function MineTabbedSection({
   stats,
+  allowEarlyStart,
   onCreate,
   onJumpTo,
 }: {
   stats: { active: Campaign[]; drafts: Campaign[]; finished: Campaign[]; pendingApprovals: number; totalVolunteers: number; all: Campaign[] };
+  allowEarlyStart: boolean;
   onCreate: () => void;
   onJumpTo: (s: Section) => void;
 }) {
@@ -992,7 +1010,10 @@ function MineTabbedSection({
     setMinePage(1);
   }, [tab]);
 
-  const running = stats.active;
+  // stats.active gồm cả approved (đang tuyển) lẫn in_progress (đang chạy) — tách ra
+  // để mỗi tab phản ánh đúng một giai đoạn.
+  const recruiting = stats.active.filter((c) => c.status === 'approved');
+  const running = stats.active.filter((c) => c.status === 'in_progress');
   const pendingCampaigns = stats.drafts;
   const finished = stats.finished;
   const pendingTNVCount = stats.pendingApprovals;
@@ -1007,7 +1028,8 @@ function MineTabbedSection({
   }, [stats.all]);
 
   const counts: Record<MineTab, number> = {
-    all: running.length + pendingCampaigns.length + finished.length + pendingTNVCount,
+    all: recruiting.length + running.length + pendingCampaigns.length + finished.length + pendingTNVCount,
+    recruiting: recruiting.length,
     running: running.length,
     pending: pendingRows.length + pendingCampaigns.length,
     finished: finished.length,
@@ -1073,7 +1095,7 @@ function MineTabbedSection({
             <p className="cm-alert-sub">Vào trang quản lý chiến dịch đang chạy để xem hồ sơ.</p>
           </div>
           <Link
-            href={`/campaigns/${running[0]?.id ?? pendingCampaigns[0]?.id ?? ''}/manage`}
+            href={`/campaigns/${recruiting[0]?.id ?? running[0]?.id ?? pendingCampaigns[0]?.id ?? ''}/manage`}
             className="cm-alert-cta"
           >
             Duyệt ngay →
@@ -1081,48 +1103,56 @@ function MineTabbedSection({
         </div>
       )}
 
-      {/* ════════ Tab "Đang chạy" / "Đã kết thúc": chỉ grid campaign ════════ */}
-      {(tab === 'running' || tab === 'finished') && (
-        <>
-          {(tab === 'running' ? running : finished).length === 0 ? (
-            <EmptyState
-              icon={tab === 'finished' ? 'verified' : 'soup_kitchen'}
-              title={
-                tab === 'running'
-                  ? 'Chưa có chiến dịch đang chạy'
-                  : 'Chưa có chiến dịch kết thúc'
-              }
-              description={
-                tab === 'running'
-                  ? 'Bấm "Tạo chiến dịch" để bắt đầu hoạt động đầu tiên.'
-                  : 'Các chiến dịch hoàn tất sẽ hiển thị ở đây.'
-              }
-              action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
+      {/* ════════ Tab "Đang tuyển" / "Đang chạy" / "Đã kết thúc": chỉ grid campaign ════════ */}
+      {(tab === 'recruiting' || tab === 'running' || tab === 'finished') && (() => {
+        const gridList = tab === 'recruiting' ? recruiting : tab === 'running' ? running : finished;
+        const emptyMeta = {
+          recruiting: {
+            icon: 'how_to_reg',
+            title: 'Chưa có chiến dịch đang tuyển',
+            description: 'Chiến dịch được admin duyệt sẽ mở tuyển tình nguyện viên và hiển thị ở đây.',
+          },
+          running: {
+            icon: 'soup_kitchen',
+            title: 'Chưa có chiến dịch đang chạy',
+            description: 'Bấm "Tạo chiến dịch" để bắt đầu hoạt động đầu tiên.',
+          },
+          finished: {
+            icon: 'verified',
+            title: 'Chưa có chiến dịch kết thúc',
+            description: 'Các chiến dịch hoàn tất sẽ hiển thị ở đây.',
+          },
+        }[tab];
+        return gridList.length === 0 ? (
+          <EmptyState
+            icon={emptyMeta.icon}
+            title={emptyMeta.title}
+            description={emptyMeta.description}
+            action={{ label: 'Tạo chiến dịch', onClick: onCreate, icon: 'add' }}
+          />
+        ) : (
+          <>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {pageSlice(gridList).map((c) => (
+                <MyCampaignCard key={c.id} c={c} allowEarlyStart={allowEarlyStart} />
+              ))}
+            </div>
+            <Pagination
+              page={minePage}
+              totalPages={totalPagesOf(gridList)}
+              onChange={setMinePage}
+              total={gridList.length}
+              perPage={MINE_PER_PAGE}
+              unit="chiến dịch"
             />
-          ) : (
-            <>
-              <div className="grid sm:grid-cols-2 gap-3">
-                {pageSlice(tab === 'running' ? running : finished).map((c) => (
-                  <MyCampaignCard key={c.id} c={c} />
-                ))}
-              </div>
-              <Pagination
-                page={minePage}
-                totalPages={totalPagesOf(tab === 'running' ? running : finished)}
-                onChange={setMinePage}
-                total={(tab === 'running' ? running : finished).length}
-                perPage={MINE_PER_PAGE}
-                unit="chiến dịch"
-              />
-            </>
-          )}
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {/* ════════ Tab "Tất cả": grid các campaign (active + draft + finished), bỏ qua đơn TNV (xem riêng bên dưới) ════════ */}
       {tab === 'all' && (
         <>
-          {running.length + pendingCampaigns.length + finished.length === 0 ? (
+          {recruiting.length + running.length + pendingCampaigns.length + finished.length === 0 ? (
             <EmptyState
               icon="soup_kitchen"
               title="Chưa có chiến dịch nào"
@@ -1132,15 +1162,15 @@ function MineTabbedSection({
           ) : (
             <>
               <div className="grid sm:grid-cols-2 gap-3">
-                {pageSlice([...running, ...pendingCampaigns, ...finished]).map((c) => (
-                  <MyCampaignCard key={c.id} c={c} />
+                {pageSlice([...recruiting, ...running, ...pendingCampaigns, ...finished]).map((c) => (
+                  <MyCampaignCard key={c.id} c={c} allowEarlyStart={allowEarlyStart} />
                 ))}
               </div>
               <Pagination
                 page={minePage}
-                totalPages={totalPagesOf([...running, ...pendingCampaigns, ...finished])}
+                totalPages={totalPagesOf([...recruiting, ...running, ...pendingCampaigns, ...finished])}
                 onChange={setMinePage}
-                total={running.length + pendingCampaigns.length + finished.length}
+                total={recruiting.length + running.length + pendingCampaigns.length + finished.length}
                 perPage={MINE_PER_PAGE}
                 unit="chiến dịch"
               />
@@ -1175,7 +1205,7 @@ function MineTabbedSection({
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3">
                     {pendingCampaigns.map((c) => (
-                      <MyCampaignCard key={c.id} c={c} />
+                      <MyCampaignCard key={c.id} c={c} allowEarlyStart={allowEarlyStart} />
                     ))}
                   </div>
                 </section>
