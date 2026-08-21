@@ -53,7 +53,8 @@ class ReviewQcStepDto {
 
 @ApiTags('Campaign Dish Steps')
 @Controller('campaigns/:campaignId')
-@UseGuards(JwtAuthGuard)
+// Mọi thao tác ghi yêu cầu tài khoản đã được admin duyệt (xem ActiveAccountGuard).
+@UseGuards(JwtAuthGuard, ActiveAccountGuard)
 @ApiBearerAuth()
 export class DishStepsController {
   constructor(private readonly service: DishStepsService) {}

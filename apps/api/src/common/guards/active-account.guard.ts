@@ -19,8 +19,15 @@ import { User } from '@prisma/client';
 @Injectable()
 export class ActiveAccountGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const { user } = context.switchToHttp().getRequest<{ user: User }>();
-    if (user.status === 'active') return true;
+    const request = context.switchToHttp().getRequest<{ user?: User; method: string }>();
+    // Route @Public không gắn user — xác thực do JwtAuthGuard quyết định, guard này bỏ qua.
+    if (!request.user) return true;
+    // Chỉ chặn thao tác GHI. GET vẫn cho qua để tài khoản chờ duyệt còn xem được
+    // dashboard (kèm banner "chờ admin duyệt" phía FE) thay vì trang trắng toàn lỗi.
+    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+      return true;
+    }
+    if (request.user.status === 'active') return true;
     throw new ForbiddenException(
       'Tài khoản của bạn đang chờ quản trị viên duyệt — không thể thực hiện thao tác này.',
     );
