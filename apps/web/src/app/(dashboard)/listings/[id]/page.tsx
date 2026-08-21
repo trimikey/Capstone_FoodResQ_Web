@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings, type ListingDetail } from '@/hooks/useListings';
@@ -20,6 +21,10 @@ import {
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
+import { reverseGeocode } from '@/lib/geocode';
+
+// Bản đồ chỉ tải khi người dùng thực sự mở phần chọn điểm giao (Leaflet cần window).
+const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), { ssr: false });
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -79,6 +84,13 @@ export default function ListingDetailPage({ params }: Props) {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  // Điểm giao: mặc định là địa chỉ trong hồ sơ, nhưng người khó di chuyển có thể
+  // đang nằm viện / ở nhà người thân nên cho phép ghim một vị trí khác cho đơn này.
+  const [useCustomDestination, setUseCustomDestination] = useState(false);
+  const [destAddress, setDestAddress] = useState('');
+  const [destLng, setDestLng] = useState<number | null>(null);
+  const [destLat, setDestLat] = useState<number | null>(null);
+  const [locatingDest, setLocatingDest] = useState(false);
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -153,6 +165,17 @@ export default function ListingDetailPage({ params }: Props) {
       toast.error('Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) trước khi đặt đơn giao tận nơi.');
       return;
     }
+    // Ghim điểm giao khác thì phải đủ cả toạ độ lẫn mô tả địa chỉ — TNV cần địa chỉ
+    // chữ để hỏi đường, toạ độ để điều hướng.
+    const wantsCustomDest = deliveryMethod === 'delivery' && useCustomDestination;
+    if (wantsCustomDest && (destLng == null || destLat == null)) {
+      toast.error('Vui lòng chọn điểm giao trên bản đồ.');
+      return;
+    }
+    if (wantsCustomDest && destAddress.trim().length < 5) {
+      toast.error('Vui lòng mô tả địa chỉ điểm giao (số nhà, tên bệnh viện, khoa/phòng…).');
+      return;
+    }
     try {
       let deliveryEvidenceUrl: string | undefined;
       if (deliveryMethod === 'delivery' && evidenceFile) {
@@ -173,6 +196,9 @@ export default function ListingDetailPage({ params }: Props) {
         quantity,
         requestDelivery: deliveryMethod === 'delivery',
         deliveryEvidenceUrl,
+        ...(wantsCustomDest
+          ? { deliveryLng: destLng!, deliveryLat: destLat!, deliveryAddress: destAddress.trim() }
+          : {}),
       });
       setReservationResult({
         reservationId: res.reservationId,
@@ -555,6 +581,116 @@ export default function ListingDetailPage({ params }: Props) {
                             </span>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Điểm giao: mặc định lấy địa chỉ hồ sơ, nhưng người khó di chuyển
+                        thường đang ở bệnh viện / nhà người thân nên cho ghim chỗ khác. */}
+                    {deliveryMethod === 'delivery' && (
+                      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-high/30 p-4 space-y-3">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                          <span className="material-symbols-outlined text-[16px]">pin_drop</span>
+                          Điểm giao hàng
+                        </p>
+
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="destination-mode"
+                            checked={!useCustomDestination}
+                            onChange={() => setUseCustomDestination(false)}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-on-surface">Địa chỉ trong hồ sơ</span>
+                            <span className="block truncate text-[11px] text-on-surface-variant">
+                              {me?.receiver?.address || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
+                            </span>
+                          </span>
+                        </label>
+
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="destination-mode"
+                            checked={useCustomDestination}
+                            onChange={() => {
+                              setUseCustomDestination(true);
+                              // Mở bản đồ ở địa chỉ hồ sơ nếu có, không thì mặc định TP.HCM.
+                              if (destLng == null || destLat == null) {
+                                setDestLng(me?.receiver?.lng ?? 106.6297);
+                                setDestLat(me?.receiver?.lat ?? 10.8231);
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-on-surface">Giao tới địa điểm khác</span>
+                            <span className="block text-[11px] text-on-surface-variant">
+                              Đang nằm viện, ở nhà người thân… — ghim đúng chỗ để tình nguyện viên tìm được
+                            </span>
+                          </span>
+                        </label>
+
+                        {useCustomDestination && (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              disabled={locatingDest}
+                              onClick={() => {
+                                if (typeof navigator === 'undefined' || !navigator.geolocation) {
+                                  toast.error('Trình duyệt này không hỗ trợ định vị.');
+                                  return;
+                                }
+                                setLocatingDest(true);
+                                navigator.geolocation.getCurrentPosition(
+                                  async ({ coords }) => {
+                                    setDestLng(coords.longitude);
+                                    setDestLat(coords.latitude);
+                                    const found = await reverseGeocode(coords.latitude, coords.longitude);
+                                    if (found) setDestAddress(found);
+                                    setLocatingDest(false);
+                                    toast.success('Đã ghim vị trí hiện tại của bạn.');
+                                  },
+                                  () => {
+                                    setLocatingDest(false);
+                                    toast.error('Không lấy được vị trí. Hãy ghim thủ công trên bản đồ.');
+                                  },
+                                  { enableHighAccuracy: true, timeout: 12_000 },
+                                );
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+                            >
+                              <span className={`material-symbols-outlined text-[16px] ${locatingDest ? 'animate-spin' : ''}`}>
+                                {locatingDest ? 'progress_activity' : 'my_location'}
+                              </span>
+                              {locatingDest ? 'Đang xác định…' : 'Dùng vị trí hiện tại'}
+                            </button>
+
+                            <input
+                              value={destAddress}
+                              onChange={(e) => setDestAddress(e.target.value)}
+                              placeholder="Ví dụ: BV Đa khoa Khánh Hoà, Khoa Nội, giường 12"
+                              maxLength={500}
+                              className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                            />
+                            <p className="text-[11px] text-on-surface-variant">
+                              Bấm hoặc kéo ghim trên bản đồ để chỉnh chính xác vị trí.
+                            </p>
+                            <div className="h-56 overflow-hidden rounded-xl border border-outline-variant/30">
+                              <LocationPicker
+                                lng={destLng ?? 106.6297}
+                                lat={destLat ?? 10.8231}
+                                address={destAddress}
+                                onPick={(lng, lat, addr) => {
+                                  setDestLng(lng);
+                                  setDestLat(lat);
+                                  if (addr) setDestAddress(addr);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

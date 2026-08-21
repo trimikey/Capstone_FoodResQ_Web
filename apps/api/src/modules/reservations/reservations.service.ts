@@ -105,17 +105,29 @@ export class ReservationsService {
       );
     }
 
-    // 2b. Yêu cầu giao tận nơi → phải có địa chỉ + toạ độ trong hồ sơ,
-    // nếu không delivery sẽ không có điểm giao (shipper không điều hướng được).
+    // 2b. Yêu cầu giao tận nơi → phải xác định được ĐIỂM GIAO: hoặc người đặt chọn
+    // riêng cho đơn này (đang nằm viện, ở nhà người thân…), hoặc lấy địa chỉ hồ sơ.
+    // Không có điểm giao thì shipper không điều hướng được.
+    const customDestination = dto.deliveryLng != null && dto.deliveryLat != null
+      ? { lng: dto.deliveryLng, lat: dto.deliveryLat, address: dto.deliveryAddress?.trim() || null }
+      : null;
     if (dto.requestDelivery) {
-      const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
-        SELECT (location IS NOT NULL) AS has_location
-        FROM receiver_profiles WHERE id = ${receiver.id}::uuid
-      `);
-      if (!receiver.address || !loc?.has_location) {
-        throw new BadRequestException(
-          'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ trước khi yêu cầu tình nguyện viên giao tận nơi.',
-        );
+      if ((dto.deliveryLng == null) !== (dto.deliveryLat == null)) {
+        throw new BadRequestException('Điểm giao cần cả kinh độ và vĩ độ. Vui lòng chọn lại vị trí trên bản đồ.');
+      }
+      if (customDestination && !customDestination.address) {
+        throw new BadRequestException('Vui lòng nhập địa chỉ mô tả cho điểm giao đã chọn để tình nguyện viên tìm được.');
+      }
+      if (!customDestination) {
+        const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
+          SELECT (location IS NOT NULL) AS has_location
+          FROM receiver_profiles WHERE id = ${receiver.id}::uuid
+        `);
+        if (!receiver.address || !loc?.has_location) {
+          throw new BadRequestException(
+            'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ, hoặc chọn điểm giao trên bản đồ cho đơn này.',
+          );
+        }
       }
       // Giao tận nơi dành cho người KHÓ DI CHUYỂN → bắt buộc ảnh bằng chứng
       // (bệnh, chấn thương…). Shipper xem ảnh này trong popup lời mời trước khi
@@ -123,6 +135,30 @@ export class ReservationsService {
       if (!dto.deliveryEvidenceUrl?.trim()) {
         throw new BadRequestException(
           'Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) khi yêu cầu tình nguyện viên giao tận nơi.',
+        );
+      }
+
+      // Chốt chặn thực tế: TNV chạy xe máy đi giao MỘT suất ăn, không thể vượt
+      // hàng chục km. Shipper chỉ được tìm trong bán kính quanh ĐIỂM LẤY, nên nếu
+      // không kiểm ở đây thì người nhận ở xa vẫn đặt được và shipper nhận đơn xong
+      // mới phát hiện quãng đường vô lý — rồi bỏ chuyến.
+      const maxDistanceKm = await this.systemConfig.getNumber('MAX_DELIVERY_DISTANCE_KM');
+      const [distanceRow] = await this.prisma.$queryRaw<{ distance_km: number | null }[]>(Prisma.sql`
+        SELECT ROUND((ST_Distance(fl.pickup_location::geography, dest.geo::geography) / 1000)::numeric, 2)::float8
+                 AS distance_km
+        FROM food_listings fl
+        CROSS JOIN LATERAL (
+          SELECT ${customDestination
+            ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+            : Prisma.sql`(SELECT location FROM receiver_profiles WHERE id = ${receiver.id}::uuid)`} AS geo
+        ) dest
+        WHERE fl.id = ${dto.listingId}::uuid
+      `);
+      const distanceKm = distanceRow?.distance_km ?? null;
+      if (distanceKm != null && distanceKm > maxDistanceKm) {
+        throw new BadRequestException(
+          `Điểm giao cách nơi lấy hàng ${distanceKm} km, vượt giới hạn ${maxDistanceKm} km cho một chuyến giao. `
+          + 'Vui lòng chọn điểm giao gần hơn hoặc chọn "Tôi sẽ tự đến lấy".',
         );
       }
     }
@@ -253,7 +289,8 @@ export class ReservationsService {
           Prisma.sql`
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
-              qr_token, qr_expires_at, receiver_notes, delivery_evidence_url, created_at, updated_at
+              qr_token, qr_expires_at, receiver_notes, delivery_evidence_url,
+              delivery_address, delivery_location, created_at, updated_at
             ) VALUES (
               ${dto.listingId}::uuid,
               ${receiver.id}::uuid,
@@ -263,6 +300,10 @@ export class ReservationsService {
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
               ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
+              ${dto.requestDelivery && customDestination ? customDestination.address : null},
+              ${dto.requestDelivery && customDestination
+                ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+                : Prisma.sql`NULL`},
               NOW(), NOW()
             )
             RETURNING id, qr_token
@@ -311,11 +352,12 @@ export class ReservationsService {
     // Để FE theo dõi đơn vẽ được bản đồ thật thay vì toạ độ giả.
     await this.prisma.$executeRaw(Prisma.sql`
       UPDATE deliveries d
+      -- COALESCE: điểm giao riêng của đơn thắng địa chỉ mặc định trong hồ sơ.
       SET pickup_location   = fl.pickup_location,
-          delivery_location = rp.location,
+          delivery_location = COALESCE(r.delivery_location, rp.location),
           distance_km = CASE
-            WHEN fl.pickup_location IS NOT NULL AND rp.location IS NOT NULL
-            THEN ROUND((ST_Distance(fl.pickup_location::geography, rp.location::geography) / 1000)::numeric, 2)
+            WHEN fl.pickup_location IS NOT NULL AND COALESCE(r.delivery_location, rp.location) IS NOT NULL
+            THEN ROUND((ST_Distance(fl.pickup_location::geography, COALESCE(r.delivery_location, rp.location)::geography) / 1000)::numeric, 2)
             ELSE NULL END
       FROM reservations r
       JOIN food_listings fl ON fl.id = ${listingId}::uuid
@@ -832,7 +874,7 @@ export class ReservationsService {
       : group === 'history' ? { notIn: active }
       : undefined;
 
-    const [items, total, activeCount, historyCount, completedAgg, noShowCount] =
+    const [items, total, activeCount, historyCount, completedAgg, noShowCount, cancelledCount] =
       await this.prisma.$transaction([
       this.prisma.reservation.findMany({
         where: {
@@ -880,6 +922,11 @@ export class ReservationsService {
       this.prisma.reservation.count({
         where: { receiverId: receiver.id, status: 'no_show' },
       }),
+      // Đơn đã huỷ: người dùng tự huỷ HOẶC hệ thống huỷ (không tìm được TNV giao).
+      // Trước đây không đếm nên thẻ thống kê thiếu hẳn một nhóm mà danh sách vẫn hiện.
+      this.prisma.reservation.count({
+        where: { receiverId: receiver.id, status: 'cancelled' },
+      }),
     ]);
 
     // Ratings là quan hệ đa hình (referenceType/referenceId) — query riêng rồi gắn cờ ratedScore
@@ -907,7 +954,10 @@ export class ReservationsService {
       counts: {
         active: activeCount,
         history: historyCount,
+        /** Tổng số đơn từ trước tới nay, không phụ thuộc bộ lọc đang xem. */
+        allOrders: activeCount + historyCount,
         completed: completedAgg._count,
+        cancelled: cancelledCount,
         noShow: noShowCount,
         portionsSaved: Number(completedAgg._sum.quantity ?? 0),
       },
