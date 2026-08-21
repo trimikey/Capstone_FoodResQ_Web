@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  INGREDIENT_SUPPLY_ID,
+  INGREDIENT_SUPPLY_IDS,
   MENU_TEMPLATES,
   SCHEDULE_TEMPLATES,
   buildScaledTemplates,
   buildMatchedMenuTemplates,
   getServingsTier,
+  requiredIngredientsForDishes,
   type ShiftTemplate,
   type ScheduleTemplate,
   type SupplyTemplate,
@@ -397,15 +400,28 @@ function ScheduleRow({
 
 export function SupplySuggestions({
   expectedServings,
-}: BaseSuggestionsProps) {
+  menuNames = [],
+}: BaseSuggestionsProps & {
+  /** Tên các món đã chọn — nguyên liệu nấu ăn chỉ gợi ý khi có món cần tới nó. */
+  menuNames?: string[];
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useClickOutside(open, () => setOpen(false));
   const { inserted, track, trackAll } = useInsertedTracker();
 
-  const supplies = useMemo(
-    () => buildScaledTemplates(expectedServings).supplies,
-    [expectedServings],
-  );
+  const menuKey = menuNames.join('|');
+  const supplies = useMemo(() => {
+    const all = buildScaledTemplates(expectedServings).supplies;
+    const required = requiredIngredientsForDishes(menuKey ? menuKey.split('|') : []);
+    const allowedIngredientIds = new Set(
+      [...required].map((ing) => INGREDIENT_SUPPLY_ID[ing]).filter(Boolean),
+    );
+    // Nguyên liệu nấu ăn chỉ hiện khi món đã chọn cần tới; vật dụng chung
+    // (hộp đựng, găng tay, bàn ghế…) luôn hiện theo quy mô.
+    return all.filter(
+      (s) => !INGREDIENT_SUPPLY_IDS.has(s.id) || allowedIngredientIds.has(s.id),
+    );
+  }, [expectedServings, menuKey]);
   const tier = getServingsTier(expectedServings || 0);
 
   const remaining = supplies.filter((s) => !inserted.has(s.id)).length;
@@ -429,7 +445,7 @@ export function SupplySuggestions({
         <SuggestionPanel
           tier={tier}
           title="Mẫu vật phẩm cần thiết"
-          subtitle={`Số lượng đã scale theo số suất (${expectedServings || 0} — tier ${TIER_LABEL[tier]}). Vật dụng cố định giữ nguyên.`}
+          subtitle={`Nguyên liệu hiện theo món đã chọn; số lượng scale theo ${expectedServings || 0} suất (tier ${TIER_LABEL[tier]}). Vật dụng cố định giữ nguyên.`}
           tone="amber"
           remainingCount={remaining}
           onInsertAll={() => {
