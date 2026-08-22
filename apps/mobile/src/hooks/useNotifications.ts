@@ -45,6 +45,11 @@ function formatOfferPopup(offer: TaskOffer) {
     `Khoảng cách: ${formatKm(delivery.distanceKm)}`,
     `Lấy: ${pickup}`,
     `Giao: ${destination}`,
+    // Popup toast chỉ hiện được chữ — nhắc shipper mở danh sách để XEM ẢNH
+    // bằng chứng trước khi nhận (ảnh hiển thị ở thẻ đơn trong màn Lời mời).
+    ...(reservation?.deliveryEvidenceUrl
+      ? ['⚠ Người nhận khó di chuyển — xem ảnh bằng chứng trong danh sách trước khi nhận.']
+      : []),
   ].join('\n');
 }
 

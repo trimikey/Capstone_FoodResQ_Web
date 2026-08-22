@@ -143,6 +143,8 @@ export interface TaskOffer {
       quantity: number;
       listing: ListingBrief;
       receiver: { address: string | null } | null;
+      /** Ảnh bằng chứng người nhận khó di chuyển — shipper xem trước khi nhận đơn. */
+      deliveryEvidenceUrl?: string | null;
     } | null;
     coords: DeliveryCoords | null;
   };

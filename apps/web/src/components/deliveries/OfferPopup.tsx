@@ -87,6 +87,33 @@ export function OfferPopup({
                 <span className="text-neutral-700"><b>Giao:</b> {destinationAddress}</span>
               </p>
             </div>
+
+            {/* Bằng chứng người nhận khó di chuyển — xem ảnh trước, thấy hợp lệ mới nhận đơn */}
+            {reservation?.deliveryEvidenceUrl && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
+                  <span className="material-symbols-outlined text-[16px]">accessible</span>
+                  Bằng chứng người nhận khó di chuyển
+                </p>
+                <a
+                  href={mediaUrl(reservation.deliveryEvidenceUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Bấm để xem ảnh gốc"
+                  className="block"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mediaUrl(reservation.deliveryEvidenceUrl)}
+                    alt="Bằng chứng khó di chuyển của người nhận"
+                    className="h-36 w-full rounded-lg border border-amber-200 object-cover"
+                  />
+                </a>
+                <p className="text-[11px] text-amber-800">
+                  Xem ảnh bằng chứng (bệnh/chấn thương) — thấy hợp lệ hãy bấm nhận đơn.
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 pt-1">
               <button
                 onClick={onReject}

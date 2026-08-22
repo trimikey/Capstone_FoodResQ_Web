@@ -117,6 +117,14 @@ export class ReservationsService {
           'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ trước khi yêu cầu tình nguyện viên giao tận nơi.',
         );
       }
+      // Giao tận nơi dành cho người KHÓ DI CHUYỂN → bắt buộc ảnh bằng chứng
+      // (bệnh, chấn thương…). Shipper xem ảnh này trong popup lời mời trước khi
+      // quyết định nhận đơn — không có ảnh thì shipper không có gì để đối chiếu.
+      if (!dto.deliveryEvidenceUrl?.trim()) {
+        throw new BadRequestException(
+          'Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) khi yêu cầu tình nguyện viên giao tận nơi.',
+        );
+      }
     }
 
     // 3. Acquire distributed lock on this listing
@@ -245,7 +253,7 @@ export class ReservationsService {
           Prisma.sql`
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
-              qr_token, qr_expires_at, receiver_notes, created_at, updated_at
+              qr_token, qr_expires_at, receiver_notes, delivery_evidence_url, created_at, updated_at
             ) VALUES (
               ${dto.listingId}::uuid,
               ${receiver.id}::uuid,
@@ -254,6 +262,7 @@ export class ReservationsService {
               encode(gen_random_bytes(32), 'hex'),
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
+              ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
               NOW(), NOW()
             )
             RETURNING id, qr_token

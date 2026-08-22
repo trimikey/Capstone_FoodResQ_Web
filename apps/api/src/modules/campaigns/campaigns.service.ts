@@ -2938,18 +2938,33 @@ export class CampaignsService {
     return campaign;
   }
 
+  /** Cấu hình cần cho tính toán readiness — đọc NGOÀI transaction rồi truyền vào. */
+  private async readStaffingConfig(): Promise<{
+    minimumFillPercent: number;
+    allowEarlyStartAndCheckIn: number;
+  }> {
+    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+    ]);
+    return { minimumFillPercent, allowEarlyStartAndCheckIn };
+  }
+
   /** Mức sẵn sàng được tính theo từng ngày + ca + vai trò, chỉ tính người đã xác nhận. */
   async getStaffingReadiness(campaignId: string) {
     return this.getStaffingReadinessWith(this.prisma, campaignId);
   }
 
+  /**
+   * @param config Cấu hình đã đọc SẴN. BẮT BUỘC truyền khi `client` là transaction
+   *   client: SystemConfigService query bằng `this.prisma` (connection NGOÀI tx),
+   *   mà pooler chạy `connection_limit=1` — transaction đang giữ connection duy
+   *   nhất nên query đó nằm chờ vô hạn, tới khi tx hết hạn 5s và pool timeout
+   *   (lỗi P2028 "Transaction already closed", 120s).
+   */
   private async getStaffingReadinessWith(
     client: Prisma.TransactionClient,
     campaignId: string,
-    // Khi gọi bên trong $transaction phải truyền config đọc sẵn từ TRƯỚC khi mở
-    // transaction: pool pgbouncer chỉ có 1 connection, để SystemConfigService tự
-    // query bằng client gốc trong lúc transaction đang giữ connection là deadlock (P2024).
-    preloadedConfig?: { minimumFillPercent: number; allowEarlyStartAndCheckIn: number },
   ) {
     const campaign = await client.kitchenCampaign.findUnique({
       where: { id: campaignId },
@@ -2983,10 +2998,10 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    const { minimumFillPercent, allowEarlyStartAndCheckIn } = preloadedConfig ?? {
-      minimumFillPercent: await this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
-      allowEarlyStartAndCheckIn: await this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
-    };
+    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+    ]);
     const days = this.campaignDays(campaign.scheduledDate, campaign.endDate ?? campaign.scheduledDate);
     const matrix = days.flatMap((day) => campaign.shifts.map((shift) => {
       const dayKey = this.toDateKey(day);
@@ -3131,6 +3146,10 @@ export class CampaignsService {
       where: { status: 'approved' },
       select: { id: true, operationStartAt: true },
     });
+    // Đọc cấu hình MỘT LẦN, NGOÀI transaction — xem chú thích ở
+    // getStaffingReadinessWith: query bằng client ngoài trong tx sẽ treo tới khi
+    // tx hết hạn (P2028) vì pooler chỉ cấp 1 connection.
+    const staffingConfig = await this.readStaffingConfig();
     let refreshed = 0;
     let started = 0;
     for (const campaign of campaigns) {
@@ -3151,10 +3170,7 @@ export class CampaignsService {
           select: { status: true, operationStartAt: true },
         });
         if (!current || current.status !== 'approved' || now < current.operationStartAt) return false;
-        const readiness = await this.getStaffingReadinessWith(tx, campaign.id, {
-          minimumFillPercent,
-          allowEarlyStartAndCheckIn,
-        });
+        const readiness = await this.getStaffingReadinessWith(tx, campaign.id);
         if (!readiness.eligibleToStart) {
           await tx.kitchenCampaign.update({
             where: { id: campaign.id },

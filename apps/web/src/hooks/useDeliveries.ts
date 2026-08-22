@@ -17,6 +17,8 @@ interface ListingBrief {
   category?: string;
   pickupAddress: string;
   imageUrls: string[] | null;
+  /** Chỉ có ở đơn đang giao — dùng cho popup đối chiếu lúc bàn giao. */
+  quantityUnit?: string;
 }
 
 export interface DeliveryCoords {
@@ -55,7 +57,13 @@ export interface TaskOffer {
     id: string;
     distanceKm: number | null;
     coords: DeliveryCoords | null;
-    reservation: { quantity: number; listing: ListingBrief; receiver: { address: string | null } | null } | null;
+    reservation: {
+      quantity: number;
+      listing: ListingBrief;
+      receiver: { address: string | null } | null;
+      /** Ảnh bằng chứng người nhận khó di chuyển — shipper xem trước khi nhận đơn. */
+      deliveryEvidenceUrl?: string | null;
+    } | null;
   };
 }
 
@@ -70,7 +78,16 @@ export interface ActiveDelivery extends DeliverySourceFields {
     id: string;
     quantity: number;
     listing: ListingBrief;
-    receiver: { address: string | null; user: { fullName: string; phone: string | null } } | null;
+    receiver: {
+      address: string | null;
+      /** Ảnh đã đăng ký — shipper đối chiếu đúng người trước khi bàn giao. */
+      faceImageUrl?: string | null;
+      idCardImageUrl?: string | null;
+      idCardNumber?: string | null;
+      user: { fullName: string; phone: string | null };
+    } | null;
+    /** Ảnh bằng chứng khó di chuyển của người nhận. */
+    deliveryEvidenceUrl?: string | null;
   } | null;
 }
 
@@ -235,7 +252,9 @@ export function useOfferSocket(enabled: boolean) {
       void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
       void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
       toast.warning('Đã tắt chế độ nhận đơn', {
-        description: 'Bạn không phản hồi lời mời trong 15 giây. Bật lại để tiếp tục nhận đơn.',
+        // Không nêu số giây cụ thể: cửa sổ phản hồi do admin cấu hình
+        // (system_configs SHIPPER_OFFER_EXPIRY_SECONDS), nêu cứng là sai khi đổi.
+        description: 'Bạn không phản hồi lời mời trong thời gian cho phép. Bật lại để tiếp tục nhận đơn.',
       });
     });
     return () => {

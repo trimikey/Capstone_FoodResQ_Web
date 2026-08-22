@@ -9,6 +9,7 @@ import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { api } from '@/lib/api';
 import { usePickupWindow } from '@/hooks/usePickupWindow';
 import {
   formatVietnamDate,
@@ -73,6 +74,11 @@ export default function ListingDetailPage({ params }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup');
   const [showPickupConfirm, setShowPickupConfirm] = useState(false);
+  // Ảnh bằng chứng khó di chuyển — BẮT BUỘC khi chọn "Cần TNV giao".
+  // Shipper sẽ xem ảnh này trong popup lời mời trước khi quyết định nhận đơn.
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -142,11 +148,31 @@ export default function ListingDetailPage({ params }: Props) {
   };
 
   const handlePreOrder = async () => {
+    // Đơn cần TNV giao → bắt buộc ảnh bằng chứng khó di chuyển (BE cũng chặn).
+    if (deliveryMethod === 'delivery' && !evidenceFile) {
+      toast.error('Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) trước khi đặt đơn giao tận nơi.');
+      return;
+    }
     try {
+      let deliveryEvidenceUrl: string | undefined;
+      if (deliveryMethod === 'delivery' && evidenceFile) {
+        setUploadingEvidence(true);
+        try {
+          const fd = new FormData();
+          fd.append('file', evidenceFile);
+          const { data } = await api.post('/uploads/image?kind=delivery-evidence', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          deliveryEvidenceUrl = (data.data ?? data).url as string;
+        } finally {
+          setUploadingEvidence(false);
+        }
+      }
       const res = await createReservation.mutateAsync({
         listingId: id,
         quantity,
         requestDelivery: deliveryMethod === 'delivery',
+        deliveryEvidenceUrl,
       });
       setReservationResult({
         reservationId: res.reservationId,
@@ -475,6 +501,62 @@ export default function ListingDetailPage({ params }: Props) {
                         <span className="material-symbols-outlined text-primary text-[22px] bg-primary/10 p-1.5 rounded-xl">handshake</span>
                       </div>
                     </label>
+
+                    {/* Ảnh bằng chứng khó di chuyển — bắt buộc khi cần TNV giao.
+                        Shipper xem ảnh này trong popup lời mời rồi mới quyết định nhận. */}
+                    {deliveryMethod === 'delivery' && (
+                      <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-2">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                          <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                          Ảnh bằng chứng khó di chuyển <span className="text-rose-500">*</span>
+                        </p>
+                        <p className="text-[11px] leading-relaxed text-amber-800">
+                          Chụp giấy khám bệnh, ảnh chấn thương (bó bột, gãy chân…) hoặc bằng chứng
+                          tương tự. Tình nguyện viên sẽ xem ảnh này trước khi nhận đơn giao.
+                        </p>
+                        <input
+                          id="delivery-evidence-input"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            setEvidenceFile(file);
+                            setEvidencePreview(URL.createObjectURL(file));
+                          }}
+                        />
+                        <div className="flex items-center gap-3">
+                          {evidencePreview ? (
+                            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-amber-200">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={evidencePreview} alt="Ảnh bằng chứng" className="h-full w-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => { setEvidenceFile(null); setEvidencePreview(null); }}
+                                className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+                                aria-label="Xoá ảnh"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">close</span>
+                              </button>
+                            </div>
+                          ) : null}
+                          <label
+                            htmlFor="delivery-evidence-input"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
+                            {evidenceFile ? 'Đổi ảnh khác' : 'Chụp / tải ảnh'}
+                          </label>
+                          {evidenceFile && (
+                            <span className="min-w-0 truncate text-[11px] font-semibold text-amber-900">
+                              {evidenceFile.name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -490,10 +572,10 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="space-y-2">
                   <button
                     onClick={handlePreOrder}
-                    disabled={createReservation.isPending}
+                    disabled={createReservation.isPending || uploadingEvidence}
                     className="w-full py-3 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-[0.98] hover:bg-primary/90 disabled:opacity-50"
                   >
-                    {createReservation.isPending ? (
+                    {createReservation.isPending || uploadingEvidence ? (
                       <>
                         <span className="animate-spin border-2 border-white border-t-transparent rounded-full w-4 h-4" />
                         Đang xử lý...
@@ -772,17 +854,21 @@ function PickupConfirmPopup({
 }) {
   const unit = UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit;
   const now = Date.now();
-  const thirtyMinMs = 30 * 60 * 1000;
-  
-  // Thời gian bắt đầu có hiệu lực = max(thời gian hiện tại + 30p, pickupStartTime)
-  const effectiveStartTime = Math.max(now + thirtyMinMs, new Date(listing.pickupStartTime).getTime());
+  /** Khớp system_configs QR_VALIDITY_MINUTES — QR chỉ sống 30 phút KỂ TỪ LÚC ĐẶT. */
+  const qrValidityMs = 30 * 60 * 1000;
+
+  // Đặt xong là đi lấy được NGAY (hoặc chờ tới giờ mở cửa nếu chưa mở) — không
+  // có lý do đẩy giờ nhận lên +30 phút như bản cũ.
+  const pickupStartTime = new Date(listing.pickupStartTime).getTime();
   const pickupEndTime = new Date(listing.pickupEndTime).getTime();
-  
-  // Thời gian còn lại để đến = effectiveStartTime - now (thời gian thực tế còn lại để chuẩn bị)
-  // Deadline để đến = pickupEndTime - 30p
-  const deadlineToArrive = pickupEndTime - thirtyMinMs;
-  const timeUntilDeadline = deadlineToArrive - now;
-  const isUrgent = timeUntilDeadline < thirtyMinMs; // < 30 phút nữa là phải đến
+  const effectiveStartTime = Math.max(now, pickupStartTime);
+
+  // Hạn phải có mặt = QR hết hạn = BÂY GIỜ + 30 phút (bản cũ lấy nhầm
+  // "giờ đóng cửa − 30 phút", ra mốc chẳng liên quan tới lúc người dùng đặt).
+  // Không vượt quá giờ đóng cửa: sát giờ đóng thì mốc chính là giờ đóng.
+  const deadlineToArrive = Math.min(now + qrValidityMs, pickupEndTime);
+  // Gấp khi cửa hàng sắp đóng trước cả khi QR hết hạn.
+  const isUrgent = pickupEndTime < now + qrValidityMs;
 
   return (
     <div
@@ -843,14 +929,16 @@ function PickupConfirmPopup({
                   <>
                     <p className="text-sm font-bold text-rose-700">⚠️ Sắp hết giờ nhận hàng!</p>
                     <p className="text-xs text-rose-600 mt-1">
-                      Bạn cần đến trước {formatVietnamTime(deadlineToArrive)}. Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
+                      Cửa hàng đóng lúc {formatVietnamTime(deadlineToArrive)} — bạn cần đến trước giờ đó.
+                      Nếu không, đơn sẽ chuyển cho người khác và bạn bị trừ điểm uy tín.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="text-sm font-bold text-amber-700">Lưu ý về thời gian</p>
                     <p className="text-xs text-amber-600 mt-1">
-                      Bạn cần đến trước {formatVietnamTime(deadlineToArrive)} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
+                      Mã QR có hiệu lực <b>30 phút</b> kể từ khi đặt — bạn cần đến trước{' '}
+                      {formatVietnamTime(deadlineToArrive)} để nhận hàng. Không đến đúng giờ sẽ bị trừ điểm uy tín.
                     </p>
                   </>
                 )}
@@ -888,16 +976,19 @@ function TimeInfoPopup({
   onClose: () => void;
 }) {
   const now = Date.now();
-  const thirtyMinMs = 30 * 60 * 1000;
+  /** Khớp system_configs QR_VALIDITY_MINUTES — QR sống 30 phút kể từ lúc đặt. */
+  const qrValidityMs = 30 * 60 * 1000;
 
   // pickupStartTime và pickupEndTime từ listing (mỗi tin đăng khác nhau)
   const pickupStartTime = new Date(listing.pickupStartTime).getTime();
   const pickupEndTime = new Date(listing.pickupEndTime).getTime();
 
-  // Thời hạn đến = giờ hiện tại + 30 phút (sau thời điểm này chưa đến → tự hủy để dành cho người khác)
-  const deadlineToArrive = now + thirtyMinMs;
-  const timeUntilDeadline = deadlineToArrive - now; // luôn = 30 phút
-  const isUrgent = timeUntilDeadline < thirtyMinMs;
+  // Thời hạn đến = QR hết hạn = bây giờ + 30 phút, nhưng không quá giờ đóng cửa
+  // (chưa đến trước mốc này thì đơn tự huỷ để dành suất cho người khác).
+  const deadlineToArrive = Math.min(now + qrValidityMs, pickupEndTime);
+  // Gấp khi cửa hàng đóng trước cả khi QR hết hạn. Bản cũ so 30p < 30p nên
+  // không bao giờ true — cảnh báo đỏ chưa từng hiện.
+  const isUrgent = pickupEndTime < now + qrValidityMs;
 
   return (
     <div

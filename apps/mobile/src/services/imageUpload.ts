@@ -1,6 +1,6 @@
 import apiClient, { API_ORIGIN } from '../api/client';
 
-export type UploadKind = 'listing' | 'avatar';
+export type UploadKind = 'listing' | 'avatar' | 'delivery-evidence';
 
 /**
  * Upload 1 ảnh local lên backend (multipart) → trả về URL tuyệt đối (https/http).
