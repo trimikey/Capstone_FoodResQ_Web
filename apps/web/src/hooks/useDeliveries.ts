@@ -538,8 +538,10 @@ export interface NearbyDelivery {
   deliveryAddress: string | null;
   deliveryScheduledAt: string | null;
   deliveryEvidenceUrl: string | null;
-  /** Ca của shipper có phủ thời điểm giao đơn này không. */
+  /** Ca của shipper có phủ thời điểm giao đơn này không (và không bận ca chiến dịch). */
   canClaim: boolean;
+  /** Khung giờ này shipper đã xác nhận một ca chiến dịch → bận, không nhận đơn lẻ. */
+  busyWithCampaign?: boolean;
   claimSlot: { workDate: string; period: ShiftPeriod };
 }
 

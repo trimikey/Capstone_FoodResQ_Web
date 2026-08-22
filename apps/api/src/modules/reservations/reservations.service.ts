@@ -317,7 +317,9 @@ export class ReservationsService {
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
               ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
-              ${dto.requestDelivery && customDestination ? customDestination.address : null},
+              ${dto.requestDelivery
+                ? (customDestination ? customDestination.address : (dto.deliveryAddress?.trim() || null))
+                : null},
               ${dto.requestDelivery && customDestination
                 ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
                 : Prisma.sql`NULL`},

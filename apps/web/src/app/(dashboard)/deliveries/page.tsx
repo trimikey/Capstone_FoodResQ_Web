@@ -728,14 +728,22 @@ export default function DeliveriesPage() {
                       }
                     }}
                     disabled={!o.canClaim || claimDelivery.isPending}
-                    title={!o.canClaim ? 'Đơn này nằm ngoài ca bạn đã đăng ký' : undefined}
+                    title={
+                      o.busyWithCampaign
+                        ? 'Bạn đã xác nhận ca chiến dịch trong khung giờ này'
+                        : !o.canClaim
+                          ? 'Đơn này nằm ngoài ca bạn đã đăng ký'
+                          : undefined
+                    }
                     className="mt-4 w-full min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {claimDelivery.isPending
                       ? 'Đang nhận…'
                       : o.canClaim
                         ? 'Nhận đơn này'
-                        : 'Ngoài ca đã đăng ký'}
+                        : o.busyWithCampaign
+                          ? 'Bận ca chiến dịch khung giờ này'
+                          : 'Ngoài ca đã đăng ký'}
                   </button>
                 </div>
               ))}

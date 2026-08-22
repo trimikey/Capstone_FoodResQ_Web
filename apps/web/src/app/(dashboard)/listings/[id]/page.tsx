@@ -93,6 +93,28 @@ export default function ListingDetailPage({ params }: Props) {
   const [locatingDest, setLocatingDest] = useState(false);
   // Hẹn giờ giao: '' = giao ngay khi có shipper nhận. Giá trị theo datetime-local (giờ VN).
   const [scheduledTime, setScheduledTime] = useState('');
+  // Hồ sơ đăng ký khi reverse-geocode thất bại sẽ lưu TOẠ ĐỘ THÔ vào cột địa chỉ
+  // ("10.847932, 106.832735") — hiển thị vậy thì người dùng lẫn shipper đều không đọc
+  // được. Resolve lại thành tên địa điểm một lần khi mở form.
+  const [profileAddressLabel, setProfileAddressLabel] = useState<string | null>(null);
+  const looksLikeCoords = (v?: string | null) =>
+    !!v && /^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(v.trim());
+  useEffect(() => {
+    const addr = me?.receiver?.address;
+    const lat = me?.receiver?.lat;
+    const lng = me?.receiver?.lng;
+    if (deliveryMethod !== 'delivery' || !looksLikeCoords(addr) || lat == null || lng == null) return;
+    let mounted = true;
+    void reverseGeocode(lat, lng).then((name) => {
+      if (mounted && name) setProfileAddressLabel(name);
+    });
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryMethod, me?.receiver?.address, me?.receiver?.lat, me?.receiver?.lng]);
+  const profileAddressDisplay =
+    (looksLikeCoords(me?.receiver?.address) ? profileAddressLabel : me?.receiver?.address)
+    ?? me?.receiver?.address
+    ?? null;
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -208,7 +230,11 @@ export default function ListingDetailPage({ params }: Props) {
         deliveryEvidenceUrl,
         ...(wantsCustomDest
           ? { deliveryLng: destLng!, deliveryLat: destLat!, deliveryAddress: destAddress.trim() }
-          : {}),
+          : deliveryMethod === 'delivery'
+              && looksLikeCoords(me?.receiver?.address)
+              && profileAddressLabel
+            ? { deliveryAddress: profileAddressLabel }
+            : {}),
         ...(deliveryMethod === 'delivery' && scheduledTime
           ? { deliveryScheduledAt: `${scheduledTime}:00+07:00` }
           : {}),
@@ -655,7 +681,7 @@ export default function ListingDetailPage({ params }: Props) {
                           <span className="min-w-0">
                             <span className="block text-xs font-semibold text-on-surface">Địa chỉ trong hồ sơ</span>
                             <span className="block truncate text-[11px] text-on-surface-variant">
-                              {me?.receiver?.address || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
+                              {profileAddressDisplay || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
                             </span>
                           </span>
                         </label>

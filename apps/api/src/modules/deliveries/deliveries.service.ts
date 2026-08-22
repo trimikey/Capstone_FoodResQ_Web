@@ -514,6 +514,31 @@ export class DeliveriesService {
     return found.length > 0;
   }
 
+  /**
+   * TNV có ca CHIẾN DỊCH đã xác nhận trùng đúng khung giờ này không.
+   *
+   * Role đã gộp nên một người vừa đăng ký ca giao vừa nhận lời mời chiến dịch được —
+   * nhưng không thể ở hai nơi cùng lúc: đã xác nhận ca bếp thì khung đó coi như BẬN,
+   * không nhận đơn giao lẻ nữa.
+   */
+  private async isBusyWithCampaignShift(
+    volunteerId: string,
+    slot: { workDate: string; period: string },
+  ): Promise<boolean> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT a.id
+      FROM campaign_volunteer_assignments a
+      JOIN campaign_shifts cs ON cs.id = a.shift_id
+      WHERE a.volunteer_id = ${volunteerId}::uuid
+        AND a.work_date = ${slot.workDate}::date
+        AND cs.period = ${slot.period}::campaign_shift_period
+        AND a.status IN ('assigned', 'checked_in', 'in_progress')
+        AND a.confirmation_status = 'confirmed'
+      LIMIT 1
+    `);
+    return rows.length > 0;
+  }
+
   /** Xác minh đủ điều kiện làm shipper (dùng chung cho danh sách đơn + nhận đơn). */
   private async requireVerifiedShipper(shipperUserId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
@@ -590,7 +615,10 @@ export class DeliveriesService {
     const results: Array<Record<string, unknown>> = [];
     for (const row of rows) {
       const targetAt = row.delivery_scheduled_at ?? new Date();
+      const slot = deliverySlotAt(targetAt);
       const covered = await this.hasDeliveryShiftCovering(volunteer.id, targetAt);
+      // Đã xác nhận ca chiến dịch trùng khung → coi như bận, không cho nhận đơn lẻ.
+      const busyWithCampaign = covered && (await this.isBusyWithCampaignShift(volunteer.id, slot));
       results.push({
         deliveryId: row.id,
         createdAt: row.created_at,
@@ -602,8 +630,9 @@ export class DeliveriesService {
         deliveryAddress: row.delivery_address ?? row.receiver_address,
         deliveryScheduledAt: row.delivery_scheduled_at,
         deliveryEvidenceUrl: row.evidence_url,
-        canClaim: covered,
-        claimSlot: deliverySlotAt(targetAt),
+        canClaim: covered && !busyWithCampaign,
+        busyWithCampaign,
+        claimSlot: slot,
       });
     }
     return results;
@@ -629,10 +658,15 @@ export class DeliveriesService {
     }
 
     const targetAt = delivery.reservation?.deliveryScheduledAt ?? new Date();
+    const slot = deliverySlotAt(targetAt);
     if (!(await this.hasDeliveryShiftCovering(volunteer.id, targetAt))) {
-      const slot = deliverySlotAt(targetAt);
       throw new BadRequestException(
         `Bạn chưa đăng ký ${PERIOD_VN[slot.period]} ngày ${slot.workDate} — chỉ nhận được đơn nằm trong ca đã đăng ký.`,
+      );
+    }
+    if (await this.isBusyWithCampaignShift(volunteer.id, slot)) {
+      throw new BadRequestException(
+        `Bạn đã xác nhận một ca chiến dịch trong ${PERIOD_VN[slot.period]} ngày ${slot.workDate} — khung giờ này đang bận, không nhận thêm đơn giao lẻ được.`,
       );
     }
 
