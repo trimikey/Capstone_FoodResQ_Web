@@ -481,6 +481,7 @@ export function useSetMyWeeklyAvailability() {
       (await api.put('/volunteers/me/weekly-availability', { slots })).data.data,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['volunteers', 'weekly-availability'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'weekly-schedule'] });
     },
   });
 }
@@ -521,7 +522,10 @@ export function useSetMyDeliveryShifts() {
   return useMutation({
     mutationFn: async (slots: DeliveryShiftSlot[]) =>
       (await api.put('/volunteers/me/delivery-shifts', { slots })).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'weekly-schedule'] });
+    },
   });
 }
 

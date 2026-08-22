@@ -88,7 +88,7 @@ export default function WeeklySchedulePage() {
           Đặt TRÊN lịch tuần vì đây là đầu vào, còn lịch tuần là hệ quả. */}
       {isPersonal && (
         <div className="mb-4">
-          <AvailabilityGrid />
+          <AvailabilityGrid deliveryShifts={deliveryShifts?.slots ?? []} />
         </div>
       )}
 

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   useMyWeeklyAvailability,
   useSetMyWeeklyAvailability,
   type AvailabilitySlot,
+  type DeliveryShiftSlot,
   type ShiftPeriod,
 } from '@/hooks/useDeliveries';
 import { errMsg } from '@/lib/utils';
@@ -33,45 +34,72 @@ const cellKey = (dow: number, period: ShiftPeriod) => `${dow}:${period}`;
 /** Lịch cũ hơn ngần này thì nhắc rà lại — dữ liệu khai báo rất nhanh lỗi thời. */
 const STALE_AFTER_DAYS = 45;
 
-export default function AvailabilityGrid() {
+function isoDayOfWeek(dateKey: string): number {
+  const day = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+export default function AvailabilityGrid({
+  deliveryShifts = [],
+}: {
+  deliveryShifts?: DeliveryShiftSlot[];
+}) {
   const { data, isLoading } = useMyWeeklyAvailability();
   const save = useSetMyWeeklyAvailability();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [dirty, setDirty] = useState(false);
+  const [now] = useState(() => Date.now());
+  const savedKey = (data?.slots ?? [])
+    .map((s) => cellKey(s.dayOfWeek, s.period))
+    .sort()
+    .join('|');
+  const savedSelected = useMemo(() => new Set(savedKey ? savedKey.split('|') : []), [savedKey]);
+  const [draft, setDraft] = useState<{ dirty: boolean; sourceKey: string; selected: Set<string> }>({
+    dirty: false,
+    sourceKey: '',
+    selected: new Set(),
+  });
 
-  // Nạp lịch đã lưu vào lưới. Không ghi đè khi người dùng đang sửa dở.
-  useEffect(() => {
-    if (!data || dirty) return;
-    setSelected(new Set(data.slots.map((s) => cellKey(s.dayOfWeek, s.period))));
-  }, [data, dirty]);
+  const selected = !draft.dirty && draft.sourceKey !== savedKey ? savedSelected : draft.selected;
+  const dirty = draft.dirty;
+
+  const occupiedByDelivery = useMemo(
+    () => new Set(deliveryShifts.map((slot) => cellKey(isoDayOfWeek(slot.workDate), slot.period))),
+    [deliveryShifts],
+  );
 
   const staleDays = useMemo(() => {
     if (!data?.updatedAt) return null;
-    return Math.floor((Date.now() - new Date(data.updatedAt).getTime()) / 86_400_000);
-  }, [data?.updatedAt]);
+    return Math.floor((now - new Date(data.updatedAt).getTime()) / 86_400_000);
+  }, [data, now]);
+
+  const selectedAvailableCount = useMemo(
+    () => [...selected].filter((key) => !occupiedByDelivery.has(key)).length,
+    [occupiedByDelivery, selected],
+  );
 
   function toggle(dow: number, period: ShiftPeriod) {
-    setDirty(true);
-    setSelected((prev) => {
-      const next = new Set(prev);
+    if (occupiedByDelivery.has(cellKey(dow, period))) return;
+    setDraft((prev) => {
+      const current = prev.dirty || prev.sourceKey === savedKey ? prev.selected : savedSelected;
+      const next = new Set(current);
       const key = cellKey(dow, period);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      return next;
+      return { dirty: true, sourceKey: savedKey, selected: next };
     });
   }
 
   /** Tick/bỏ tick cả hàng ca — người rảnh cố định một khung thì đỡ bấm 7 lần. */
   function toggleRow(period: ShiftPeriod) {
-    setDirty(true);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      const allOn = DAYS.every((d) => next.has(cellKey(d.dow, period)));
-      for (const d of DAYS) {
+    setDraft((prev) => {
+      const current = prev.dirty || prev.sourceKey === savedKey ? prev.selected : savedSelected;
+      const next = new Set(current);
+      const editableDays = DAYS.filter((d) => !occupiedByDelivery.has(cellKey(d.dow, period)));
+      const allOn = editableDays.length > 0 && editableDays.every((d) => next.has(cellKey(d.dow, period)));
+      for (const d of editableDays) {
         if (allOn) next.delete(cellKey(d.dow, period));
         else next.add(cellKey(d.dow, period));
       }
-      return next;
+      return { dirty: true, sourceKey: savedKey, selected: next };
     });
   }
 
@@ -79,10 +107,15 @@ export default function AvailabilityGrid() {
     const slots: AvailabilitySlot[] = [...selected].map((key) => {
       const [dow, period] = key.split(':');
       return { dayOfWeek: Number(dow), period: period as ShiftPeriod };
-    });
+    }).filter((slot) => !occupiedByDelivery.has(cellKey(slot.dayOfWeek, slot.period)));
     try {
       await save.mutateAsync(slots);
-      setDirty(false);
+      const nextSelected = new Set(slots.map((slot) => cellKey(slot.dayOfWeek, slot.period)));
+      setDraft({
+        dirty: false,
+        sourceKey: [...nextSelected].sort().join('|'),
+        selected: nextSelected,
+      });
       toast.success(
         slots.length === 0
           ? 'Đã xoá lịch rảnh. Bạn vẫn đăng ký ca thủ công được như thường.'
@@ -107,7 +140,8 @@ export default function AvailabilityGrid() {
           </h2>
           <p className="mt-1 text-xs text-neutral-500">
             Tick các ca bạn thường rảnh trong tuần. Hệ thống dùng để <b>lọc ca phù hợp</b> cho bạn và
-            để tổ chức biết ai có thể mời khi ca thiếu người — <b>không tự động xếp bạn vào ca nào</b>.
+            để tổ chức biết ai có thể mời khi ca thiếu người. Ca giao hàng đã đăng ký sẽ tự hiện là
+            <b> bận giao hàng</b> để không bị mời trùng giờ.
           </p>
         </div>
         <button
@@ -156,21 +190,25 @@ export default function AvailabilityGrid() {
                 </th>
                 {DAYS.map((d) => {
                   const on = selected.has(cellKey(d.dow, p.id));
+                  const occupied = occupiedByDelivery.has(cellKey(d.dow, p.id));
                   return (
                     <td key={d.dow}>
                       <button
                         type="button"
                         onClick={() => toggle(d.dow, p.id)}
-                        aria-pressed={on}
+                        disabled={occupied}
+                        aria-pressed={occupied || on}
                         aria-label={`${p.label} ${d.short}`}
                         className={`h-11 w-full rounded-lg border transition-colors ${
-                          on
+                          occupied
+                            ? 'cursor-not-allowed border-teal-300 bg-teal-50 text-teal-700'
+                            : on
                             ? 'border-emerald-600 bg-emerald-600 text-white'
                             : 'border-neutral-200 bg-white text-neutral-300 hover:border-emerald-300 hover:bg-emerald-50'
                         }`}
                       >
                         <span className="material-symbols-outlined text-[17px]">
-                          {on ? 'check' : 'add'}
+                          {occupied ? 'local_shipping' : on ? 'check' : 'add'}
                         </span>
                       </button>
                     </td>
@@ -183,7 +221,13 @@ export default function AvailabilityGrid() {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Đã chọn <b>{selected.size}</b>/28 khung. Bấm tên ca để tick cả tuần.
+        Đã chọn <b>{selectedAvailableCount}</b>/28 khung. Bấm tên ca để tick cả tuần.
+        {occupiedByDelivery.size > 0 && (
+          <span className="ml-2 inline-flex items-center gap-1 font-semibold text-teal-700">
+            <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+            {occupiedByDelivery.size} khung bận giao hàng
+          </span>
+        )}
       </p>
     </section>
   );
