@@ -85,9 +85,16 @@ export default function ListingCard({ listing }: Props) {
     >
       {/* Image Container */}
       <div className="relative h-40 sm:h-48 bg-neutral-100 overflow-hidden border-b border-neutral-100">
+        {/* Ảnh thật vẫn có thể 404 (tin cũ trỏ vào /uploads của máy khác) — không bắt
+            lỗi thì trình duyệt hiện icon vỡ kèm alt text, trông như hỏng hệ thống.
+            Guard so sánh src để ảnh dự phòng lỗi nốt cũng không lặp vô hạn. */}
         <img
           src={imageUrl}
           alt={listing.title}
+          loading="lazy"
+          onError={(e) => {
+            if (!e.currentTarget.src.endsWith(fallbackImage)) e.currentTarget.src = fallbackImage;
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
 

@@ -259,6 +259,12 @@ export default function ListingDetailPage({ params }: Props) {
                   : fallbackImage(listing.category)
               }
               alt={listing.title}
+              loading="lazy"
+              onError={(e) => {
+                // Ảnh /uploads của máy khác 404 → rơi về ảnh theo danh mục thay vì icon vỡ.
+                const fb = fallbackImage(listing.category);
+                if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+              }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
             <div className="absolute top-4 left-4 flex gap-2">
@@ -790,6 +796,11 @@ export default function ListingDetailPage({ params }: Props) {
                         : fallbackImage(item.category)
                     }
                     alt={item.title}
+                    loading="lazy"
+                    onError={(e) => {
+                      const fb = fallbackImage(item.category);
+                      if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                    }}
                     className="w-full h-full object-cover"
                   />
                   <span className="absolute top-2 left-2 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded-full">Miễn phí</span>

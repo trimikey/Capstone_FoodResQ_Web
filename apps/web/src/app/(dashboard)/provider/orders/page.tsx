@@ -534,7 +534,11 @@ function OrderCard({
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
   const code = item.id.slice(0, 8).toUpperCase();
-  const image = item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+  // mediaUrl: ảnh upload (/uploads/...) phải ghép origin API — thiếu thì trỏ nhầm
+  // sang :3000 và 404 với mọi ảnh thật, chỉ ảnh fallback trong /public là hiện.
+  const image = item.listing.imageUrls[0]
+    ? mediaUrl(item.listing.imageUrls[0])
+    : FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
   const qty = formatWeight(item);
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 
@@ -563,7 +567,17 @@ function OrderCard({
         <div className="flex-1 min-w-0 flex items-start gap-3">
           <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt={item.listing.title} className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image}
+              alt={item.listing.title}
+              loading="lazy"
+              onError={(e) => {
+                const fb = FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+                if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+              }}
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-800 text-sm truncate">{item.listing.title}</p>

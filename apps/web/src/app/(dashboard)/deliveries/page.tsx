@@ -677,6 +677,9 @@ export default function DeliveriesPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={deliveryImage(o.delivery) ? mediaUrl(deliveryImage(o.delivery)!) : '/food_bread.png'}
+                        onError={(e) => {
+                          if (!e.currentTarget.src.endsWith('/food_bread.png')) e.currentTarget.src = '/food_bread.png';
+                        }}
                         alt={deliveryTitle(o.delivery)}
                         className="w-full h-full object-cover"
                       />

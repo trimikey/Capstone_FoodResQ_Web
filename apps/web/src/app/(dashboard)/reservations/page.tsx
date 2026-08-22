@@ -268,8 +268,19 @@ export default function ReservationsPage() {
                 <div className="flex-1 min-w-0">
                 <div className="p-4 sm:p-5 flex flex-col min-[390px]:flex-row gap-4 min-[390px]:items-center">
                   <div className="w-full min-[390px]:w-20 h-36 min-[390px]:h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
+                    {/* Ảnh tin cũ trỏ /uploads của máy khác sẽ 404 — rơi về ảnh theo
+                        danh mục thay vì hiện icon vỡ + alt text. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={mediaUrl(r.listing.imageUrls?.[0] || fallbackImg(r.listing.category))} alt={r.listing.title} className="w-full h-full object-cover" />
+                    <img
+                      src={mediaUrl(r.listing.imageUrls?.[0] || fallbackImg(r.listing.category))}
+                      alt={r.listing.title}
+                      loading="lazy"
+                      onError={(e) => {
+                        const fb = fallbackImg(r.listing.category);
+                        if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                      }}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
