@@ -12,6 +12,8 @@ import {
   useStartCampaign,
   useCompleteCampaign,
   useCancelCampaign,
+  useAvailableVolunteers,
+  useInviteVolunteers,
   type CampaignManageParticipant,
   type DishProcessItem,
   type DistributionPoint,
@@ -284,10 +286,10 @@ export function ManageShell({
       toast.error(errMsg(e, 'Không thể hoàn tất'));
     }
   }
-  async function onCancel() {
+  async function onCancel(reason: string) {
     try {
-      await cancelCampaign.mutateAsync(c!.id);
-      toast.success('Đã huỷ chiến dịch');
+      await cancelCampaign.mutateAsync({ id: c!.id, reason });
+      toast.success('Đã huỷ chiến dịch — tình nguyện viên và nhà cung cấp đã được thông báo');
       setActionModal(null);
     } catch (e) {
       toast.error(errMsg(e, 'Không thể huỷ'));
@@ -577,7 +579,19 @@ function RecruitmentReadinessPanel({
                     </span>
                   </td>
                   <td className="p-2 font-bold">{row.minimumRequired} người ({readiness.minimumFillPercent}%)</td>
-                  <td className={`p-2 font-bold ${row.eligibleToStart ? 'text-emerald-700' : 'text-amber-700'}`}>{row.ready ? 'Đủ 100%' : row.eligibleToStart ? `Đạt ${row.fillPercent}%` : `Thiếu ${Math.max(0, row.minimumRequired - row.confirmed)} để đạt ngưỡng`}</td>
+                  <td className={`p-2 font-bold ${row.eligibleToStart ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {row.ready ? 'Đủ 100%' : row.eligibleToStart ? `Đạt ${row.fillPercent}%` : `Thiếu ${Math.max(0, row.minimumRequired - row.confirmed)} để đạt ngưỡng`}
+                    {/* Ca còn trống → gợi ý người đã khai rảnh đúng khung này để mời. */}
+                    {!row.ready && row.period && (
+                      <AvailableVolunteersHint
+                        campaignId={campaignId}
+                        workDate={row.workDate}
+                        period={row.period}
+                        role={row.role ?? undefined}
+                        shiftId={row.shiftId}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}</tbody>
             </table>
@@ -603,10 +617,19 @@ function RecruitmentReadinessPanel({
         </div>
       )}
 
-      {readiness.eligibleToStart && !readiness.ready && !continueRecruiting && (
+      {/* Bỏ điều kiện `!readiness.ready`: khi đã đủ 100% người, khối này bị ẩn nên
+          KHÔNG còn nút bắt đầu thủ công nào — tổ chức chỉ biết ngồi chờ cron. Đủ
+          điều kiện là phải luôn có nút, còn bấm được hay chưa do canStartNow quyết. */}
+      {readiness.eligibleToStart && !continueRecruiting && (
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-          <p className="text-sm font-extrabold text-emerald-900">Đã đủ điều kiện nhân sự để bắt đầu</p>
-          <p className="mt-1 text-xs text-emerald-800">Tất cả ca/vai trò đã đạt tối thiểu {readiness.minimumFillPercent}% theo cấu hình Admin. Bạn có thể tiếp tục tuyển đến hạn hoặc bắt đầu khi đã tới giờ vận hành.</p>
+          <p className="text-sm font-extrabold text-emerald-900">
+            {readiness.ready ? 'Đã đủ 100% nhân sự' : 'Đã đủ điều kiện nhân sự để bắt đầu'}
+          </p>
+          <p className="mt-1 text-xs text-emerald-800">
+            {readiness.canStartNow
+              ? 'Bạn có thể bắt đầu chiến dịch ngay bây giờ.'
+              : `Tất cả ca/vai trò đã đạt tối thiểu ${readiness.minimumFillPercent}% theo cấu hình Admin. Nút bắt đầu sẽ bật khi tới giờ vận hành (hoặc khi admin bật "Cho phép bắt đầu sớm").`}
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => void startNow()} disabled={!readiness.canStartNow || startCampaign.isPending} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50">
               {startCampaign.isPending ? 'Đang bắt đầu…' : readiness.canStartNow ? 'Bắt đầu chiến dịch' : 'Chưa tới giờ vận hành'}
@@ -626,6 +649,140 @@ function RecruitmentReadinessPanel({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Gợi ý TNV đã khai rảnh đúng ca/ngày này, để tổ chức chủ động liên hệ mời.
+ *
+ * CỐ Ý chỉ hiển thị tên + SĐT chứ không có nút "gán": lịch rảnh là khai báo ý định,
+ * gán thẳng sẽ tạo ra người bị xếp việc mà không hay biết rồi bị đánh vắng oan.
+ */
+function AvailableVolunteersHint({
+  campaignId,
+  workDate,
+  period,
+  role,
+  shiftId,
+}: {
+  campaignId: string;
+  workDate: string;
+  period: string;
+  role?: string;
+  /** Gửi kèm lời mời để TNV bấm "Nhận ca" là đăng ký đúng ca này ngay. */
+  shiftId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState('');
+  const { data, isLoading } = useAvailableVolunteers(
+    campaignId,
+    open ? { workDate, period, role } : null,
+  );
+  const invite = useInviteVolunteers(campaignId);
+
+  async function sendInvites() {
+    try {
+      const res = await invite.mutateAsync({
+        volunteerIds: [...picked],
+        workDate,
+        period,
+        shiftId,
+        message: note.trim() || undefined,
+      });
+      // Lịch rảnh sửa được bất cứ lúc nào nên danh sách đang mở có thể đã cũ — nói rõ
+      // ai bị bỏ qua, đừng để tổ chức tưởng đã mời đủ số người mình chọn.
+      if (res.skipped > 0) {
+        toast.warning(
+          `Đã mời ${res.invited} người. ${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh nên không được mời.`,
+        );
+      } else {
+        toast.success(`Đã gửi lời mời tới ${res.invited} tình nguyện viên.`);
+      }
+      setPicked(new Set());
+      setNote('');
+    } catch (e) {
+      toast.error(errMsg(e, 'Không gửi được lời mời'));
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 block text-[11px] font-semibold text-sky-700 underline decoration-dotted hover:text-sky-900"
+      >
+        Ai rảnh khung này?
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-sky-200 bg-sky-50 p-2 text-left">
+      {isLoading ? (
+        <p className="text-[11px] text-sky-800">Đang tìm…</p>
+      ) : !data || data.length === 0 ? (
+        <p className="text-[11px] text-sky-900">
+          Chưa có tình nguyện viên nào khai rảnh khung này.
+        </p>
+      ) : (
+        <>
+          <p className="text-[11px] font-extrabold text-sky-900">
+            {data.length} người khai rảnh khung này
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {data.map((v) => (
+              <li key={v.volunteerId}>
+                <label className="flex cursor-pointer items-start gap-1.5 rounded px-1 py-0.5 hover:bg-sky-100">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(v.volunteerId)}
+                    onChange={(e) => {
+                      setPicked((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(v.volunteerId);
+                        else next.delete(v.volunteerId);
+                        return next;
+                      });
+                    }}
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-sky-700"
+                  />
+                  <span className="text-[11px] font-normal text-sky-900">
+                    {v.fullName}
+                    {v.phone ? ` · ${v.phone}` : ''}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            maxLength={300}
+            placeholder="Lời nhắn kèm theo (không bắt buộc)"
+            className="mt-1.5 w-full resize-none rounded-lg border border-sky-200 px-2 py-1.5 text-[11px] outline-none focus:border-sky-500"
+          />
+          <button
+            type="button"
+            onClick={() => void sendInvites()}
+            disabled={picked.size === 0 || invite.isPending}
+            className="mt-1 w-full rounded-lg bg-sky-700 px-2 py-1.5 text-[11px] font-extrabold text-white hover:bg-sky-800 disabled:opacity-40"
+          >
+            {invite.isPending
+              ? 'Đang gửi…'
+              : picked.size === 0
+                ? 'Chọn người để mời'
+                : `Gửi lời mời (${picked.size})`}
+          </button>
+          <p className="mt-1 text-[10px] italic text-sky-700">
+            Lời mời chỉ là thông báo — họ vẫn phải tự đăng ký và bạn vẫn duyệt như thường.
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -863,7 +1020,10 @@ function CancelCampaignModal({
 }: {
   c: CampaignData;
   onCancel: () => void;
-  onConfirm: () => void | Promise<void>;
+  // Lý do PHẢI được chuyển tiếp: modal bắt nhập tối thiểu 5 ký tự rồi trước đây
+  // gọi onConfirm() không tham số nên lý do bị vứt, TNV nhận thông báo huỷ mà
+  // không biết vì sao.
+  onConfirm: (reason: string) => void | Promise<void>;
   pending: boolean;
 }) {
   const [reason, setReason] = useState('');
@@ -880,7 +1040,7 @@ function CancelCampaignModal({
       return;
     }
     setError(undefined);
-    void onConfirm();
+    void onConfirm(trimmed);
   }
 
   return (

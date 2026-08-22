@@ -7,14 +7,7 @@ import {
   useAdminCampaigns,
   useSetCampaignStatus,
   useAdminCampaignDetail,
-  useAdminCharities,
-  useAdminVolunteers,
-  useCreateAdminCampaign,
-  useUpdateAdminCampaign,
-  useAssignVolunteer,
-  useUnassignVolunteer,
   type AdminCampaign,
-  type AdminCampaignDetail,
 } from '@/hooks/useAdmin';
 import { usePaged, Pagination, Skeleton, Empty } from './admin-shared';
 
@@ -61,57 +54,6 @@ function DetailStat({ icon, label, value }: { icon: string; label: string; value
       <span className="material-symbols-outlined text-[18px] text-neutral-400">{icon}</span>
       <p className="text-[10px] font-bold text-neutral-400 uppercase mt-0.5">{label}</p>
       <p className="text-sm font-extrabold text-neutral-900 mt-0.5">{value}</p>
-    </div>
-  );
-}
-
-function AssignSection({ campaignId }: { campaignId: string }) {
-  const [role, setRole] = useState<'chef' | 'waiter' | 'shipper'>('chef');
-  const [volId, setVolId] = useState('');
-  const [override, setOverride] = useState(false);
-  const { data: vols, isLoading } = useAdminVolunteers(override ? undefined : role);
-  const assign = useAssignVolunteer();
-
-  async function doAssign() {
-    if (!volId) { toast.error('Chọn tình nguyện viên'); return; }
-    try {
-      await assign.mutateAsync({ campaignId, volunteerId: volId, role, override });
-      toast.success('Đã gán tình nguyện viên');
-      setVolId('');
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Gán thất bại';
-      toast.error(msg);
-    }
-  }
-
-  return (
-    <div className="bg-neutral-50 border border-neutral-150 rounded-2xl p-3 mb-3 space-y-2">
-      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-        <select value={role} onChange={(e) => { setRole(e.target.value as 'chef' | 'waiter' | 'shipper'); setVolId(''); }}
-          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500">
-          <option value="chef">Đầu bếp</option>
-          <option value="waiter">Phục vụ</option>
-          <option value="shipper">Giao hàng</option>
-        </select>
-        <select value={volId} onChange={(e) => setVolId(e.target.value)}
-          className="flex-1 bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500">
-          <option value="">{isLoading ? 'Đang tải...' : (vols && vols.length ? '— Chọn tình nguyện viên —' : 'Không có TNV phù hợp')}</option>
-          {(vols ?? []).map((v) => (
-            <option key={v.volunteerId} value={v.volunteerId}>
-              {v.fullName}{override && v.specializations.length ? ` (${v.specializations.map((s) => ROLE_VN_MAP[s] ?? s).join(', ')})` : ''}
-            </option>
-          ))}
-        </select>
-        <button onClick={doAssign} disabled={assign.isPending || !volId}
-          className="px-4 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1 disabled:opacity-40 transition-colors">
-          <span className="material-symbols-outlined text-[18px]">person_add</span> Gán
-        </button>
-      </div>
-      <label className="flex items-center gap-2 text-xs font-semibold text-neutral-500 cursor-pointer select-none">
-        <input type="checkbox" checked={override} onChange={(e) => { setOverride(e.target.checked); setVolId(''); }}
-          className="w-4 h-4 rounded accent-emerald-600" />
-        Gán vượt chuyên môn (cho phép chọn mọi tình nguyện viên)
-      </label>
     </div>
   );
 }
@@ -199,90 +141,6 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function CampaignFormModal({ mode, campaign, onClose }: { mode: 'create' | 'edit'; campaign?: AdminCampaignDetail; onClose: () => void }) {
-  const { data: charities } = useAdminCharities();
-  const create = useCreateAdminCampaign();
-  const update = useUpdateAdminCampaign();
-  const pending = create.isPending || update.isPending;
-
-  const [f, setF] = useState({
-    charityReceiverId: '',
-    title: campaign?.title ?? '',
-    description: campaign?.description ?? '',
-    kitchenAddress: campaign?.kitchenAddress ?? '',
-    scheduledDate: campaign ? campaign.scheduledDate.slice(0, 10) : vnTomorrow(),
-    startTime: (campaign?.startTime ?? '08:00').slice(0, 5),
-    endTime: (campaign?.endTime ?? '12:00').slice(0, 5),
-    chefSlotsNeeded: campaign?.slots.chef.needed ?? 2,
-    waiterSlotsNeeded: campaign?.slots.waiter.needed ?? 3,
-    shipperSlotsNeeded: campaign?.slots.shipper.needed ?? 2,
-    expectedServings: campaign?.expectedServings ?? 100,
-  });
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (f.title.trim().length < 5) { toast.error('Tiêu đề tối thiểu 5 ký tự'); return; }
-    if (f.kitchenAddress.trim().length < 5) { toast.error('Địa chỉ bếp tối thiểu 5 ký tự'); return; }
-    try {
-      if (mode === 'create') {
-        if (!f.charityReceiverId) { toast.error('Chọn tổ chức chủ chiến dịch'); return; }
-        await create.mutateAsync({ ...f });
-        toast.success('Đã tạo chiến dịch');
-      } else {
-        const { charityReceiverId: _omit, ...rest } = f;
-        await update.mutateAsync({ id: campaign!.id, input: rest });
-        toast.success('Đã cập nhật chiến dịch');
-      }
-      onClose();
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
-      toast.error(msg);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg my-8 shadow-2xl overflow-hidden">
-        <div className="bg-[#166534] px-6 py-5 text-white flex items-center gap-3">
-          <span className="material-symbols-outlined">{mode === 'create' ? 'add_circle' : 'edit'}</span>
-          <h3 className="font-extrabold text-lg">{mode === 'create' ? 'Tạo chiến dịch' : 'Sửa chiến dịch'}</h3>
-        </div>
-        <div className="p-6 space-y-4">
-          {mode === 'create' && (
-            <div>
-              <label className="text-xs font-bold text-neutral-500">Tổ chức / Người nhận (chủ chiến dịch) *</label>
-              <select value={f.charityReceiverId} onChange={(e) => setF({ ...f, charityReceiverId: e.target.value })} className="input-base mt-1" required>
-                <option value="">— Chọn tổ chức —</option>
-                {(charities ?? []).map((ch) => (
-                  <option key={ch.id} value={ch.id}>{ch.name}{ch.isCharityOrg ? ' (tổ chức)' : ''}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Tiêu đề *" className="input-base" required minLength={5} />
-          <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Mô tả" rows={2} className="input-base" />
-          <input value={f.kitchenAddress} onChange={(e) => setF({ ...f, kitchenAddress: e.target.value })} placeholder="Địa chỉ bếp *" className="input-base" required minLength={5} />
-          <div className="grid grid-cols-3 gap-3">
-            <input type="date" value={f.scheduledDate} onChange={(e) => setF({ ...f, scheduledDate: e.target.value })} className="input-base" required />
-            <input type="time" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} className="input-base" required />
-            <input type="time" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} className="input-base" required />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <label className="text-xs font-bold text-honey-700 block">Đầu bếp<input type="number" min={0} value={f.chefSlotsNeeded} onChange={(e) => setF({ ...f, chefSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-            <label className="text-xs font-bold text-sky-700 block">Phục vụ<input type="number" min={0} value={f.waiterSlotsNeeded} onChange={(e) => setF({ ...f, waiterSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-            <label className="text-xs font-bold text-emerald-700 block">Giao hàng<input type="number" min={0} value={f.shipperSlotsNeeded} onChange={(e) => setF({ ...f, shipperSlotsNeeded: Number(e.target.value) })} className="input-base mt-1" /></label>
-          </div>
-          <label className="text-xs font-bold text-neutral-500 block">Suất ăn dự kiến<input type="number" min={0} value={f.expectedServings} onChange={(e) => setF({ ...f, expectedServings: Number(e.target.value) })} className="input-base mt-1" /></label>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-3 border border-neutral-200 text-neutral-700 font-bold text-sm rounded-xl hover:bg-neutral-50 transition-colors">Huỷ</button>
-            <button type="submit" disabled={pending} className="flex-1 py-3 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-colors">{pending ? 'Đang lưu...' : (mode === 'create' ? 'Tạo chiến dịch' : 'Lưu thay đổi')}</button>
-          </div>
-        </div>
-      </form>
     </div>
   );
 }

@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Put, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { VolunteersService } from './volunteers.service';
 import { SetAvailabilityDto, UpdateLocationDto } from './dto/set-availability.dto';
+import { SetWeeklyAvailabilityDto } from './dto/weekly-availability.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -35,5 +36,22 @@ export class VolunteersController {
   @ApiOperation({ summary: 'Volunteer: cập nhật vị trí hiện tại (theo dõi đơn giao trực tiếp)' })
   updateLocation(@CurrentUser() user: User, @Body() dto: UpdateLocationDto) {
     return this.volunteersService.updateLocation(user.id, dto.lng, dto.lat);
+  }
+
+  @Get('me/weekly-availability')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: lịch rảnh hằng tuần đã khai (lưới 7 ngày × 4 ca)' })
+  getWeeklyAvailability(@CurrentUser() user: User) {
+    return this.volunteersService.getMyWeeklyAvailability(user.id);
+  }
+
+  @Put('me/weekly-availability')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary:
+      'Volunteer: lưu lịch rảnh hằng tuần (ghi đè toàn bộ). Chỉ dùng để lọc/gợi ý ca, không tự động phân công.',
+  })
+  setWeeklyAvailability(@CurrentUser() user: User, @Body() dto: SetWeeklyAvailabilityDto) {
+    return this.volunteersService.setMyWeeklyAvailability(user.id, dto);
   }
 }

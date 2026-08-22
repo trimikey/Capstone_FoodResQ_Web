@@ -24,7 +24,11 @@ export interface Campaign {
   recruitmentStartAt?: string;
   recruitmentEndAt?: string;
   recruitmentBufferHours?: number;
+  expectedServings?: number | null;
   actualServings?: number | null;
+  /** Ghi chú trạng thái từ hệ thống — "Từ chối duyệt: ..." khi admin từ chối,
+   *  "Kết thúc sớm: ..." khi tổ chức kết thúc trước lịch. */
+  notes?: string | null;
   distributionSummary?: { servingsServed: number; peopleServed: number; leftoverServings: number };
   peopleServed?: number;
   /** Nguyên liệu/vật phẩm khai lúc tạo chiến dịch — BE trả nguyên JSONB (bản cũ có thể là string[]). */
@@ -598,7 +602,8 @@ export function useConfirmCampaignAssignment() {
 export function useCancelCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.patch(`/campaigns/${id}/cancel`)).data.data,
+    mutationFn: async (p: { id: string; reason?: string }) =>
+      (await api.patch(`/campaigns/${p.id}/cancel`, p.reason?.trim() ? { reason: p.reason.trim() } : {})).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campaigns'] }),
   });
 }
@@ -985,6 +990,11 @@ export function useReviewAssignment() {
         qc.invalidateQueries({ queryKey: ['campaigns', 'open'], refetchType: 'all' }),
         qc.invalidateQueries({ queryKey: ['campaigns', 'mine'], refetchType: 'all' }),
         qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'], refetchType: 'all' }),
+        // Duyệt/từ chối làm đổi số người đã xác nhận → ma trận đủ người và nút "Bắt
+        // đầu" đọc từ staffing-readiness phải refetch, nếu không UI đứng yên tới nhịp
+        // poll 15s tiếp theo và tổ chức tưởng thao tác không ăn.
+        qc.invalidateQueries({ queryKey: ['campaigns', 'staffing-readiness', p.campaignId], refetchType: 'all' }),
+        qc.refetchQueries({ queryKey: ['campaigns', 'staffing-readiness', p.campaignId], type: 'active' }),
         qc.refetchQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId], type: 'active' }),
         qc.refetchQueries({ queryKey: ['campaigns', 'public', p.campaignId], type: 'active' }),
         qc.refetchQueries({ queryKey: ['campaigns', 'open'], type: 'active' }),
@@ -1498,6 +1508,8 @@ export interface CampaignCreateConstraints {
   multiDayEarliestStartDate: string;
   minFillPercent: number;
   changeLockDays: number;
+  /** Admin bật "Cho phép bắt đầu/điểm danh sớm" → cho bấm Bắt đầu trước giờ vận hành. */
+  allowEarlyStart: boolean;
 }
 
 export function useCampaignCreateConstraints(enabled = true) {
@@ -1872,5 +1884,130 @@ export function useMyDistributionHistory(opts: { page?: number; limit?: number; 
         meta: { page: number; limit: number; total: number; totalPages: number };
       },
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Tổ chức: TNV đã khai rảnh đúng ca/ngày này — danh sách GỢI Ý để chủ động mời khi
+ * ca thiếu người. Không phải người đã nhận việc; BE đã loại sẵn ai đăng ký ca đó rồi.
+ */
+export interface AvailableVolunteer {
+  volunteerId: string;
+  fullName: string;
+  phone: string | null;
+  specializations: string[];
+}
+
+export function useAvailableVolunteers(
+  campaignId: string,
+  params: { workDate: string; period: string; role?: string } | null,
+) {
+  return useQuery({
+    queryKey: ['campaigns', 'available-volunteers', campaignId, params],
+    queryFn: async () =>
+      (
+        await api.get(`/campaigns/${campaignId}/available-volunteers`, { params: params ?? {} })
+      ).data.data as AvailableVolunteer[],
+    enabled: !!campaignId && !!params,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Tổ chức gửi lời mời tới TNV đã khai rảnh ca này.
+ * Chỉ là thông báo — TNV vẫn tự bấm đăng ký, tổ chức vẫn duyệt như thường.
+ */
+export function useInviteVolunteers(campaignId: string) {
+  return useMutation({
+    mutationFn: async (input: {
+      volunteerIds: string[];
+      workDate: string;
+      period: string;
+      /** Ca cụ thể — để TNV nhận lời mời là đăng ký một chạm. */
+      shiftId?: string;
+      message?: string;
+    }) =>
+      (await api.post(`/campaigns/${campaignId}/invite-volunteers`, input)).data.data as {
+        invited: number;
+        /** Số người bị bỏ qua vì vừa bỏ khung giờ này khỏi lịch rảnh / bị khoá tài khoản. */
+        skipped: number;
+      },
+  });
+}
+
+/** Charity: lịch sử nguyên liệu đã nhận, nhóm theo từng chiến dịch. */
+export interface IntakeHistoryItem {
+  id: string;
+  itemName: string;
+  quantity: string | null;
+  note: string | null;
+  receivedAt: string | null;
+  providerName: string;
+  providerAddress: string | null;
+  providerPhone: string | null;
+}
+
+export interface IntakeHistory {
+  campaigns: Array<{
+    campaignId: string;
+    campaignTitle: string;
+    scheduledDate: string;
+    campaignStatus: string;
+    items: IntakeHistoryItem[];
+  }>;
+  summary: { totalItems: number; totalCampaigns: number; totalProviders: number };
+}
+
+export function useMyIntakeHistory(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'intake-history'],
+    queryFn: async () => (await api.get('/campaigns/my-intake-history')).data.data as IntakeHistory,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** Volunteer: lời mời nhận ca do tổ chức gửi, đang chờ phản hồi. */
+export interface ShiftInvite {
+  notificationId: string;
+  campaignId: string;
+  campaignTitle: string;
+  kitchenAddress: string;
+  workDate: string;
+  period: string | null;
+  /** Có shiftId thì bấm "Nhận ca" là đăng ký thẳng, không phải tự mò lại danh sách ca. */
+  shiftId: string | null;
+  message: string;
+  invitedAt: string;
+  recruitmentEndAt: string;
+}
+
+export function useMyShiftInvites(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'shift-invites'],
+    queryFn: async () => (await api.get('/campaigns/my-shift-invites')).data.data as ShiftInvite[],
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Volunteer: nhận lời mời → vào THẲNG ca, không chờ tổ chức duyệt lại.
+ * Tổ chức đã chọn đích danh khi mời, TNV bấm nhận là hai bên đã đồng thuận.
+ */
+export function useAcceptShiftInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; notificationId: string }) =>
+      (await api.post(`/campaigns/${p.campaignId}/accept-invite`, {
+        notificationId: p.notificationId,
+      })).data.data as { ok: boolean; shiftLabel: string; workDate: string },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
   });
 }

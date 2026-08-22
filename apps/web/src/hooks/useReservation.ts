@@ -26,7 +26,10 @@ async function fetchMyReservations(page = 1, group?: 'active' | 'history', limit
     counts: {
       active: number;
       history: number;
+      /** Tổng số đơn từ trước tới nay (active + history). */
+      allOrders: number;
       completed: number;
+      cancelled: number;
       noShow: number;
       portionsSaved: number;
     };

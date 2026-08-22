@@ -3799,7 +3799,9 @@ padding: 14px 24px;
   .cm-modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 400;
+    /* PublicHeader là fixed z-[9999] — overlay phải cao hơn, nếu không navbar
+       đè lên và cắt cụt phần đầu popup (header "Tạo chiến dịch mới"). */
+    z-index: 10000;
     display: grid;
     place-items: center;
     padding: clamp(16px, 4vh, 48px) clamp(12px, 2vw, 28px);

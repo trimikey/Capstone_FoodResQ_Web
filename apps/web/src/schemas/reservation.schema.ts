@@ -7,6 +7,10 @@ export const createReservationSchema = z.object({
   requestDelivery: z.boolean().optional(),
   /** Ảnh bằng chứng khó di chuyển — bắt buộc khi requestDelivery (BE chặn nếu thiếu). */
   deliveryEvidenceUrl: z.string().max(2048).optional(),
+  /** Điểm giao riêng cho đơn này. Bỏ trống = giao về địa chỉ trong hồ sơ. */
+  deliveryLng: z.number().min(-180).max(180).optional(),
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryAddress: z.string().max(500).optional(),
 });
 
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;

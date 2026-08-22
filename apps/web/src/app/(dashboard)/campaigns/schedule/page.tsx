@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useWeeklySchedule } from '@/hooks/useCampaigns';
+import AvailabilityGrid from './AvailabilityGrid';
 import { errMsg } from '@/lib/utils';
 
 const DAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
@@ -69,6 +70,14 @@ export default function WeeklySchedulePage() {
             : 'Danh sách chiến dịch của tổ chức trong tuần.'}
         </p>
       </header>
+
+      {/* Khai báo khung giờ rảnh — chỉ TNV mới có (tổ chức xem lịch chiến dịch).
+          Đặt TRÊN lịch tuần vì đây là đầu vào, còn lịch tuần là hệ quả. */}
+      {isPersonal && (
+        <div className="mb-4">
+          <AvailabilityGrid />
+        </div>
+      )}
 
       {/* Week selector */}
       <div className="flex items-center justify-between gap-3 mb-4 bg-white border border-neutral-200 rounded-2xl p-3">

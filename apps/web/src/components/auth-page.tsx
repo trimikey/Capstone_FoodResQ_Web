@@ -1160,76 +1160,9 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                             )}
                           </div>
 
-                          {selectedRole === "charity" && (() => {
-                            const evidenceUrls: string[] = (watchRegister("evidenceUrls") ?? []) as string[];
-                            const setEvidence = (urls: string[]) =>
-                              setRegisterValue("evidenceUrls", urls, { shouldValidate: true });
-                            return (
-                              <div className="space-y-2">
-                                <label className="font-semibold text-base text-neutral-500 ml-1">
-                                  Ảnh giấy tờ xác minh tổ chức
-                                </label>
-                                <p className="text-xs text-neutral-500 ml-1">
-                                  Tải ít nhất 2 ảnh: giấy phép/giấy giới thiệu tổ chức và giấy tờ người đại diện.
-                                </p>
-
-                                <div className="grid grid-cols-3 gap-2">
-                                  {evidenceUrls.map((u: string, idx: number) => (
-                                    <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
-                                      <img src={mediaUrl(u)} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setEvidence(evidenceUrls.filter((_, i) => i !== idx))
-                                        }
-                                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-black/80"
-                                        aria-label="Xóa ảnh"
-                                      >
-                                        x
-                                      </button>
-                                      {idx < 2 && (
-                                        <span className="absolute bottom-1 left-1 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded">
-                                          {idx === 0 ? "Tổ chức" : "Đại diện"}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-
-                                <label className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-neutral-200/60 rounded-xl text-sm font-semibold text-emerald-800 hover:bg-emerald-50 cursor-pointer disabled:opacity-50">
-                                  <span className="material-symbols-outlined text-base">add_photo_alternate</span>
-                                  {uploadEvidence.isPending ? "Đang upload..." : "Thêm ảnh"}
-                                  <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    multiple
-                                    className="hidden"
-                                    disabled={isSubmitting || uploadEvidence.isPending}
-                                    onChange={async (e) => {
-                                      const files = Array.from(e.target.files ?? []);
-                                      if (!files.length) return;
-                                      try {
-                                        const urls: string[] = [];
-                                        for (const f of files) {
-                                          const u = await uploadEvidence.uploadVerificationImage(f);
-                                          urls.push(u);
-                                        }
-                                        setEvidence([...evidenceUrls, ...urls]);
-                                        toast.success(`Đã upload ${urls.length} ảnh.`);
-                                      } catch {
-                                        toast.error("Upload ảnh thất bại. Vui lòng thử lại.");
-                                      } finally {
-                                        e.target.value = "";
-                                      }
-                                    }}
-                                  />
-                                </label>
-                                {registerErrors.evidenceUrls && (
-                                  <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.evidenceUrls.message}</p>
-                                )}
-                              </div>
-                            );
-                          })()}
+                          {/* Ảnh xác minh tổ chức: dùng CHUNG khối "Hồ sơ xác minh tổ chức"
+                              phía dưới — trước đây có thêm một khối riêng ở đây cùng bind vào
+                              evidenceUrls nên 1 ảnh hiện ở 2 chỗ, người dùng tưởng phải tải 2 lần. */}
 
                           {/* Provider: loại hình kinh doanh (P3) */}
                           {selectedRole === "provider" && (
@@ -1383,9 +1316,6 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                                   }}
                                 />
                               </label>
-                              {registerErrors.evidenceUrls && (
-                                <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.evidenceUrls.message}</p>
-                              )}
                             </div>
                             );
                           })()}

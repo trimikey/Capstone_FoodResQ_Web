@@ -1143,12 +1143,22 @@ export class DeliveriesService {
 
   private sourceAwareDelivery<T extends {
     id: string;
-    reservation: { listing: { pickupAddress: string }; receiver: { address: string | null } | null } | null;
+    reservation: {
+      listing: { pickupAddress: string };
+      receiver: { address: string | null } | null;
+      deliveryAddress?: string | null;
+    } | null;
     coords?: { pickupLng: number | null; pickupLat: number | null; deliveryLng: number | null; deliveryLat: number | null } | null;
   }>(delivery: T, campaignTransport?: CampaignTransportSummary) {
     const reservation = delivery.reservation;
     const pickupAddress = reservation?.listing.pickupAddress ?? campaignTransport?.providerAddress ?? null;
-    const destinationAddress = reservation?.receiver?.address ?? campaignTransport?.kitchenAddress ?? null;
+    // Điểm giao riêng của đơn (người nhận đang nằm viện / ở nhà người thân) phải
+    // thắng địa chỉ mặc định trong hồ sơ — nếu không shipper sẽ chạy nhầm chỗ.
+    const destinationAddress =
+      reservation?.deliveryAddress?.trim()
+      || reservation?.receiver?.address
+      || campaignTransport?.kitchenAddress
+      || null;
     return {
       ...delivery,
       source: reservation ? 'reservation' as const : 'campaign_transport' as const,

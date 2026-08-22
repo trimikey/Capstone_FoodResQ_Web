@@ -343,11 +343,14 @@ export default function ProviderOrdersPage() {
         )}
 
         {/* Stats */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {/* Có sẵn bộ lọc "Đã hủy" nhưng lại không có thẻ đếm — người bán không biết
+            mình bị huỷ bao nhiêu đơn nếu không tự bấm sang tab đó. */}
+        <section className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
           <StatCard icon="inventory_2" label="Tổng đơn" value={counts.all} tone="sage" />
           <StatCard icon="hourglass_top" label="Chờ xử lý" value={counts.pending} tone="amber" />
           <StatCard icon="local_shipping" label="Đang giao / đã nhận" value={counts.confirmed} tone="sky" />
           <StatCard icon="task_alt" label="Hoàn thành" value={counts.completed} tone="emerald" />
+          <StatCard icon="cancel" label="Huỷ / không đến" value={counts.cancelled} tone="rose" />
         </section>
 
         {/* Tabs + search */}
@@ -495,13 +498,14 @@ function StatCard({
   icon: string;
   label: string;
   value: number;
-  tone: 'sage' | 'amber' | 'sky' | 'emerald';
+  tone: 'sage' | 'amber' | 'sky' | 'emerald' | 'rose';
 }) {
   const tones = {
     sage: { bg: 'bg-[#efe8d8]', text: 'text-[#236c2a]' },
     amber: { bg: 'bg-amber-100', text: 'text-amber-700' },
     sky: { bg: 'bg-sky-100', text: 'text-sky-700' },
     emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+    rose: { bg: 'bg-rose-100', text: 'text-rose-700' },
   } as const;
   const t = tones[tone];
 

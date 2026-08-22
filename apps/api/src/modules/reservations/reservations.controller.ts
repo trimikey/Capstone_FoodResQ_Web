@@ -31,6 +31,7 @@ import { SubmitPickupProofDto } from './dto/submit-pickup-proof.dto';
 import { RateReservationDto } from './dto/rate-reservation.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { UserRole } from '@foodresq/types';
@@ -40,7 +41,9 @@ const MAX_PROOF_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB
 
 @ApiTags('Reservations')
 @Controller('reservations')
-@UseGuards(JwtAuthGuard)
+// Mọi thao tác ghi (đặt/huỷ/scan QR…) yêu cầu tài khoản đã được admin duyệt —
+// tài khoản pending_verification (vd tổ chức từ thiện chưa xác minh) chỉ xem được.
+@UseGuards(JwtAuthGuard, ActiveAccountGuard)
 @ApiBearerAuth()
 export class ReservationsController {
   constructor(private reservationsService: ReservationsService) {}

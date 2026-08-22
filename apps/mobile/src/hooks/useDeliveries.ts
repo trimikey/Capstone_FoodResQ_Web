@@ -163,8 +163,14 @@ export interface ActiveDelivery extends DeliverySourceFields {
     listing: ListingBrief;
     receiver: {
       address: string | null;
+      /** Ảnh đã đăng ký — shipper đối chiếu đúng người trước khi bàn giao. */
+      faceImageUrl?: string | null;
+      idCardImageUrl?: string | null;
+      idCardNumber?: string | null;
       user: { fullName: string; phone: string | null };
     } | null;
+    /** Ảnh bằng chứng khó di chuyển của người nhận. */
+    deliveryEvidenceUrl?: string | null;
   } | null;
   coords: DeliveryCoords | null;
 }
