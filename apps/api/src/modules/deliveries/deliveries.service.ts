@@ -1054,8 +1054,16 @@ export class DeliveriesService {
       { id: string; plng: number | null; plat: number | null }[]
     >(Prisma.sql`
       SELECT d.id,
-             ST_X(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plng,
-             ST_Y(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plat
+             CASE
+               WHEN d.pickup_location IS NOT NULL THEN ST_X(d.pickup_location::geometry)
+               WHEN fl.pickup_location IS NOT NULL THEN ST_X(fl.pickup_location::geometry)
+               ELSE NULL
+             END AS plng,
+             CASE
+               WHEN d.pickup_location IS NOT NULL THEN ST_Y(d.pickup_location::geometry)
+               WHEN fl.pickup_location IS NOT NULL THEN ST_Y(fl.pickup_location::geometry)
+               ELSE NULL
+             END AS plat
       FROM deliveries d
       LEFT JOIN reservations r ON r.id = d.reservation_id
       LEFT JOIN food_listings fl ON fl.id = r.listing_id

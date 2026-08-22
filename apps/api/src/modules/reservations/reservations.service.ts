@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -17,11 +18,19 @@ import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
+import { DeliveriesService } from '@/modules/deliveries/deliveries.service';
 import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import type { RateTarget } from './dto/rate-reservation.dto';
 
 const LOCK_TTL_MS = 10_000;   // 10s window để acquire lock và complete transaction
+const DEFAULT_NO_SHOW_CRON_BATCH_SIZE = 50;
+
+function noShowCronBatchSize(): number {
+  const configured = Number(process.env.RESERVATION_NO_SHOW_CRON_BATCH_SIZE);
+  if (Number.isInteger(configured) && configured > 0) return configured;
+  return DEFAULT_NO_SHOW_CRON_BATCH_SIZE;
+}
 
 @Injectable()
 export class ReservationsService {
@@ -37,6 +46,7 @@ export class ReservationsService {
     private notifications: NotificationsService,
     private trust: TrustService,
     @InjectQueue('notification-push') private notifQueue: Queue,
+    @Optional() private deliveries?: DeliveriesService,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -375,6 +385,19 @@ export class ReservationsService {
     `);
 
     if (listing) {
+      if (this.deliveries) {
+        try {
+          await this.deliveries.broadcastToNearbyShippers(delivery.id, listing.lng, listing.lat);
+          return;
+        } catch (err) {
+          this.logger.warn(
+            `Broadcast shipper trực tiếp thất bại cho delivery ${delivery.id}, chuyển sang queue retry: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+
       await this.notifQueue.add(
         'shipper-broadcast',
         { deliveryId: delivery.id, pickupLng: listing.lng, pickupLat: listing.lat },
@@ -1101,6 +1124,8 @@ export class ReservationsService {
    */
   async expireNoShows(): Promise<number> {
     const now = new Date();
+    const batchSize = noShowCronBatchSize();
+    const noShowPenalty = await this.systemConfig.getNumber('RESERVATION_NO_SHOW_PENALTY');
     // Đơn TỰ ĐẾN LẤY = chưa từng có delivery, HOẶC delivery đã bị huỷ (người nhận
     // bấm "Tự đến lấy trực tiếp"). Trước đây chỉ lọc `delivery: null` nên nhóm thứ hai
     // rơi khỏi cả hai truy vấn và nằm 'confirmed' vĩnh viễn, giữ suất ăn không ai nhận được.
@@ -1114,7 +1139,7 @@ export class ReservationsService {
         ],
       },
       include: { receiver: { select: { id: true, userId: true } } },
-      take: 200,
+      take: batchSize,
     });
 
     for (const r of overdue) {
@@ -1136,7 +1161,6 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
-      const noShowPenalty = await this.systemConfig.getNumber('RESERVATION_NO_SHOW_PENALTY');
       if (noShowPenalty > 0) {
         await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -noShowPenalty);
       }
@@ -1145,15 +1169,18 @@ export class ReservationsService {
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.
     // Gồm cả delivery đã 'failed' (phòng trường hợp reservation chưa kịp đóng theo) —
     // không nhóm nào được phép kẹt 'confirmed' vĩnh viễn.
-    const unassigned = await this.prisma.reservation.findMany({
-      where: {
-        status: 'confirmed',
-        qrExpiresAt: { lt: now },
-        delivery: { status: { in: ['pending_assignment', 'failed'] } },
-      },
-      include: { delivery: { select: { id: true, status: true } } },
-      take: 200,
-    });
+    const remaining = batchSize - overdue.length;
+    const unassigned = remaining > 0
+      ? await this.prisma.reservation.findMany({
+          where: {
+            status: 'confirmed',
+            qrExpiresAt: { lt: now },
+            delivery: { status: { in: ['pending_assignment', 'failed'] } },
+          },
+          include: { delivery: { select: { id: true, status: true } } },
+          take: remaining,
+        })
+      : [];
 
     for (const r of unassigned) {
       await this.prisma.$transaction([

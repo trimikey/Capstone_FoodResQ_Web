@@ -29,6 +29,13 @@ const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục 
 
 /** Việt Nam là UTC+7 quanh năm, không có giờ mùa hè. */
 const VN_UTC_OFFSET_HOURS = 7;
+const DEFAULT_RECRUITMENT_CRON_BATCH_SIZE = 20;
+
+function recruitmentCronBatchSize(): number {
+  const configured = Number(process.env.CAMPAIGN_RECRUITMENT_CRON_BATCH_SIZE);
+  if (Number.isInteger(configured) && configured > 0) return configured;
+  return DEFAULT_RECRUITMENT_CRON_BATCH_SIZE;
+}
 
 /**
  * Tổ chức được mở chiến dịch sớm bao nhiêu giờ trước mốc bắt đầu.
@@ -3391,6 +3398,10 @@ export class CampaignsService {
   private async getStaffingReadinessWith(
     client: Prisma.TransactionClient,
     campaignId: string,
+    config?: {
+      minimumFillPercent: number;
+      allowEarlyStartAndCheckIn: number;
+    },
   ) {
     const campaign = await client.kitchenCampaign.findUnique({
       where: { id: campaignId },
@@ -3424,10 +3435,7 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
-      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
-      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
-    ]);
+    const { minimumFillPercent, allowEarlyStartAndCheckIn } = config ?? await this.readStaffingConfig();
     const days = this.campaignDays(campaign.scheduledDate, campaign.endDate ?? campaign.scheduledDate);
     const matrix = days.flatMap((day) => campaign.shifts.map((shift) => {
       const dayKey = this.toDateKey(day);
@@ -3569,8 +3577,22 @@ export class CampaignsService {
   /** Tự mở/đóng tuyển và tự bắt đầu đúng giờ. Gọi lặp lại an toàn từ cron. */
   async advanceRecruitmentLifecycle(now = new Date()): Promise<{ refreshed: number; started: number }> {
     const campaigns = await this.prisma.kitchenCampaign.findMany({
-      where: { status: 'approved' },
-      select: { id: true, operationStartAt: true },
+      where: {
+        status: 'approved',
+        OR: [
+          { recruitmentStartAt: { lte: now } },
+          { recruitmentEndAt: { lte: now } },
+          { operationStartAt: { lte: now } },
+        ],
+      },
+      orderBy: [{ operationStartAt: 'asc' }, { recruitmentEndAt: 'asc' }],
+      take: recruitmentCronBatchSize(),
+      select: {
+        id: true,
+        title: true,
+        operationStartAt: true,
+        charityReceiver: { select: { userId: true } },
+      },
     });
     // Đọc cấu hình MỘT LẦN, NGOÀI transaction — xem chú thích ở
     // getStaffingReadinessWith: query bằng client ngoài trong tx sẽ treo tới khi
@@ -3579,52 +3601,55 @@ export class CampaignsService {
     let refreshed = 0;
     let started = 0;
     for (const campaign of campaigns) {
-      await this.refreshRecruitmentStatus(campaign.id, now);
+      const readiness = await this.getStaffingReadinessWith(this.prisma, campaign.id, staffingConfig);
+      const next = now < readiness.recruitmentStartAt
+        ? 'scheduled'
+        : readiness.eligibleToStart
+          ? (now >= readiness.recruitmentEndAt ? 'closed_ready' : 'staffed')
+          : (now >= readiness.recruitmentEndAt ? 'expired_understaffed' : 'open');
+      if (next !== readiness.recruitmentStatus) {
+        await this.prisma.kitchenCampaign.updateMany({
+          where: { id: campaign.id, status: 'approved' },
+          data: { recruitmentStatus: next },
+        });
+        const messages: Partial<Record<typeof next, { title: string; body: string }>> = {
+          open: { title: 'Đã mở tuyển tình nguyện viên', body: `Chiến dịch "${campaign.title}" đang nhận đăng ký theo từng ca.` },
+          staffed: { title: 'Đã đủ ngưỡng nhân sự tối thiểu', body: `Chiến dịch "${campaign.title}" đã đạt tối thiểu ${readiness.minimumFillPercent}% ở từng ca/vai trò. Bạn có thể tiếp tục tuyển đến hạn.` },
+          closed_ready: { title: 'Chiến dịch đủ điều kiện bắt đầu', body: `Chiến dịch "${campaign.title}" đã đạt ngưỡng ${readiness.minimumFillPercent}% ở từng ca/vai trò.` },
+          expired_understaffed: { title: 'Hết hạn tuyển nhưng còn thiếu người', body: `Chiến dịch "${campaign.title}" không thể bắt đầu; hãy gia hạn trong giới hạn, dời lịch hoặc huỷ.` },
+        };
+        const message = messages[next];
+        if (message && campaign.charityReceiver?.userId) {
+          void this.notifications.notify(campaign.charityReceiver.userId, {
+            type: 'campaign',
+            ...message,
+            data: { campaignId: campaign.id, recruitmentStatus: next },
+          });
+        }
+      }
       refreshed += 1;
       if (now < campaign.operationStartAt) continue;
-      // Đọc config TRƯỚC khi mở transaction — xem ghi chú ở getStaffingReadinessWith.
-      const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
-        this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
-        this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
-      ]);
-      const didStart = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(Prisma.sql`
-          SELECT id FROM kitchen_campaigns WHERE id = ${campaign.id}::uuid FOR UPDATE
-        `);
-        const current = await tx.kitchenCampaign.findUnique({
-          where: { id: campaign.id },
-          select: { status: true, operationStartAt: true },
+      if (!readiness.eligibleToStart) {
+        await this.prisma.kitchenCampaign.updateMany({
+          where: { id: campaign.id, status: 'approved' },
+          data: { recruitmentStatus: 'expired_understaffed' },
         });
-        if (!current || current.status !== 'approved' || now < current.operationStartAt) return false;
-        const readiness = await this.getStaffingReadinessWith(tx, campaign.id);
-        if (!readiness.eligibleToStart) {
-          await tx.kitchenCampaign.update({
-            where: { id: campaign.id },
-            data: { recruitmentStatus: 'expired_understaffed' },
-          });
-          return false;
-        }
-        // Đạt ngưỡng admin nhưng chưa đủ 100%: chờ tổ chức xác nhận bắt đầu thủ
-        // công. Chỉ trường hợp đủ toàn bộ định biên mới tự động bắt đầu.
-        if (!readiness.ready) {
-          await tx.kitchenCampaign.update({
-            where: { id: campaign.id },
-            data: { recruitmentStatus: 'closed_ready' },
-          });
-          return false;
-        }
-        await tx.kitchenCampaign.update({
-          where: { id: campaign.id },
-          data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
+        continue;
+      }
+      // Đạt ngưỡng admin nhưng chưa đủ 100%: chờ tổ chức xác nhận bắt đầu thủ
+      // công. Chỉ trường hợp đủ toàn bộ định biên mới tự động bắt đầu.
+      if (!readiness.ready) {
+        await this.prisma.kitchenCampaign.updateMany({
+          where: { id: campaign.id, status: 'approved' },
+          data: { recruitmentStatus: 'closed_ready' },
         });
-        return true;
-      }, {
-        // Cron can briefly wait on the row lock while an admin/user action is updating
-        // the same campaign. Prisma's 5s default is too low for that lock-bearing path.
-        maxWait: 10_000,
-        timeout: 30_000,
+        continue;
+      }
+      const didStart = await this.prisma.kitchenCampaign.updateMany({
+        where: { id: campaign.id, status: 'approved', operationStartAt: { lte: now } },
+        data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
       });
-      if (didStart) {
+      if (didStart.count > 0) {
         started += 1;
         const startedCampaign = await this.prisma.kitchenCampaign.findUnique({
           where: { id: campaign.id },

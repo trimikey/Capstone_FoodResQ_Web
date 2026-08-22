@@ -40,9 +40,13 @@ Một app trong monorepo `Capstone_FoodResQ_Web` (pnpm workspaces); backend Nest
 Không commit (đã gitignore). Biến `EXPO_PUBLIC_*` được inline vào bundle — xem [Expo: Environment variables](https://docs.expo.dev/guides/environment-variables/).
 
 ```bash
-# API backend — Android emulator dùng 10.0.2.2 để trỏ về localhost máy host
-EXPO_PUBLIC_API_URL=http://10.0.2.2:3001/api/v1
-# iOS simulator: http://localhost:3001/api/v1 — thiết bị thật: http://<LAN-IP>:3001/api/v1
+# API backend — để trống trong dev để app tự lấy IP từ Metro/Expo.
+# Chỉ set khi cần override thủ công:
+# EXPO_PUBLIC_API_URL=http://10.0.2.2:3001/api/v1
+# Android emulator: http://10.0.2.2:3001/api/v1
+# iOS simulator: http://localhost:3001/api/v1
+# Thiết bị Android qua USB + adb reverse: http://127.0.0.1:3001/api/v1
+# API deploy/tunnel: https://your-api-domain.example/api/v1
 
 # Google Sign-In: Web client ID (oauth_client client_type=3 trong google-services.json)
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com

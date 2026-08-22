@@ -637,18 +637,31 @@ export class AuthService {
       expiresIn: ACCESS_TOKEN_TTL,
     });
 
-    const rawRefreshToken = this.jwt.sign(payload, {
-      secret: this.config.getOrThrow('JWT_REFRESH_SECRET'),
-      expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`,
-    });
-
-    const tokenHash = this.hashRefreshToken(rawRefreshToken);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_TTL_DAYS);
 
-    await this.prisma.refreshToken.create({
-      data: { userId: user.id, tokenHash, deviceInfo, ipAddress, expiresAt },
-    });
+    const refreshSecret = this.config.getOrThrow('JWT_REFRESH_SECRET');
+    let rawRefreshToken = '';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      rawRefreshToken = this.jwt.sign(
+        { ...payload, jti: crypto.randomUUID() },
+        { secret: refreshSecret, expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d` },
+      );
+      const tokenHash = this.hashRefreshToken(rawRefreshToken);
+      try {
+        await this.prisma.refreshToken.create({
+          data: { userId: user.id, tokenHash, deviceInfo, ipAddress, expiresAt },
+        });
+        break;
+      } catch (e) {
+        const duplicateHash =
+          e instanceof Prisma.PrismaClientKnownRequestError
+          && e.code === 'P2002'
+          && Array.isArray(e.meta?.target)
+          && e.meta.target.includes('token_hash');
+        if (!duplicateHash || attempt === 2) throw e;
+      }
+    }
 
     return {
       accessToken,

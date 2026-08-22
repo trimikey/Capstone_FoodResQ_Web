@@ -36,8 +36,10 @@ function isAndroidEmulator(): boolean {
 }
 
 // Dev URL strategy:
+// - EXPO_PUBLIC_API_URL is an optional manual override.
 // - Android emulator: 10.0.2.2 points to the host machine.
-// - Physical devices: use EXPO_PUBLIC_API_URL, which should be the host LAN IP.
+// - Physical devices on LAN/hotspot: derive the host from Metro/Expo so the
+//   URL follows the current network instead of hardcoding a changing IP.
 // - iOS simulator fallback: localhost.
 function getApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;

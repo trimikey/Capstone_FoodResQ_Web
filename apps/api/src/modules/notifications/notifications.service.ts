@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { getApps } from 'firebase-admin/app';
@@ -13,6 +13,8 @@ interface NotifyInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private prisma: PrismaService,
     private gateway: NotificationsGateway,
@@ -21,52 +23,60 @@ export class NotificationsService {
   /** Tạo thông báo (lưu DB) + đẩy real-time qua WebSocket + FCM push nếu có token. Không throw để không chặn flow chính. */
   async notify(userId: string, input: NotifyInput) {
     try {
-      const [notif, userRow] = await Promise.all([
-        this.prisma.notification.create({
-          data: {
-            userId,
-            type: input.type,
-            title: input.title,
-            body: input.body,
-            data: (input.data ?? {}) as never,
-          },
-        }),
-        this.prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } }),
-      ]);
+      const notif = await this.prisma.notification.create({
+        data: {
+          userId,
+          type: input.type,
+          title: input.title,
+          body: input.body,
+          data: (input.data ?? {}) as never,
+        },
+      });
 
       this.gateway.emitToUser(userId, 'notification:new', notif);
-
-      // FCM push — chỉ gửi khi Firebase đã khởi tạo và user có token
-      const fcmToken = userRow?.fcmToken;
-      if (fcmToken) {
-        const apps = getApps();
-        if (apps.length > 0) {
-          try {
-            await getMessaging(apps[0]).send({
-              token: fcmToken,
-              notification: { title: input.title, body: input.body },
-              data: Object.fromEntries(
-                Object.entries(input.data ?? {}).map(([k, v]) => [k, String(v)]),
-              ),
-              android: { priority: 'high' },
-              apns: { payload: { aps: { sound: 'default', badge: 1 } } },
-            });
-          } catch (e: any) {
-            // Token hết hạn / bị thu hồi → xoá để không thử lại
-            const code: string = e?.errorInfo?.code ?? '';
-            if (
-              code === 'messaging/registration-token-not-registered' ||
-              code === 'messaging/invalid-registration-token'
-            ) {
-              await this.prisma.user.update({ where: { id: userId }, data: { fcmToken: null } }).catch(() => null);
-            }
-          }
-        }
-      }
+      void this.sendFcmInBackground(userId, input);
 
       return notif;
     } catch {
       return null;
+    }
+  }
+
+  private async sendFcmInBackground(userId: string, input: NotifyInput) {
+    try {
+      const userRow = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fcmToken: true },
+      });
+
+      // FCM push — chỉ gửi khi Firebase đã khởi tạo và user có token.
+      const fcmToken = userRow?.fcmToken;
+      if (!fcmToken) return;
+
+      const apps = getApps();
+      if (apps.length === 0) return;
+
+      await getMessaging(apps[0]).send({
+        token: fcmToken,
+        notification: { title: input.title, body: input.body },
+        data: Object.fromEntries(
+          Object.entries(input.data ?? {}).map(([k, v]) => [k, String(v)]),
+        ),
+        android: { priority: 'high' },
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+      });
+    } catch (e: any) {
+      // Token hết hạn / bị thu hồi → xoá để không thử lại. Lỗi FCM không được
+      // kéo chậm WebSocket/in-app notification, đặc biệt với popup đơn shipper.
+      const code: string = e?.errorInfo?.code ?? '';
+      if (
+        code === 'messaging/registration-token-not-registered' ||
+        code === 'messaging/invalid-registration-token'
+      ) {
+        await this.prisma.user.update({ where: { id: userId }, data: { fcmToken: null } }).catch(() => null);
+      } else {
+        this.logger.warn(`FCM push failed for user ${userId}: ${e?.message ?? String(e)}`);
+      }
     }
   }
 

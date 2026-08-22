@@ -12,6 +12,7 @@ import { TrustService } from '@/modules/trust/trust.service';
 
 describe('CampaignsService', () => {
   let service: CampaignsService;
+  let systemConfig: { getNumber: jest.Mock };
   const prisma = {
     volunteerProfile: { findUnique: jest.fn() },
     kitchenCampaign: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
@@ -39,17 +40,20 @@ describe('CampaignsService', () => {
     prisma.campaignVolunteerAssignment.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
     prisma.$queryRaw.mockResolvedValue([]);
+    systemConfig = {
+      getNumber: jest.fn(async (k: string) => {
+        if (k === 'CHECKIN_GPS_RADIUS_M') return 500;
+        if (k === 'CAMPAIGN_MIN_FILL_PERCENT') return 50;
+        return 0;
+      }),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         CampaignsService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
         { provide: StorageService, useValue: { saveImage: jest.fn() } },
-        { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => {
-          if (k === 'CHECKIN_GPS_RADIUS_M') return 500;
-          if (k === 'CAMPAIGN_MIN_FILL_PERCENT') return 50;
-          return 0;
-        }) } },
+        { provide: SystemConfigService, useValue: systemConfig },
         { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
         { provide: DishStepsService, useValue: { getStepsForCampaign: jest.fn().mockResolvedValue({ dishes: [], cookingTeam: [], safetyLogs: [] }) } },
         { provide: TrustService, useValue: { applyDelta: jest.fn() } },
@@ -398,18 +402,34 @@ describe('CampaignsService', () => {
       };
       prisma.kitchenCampaign.findMany.mockResolvedValue([{ id: 'campaign-1', operationStartAt: readyCampaign.operationStartAt }]);
       prisma.kitchenCampaign.findUnique.mockResolvedValue(readyCampaign);
+      prisma.kitchenCampaign.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
 
       expect(result.started).toBe(1);
-      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id: 'campaign-1' },
+      expect(prisma.kitchenCampaign.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'campaign-1', status: 'approved', operationStartAt: { lte: new Date('2099-01-01T00:00:00.000Z') } },
         data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
       }));
-      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-        maxWait: 10_000,
-        timeout: 30_000,
-      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('không dùng interactive transaction trong cron tuyển', async () => {
+      const readyCampaign = {
+        ...lifecycleCampaign,
+        assignments: [
+          ...lifecycleCampaign.assignments,
+          { id: 'a-2', volunteerId: 'v-2', shiftId: 'morning-chef', workDate: new Date('2099-01-01T00:00:00.000Z'), role: 'chef', confirmationStatus: 'confirmed', volunteer: { userId: 'user-2' } },
+        ],
+      };
+      prisma.$transaction.mockRejectedValue(new Error('Transaction should not be used by recruitment cron'));
+      prisma.kitchenCampaign.findMany.mockResolvedValue([{ id: 'campaign-1', operationStartAt: readyCampaign.operationStartAt }]);
+      prisma.kitchenCampaign.findUnique.mockResolvedValue(readyCampaign);
+      prisma.kitchenCampaign.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z')))
+        .resolves.toEqual(expect.objectContaining({ started: 1 }));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('đạt ngưỡng tối thiểu nhưng chưa đủ 100% thì chờ tổ chức xác nhận bắt đầu', async () => {
@@ -419,7 +439,7 @@ describe('CampaignsService', () => {
       const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
 
       expect(result.started).toBe(0);
-      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
+      expect(prisma.kitchenCampaign.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: { recruitmentStatus: 'closed_ready' },
       }));
     });
@@ -432,7 +452,7 @@ describe('CampaignsService', () => {
       const result = await service.advanceRecruitmentLifecycle(new Date('2099-01-01T00:00:00.000Z'));
 
       expect(result.started).toBe(0);
-      expect(prisma.kitchenCampaign.update).toHaveBeenCalledWith(expect.objectContaining({
+      expect(prisma.kitchenCampaign.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: { recruitmentStatus: 'expired_understaffed' },
       }));
     });

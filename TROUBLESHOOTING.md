@@ -34,7 +34,7 @@ Error: Cannot find module 'D:\Do_An\foodresq\apps\api\dist\main'
 
 **Nguyên nhân**
 
-`npm run start:prod` = `node dist/main` — nó chỉ *chạy* code đã build chứ không build.
+`npm run start:prod` = `node dist/main.js` — nó chỉ *chạy* code đã build chứ không build.
 Thư mục `dist/` chưa tồn tại vì một trong các lý do:
 
 - Chưa từng chạy `nest build` sau khi clone / sau khi xoá `dist`.

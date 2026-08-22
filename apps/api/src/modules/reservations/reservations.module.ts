@@ -8,6 +8,7 @@ import { StorageModule } from '@/common/storage/storage.module';
 import { FaceMatchModule } from '@/common/face-match/face-match.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { TrustModule } from '@/modules/trust/trust.module';
+import { DeliveriesModule } from '@/modules/deliveries/deliveries.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TrustModule } from '@/modules/trust/trust.module';
     FaceMatchModule,
     NotificationsModule,
     TrustModule,
+    DeliveriesModule,
     BullModule.registerQueue({ name: 'notification-push' }),
   ],
   controllers: [ReservationsController],
