@@ -91,6 +91,30 @@ export default function ListingDetailPage({ params }: Props) {
   const [destLng, setDestLng] = useState<number | null>(null);
   const [destLat, setDestLat] = useState<number | null>(null);
   const [locatingDest, setLocatingDest] = useState(false);
+  // Hẹn giờ giao: '' = giao ngay khi có shipper nhận. Giá trị theo datetime-local (giờ VN).
+  const [scheduledTime, setScheduledTime] = useState('');
+  // Hồ sơ đăng ký khi reverse-geocode thất bại sẽ lưu TOẠ ĐỘ THÔ vào cột địa chỉ
+  // ("10.847932, 106.832735") — hiển thị vậy thì người dùng lẫn shipper đều không đọc
+  // được. Resolve lại thành tên địa điểm một lần khi mở form.
+  const [profileAddressLabel, setProfileAddressLabel] = useState<string | null>(null);
+  const looksLikeCoords = (v?: string | null) =>
+    !!v && /^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(v.trim());
+  useEffect(() => {
+    const addr = me?.receiver?.address;
+    const lat = me?.receiver?.lat;
+    const lng = me?.receiver?.lng;
+    if (deliveryMethod !== 'delivery' || !looksLikeCoords(addr) || lat == null || lng == null) return;
+    let mounted = true;
+    void reverseGeocode(lat, lng).then((name) => {
+      if (mounted && name) setProfileAddressLabel(name);
+    });
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryMethod, me?.receiver?.address, me?.receiver?.lat, me?.receiver?.lng]);
+  const profileAddressDisplay =
+    (looksLikeCoords(me?.receiver?.address) ? profileAddressLabel : me?.receiver?.address)
+    ?? me?.receiver?.address
+    ?? null;
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -176,6 +200,14 @@ export default function ListingDetailPage({ params }: Props) {
       toast.error('Vui lòng mô tả địa chỉ điểm giao (số nhà, tên bệnh viện, khoa/phòng…).');
       return;
     }
+    // Hẹn giờ: shipper cần thời gian di chuyển và tìm đơn → tối thiểu 30 phút nữa.
+    if (deliveryMethod === 'delivery' && scheduledTime) {
+      const at = new Date(`${scheduledTime}:00+07:00`);
+      if (!Number.isFinite(at.getTime()) || at.getTime() < Date.now() + 30 * 60_000) {
+        toast.error('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
+        return;
+      }
+    }
     try {
       let deliveryEvidenceUrl: string | undefined;
       if (deliveryMethod === 'delivery' && evidenceFile) {
@@ -198,6 +230,13 @@ export default function ListingDetailPage({ params }: Props) {
         deliveryEvidenceUrl,
         ...(wantsCustomDest
           ? { deliveryLng: destLng!, deliveryLat: destLat!, deliveryAddress: destAddress.trim() }
+          : deliveryMethod === 'delivery'
+              && looksLikeCoords(me?.receiver?.address)
+              && profileAddressLabel
+            ? { deliveryAddress: profileAddressLabel }
+            : {}),
+        ...(deliveryMethod === 'delivery' && scheduledTime
+          ? { deliveryScheduledAt: `${scheduledTime}:00+07:00` }
           : {}),
       });
       setReservationResult({
@@ -259,6 +298,12 @@ export default function ListingDetailPage({ params }: Props) {
                   : fallbackImage(listing.category)
               }
               alt={listing.title}
+              loading="lazy"
+              onError={(e) => {
+                // Ảnh /uploads của máy khác 404 → rơi về ảnh theo danh mục thay vì icon vỡ.
+                const fb = fallbackImage(listing.category);
+                if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+              }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
             <div className="absolute top-4 left-4 flex gap-2">
@@ -636,7 +681,7 @@ export default function ListingDetailPage({ params }: Props) {
                           <span className="min-w-0">
                             <span className="block text-xs font-semibold text-on-surface">Địa chỉ trong hồ sơ</span>
                             <span className="block truncate text-[11px] text-on-surface-variant">
-                              {me?.receiver?.address || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
+                              {profileAddressDisplay || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
                             </span>
                           </span>
                         </label>
@@ -725,6 +770,54 @@ export default function ListingDetailPage({ params }: Props) {
                         )}
                       </div>
                     )}
+
+                    {/* Hẹn giờ nhận: người nhận có thể chọn khung giờ thay vì giao ngay —
+                        shipper thấy giờ hẹn trong danh sách đơn và chỉ nhận nếu ca phủ giờ đó. */}
+                    {deliveryMethod === 'delivery' && (
+                      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-high/30 p-4 space-y-2">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                          <span className="material-symbols-outlined text-[16px]">schedule</span>
+                          Giờ nhận hàng
+                        </p>
+                        <label className="flex cursor-pointer items-center gap-2.5">
+                          <input
+                            type="radio"
+                            name="delivery-time-mode"
+                            checked={!scheduledTime}
+                            onChange={() => setScheduledTime('')}
+                            className="h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="text-xs font-semibold text-on-surface">Giao ngay khi có tình nguyện viên nhận</span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="delivery-time-mode"
+                            checked={!!scheduledTime}
+                            onChange={() => {
+                              if (!scheduledTime) {
+                                // Gợi ý sẵn mốc 1 giờ nữa (giờ VN) để đỡ phải bấm chọn từ đầu.
+                                const t = new Date(Date.now() + 60 * 60_000 + 7 * 3600_000);
+                                setScheduledTime(t.toISOString().slice(0, 16));
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-semibold text-on-surface">Hẹn giờ nhận</span>
+                            <span className="block text-[11px] text-on-surface-variant">Tối thiểu 30 phút nữa, trong khung giờ nhận của tin</span>
+                            {!!scheduledTime && (
+                              <input
+                                type="datetime-local"
+                                value={scheduledTime}
+                                onChange={(e) => setScheduledTime(e.target.value)}
+                                className="mt-1.5 w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                              />
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -790,6 +883,11 @@ export default function ListingDetailPage({ params }: Props) {
                         : fallbackImage(item.category)
                     }
                     alt={item.title}
+                    loading="lazy"
+                    onError={(e) => {
+                      const fb = fallbackImage(item.category);
+                      if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                    }}
                     className="w-full h-full object-cover"
                   />
                   <span className="absolute top-2 left-2 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded-full">Miễn phí</span>

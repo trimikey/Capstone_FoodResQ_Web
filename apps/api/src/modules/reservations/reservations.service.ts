@@ -5,11 +5,8 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
-  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -18,19 +15,11 @@ import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
-import { DeliveriesService } from '@/modules/deliveries/deliveries.service';
 import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import type { RateTarget } from './dto/rate-reservation.dto';
 
 const LOCK_TTL_MS = 10_000;   // 10s window để acquire lock và complete transaction
-const DEFAULT_NO_SHOW_CRON_BATCH_SIZE = 50;
-
-function noShowCronBatchSize(): number {
-  const configured = Number(process.env.RESERVATION_NO_SHOW_CRON_BATCH_SIZE);
-  if (Number.isInteger(configured) && configured > 0) return configured;
-  return DEFAULT_NO_SHOW_CRON_BATCH_SIZE;
-}
 
 @Injectable()
 export class ReservationsService {
@@ -45,8 +34,6 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
-    @InjectQueue('notification-push') private notifQueue: Queue,
-    @Optional() private deliveries?: DeliveriesService,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -170,6 +157,23 @@ export class ReservationsService {
           `Điểm giao cách nơi lấy hàng ${distanceKm} km, vượt giới hạn ${maxDistanceKm} km cho một chuyến giao. `
           + 'Vui lòng chọn điểm giao gần hơn hoặc chọn "Tôi sẽ tự đến lấy".',
         );
+      }
+
+      // Hẹn giờ giao: shipper cần thời gian di chuyển nên tối thiểu 30 phút nữa,
+      // và không được vượt quá giờ đóng nhận hàng của tin (quá giờ là quán đóng).
+      if (dto.deliveryScheduledAt) {
+        const scheduledAt = new Date(dto.deliveryScheduledAt);
+        if (scheduledAt.getTime() < Date.now() + 30 * 60_000) {
+          throw new BadRequestException('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
+        }
+        const [windowRow] = await this.prisma.$queryRaw<{ pickup_end_time: Date }[]>(Prisma.sql`
+          SELECT pickup_end_time FROM food_listings WHERE id = ${dto.listingId}::uuid
+        `);
+        if (windowRow && scheduledAt > windowRow.pickup_end_time) {
+          throw new BadRequestException(
+            'Giờ hẹn giao vượt quá khung giờ nhận hàng của tin. Vui lòng chọn giờ sớm hơn.',
+          );
+        }
       }
     }
 
@@ -300,7 +304,7 @@ export class ReservationsService {
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
               qr_token, qr_expires_at, receiver_notes, delivery_evidence_url,
-              delivery_address, delivery_location, created_at, updated_at
+              delivery_address, delivery_location, delivery_scheduled_at, created_at, updated_at
             ) VALUES (
               ${dto.listingId}::uuid,
               ${receiver.id}::uuid,
@@ -310,9 +314,14 @@ export class ReservationsService {
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
               ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
-              ${dto.requestDelivery && customDestination ? customDestination.address : null},
+              ${dto.requestDelivery
+                ? (customDestination ? customDestination.address : (dto.deliveryAddress?.trim() || null))
+                : null},
               ${dto.requestDelivery && customDestination
                 ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+                : Prisma.sql`NULL`},
+              ${dto.requestDelivery && dto.deliveryScheduledAt
+                ? Prisma.sql`${new Date(dto.deliveryScheduledAt).toISOString()}::timestamptz`
                 : Prisma.sql`NULL`},
               NOW(), NOW()
             )
@@ -385,24 +394,39 @@ export class ReservationsService {
     `);
 
     if (listing) {
-      if (this.deliveries) {
-        try {
-          await this.deliveries.broadcastToNearbyShippers(delivery.id, listing.lng, listing.lat);
-          return;
-        } catch (err) {
-          this.logger.warn(
-            `Broadcast shipper trực tiếp thất bại cho delivery ${delivery.id}, chuyển sang queue retry: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-        }
+      // MÔ HÌNH MỚI: không mời tuần tự 15s nữa. Báo cho các TNV đã đăng ký CA phủ
+      // thời điểm giao (giao ngay = bây giờ; hẹn giờ = giờ hẹn) để họ mở Trung tâm
+      // giao hàng và tự chọn đơn. Khoảng cách lọc lúc họ xem danh sách (GPS tươi).
+      const reservationRow = await this.prisma.reservation.findUnique({
+        where: { id: reservationId },
+        select: { deliveryScheduledAt: true, listing: { select: { title: true } } },
+      });
+      const targetAt = reservationRow?.deliveryScheduledAt ?? new Date();
+      const vn = new Date(targetAt.getTime() + 7 * 3600_000);
+      const hour = vn.getUTCHours();
+      const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+      const workDate = vn.toISOString().slice(0, 10);
+      const onDuty = await this.prisma.$queryRaw<{ user_id: string }[]>(Prisma.sql`
+        SELECT DISTINCT vp.user_id
+        FROM delivery_shift_registrations reg
+        JOIN volunteer_profiles vp ON vp.id = reg.volunteer_id
+        JOIN users u ON u.id = vp.user_id
+        WHERE reg.work_date = ${workDate}::date
+          AND reg.period = ${period}::campaign_shift_period
+          AND u.status = 'active'
+        LIMIT 50
+      `);
+      const scheduledNote = reservationRow?.deliveryScheduledAt
+        ? ` (hẹn giao ${new Date(reservationRow.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })})`
+        : '';
+      for (const shipper of onDuty) {
+        void this.notifications.notify(shipper.user_id, {
+          type: 'delivery',
+          title: 'Đơn giao mới trong ca của bạn',
+          body: `"${reservationRow?.listing.title ?? 'Suất ăn'}"${scheduledNote} đang chờ shipper. Mở Trung tâm giao hàng để nhận đơn.`,
+          data: { deliveryId: delivery.id, kind: 'delivery_available' },
+        });
       }
-
-      await this.notifQueue.add(
-        'shipper-broadcast',
-        { deliveryId: delivery.id, pickupLng: listing.lng, pickupLat: listing.lat },
-        { delay: 0, removeOnComplete: true, attempts: 3 },
-      );
     } else {
       // Tin đăng thiếu pickup_location → không thể tìm shipper quanh điểm lấy.
       this.logger.error(
@@ -1124,8 +1148,6 @@ export class ReservationsService {
    */
   async expireNoShows(): Promise<number> {
     const now = new Date();
-    const batchSize = noShowCronBatchSize();
-    const noShowPenalty = await this.systemConfig.getNumber('RESERVATION_NO_SHOW_PENALTY');
     // Đơn TỰ ĐẾN LẤY = chưa từng có delivery, HOẶC delivery đã bị huỷ (người nhận
     // bấm "Tự đến lấy trực tiếp"). Trước đây chỉ lọc `delivery: null` nên nhóm thứ hai
     // rơi khỏi cả hai truy vấn và nằm 'confirmed' vĩnh viễn, giữ suất ăn không ai nhận được.
@@ -1139,7 +1161,7 @@ export class ReservationsService {
         ],
       },
       include: { receiver: { select: { id: true, userId: true } } },
-      take: batchSize,
+      take: 200,
     });
 
     for (const r of overdue) {
@@ -1161,6 +1183,7 @@ export class ReservationsService {
           data: { reservationsToday: { decrement: 1 } },
         }),
       ]);
+      const noShowPenalty = await this.systemConfig.getNumber('RESERVATION_NO_SHOW_PENALTY');
       if (noShowPenalty > 0) {
         await this.applyTrustDelta(r.receiver.userId, r.id, TrustScoreReason.NO_SHOW, -noShowPenalty);
       }
@@ -1169,18 +1192,15 @@ export class ReservationsService {
     // Đơn giao hàng quá hạn mà chưa có shipper nào nhận → hết hạn nhẹ nhàng, không phạt.
     // Gồm cả delivery đã 'failed' (phòng trường hợp reservation chưa kịp đóng theo) —
     // không nhóm nào được phép kẹt 'confirmed' vĩnh viễn.
-    const remaining = batchSize - overdue.length;
-    const unassigned = remaining > 0
-      ? await this.prisma.reservation.findMany({
-          where: {
-            status: 'confirmed',
-            qrExpiresAt: { lt: now },
-            delivery: { status: { in: ['pending_assignment', 'failed'] } },
-          },
-          include: { delivery: { select: { id: true, status: true } } },
-          take: remaining,
-        })
-      : [];
+    const unassigned = await this.prisma.reservation.findMany({
+      where: {
+        status: 'confirmed',
+        qrExpiresAt: { lt: now },
+        delivery: { status: { in: ['pending_assignment', 'failed'] } },
+      },
+      include: { delivery: { select: { id: true, status: true } } },
+      take: 200,
+    });
 
     for (const r of unassigned) {
       await this.prisma.$transaction([

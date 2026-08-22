@@ -33,7 +33,6 @@ describe('ReservationsService.rateReservation', () => {
       {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   });
 
@@ -109,7 +108,6 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
       {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   });
 
@@ -190,7 +188,6 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
       { getNumber: jest.fn().mockResolvedValue(3) } as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   };
 
@@ -277,7 +274,6 @@ describe('ReservationsService — thời hạn QR theo cấu hình admin', () =>
       systemConfig as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
     return { service, systemConfig };
   };
@@ -410,7 +406,6 @@ describe('ReservationsService.expireNoShows', () => {
       { getNumber: jest.fn(async (k: string) => (k === 'RESERVATION_NO_SHOW_PENALTY' ? 20 : 10)) } as never,
       { notify: jest.fn() } as never,
       trust as never,
-      { add: jest.fn() } as never,
     );
   });
 

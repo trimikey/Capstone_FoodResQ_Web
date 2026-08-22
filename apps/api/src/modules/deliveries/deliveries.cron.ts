@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { DeliveriesService } from './deliveries.service';
 import { logCronError, runCronDbExclusive } from '@/common/utils/cron-error';
 
@@ -11,7 +11,7 @@ export class DeliveriesCron {
   constructor(private deliveries: DeliveriesService) {}
 
   // Mỗi 5 phút: auto-fail các đơn giao kẹt quá lâu không cập nhật trạng thái
-  @Cron('35 */5 * * * *')
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async handleStalledDeliveries() {
     try {
       const n = await runCronDbExclusive(this.logger, 'expireStalledDeliveries', () =>
@@ -23,18 +23,17 @@ export class DeliveriesCron {
     }
   }
 
-  // Mỗi 30s: đóng offer quá hạn + mời lại shipper cho đơn chưa ai nhận còn hiệu lực.
-  // Chạy dày để thu hẹp "khoảng chết" giữa lúc đợt offer cũ hết hạn (TTL 2 phút)
-  // và đợt mời lại — nếu quét theo phút, shipper có thể thấy trống tới ~60s.
-  @Cron('20,50 * * * * *')
-  async handleOfferSweep() {
+  // Mỗi 30s: huỷ đơn không ai nhận đúng hạn (đơn ngay hết cửa sổ chờ / đơn hẹn giờ
+  // quá giờ hẹn). Hệ mời tuần tự cũ đã gỡ — shipper tự chọn đơn trong ca của mình.
+  @Cron(CronExpression.EVERY_30_SECONDS)
+  async handleUnclaimedSweep() {
     try {
-      const n = await runCronDbExclusive(this.logger, 'sweepOffersAndRebroadcast', () =>
-        this.deliveries.sweepOffersAndRebroadcast(),
+      const n = await runCronDbExclusive(this.logger, 'expireUnclaimedDeliveries', () =>
+        this.deliveries.expireUnclaimedDeliveries(),
       );
-      if (typeof n === 'number' && n > 0) this.logger.log(`Re-broadcasted ${n} unassigned delivery(ies)`);
+      if (typeof n === 'number' && n > 0) this.logger.log(`Expired ${n} unclaimed delivery(ies)`);
     } catch (e) {
-      logCronError(this.logger, 'sweepOffersAndRebroadcast', e);
+      logCronError(this.logger, 'expireUnclaimedDeliveries', e);
     }
   }
 }

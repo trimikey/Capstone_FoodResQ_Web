@@ -728,8 +728,14 @@ export default function ReservationDetailsPage() {
                     </div>
                     <div>
                       <h5 className="font-bold text-neutral-800">
-                        {countdownExpired ? 'Không tìm được TNV' : 'Đang tìm tình nguyện viên…'}
+                        {countdownExpired ? 'Không tìm được TNV' : 'Đang chờ tình nguyện viên nhận đơn…'}
                       </h5>
+                      {(tracking as { deliveryScheduledAt?: string | null } | undefined)?.deliveryScheduledAt && (
+                        <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+                          <span className="material-symbols-outlined text-[12px]">schedule</span>
+                          Hẹn giao {new Date((tracking as { deliveryScheduledAt?: string }).deliveryScheduledAt!).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                        </p>
+                      )}
                       <p className="text-xs text-neutral-500 mt-0.5">
                         {countdownExpired
                           ? 'Hết thời gian chờ. Bạn có thể đến lấy trực tiếp.'

@@ -242,8 +242,16 @@ export class AuthService {
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
         });
-        await tx.volunteerSpecializationEntry.create({
-          data: { volunteerId: vp.id, specialization },
+        // Role "Giao hàng & Phục vụ" đã GỘP: đăng ký shipper hay waiter đều nhận CẢ HAI
+        // chuyên môn — một người vừa giao đơn vừa phục vụ tại bếp, không tách nữa.
+        // Đầu bếp vẫn là chuyên môn riêng (cần kỹ năng nấu).
+        const grantedSpecializations =
+          specialization === 'shipper' || specialization === 'waiter'
+            ? (['shipper', 'waiter'] as const)
+            : ([specialization] as const);
+        await tx.volunteerSpecializationEntry.createMany({
+          data: grantedSpecializations.map((sp) => ({ volunteerId: vp.id, specialization: sp })),
+          skipDuplicates: true,
         });
         if (vehiclePlateImageUrl) {
           await tx.verificationRequest.create({

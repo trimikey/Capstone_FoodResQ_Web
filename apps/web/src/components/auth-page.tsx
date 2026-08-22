@@ -1394,9 +1394,10 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               disabled={isSubmitting}
                               {...registerSignup("volunteerRole")}
                             >
-                              <option value="shipper">Người giao hàng (Shipper)</option>
+                              {/* Shipper và Waiter đã GỘP làm một: đăng ký là nhận cả hai
+                                  chuyên môn (backend cấp kèm) — vừa giao đơn vừa phục vụ bếp. */}
+                              <option value="shipper">Giao hàng &amp; Phục vụ</option>
                               <option value="chef">Đầu bếp (Chef)</option>
-                              <option value="waiter">Phục vụ (Waiter)</option>
                             </select>
                             {registerErrors.volunteerRole && (
                               <p className="text-rose-600 text-sm ml-1 mt-2">{registerErrors.volunteerRole.message}</p>

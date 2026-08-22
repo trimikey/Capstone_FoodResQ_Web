@@ -8,13 +8,12 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   useVolunteerMe,
-  useMyOffers,
+  useMyDeliveryShifts,
+  useNearbyDeliveries,
+  useClaimDelivery,
   useActiveDelivery,
   useShipperStats,
   useDeliveryHistory,
-  useSetAvailability,
-  useAcceptOffer,
-  useRejectOffer,
   useUpdateDeliveryStatus,
   useCancelDelivery,
   useFailDelivery,
@@ -29,13 +28,14 @@ import ConfirmPickupModal from '@/components/deliveries/ConfirmPickupModal';
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
-import { OfferCountdown } from '@/components/deliveries/OfferPopup';
 
 const QrScanModal = dynamic(() => import('@/components/deliveries/QrScanModal'), { ssr: false });
 const HandoverConfirmModal = dynamic(
   () => import('@/components/deliveries/HandoverConfirmModal'),
   { ssr: false },
 );
+
+import DeliveryShiftPanel from './DeliveryShiftPanel';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -93,13 +93,15 @@ export default function DeliveriesPage() {
   const router = useRouter();
   const { data: me, isLoading: meLoading } = useVolunteerMe();
   const { data: active } = useActiveDelivery();
-  const { data: offers } = useMyOffers(!active); // chỉ poll offers khi chưa có đơn đang giao
+  // MÔ HÌNH MỚI: shipper trong ca tự xem danh sách đơn quanh mình và chọn đơn —
+  // không còn chờ lời mời tuần tự 15s, không còn nút bật/tắt sẵn sàng.
+  const { data: myShifts } = useMyDeliveryShifts();
+  const [gps, setGps] = useState<{ lng: number; lat: number } | null>(null);
+  const { data: nearby, isLoading: nearbyLoading } = useNearbyDeliveries(!active ? gps : null);
+  const claimDelivery = useClaimDelivery();
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
   const { data: pickupData } = useMyPickupOrders(!!me?.isShipper);
-  const setAvailability = useSetAvailability();
-  const acceptOffer = useAcceptOffer();
-  const rejectOffer = useRejectOffer();
   const updateStatus = useUpdateDeliveryStatus();
   const cancelDelivery = useCancelDelivery();
   const failDelivery = useFailDelivery();
@@ -111,6 +113,15 @@ export default function DeliveriesPage() {
   // Khi đang giao đơn → theo dõi GPS liên tục và đẩy vị trí để người nhận xem trực tiếp.
   // watchPosition tự bắn khi tài xế di chuyển; throttle gửi mạng tối đa 1 lần / 10s.
   // liveLoc: vị trí GPS tức thì (không throttle) để marker shipper trên bản đồ tự di chuyển.
+  // GPS cho danh sách đơn gần: lấy khi vào trang, làm mới mỗi 2 phút.
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => void getLocation().then((loc) => { if (mounted) setGps(loc); });
+    refresh();
+    const t = setInterval(refresh, 120_000);
+    return () => { mounted = false; clearInterval(t); };
+  }, []);
+
   const [liveLoc, setLiveLoc] = useState<{ lng: number; lat: number } | null>(null);
   /** Đơn nguyên liệu đang mở hộp thoại xác nhận đã lấy. */
   const [pickingUp, setPickingUp] = useState<MyPickupOrder | null>(null);
@@ -178,43 +189,6 @@ export default function DeliveriesPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
       toast.error(msg);
-    }
-  }
-
-  async function handleToggle() {
-    if (!me) return;
-    try {
-      if (me.isAvailable) {
-        await setAvailability.mutateAsync({ isAvailable: false });
-        toast.success('Đã tắt nhận đơn');
-      } else {
-        const loc = await getLocation();
-        await setAvailability.mutateAsync({ isAvailable: true, ...loc });
-        toast.success('Đã bật sẵn sàng — bạn sẽ nhận được đơn giao gần bạn');
-      }
-    } catch {
-      toast.error('Không cập nhật được trạng thái');
-    }
-  }
-
-  async function handleAccept(deliveryId: string) {
-    try {
-      await acceptOffer.mutateAsync(deliveryId);
-      toast.success('Đã nhận đơn! Bắt đầu hành trình giao hàng.');
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Nhận đơn thất bại (có thể đã có người khác nhận).';
-      toast.error(msg);
-    }
-  }
-
-  async function handleReject(deliveryId: string) {
-    try {
-      await rejectOffer.mutateAsync({ deliveryId });
-      toast.info('Đã bỏ qua đơn này');
-    } catch {
-      toast.error('Thao tác thất bại');
     }
   }
 
@@ -321,18 +295,25 @@ export default function DeliveriesPage() {
             </p>
           </div>
 
-          <button
-            onClick={handleToggle}
-            disabled={setAvailability.isPending || !!active}
-            className={`min-h-12 w-full sm:w-auto justify-center flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm disabled:opacity-60 ${
-              me?.isAvailable
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-50'
-            }`}
-          >
-            <span className={`w-2.5 h-2.5 rounded-full ${me?.isAvailable ? 'bg-white animate-pulse' : 'bg-neutral-400'}`} />
-            {me?.isAvailable ? 'Đang sẵn sàng' : 'Đang tắt'}
-          </button>
+          {/* Nút bật/tắt sẵn sàng đã bỏ: trạng thái nhận đơn giờ đi theo CA đã đăng ký.
+              Chip này chỉ phản ánh, không bấm được — muốn đổi thì sửa lịch ca bên dưới. */}
+          {(() => {
+            const nowVn = new Date(Date.now() + 7 * 3600_000);
+            const hour = nowVn.getUTCHours();
+            const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+            const todayKey = nowVn.toISOString().slice(0, 10);
+            const onDuty = (myShifts?.slots ?? []).some((sl) => sl.workDate === todayKey && sl.period === period);
+            return (
+              <div
+                className={`min-h-12 w-full sm:w-auto justify-center flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm shadow-sm ${
+                  onDuty ? 'bg-emerald-600 text-white' : 'bg-white text-neutral-700 border border-neutral-200'
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${onDuty ? 'bg-white animate-pulse' : 'bg-neutral-400'}`} />
+                {onDuty ? 'Đang trong ca giao hàng' : 'Ngoài ca — đăng ký ca để nhận đơn'}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Bảng thành tích shipper (kiểu dashboard tài xế) */}
@@ -645,159 +626,130 @@ export default function DeliveriesPage() {
             </div>
           </div>
         ) : (
-          /* DANH SÁCH OFFER */
+          /* DANH SÁCH ĐƠN CHỜ — shipper tự chọn (thay lời mời tuần tự 15s) */
           <div className="space-y-4">
+            <DeliveryShiftPanel />
+
             <h2 className="font-extrabold text-xl text-neutral-900">
-              Đơn giao gần bạn {offers && offers.length > 0 ? `(${offers.length})` : ''}
+              Đơn giao gần bạn {nearby && nearby.length > 0 ? `(${nearby.length})` : ''}
             </h2>
 
-            {!me?.isAvailable && (
-              <div className="text-center py-12 bg-white rounded-3xl border border-neutral-200">
-                <span className="material-symbols-outlined text-neutral-300 text-[56px]">bedtime</span>
-                <p className="font-bold text-neutral-700 mt-3">Bạn đang tắt nhận đơn</p>
-                <p className="text-xs text-neutral-500 mt-1">Bật &quot;Sẵn sàng&quot; ở góc trên để nhận đơn giao gần bạn.</p>
+            {!gps && (
+              <div className="text-center py-10 bg-white rounded-3xl border border-neutral-200">
+                <span className="material-symbols-outlined text-neutral-300 text-[48px]">my_location</span>
+                <p className="font-bold text-neutral-700 mt-3">Đang xác định vị trí của bạn…</p>
+                <p className="text-xs text-neutral-500 mt-1">Cho phép trình duyệt truy cập GPS để xem đơn trong bán kính 5km.</p>
               </div>
             )}
 
-            {me?.isAvailable && (!offers || offers.length === 0) && (
+            {gps && !nearbyLoading && (!nearby || nearby.length === 0) && (
               <div className="text-center py-12 bg-white rounded-3xl border border-neutral-200">
                 <span className="material-symbols-outlined text-neutral-300 text-[56px]">inbox</span>
-                <p className="font-bold text-neutral-700 mt-3">Chưa có đơn nào</p>
+                <p className="font-bold text-neutral-700 mt-3">Chưa có đơn nào quanh bạn</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Khi có người đặt thực phẩm cần giao gần bạn, đơn sẽ hiện ở đây (tự làm mới).
+                  Đơn trong bán kính 5km sẽ hiện ở đây (tự làm mới mỗi 20 giây). Bạn chỉ nhận được đơn thuộc ca đã đăng ký.
                 </p>
               </div>
             )}
 
-            {me?.isAvailable &&
-              offers?.map((o) => (
-                <div key={o.id} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5">
+            {gps &&
+              nearby?.map((o) => (
+                <div key={o.deliveryId} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5">
                   <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center gap-4">
                     <div className="w-full min-[420px]:w-16 h-36 min-[420px]:h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={deliveryImage(o.delivery) ? mediaUrl(deliveryImage(o.delivery)!) : '/food_bread.png'}
-                        alt={deliveryTitle(o.delivery)}
+                        src={o.imageUrls[0] ? mediaUrl(o.imageUrls[0]) : '/food_bread.png'}
+                        onError={(e) => {
+                          if (!e.currentTarget.src.endsWith('/food_bread.png')) e.currentTarget.src = '/food_bread.png';
+                        }}
+                        alt={o.listingTitle}
                         className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-extrabold text-neutral-900 truncate">
-                        {deliveryTitle(o.delivery)}
-                      </h3>
+                      <h3 className="font-extrabold text-neutral-900 truncate">{o.listingTitle}</h3>
                       <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
-                        <span className="material-symbols-outlined text-[14px]">place</span>
-                        {o.delivery.pickup.address ?? 'Chưa có địa chỉ lấy hàng'}
+                        <span className="material-symbols-outlined text-[14px]">storefront</span>
+                        Lấy tại: {o.pickupAddress}
                       </p>
-                      {o.delivery.source === 'campaign_transport' && (
-                        <p className="text-xs text-emerald-700 mt-0.5 truncate">
-                          Giao đến bếp: {o.delivery.destination.address ?? '—'}
+                      {o.deliveryAddress && (
+                        <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
+                          <span className="material-symbols-outlined text-[14px]">place</span>
+                          Giao đến: {o.deliveryAddress}
                         </p>
                       )}
                       <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2 flex-wrap">
-                        {(() => {
-                          const c = o.delivery.coords;
-                          const fromMe =
-                            me?.currentLocation && c?.pickupLat != null && c?.pickupLng != null
-                              ? haversineKm(me.currentLocation, { lat: c.pickupLat, lng: c.pickupLng })
-                              : null;
-                          return (
-                            <>
-                              {fromMe != null && <span className="font-semibold text-emerald-700">Cách bạn ~{fromMe.toFixed(1)} km</span>}
-                              {o.delivery.distanceKm != null && <span>· Lấy→giao ~{o.delivery.distanceKm} km</span>}
-                            </>
-                          );
-                        })()}
+                        <span className="font-semibold text-emerald-700">Cách bạn ~{o.distanceKm} km</span>
+                        {o.tripKm != null && <span>· Lấy→giao ~{o.tripKm} km</span>}
                       </p>
-                      <p className="text-xs text-neutral-500 mt-1">
-                        Hết hạn sau <OfferCountdown expiresAt={o.expiresAt} />
-                      </p>
+                      {/* Giờ hẹn giao — khác đơn giao ngay */}
+                      {o.deliveryScheduledAt ? (
+                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                          <span className="material-symbols-outlined text-[13px]">schedule</span>
+                          Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                        </p>
+                      ) : (
+                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                          <span className="material-symbols-outlined text-[13px]">bolt</span>
+                          Giao ngay
+                        </p>
+                      )}
                     </div>
-                    {o.delivery.coords?.pickupLat != null && o.delivery.coords?.pickupLng != null && (
-                      <a
-                        href={mapsDirUrl(o.delivery.coords.pickupLat, o.delivery.coords.pickupLng)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Điều hướng tới điểm lấy hàng"
-                        className="shrink-0 min-w-11 w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center self-end min-[420px]:self-center"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">directions</span>
-                      </a>
-                    )}
                   </div>
 
                   {/* Bằng chứng người nhận khó di chuyển — xem trước khi nhận đơn */}
-                  {o.delivery.reservation?.deliveryEvidenceUrl && (
+                  {o.deliveryEvidenceUrl && (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
                       <p className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
                         <span className="material-symbols-outlined text-[16px]">accessible</span>
                         Bằng chứng người nhận khó di chuyển
                       </p>
-                      <a
-                        href={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Bấm để xem ảnh gốc"
-                        className="mt-2 block"
-                      >
+                      <a href={mediaUrl(o.deliveryEvidenceUrl)} target="_blank" rel="noreferrer" className="mt-2 block">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
+                          src={mediaUrl(o.deliveryEvidenceUrl)}
                           alt="Bằng chứng khó di chuyển của người nhận"
                           className="h-32 w-full rounded-xl border border-amber-200 object-cover"
                         />
                       </a>
-                      <p className="mt-1.5 text-[11px] text-amber-800">
-                        Xem ảnh (bệnh/chấn thương) — thấy hợp lệ hãy bấm nhận đơn.
-                      </p>
                     </div>
                   )}
 
-                  {/* Xem trước lộ trình lấy → giao */}
-                  {o.delivery.coords?.pickupLat != null &&
-                    o.delivery.coords?.pickupLng != null &&
-                    o.delivery.coords?.deliveryLat != null &&
-                    o.delivery.coords?.deliveryLng != null && (
-                      <div className="mt-3">
-                        <button
-                          onClick={() => setOpenMapId(openMapId === o.deliveryId ? null : o.deliveryId)}
-                          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">map</span>
-                          {openMapId === o.deliveryId ? 'Ẩn lộ trình' : 'Xem lộ trình'}
-                        </button>
-                        {openMapId === o.deliveryId && (
-                          <div className="h-48 rounded-2xl overflow-hidden border border-neutral-150 mt-2">
-                            <DeliveryRouteMap
-                              pickup={{ lat: o.delivery.coords.pickupLat, lng: o.delivery.coords.pickupLng }}
-                              delivery={{ lat: o.delivery.coords.deliveryLat, lng: o.delivery.coords.deliveryLng }}
-                              shipper={me?.currentLocation ?? null}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                  <div className="grid grid-cols-2 gap-3 mt-4">
-                    <button
-                      onClick={() => handleReject(o.deliveryId)}
-                      disabled={rejectOffer.isPending}
-                      className="min-h-12 py-3 border border-neutral-200 text-neutral-600 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
-                    >
-                      Bỏ qua
-                    </button>
-                    <button
-                      onClick={() => handleAccept(o.deliveryId)}
-                      disabled={acceptOffer.isPending}
-                      className="min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50"
-                    >
-                      Nhận đơn
-                    </button>
-                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await claimDelivery.mutateAsync(o.deliveryId);
+                        toast.success('Bạn đã nhận đơn — tới điểm lấy hàng nhé!');
+                      } catch (err: unknown) {
+                        const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+                          ?.response?.data?.error?.message ?? 'Không nhận được đơn này';
+                        toast.error(msg);
+                      }
+                    }}
+                    disabled={!o.canClaim || claimDelivery.isPending}
+                    title={
+                      o.busyWithCampaign
+                        ? 'Bạn đã xác nhận ca chiến dịch trong khung giờ này'
+                        : !o.canClaim
+                          ? 'Đơn này nằm ngoài ca bạn đã đăng ký'
+                          : undefined
+                    }
+                    className="mt-4 w-full min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {claimDelivery.isPending
+                      ? 'Đang nhận…'
+                      : o.canClaim
+                        ? 'Nhận đơn này'
+                        : o.busyWithCampaign
+                          ? 'Bận ca chiến dịch khung giờ này'
+                          : 'Ngoài ca đã đăng ký'}
+                  </button>
                 </div>
               ))}
           </div>
         )}
+
 
         {/* ĐƠN LẤY NGUYÊN LIỆU CHIẾN DỊCH
             Không phải bản ghi `deliveries` nên không nằm trong luồng nhận/giao ở trên,
