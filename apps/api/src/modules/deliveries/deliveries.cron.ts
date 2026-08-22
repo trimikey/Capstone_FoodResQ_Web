@@ -21,16 +21,15 @@ export class DeliveriesCron {
     }
   }
 
-  // Mỗi 30s: đóng offer quá hạn + mời lại shipper cho đơn chưa ai nhận còn hiệu lực.
-  // Chạy dày để thu hẹp "khoảng chết" giữa lúc đợt offer cũ hết hạn (TTL 2 phút)
-  // và đợt mời lại — nếu quét theo phút, shipper có thể thấy trống tới ~60s.
+  // Mỗi 30s: huỷ đơn không ai nhận đúng hạn (đơn ngay hết cửa sổ chờ / đơn hẹn giờ
+  // quá giờ hẹn). Hệ mời tuần tự cũ đã gỡ — shipper tự chọn đơn trong ca của mình.
   @Cron(CronExpression.EVERY_30_SECONDS)
-  async handleOfferSweep() {
+  async handleUnclaimedSweep() {
     try {
-      const n = await this.deliveries.sweepOffersAndRebroadcast();
-      if (n > 0) this.logger.log(`Re-broadcasted ${n} unassigned delivery(ies)`);
+      const n = await this.deliveries.expireUnclaimedDeliveries();
+      if (n > 0) this.logger.log(`Expired ${n} unclaimed delivery(ies)`);
     } catch (e) {
-      logCronError(this.logger, 'sweepOffersAndRebroadcast', e);
+      logCronError(this.logger, 'expireUnclaimedDeliveries', e);
     }
   }
 }

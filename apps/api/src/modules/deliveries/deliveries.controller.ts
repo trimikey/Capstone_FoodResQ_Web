@@ -42,13 +42,6 @@ export class DeliveriesController {
     return this.deliveriesService.getMyActiveDelivery(user.id);
   }
 
-  @Get('my/offers')
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Get pending task offers' })
-  getMyOffers(@CurrentUser() user: User) {
-    return this.deliveriesService.getMyPendingOffers(user.id);
-  }
-
   @Get('track/:reservationId')
   @Roles(UserRole.RECEIVER)
   @ApiOperation({ summary: 'Receiver: theo dõi đơn giao (trạng thái + vị trí shipper)' })
@@ -116,24 +109,6 @@ export class DeliveriesController {
   })
   claim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.deliveriesService.claimDelivery(id, user.id);
-  }
-
-  @Post(':id/accept')
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Accept a delivery offer' })
-  accept(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.deliveriesService.acceptOffer(id, user.id);
-  }
-
-  @Post(':id/reject')
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Reject a delivery offer' })
-  reject(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Body() dto: RejectOfferDto,
-  ) {
-    return this.deliveriesService.rejectOffer(id, user.id, dto.reason);
   }
 
   @Post(':id/cancel')

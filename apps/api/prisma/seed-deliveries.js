@@ -1,10 +1,10 @@
-/* eslint-disable */
+    /* eslint-disable */
 // Seed đơn giao hàng cho shipper demo: cấp chuyên môn shipper + tạo các đơn đặt có giao,
 // rải địa điểm giao khắp TP.HCM, gửi lời mời (offer) cho shipper.
 // Idempotent: làm mới hạn offer đang có, chỉ tạo bù cho đủ DESIRED.
 // Chạy: node prisma/seed-deliveries.js
 const { PrismaClient, Prisma } = require('@prisma/client');
-const crypto = require('crypto');
+const crypto = require('crypto');   
 const prisma = new PrismaClient();
 
 const SHIPPER_EMAIL = process.env.SHIPPER_EMAIL || 'shipper1@gmail.com';
