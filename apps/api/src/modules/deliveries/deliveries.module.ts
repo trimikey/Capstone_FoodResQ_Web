@@ -3,7 +3,6 @@ import { BullModule } from '@nestjs/bullmq';
 import { DeliveriesController } from './deliveries.controller';
 import { DeliveriesService } from './deliveries.service';
 import { DeliveriesCron } from './deliveries.cron';
-import { NotificationProcessor } from './processors/notification.processor';
 import { StorageModule } from '@/common/storage/storage.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { TrustModule } from '@/modules/trust/trust.module';
@@ -16,7 +15,7 @@ import { TrustModule } from '@/modules/trust/trust.module';
     TrustModule,
   ],
   controllers: [DeliveriesController],
-  providers: [DeliveriesService, DeliveriesCron, NotificationProcessor],
+  providers: [DeliveriesService, DeliveriesCron],
   exports: [DeliveriesService],
 })
 export class DeliveriesModule {}

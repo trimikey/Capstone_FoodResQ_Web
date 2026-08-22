@@ -6,8 +6,6 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { TrustScoreReason } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -17,28 +15,9 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { TrustService } from '@/modules/trust/trust.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 
-// Cửa sổ phản hồi của shipper (giá trị MẶC ĐỊNH). Theo mô hình gọi xe (mời lần
-// lượt từng người, đếm ngược ngắn) — để 2 phút thì một tài khoản không phản hồi
-// chặn trọn 2 phút của hàng đợi.
-// Admin chỉnh được qua system_configs `SHIPPER_OFFER_EXPIRY_SECONDS`; luôn đọc
-// bằng `offerExpirySeconds()` chứ đừng dùng thẳng hằng số này khi tạo lời mời.
-export const OFFER_EXPIRY_SECONDS = 15;
 const BROADCAST_RADIUS_M = 5000; // 5km
 // Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
 const DELIVERY_STALL_HOURS = 6;
-// Tìm shipper tối đa 4 phút 30 giây — quá hạn không ai nhận thì đóng đơn,
-// báo người nhận "không có tình nguyện viên nào nhận, vui lòng đặt lại".
-export const ASSIGNMENT_TIMEOUT_MS = 270 * 1000;
-/**
- * Trần số lượt mời — SUY RA từ cửa sổ phản hồi, không đặt tay: phải đủ lấp kín
- * cửa sổ tìm kiếm. Đặt cứng 5 với cửa sổ 15s thì quota cạn sau 75s, đơn nằm im
- * hơn 3 phút còn lại dù vẫn còn shipper hợp lệ chưa được mời.
- * Tối thiểu 2 lượt: cửa sổ dài (vd 120s) vẫn phải cho mời được người kế tiếp.
- */
-export function maxOffersPerDelivery(expirySeconds: number): number {
-  return Math.max(2, Math.ceil(ASSIGNMENT_TIMEOUT_MS / (expirySeconds * 1000)));
-}
-export const MAX_OFFERS_PER_DELIVERY = maxOffersPerDelivery(OFFER_EXPIRY_SECONDS);
 
 /**
  * Quy một thời điểm về ô ca (ngày VN + 1 trong 4 ca cố định của hệ thống).
@@ -55,12 +34,6 @@ export function deliverySlotAt(at: Date): { workDate: string; period: 'midnight'
 const PERIOD_VN: Record<string, string> = {
   midnight: 'ca khuya', morning: 'ca sáng', afternoon: 'ca chiều', evening: 'ca tối',
 };
-
-interface NearbyShipper {
-  id: string;
-  user_id: string;
-  distance_m: number;
-}
 
 export interface CampaignTransportSummary {
   id: string;
@@ -81,7 +54,6 @@ export class DeliveriesService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
-    @InjectQueue('notification-push') private notifQueue: Queue,
     private gateway: NotificationsGateway,
     private notifications: NotificationsService,
     private trust: TrustService,
@@ -91,16 +63,6 @@ export class DeliveriesService {
   /** Lưu ảnh proof (QC/giao hàng) của shipper, trả về URL. */
   async saveProofPhoto(photo: Express.Multer.File): Promise<string> {
     return this.storage.saveImage(photo, 'delivery-proofs');
-  }
-
-  /**
-   * Cửa sổ phản hồi lời mời — đọc LIVE từ system_configs để admin chỉnh ở
-   * /admin/configs là có hiệu lực ngay. Trước đây dùng thẳng hằng số 15s nên
-   * ô cấu hình "Hết hạn lời mời shipper" hoàn toàn vô tác dụng.
-   */
-  private async offerExpirySeconds(): Promise<number> {
-    const seconds = await this.systemConfig.getNumber('SHIPPER_OFFER_EXPIRY_SECONDS');
-    return seconds > 0 ? seconds : OFFER_EXPIRY_SECONDS;
   }
 
   private normalizeQrToken(qrToken: string): string {
@@ -226,279 +188,6 @@ export class DeliveriesService {
         data: { campaignId: transport.campaign_id, transportId: transport.transport_id, deliveryId, status },
       });
     }
-  }
-
-  /**
-   * Shipper để lời mời trôi qua (không bấm nhận, cũng không bấm từ chối) → tắt
-   * chế độ sẵn sàng.
-   *
-   * Người thực sự đang online sẽ bấm một trong hai nút; im lặng hết cửa sổ nghĩa
-   * là không có ai ngồi trước máy. Để nguyên `is_available = true` thì tài khoản
-   * đó tiếp tục đứng đầu hàng đợi của mọi đơn kế tiếp và chặn shipper thật.
-   *
-   * TỪ CHỐI TƯỜNG MINH KHÔNG BỊ TẮT — đó là phản hồi hợp lệ.
-   *
-   * NGOẠI LỆ: shipper vừa hoàn thành đơn trong 60 giây qua không bị tắt — offer
-   * có thể đến trong cửa sổ chuyển tiếp ngắn và không phản ánh "bỏ qua cố tình".
-   */
-  private async goOfflineAfterLapse(shipperIds: string[]) {
-    const ids = [...new Set(shipperIds)];
-    if (ids.length === 0) return;
-
-    // Exempt shippers who completed a delivery within the last 60 seconds.
-    const graceCutoff = new Date(Date.now() - 60_000);
-    const recentlyCompleted = await this.prisma.delivery.findMany({
-      where: { shipperId: { in: ids }, status: 'delivered', deliveredAt: { gte: graceCutoff } },
-      select: { shipperId: true },
-    });
-    const exemptIds = new Set(recentlyCompleted.map((d) => d.shipperId).filter(Boolean) as string[]);
-    const idsToProcess = ids.filter((id) => !exemptIds.has(id));
-    if (idsToProcess.length === 0) return;
-
-    const affected = await this.prisma.volunteerProfile.updateMany({
-      where: { id: { in: idsToProcess }, isAvailable: true },
-      data: { isAvailable: false },
-    });
-    if (affected.count === 0) return;
-
-    const shippers = await this.prisma.volunteerProfile.findMany({
-      where: { id: { in: idsToProcess } },
-      select: { id: true, userId: true },
-    });
-    for (const s of shippers) {
-      this.gateway.emitToUser(s.userId, 'shipper:auto_offline', { reason: 'offer_lapsed' });
-      await this.notifications.notify(s.userId, {
-        type: 'delivery',
-        title: 'Đã tắt chế độ nhận đơn',
-        body: 'Bạn không phản hồi lời mời giao hàng trong thời gian cho phép nên hệ thống đã tắt chế độ sẵn sàng. Bật lại khi bạn muốn tiếp tục nhận đơn.',
-        data: { reason: 'offer_lapsed' },
-      });
-    }
-  }
-
-  private async notifyTaskOffer(
-    shipper: NearbyShipper,
-    deliveryId: string,
-    expiresAt: Date,
-    expirySeconds: number,
-  ) {
-    void this.notifQueue.add(
-      'delivery-offer-timeout',
-      { shipperId: shipper.id, deliveryId, expiresAt },
-      { delay: expirySeconds * 1000, removeOnComplete: true },
-    );
-    this.gateway.emitToUser(shipper.user_id, 'delivery:offer', { deliveryId });
-  }
-
-  private async offerNextNearestShipper(deliveryId: string, pickupLng: number, pickupLat: number) {
-    const now = new Date();
-    const lapsed = await this.prisma.shipperTaskOffer.findMany({
-      where: { deliveryId, status: 'pending', expiresAt: { lte: now } },
-      select: { shipperId: true },
-    });
-    if (lapsed.length > 0) {
-      await this.prisma.shipperTaskOffer.updateMany({
-        where: { deliveryId, status: 'pending', expiresAt: { lte: now } },
-        data: { status: 'expired', respondedAt: now, rejectReason: 'Offer timeout' },
-      });
-      await this.goOfflineAfterLapse(lapsed.map((o) => o.shipperId));
-    }
-
-    const shippers = await this.prisma.$queryRaw<NearbyShipper[]>(Prisma.sql`
-      SELECT
-        vp.id,
-        vp.user_id AS user_id,
-        ST_Distance(
-          vp.current_location::geography,
-          ST_MakePoint(${pickupLng}, ${pickupLat})::geography
-        ) AS distance_m
-      FROM volunteer_profiles vp
-      JOIN users u ON u.id = vp.user_id
-      JOIN volunteer_specializations vs ON vs.volunteer_id = vp.id
-        AND vs.specialization = 'shipper'
-        AND vs.is_verified = TRUE
-      WHERE vp.is_available = TRUE
-        AND vp.verification_status = 'approved'
-        AND vp.current_location IS NOT NULL
-        AND u.status = 'active'
-        AND u.deleted_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1
-          FROM shipper_task_offers existing
-          WHERE existing.delivery_id = ${deliveryId}::uuid
-            AND existing.shipper_id = vp.id
-        )
-        AND ST_DWithin(
-          vp.current_location::geography,
-          ST_MakePoint(${pickupLng}, ${pickupLat})::geography,
-          ${BROADCAST_RADIUS_M}
-        )
-      ORDER BY distance_m ASC
-      LIMIT 1
-    `);
-
-    const shipper = shippers[0];
-    if (!shipper) return null;
-
-    // Cửa sổ phản hồi + trần số lượt đều theo cấu hình LIVE của admin.
-    const expirySeconds = await this.offerExpirySeconds();
-    const maxOffers = maxOffersPerDelivery(expirySeconds);
-    const expiresAt = new Date(now.getTime() + expirySeconds * 1000);
-    const inserted = await this.prisma.$executeRaw(Prisma.sql`
-      INSERT INTO shipper_task_offers (delivery_id, shipper_id, status, expires_at)
-      SELECT ${deliveryId}::uuid, ${shipper.id}::uuid, 'pending'::offer_status, ${expiresAt.toISOString()}::timestamptz
-      WHERE EXISTS (
-        SELECT 1
-        FROM deliveries
-        WHERE id = ${deliveryId}::uuid
-          AND status = 'pending_assignment'
-          AND shipper_id IS NULL
-      )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM shipper_task_offers
-          WHERE delivery_id = ${deliveryId}::uuid
-            AND status = 'pending'
-        )
-        AND (
-          SELECT COUNT(*)
-          FROM shipper_task_offers
-          WHERE delivery_id = ${deliveryId}::uuid
-        ) < ${maxOffers}
-      ON CONFLICT (delivery_id, shipper_id) DO NOTHING
-    `);
-    if (inserted !== 1) return null;
-
-    await this.notifyTaskOffer(shipper, deliveryId, expiresAt, expirySeconds);
-    return shipper;
-  }
-
-  // Called after reservation created with requestDelivery=true. Kept as public API for the queue processor.
-  async broadcastToNearbyShippers(deliveryId: string, pickupLng: number, pickupLat: number) {
-    const shipper = await this.offerNextNearestShipper(deliveryId, pickupLng, pickupLat);
-    if (!shipper) return;
-
-    // Mốc broadcast chỉ tồn tại cho chuyến của chiến dịch — đơn lẻ không có dòng
-    // campaign_transports nào, nên không chạm vào bảng đó.
-    if (!(await this.hasCampaignTransport(this.prisma, deliveryId))) return;
-
-    // Bookkeeping thuần: offer đã được tạo và socket `delivery:offer` đã bắn ở trên.
-    // Lỗi ở đây KHÔNG được phép làm job fail — job retry sẽ bị guard "đã có offer
-    // pending" chặn nên sẽ không emit lại lần nào nữa, shipper mất popup.
-    try {
-      await this.prisma.$executeRaw(Prisma.sql`
-        UPDATE campaign_transports
-        SET last_broadcast_at = NOW(), updated_at = NOW()
-        WHERE delivery_id = ${deliveryId}::uuid
-      `);
-    } catch (err) {
-      this.logger.warn(
-        `Không ghi được mốc broadcast cho delivery ${deliveryId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  async acceptOffer(deliveryId: string, shipperUserId: string) {
-    const volunteer = await this.prisma.volunteerProfile.findUnique({
-      where: { userId: shipperUserId },
-    });
-    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-
-    const offer = await this.prisma.shipperTaskOffer.findUnique({
-      where: { deliveryId_shipperId: { deliveryId, shipperId: volunteer.id } },
-    });
-
-    if (!offer) throw new NotFoundException('Không tìm thấy lời mời giao hàng.');
-    if (offer.status !== 'pending') throw new BadRequestException('Lời mời này không còn hiệu lực (đã được phản hồi hoặc hết hạn).');
-    if (new Date() > offer.expiresAt) throw new BadRequestException('Lời mời giao hàng đã hết hạn.');
-
-    // Mỗi shipper chỉ giữ 1 đơn đang giao tại một thời điểm
-    const existingActive = await this.prisma.delivery.findFirst({
-      where: {
-        shipperId: volunteer.id,
-        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
-      },
-      select: { id: true },
-    });
-    if (existingActive) {
-      throw new BadRequestException(
-        'Bạn đang có một đơn giao chưa hoàn tất. Hãy hoàn tất đơn hiện tại trước khi nhận đơn mới.',
-      );
-    }
-
-    // Đang chạy chuyến giao sỉ thì không nhận thêm đơn lẻ (guard chéo với bulk-runs)
-    const activeBulk = await this.prisma.bulkRun.findFirst({
-      where: { shipperId: volunteer.id, status: { in: ['approved', 'picked_up'] } },
-      select: { id: true },
-    });
-    if (activeBulk) {
-      throw new BadRequestException(
-        'Bạn đang chạy một chuyến giao sỉ. Hoàn tất chuyến trước khi nhận đơn lẻ.',
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      const claimedVolunteer = await tx.volunteerProfile.updateMany({
-        where: { id: volunteer.id, isAvailable: true },
-        data: { isAvailable: false },
-      });
-      if (claimedVolunteer.count !== 1) {
-        throw new ConflictException('Bạn đã nhận một đơn giao khác.');
-      }
-
-      const assigned = await tx.delivery.updateMany({
-        where: {
-          id: deliveryId,
-          status: 'pending_assignment',
-          shipperId: null,
-        },
-        data: {
-          shipperId: volunteer.id,
-          status: 'assigned',
-          assignedAt: new Date(),
-        },
-      });
-
-      if (assigned.count !== 1) {
-        throw new ConflictException('Đơn này đã được shipper khác nhận.');
-      }
-
-      const accepted = await tx.shipperTaskOffer.updateMany({
-        where: { id: offer.id, status: 'pending', expiresAt: { gt: new Date() } },
-        data: { status: 'accepted', respondedAt: new Date() },
-      });
-      if (accepted.count !== 1) {
-        throw new ConflictException('Lời mời này không còn hiệu lực.');
-      }
-
-      await tx.shipperTaskOffer.updateMany({
-        where: { deliveryId, id: { not: offer.id }, status: 'pending' },
-        data: { status: 'expired', respondedAt: new Date() },
-      });
-
-      await this.syncCampaignTransport(tx, deliveryId, 'assigned');
-    });
-
-    // Realtime: báo cho receiver biết có shipper nhận rồi
-    const updated = await this.prisma.delivery.findUnique({
-      where: { id: deliveryId },
-      include: {
-        reservation: { include: { receiver: { include: { user: true } }, listing: true } },
-        shipper: { include: { user: true } },
-      },
-    });
-    if (updated?.reservation?.receiver?.userId) {
-      this.gateway.emitToUser(updated.reservation.receiver.userId, 'delivery:assigned', {
-        reservationId: updated.reservationId,
-        deliveryId,
-        shipperName: updated.shipper?.user.fullName ?? 'TNV',
-        shipperPhone: updated.shipper?.user.phone,
-      });
-    } else {
-      void this.notifyCampaignTransport(deliveryId, 'assigned');
-    }
-
-    return updated;
   }
 
   /** TNV có ca giao hàng phủ thời điểm này không (điều kiện để nhận đơn). */
@@ -733,69 +422,6 @@ export class DeliveriesService {
     return updated;
   }
 
-  async rejectOffer(deliveryId: string, shipperUserId: string, reason?: string) {
-    const volunteer = await this.prisma.volunteerProfile.findUnique({
-      where: { userId: shipperUserId },
-    });
-    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-
-    const offer = await this.prisma.shipperTaskOffer.findUnique({
-      where: { deliveryId_shipperId: { deliveryId, shipperId: volunteer.id } },
-    });
-
-    if (!offer || offer.status !== 'pending') {
-      throw new BadRequestException('Không có lời mời giao hàng nào đang chờ.');
-    }
-
-    const coords = (await this.getDeliveryCoords([deliveryId])).get(deliveryId);
-
-    await this.prisma.$transaction(async (tx) => {
-      const rejected = await tx.shipperTaskOffer.updateMany({
-        where: { id: offer.id, status: 'pending', expiresAt: { gt: new Date() } },
-        data: { status: 'rejected', respondedAt: new Date(), rejectReason: reason ?? 'Shipper bỏ qua' },
-      });
-      if (rejected.count !== 1) {
-        throw new BadRequestException('Lời mời này không còn hiệu lực.');
-      }
-    });
-
-    if (coords?.pickupLng != null && coords?.pickupLat != null) {
-      await this.offerNextNearestShipper(deliveryId, coords.pickupLng, coords.pickupLat);
-    }
-
-    return { message: 'Offer rejected' };
-  }
-
-  async expireOfferAndOfferNext(deliveryId: string, shipperId: string, expiresAt?: string) {
-    const expectedExpiry = expiresAt ? new Date(expiresAt) : undefined;
-    if (expectedExpiry && Number.isNaN(expectedExpiry.getTime())) return;
-
-    const offer = await this.prisma.shipperTaskOffer.findUnique({
-      where: { deliveryId_shipperId: { deliveryId, shipperId } },
-      select: { id: true, status: true, expiresAt: true },
-    });
-    if (
-      !offer
-      || offer.status !== 'pending'
-      || offer.expiresAt > new Date()
-      || (expectedExpiry && offer.expiresAt.getTime() !== expectedExpiry.getTime())
-    ) return;
-
-    const coords = (await this.getDeliveryCoords([deliveryId])).get(deliveryId);
-    const expired = await this.prisma.shipperTaskOffer.updateMany({
-      where: { id: offer.id, status: 'pending', expiresAt: offer.expiresAt },
-      data: { status: 'expired', respondedAt: new Date(), rejectReason: 'Offer timeout' },
-    });
-    if (expired.count !== 1) return;
-
-    // Để trôi lời mời → tắt sẵn sàng, trước khi chuyển lượt cho người kế tiếp.
-    await this.goOfflineAfterLapse([shipperId]);
-
-    if (coords?.pickupLng != null && coords?.pickupLat != null) {
-      await this.offerNextNearestShipper(deliveryId, coords.pickupLng, coords.pickupLat);
-    }
-  }
-
   async updateStatus(
     deliveryId: string,
     shipperUserId: string,
@@ -1023,11 +649,8 @@ export class DeliveriesService {
           ]),
     ]);
 
-    // Mời lại các shipper khác gần điểm lấy hàng
-    const coords = (await this.getDeliveryCoords([deliveryId])).get(deliveryId);
-    if (coords?.pickupLng != null && coords?.pickupLat != null) {
-      await this.broadcastToNearbyShippers(deliveryId, coords.pickupLng, coords.pickupLat);
-    }
+    // Đơn trở về trạng thái chờ — tự hiện lại trong danh sách "Đơn giao gần bạn"
+    // của các shipper đang trong ca (trang poll 20s), không cần mời lại tuần tự.
     return { id: deliveryId, status: 'pending_assignment' };
   }
 
@@ -1292,49 +915,19 @@ export class DeliveriesService {
 
     return stale.length;
   }
-
-  async sweepOffersAndRebroadcast(): Promise<number> {
-    // Bỏ cuộc các đơn đã tìm quá 4ph30 TRƯỚC, để không mời lại vô ích
-    await this.failUnassignedTimeouts();
-
-    // RETURNING để biết ai đã để trôi lời mời → tắt sẵn sàng cho họ.
-    const lapsed = await this.prisma.$queryRaw<{ shipper_id: string }[]>(Prisma.sql`
-      UPDATE shipper_task_offers
-      SET status = 'expired'::offer_status, responded_at = NOW()
-      WHERE status = 'pending' AND expires_at < NOW()
-      RETURNING shipper_id
-    `);
-    await this.goOfflineAfterLapse(lapsed.map((o) => o.shipper_id));
-
-    const stuck = await this.prisma.$queryRaw<
-      { id: string; plng: number | null; plat: number | null }[]
-    >(Prisma.sql`
-      SELECT d.id,
-             ST_X(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plng,
-             ST_Y(COALESCE(d.pickup_location, fl.pickup_location)::geometry) AS plat
-      FROM deliveries d
-      LEFT JOIN reservations r ON r.id = d.reservation_id
-      LEFT JOIN food_listings fl ON fl.id = r.listing_id
-      LEFT JOIN campaign_transports ct ON ct.delivery_id = d.id
-      WHERE d.status = 'pending_assignment'
-        AND (
-          (r.id IS NOT NULL AND r.status = 'confirmed' AND r.qr_expires_at > NOW())
-          OR (ct.id IS NOT NULL AND ct.status = 'pending')
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM shipper_task_offers o
-          WHERE o.delivery_id = d.id AND o.status = 'pending'
-        )
-      LIMIT 20
-    `);
-
-    for (const d of stuck) {
-      if (d.plng != null && d.plat != null) {
-        await this.broadcastToNearbyShippers(d.id, Number(d.plng), Number(d.plat));
-      }
-    }
-
-    return stuck.length;
+  /**
+   * Huỷ các đơn không ai nhận đúng hạn (đơn ngay: hết cửa sổ chờ; đơn hẹn giờ:
+   * quá giờ hẹn) và dọn lời mời cũ còn treo từ hệ mời tuần tự đã gỡ bỏ.
+   */
+  async expireUnclaimedDeliveries(): Promise<number> {
+    const expired = await this.failUnassignedTimeouts();
+    // Dọn dữ liệu: hàng lời mời cũ (trước khi chuyển sang mô hình tự chọn đơn)
+    // còn pending sẽ treo mãi vì không còn cron nào đụng tới.
+    await this.prisma.shipperTaskOffer.updateMany({
+      where: { status: 'pending', expiresAt: { lt: new Date() } },
+      data: { status: 'expired', respondedAt: new Date() },
+    });
+    return expired;
   }
 
   /** Lấy toạ độ lấy hàng / giao hàng (cột geography) cho danh sách delivery. */
@@ -1714,45 +1307,5 @@ export class DeliveriesService {
         ? { name: delivery.shipper.user.fullName, phone: delivery.shipper.user.phone, location: shipperLocation }
         : null,
     };
-  }
-
-  async getMyPendingOffers(shipperUserId: string) {
-    const volunteer = await this.prisma.volunteerProfile.findUnique({
-      where: { userId: shipperUserId },
-    });
-    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
-
-    const offers = await this.prisma.shipperTaskOffer.findMany({
-      where: {
-        shipperId: volunteer.id,
-        status: 'pending',
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        delivery: {
-          include: {
-            reservation: {
-              include: {
-                listing: { select: { title: true, pickupAddress: true, imageUrls: true } },
-                receiver: { select: { address: true } },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { offeredAt: 'asc' },
-    });
-
-    const [coordsMap, transports] = await Promise.all([
-      this.getDeliveryCoords(offers.map((offer) => offer.deliveryId)),
-      this.getCampaignTransportSummaries(offers.map((offer) => offer.deliveryId)),
-    ]);
-    return offers.map((offer) => ({
-      ...offer,
-      delivery: this.sourceAwareDelivery(
-        { ...offer.delivery, coords: coordsMap.get(offer.deliveryId) ?? null },
-        transports.get(offer.deliveryId),
-      ),
-    }));
   }
 }
