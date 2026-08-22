@@ -484,3 +484,84 @@ export function useSetMyWeeklyAvailability() {
     },
   });
 }
+
+// ─── Mô hình mới: đăng ký ca giao hàng + tự chọn đơn (thay mời tuần tự 15s) ───
+
+export interface DeliveryShiftSlot {
+  workDate: string;
+  period: ShiftPeriod;
+}
+
+export interface DeliveryShiftsData {
+  isShipper: boolean;
+  slots: DeliveryShiftSlot[];
+  window: {
+    alwaysOpen: boolean;
+    open: boolean;
+    opensAt: string | null;
+    closesAt: string | null;
+    nextOpensAt: string | null;
+    /** Tuần đang được phép đăng ký (YYYY-MM-DD) — null khi luôn mở. */
+    editableFrom: string | null;
+    editableTo: string | null;
+  };
+}
+
+export function useMyDeliveryShifts(enabled = true) {
+  return useQuery({
+    queryKey: ['volunteers', 'delivery-shifts'],
+    queryFn: async () => (await api.get('/volunteers/me/delivery-shifts')).data.data as DeliveryShiftsData,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useSetMyDeliveryShifts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (slots: DeliveryShiftSlot[]) =>
+      (await api.put('/volunteers/me/delivery-shifts', { slots })).data.data,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
+  });
+}
+
+export interface NearbyDelivery {
+  deliveryId: string;
+  createdAt: string;
+  /** Điểm lấy hàng cách vị trí hiện tại của shipper (km). */
+  distanceKm: number;
+  /** Quãng lấy → giao (km). */
+  tripKm: number | null;
+  listingTitle: string;
+  pickupAddress: string;
+  imageUrls: string[];
+  deliveryAddress: string | null;
+  deliveryScheduledAt: string | null;
+  deliveryEvidenceUrl: string | null;
+  /** Ca của shipper có phủ thời điểm giao đơn này không. */
+  canClaim: boolean;
+  claimSlot: { workDate: string; period: ShiftPeriod };
+}
+
+export function useNearbyDeliveries(coords: { lng: number; lat: number } | null) {
+  return useQuery({
+    queryKey: ['deliveries', 'nearby', coords],
+    queryFn: async () =>
+      (await api.get('/deliveries/nearby', { params: coords! })).data.data as NearbyDelivery[],
+    enabled: !!coords,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useClaimDelivery() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (deliveryId: string) =>
+      (await api.post(`/deliveries/${deliveryId}/claim`)).data.data,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['deliveries'] });
+      void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
+    },
+  });
+}

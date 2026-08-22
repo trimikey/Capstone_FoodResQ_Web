@@ -398,6 +398,7 @@ model VolunteerProfile {
   user                   User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   specializations        VolunteerSpecializationEntry[]
   availability           VolunteerAvailability[]
+  deliveryShifts         DeliveryShiftRegistration[]
   deliveries             Delivery[]
   campaignAssignments    CampaignVolunteerAssignment[]
   dedicationPointHistory DedicationPointsHistory[]
@@ -508,6 +509,8 @@ model Reservation {
   /// Điểm giao do người đặt chọn riêng cho đơn này (đang nằm viện, ở nhà người thân…).
   /// NULL = giao về địa chỉ mặc định trong hồ sơ người nhận.
   deliveryAddress        String?                 @map("delivery_address")
+  /// Giờ hẹn giao do người nhận chọn. NULL = giao ngay khi có shipper nhận đơn.
+  deliveryScheduledAt    DateTime?               @map("delivery_scheduled_at") @db.Timestamptz
   deliveryLocation       Unsupported("geography(Point, 4326)")? @map("delivery_location")
   trustPenaltyApplied    Boolean                 @default(false) @map("trust_penalty_applied")
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
@@ -644,6 +647,24 @@ model VolunteerAvailability {
   @@index([dayOfWeek, period], map: "idx_volunteer_availability_slot")
   @@index([volunteerId], map: "idx_volunteer_availability_volunteer")
   @@map("volunteer_availability")
+}
+
+/// Ca GIAO HÀNG tình nguyện viên đã đăng ký cho một ngày cụ thể.
+/// Khác volunteer_availability (khai báo rảnh, lặp hằng tuần): đây là CAM KẾT trực ca,
+/// là điều kiện để nhận đơn giao trong khung giờ đó.
+model DeliveryShiftRegistration {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId String              @map("volunteer_id") @db.Uuid
+  workDate    DateTime            @map("work_date") @db.Date
+  period      CampaignShiftPeriod
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([volunteerId, workDate, period], map: "delivery_shift_reg_unique")
+  @@index([workDate, period], map: "idx_delivery_shift_reg_slot")
+  @@index([volunteerId, workDate], map: "idx_delivery_shift_reg_volunteer")
+  @@map("delivery_shift_registrations")
 }
 
 model KitchenCampaign {

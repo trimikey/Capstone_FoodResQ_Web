@@ -40,6 +40,22 @@ export function maxOffersPerDelivery(expirySeconds: number): number {
 }
 export const MAX_OFFERS_PER_DELIVERY = maxOffersPerDelivery(OFFER_EXPIRY_SECONDS);
 
+/**
+ * Quy một thời điểm về ô ca (ngày VN + 1 trong 4 ca cố định của hệ thống).
+ * Dùng để so với ca giao hàng TNV đã đăng ký: đơn "giao ngay" xét theo BÂY GIỜ,
+ * đơn hẹn giờ xét theo GIỜ HẸN.
+ */
+export function deliverySlotAt(at: Date): { workDate: string; period: 'midnight' | 'morning' | 'afternoon' | 'evening' } {
+  const vn = new Date(at.getTime() + 7 * 3600_000);
+  const hour = vn.getUTCHours();
+  const period = hour < 6 ? 'midnight' as const : hour < 12 ? 'morning' as const : hour < 18 ? 'afternoon' as const : 'evening' as const;
+  return { workDate: vn.toISOString().slice(0, 10), period };
+}
+
+const PERIOD_VN: Record<string, string> = {
+  midnight: 'ca khuya', morning: 'ca sáng', afternoon: 'ca chiều', evening: 'ca tối',
+};
+
 interface NearbyShipper {
   id: string;
   user_id: string;
@@ -482,6 +498,204 @@ export class DeliveriesService {
       void this.notifyCampaignTransport(deliveryId, 'assigned');
     }
 
+    return updated;
+  }
+
+  /** TNV có ca giao hàng phủ thời điểm này không (điều kiện để nhận đơn). */
+  private async hasDeliveryShiftCovering(volunteerId: string, at: Date): Promise<boolean> {
+    const slot = deliverySlotAt(at);
+    const found = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM delivery_shift_registrations
+      WHERE volunteer_id = ${volunteerId}::uuid
+        AND work_date = ${slot.workDate}::date
+        AND period = ${slot.period}::campaign_shift_period
+      LIMIT 1
+    `);
+    return found.length > 0;
+  }
+
+  /** Xác minh đủ điều kiện làm shipper (dùng chung cho danh sách đơn + nhận đơn). */
+  private async requireVerifiedShipper(shipperUserId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId: shipperUserId },
+      select: {
+        id: true,
+        verificationStatus: true,
+        user: { select: { status: true } },
+        specializations: { select: { specialization: true, isVerified: true } },
+      },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    const shipperOk = volunteer.specializations.some(
+      (sp) => sp.specialization === 'shipper' && sp.isVerified,
+    );
+    if (volunteer.user.status !== 'active' || volunteer.verificationStatus !== 'approved' || !shipperOk) {
+      throw new ForbiddenException('Tài khoản chưa được xác minh chuyên môn giao hàng.');
+    }
+    return volunteer;
+  }
+
+  /**
+   * Đơn đang chờ shipper trong bán kính 5km quanh vị trí hiện tại của TNV.
+   *
+   * Mô hình MỚI thay cho mời tuần tự 15s: shipper trong ca tự xem danh sách và
+   * CHỌN đơn muốn giao. Toạ độ lấy từ FE lúc gọi (GPS tươi) thay vì cột
+   * current_location vốn chỉ được cập nhật khi còn dùng nút bật/tắt sẵn sàng.
+   */
+  async getNearbyPendingDeliveries(shipperUserId: string, lng: number, lat: number) {
+    const volunteer = await this.requireVerifiedShipper(shipperUserId);
+
+    const rows = await this.prisma.$queryRaw<Array<{
+      id: string;
+      created_at: Date;
+      distance_m: number;
+      trip_km: number | null;
+      listing_title: string;
+      pickup_address: string;
+      image_urls: unknown;
+      delivery_address: string | null;
+      receiver_address: string | null;
+      delivery_scheduled_at: Date | null;
+      evidence_url: string | null;
+    }>>(Prisma.sql`
+      SELECT d.id,
+             d.created_at,
+             ST_Distance(d.pickup_location::geography, ST_MakePoint(${lng}, ${lat})::geography) AS distance_m,
+             d.distance_km::float8 AS trip_km,
+             fl.title AS listing_title,
+             fl.pickup_address,
+             fl.image_urls,
+             r.delivery_address,
+             rp.address AS receiver_address,
+             r.delivery_scheduled_at,
+             r.delivery_evidence_url AS evidence_url
+      FROM deliveries d
+      JOIN reservations r ON r.id = d.reservation_id
+      JOIN food_listings fl ON fl.id = r.listing_id
+      LEFT JOIN receiver_profiles rp ON rp.id = r.receiver_id
+      WHERE d.status = 'pending_assignment'
+        AND d.shipper_id IS NULL
+        AND d.pickup_location IS NOT NULL
+        AND ST_DWithin(
+          d.pickup_location::geography,
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ${BROADCAST_RADIUS_M}
+        )
+      ORDER BY r.delivery_scheduled_at ASC NULLS FIRST, d.created_at ASC
+      LIMIT 30
+    `);
+
+    // Gắn cờ "ca của bạn có phủ đơn này không" để FE giải thích vì sao nút mờ,
+    // thay vì để bấm rồi mới ăn lỗi.
+    const results: Array<Record<string, unknown>> = [];
+    for (const row of rows) {
+      const targetAt = row.delivery_scheduled_at ?? new Date();
+      const covered = await this.hasDeliveryShiftCovering(volunteer.id, targetAt);
+      results.push({
+        deliveryId: row.id,
+        createdAt: row.created_at,
+        distanceKm: Math.round((row.distance_m / 1000) * 10) / 10,
+        tripKm: row.trip_km,
+        listingTitle: row.listing_title,
+        pickupAddress: row.pickup_address,
+        imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
+        deliveryAddress: row.delivery_address ?? row.receiver_address,
+        deliveryScheduledAt: row.delivery_scheduled_at,
+        deliveryEvidenceUrl: row.evidence_url,
+        canClaim: covered,
+        claimSlot: deliverySlotAt(targetAt),
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Shipper TỰ NHẬN một đơn đang chờ — thay cho bấm chấp nhận lời mời 15s.
+   *
+   * Điều kiện cốt lõi: phải có CA GIAO HÀNG đã đăng ký phủ thời điểm giao
+   * (đơn hẹn giờ xét theo giờ hẹn, đơn giao ngay xét theo bây giờ) — đúng cam kết
+   * "chọn đơn đi giao trong lịch đã đăng ký".
+   */
+  async claimDelivery(deliveryId: string, shipperUserId: string) {
+    const volunteer = await this.requireVerifiedShipper(shipperUserId);
+
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: { reservation: { select: { deliveryScheduledAt: true } } },
+    });
+    if (!delivery || !delivery.reservationId) throw new NotFoundException('Không tìm thấy đơn giao.');
+    if (delivery.status !== 'pending_assignment' || delivery.shipperId) {
+      throw new BadRequestException('Đơn này đã có người nhận hoặc không còn chờ giao.');
+    }
+
+    const targetAt = delivery.reservation?.deliveryScheduledAt ?? new Date();
+    if (!(await this.hasDeliveryShiftCovering(volunteer.id, targetAt))) {
+      const slot = deliverySlotAt(targetAt);
+      throw new BadRequestException(
+        `Bạn chưa đăng ký ${PERIOD_VN[slot.period]} ngày ${slot.workDate} — chỉ nhận được đơn nằm trong ca đã đăng ký.`,
+      );
+    }
+
+    // Mỗi shipper một đơn đang giao; đang chạy giao sỉ thì không nhận đơn lẻ.
+    const existingActive = await this.prisma.delivery.findFirst({
+      where: {
+        shipperId: volunteer.id,
+        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+      },
+      select: { id: true },
+    });
+    if (existingActive) {
+      throw new BadRequestException('Bạn đang có một đơn giao chưa hoàn tất. Hãy hoàn tất đơn hiện tại trước.');
+    }
+    const activeBulk = await this.prisma.bulkRun.findFirst({
+      where: { shipperId: volunteer.id, status: { in: ['approved', 'picked_up'] } },
+      select: { id: true },
+    });
+    if (activeBulk) {
+      throw new BadRequestException('Bạn đang chạy một chuyến giao sỉ. Hoàn tất chuyến trước khi nhận đơn lẻ.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const assigned = await tx.delivery.updateMany({
+        where: { id: deliveryId, status: 'pending_assignment', shipperId: null },
+        data: { shipperId: volunteer.id, status: 'assigned', assignedAt: new Date() },
+      });
+      if (assigned.count !== 1) {
+        throw new ConflictException('Đơn này vừa được shipper khác nhận trước bạn.');
+      }
+      // Đơn có thể còn lời mời cũ (giai đoạn chuyển tiếp) — đóng hết để không ai bấm nhầm.
+      await tx.shipperTaskOffer.updateMany({
+        where: { deliveryId, status: 'pending' },
+        data: { status: 'expired', respondedAt: new Date() },
+      });
+      await this.syncCampaignTransport(tx, deliveryId, 'assigned');
+    });
+
+    const updated = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: {
+        reservation: { include: { receiver: { include: { user: true } }, listing: true } },
+        shipper: { include: { user: true } },
+      },
+    });
+    if (updated?.reservation?.receiver?.userId) {
+      this.gateway.emitToUser(updated.reservation.receiver.userId, 'delivery:assigned', {
+        reservationId: updated.reservationId,
+        deliveryId,
+        shipperName: updated.shipper?.user.fullName ?? 'TNV',
+        shipperPhone: updated.shipper?.user.phone,
+      });
+      void this.notifications.notify(updated.reservation.receiver.userId, {
+        type: 'delivery',
+        title: 'Đã có tình nguyện viên nhận đơn',
+        body:
+          `${updated.shipper?.user.fullName ?? 'Tình nguyện viên'} sẽ giao "${updated.reservation.listing.title}" cho bạn`
+          + (updated.reservation.deliveryScheduledAt
+            ? ` vào ${new Date(updated.reservation.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`
+            : ' trong ít phút tới.'),
+        data: { reservationId: updated.reservationId, deliveryId, status: 'assigned' },
+      });
+    }
     return updated;
   }
 
@@ -956,12 +1170,13 @@ export class DeliveriesService {
    * KHÔNG phạt trust) và báo người nhận đặt lại.
    */
   private async failUnassignedTimeouts(): Promise<number> {
-    const cutoff = new Date(Date.now() - ASSIGNMENT_TIMEOUT_MS);
-    const stale = await this.prisma.delivery.findMany({
-      where: {
-        status: 'pending_assignment',
-        createdAt: { lt: cutoff },
-      },
+    // Mô hình tự nhận đơn: hạn chờ KHÔNG còn là 4ph30 cứng.
+    //  - Đơn giao ngay: chờ DELIVERY_CLAIM_WINDOW_MINUTES (admin chỉnh, mặc định 30ph).
+    //  - Đơn hẹn giờ:   chờ tới đúng giờ hẹn — quá giờ mà không ai nhận mới huỷ.
+    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
+    const now = Date.now();
+    const candidates = await this.prisma.delivery.findMany({
+      where: { status: 'pending_assignment' },
       include: {
         reservation: {
           select: {
@@ -969,12 +1184,19 @@ export class DeliveriesService {
             quantity: true,
             listingId: true,
             receiverId: true,
+            deliveryScheduledAt: true,
             receiver: { select: { userId: true } },
             listing: { select: { title: true } },
           },
         },
       },
-      take: 50,
+      take: 100,
+    });
+    const stale = candidates.filter((d) => {
+      const deadline = d.reservation?.deliveryScheduledAt
+        ? d.reservation.deliveryScheduledAt.getTime()
+        : d.createdAt.getTime() + claimWindowMinutes * 60_000;
+      return now > deadline;
     });
 
     for (const d of stale) {
@@ -1374,7 +1596,7 @@ export class DeliveriesService {
     const delivery = await this.prisma.delivery.findUnique({
       where: { reservationId },
       include: {
-        reservation: { select: { receiverId: true, listing: { select: { title: true, pickupAddress: true } } } },
+        reservation: { select: { receiverId: true, deliveryScheduledAt: true, listing: { select: { title: true, pickupAddress: true } } } },
         shipper: { select: { id: true, user: { select: { fullName: true, phone: true } } } },
       },
     });
@@ -1442,8 +1664,14 @@ export class DeliveriesService {
       // này thay vì đếm từ lúc mở trang (reload sẽ nhảy về 4:30 dù đã tìm gần hết giờ).
       searchExpiresAt:
         delivery.status === 'pending_assignment'
-          ? new Date(delivery.createdAt.getTime() + ASSIGNMENT_TIMEOUT_MS).toISOString()
+          ? (delivery.reservation.deliveryScheduledAt
+              ? delivery.reservation.deliveryScheduledAt.toISOString()
+              : new Date(
+                  delivery.createdAt.getTime()
+                    + (await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES')) * 60_000,
+                ).toISOString())
           : null,
+      deliveryScheduledAt: delivery.reservation.deliveryScheduledAt?.toISOString() ?? null,
       distanceKm: delivery.distanceKm != null ? Number(delivery.distanceKm) : null,
       listingTitle: delivery.reservation.listing.title,
       pickupAddress: delivery.reservation.listing.pickupAddress,

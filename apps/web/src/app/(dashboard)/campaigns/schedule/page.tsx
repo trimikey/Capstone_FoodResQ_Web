@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useWeeklySchedule } from '@/hooks/useCampaigns';
 import AvailabilityGrid from './AvailabilityGrid';
+import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { errMsg } from '@/lib/utils';
 
 const DAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
@@ -38,9 +39,21 @@ export default function WeeklySchedulePage() {
   const [anchor, setAnchor] = useState<Date>(() => weekStartOf(new Date()));
   const weekStartKey = fmtDateKey(anchor);
   const { data: weekly, isLoading, error } = useWeeklySchedule(weekStartKey);
+  // Ca giao hàng đã đăng ký — hiện chung lịch với ca chiến dịch để TNV nhìn một chỗ.
+  const { data: deliveryShifts } = useMyDeliveryShifts();
 
   const days = weekly?.days ?? [];
   const isPersonal = weekly?.isPersonalView ?? false;
+
+  const DELIVERY_PERIOD_LABEL: Record<string, string> = {
+    midnight: '00:00–06:00', morning: '06:00–12:00', afternoon: '12:00–18:00', evening: '18:00–24:00',
+  };
+  const deliveryByDate = new Map<string, string[]>();
+  for (const slot of deliveryShifts?.slots ?? []) {
+    const list = deliveryByDate.get(slot.workDate) ?? [];
+    list.push(DELIVERY_PERIOD_LABEL[slot.period] ?? slot.period);
+    deliveryByDate.set(slot.workDate, list);
+  }
 
   function gotoPrevWeek() {
     setAnchor((a) => addDays(a, -7));
@@ -146,7 +159,20 @@ export default function WeeklySchedulePage() {
 
                 {/* Campaigns */}
                 <div className="p-2 space-y-1.5 flex-1 min-h-[120px]">
-                  {day.campaigns.length === 0 ? (
+                  {/* Ca giao hàng của chính TNV trong ngày này */}
+                  {(deliveryByDate.get(day.date) ?? []).map((time) => (
+                    <div
+                      key={`dlv-${day.date}-${time}`}
+                      className="rounded-xl border border-teal-200 bg-teal-50 px-2 py-1.5"
+                    >
+                      <p className="flex items-center gap-1 text-[11px] font-bold text-teal-800">
+                        <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                        Ca giao hàng
+                      </p>
+                      <p className="text-[10px] text-teal-700">{time}</p>
+                    </div>
+                  ))}
+                  {day.campaigns.length === 0 && (deliveryByDate.get(day.date) ?? []).length === 0 ? (
                     <p className="text-[11px] text-neutral-400 italic text-center py-4">
                       Không có lịch
                     </p>
