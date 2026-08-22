@@ -11,6 +11,8 @@ export const createReservationSchema = z.object({
   deliveryLng: z.number().min(-180).max(180).optional(),
   deliveryLat: z.number().min(-90).max(90).optional(),
   deliveryAddress: z.string().max(500).optional(),
+  /** Giờ hẹn giao (ISO). Bỏ trống = giao ngay. */
+  deliveryScheduledAt: z.string().optional(),
 });
 
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;

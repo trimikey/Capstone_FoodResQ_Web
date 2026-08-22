@@ -7,8 +7,6 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -36,7 +34,6 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
-    @InjectQueue('notification-push') private notifQueue: Queue,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -160,6 +157,23 @@ export class ReservationsService {
           `Điểm giao cách nơi lấy hàng ${distanceKm} km, vượt giới hạn ${maxDistanceKm} km cho một chuyến giao. `
           + 'Vui lòng chọn điểm giao gần hơn hoặc chọn "Tôi sẽ tự đến lấy".',
         );
+      }
+
+      // Hẹn giờ giao: shipper cần thời gian di chuyển nên tối thiểu 30 phút nữa,
+      // và không được vượt quá giờ đóng nhận hàng của tin (quá giờ là quán đóng).
+      if (dto.deliveryScheduledAt) {
+        const scheduledAt = new Date(dto.deliveryScheduledAt);
+        if (scheduledAt.getTime() < Date.now() + 30 * 60_000) {
+          throw new BadRequestException('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
+        }
+        const [windowRow] = await this.prisma.$queryRaw<{ pickup_end_time: Date }[]>(Prisma.sql`
+          SELECT pickup_end_time FROM food_listings WHERE id = ${dto.listingId}::uuid
+        `);
+        if (windowRow && scheduledAt > windowRow.pickup_end_time) {
+          throw new BadRequestException(
+            'Giờ hẹn giao vượt quá khung giờ nhận hàng của tin. Vui lòng chọn giờ sớm hơn.',
+          );
+        }
       }
     }
 
@@ -290,7 +304,7 @@ export class ReservationsService {
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
               qr_token, qr_expires_at, receiver_notes, delivery_evidence_url,
-              delivery_address, delivery_location, created_at, updated_at
+              delivery_address, delivery_location, delivery_scheduled_at, created_at, updated_at
             ) VALUES (
               ${dto.listingId}::uuid,
               ${receiver.id}::uuid,
@@ -300,9 +314,14 @@ export class ReservationsService {
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
               ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
-              ${dto.requestDelivery && customDestination ? customDestination.address : null},
+              ${dto.requestDelivery
+                ? (customDestination ? customDestination.address : (dto.deliveryAddress?.trim() || null))
+                : null},
               ${dto.requestDelivery && customDestination
                 ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+                : Prisma.sql`NULL`},
+              ${dto.requestDelivery && dto.deliveryScheduledAt
+                ? Prisma.sql`${new Date(dto.deliveryScheduledAt).toISOString()}::timestamptz`
                 : Prisma.sql`NULL`},
               NOW(), NOW()
             )
@@ -375,11 +394,39 @@ export class ReservationsService {
     `);
 
     if (listing) {
-      await this.notifQueue.add(
-        'shipper-broadcast',
-        { deliveryId: delivery.id, pickupLng: listing.lng, pickupLat: listing.lat },
-        { delay: 0, removeOnComplete: true, attempts: 3 },
-      );
+      // MÔ HÌNH MỚI: không mời tuần tự 15s nữa. Báo cho các TNV đã đăng ký CA phủ
+      // thời điểm giao (giao ngay = bây giờ; hẹn giờ = giờ hẹn) để họ mở Trung tâm
+      // giao hàng và tự chọn đơn. Khoảng cách lọc lúc họ xem danh sách (GPS tươi).
+      const reservationRow = await this.prisma.reservation.findUnique({
+        where: { id: reservationId },
+        select: { deliveryScheduledAt: true, listing: { select: { title: true } } },
+      });
+      const targetAt = reservationRow?.deliveryScheduledAt ?? new Date();
+      const vn = new Date(targetAt.getTime() + 7 * 3600_000);
+      const hour = vn.getUTCHours();
+      const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+      const workDate = vn.toISOString().slice(0, 10);
+      const onDuty = await this.prisma.$queryRaw<{ user_id: string }[]>(Prisma.sql`
+        SELECT DISTINCT vp.user_id
+        FROM delivery_shift_registrations reg
+        JOIN volunteer_profiles vp ON vp.id = reg.volunteer_id
+        JOIN users u ON u.id = vp.user_id
+        WHERE reg.work_date = ${workDate}::date
+          AND reg.period = ${period}::campaign_shift_period
+          AND u.status = 'active'
+        LIMIT 50
+      `);
+      const scheduledNote = reservationRow?.deliveryScheduledAt
+        ? ` (hẹn giao ${new Date(reservationRow.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })})`
+        : '';
+      for (const shipper of onDuty) {
+        void this.notifications.notify(shipper.user_id, {
+          type: 'delivery',
+          title: 'Đơn giao mới trong ca của bạn',
+          body: `"${reservationRow?.listing.title ?? 'Suất ăn'}"${scheduledNote} đang chờ shipper. Mở Trung tâm giao hàng để nhận đơn.`,
+          data: { deliveryId: delivery.id, kind: 'delivery_available' },
+        });
+      }
     } else {
       // Tin đăng thiếu pickup_location → không thể tìm shipper quanh điểm lấy.
       this.logger.error(

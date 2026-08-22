@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsInt, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, Matches, Max, Min, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -31,4 +31,27 @@ export class SetWeeklyAvailabilityDto {
   @ValidateNested({ each: true })
   @Type(() => AvailabilitySlotDto)
   slots!: AvailabilitySlotDto[];
+}
+
+/** Một ca giao hàng cho NGÀY cụ thể (khác AvailabilitySlotDto vốn theo thứ trong tuần). */
+export class DeliveryShiftSlotDto {
+  @ApiProperty({ example: '2026-08-24', description: 'Ngày trực (YYYY-MM-DD)' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trực phải theo định dạng YYYY-MM-DD' })
+  workDate!: string;
+
+  @ApiProperty({ enum: SHIFT_PERIOD_VALUES, example: 'afternoon' })
+  @IsIn(SHIFT_PERIOD_VALUES, { message: 'Ca chỉ nhận: midnight / morning / afternoon / evening' })
+  period!: ShiftPeriodValue;
+}
+
+export class SetDeliveryShiftsDto {
+  @ApiProperty({
+    type: [DeliveryShiftSlotDto],
+    description: 'Toàn bộ ca giao hàng trong TUẦN ĐANG MỞ ĐĂNG KÝ (ghi đè). Mảng rỗng = bỏ hết ca tuần đó.',
+  })
+  @IsArray({ message: 'Danh sách ca phải là mảng' })
+  @ArrayMaxSize(28, { message: 'Tối đa 28 ca (7 ngày × 4 ca)' })
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryShiftSlotDto)
+  slots!: DeliveryShiftSlotDto[];
 }

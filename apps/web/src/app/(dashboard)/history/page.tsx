@@ -301,6 +301,11 @@ export default function HistoryPage() {
                       <img
                         src={mediaUrl(t.listing.imageUrls[0] || fallbackImage(t.listing.category))}
                         alt={t.listing.title}
+                        loading="lazy"
+                        onError={(e) => {
+                          const fb = fallbackImage(t.listing.category);
+                          if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                        }}
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -502,6 +507,11 @@ export default function HistoryPage() {
                     <img
                       src={mediaUrl(viewingItem.listing.imageUrls[0] || fallbackImage(viewingItem.listing.category))}
                       alt={viewingItem.listing.title}
+                      loading="lazy"
+                      onError={(e) => {
+                        const fb = fallbackImage(viewingItem.listing.category);
+                        if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                      }}
                       className="w-full h-full object-cover"
                     />
                   </div>

@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsBoolean,
+  IsDateString,
   Min,
   Max,
   MaxLength,
@@ -68,4 +69,13 @@ export class CreateReservationDto {
   @IsString({ message: 'Địa chỉ giao phải là chuỗi' })
   @MaxLength(500, { message: 'Địa chỉ giao tối đa 500 ký tự' })
   deliveryAddress?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-22T17:30:00+07:00',
+    description:
+      'Giờ hẹn giao (ISO 8601). Bỏ trống = giao ngay. Phải nằm trong khung giờ nhận của tin và cách hiện tại ít nhất 30 phút.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Giờ hẹn giao không hợp lệ' })
+  deliveryScheduledAt?: string;
 }
