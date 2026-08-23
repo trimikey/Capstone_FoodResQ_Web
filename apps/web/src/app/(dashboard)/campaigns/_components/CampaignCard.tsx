@@ -17,14 +17,12 @@ const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
 interface CampaignCardProps {
   c: Campaign;
   myRoles: string[];
-  onApply: (id: string, role: AssignmentRole) => void;
-  applying: boolean;
   isProvider?: boolean;
   /** Tài khoản chưa active → vô hiệu hoá nút apply / pledge. */
   disabled?: boolean;
 }
 
-export default function CampaignCard({ c, myRoles, onApply, applying, isProvider, disabled }: CampaignCardProps) {
+export default function CampaignCard({ c, myRoles, isProvider, disabled }: CampaignCardProps) {
   const pledge = usePledgeDonation();
   const [donating, setDonating] = useState(false);
   const availableSupply = (c.supplyProgress ?? []).filter((s) => s.remainingQuantity > 0);
@@ -153,8 +151,6 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           filled={c.chefSlotsFilled}
           needed={c.chefSlotsNeeded}
           canApply={myRoles.includes('chef')}
-          onApply={(r) => onApply(c.id, r)}
-          applying={applying}
           overdue={overdue}
           disabled={disabled}
           recruitmentUnavailable={recruitmentUnavailable}
@@ -165,8 +161,6 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           filled={c.waiterSlotsFilled}
           needed={c.waiterSlotsNeeded}
           canApply={myRoles.includes('waiter')}
-          onApply={(r) => onApply(c.id, r)}
-          applying={applying}
           overdue={overdue}
           disabled={disabled}
           recruitmentUnavailable={recruitmentUnavailable}
@@ -177,8 +171,6 @@ export default function CampaignCard({ c, myRoles, onApply, applying, isProvider
           filled={c.shipperSlotsFilled}
           needed={c.shipperSlotsNeeded}
           canApply={myRoles.includes('shipper')}
-          onApply={(r) => onApply(c.id, r)}
-          applying={applying}
           overdue={overdue}
           disabled={disabled}
           recruitmentUnavailable={recruitmentUnavailable}
@@ -367,8 +359,6 @@ function Slot({
   filled,
   needed,
   canApply,
-  onApply,
-  applying,
   overdue,
   disabled,
   recruitmentUnavailable,
@@ -378,8 +368,6 @@ function Slot({
   filled: number;
   needed: number;
   canApply: boolean;
-  onApply: (role: AssignmentRole) => void;
-  applying: boolean;
   overdue?: boolean;
   disabled?: boolean;
   recruitmentUnavailable?: boolean;
@@ -408,30 +396,27 @@ function Slot({
       <div className="mt-1.5 h-1.5 rounded-full bg-white/70 overflow-hidden">
         <div className={`h-full rounded-full ${rm?.bar ?? 'bg-neutral-400'} transition-all`} style={{ width: `${pct}%` }} />
       </div>
+      {/* KHÔNG đăng ký từ card: đăng ký cần chọn ca + ngày trực cụ thể, mà card không
+          có thông tin đó — bấm ở đây trước sau gì cũng bị chặn. Card chỉ báo TRẠNG THÁI,
+          bấm vào card để mở trang chiến dịch rồi đăng ký ở đó. */}
       {canApply && (
-        <button
-          type="button"
-          onClick={() => onApply(role)}
-          disabled={full || applying || overdue || disabled || recruitmentUnavailable}
-          title={disabled
-            ? 'Tài khoản đang chờ admin duyệt'
-            : recruitmentNotStarted
-              ? 'Chiến dịch chưa đến giờ mở tuyển'
-              : recruitmentUnavailable
-                ? 'Chiến dịch hiện không nhận đăng ký'
-                : undefined}
-          className="mt-2.5 w-full py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed bg-[#236c2a] hover:bg-[#1a4f1f] text-white transition-colors"
+        <p
+          className={`mt-2.5 w-full rounded-lg py-1.5 text-center text-[11px] font-bold ${
+            full || overdue || recruitmentUnavailable || disabled
+              ? 'bg-neutral-100 text-neutral-500'
+              : 'bg-emerald-50 text-emerald-700'
+          }`}
         >
           {disabled
-            ? 'Chờ duyệt'
+            ? 'Tài khoản chờ duyệt'
             : overdue || (recruitmentUnavailable && !recruitmentNotStarted)
               ? 'Hết tuyển'
               : recruitmentNotStarted
-                ? 'Sắp mở'
+                ? 'Sắp mở tuyển'
                 : full
-                  ? 'Đã đủ'
-                  : 'Đăng ký'}
-        </button>
+                  ? 'Đã đủ người'
+                  : 'Còn nhận · bấm để xem'}
+        </p>
       )}
     </div>
   );

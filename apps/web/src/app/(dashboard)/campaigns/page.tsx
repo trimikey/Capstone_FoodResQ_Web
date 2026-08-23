@@ -5,7 +5,7 @@ import './campaign-tokens.css';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { AssignmentRole, UserRole } from '@foodresq/types';
+import { UserRole } from '@foodresq/types';
 import { toast } from 'sonner';
 import {
   useCampaigns,
@@ -100,7 +100,7 @@ function CampaignsPageInner() {
   // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì tổ chức được bấm Bắt đầu trước
   // giờ vận hành — card phải biết cấu hình này mới hiện đúng nút.
   const { data: campaignConstraints } = useCampaignCreateConstraints(isCharity);
-  // Đăng ký ca thực hiện ở trang chi tiết (cần chọn ca + ngày) — xem handleApply.
+  // Đăng ký ca chỉ thực hiện ở TRANG CHI TIẾT chiến dịch (nơi chọn được ca + ngày trực).
   const create = useCreateCampaign();
 
   const [showForm, setShowForm] = useState(false);
@@ -233,15 +233,6 @@ function CampaignsPageInner() {
     return entries;
   }, [isCharity, isProvider, isVolunteer, stats, myTasks]);
 
-  // Mọi chiến dịch đều bắt buộc có ít nhất một ca (BE chặn tạo nếu không), mà đăng ký
-  // theo ca thì cần cả shiftId lẫn ngày trực — thông tin card này không có. Trước đây
-  // nút bấm gọi thẳng API với mỗi {id, role} nên LUÔN nhận 400 "vui lòng đăng ký trực
-  // tiếp theo từng ca". Giờ đưa TNV sang trang chi tiết, nơi có bảng chọn ca + ngày.
-  function handleApply(id: string, role: AssignmentRole) {
-    toast.info(`Chọn ca và ngày trực cho vai trò ${ROLE_LABEL[role]} ở trang chiến dịch.`);
-    router.push(`/campaigns/${id}?role=${role}`);
-  }
-
   const greetingName = me?.receiver?.organizationName ?? me?.fullName?.split(' ')[0] ?? 'bạn';
   const greetingSubtitle = isCharity
     ? 'Quản lý chiến dịch, duyệt tình nguyện viên, theo dõi tiến độ.'
@@ -296,8 +287,6 @@ function CampaignsPageInner() {
               isCharity={isCharity}
               isAccountActive={isAccountActive}
               myRoles={myRoles}
-              onApply={handleApply}
-              applying={false}
               onClear={() => setSearch('')}
             />
           )}
@@ -353,8 +342,6 @@ function CampaignsPageInner() {
               isCharity={isCharity}
               isAccountActive={isAccountActive}
               myRoles={myRoles}
-              onApply={handleApply}
-              applying={false}
             />
           )}
           {!searching && section === 'suppliers' && isCharity && (
@@ -581,8 +568,6 @@ function OverviewDashboard({
                   key={c.id}
                   c={c}
                   myRoles={isVolunteer ? (myTasks ?? []).map((t) => t.role) : []}
-                  onApply={() => undefined}
-                  applying={false}
                   isProvider={isProvider}
                   disabled={!isAccountActive}
                 />
@@ -1406,8 +1391,6 @@ function SearchResultsSection({
   isProvider,
   isAccountActive,
   myRoles,
-  onApply,
-  applying,
   onClear,
 }: {
   query: string;
@@ -1420,8 +1403,6 @@ function SearchResultsSection({
   isCharity: boolean;
   isAccountActive: boolean;
   myRoles: string[];
-  onApply: (id: string, role: AssignmentRole) => void;
-  applying: boolean;
   onClear: () => void;
 }) {
   return (
@@ -1481,8 +1462,6 @@ function SearchResultsSection({
               key={c.id}
               c={c}
               myRoles={isVolunteer ? myRoles : []}
-              onApply={onApply}
-              applying={applying}
               isProvider={isProvider}
               disabled={!isAccountActive}
             />
@@ -1503,8 +1482,6 @@ function BrowseSection({
   isCharity,
   isAccountActive,
   myRoles,
-  onApply,
-  applying,
 }: {
   isLoading: boolean;
   filtered: Campaign[];
@@ -1516,8 +1493,6 @@ function BrowseSection({
   isCharity: boolean;
   isAccountActive: boolean;
   myRoles: string[];
-  onApply: (id: string, role: AssignmentRole) => void;
-  applying: boolean;
 }) {
   return (
     <section>
@@ -1579,8 +1554,6 @@ function BrowseSection({
               key={c.id}
               c={c}
               myRoles={isVolunteer ? myRoles : []}
-              onApply={onApply}
-              applying={applying}
               isProvider={isProvider}
               // Khi tài khoản chưa active: vô hiệu hoá nút đăng ký (đi qua wrapper).
               disabled={!isAccountActive}
