@@ -84,47 +84,19 @@ export default function HomeContent() {
   const [foodCount, setFoodCount] = useState<number>(2000);
   const [heroBgIndex, setHeroBgIndex] = useState<number>(0);
 
-  // Banner ưu tiên hai tấm ảnh thật của chiến dịch tình nguyện: tranh "Mùa hè xanh"
-  // và ảnh trẻ em bên đồng lúa. Ảnh stock chụp studio trước đây khiến trang nhìn như
-  // do máy dựng; hai ảnh này có bối cảnh Việt Nam cụ thể nên thật hơn hẳn.
-  const HERO_PREFERRED = ['/hero_muahexanh_2026.png', '/hero_treem_donglua.jpg'];
-  // Ảnh dự phòng: chừng nào hai file trên chưa được đặt vào public/, hero vẫn có nền
-  // tử tế thay vì trống trơn. Ảnh nền vẽ bằng CSS background nên không có onError —
-  // phải tự thử tải rồi mới quyết định dùng bộ nào.
-  const HERO_FALLBACK = ['/new_wide_hero_1.png', '/new_wide_hero_3.png'];
-
-  const [heroImages, setHeroImages] = useState<string[]>(HERO_FALLBACK);
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      HERO_PREFERRED.map(
-        (src) =>
-          new Promise<string | null>((resolve) => {
-            const probe = new window.Image();
-            probe.onload = () => resolve(src);
-            probe.onerror = () => resolve(null);
-            probe.src = src;
-          }),
-      ),
-    ).then((found) => {
-      const usable = found.filter((src): src is string => !!src);
-      if (alive && usable.length > 0) setHeroImages(usable);
-    });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Ba ảnh tài liệu thật của hoạt động thiện nguyện: phát bánh mì dưới tán cây,
+  // phát quà trên phố, và tình nguyện viên chơi với trẻ vùng cao. Ảnh stock chụp
+  // studio trước đây khiến trang nhìn như do máy dựng.
+  const HERO_IMAGES = ['/anhbanner1.jpg', '/anhbanner2.jpg', '/anhbanner3.jpg'];
 
   // Rotate hero background every 4 seconds
   useEffect(() => {
     const bgTimer = setInterval(() => {
-      // Số ảnh có thể đổi sau khi thử tải xong nên phải lấy độ dài tại thời điểm chạy.
-      setHeroBgIndex((prev) => (prev + 1) % Math.max(1, heroImages.length));
+      setHeroBgIndex((prev) => (prev + 1) % HERO_IMAGES.length);
     }, 4000);
     return () => clearInterval(bgTimer);
-  }, [heroImages.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Animated counters on mount
   useEffect(() => {
@@ -209,13 +181,11 @@ export default function HomeContent() {
       <section className="w-full px-6 md:px-16 lg:px-24 pt-32 pb-24 relative overflow-hidden">
         {/* Background Slider */}
         <div className="absolute inset-0 z-0">
-          {heroImages.map((img, idx) => (
+          {HERO_IMAGES.map((img, idx) => (
             <div
               key={img}
               className={`absolute inset-0 bg-center bg-no-repeat bg-cover transition-all duration-[1500ms] ease-in-out ${
-                // Chốt lại theo số ảnh hiện có: bộ ảnh có thể đổi độ dài sau khi thử
-                // tải xong, index cũ trỏ ra ngoài mảng sẽ làm hero trắng trơn.
-                idx === heroBgIndex % heroImages.length ? 'opacity-100 scale-100' : 'opacity-0 scale-110'
+                idx === heroBgIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'
               }`}
               style={{
                 backgroundImage: `url("${img}")`,
@@ -223,11 +193,13 @@ export default function HomeContent() {
               }}
             />
           ))}
-          {/* Lớp phủ ăn theo màu ảnh: trời xanh ở trên, lúa chín ở dưới — thay lớp
-              wash xám cũ vốn làm cả hai ảnh bạc màu. Ở giữa để mờ nhất cho tranh hiện rõ. */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/75 via-white/10 to-[#fff4dd]/85" />
-          {/* Scrim bên trái giữ chữ đọc được dù ảnh nền nhiều chi tiết. */}
-          <div className="absolute inset-0 bg-gradient-to-r from-white/90 via-white/45 to-transparent" />
+          {/* Lớp phủ: hơi xanh trời ở trên rồi nhạt dần về trắng. Không ám vàng nữa —
+              hai ảnh chụp phố và công viên không có tông lúa chín, phủ vàng lên chỉ
+              làm ảnh bị ố. Ở giữa để mờ nhất cho ảnh hiện rõ. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/70 via-white/15 to-white/80" />
+          {/* Scrim trái đậm hơn bản trước: ba ảnh này là ảnh tài liệu rất nhiều chi tiết
+              (đông người, cây lá), chữ đen đặt thẳng lên sẽ không đọc nổi. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/70 to-transparent" />
         </div>
 
         <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
@@ -242,7 +214,7 @@ export default function HomeContent() {
               Tấn
             </span>
           </h1>
-          <div className="h-1 w-20 bg-[var(--color-rice-brand)] rounded-full my-6" />
+          <div className="h-1 w-20 bg-[var(--color-warm-brand)] rounded-full my-6" />
           <h2 className="font-bold text-2xl sm:text-3xl lg:text-4xl text-neutral-800 leading-snug max-w-2xl">
             thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
           </h2>
@@ -269,12 +241,12 @@ export default function HomeContent() {
 
         {/* Pagination Dots */}
         <div className="absolute bottom-8 left-6 md:left-16 lg:left-24 flex gap-2 z-10">
-          {heroImages.map((_, idx) => (
+          {HERO_IMAGES.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setHeroBgIndex(idx)}
               className={`h-2 rounded-full transition-all duration-300 ${
-                idx === heroBgIndex % heroImages.length
+                idx === heroBgIndex
                   ? 'w-8 bg-[var(--color-leaf-brand)]'
                   : 'w-2 bg-[var(--color-leaf-brand)]/35 hover:bg-[var(--color-leaf-brand)]/60'
               }`}
