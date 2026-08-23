@@ -84,10 +84,12 @@ export default function HomeContent() {
   const [foodCount, setFoodCount] = useState<number>(2000);
   const [heroBgIndex, setHeroBgIndex] = useState<number>(0);
 
+  // Banner lấy từ hai tấm ảnh thật của chiến dịch tình nguyện: tranh "Mùa hè xanh"
+  // và ảnh trẻ em bên đồng lúa. Ảnh stock chụp studio trước đây khiến trang nhìn như
+  // do máy dựng; hai ảnh này có bối cảnh Việt Nam cụ thể nên thật hơn hẳn.
   const HERO_IMAGES = [
-    '/new_wide_hero_1.png',
-    '/new_wide_hero_2.png',
-    '/new_wide_hero_3.png'
+    '/hero_muahexanh_2026.png',
+    '/hero_treem_donglua.jpg',
   ];
 
   // Rotate hero background every 4 seconds
@@ -190,27 +192,30 @@ export default function HomeContent() {
               }`}
               style={{
                 backgroundImage: `url("${img}")`,
-                backgroundPosition: 'center 15%'
+                backgroundPosition: 'center 30%',
               }}
             />
           ))}
-          {/* Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#FAFBF9]/60 via-[#FAFBF9]/10 to-[#FAFBF9]/70" />
+          {/* Lớp phủ ăn theo màu ảnh: trời xanh ở trên, lúa chín ở dưới — thay lớp
+              wash xám cũ vốn làm cả hai ảnh bạc màu. Ở giữa để mờ nhất cho tranh hiện rõ. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/75 via-white/10 to-[#fff4dd]/85" />
+          {/* Scrim bên trái giữ chữ đọc được dù ảnh nền nhiều chi tiết. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-white/90 via-white/45 to-transparent" />
         </div>
 
         <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-800 font-bold text-xs uppercase tracking-wider shadow-sm">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-sky-brand)_14%,white)] border border-[color-mix(in_srgb,var(--color-sky-brand)_35%,white)] text-[color-mix(in_srgb,var(--color-sky-brand)_75%,#0b2a3a)] font-bold text-xs uppercase tracking-wider shadow-sm">
             Tác động của FoodResQ
           </div>
           <h1 className="font-extrabold text-7xl sm:text-8xl lg:text-9xl tracking-tighter tabular-nums leading-none">
-            <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-900 to-emerald-600 drop-shadow-sm">
+            <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-800 via-[var(--color-leaf-brand)] to-emerald-600 drop-shadow-sm">
               {formatNumber(foodCount)}
             </span>
             <span className="text-4xl sm:text-5xl lg:text-6xl text-emerald-800/60 font-bold tracking-normal align-baseline ml-3">
               Tấn
             </span>
           </h1>
-          <div className="h-1 w-20 bg-emerald-500 rounded-full my-6 opacity-70" />
+          <div className="h-1 w-20 bg-[var(--color-rice-brand)] rounded-full my-6" />
           <h2 className="font-bold text-2xl sm:text-3xl lg:text-4xl text-neutral-800 leading-snug max-w-2xl">
             thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
           </h2>
@@ -221,7 +226,7 @@ export default function HomeContent() {
           <div className="flex flex-wrap gap-4 pt-8">
             <button
               onClick={() => router.push('/listings')}
-              className="px-8 py-4 bg-emerald-800 hover:bg-emerald-950 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-800/20 flex items-center gap-2 group active:scale-95"
+              className="px-8 py-4 bg-emerald-700 hover:bg-emerald-850 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-700/25 flex items-center gap-2 group active:scale-95"
             >
               Tham gia giải cứu
               <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
@@ -242,7 +247,9 @@ export default function HomeContent() {
               key={idx}
               onClick={() => setHeroBgIndex(idx)}
               className={`h-2 rounded-full transition-all duration-300 ${
-                idx === heroBgIndex ? 'w-8 bg-emerald-600' : 'w-2 bg-emerald-600/30 hover:bg-emerald-600/50'
+                idx === heroBgIndex
+                  ? 'w-8 bg-[var(--color-leaf-brand)]'
+                  : 'w-2 bg-[var(--color-leaf-brand)]/35 hover:bg-[var(--color-leaf-brand)]/60'
               }`}
               aria-label={`Go to slide ${idx + 1}`}
             />

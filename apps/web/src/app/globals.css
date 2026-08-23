@@ -134,6 +134,13 @@
   --color-honey-600: #a66a13;
   --color-honey-700: #7f4f13;
 
+  /* Bảng màu BANNER — bám theo tranh "Mùa hè xanh" và ảnh trẻ em bên đồng lúa:
+     trời xanh, lá non, lúa chín. Bảng sage mặc định quá trầm so với hai ảnh đó nên
+     hero nhìn xám xịt và "máy móc"; ba tông này lấy thẳng từ chính hai tấm ảnh. */
+  --color-sky-brand: #3aa6dd;
+  --color-leaf-brand: #4fb14f;
+  --color-rice-brand: #e0a92e;
+
   /* Box-shadow scale (Material-ish elevation) */
   --shadow-12: 0 18px 40px -12px rgba(35, 108, 42, 0.22);
 }
