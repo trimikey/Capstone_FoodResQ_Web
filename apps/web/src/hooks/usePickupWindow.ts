@@ -11,6 +11,13 @@ export interface PickupWindowState {
   isOpen: boolean;
   /** Số phút còn lại tới hạn lấy (null nếu chưa mở hoặc đã đóng) */
   minutesLeft: number | null;
+  /**
+   * Mốc "bây giờ" mà trạng thái này được tính ra.
+   *
+   * Trả kèm để nơi khác cần đồng hồ (vd tính giờ sớm nhất được hẹn giao) dùng chung
+   * nhịp tick sẵn có, thay vì gọi Date.now() giữa render — render phải thuần khiết.
+   */
+  now: number;
 }
 
 const TICK_MS = 30_000;
@@ -25,13 +32,13 @@ export function getPickupWindowState(
   now = Date.now(),
 ): PickupWindowState {
   if (!pickupStartTime || !pickupEndTime) {
-    return { notYetOpen: false, closed: false, isOpen: true, minutesLeft: null };
+    return { notYetOpen: false, closed: false, isOpen: true, minutesLeft: null, now };
   }
 
   const start = new Date(pickupStartTime).getTime();
   const end = new Date(pickupEndTime).getTime();
   if (Number.isNaN(start) || Number.isNaN(end)) {
-    return { notYetOpen: false, closed: true, isOpen: false, minutesLeft: null };
+    return { notYetOpen: false, closed: true, isOpen: false, minutesLeft: null, now };
   }
 
   const notYetOpen = now < start;
@@ -43,6 +50,7 @@ export function getPickupWindowState(
     closed,
     isOpen,
     minutesLeft: isOpen ? Math.max(0, Math.floor((end - now) / 60_000)) : null,
+    now,
   };
 }
 

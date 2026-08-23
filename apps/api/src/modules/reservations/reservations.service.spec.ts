@@ -5,6 +5,19 @@ import { ReservationsService } from './reservations.service';
  * Đánh giá sau đơn: một đơn có thể có HAI đánh giá — cửa hàng và tình nguyện viên
  * đã giao — phân biệt bằng rateeId. Chấm nhầm bên nào thì avgRating của bên kia sai.
  */
+/**
+ * Giá trị cấu hình mặc định cho test.
+ *
+ * Trước đây mock trả 3 cho MỌI khoá — vô hại khi chỉ có hạn mức số lượt/ngày, nhưng
+ * khung giờ nhận đơn cũng đọc từ đây: mở 00:03 đóng 00:03 là khung rỗng, mọi test đặt
+ * hàng fail. Trả theo khoá để test chạy đúng luật thật.
+ */
+async function configValue(key: string): Promise<number> {
+  if (key === 'PLATFORM_ORDER_OPEN_MINUTE') return 0;
+  if (key === 'PLATFORM_ORDER_CLOSE_MINUTE') return 1440;
+  return 3;
+}
+
 describe('ReservationsService.rateReservation', () => {
   const prisma = {
     receiverProfile: { findUnique: jest.fn() },
@@ -170,7 +183,10 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
   const lock = { release: jest.fn() };
   let service: ReservationsService;
 
-  const build = (daily: { start: number | null; end: number | null }) => {
+  const build = (
+    daily: { start: number | null; end: number | null },
+    platform: { open: number; close: number } = { open: 0, close: 1440 },
+  ) => {
     prisma.receiverProfile.findUnique.mockResolvedValue({
       id: 'receiver-1',
       isCharityOrg: false,
@@ -185,7 +201,13 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
       {} as never,
       { acquire: jest.fn().mockResolvedValue(lock) } as never,
       {} as never, {} as never,
-      { getNumber: jest.fn().mockResolvedValue(3) } as never,
+      {
+        getNumber: jest.fn(async (key: string) => {
+          if (key === 'PLATFORM_ORDER_OPEN_MINUTE') return platform.open;
+          if (key === 'PLATFORM_ORDER_CLOSE_MINUTE') return platform.close;
+          return configValue(key);
+        }),
+      } as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
     );
@@ -208,7 +230,7 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
     service = build({ start: 0, end: 1 });
 
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
-      .rejects.toThrow(/Ngoài giờ nhận hàng/);
+      .rejects.toThrow(/Ngoài giờ nhận đơn/);
   });
 
   it('cho đặt trong daily window khi pickupStartTime cũ bị lưu muộn hơn', async () => {
@@ -234,6 +256,44 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
 
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
       .resolves.toMatchObject({ reservationId: 'reservation-1' });
+  });
+
+  it('giờ SÀN chặn cả tin không khai giờ riêng — không còn đặt được lúc 2h sáng', async () => {
+    // FAKE_NOW = 16:33 giờ VN, ngoài khung sàn 08:00–10:00.
+    service = build({ start: null, end: null }, { open: 480, close: 600 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/Ngoài giờ nhận đơn \(08:00–10:00\)/);
+  });
+
+  it('cửa hàng khai rộng hơn giờ sàn thì lấy phần giao nhau, không nới ra được', async () => {
+    // Cửa hàng khai 00:00–23:59 nhưng sàn chỉ mở 08:00–16:00 → 16:33 vẫn bị chặn.
+    service = build({ start: 0, end: 1439 }, { open: 480, close: 960 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/08:00–16:00/);
+  });
+
+  it('giờ cửa hàng nằm ngoài giờ sàn → báo khung rỗng thay vì lỗi khó hiểu', async () => {
+    service = build({ start: 1380, end: 1439 }, { open: 480, close: 1350 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/ngoài giờ hoạt động của hệ thống/);
+  });
+
+  it('chặn hẹn giao ngoài khung dù lúc ĐẶT vẫn đang trong giờ mở cửa', async () => {
+    // Đặt lúc 16:33 (hợp lệ) nhưng hẹn giao 02:00 sáng hôm sau — đúng tình huống
+    // "2h sáng vẫn có shipper phải đi giao" mà khung giờ sinh ra để chặn.
+    service = build({ start: null, end: null }, { open: 480, close: 1350 });
+
+    await expect(
+      service.create('user-1', {
+        listingId: 'listing-1',
+        quantity: 1,
+        requestDelivery: false,
+        deliveryScheduledAt: '2026-08-18T02:00:00+07:00',
+      } as never),
+    ).rejects.toThrow(/Giờ hẹn giao phải nằm trong khung 08:00–22:30/);
   });
 
   afterEach(() => jest.useRealTimers());
@@ -262,7 +322,7 @@ describe('ReservationsService — thời hạn QR theo cấu hình admin', () =>
   const createService = (qrValidMinutes: number) => {
     const systemConfig = {
       getNumber: jest.fn(async (key: string) =>
-        key === 'QR_VALIDITY_MINUTES' ? qrValidMinutes : 3,
+        key === 'QR_VALIDITY_MINUTES' ? qrValidMinutes : configValue(key),
       ),
     };
     const service = new ReservationsService(

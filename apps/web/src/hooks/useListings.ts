@@ -17,6 +17,11 @@ export interface ListingItem {
   imageUrls: string[];
   isSurpriseBag?: boolean;
   status: string;
+  /**
+   * Khung giờ trong ngày còn đặt được (phút từ 00:00 giờ VN), đã là phần giao giữa giờ
+   * hoạt động của sàn và giờ cửa hàng tự khai. Backend tính sẵn để hai bên cùng một luật.
+   */
+  orderWindow?: { openMinute: number; closeMinute: number };
   provider: { id: string; businessName: string };
   distanceM: number;
   lng?: number;
