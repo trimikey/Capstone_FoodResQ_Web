@@ -193,13 +193,20 @@ export default function HomeContent() {
               }}
             />
           ))}
-          {/* Lớp phủ: hơi xanh trời ở trên rồi nhạt dần về trắng. Không ám vàng nữa —
-              hai ảnh chụp phố và công viên không có tông lúa chín, phủ vàng lên chỉ
-              làm ảnh bị ố. Ở giữa để mờ nhất cho ảnh hiện rõ. */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/70 via-white/15 to-white/80" />
-          {/* Scrim trái đậm hơn bản trước: ba ảnh này là ảnh tài liệu rất nhiều chi tiết
-              (đông người, cây lá), chữ đen đặt thẳng lên sẽ không đọc nổi. */}
-          <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/70 to-transparent" />
+          {/* Lớp phủ dọc rất nhẹ, chỉ để dịu nắng gắt ở mép trên/dưới. Bản trước phủ
+              tới 70–80% nên ảnh bạc trắng như bị xoá mờ. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/25 via-transparent to-white/35" />
+          {/* Scrim TRÁI có mốc dừng rõ ràng: đậm đúng vùng đặt chữ rồi tắt hẳn trước
+              nửa khung, để hơn một phần ba ảnh bên phải giữ nguyên màu thật. Dùng
+              linear-gradient tường minh vì gradient 3 nấc của Tailwind trải đều toàn
+              khung, làm cả tấm ảnh mờ theo chứ không chỉ vùng có chữ. */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 26%, rgba(255,255,255,0.55) 44%, rgba(255,255,255,0) 62%)',
+            }}
+          />
         </div>
 
         <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
@@ -259,13 +266,29 @@ export default function HomeContent() {
       {/* 9. HỆ SINH THÁI FOODRESQ SECTION */}
       <section id="about" className="w-full px-6 md:px-16 lg:px-24 py-20 grid grid-cols-1 lg:grid-cols-12 gap-16 items-center animate-fade-in-up [animation-delay:300ms]">
         
-        {/* Left Side: 2x2 Image Grid */}
-        {/* Left Side: 2x2 Image Grid */}
+        {/* Lưới ảnh hệ sinh thái — xen ảnh chụp THẬT của hoạt động thiện nguyện vào
+            giữa bộ ảnh dựng có logo. Toàn ảnh dựng thì khối này nhìn như catalogue;
+            có ảnh thật xen kẽ mới ra được cảm giác đây là việc đang diễn ra ngoài đời.
+            Hai ảnh thật lấy đúng file đã dùng ở banner nên trình duyệt đã cache sẵn,
+            không tốn thêm lượt tải. */}
         <div className="lg:col-span-6 grid grid-cols-2 gap-3">
-          <img src="/xehang_TC.png" alt="Volunteers and Logistics" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/shipper_TC.png" alt="Delivery" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/giaohang_TC.png" alt="Beneficiary" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/nauan_TC.png" alt="Cooking" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          {[
+            { src: '/anhbanner1.jpg', alt: 'Phát bánh mì từ thiện tại công viên' },
+            { src: '/xehang_TC.png', alt: 'Tình nguyện viên bốc dỡ thực phẩm' },
+            { src: '/shipper_TC.png', alt: 'Tình nguyện viên giao hàng bằng xe máy' },
+            { src: '/anhbanner2.jpg', alt: 'Trao quà cho người dân trên phố' },
+            { src: '/giaohang_TC.png', alt: 'Trao thực phẩm tới người nhận' },
+            { src: '/nauan_TC.png', alt: 'Bếp ăn thiện nguyện đang nấu' },
+          ].map((img) => (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              key={img.src}
+              src={img.src}
+              alt={img.alt}
+              loading="lazy"
+              className="w-full aspect-square object-cover rounded-xl shadow-sm"
+            />
+          ))}
         </div>
 
         {/* Right Side: Description and 3 Pillars */}
