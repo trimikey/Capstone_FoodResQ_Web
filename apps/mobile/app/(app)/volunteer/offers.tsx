@@ -15,7 +15,6 @@ import {
   useMyOffers,
   useAcceptOffer,
   useRejectOffer,
-  useDeliveryOfferSocket,
   useActiveDelivery,
   type TaskOffer,
   type ActiveDelivery,
@@ -93,14 +92,15 @@ function offerDetails(offer: TaskOffer) {
 }
 
 /**
- * Đơn cần giao (tab volunteer) - danh sách lời mời giao hàng đang chờ.
- * Mỗi lời mời: điểm lấy/giao + bản đồ tuyến + đếm ngược; Chấp nhận / Từ chối.
- * Poll 15s. Chấp nhận xong → chuyển sang tab "Đang giao".
+ * Đơn cần giao (tab volunteer) — đơn đang chờ trong bán kính 5km quanh shipper.
+ *
+ * Hệ "lời mời tuần tự 15s" đã gỡ: đơn không gán riêng cho ai, shipper trong ca tự
+ * chọn đơn. Đếm ngược giờ là HẠN CỦA ĐƠN (quá hạn không ai nhận thì đơn bị huỷ),
+ * "Bỏ qua" chỉ ẩn khỏi danh sách của bạn. Poll 20s. Nhận xong → tab "Đang giao".
  */
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
-  useDeliveryOfferSocket();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,
@@ -110,7 +110,6 @@ export default function VolunteerOffersScreen() {
   const hasVerifiedShipper = volunteer?.specializations.some(
     (s) => s.specialization === 'shipper' && s.isVerified
   ) === true;
-  useDeliveryOfferSocket(); // nhận lời mời realtime, không chờ poll 15s
   const accept = useAcceptOffer();
   const reject = useRejectOffer();
   const faceEnrollment = useFaceEnrollment();
