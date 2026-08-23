@@ -108,9 +108,12 @@ export default function AvailabilityGrid() {
     <section className="rounded-2xl border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-1.5 text-base font-extrabold text-neutral-900">
+          <h2 className="flex flex-wrap items-center gap-1.5 text-base font-extrabold text-neutral-900">
             <span className="material-symbols-outlined text-emerald-600 text-[20px]">event_available</span>
             Khung giờ tôi rảnh
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+              Lặp hàng tuần
+            </span>
           </h2>
           <p className="mt-1 text-xs text-neutral-500">
             Đây là <b>mẫu lặp hàng tuần</b>, không gắn với ngày cụ thể. Dùng vào hai việc: tổ chức

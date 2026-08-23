@@ -72,15 +72,18 @@ export default function WeeklySchedulePage() {
   return (
     <div className="cm-scope p-4 md:p-6 max-w-7xl mx-auto pb-24">
       <header className="mb-5">
+        {/* Trang này gom lịch của CẢ HAI mảng việc, nên không gắn nhãn "Bếp ăn cộng
+            đồng" nữa — nhãn đó khiến lưới ca giao hàng bên dưới bị hiểu nhầm là ca trực
+            bếp của chiến dịch. */}
         <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
-          Bếp ăn cộng đồng
+          {isPersonal ? 'Tình nguyện viên' : 'Bếp ăn cộng đồng'}
         </div>
         <h1 className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1">
-          {isPersonal ? 'Lịch ca của tôi' : 'Lịch chiến dịch tổ chức'}
+          {isPersonal ? 'Lịch làm việc của tôi' : 'Lịch chiến dịch tổ chức'}
         </h1>
         <p className="text-sm text-neutral-500 mt-1">
           {isPersonal
-            ? 'Các ca trực bạn đã đăng ký trong tuần này.'
+            ? 'Gồm hai mảng việc tách biệt: ca trực bếp của chiến dịch, và ca giao đơn cho người nhận.'
             : 'Danh sách chiến dịch của tổ chức trong tuần.'}
         </p>
       </header>

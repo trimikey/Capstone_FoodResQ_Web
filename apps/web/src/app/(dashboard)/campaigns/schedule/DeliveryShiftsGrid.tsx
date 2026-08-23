@@ -190,10 +190,20 @@ export default function DeliveryShiftsGrid() {
     <section className="rounded-2xl border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-1.5 text-base font-extrabold text-neutral-900">
+          <h2 className="flex flex-wrap items-center gap-1.5 text-base font-extrabold text-neutral-900">
             <span className="material-symbols-outlined text-teal-600 text-[20px]">local_shipping</span>
             Ca giao hàng của tôi
+            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
+              Đơn giao của người nhận
+            </span>
           </h2>
+          {/* Nói thẳng đây KHÔNG phải ca bếp: hai lưới nằm cùng một trang nên rất dễ
+              tưởng ca giao hàng cũng là việc của chiến dịch. */}
+          <p className="mt-1 text-xs text-neutral-500">
+            Ca để nhận <b>đơn giao hàng thông thường</b> — đơn người nhận đặt từ tin thực phẩm.
+            Không liên quan ca trực bếp của chiến dịch (ca bếp do tổ chức phân khi bạn đăng ký
+            hoặc nhận lời mời).
+          </p>
           <p className="mt-1 text-xs text-neutral-500">
             Đây là <b>cam kết theo ngày</b>: chỉ những ca tick ở đây mới nhận được đơn, và đơn hẹn
             giờ cần ca phủ đúng giờ hẹn. Tuần chưa đăng ký sẽ được điền sẵn theo khung giờ rảnh ở
