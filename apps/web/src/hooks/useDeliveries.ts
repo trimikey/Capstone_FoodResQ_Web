@@ -438,11 +438,17 @@ export function useMyDeliveryShifts(enabled = true) {
   });
 }
 
+/**
+ * Ghi đè ca giao hàng trong ĐÚNG khoảng `from → to` đang hiển thị.
+ *
+ * Phải gửi kèm khoảng: lưới chỉ hiện một tuần, còn quyền sửa có thể trải rộng hơn —
+ * thiếu khoảng thì server ghi đè toàn bộ và xoá mất ca của những tuần không nhìn thấy.
+ */
 export function useSetMyDeliveryShifts() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (slots: DeliveryShiftSlot[]) =>
-      (await api.put('/volunteers/me/delivery-shifts', { slots })).data.data,
+    mutationFn: async (p: { slots: DeliveryShiftSlot[]; from: string; to: string }) =>
+      (await api.put('/volunteers/me/delivery-shifts', p)).data.data,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
   });
 }

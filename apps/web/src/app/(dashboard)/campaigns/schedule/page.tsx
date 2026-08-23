@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useWeeklySchedule } from '@/hooks/useCampaigns';
 import AvailabilityGrid from './AvailabilityGrid';
+import DeliveryShiftsGrid from './DeliveryShiftsGrid';
 import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { errMsg } from '@/lib/utils';
 
@@ -84,11 +85,14 @@ export default function WeeklySchedulePage() {
         </p>
       </header>
 
-      {/* Khai báo khung giờ rảnh — chỉ TNV mới có (tổ chức xem lịch chiến dịch).
-          Đặt TRÊN lịch tuần vì đây là đầu vào, còn lịch tuần là hệ quả. */}
+      {/* Hai lưới đầu vào của TNV, đặt cạnh nhau vì trước đây chúng nằm hai trang khác
+          nhau và trông y hệt nhau nên ai cũng tưởng là một: khai rảnh cả tuần rồi ngồi
+          đợi đơn mà không hiểu sao không có. Xếp theo mức ràng buộc tăng dần — khai báo
+          trước, cam kết sau — rồi mới tới lịch tuần vốn là HỆ QUẢ của cả hai. */}
       {isPersonal && (
-        <div className="mb-4">
+        <div className="mb-4 space-y-3">
           <AvailabilityGrid />
+          <DeliveryShiftsGrid />
         </div>
       )}
 

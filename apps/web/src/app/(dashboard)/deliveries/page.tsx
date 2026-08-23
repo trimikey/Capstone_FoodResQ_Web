@@ -34,7 +34,7 @@ const HandoverConfirmModal = dynamic(
   { ssr: false },
 );
 
-import DeliveryShiftPanel from './DeliveryShiftPanel';
+import DeliveryShiftSummary from './DeliveryShiftSummary';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -627,7 +627,7 @@ export default function DeliveriesPage() {
         ) : (
           /* DANH SÁCH ĐƠN CHỜ — shipper tự chọn (thay lời mời tuần tự 15s) */
           <div className="space-y-4">
-            <DeliveryShiftPanel />
+            <DeliveryShiftSummary />
 
             <h2 className="font-extrabold text-xl text-neutral-900">
               Đơn giao gần bạn {nearby && nearby.length > 0 ? `(${nearby.length})` : ''}

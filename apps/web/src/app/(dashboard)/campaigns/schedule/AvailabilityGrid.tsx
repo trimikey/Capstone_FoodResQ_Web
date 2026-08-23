@@ -8,6 +8,7 @@ import {
   type AvailabilitySlot,
   type ShiftPeriod,
 } from '@/hooks/useDeliveries';
+import { useDragSelect } from '@/hooks/useDragSelect';
 import { errMsg } from '@/lib/utils';
 
 /** Đúng 4 ca cố định của chiến dịch — khai theo ca nên khớp 1-1 với ca thật. */
@@ -50,16 +51,22 @@ export default function AvailabilityGrid() {
     return Math.floor((Date.now() - new Date(data.updatedAt).getTime()) / 86_400_000);
   }, [data?.updatedAt]);
 
-  function toggle(dow: number, period: ShiftPeriod) {
+  /** Bật/tắt một ô theo `on` — dùng chung cho cả bấm lẻ lẫn kéo nhiều ô. */
+  function paint(key: string, on: boolean) {
     setDirty(true);
     setSelected((prev) => {
+      if (prev.has(key) === on) return prev;
       const next = new Set(prev);
-      const key = cellKey(dow, period);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (on) next.add(key);
+      else next.delete(key);
       return next;
     });
   }
+
+  const { cellProps, dragging } = useDragSelect({
+    isOn: (key) => selected.has(key),
+    paint,
+  });
 
   /** Tick/bỏ tick cả hàng ca — người rảnh cố định một khung thì đỡ bấm 7 lần. */
   function toggleRow(period: ShiftPeriod) {
@@ -129,7 +136,11 @@ export default function AvailabilityGrid() {
       )}
 
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[520px] border-separate border-spacing-1 text-center text-xs">
+        <table
+          className={`w-full min-w-[520px] border-separate border-spacing-1 text-center text-xs ${
+            dragging ? 'select-none' : ''
+          }`}
+        >
           <thead>
             <tr>
               <th className="w-32 text-left text-[11px] font-bold uppercase tracking-wide text-neutral-400">
@@ -160,7 +171,7 @@ export default function AvailabilityGrid() {
                     <td key={d.dow}>
                       <button
                         type="button"
-                        onClick={() => toggle(d.dow, p.id)}
+                        {...cellProps(cellKey(d.dow, p.id))}
                         aria-pressed={on}
                         aria-label={`${p.label} ${d.short}`}
                         className={`h-11 w-full rounded-lg border transition-colors ${
@@ -183,7 +194,8 @@ export default function AvailabilityGrid() {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Đã chọn <b>{selected.size}</b>/28 khung. Bấm tên ca để tick cả tuần.
+        Đã chọn <b>{selected.size}</b>/28 khung. Kéo qua nhiều ô để tick một lượt · bấm tên ca để
+        tick cả tuần.
       </p>
     </section>
   );
