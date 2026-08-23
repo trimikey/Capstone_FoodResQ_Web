@@ -370,13 +370,27 @@ export default function HomeContent() {
           </svg>
         </div>
 
-        {/* Shaking Arched Images */}
+        {/* Hai khung vòm — đổi sang ảnh chụp THẬT suất ăn thiện nguyện thay cho ảnh
+            bánh mì và salad kiểu catalogue. Cả hai ảnh gốc đều dạng dọc nên khớp sẵn
+            với tỉ lệ vòm, không bị cắt mất phần chính. */}
         <div className="flex gap-8 md:gap-16 items-end justify-center w-full max-w-4xl mt-4">
           <div className="w-48 md:w-72 aspect-[1/1.3] rounded-t-[1000px] rounded-b-2xl overflow-hidden animate-sway-1 shadow-lg border-[6px] border-white relative z-10">
-            <img src="/food_bread.png" alt="Thực phẩm dư thừa" className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/DTA1.jpg"
+              alt="Hộp cơm cá kho kèm rau luộc và đậu phộng"
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="w-56 md:w-80 aspect-[1/1.4] rounded-t-[1000px] rounded-b-2xl overflow-hidden animate-sway-2 shadow-lg border-[6px] border-white -mb-8 relative z-20">
-            <img src="/food_salad.png" alt="Thực phẩm dư thừa 2" className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/DTA2.webp"
+              alt="Hàng loạt hộp cơm đã soạn sẵn chờ đem đi phát"
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
           </div>
         </div>
       </section>
