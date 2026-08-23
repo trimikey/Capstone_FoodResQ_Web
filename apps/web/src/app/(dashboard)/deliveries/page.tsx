@@ -20,7 +20,6 @@ import {
   useUpdateMyLocation,
   type ActiveDelivery,
   type DeliveryHistoryItem,
-  type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
 import PickupOrderCard from '@/components/deliveries/PickupOrderCard';
@@ -69,11 +68,11 @@ const STEPS = [
   { key: 'delivered', label: 'Hoàn tất' },
 ];
 
-function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
 }
 
-function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.imageUrls?.[0] ?? null;
 }
 

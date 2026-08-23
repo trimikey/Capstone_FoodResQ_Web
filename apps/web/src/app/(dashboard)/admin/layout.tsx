@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
-import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 import NotificationBell from '@/components/shared/NotificationBell';
 
@@ -98,7 +97,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="h-screen overflow-hidden bg-[#FAFBF9] font-body-md flex flex-col">
-      {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}

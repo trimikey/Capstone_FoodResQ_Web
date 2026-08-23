@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
-import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 const PROVIDER_NAV = [
@@ -64,7 +63,6 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     // của dashboard. Kéo ngược lên rồi bù lại padding để nền khu NCC phủ kín,
     // không còn vệt màu lạ ở giữa trang.
     <div className="min-h-screen bg-[#FAFBF9] font-body-md md:-mt-[104px] md:pt-[104px]">
-      {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
