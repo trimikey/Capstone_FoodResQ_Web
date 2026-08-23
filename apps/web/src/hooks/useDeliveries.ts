@@ -473,6 +473,11 @@ export interface NearbyDelivery {
   /** Khung giờ này shipper đã xác nhận một ca chiến dịch → bận, không nhận đơn lẻ. */
   busyWithCampaign?: boolean;
   claimSlot: { workDate: string; period: ShiftPeriod };
+  /**
+   * Hạn cuối còn nhận được đơn — hết hạn thì đơn bị huỷ và người nhận phải đặt lại.
+   * Đơn hẹn giờ đóng trước giờ hẹn 15 phút; đơn giao ngay theo cửa sổ admin cấu hình.
+   */
+  claimExpiresAt: string;
 }
 
 export function useNearbyDeliveries(coords: { lng: number; lat: number } | null) {

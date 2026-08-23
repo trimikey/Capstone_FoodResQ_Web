@@ -34,6 +34,7 @@ const HandoverConfirmModal = dynamic(
   { ssr: false },
 );
 
+import ClaimCountdown from './ClaimCountdown';
 import DeliveryShiftSummary from './DeliveryShiftSummary';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -682,18 +683,27 @@ export default function DeliveriesPage() {
                         <span className="font-semibold text-emerald-700">Cách bạn ~{o.distanceKm} km</span>
                         {o.tripKm != null && <span>· Lấy→giao ~{o.tripKm} km</span>}
                       </p>
-                      {/* Giờ hẹn giao — khác đơn giao ngay */}
-                      {o.deliveryScheduledAt ? (
-                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
-                          <span className="material-symbols-outlined text-[13px]">schedule</span>
-                          Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-                        </p>
-                      ) : (
-                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                          <span className="material-symbols-outlined text-[13px]">bolt</span>
-                          Giao ngay
-                        </p>
-                      )}
+                      {/* Giờ hẹn giao — khác đơn giao ngay. Kèm hạn nhận vì đơn là hàng
+                          chung: ai bấm trước được trước, và hết hạn thì đơn bị huỷ. */}
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {o.deliveryScheduledAt ? (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                            <span className="material-symbols-outlined text-[13px]">schedule</span>
+                            Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                          </span>
+                        ) : (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                            <span className="material-symbols-outlined text-[13px]">bolt</span>
+                            Giao ngay
+                          </span>
+                        )}
+                        {o.claimExpiresAt && (
+                          <ClaimCountdown
+                            expiresAt={o.claimExpiresAt}
+                            scheduled={!!o.deliveryScheduledAt}
+                          />
+                        )}
+                      </span>
                     </div>
                   </div>
 

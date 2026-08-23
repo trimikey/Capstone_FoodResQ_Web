@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { DeliveriesService } from './deliveries.service';
+import { DeliveriesService, claimDeadline } from './deliveries.service';
 
 describe('DeliveriesService', () => {
   const prisma = {
@@ -174,5 +174,30 @@ describe('DeliveriesService', () => {
     ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
 
     expect(prisma.reservation.update).toHaveBeenCalled();
+  });
+
+  /**
+   * Hạn nhận đơn được ba nơi dùng chung (danh sách đơn gần, lúc bấm nhận, cron dọn đơn).
+   * Lệch công thức là sinh ra đơn hiện trên app nhưng bấm vào báo hết hạn.
+   */
+  describe('claimDeadline', () => {
+    it('đơn hẹn giờ: đóng nhận TRƯỚC giờ hẹn 15 phút', () => {
+      const scheduled = new Date('2026-08-23T10:40:00Z'); // 17:40 giờ VN
+      const d = claimDeadline(new Date('2026-08-23T08:00:00Z'), scheduled, 30);
+      expect(d.toISOString()).toBe('2026-08-23T10:25:00.000Z');
+    });
+
+    it('đơn giao ngay: đếm từ lúc tạo theo cửa sổ admin cấu hình', () => {
+      const created = new Date('2026-08-23T08:00:00Z');
+      expect(claimDeadline(created, null, 30).toISOString()).toBe('2026-08-23T08:30:00.000Z');
+      expect(claimDeadline(created, undefined, 45).toISOString()).toBe('2026-08-23T08:45:00.000Z');
+    });
+
+    it('đơn hẹn giờ KHÔNG phụ thuộc cửa sổ đơn giao ngay', () => {
+      const scheduled = new Date('2026-08-25T02:00:00Z');
+      const a = claimDeadline(new Date('2026-08-23T08:00:00Z'), scheduled, 30);
+      const b = claimDeadline(new Date('2026-08-23T08:00:00Z'), scheduled, 120);
+      expect(a.getTime()).toBe(b.getTime());
+    });
   });
 });

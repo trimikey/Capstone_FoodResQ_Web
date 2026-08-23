@@ -35,6 +35,32 @@ const PERIOD_VN: Record<string, string> = {
   midnight: 'ca khuya', morning: 'ca sáng', afternoon: 'ca chiều', evening: 'ca tối',
 };
 
+/**
+ * Đơn hẹn giờ đóng cửa nhận trước giờ hẹn bao nhiêu phút.
+ *
+ * Nhận đúng vào phút hẹn là vô nghĩa: shipper còn phải chạy tới chỗ lấy hàng rồi mới
+ * giao được, nhận sát giờ thì chắc chắn trễ hẹn. Cắt sớm 15 phút để đơn không ai nhận
+ * kịp thì huỷ sớm, người nhận còn kịp đặt lại thay vì ngồi chờ tới giờ mới biết hỏng.
+ */
+const SCHEDULED_CLAIM_CUTOFF_MINUTES = 15;
+
+/**
+ * Hạn CUỐI còn nhận được một đơn đang chờ.
+ *
+ * Một chỗ duy nhất cho cả ba nơi cần biết (danh sách đơn gần, lúc bấm nhận, cron dọn
+ * đơn quá hạn) — ba công thức riêng sẽ lệch nhau và sinh ra đơn hiện trên app nhưng
+ * bấm vào thì báo hết hạn.
+ */
+export function claimDeadline(
+  createdAt: Date,
+  scheduledAt: Date | null | undefined,
+  claimWindowMinutes: number,
+): Date {
+  return scheduledAt
+    ? new Date(scheduledAt.getTime() - SCHEDULED_CLAIM_CUTOFF_MINUTES * 60_000)
+    : new Date(createdAt.getTime() + claimWindowMinutes * 60_000);
+}
+
 export interface CampaignTransportSummary {
   id: string;
   status: string;
@@ -307,6 +333,11 @@ export class DeliveriesService {
     const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
     const results: Array<Record<string, unknown>> = [];
     for (const row of rows) {
+      // Bỏ đơn đã qua hạn nhận: cron dọn theo chu kỳ nên chúng còn `pending_assignment`
+      // thêm một lúc — vẫn hiện thì shipper bấm vào chỉ nhận được lỗi.
+      const expiresAt = claimDeadline(row.created_at, row.delivery_scheduled_at, claimWindowMinutes);
+      if (Date.now() > expiresAt.getTime()) continue;
+
       const targetAt = row.delivery_scheduled_at ?? new Date();
       const slot = deliverySlotAt(targetAt);
       const covered = await this.hasDeliveryShiftCovering(volunteer.id, targetAt);
@@ -326,8 +357,7 @@ export class DeliveriesService {
         canClaim: covered && !busyWithCampaign,
         busyWithCampaign,
         claimSlot: slot,
-        claimExpiresAt: row.delivery_scheduled_at
-          ?? new Date(row.created_at.getTime() + claimWindowMinutes * 60_000),
+        claimExpiresAt: expiresAt,
       });
     }
     return results;
@@ -350,6 +380,23 @@ export class DeliveriesService {
     if (!delivery || !delivery.reservationId) throw new NotFoundException('Không tìm thấy đơn giao.');
     if (delivery.status !== 'pending_assignment' || delivery.shipperId) {
       throw new BadRequestException('Đơn này đã có người nhận hoặc không còn chờ giao.');
+    }
+
+    // Cron dọn đơn quá hạn chạy theo chu kỳ nên luôn có khe: đơn đã qua hạn vẫn còn
+    // `pending_assignment` cho tới lượt quét kế tiếp. Không chặn ở đây thì shipper nhận
+    // được đơn mà hệ thống đang chuẩn bị huỷ — nhận xong bị giật mất giữa chừng.
+    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
+    const deadline = claimDeadline(
+      delivery.createdAt,
+      delivery.reservation?.deliveryScheduledAt,
+      claimWindowMinutes,
+    );
+    if (Date.now() > deadline.getTime()) {
+      throw new BadRequestException(
+        delivery.reservation?.deliveryScheduledAt
+          ? `Đơn này đã hết hạn nhận (đóng trước giờ hẹn ${SCHEDULED_CLAIM_CUTOFF_MINUTES} phút).`
+          : 'Đơn này đã hết hạn nhận.',
+      );
     }
 
     const targetAt = delivery.reservation?.deliveryScheduledAt ?? new Date();
@@ -855,12 +902,10 @@ export class DeliveriesService {
       },
       take: 100,
     });
-    const stale = candidates.filter((d) => {
-      const deadline = d.reservation?.deliveryScheduledAt
-        ? d.reservation.deliveryScheduledAt.getTime()
-        : d.createdAt.getTime() + claimWindowMinutes * 60_000;
-      return now > deadline;
-    });
+    const stale = candidates.filter(
+      (d) =>
+        now > claimDeadline(d.createdAt, d.reservation?.deliveryScheduledAt, claimWindowMinutes).getTime(),
+    );
 
     for (const d of stale) {
       const reason = 'Không có tình nguyện viên nào nhận đơn trong thời gian tìm kiếm.';
