@@ -159,16 +159,15 @@ export default function ShipperTaskView({ detail, onCheckedIn }: Props) {
         }
       />
 
-      {/* 2. Ca trực được phân */}
+      {/* 2. Ca trực được phân — THÔNG TIN, không phải việc để "làm xong".
+          Ca kết thúc khi hết giờ, không phải khi bấm điểm danh; còn tiến độ lấy nguyên
+          liệu đã được đếm riêng ở từng đơn bên dưới nên không cần gắn "Xong" ở đây.
+          Bỏ số thứ tự cho khớp bộ đếm phía trên — bộ đếm chưa bao giờ tính dòng này. */}
       {assignment.shift && (
         <TaskItem
-          index={nextStep()}
           icon="schedule"
           title={assignment.shift.label}
           time={`${assignment.shift.startTime}–${assignment.shift.endTime}`}
-          // Ca chỉ "Xong" khi đã lấy hết nguyên liệu của chiến dịch. Trước đây điểm danh
-          // xong là ca hiện "Xong" ngay, trong khi chưa lấy được cân hàng nào.
-          done={pickupOrders.length > 0 ? donePickups.length === pickupOrders.length : checkedIn}
           locked={!checkedIn}
           lockedHint="Điểm danh tại bếp trước đã"
           description={
@@ -393,7 +392,8 @@ function TaskItem({
   action,
   children,
 }: {
-  index: number;
+  /** Bỏ trống = thẻ THÔNG TIN, không đánh số và không gắn nhãn "Xong". */
+  index?: number;
   icon: string;
   title: string;
   time?: string | null;
@@ -413,25 +413,27 @@ function TaskItem({
       <div className="flex items-start gap-3">
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            done ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
+            done && index != null ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
           }`}
         >
           <span className="material-symbols-outlined text-[20px]">
-            {done ? 'check' : locked ? 'lock' : icon}
+            {done && index != null ? 'check' : locked ? 'lock' : icon}
           </span>
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
-              Việc {index}
-            </span>
+            {index != null && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
+                Việc {index}
+              </span>
+            )}
             {time && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
                 {time}
               </span>
             )}
-            {done && (
+            {done && index != null && (
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                 Xong
               </span>
