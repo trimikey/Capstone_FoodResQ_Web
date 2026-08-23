@@ -1532,7 +1532,10 @@ export default function ReservationDetailsPage() {
           dùng chung một module luật để hai màn hình không báo hai con số khác nhau. */}
       {showDropOrder && (() => {
         const endTime = (listing as { pickupEndTime?: string } | null)?.pickupEndTime;
-        const late = endTime ? isLateCancel(endTime) : false;
+        // Còn đang tìm tình nguyện viên → huỷ không bị phạt, dù sát giờ đóng nhận.
+        const late = endTime
+          ? isLateCancel(endTime, realDeliveryStatus === 'pending_assignment')
+          : false;
         const score = me?.trustScore;
         const after = scoreAfterLateCancel(score);
         const outcome = after != null && late ? penaltyOutcome(after) : null;
@@ -1568,9 +1571,21 @@ export default function ReservationDetailsPage() {
                 ) : (
                   <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                    {/* Đơn đang tìm shipper KHÔNG đi qua cron no_show (cron đó chỉ áp cho
+                        đơn tự đến lấy) — doạ trừ 20 điểm ở đây là sai luật. */}
                     <p className="text-sm leading-relaxed text-neutral-600">
-                      Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu cứ để đó mà không đến nhận,
-                      bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                      {realDeliveryStatus === 'pending_assignment' ? (
+                        <>
+                          Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu bạn không huỷ, hệ thống cũng
+                          tự huỷ khi hết hạn tìm người giao và cũng không trừ điểm — huỷ sớm chỉ
+                          giúp trả suất ăn lại cho người khác nhanh hơn.
+                        </>
+                      ) : (
+                        <>
+                          Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu cứ để đó mà không đến
+                          nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                        </>
+                      )}
                     </p>
                   </div>
                 )}

@@ -759,9 +759,22 @@ export class ReservationsService {
       );
     }
 
+    // Đơn giao CHƯA tìm được người nhận thì huỷ không bao giờ bị phạt.
+    //
+    // Phạt huỷ trễ sinh ra để bù cho bên bị thiệt: cửa hàng đã để dành suất, hoặc shipper
+    // đã chạy tới lấy. Khi chưa ai nhận đơn thì không có thiệt hại đó — mà nếu người nhận
+    // cứ ngồi im, cron sẽ tự huỷ lúc hết hạn nhận và KHÔNG phạt gì cả. Phạt người bấm huỷ
+    // sớm hơn hoá ra là thưởng cho việc ngồi im, trong khi huỷ sớm mới là cái trả suất về
+    // kho kịp cho người khác đặt.
+    const waitingForShipper =
+      !!reservation.delivery
+      && reservation.delivery.status === 'pending_assignment'
+      && !reservation.delivery.shipperId;
+
     // Huỷ trễ = còn dưới 30 phút trước giờ kết thúc nhận hàng (CLAUDE.md §9)
     const isLateCancellation =
-      reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
+      !waitingForShipper
+      && reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
 
     const ops: Prisma.PrismaPromise<unknown>[] = [
       // Cancel reservation

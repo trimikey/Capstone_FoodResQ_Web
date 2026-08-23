@@ -554,3 +554,76 @@ describe('ReservationsService.expireNoShows', () => {
     expect(prisma.delivery.update).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Phạt huỷ trễ tồn tại để bù cho bên bị thiệt (cửa hàng đã để dành suất, shipper đã
+ * chạy tới lấy). Đơn giao chưa ai nhận thì không có thiệt hại đó — mà cứ để đó thì cron
+ * tự huỷ và KHÔNG phạt, nên phạt người bấm huỷ sớm hơn là thưởng cho việc ngồi im.
+ */
+describe('ReservationsService.cancel — không phạt khi chưa tìm được shipper', () => {
+  const prisma = {
+    reservation: { findUnique: jest.fn(), update: jest.fn() },
+    receiverProfile: { updateMany: jest.fn() },
+    delivery: { update: jest.fn() },
+    shipperTaskOffer: { updateMany: jest.fn() },
+    volunteerProfile: { update: jest.fn() },
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn().mockResolvedValue([]),
+  };
+  const trust = { applyDelta: jest.fn() };
+  let service: ReservationsService;
+
+  /** Sát giờ đóng nhận (còn 5 phút) → thoả điều kiện "huỷ trễ" theo thời gian. */
+  const buildReservation = (delivery: Record<string, unknown> | null) => ({
+    id: 'res-1',
+    status: 'confirmed',
+    quantity: 1,
+    listingId: 'listing-1',
+    receiverId: 'receiver-1',
+    receiver: { userId: 'user-1' },
+    listing: { pickupEndTime: new Date(Date.now() + 5 * 60_000), title: 'Cơm gà' },
+    delivery,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new ReservationsService(
+      prisma as never,
+      {} as never, {} as never, {} as never, {} as never,
+      { getNumber: jest.fn(configValue) } as never,
+      { notify: jest.fn() } as never,
+      trust as never,
+    );
+  });
+
+  it('đơn giao đang tìm shipper: huỷ sát giờ vẫn KHÔNG bị trừ điểm', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(
+      buildReservation({ id: 'dlv-1', status: 'pending_assignment', shipperId: null, shipper: null }),
+    );
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).not.toHaveBeenCalled();
+  });
+
+  it('đơn giao ĐÃ có shipper nhận: huỷ sát giờ vẫn bị trừ điểm (shipper đã đi)', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(
+      buildReservation({
+        id: 'dlv-1', status: 'assigned', shipperId: 'shipper-1',
+        shipper: { userId: 'shipper-user-1' },
+      }),
+    );
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).toHaveBeenCalled();
+  });
+
+  it('đơn tự đến lấy: giữ nguyên luật phạt huỷ trễ', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(buildReservation(null));
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).toHaveBeenCalled();
+  });
+});

@@ -422,7 +422,11 @@ export default function ReservationsPage() {
       {confirmCancel && (() => {
         const r = reservations.find(res => res.id === confirmCancel);
         if (!r) return null;
-        const isLate = isLateCancel(r.listing.pickupEndTime);
+        // Đơn giao còn đang tìm shipper thì huỷ không bị phạt — khớp luật backend.
+        const isLate = isLateCancel(
+          r.listing.pickupEndTime,
+          r.delivery?.status === 'pending_assignment',
+        );
         const score = me?.trustScore;
         const after = scoreAfterLateCancel(score);
         const outcome = after != null ? penaltyOutcome(after) : null;
@@ -457,8 +461,19 @@ export default function ReservationsPage() {
               ) : (
                 <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                   <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                  {/* Cron no_show chỉ áp cho đơn TỰ ĐẾN LẤY; đơn đang tìm shipper mà
+                      không ai nhận thì hệ thống tự huỷ và không phạt gì. */}
                   <p className="text-sm text-neutral-600 leading-relaxed">
-                    Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                    {r.delivery?.status === 'pending_assignment' ? (
+                      <>
+                        Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu không huỷ, hệ thống cũng tự huỷ
+                        khi hết hạn tìm người giao và cũng không trừ điểm.
+                      </>
+                    ) : (
+                      <>
+                        Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                      </>
+                    )}
                   </p>
                 </div>
               )}

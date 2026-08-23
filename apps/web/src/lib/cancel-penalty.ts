@@ -16,8 +16,20 @@ export const LATE_WINDOW_MS = 30 * 60 * 1000;
 const BAN_THRESHOLD = 30; // ≤ 30 điểm → khoá tài khoản
 const RESTRICT_THRESHOLD = 60; // ≤ 60 điểm → hạn chế (1 đơn/ngày)
 
-/** Huỷ lúc này có bị tính là huỷ trễ không. */
-export function isLateCancel(pickupEndTime: string | Date, now = Date.now()): boolean {
+/**
+ * Huỷ lúc này có bị tính là huỷ trễ không.
+ *
+ * `waitingForShipper` = đơn giao còn đang tìm người nhận. Lúc đó huỷ KHÔNG bao giờ bị
+ * phạt: chưa ai chịu thiệt, và nếu cứ để đó thì hệ thống tự huỷ khi hết hạn cũng không
+ * phạt. Phải khớp đúng `ReservationsService.cancel` của backend, nếu không người dùng
+ * đọc một đằng còn bị trừ điểm một nẻo.
+ */
+export function isLateCancel(
+  pickupEndTime: string | Date,
+  waitingForShipper = false,
+  now = Date.now(),
+): boolean {
+  if (waitingForShipper) return false;
   return new Date(pickupEndTime).getTime() - now < LATE_WINDOW_MS;
 }
 
