@@ -1411,16 +1411,23 @@ export class CampaignsService {
     });
     if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
 
+    // KHÔNG lọc theo isRead: mở chuông thông báo là mọi thứ thành "đã đọc", lời mời
+    // sẽ biến mất dù TNV chưa hề phản hồi. Cờ đúng là `dismissedAt` — chỉ được ghi
+    // khi họ bấm nhận hoặc bỏ qua.
     const rows = await this.prisma.notification.findMany({
-      where: { userId, type: 'campaign', isRead: false },
+      where: { userId, type: 'campaign' },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 100,
       select: { id: true, body: true, data: true, createdAt: true },
     });
 
     const invites = rows
       .map((n) => ({ notification: n, data: n.data as Record<string, unknown> }))
-      .filter((r) => r.data?.kind === 'shift_invite' && typeof r.data.campaignId === 'string');
+      .filter((r) =>
+        r.data?.kind === 'shift_invite'
+        && typeof r.data.campaignId === 'string'
+        && !r.data.dismissedAt,
+      );
     if (invites.length === 0) return [];
 
     const campaigns = await this.prisma.kitchenCampaign.findMany({
@@ -1492,12 +1499,15 @@ export class CampaignsService {
 
     // 1) Lời mời phải có thật, thuộc về chính người này và chưa dùng.
     const invite = await this.prisma.notification.findFirst({
-      where: { id: notificationId, userId, isRead: false },
+      where: { id: notificationId, userId },
       select: { id: true, data: true },
     });
     const data = (invite?.data ?? {}) as Record<string, unknown>;
     if (!invite || data.kind !== 'shift_invite' || data.campaignId !== campaignId) {
-      throw new BadRequestException('Lời mời không hợp lệ hoặc đã được sử dụng.');
+      throw new BadRequestException('Lời mời không hợp lệ.');
+    }
+    if (data.dismissedAt) {
+      throw new BadRequestException('Bạn đã phản hồi lời mời này rồi.');
     }
     const shiftId = typeof data.shiftId === 'string' ? data.shiftId : null;
     const workDateKey = typeof data.workDate === 'string' ? data.workDate : null;
@@ -1599,7 +1609,13 @@ export class CampaignsService {
       });
       await tx.notification.update({
         where: { id: invite.id },
-        data: { isRead: true, readAt: new Date() },
+        data: {
+          isRead: true,
+          readAt: new Date(),
+          // Cờ ĐÃ PHẢN HỒI — khác isRead (chỉ là đã xem). Lời mời biến mất khỏi
+          // danh sách chờ nhờ cờ này, không phải vì người dùng liếc qua chuông.
+          data: { ...data, dismissedAt: new Date().toISOString(), dismissedBy: 'accepted' },
+        },
       });
     });
 
@@ -1616,6 +1632,32 @@ export class CampaignsService {
     });
 
     return { ok: true, shiftLabel: shift.label, workDate: workDateKey };
+  }
+
+  /**
+   * TNV bỏ qua một lời mời — đánh dấu đã phản hồi để nó không hiện lại.
+   *
+   * Tách khỏi "đánh dấu đã đọc" của chuông thông báo: đọc thông báo không có nghĩa
+   * là đã quyết định, còn bỏ qua thì có.
+   */
+  async dismissShiftInvite(userId: string, notificationId: string) {
+    const invite = await this.prisma.notification.findFirst({
+      where: { id: notificationId, userId },
+      select: { id: true, data: true },
+    });
+    const data = (invite?.data ?? {}) as Record<string, unknown>;
+    if (!invite || data.kind !== 'shift_invite') {
+      throw new NotFoundException('Không tìm thấy lời mời.');
+    }
+    await this.prisma.notification.update({
+      where: { id: invite.id },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+        data: { ...data, dismissedAt: new Date().toISOString(), dismissedBy: 'declined' },
+      },
+    });
+    return { ok: true };
   }
 
   /** Việc của tình nguyện viên: các campaign đã đăng ký + vai trò + trạng thái. */
@@ -3365,7 +3407,7 @@ export class CampaignsService {
         body:
           `Chiến dịch "${campaign.title}" đang cần người cho ${periodLabel} ngày ${dateLabel} `
           + `— khung giờ bạn đã khai là rảnh.${note ? ` Lời nhắn từ tổ chức: ${note}` : ''} `
-          + 'Mở chiến dịch để đăng ký nếu bạn sắp xếp được.',
+          + 'Vào mục "Chiến dịch → Việc của tôi" để nhận hoặc bỏ qua ca này.',
         data: {
           campaignId,
           workDate: dto.workDate,

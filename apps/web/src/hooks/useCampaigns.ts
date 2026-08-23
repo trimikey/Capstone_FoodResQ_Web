@@ -2011,3 +2011,25 @@ export function useAcceptShiftInvite() {
     },
   });
 }
+
+/**
+ * Volunteer: bỏ qua lời mời.
+ *
+ * Khác "đánh dấu đã đọc" của chuông thông báo — đọc thông báo không phải là đã
+ * quyết định, nên lời mời chỉ rời danh sách chờ khi bấm đúng nút này.
+ */
+export function useDismissShiftInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: string) =>
+      (await api.post(`/campaigns/shift-invites/${notificationId}/dismiss`)).data.data as {
+        ok: boolean;
+      },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
+  });
+}

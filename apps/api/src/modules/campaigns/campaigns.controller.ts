@@ -100,6 +100,17 @@ export class CampaignsController {
     return this.campaignsService.acceptShiftInvite(id, user.id, dto.notificationId);
   }
 
+  @Post('shift-invites/:notificationId/dismiss')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: bỏ qua một lời mời nhận ca (đánh dấu đã phản hồi)' })
+  dismissShiftInvite(
+    @Param('notificationId', ParseUUIDPipe) notificationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.dismissShiftInvite(user.id, notificationId);
+  }
+
   @Get('my-shift-invites')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)
