@@ -5353,7 +5353,15 @@ export class CampaignsService {
           where: { id: a.volunteerId },
           select: { userId: true },
         });
-        return { updated, notifyUserId: vol?.userId ?? null };
+        // Từ chối vẫn nêu tên ca cho rõ — TNV có thể đã đăng ký nhiều ca.
+        const rejectedShift = a.shiftId
+          ? await tx.campaignShift.findUnique({ where: { id: a.shiftId }, select: { label: true } })
+          : null;
+        return {
+          updated,
+          notifyUserId: vol?.userId ?? null,
+          shiftLabel: rejectedShift?.label ?? null,
+        };
       }
 
       // action === 'approved' -> check role slot and, when campaign has shifts, assign a concrete shift.
@@ -5458,15 +5466,34 @@ export class CampaignsService {
         select: { userId: true },
       });
 
-      return { updated, notifyUserId: vol?.userId ?? null };
+      return {
+        updated,
+        notifyUserId: vol?.userId ?? null,
+        shiftLabel: selectedShiftLabel,
+      };
     });
+
+    // Ngữ cảnh cho thông báo: cùng một TNV có thể được duyệt NHIỀU ca trong một
+    // chiến dịch, nên phải nói rõ ca nào ngày nào — nếu không các thông báo trông
+    // y hệt nhau và người nhận tưởng bị gửi lặp.
+    const campaignForNotify = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: { title: true },
+    });
+    const shiftPart = result.shiftLabel ? `ca "${result.shiftLabel}"` : 'ca đã đăng ký';
+    const datePart = result.updated.workDate
+      ? ` ngày ${this.toDateKey(result.updated.workDate)}`
+      : '';
+    const campaignPart = campaignForNotify?.title ? ` của chiến dịch "${campaignForNotify.title}"` : '';
 
     if (result.notifyUserId) {
       if (dto.action === 'rejected') {
         await this.notifications.notify(result.notifyUserId, {
           type: 'campaign',
           title: 'Đăng ký bị từ chối',
-          body: `Rất tiếc, tổ chức không thể nhận bạn vào ca này.${dto.note ? ` Lý do: ${dto.note}` : ''}`,
+          body:
+            `Rất tiếc, tổ chức không thể nhận bạn vào ${shiftPart}${datePart}${campaignPart}.`
+            + `${dto.note ? ` Lý do: ${dto.note}` : ''}`,
           data: {
             campaignId,
             assignmentId,
@@ -5478,7 +5505,10 @@ export class CampaignsService {
         await this.notifications.notify(result.notifyUserId, {
           type: 'campaign',
           title: 'Đăng ký được duyệt — cần xác nhận',
-          body: `Bạn đã được nhận với vai trò ${ROLE_VN[result.updated.role]}. Hãy xác nhận ca để được tính vào nhân sự chính thức.`,
+          body:
+            `Bạn đã được nhận vào ${shiftPart}${datePart}${campaignPart} `
+            + `với vai trò ${ROLE_VN[result.updated.role]}. `
+            + 'Hãy xác nhận ca để được tính vào nhân sự chính thức.',
           data: {
             campaignId,
             assignmentId,
