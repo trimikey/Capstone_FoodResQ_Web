@@ -45,6 +45,9 @@ function shiftCovers(
   return pickupStart >= shiftStart && pickupEnd <= shiftEnd;
 }
 
+/** Vai trò VẬN HÀNH — phục vụ và giao hàng dùng chung, chỉ đầu bếp là riêng. */
+const OPS_ROLES: string[] = ['shipper', 'waiter'];
+
 const REQUEST_STATUS_LABEL: Record<string, string> = {
   pending: 'Chờ NCC duyệt',
   accepted: 'NCC đã đồng ý',
@@ -190,7 +193,10 @@ function TransportRow({
     pickupDateKey && startStr && endStr
       ? participants.filter(
           (p) =>
-            p.role === 'shipper' &&
+            // Phục vụ và giao hàng đã gộp làm một vai trò vận hành: người trực ca sáng
+            // đi lấy nguyên liệu, ca chiều chia suất rồi đi phát. Lọc riêng 'shipper'
+            // sinh ra cảnh có người trực đúng khung mà vẫn báo "không có shipper nào".
+            OPS_ROLES.includes(p.role) &&
             ['assigned', 'checked_in', 'in_progress'].includes(p.status) &&
             p.shift &&
             p.workDate?.slice(0, 10) === pickupDateKey &&

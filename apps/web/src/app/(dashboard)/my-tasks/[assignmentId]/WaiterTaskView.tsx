@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import { useAdvanceTask, type MyTaskDetail } from '@/hooks/useCampaigns';
+import { useAdvanceTask, type MyTaskDetail, type PickupOrder } from '@/hooks/useCampaigns';
 import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
@@ -46,6 +47,11 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
     d.steps.some((s) => s.stepOrder === 4 && s.effectiveStatus === 'done'),
   );
   const doneDistributions = distributions.filter((d) => d.completedAt);
+  // Phục vụ và giao hàng đã gộp làm một vai trò vận hành, nên ca phục vụ cũng có thể
+  // được cử đi lấy nguyên liệu — ví dụ ca sáng đi lấy, ca chiều chia suất rồi đi phát.
+  const pickupOrders = detail.pickupOrders ?? [];
+  const isOrderDone = (o: PickupOrder) => !!o.pickup || o.delivery?.status === 'delivered';
+  const donePickups = pickupOrders.filter(isOrderDone);
 
   async function handleCheckIn() {
     try {
@@ -60,8 +66,8 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
   let step = 0;
   const nextStep = () => (step += 1);
 
-  const totalTasks = 1 + distributions.length;
-  const doneTasks = (checkedIn ? 1 : 0) + doneDistributions.length;
+  const totalTasks = 1 + pickupOrders.length + distributions.length;
+  const doneTasks = (checkedIn ? 1 : 0) + donePickups.length + doneDistributions.length;
 
   return (
     <div className="space-y-4">
@@ -211,6 +217,27 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
           </ul>
         )}
       </TaskItem>
+
+      {/* Đơn nguyên liệu tổ chức cử đi lấy — việc THẬT nên có đánh số và tính vào bộ đếm. */}
+      {pickupOrders.length > 0 && (
+        <TaskItem
+          index={nextStep()}
+          icon="inventory"
+          title="Đi lấy nguyên liệu từ nhà cung cấp"
+          done={donePickups.length === pickupOrders.length}
+          locked={!checkedIn}
+          lockedHint="Điểm danh tại bếp trước đã"
+          description={`${donePickups.length}/${pickupOrders.length} đơn đã lấy. Chi tiết từng đơn và nút xác nhận nằm ở Trung tâm giao hàng.`}
+        >
+          <Link
+            href="/deliveries"
+            className="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+          >
+            <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+            Mở Trung tâm giao hàng
+          </Link>
+        </TaskItem>
+      )}
 
       {/* 4. Đợt phát được phân công */}
       {distributions.length === 0 ? (

@@ -25,6 +25,15 @@ const SLOT_FIELD: Record<string, { needed: keyof CampaignSlots; filled: keyof Ca
   shipper: { needed: 'shipperSlotsNeeded', filled: 'shipperSlotsFilled' },
 };
 
+/**
+ * Vai trò VẬN HÀNH — phục vụ và giao hàng đã gộp làm một.
+ *
+ * Cùng một tình nguyện viên: ca sáng đi lấy nguyên liệu, ca chiều chia suất rồi đi phát.
+ * Tách hai vai trò chỉ tạo ra tình huống có người trực đúng khung giờ mà hệ thống vẫn
+ * báo "không có shipper nào". Đầu bếp thì giữ riêng — họ phải đứng bếp.
+ */
+const OPS_ROLES = ['shipper', 'waiter'] as const;
+
 const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
 /** Việt Nam là UTC+7 quanh năm, không có giờ mùa hè. */
@@ -1796,7 +1805,9 @@ export class CampaignsService {
     });
 
     // Lấy delivery của từng campaign shipper qua campaign_provider_requests → campaign_transports
-    const shipperAssignments = assignments.filter((a) => a.role === 'shipper');
+    const shipperAssignments = assignments.filter((a) =>
+      OPS_ROLES.includes(a.role as (typeof OPS_ROLES)[number]),
+    );
     if (shipperAssignments.length === 0) return assignments.map(withPickups);
 
     // Query từng campaign để tránh lỗi "uuid = text" với ANY(text[])
@@ -1845,7 +1856,7 @@ export class CampaignsService {
     }
 
     return assignments.map((a) =>
-      a.role === 'shipper'
+      OPS_ROLES.includes(a.role as (typeof OPS_ROLES)[number])
         ? {
             ...withPickups(a),
             deliveryId: deliveryByCampaign.get(a.campaignId) ?? null,
@@ -1989,6 +2000,13 @@ export class CampaignsService {
         ? await this.myAssignedDistributions(assignment.campaignId, volunteer.id)
         : [];
 
+    // Phục vụ cũng nhận được đơn đi lấy nguyên liệu (hai vai trò vận hành đã gộp).
+    // Không trả về đây thì tổ chức phân công xong mà người được phân không thấy việc.
+    const waiterPickupOrders =
+      assignment.role === 'waiter'
+        ? await this.listPickupOrders([assignment.campaignId], volunteer.id)
+        : [];
+
     return {
       assignment: {
         id: assignment.id,
@@ -2011,6 +2029,7 @@ export class CampaignsService {
         menuItems: CampaignsService.normalizeMenuItems(assignment.campaign.menuItems as unknown as Prisma.JsonValue),
       },
       ...detail,
+      ...(assignment.role === 'waiter' ? { pickupOrders: waiterPickupOrders } : {}),
       ...(assignment.role === 'waiter'
         ? {
             distributions: distributions.map((d) => ({
@@ -4450,9 +4469,9 @@ export class CampaignsService {
       if (assignment.campaignId !== donation.campaign.id) {
         throw new BadRequestException(`${name} không thuộc chiến dịch này.`);
       }
-      // Đi nhận hàng là việc của vai trò Giao hàng — chef/phục vụ phải ở bếp.
-      if (assignment.role !== 'shipper') {
-        throw new BadRequestException(`${name} không phải vai trò Giao hàng — chỉ shipper được phân công đi nhận.`);
+      // Đi nhận hàng là việc VẬN HÀNH (giao hàng hoặc phục vụ) — chỉ đầu bếp phải ở bếp.
+      if (!OPS_ROLES.includes(assignment.role as (typeof OPS_ROLES)[number])) {
+        throw new BadRequestException(`${name} đang trực ca Đầu bếp — không phân công đi nhận hàng được.`);
       }
       if (!['assigned', 'checked_in', 'in_progress'].includes(assignment.status)) {
         throw new BadRequestException(`${name} chưa được duyệt vào ca (hoặc đã kết thúc), không thể phân công.`);
@@ -4607,8 +4626,8 @@ export class CampaignsService {
       if (assignment.campaignId !== request.campaign.id) {
         throw new BadRequestException(`${name} không thuộc chiến dịch này.`);
       }
-      if (assignment.role !== 'shipper') {
-        throw new BadRequestException(`${name} không phải vai trò Giao hàng — chỉ shipper được phân công đi nhận.`);
+      if (!OPS_ROLES.includes(assignment.role as (typeof OPS_ROLES)[number])) {
+        throw new BadRequestException(`${name} đang trực ca Đầu bếp — không phân công đi nhận hàng được.`);
       }
       if (!['assigned', 'checked_in', 'in_progress'].includes(assignment.status)) {
         throw new BadRequestException(`${name} chưa được duyệt vào ca (hoặc đã kết thúc), không thể phân công.`);
@@ -5733,7 +5752,7 @@ export class CampaignsService {
         where: {
           campaignId,
           volunteerId: { in: requestedAssignees },
-          role: { in: ['shipper', 'waiter'] },
+          role: { in: [...OPS_ROLES] },
           status: { in: [...APPROVED] },
         },
         select: {
