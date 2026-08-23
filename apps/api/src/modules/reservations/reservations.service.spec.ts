@@ -406,7 +406,6 @@ describe('ReservationsService.expireNoShows', () => {
       { getNumber: jest.fn(async (k: string) => (k === 'RESERVATION_NO_SHOW_PENALTY' ? 20 : 10)) } as never,
       { notify: jest.fn() } as never,
       trust as never,
-      { add: jest.fn() } as never,
     );
   });
 

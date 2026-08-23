@@ -301,6 +301,10 @@ export class DeliveriesService {
 
     // Gắn cờ "ca của bạn có phủ đơn này không" để FE giải thích vì sao nút mờ,
     // thay vì để bấm rồi mới ăn lỗi.
+    // Hạn đơn: đơn hẹn giờ chờ tới giờ hẹn; đơn giao ngay chờ hết cửa sổ nhận.
+    // Trả về để client đếm ngược "đơn còn chờ được bao lâu" (không phải hạn trả lời
+    // lời mời như hệ cũ — mô hình mới không mời ai cả).
+    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
     const results: Array<Record<string, unknown>> = [];
     for (const row of rows) {
       const targetAt = row.delivery_scheduled_at ?? new Date();
@@ -322,6 +326,8 @@ export class DeliveriesService {
         canClaim: covered && !busyWithCampaign,
         busyWithCampaign,
         claimSlot: slot,
+        claimExpiresAt: row.delivery_scheduled_at
+          ?? new Date(row.created_at.getTime() + claimWindowMinutes * 60_000),
       });
     }
     return results;
