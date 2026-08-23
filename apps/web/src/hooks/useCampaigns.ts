@@ -1931,6 +1931,8 @@ export function useInviteVolunteers(campaignId: string) {
         invited: number;
         /** Số người bị bỏ qua vì vừa bỏ khung giờ này khỏi lịch rảnh / bị khoá tài khoản. */
         skipped: number;
+        /** Số người đã có lời mời cho đúng ca này và chưa trả lời — không gửi lại. */
+        duplicated: number;
       },
   });
 }

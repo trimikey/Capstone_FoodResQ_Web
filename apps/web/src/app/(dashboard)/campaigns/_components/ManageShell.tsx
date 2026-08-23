@@ -692,10 +692,15 @@ function AvailableVolunteersHint({
       });
       // Lịch rảnh sửa được bất cứ lúc nào nên danh sách đang mở có thể đã cũ — nói rõ
       // ai bị bỏ qua, đừng để tổ chức tưởng đã mời đủ số người mình chọn.
+      const reasons: string[] = [];
       if (res.skipped > 0) {
-        toast.warning(
-          `Đã mời ${res.invited} người. ${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh nên không được mời.`,
-        );
+        reasons.push(`${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh`);
+      }
+      if (res.duplicated > 0) {
+        reasons.push(`${res.duplicated} người đã có lời mời cho ca này và chưa trả lời`);
+      }
+      if (reasons.length > 0) {
+        toast.warning(`Đã mời ${res.invited} người. Bỏ qua: ${reasons.join('; ')}.`);
       } else {
         toast.success(`Đã gửi lời mời tới ${res.invited} tình nguyện viên.`);
       }

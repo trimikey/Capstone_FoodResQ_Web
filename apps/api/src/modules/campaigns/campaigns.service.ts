@@ -1451,12 +1451,21 @@ export class CampaignsService {
       taken.map((a) => `${a.campaignId}:${a.shiftId ?? ''}:${this.toDateKey(a.workDate ?? new Date(0))}`),
     );
 
+    // Gộp lời mời trùng cho cùng một ca: giờ đã chặn gửi trùng ở inviteVolunteersToShift,
+    // nhưng dữ liệu cũ vẫn còn các cặp y hệt nhau — hiện hai thẻ giống nhau thì nhận một
+    // cái xong cái kia vẫn nằm đó, TNV tưởng còn ca chưa trả lời. Giữ lời mời mới nhất
+    // (rows đã sắp xếp createdAt desc) để lời nhắn kèm theo là bản cập nhật nhất.
+    const seen = new Set<string>();
+
     return invites.flatMap((i) => {
       const campaign = campaignById.get(i.data.campaignId as string);
       if (!campaign) return [];
       const shiftId = typeof i.data.shiftId === 'string' ? i.data.shiftId : null;
       const workDate = typeof i.data.workDate === 'string' ? i.data.workDate : null;
       if (!workDate) return [];
+      const key = `${campaign.id}:${shiftId ?? ''}:${workDate}:${typeof i.data.period === 'string' ? i.data.period : ''}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
       if (takenKeys.has(`${campaign.id}:${shiftId ?? ''}:${workDate}`)) return [];
       // Hết hạn tuyển thì lời mời cũng vô nghĩa.
       if (new Date() >= campaign.recruitmentEndAt) return [];
@@ -3396,11 +3405,38 @@ export class CampaignsService {
       );
     }
 
+    // Không gửi lại lời mời TNV đang còn treo cho đúng ca đó: tổ chức bấm mời hai lần
+    // (hoặc mời lại người vẫn còn trong danh sách gợi ý) sẽ đẻ ra hai thông báo y hệt
+    // nhau bên TNV — nhận một cái thì cái còn lại vẫn nằm đó, tưởng còn ca chưa trả lời.
+    // Khoá trùng tính theo chiến dịch + ngày + ca + shiftId: cùng ngày cùng khung giờ
+    // nhưng khác shift (khác vai trò) vẫn là hai lời mời hợp lệ.
+    const pending = await this.prisma.$queryRaw<{ userId: string }[]>(Prisma.sql`
+      SELECT DISTINCT n.user_id AS "userId"
+      FROM notifications n
+      WHERE n.user_id IN (${Prisma.join(volunteers.map((v) => Prisma.sql`${v.userId}::uuid`))})
+        AND n.type = 'campaign'
+        AND n.data->>'kind' = 'shift_invite'
+        AND n.data->>'campaignId' = ${campaignId}
+        AND n.data->>'workDate' = ${dto.workDate}
+        AND n.data->>'period' = ${dto.period}
+        AND COALESCE(n.data->>'shiftId', '') = ${dto.shiftId ?? ''}
+        AND n.data->>'dismissedAt' IS NULL
+    `);
+    const pendingUserIds = new Set(pending.map((p) => p.userId));
+    const targets = volunteers.filter((v) => !pendingUserIds.has(v.userId));
+    const duplicated = volunteers.length - targets.length;
+    if (targets.length === 0) {
+      throw new BadRequestException(
+        'Những người bạn chọn đều đang có lời mời cho đúng ca này và chưa trả lời. '
+        + 'Hãy đợi họ phản hồi thay vì gửi thêm.',
+      );
+    }
+
     const periodLabel = SHIFT_PERIODS[dto.period as CampaignShiftPeriod]?.label ?? dto.period;
     const dateLabel = new Date(`${dto.workDate}T00:00:00+07:00`).toLocaleDateString('vi-VN');
     const note = dto.message?.trim();
 
-    for (const v of volunteers) {
+    for (const v of targets) {
       void this.notifications.notify(v.userId, {
         type: 'campaign',
         title: 'Lời mời tham gia ca trực',
@@ -3420,7 +3456,7 @@ export class CampaignsService {
     }
 
     // Báo rõ số người bị bỏ qua để tổ chức biết danh sách đã cũ, không tưởng đã mời đủ.
-    return { invited: volunteers.length, skipped };
+    return { invited: targets.length, skipped, duplicated };
   }
 
   /** Mức sẵn sàng được tính theo từng ngày + ca + vai trò, chỉ tính người đã xác nhận. */
