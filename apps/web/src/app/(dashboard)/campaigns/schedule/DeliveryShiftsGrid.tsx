@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   useMyDeliveryShifts,
+  useMyWeeklyAvailability,
   useSetMyDeliveryShifts,
   type DeliveryShiftSlot,
   type ShiftPeriod,
@@ -29,6 +30,12 @@ function addDaysKey(dateKey: string, days: number): string {
   const d = new Date(`${dateKey}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** Thứ trong tuần theo ISO (1 = Thứ 2 … 7 = Chủ nhật) — khớp cột day_of_week của lịch rảnh. */
+function isoDowOfKey(dateKey: string): number {
+  const g = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+  return g === 0 ? 7 : g;
 }
 
 /** Thứ 2 của tuần chứa `dateKey` — để cột luôn chạy T2 → CN như lưới khung giờ rảnh. */
@@ -72,6 +79,7 @@ function fmtVn(iso: string | null): string {
  */
 export default function DeliveryShiftsGrid() {
   const { data, isLoading } = useMyDeliveryShifts();
+  const { data: availability } = useMyWeeklyAvailability();
   const save = useSetMyDeliveryShifts();
   // `draft === null` = chưa sửa gì, lưới soi thẳng dữ liệu server nên tự cập nhật khi
   // refetch. Chỉ khi người dùng chạm vào mới tách ra bản nháp riêng.
@@ -80,8 +88,6 @@ export default function DeliveryShiftsGrid() {
   const serverSelected = new Set(
     (data?.slots ?? []).map((s) => cellKey(s.workDate, s.period)),
   );
-  const selected = draft ?? serverSelected;
-  const dirty = draft !== null;
 
   const window_ = data?.window;
   const editable = !!window_ && (window_.alwaysOpen || window_.open);
@@ -105,11 +111,35 @@ export default function DeliveryShiftsGrid() {
 
   const canEditDay = (dateKey: string) => editable && dateKey >= todayKey;
 
+  // Điền sẵn theo khung giờ rảnh — chỉ khi tuần này CHƯA đăng ký ca nào. Có rồi mà vẫn
+  // điền thì những ca người ta cố ý bỏ sẽ mọc lại sau mỗi lần tải trang.
+  // Đây chỉ là GỢI Ý chưa lưu: hệ thống không tự cam kết thay người dùng, phải bấm Lưu.
+  // Đánh đổi đã biết: tuần cố ý để trống vẫn bị gợi ý lại mỗi lần mở, vì DB không phân
+  // biệt "chưa đăng ký" với "tuần này tôi nghỉ". Chấp nhận được vì gợi ý không tự lưu.
+  const weekHasSaved = days.some((d) =>
+    PERIODS.some((p) => serverSelected.has(cellKey(d, p.id))),
+  );
+  const suggested = new Set<string>();
+  if (editable && !weekHasSaved) {
+    for (const day of days) {
+      if (day < todayKey) continue;
+      const dow = isoDowOfKey(day);
+      for (const a of availability?.slots ?? []) {
+        if (a.dayOfWeek === dow) suggested.add(cellKey(day, a.period));
+      }
+    }
+  }
+
+  const selected =
+    draft ?? (suggested.size > 0 ? new Set([...serverSelected, ...suggested]) : serverSelected);
+  // Có gợi ý chưa lưu cũng coi như "có thay đổi cần lưu", để nút Lưu ca sáng lên.
+  const dirty = draft !== null || suggested.size > 0;
+
   function paint(key: string, on: boolean) {
     const [dateKey] = key.split(':');
     if (!canEditDay(dateKey)) return;
     setDraft((prev) => {
-      const base = prev ?? serverSelected;
+      const base = prev ?? selected;
       if (base.has(key) === on) return prev ?? new Set(base);
       const next = new Set(base);
       if (on) next.add(key);
@@ -165,8 +195,9 @@ export default function DeliveryShiftsGrid() {
             Ca giao hàng của tôi
           </h2>
           <p className="mt-1 text-xs text-neutral-500">
-            Đây là <b>cam kết</b>, khác với khung giờ rảnh ở trên: chỉ những ca tick ở đây mới
-            nhận được đơn, và đơn hẹn giờ cần ca phủ đúng giờ hẹn.
+            Đây là <b>cam kết theo ngày</b>: chỉ những ca tick ở đây mới nhận được đơn, và đơn hẹn
+            giờ cần ca phủ đúng giờ hẹn. Tuần chưa đăng ký sẽ được điền sẵn theo khung giờ rảnh ở
+            trên để bạn chỉ việc sửa lại.
           </p>
         </div>
         <button
@@ -192,6 +223,16 @@ export default function DeliveryShiftsGrid() {
           {window_.open
             ? `Đang mở đăng ký cho tuần ${window_.editableFrom} → ${window_.editableTo}. Đóng lúc ${fmtVn(window_.closesAt)}.`
             : `Ngoài giờ đăng ký — cửa sổ kế tiếp mở ${fmtVn(window_.nextOpensAt)} (Chủ nhật 12:00 trưa).`}
+        </p>
+      )}
+
+      {suggested.size > 0 && (
+        <p className="mt-3 flex items-start gap-1.5 rounded-xl bg-sky-50 p-2.5 text-[11px] font-semibold text-sky-900">
+          <span className="material-symbols-outlined text-[15px]">auto_awesome</span>
+          <span>
+            Đã điền sẵn {suggested.size} ca theo <b>khung giờ rảnh</b> của bạn (viền đứt = chưa
+            lưu). Bỏ bớt ca tuần này bạn bận rồi bấm <b>Lưu ca</b> — chưa lưu thì chưa nhận đơn.
+          </span>
         </p>
       )}
 
@@ -259,6 +300,8 @@ export default function DeliveryShiftsGrid() {
                 {days.map((d) => {
                   const key = cellKey(d, p.id);
                   const on = selected.has(key);
+                  // Viền đứt = đã tick nhưng chưa lưu (gợi ý tự điền hoặc vừa sửa tay).
+                  const unsaved = on && !serverSelected.has(key);
                   const usable = canEditDay(d);
                   return (
                     <td key={d}>
@@ -277,7 +320,9 @@ export default function DeliveryShiftsGrid() {
                         }
                         className={`h-11 w-full rounded-lg border transition-colors disabled:cursor-not-allowed ${
                           on
-                            ? 'border-teal-600 bg-teal-600 text-white disabled:border-teal-200 disabled:bg-teal-200'
+                            ? `bg-teal-600 text-white disabled:border-teal-200 disabled:bg-teal-200 ${
+                                unsaved ? 'border-dashed border-teal-900' : 'border-teal-600'
+                              }`
                             : 'border-neutral-200 bg-white text-neutral-300 hover:border-teal-300 hover:bg-teal-50 disabled:bg-neutral-50 disabled:hover:border-neutral-200 disabled:hover:bg-neutral-50'
                         }`}
                       >
@@ -295,7 +340,10 @@ export default function DeliveryShiftsGrid() {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Tuần này đã đăng ký <b>{weekCount}</b>/28 ca.
+        {/* Khi đang có gợi ý tự điền thì con số này CHƯA phải là đã đăng ký — nói "đã đăng
+            ký" lúc đó sẽ khiến TNV bỏ qua nút Lưu và tưởng mình đã có ca. */}
+        {dirty ? 'Đang chọn' : 'Tuần này đã đăng ký'} <b>{weekCount}</b>/28 ca
+        {dirty ? ' — chưa lưu.' : '.'}
         {editable ? ' Kéo qua nhiều ô để tick một lượt.' : ' Ngoài cửa sổ đăng ký nên chỉ xem được.'}
       </p>
     </section>

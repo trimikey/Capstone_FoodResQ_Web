@@ -113,8 +113,9 @@ export default function AvailabilityGrid() {
             Khung giờ tôi rảnh
           </h2>
           <p className="mt-1 text-xs text-neutral-500">
-            Tick các ca bạn thường rảnh trong tuần. Hệ thống dùng để <b>lọc ca phù hợp</b> cho bạn và
-            để tổ chức biết ai có thể mời khi ca thiếu người — <b>không tự động xếp bạn vào ca nào</b>.
+            Đây là <b>mẫu lặp hàng tuần</b>, không gắn với ngày cụ thể. Dùng vào hai việc: tổ chức
+            biết ai có thể mời khi ca bếp thiếu người, và <b>điền sẵn ca giao hàng</b> ở lưới bên
+            dưới mỗi tuần — <b>không tự động xếp bạn vào ca nào</b>.
           </p>
         </div>
         <button

@@ -449,7 +449,9 @@ export function useSetMyDeliveryShifts() {
   return useMutation({
     mutationFn: async (p: { slots: DeliveryShiftSlot[]; from: string; to: string }) =>
       (await api.put('/volunteers/me/delivery-shifts', p)).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
+    // Chờ refetch xong rồi mới trả về: lưới điền sẵn gợi ý cho tuần CHƯA có ca nào, nên
+    // nếu trả sớm khi cache còn cũ thì gợi ý bật lại ngay sau khi vừa lưu.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
   });
 }
 
