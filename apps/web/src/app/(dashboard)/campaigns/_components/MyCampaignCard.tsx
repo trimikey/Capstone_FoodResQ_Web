@@ -4,9 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
-  useStartCampaign,
-  useCancelCampaign,
-  useCompleteCampaign,
   useConfirmDonation,
   type Campaign,
 } from '@/hooks/useCampaigns';
@@ -49,12 +46,7 @@ const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Campaign; allowEarlyStart?: boolean }) {
-  const start = useStartCampaign();
-  const cancelCampaign = useCancelCampaign();
-  const complete = useCompleteCampaign();
   const confirmDon = useConfirmDonation();
-  const [servings, setServings] = useState('');
-  const [finishing, setFinishing] = useState(false);
   const [confirmingDonationId, setConfirmingDonationId] = useState<string | null>(null);
   const [receiptNote, setReceiptNote] = useState('');
   const rejectionReason = c.status === 'cancelled' && c.notes?.startsWith(REJECTION_PREFIX)
@@ -97,14 +89,6 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
     : overdue;
   const canShowStart = reachedOperationTime || allowEarlyStart;
 
-  // Đã qua ngày kết thúc theo lịch chưa (so theo ngày, khớp với BE) — quyết định
-  // việc kết thúc có bị coi là "kết thúc sớm" hay không.
-  const campaignEndReached = (() => {
-    const endKey = (c.endDate ?? c.scheduledDate).slice(0, 10);
-    const [yy, mm, dd] = endKey.split('-').map(Number);
-    const now = new Date();
-    return Date.UTC(yy, mm - 1, dd) <= Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  })();
 
   async function doConfirm(donationId: string) {
     try {
@@ -121,54 +105,6 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
     if (confirmDon.isPending) return;
     setConfirmingDonationId(null);
     setReceiptNote('');
-  }
-
-  async function doStart() {
-    try {
-      await start.mutateAsync(c.id);
-      toast.success('Đã bắt đầu chiến dịch');
-    } catch (e) {
-      toast.error(errMsg(e, 'Không bắt đầu được'));
-    }
-  }
-
-  async function doCancel() {
-    if (!window.confirm('Huỷ chiến dịch quá hạn này? Hành động không thể hoàn tác.')) return;
-    try {
-      await cancelCampaign.mutateAsync({
-        id: c.id,
-        reason: 'Quá ngày vận hành mà chiến dịch chưa bắt đầu được.',
-      });
-      toast.success('Đã huỷ chiến dịch quá hạn');
-    } catch (e) {
-      toast.error(errMsg(e, 'Huỷ thất bại'));
-    }
-  }
-
-  async function doComplete() {
-    const n = Number(servings);
-    if (Number.isNaN(n) || n < 0) {
-      toast.error('Nhập số suất ăn hợp lệ');
-      return;
-    }
-    if (n > 100000) {
-      toast.error('Số suất thực tế tối đa 100.000');
-      return;
-    }
-    // Kết thúc TRƯỚC ngày kết thúc theo lịch là "kết thúc sớm" — BE bắt buộc kèm xác
-    // nhận và lý do. Widget gọn trên card không có chỗ nhập lý do nên đẩy sang trang
-    // quản lý (modal ở đó có sẵn); trước đây bấm ở đây luôn báo lỗi chung chung.
-    if (!campaignEndReached) {
-      toast.info('Chiến dịch chưa tới ngày kết thúc — hãy vào trang Quản lý để xác nhận kết thúc sớm kèm lý do.');
-      return;
-    }
-    try {
-      await complete.mutateAsync({ id: c.id, actualServings: n });
-      toast.success('Đã kết thúc chiến dịch');
-      setFinishing(false);
-    } catch (e) {
-      toast.error(errMsg(e, 'Không kết thúc được'));
-    }
   }
 
   return (
@@ -270,35 +206,37 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
         </p>
       )}
 
-      {c.status === 'approved' &&
-        (overdue ? (
-          <div className="mt-3 space-y-2">
-            <p className="text-[11px] text-rose-600 flex items-center gap-1">
+      {/* Thao tác vòng đời (bắt đầu / huỷ / kết thúc) làm trong trang QUẢN LÝ, không
+          làm ngoài card. Lý do: mỗi thao tác đều cần thông tin mà card không có —
+          bắt đầu cần xem ma trận đủ người từng ca, kết thúc cần lý do khi kết thúc
+          sớm, huỷ cần lý do gửi cho TNV và NCC. Card chỉ báo TRẠNG THÁI. */}
+      {c.status === 'approved' && (
+        overdue ? (
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-600">
               <span className="material-symbols-outlined text-[14px]">event_busy</span>
-              Đã quá ngày diễn ra mà chưa bắt đầu
+              Quá ngày diễn ra mà chưa bắt đầu
             </p>
-            <button
-              type="button"
-              onClick={doCancel}
-              disabled={cancelCampaign.isPending}
-              className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
+            <Link
+              href={`/campaigns/${c.id}/manage/status`}
+              className="shrink-0 text-[11px] font-bold text-rose-700 hover:text-rose-900"
             >
-              {cancelCampaign.isPending ? 'Đang huỷ...' : 'Huỷ chiến dịch quá hạn'}
-            </button>
+              Xử lý →
+            </Link>
           </div>
         ) : canShowStart ? (
-          // BE chỉ cho bắt đầu khi ĐÃ tới giờ vận hành và đủ người xác nhận. Trước đây
-          // nút hiện cho mọi chiến dịch approved nên bấm lúc nào cũng nhận lỗi "Chưa
-          // tới thời gian vận hành"; giờ chỉ hiện đúng lúc, còn điều kiện đủ người
-          // vẫn do BE kiểm (báo lỗi kèm số người còn thiếu).
-          <button
-            type="button"
-            onClick={doStart}
-            disabled={start.isPending}
-            className="mt-3 w-full py-2 bg-[#236c2a] hover:bg-[#1a4f1f] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors"
-          >
-            {start.isPending ? 'Đang bắt đầu...' : 'Bắt đầu chiến dịch'}
-          </button>
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-emerald-50 px-2.5 py-2">
+            <p className="flex items-center gap-1 text-[11px] font-bold text-emerald-800">
+              <span className="material-symbols-outlined text-[14px]">play_circle</span>
+              Đã tới giờ vận hành
+            </p>
+            <Link
+              href={`/campaigns/${c.id}/manage`}
+              className="shrink-0 text-[11px] font-extrabold text-emerald-700 hover:text-emerald-900"
+            >
+              Bắt đầu ở trang quản lý →
+            </Link>
+          </div>
         ) : (
           <p className="mt-3 flex items-center gap-1 text-[11px] text-neutral-500">
             <span className="material-symbols-outlined text-[14px]">schedule</span>
@@ -306,45 +244,23 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
               ? `Tự bắt đầu lúc ${formatVnShort(c.operationStartAt)} khi đủ người xác nhận`
               : 'Chiến dịch sẽ tự bắt đầu khi tới giờ và đủ người xác nhận'}
           </p>
-        ))}
+        )
+      )}
 
-      {c.status === 'in_progress' &&
-        (finishing ? (
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              value={servings}
-              onChange={(e) => setServings(e.target.value)}
-              placeholder="Số suất ăn"
-              className="flex-1 input-base !py-1.5 text-xs"
-              autoFocus
-            />
-            <button
-              type="button"
-              onClick={doComplete}
-              disabled={complete.isPending}
-              className="px-3 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold disabled:opacity-50"
-            >
-              Xong
-            </button>
-            <button
-              type="button"
-              onClick={() => setFinishing(false)}
-              className="px-2 py-2 text-neutral-400 text-xs"
-            >
-              Huỷ
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setFinishing(true)}
-            className="mt-3 w-full py-2 bg-honey-500 hover:bg-honey-600 text-white rounded-xl text-xs font-bold transition-colors"
+      {c.status === 'in_progress' && (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-honey-50 px-2.5 py-2">
+          <p className="flex items-center gap-1 text-[11px] font-bold text-honey-700">
+            <span className="material-symbols-outlined text-[14px]">local_fire_department</span>
+            Đang diễn ra
+          </p>
+          <Link
+            href={`/campaigns/${c.id}/manage/status`}
+            className="shrink-0 text-[11px] font-extrabold text-honey-700 hover:text-honey-600"
           >
-            Kết thúc &amp; nhập số suất
-          </button>
-        ))}
+            Kết thúc &amp; nhập số suất →
+          </Link>
+        </div>
+      )}
 
       {c.status === 'completed' && c.actualServings != null && (
         <p className="text-[11px] text-emerald-700 mt-3 flex items-center gap-1 font-semibold">
