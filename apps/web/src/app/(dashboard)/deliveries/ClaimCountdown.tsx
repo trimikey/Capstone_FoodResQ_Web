@@ -53,8 +53,9 @@ export default function ClaimCountdown({
     <span
       className={`mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}
       title={
+        // Không nêu con số phút: mốc này admin chỉnh được, ghi cứng ở đây sẽ sai khi họ đổi.
         scheduled
-          ? 'Đơn hẹn giờ đóng nhận trước giờ hẹn 15 phút để shipper còn kịp tới lấy hàng'
+          ? 'Đơn hẹn giờ đóng nhận sớm hơn giờ hẹn để shipper còn kịp tới lấy hàng'
           : 'Hết hạn mà không ai nhận thì đơn bị huỷ và người nhận được báo đặt lại'
       }
     >

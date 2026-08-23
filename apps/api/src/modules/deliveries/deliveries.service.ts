@@ -36,28 +36,25 @@ const PERIOD_VN: Record<string, string> = {
 };
 
 /**
- * Đơn hẹn giờ đóng cửa nhận trước giờ hẹn bao nhiêu phút.
- *
- * Nhận đúng vào phút hẹn là vô nghĩa: shipper còn phải chạy tới chỗ lấy hàng rồi mới
- * giao được, nhận sát giờ thì chắc chắn trễ hẹn. Cắt sớm 15 phút để đơn không ai nhận
- * kịp thì huỷ sớm, người nhận còn kịp đặt lại thay vì ngồi chờ tới giờ mới biết hỏng.
- */
-const SCHEDULED_CLAIM_CUTOFF_MINUTES = 15;
-
-/**
  * Hạn CUỐI còn nhận được một đơn đang chờ.
  *
- * Một chỗ duy nhất cho cả ba nơi cần biết (danh sách đơn gần, lúc bấm nhận, cron dọn
- * đơn quá hạn) — ba công thức riêng sẽ lệch nhau và sinh ra đơn hiện trên app nhưng
- * bấm vào thì báo hết hạn.
+ * Một chỗ duy nhất cho MỌI nơi cần biết (danh sách đơn gần, lúc bấm nhận, cron dọn đơn
+ * quá hạn, đồng hồ đếm ngược bên người nhận) — mỗi nơi tự tính một kiểu là sinh ra đơn
+ * hiện trên app nhưng bấm vào báo hết hạn, hoặc người nhận thấy còn 51 phút trong khi
+ * shipper chỉ còn 36.
+ *
+ * Đơn hẹn giờ đóng SỚM hơn giờ hẹn: nhận đúng phút hẹn là chắc chắn trễ vì shipper còn
+ * phải chạy tới chỗ lấy hàng. Cắt sớm cũng để đơn hỏng thì huỷ sớm, người nhận còn kịp
+ * đặt lại thay vì ngồi chờ tới giờ mới biết.
  */
 export function claimDeadline(
   createdAt: Date,
   scheduledAt: Date | null | undefined,
   claimWindowMinutes: number,
+  scheduledCutoffMinutes: number,
 ): Date {
   return scheduledAt
-    ? new Date(scheduledAt.getTime() - SCHEDULED_CLAIM_CUTOFF_MINUTES * 60_000)
+    ? new Date(scheduledAt.getTime() - scheduledCutoffMinutes * 60_000)
     : new Date(createdAt.getTime() + claimWindowMinutes * 60_000);
 }
 
@@ -282,6 +279,21 @@ export class DeliveriesService {
    * CHỌN đơn muốn giao. Toạ độ lấy từ FE lúc gọi (GPS tươi) thay vì cột
    * current_location vốn chỉ được cập nhật khi còn dùng nút bật/tắt sẵn sàng.
    */
+  /** Hai mốc thời gian quyết định hạn nhận đơn, đọc từ system_configs (cache 30s). */
+  private async claimTimings() {
+    const [claimWindowMinutes, scheduledCutoffMinutes] = await Promise.all([
+      this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES'),
+      this.systemConfig.getNumber('DELIVERY_SCHEDULED_CUTOFF_MINUTES'),
+    ]);
+    return { claimWindowMinutes, scheduledCutoffMinutes };
+  }
+
+  /** Hạn nhận của MỘT đơn — bản tiện dụng của `claimDeadline` khi không lặp qua nhiều đơn. */
+  private async claimDeadlineFor(createdAt: Date, scheduledAt: Date | null | undefined) {
+    const { claimWindowMinutes, scheduledCutoffMinutes } = await this.claimTimings();
+    return claimDeadline(createdAt, scheduledAt, claimWindowMinutes, scheduledCutoffMinutes);
+  }
+
   async getNearbyPendingDeliveries(shipperUserId: string, lng: number, lat: number) {
     const volunteer = await this.requireVerifiedShipper(shipperUserId);
 
@@ -330,12 +342,17 @@ export class DeliveriesService {
     // Hạn đơn: đơn hẹn giờ chờ tới giờ hẹn; đơn giao ngay chờ hết cửa sổ nhận.
     // Trả về để client đếm ngược "đơn còn chờ được bao lâu" (không phải hạn trả lời
     // lời mời như hệ cũ — mô hình mới không mời ai cả).
-    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
+    const { claimWindowMinutes, scheduledCutoffMinutes } = await this.claimTimings();
     const results: Array<Record<string, unknown>> = [];
     for (const row of rows) {
       // Bỏ đơn đã qua hạn nhận: cron dọn theo chu kỳ nên chúng còn `pending_assignment`
       // thêm một lúc — vẫn hiện thì shipper bấm vào chỉ nhận được lỗi.
-      const expiresAt = claimDeadline(row.created_at, row.delivery_scheduled_at, claimWindowMinutes);
+      const expiresAt = claimDeadline(
+        row.created_at,
+        row.delivery_scheduled_at,
+        claimWindowMinutes,
+        scheduledCutoffMinutes,
+      );
       if (Date.now() > expiresAt.getTime()) continue;
 
       const targetAt = row.delivery_scheduled_at ?? new Date();
@@ -385,16 +402,17 @@ export class DeliveriesService {
     // Cron dọn đơn quá hạn chạy theo chu kỳ nên luôn có khe: đơn đã qua hạn vẫn còn
     // `pending_assignment` cho tới lượt quét kế tiếp. Không chặn ở đây thì shipper nhận
     // được đơn mà hệ thống đang chuẩn bị huỷ — nhận xong bị giật mất giữa chừng.
-    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
+    const { claimWindowMinutes, scheduledCutoffMinutes } = await this.claimTimings();
     const deadline = claimDeadline(
       delivery.createdAt,
       delivery.reservation?.deliveryScheduledAt,
       claimWindowMinutes,
+      scheduledCutoffMinutes,
     );
     if (Date.now() > deadline.getTime()) {
       throw new BadRequestException(
-        delivery.reservation?.deliveryScheduledAt
-          ? `Đơn này đã hết hạn nhận (đóng trước giờ hẹn ${SCHEDULED_CLAIM_CUTOFF_MINUTES} phút).`
+        delivery.reservation?.deliveryScheduledAt && scheduledCutoffMinutes > 0
+          ? `Đơn này đã hết hạn nhận (đóng trước giờ hẹn ${scheduledCutoffMinutes} phút).`
           : 'Đơn này đã hết hạn nhận.',
       );
     }
@@ -883,7 +901,7 @@ export class DeliveriesService {
     // Mô hình tự nhận đơn: hạn chờ KHÔNG còn là 4ph30 cứng.
     //  - Đơn giao ngay: chờ DELIVERY_CLAIM_WINDOW_MINUTES (admin chỉnh, mặc định 30ph).
     //  - Đơn hẹn giờ:   chờ tới đúng giờ hẹn — quá giờ mà không ai nhận mới huỷ.
-    const claimWindowMinutes = await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES');
+    const { claimWindowMinutes, scheduledCutoffMinutes } = await this.claimTimings();
     const now = Date.now();
     const candidates = await this.prisma.delivery.findMany({
       where: { status: 'pending_assignment' },
@@ -904,7 +922,13 @@ export class DeliveriesService {
     });
     const stale = candidates.filter(
       (d) =>
-        now > claimDeadline(d.createdAt, d.reservation?.deliveryScheduledAt, claimWindowMinutes).getTime(),
+        now
+        > claimDeadline(
+          d.createdAt,
+          d.reservation?.deliveryScheduledAt,
+          claimWindowMinutes,
+          scheduledCutoffMinutes,
+        ).getTime(),
     );
 
     for (const d of stale) {
@@ -1338,16 +1362,16 @@ export class DeliveriesService {
       deliveryId: delivery.id,
       status: delivery.status,
       failedReason: delivery.failedReason,
-      // Hạn tìm shipper TUYỆT ĐỐI, tính từ lúc tạo đơn — để FE đếm ngược theo mốc
-      // này thay vì đếm từ lúc mở trang (reload sẽ nhảy về 4:30 dù đã tìm gần hết giờ).
+      // Hạn tìm shipper TUYỆT ĐỐI — FE đếm ngược theo mốc này thay vì đếm từ lúc mở
+      // trang (reload sẽ nhảy về đầu dù đã tìm gần hết giờ). Dùng CHUNG công thức với
+      // phía shipper: trước đây chỗ này lấy thẳng giờ hẹn nên người nhận thấy còn 51
+      // phút trong khi đơn đã đóng nhận từ phút thứ 36.
       searchExpiresAt:
         delivery.status === 'pending_assignment'
-          ? (delivery.reservation.deliveryScheduledAt
-              ? delivery.reservation.deliveryScheduledAt.toISOString()
-              : new Date(
-                  delivery.createdAt.getTime()
-                    + (await this.systemConfig.getNumber('DELIVERY_CLAIM_WINDOW_MINUTES')) * 60_000,
-                ).toISOString())
+          ? (await this.claimDeadlineFor(
+              delivery.createdAt,
+              delivery.reservation.deliveryScheduledAt,
+            )).toISOString()
           : null,
       deliveryScheduledAt: delivery.reservation.deliveryScheduledAt?.toISOString() ?? null,
       distanceKm: delivery.distanceKm != null ? Number(delivery.distanceKm) : null,
