@@ -6,7 +6,15 @@ import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
-import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
+import { useReservationDetails, useSubmitPickupProof, useCancelReservation } from '@/hooks/useReservation';
+import { useMe } from '@/hooks/useProfile';
+import {
+  LATE_CANCEL_PENALTY,
+  NO_SHOW_PENALTY,
+  isLateCancel,
+  penaltyOutcome,
+  scoreAfterLateCancel,
+} from '@/lib/cancel-penalty';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
 import { haversineKm, mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
@@ -78,6 +86,9 @@ export default function ReservationDetailsPage() {
   const { data: fetchedData, isLoading, isError } = useReservationDetails(id);
   const submitProofMutation = useSubmitPickupProof();
   const cancelDeliveryMutation = useCancelDeliverySearch();
+  // Huỷ HẲN đơn — khác huỷ tìm shipper (chỉ dừng tìm, đơn vẫn còn để tự đến lấy).
+  const cancelReservationMutation = useCancelReservation();
+  const { data: me } = useMe();
 
   // Mode and state simulations
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
@@ -87,6 +98,7 @@ export default function ReservationDetailsPage() {
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showDropOrder, setShowDropOrder] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState(
     isMock
@@ -241,6 +253,24 @@ export default function ReservationDetailsPage() {
     }
     setDeliveryMethod('pickup');
   }, [isMock, deliveryId, cancelDeliveryMutation]);
+
+  /**
+   * Huỷ HẲN đơn — trả suất về kho, khác hẳn "huỷ tìm tình nguyện viên" vốn chỉ dừng
+   * tìm shipper và giữ đơn lại để tự đến lấy. Backend đóng luôn delivery và thu hồi
+   * shipper nếu đã có người nhận.
+   */
+  const confirmDropOrder = useCallback(async () => {
+    try {
+      await cancelReservationMutation.mutateAsync({ id });
+      toast.success('Đã huỷ đơn. Suất ăn được trả lại cho người khác đặt.');
+      setShowDropOrder(false);
+      router.push('/reservations');
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Huỷ đơn thất bại';
+      toast.error(msg);
+    }
+  }, [cancelReservationMutation, id, router]);
 
   const fmtCountdown = (s: number) => {
     const m = Math.floor(s / 60);
@@ -773,6 +803,22 @@ export default function ReservationDetailsPage() {
                       <p className="text-[10px] text-neutral-400 text-center mt-1.5">
                         Sau khi hủy, bạn vẫn có thể đến lấy trực tiếp
                       </p>
+                    </div>
+                  )}
+
+                  {/* Huỷ HẲN đơn. Tách riêng khỏi "huỷ tìm tình nguyện viên" vì hai việc
+                      khác hẳn nhau: huỷ tìm thì đơn còn nguyên và phải tự đi lấy, còn cái
+                      này mới là không lấy nữa. Hiện với mọi đơn còn 'confirmed' — kể cả
+                      đơn tự đến lấy hoặc đã có shipper nhận (backend chặn khi đã lấy hàng). */}
+                  {liveStatus === 'confirmed' && (
+                    <div className="mt-3 pt-3 border-t border-neutral-100">
+                      <button
+                        onClick={() => setShowDropOrder(true)}
+                        className="w-full py-2.5 border border-rose-200 hover:bg-rose-50 rounded-xl text-xs font-bold text-rose-600 transition-all flex items-center justify-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                        Huỷ đơn — không lấy nữa
+                      </button>
                     </div>
                   )}
 
@@ -1439,7 +1485,8 @@ export default function ReservationDetailsPage() {
             <div className="overflow-y-auto flex-1 min-h-0">
               <div className="px-5 py-4 space-y-3">
                 <p className="text-sm text-neutral-600 leading-relaxed">
-                  Bạn muốn tiếp tục đợi tình nguyện viên giao hàng hay tự đến địa chỉ nhận?
+                  Bạn muốn tiếp tục đợi tình nguyện viên giao hàng, tự đến địa chỉ nhận, hay bỏ
+                  luôn đơn này?
                 </p>
                 <button
                   onClick={() => setShowCancelConfirm(false)}
@@ -1465,11 +1512,93 @@ export default function ReservationDetailsPage() {
                     </>
                   )}
                 </button>
+                {/* Lựa chọn thứ ba: KHÔNG lấy nữa. Trước đây popup chỉ có "đợi tiếp" và
+                    "tự đến lấy" nên người không lấy được nữa buộc phải bỏ mặc đơn tới lúc
+                    bị đánh no_show (−20 điểm) — nặng hơn huỷ chủ động rất nhiều. */}
+                <button
+                  onClick={() => { setShowCancelConfirm(false); setShowDropOrder(true); }}
+                  className="w-full py-3 bg-white border border-rose-200 text-rose-600 rounded-xl text-sm font-bold hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">cancel</span>
+                  Huỷ luôn đơn này
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Xác nhận huỷ HẲN đơn — kèm cảnh báo điểm uy tín đúng như ở danh sách đơn,
+          dùng chung một module luật để hai màn hình không báo hai con số khác nhau. */}
+      {showDropOrder && (() => {
+        const endTime = (listing as { pickupEndTime?: string } | null)?.pickupEndTime;
+        const late = endTime ? isLateCancel(endTime) : false;
+        const score = me?.trustScore;
+        const after = scoreAfterLateCancel(score);
+        const outcome = after != null && late ? penaltyOutcome(after) : null;
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white overflow-hidden shadow-xl">
+              <div className="flex items-center gap-3 px-5 py-4 border-b border-neutral-100">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-100">
+                  <span className="material-symbols-outlined text-rose-600 text-[22px]">cancel</span>
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-neutral-900">Huỷ đơn hàng?</h3>
+                  <p className="truncate text-xs text-neutral-500">{reservation?.listing?.title}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-5 py-4">
+                {late ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
+                    <div className="text-sm leading-relaxed">
+                      <p className="font-bold text-rose-700">
+                        Huỷ lúc này là HUỶ TRỄ — bạn bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
+                        {score != null ? ` (${score} → ${after})` : ''}.
+                      </p>
+                      {outcome && (
+                        <p className={`mt-1 font-semibold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
+                          ⚠ {outcome.text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                    <p className="text-sm leading-relaxed text-neutral-600">
+                      Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu cứ để đó mà không đến nhận,
+                      bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-neutral-500">
+                  Suất ăn sẽ được trả lại cho người khác đặt. Nếu đang có tình nguyện viên nhận
+                  đơn, chuyến giao cũng được đóng lại.
+                </p>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setShowDropOrder(false)}
+                    className="flex-1 rounded-xl border border-neutral-200 py-2.5 text-sm font-bold text-neutral-600 hover:bg-neutral-50"
+                  >
+                    Không huỷ
+                  </button>
+                  <button
+                    onClick={confirmDropOrder}
+                    disabled={cancelReservationMutation.isPending}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    {cancelReservationMutation.isPending ? 'Đang huỷ…' : 'Xác nhận huỷ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Đánh giá sau khi nhận hàng thành công — có thể bỏ qua.
           Đơn có TNV giao thì chấm cả hai bên; đơn tự đến lấy chỉ chấm cửa hàng. */}
