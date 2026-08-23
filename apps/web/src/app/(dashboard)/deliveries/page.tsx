@@ -101,7 +101,10 @@ export default function DeliveriesPage() {
   const claimDelivery = useClaimDelivery();
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
-  const { data: pickupData } = useMyPickupOrders(!!me?.isShipper);
+  // KHÔNG khoá theo isShipper: vai trò phục vụ và giao hàng đã gộp, nên một TNV chỉ
+  // có chuyên môn phục vụ vẫn có thể được tổ chức cử đi lấy nguyên liệu. Backend đã
+  // lọc theo ca đang trực nên gọi thẳng là đủ.
+  const { data: pickupData } = useMyPickupOrders();
   const updateStatus = useUpdateDeliveryStatus();
   const cancelDelivery = useCancelDelivery();
   const failDelivery = useFailDelivery();
@@ -763,7 +766,7 @@ export default function DeliveriesPage() {
         {/* ĐƠN LẤY NGUYÊN LIỆU CHIẾN DỊCH
             Không phải bản ghi `deliveries` nên không nằm trong luồng nhận/giao ở trên,
             nhưng vẫn là "đơn phải đi lấy" của shipper — gom về đây để quản lý một chỗ. */}
-        {me?.isShipper && pendingPickups.length > 0 && (
+        {pendingPickups.length > 0 && (
           <div className="space-y-4 mt-8">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">

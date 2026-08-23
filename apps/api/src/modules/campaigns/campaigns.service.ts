@@ -2220,7 +2220,10 @@ export class CampaignsService {
     const assignments = await this.prisma.campaignVolunteerAssignment.findMany({
       where: {
         volunteerId: volunteer.id,
-        role: 'shipper',
+        // Phục vụ và giao hàng đã gộp làm một vai trò vận hành: ca phục vụ được cử đi
+        // lấy nguyên liệu thì cũng phải thấy đơn ở Trung tâm giao hàng, nếu không họ
+        // nhận thông báo phân công mà bấm vào chẳng có gì.
+        role: { in: [...OPS_ROLES] },
         status: { in: ['assigned', 'checked_in', 'in_progress'] },
         campaign: { status: 'in_progress' },
       },
@@ -2442,18 +2445,18 @@ export class CampaignsService {
       );
     }
 
-    // Phải là shipper của chiến dịch VÀ đã điểm danh — cùng lý do với chốt đợt phát:
-    // không điểm danh thì người ở nhà vẫn "xác nhận đã lấy" được.
+    // Phải trực ca vận hành của chiến dịch VÀ đã điểm danh — cùng lý do với chốt đợt
+    // phát: không điểm danh thì người ở nhà vẫn "xác nhận đã lấy" được.
     const assignment = await this.prisma.campaignVolunteerAssignment.findFirst({
       where: {
         campaignId: request.campaignId,
         volunteerId: volunteer.id,
-        role: 'shipper',
+        role: { in: [...OPS_ROLES] },
       },
       select: { id: true, status: true },
     });
     if (!assignment) {
-      throw new ForbiddenException('Bạn không phải shipper của chiến dịch này.');
+      throw new ForbiddenException('Bạn không trực ca vận hành nào của chiến dịch này.');
     }
     if (!['checked_in', 'in_progress', 'completed'].includes(assignment.status)) {
       throw new BadRequestException(
