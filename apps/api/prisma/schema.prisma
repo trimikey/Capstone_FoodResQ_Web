@@ -746,10 +746,18 @@ model CampaignDonation {
   /// (cùng pattern `assigneeIds` của meal_distributions).
   pickupAssigneeIds Json @default("[]") @map("pickup_assignee_ids")
 
+  /// Đơn nguyên liệu đã sinh ra khoản này (NCC đồng ý request → BE tự tạo donation để
+  /// số kg vào sổ kho). Có giá trị = CÙNG MỘT LÔ HÀNG với request đó: lịch đi nhận và
+  /// việc xác nhận thực nhận do request quản, không làm riêng ở đây.
+  /// null = NCC tự nguyện góp thẳng, không qua đơn nào.
+  providerRequestId String? @map("provider_request_id") @db.Uuid
+
   campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   provider ProviderProfile @relation(fields: [providerId], references: [id])
+  providerRequest CampaignProviderRequest? @relation("DonationFromProviderRequest", fields: [providerRequestId], references: [id], onDelete: SetNull)
 
   @@index([campaignId])
+  @@index([providerRequestId])
   @@index([providerId])
   @@map("campaign_donations")
 }
@@ -798,6 +806,8 @@ model CampaignProviderRequest {
   transport        CampaignTransport?
   delivery         Delivery?                 @relation("DeliveryForProviderRequest")
   ingredientPickup CampaignIngredientPickup?
+  /// Khoản ghi sổ kho sinh ra khi NCC đồng ý đơn này — cùng một lô hàng.
+  donations        CampaignDonation[]        @relation("DonationFromProviderRequest")
 
   @@unique([campaignId, providerId])
   @@index([campaignId])

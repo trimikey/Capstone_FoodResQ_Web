@@ -67,7 +67,12 @@ export default function LogisticsPage() {
   const requests = (sentRequests ?? []).filter(
     (r) => r.campaign?.id === c.id && r.status === 'accepted',
   );
-  const donations = c.donations ?? [];
+  // Khoản sinh ra từ đơn nguyên liệu là CÙNG MỘT LÔ với đơn đó — đã hiện đầy đủ ở thẻ
+  // trên (trạng thái chuyến + ô xác nhận số kg thực nhận). Liệt kê lại ở đây thì tổ chức
+  // thấy một lô thành hai thẻ, tưởng phải nhập số kg hai lần.
+  const allDonations = c.donations ?? [];
+  const donations = allDonations.filter((d) => !d.providerRequestId);
+  const mergedCount = allDonations.length - donations.length;
 
   // Tra tên shipper được cử đi nhận quyên góp từ danh sách phân công ca.
   const assigneeName = (assignmentId: string) =>
@@ -113,13 +118,22 @@ export default function LogisticsPage() {
           Nguyên liệu quyên góp ({donations.length})
         </h2>
         <p className="cm-manage-card-sub !mt-0 mb-3">
-          NCC hứa góp — tổ chức cử shipper có ca trùng giờ đi nhận, rồi xác nhận số
-          lượng thực nhận tại đây.
+          NCC <b>tự nguyện góp thẳng</b>, không qua đơn đặt — tổ chức cử shipper có ca
+          trùng giờ đi nhận, rồi xác nhận số lượng thực nhận tại đây.
+          {mergedCount > 0 && (
+            <>
+              {' '}
+              ({mergedCount} khoản khác đi kèm đơn nguyên liệu ở trên, xác nhận ngay trên
+              đơn đó.)
+            </>
+          )}
         </p>
 
         {donations.length === 0 ? (
           <p className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-5 text-center text-xs text-neutral-500">
-            Chưa có khoản quyên góp nào cho chiến dịch này.
+            {mergedCount > 0
+              ? 'Mọi nguyên liệu của chiến dịch này đều đi kèm đơn đặt ở trên — không có khoản góp thẳng nào.'
+              : 'Chưa có khoản quyên góp nào cho chiến dịch này.'}
           </p>
         ) : (
           <div className="space-y-3">

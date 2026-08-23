@@ -135,6 +135,11 @@ type CampaignData = {
     pickupEndTime?: string | null;
     /** DS assignment id shipper được cử đi nhận — tra tên qua participants. */
     pickupAssigneeIds?: string[];
+    /**
+     * Có giá trị = khoản này sinh ra từ một đơn nguyên liệu, tức CÙNG MỘT LÔ HÀNG với
+     * đơn đó — lịch đi nhận và xác nhận thực nhận do đơn quản.
+     */
+    providerRequestId?: string | null;
     provider?: { businessName?: string | null; address?: string | null; contactPhone?: string | null };
   }>;
   expectedServings?: number | null;

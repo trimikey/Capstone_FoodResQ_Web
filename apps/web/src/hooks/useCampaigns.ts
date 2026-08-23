@@ -65,6 +65,12 @@ export interface CampaignDonationItem {
   pickupEndTime?: string | null;
   /** DS assignment id shipper được cử đi nhận — tra tên qua campaign.assignments. */
   pickupAssigneeIds?: string[];
+  /**
+   * Có giá trị = khoản này sinh ra từ một đơn nguyên liệu, tức CÙNG MỘT LÔ HÀNG với
+   * đơn đó. Lịch đi nhận và xác nhận thực nhận do đơn quản, nên không hiện thành lô
+   * riêng ở mục quyên góp nữa.
+   */
+  providerRequestId?: string | null;
 }
 
 export interface SupplyProgressItem {

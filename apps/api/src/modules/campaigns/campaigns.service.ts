@@ -410,6 +410,9 @@ export class CampaignsService {
           ? `${input.note.trim()} | Tạo từ request ${input.requestId}`
           : `Tạo từ request ${input.requestId}`,
         status: 'pledged',
+        // Khoá nối thật thay cho chuỗi chữ trong note: đây là CÙNG một lô hàng với đơn
+        // nguyên liệu, nên lịch đi nhận và việc xác nhận thực nhận phải do đơn đó quản.
+        providerRequestId: input.requestId,
       },
     });
   }
@@ -2607,6 +2610,9 @@ export class CampaignsService {
             pickupStartTime: true,
             pickupEndTime: true,
             pickupAssigneeIds: true,
+            // Có giá trị = khoản này đi kèm một đơn nguyên liệu; FE gộp vào thẻ đơn đó
+            // thay vì hiện thành lô riêng.
+            providerRequestId: true,
             provider: { select: { businessName: true, address: true, contactPhone: true } },
           },
         },
@@ -4319,6 +4325,13 @@ export class CampaignsService {
     if (donation.status !== 'pledged') {
       throw new BadRequestException('Khoản quyên góp này đã được xử lý.');
     }
+    // Cùng lý do như phân công: lô đi kèm đơn nguyên liệu được chốt một lần khi tổ chức
+    // xác nhận nhận chuyến, không xác nhận lần hai ở đây.
+    if (donation.providerRequestId) {
+      throw new BadRequestException(
+        'Khoản này đi cùng đơn nguyên liệu từ NCC — xác nhận số kg thực nhận ngay trên đơn đó.',
+      );
+    }
     // Chiến dịch đã huỷ/kết thúc thì không xác nhận nhận hàng được nữa — pledgeDonation
     // đã chặn ở đầu vào (ensureCampaignCanReceiveFood) nhưng nhánh xác nhận thì chưa.
     if (!['approved', 'in_progress'].includes(donation.campaign.status)) {
@@ -4376,6 +4389,13 @@ export class CampaignsService {
     });
     if (!receiver || donation.campaign.charityReceiverId !== receiver.id) {
       throw new ForbiddenException('Chỉ tổ chức chủ chiến dịch mới phân công được.');
+    }
+    // Khoản sinh ra từ đơn nguyên liệu dùng CHUNG chuyến với đơn đó. Cho phân công
+    // riêng ở đây thì tổ chức có thể cử hai shipper khác nhau đi lấy cùng một lô.
+    if (donation.providerRequestId) {
+      throw new BadRequestException(
+        'Khoản này đi cùng đơn nguyên liệu từ NCC — hãy phân công shipper ở mục "Đơn nguyên liệu từ NCC".',
+      );
     }
     if (donation.status !== 'pledged') {
       throw new BadRequestException('Chỉ phân công đi nhận khi khoản góp đang chờ nhận hàng.');
@@ -5327,7 +5347,7 @@ export class CampaignsService {
         id: transportId,
         providerRequest: { campaignId, receiverId: receiver.id },
       },
-      select: { id: true, status: true, deliveryId: true },
+      select: { id: true, status: true, deliveryId: true, providerRequestId: true },
     });
     if (!transport) throw new NotFoundException('Không tìm thấy chuyến vận chuyển của chiến dịch này.');
     if (transport.status === 'received') {
@@ -5350,6 +5370,16 @@ export class CampaignsService {
     if (received.count !== 1) {
       return this.prisma.campaignTransport.findUnique({ where: { id: transportId } });
     }
+
+    // Đóng luôn khoản ghi sổ kho của CÙNG lô hàng này.
+    //
+    // Xác nhận chuyến chỉ nói "hàng đã về bếp"; số kg vào mục tiêu nguyên liệu lại nằm ở
+    // campaign_donations. Trước đây hai bước tách rời nên tổ chức phải bấm xác nhận hai
+    // lần cho một lô, quên bước sau là tiến độ nguyên liệu đứng im dù hàng đã về.
+    await this.prisma.campaignDonation.updateMany({
+      where: { providerRequestId: transport.providerRequestId, status: 'pledged' },
+      data: { status: 'received', receivedAt: new Date() },
+    });
 
     const result = await this.prisma.campaignTransport.findUnique({
       where: { id: transportId },

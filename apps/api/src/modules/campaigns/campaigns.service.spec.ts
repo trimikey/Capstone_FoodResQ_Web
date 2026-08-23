@@ -21,6 +21,8 @@ describe('CampaignsService', () => {
     receiverProfile: { findUnique: jest.fn() },
     mealDistribution: { aggregate: jest.fn(), create: jest.fn() },
     campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
+    // Xác nhận nhận chuyến chốt luôn khoản ghi sổ kho của cùng lô hàng.
+    campaignDonation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
     $transaction: jest.fn(),
@@ -802,5 +804,71 @@ describe('CampaignsService.createDistribution', () => {
       'chưa có tình nguyện viên nào được duyệt',
     );
     expect(prisma.mealDistribution.create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Một lô hàng = một request + một donation ghi sổ kho. Hai bảng phải đi cùng nhau:
+ * xác nhận nhận chuyến là chốt luôn sổ kho, và không cho thao tác lẻ trên donation.
+ */
+describe('CampaignsService — khoản quyên góp sinh ra từ đơn nguyên liệu', () => {
+  const prisma = {
+    receiverProfile: { findUnique: jest.fn() },
+    campaignTransport: { findFirst: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
+    campaignDonation: { findUnique: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+  };
+  const notifications = { notify: jest.fn() };
+  let service: CampaignsService;
+
+  const build = () =>
+    new CampaignsService(
+      prisma as never,
+      notifications as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-1' });
+    service = build();
+  });
+
+  it('xác nhận nhận chuyến đóng luôn khoản ghi sổ kho của cùng lô', async () => {
+    prisma.campaignTransport.findFirst.mockResolvedValue({
+      id: 'tr-1', status: 'delivered', deliveryId: null, providerRequestId: 'req-1',
+    });
+    prisma.campaignTransport.updateMany.mockResolvedValue({ count: 1 });
+    prisma.campaignDonation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.campaignTransport.findUnique.mockResolvedValue({ id: 'tr-1', providerRequest: null });
+
+    await service.confirmTransportReceipt('camp-1', 'tr-1', 'user-1', { note: 'Thực nhận: 5 kg' });
+
+    expect(prisma.campaignDonation.updateMany).toHaveBeenCalledWith({
+      where: { providerRequestId: 'req-1', status: 'pledged' },
+      data: expect.objectContaining({ status: 'received' }),
+    });
+  });
+
+  it('không cho xác nhận riêng khoản đã thuộc một đơn nguyên liệu', async () => {
+    prisma.campaignDonation.findUnique.mockResolvedValue({
+      id: 'don-1', status: 'pledged', providerRequestId: 'req-1',
+      campaign: { id: 'camp-1', charityReceiverId: 'receiver-1', title: 'X', status: 'approved' },
+      provider: { userId: 'p-1', businessName: 'NCC' },
+    });
+
+    await expect(service.confirmDonation('don-1', 'user-1')).rejects.toThrow(/đơn nguyên liệu/);
+    expect(prisma.campaignDonation.update).not.toHaveBeenCalled();
+  });
+
+  it('khoản góp thẳng (không kèm đơn) vẫn xác nhận bình thường', async () => {
+    prisma.campaignDonation.findUnique.mockResolvedValue({
+      id: 'don-2', status: 'pledged', providerRequestId: null, quantity: '5 kg', itemName: 'Gạo',
+      campaign: { id: 'camp-1', charityReceiverId: 'receiver-1', title: 'X', status: 'approved' },
+      provider: { userId: 'p-1', businessName: 'NCC' },
+    });
+    prisma.campaignDonation.update.mockResolvedValue({ id: 'don-2' });
+
+    await expect(service.confirmDonation('don-2', 'user-1'))
+      .resolves.toEqual({ id: 'don-2', status: 'received' });
   });
 });
