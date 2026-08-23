@@ -209,3 +209,73 @@ describe('DeliveriesService', () => {
     });
   });
 });
+
+/**
+ * Mặt còn lại của luật "có ca bếp thì không nhận đơn giao": đang cầm đơn chưa giao xong
+ * thì cũng không được nhận ca bếp trùng khung. Thiếu chiều này thì chỉ cần đổi thứ tự
+ * thao tác là kẹt hai chỗ cùng lúc.
+ */
+describe('DeliveriesService.hasActiveDeliveryInSlot', () => {
+  const prisma = { delivery: { findMany: jest.fn() } };
+  let service: DeliveriesService;
+
+  /** 15:00 giờ VN ngày 24/8 → ca chiều (12–18h). */
+  const scheduled = new Date('2026-08-24T08:00:00.000Z');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DeliveriesService(
+      prisma as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+  });
+
+  it('đơn hẹn giờ rơi đúng ca → báo bận', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' }),
+    ).resolves.toBe(true);
+  });
+
+  it('cùng ngày nhưng khác ca → KHÔNG chặn oan', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'morning' }),
+    ).resolves.toBe(false);
+  });
+
+  it('khác ngày → KHÔNG chặn oan', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-30', period: 'afternoon' }),
+    ).resolves.toBe(false);
+  });
+
+  it('không có đơn nào đang cầm → rảnh', async () => {
+    prisma.delivery.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' }),
+    ).resolves.toBe(false);
+  });
+
+  it('chỉ xét đơn CHƯA hoàn tất', async () => {
+    await service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' });
+
+    expect(prisma.delivery.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+        }),
+      }),
+    );
+  });
+});

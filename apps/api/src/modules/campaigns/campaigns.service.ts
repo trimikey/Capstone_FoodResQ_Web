@@ -1565,6 +1565,7 @@ export class CampaignsService {
 
     // 3) Không nhận hai ca chồng giờ, kể cả ở chiến dịch khác.
     await this.assertShiftNotOverlapping(campaignId, volunteer.id, shift.id, workDate);
+    await this.assertNoActiveDeliveryInShift(volunteer.id, shift.period, workDateKey);
 
     const alreadyIn = await this.prisma.campaignVolunteerAssignment.findFirst({
       where: {
@@ -1667,6 +1668,32 @@ export class CampaignsService {
       },
     });
     return { ok: true };
+  }
+
+  /**
+   * Chặn nhận ca bếp khi đang cầm một đơn giao chưa xong trong đúng khung giờ đó.
+   *
+   * Mặt còn lại của luật "đã xác nhận ca bếp thì không nhận đơn giao lẻ". Trước đây chỉ
+   * có một chiều, nên chỉ cần nhận đơn TRƯỚC rồi nhận ca bếp SAU là kẹt hai chỗ cùng lúc
+   * mà không gì cản.
+   */
+  private async assertNoActiveDeliveryInShift(
+    volunteerId: string,
+    period: CampaignShiftPeriod | string | null,
+    workDateKey: string,
+  ) {
+    if (!period) return;
+    const busy = await this.deliveries.hasActiveDeliveryInSlot(volunteerId, {
+      workDate: workDateKey,
+      period,
+    });
+    if (busy) {
+      const label = SHIFT_PERIODS[period as CampaignShiftPeriod]?.label ?? period;
+      throw new BadRequestException(
+        `Bạn đang có một đơn giao chưa hoàn tất rơi vào ${label} ngày ${workDateKey}. `
+        + 'Hãy giao xong đơn đó trước khi nhận ca này.',
+      );
+    }
   }
 
   /** Việc của tình nguyện viên: các campaign đã đăng ký + vai trò + trạng thái. */
@@ -2996,6 +3023,15 @@ export class CampaignsService {
 
     if (shiftId) {
       await this.assertShiftNotOverlapping(campaignId, volunteer.id, shiftId, workDate);
+      const shiftRow = await this.prisma.campaignShift.findUnique({
+        where: { id: shiftId },
+        select: { period: true },
+      });
+      await this.assertNoActiveDeliveryInShift(
+        volunteer.id,
+        shiftRow?.period ?? null,
+        this.toDateKey(workDate),
+      );
     }
 
     await this.prisma.campaignVolunteerAssignment.create({
@@ -3027,7 +3063,7 @@ export class CampaignsService {
             charityReceiver: { select: { userId: true } },
           },
         },
-        shift: { select: { id: true, label: true } },
+        shift: { select: { id: true, label: true, period: true } },
       },
     });
     if (!assignment) throw new NotFoundException('Không tìm thấy đăng ký.');
@@ -3036,6 +3072,14 @@ export class CampaignsService {
     }
     if (assignment.status !== 'assigned') {
       throw new BadRequestException('Chỉ xác nhận được ca đã được tổ chức duyệt.');
+    }
+    // Xác nhận mới là lúc ca thành cam kết thật — chặn ở đây, không chỉ ở lúc nhận lời mời.
+    if (decision === 'confirmed' && assignment.workDate) {
+      await this.assertNoActiveDeliveryInShift(
+        assignment.volunteerId,
+        assignment.shift?.period ?? null,
+        this.toDateKey(assignment.workDate),
+      );
     }
     await this.prisma.$transaction(async (tx) => {
       // Cùng khoá với tác vụ auto-start: xác nhận/huỷ và quyết định bắt đầu không thể chen ngang nhau.

@@ -251,6 +251,35 @@ export class DeliveriesService {
     return rows.length > 0;
   }
 
+  /**
+   * TNV có đơn giao ĐANG CẦM TAY rơi đúng vào khung giờ này không.
+   *
+   * Ngược chiều với `isBusyWithCampaignShift`: bên kia chặn nhận đơn mới khi đã có ca
+   * bếp, bên này chặn nhận ca bếp khi đang có đơn chưa giao xong trong cùng khung. Thiếu
+   * một chiều thì vẫn kẹt hai chỗ cùng lúc — chỉ cần đổi thứ tự thao tác là lách được.
+   *
+   * Đơn hẹn giờ xét theo GIỜ HẸN, đơn giao ngay xét theo BÂY GIỜ — cùng quy tắc với lúc
+   * nhận đơn, nên một đơn đang giao chỉ chặn đúng ca đang diễn ra chứ không chặn oan ca
+   * của những ngày sau.
+   */
+  async hasActiveDeliveryInSlot(
+    volunteerId: string,
+    slot: { workDate: string; period: string },
+  ): Promise<boolean> {
+    const rows = await this.prisma.delivery.findMany({
+      where: {
+        shipperId: volunteerId,
+        status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+      },
+      select: { id: true, reservation: { select: { deliveryScheduledAt: true } } },
+    });
+    return rows.some((d) => {
+      const at = d.reservation?.deliveryScheduledAt ?? new Date();
+      const s = deliverySlotAt(at);
+      return s.workDate === slot.workDate && s.period === slot.period;
+    });
+  }
+
   /** Xác minh đủ điều kiện làm shipper (dùng chung cho danh sách đơn + nhận đơn). */
   private async requireVerifiedShipper(shipperUserId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
