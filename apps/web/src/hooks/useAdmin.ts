@@ -202,6 +202,8 @@ export interface SystemConfigItem {
   default: number;
   value: number;
   updatedAt: string | null;
+  /** `minute-of-day` = giá trị là số phút từ 00:00; giao diện quy đổi sẵn ra giờ. */
+  display?: 'minute-of-day';
 }
 
 export function useAdminConfigs() {

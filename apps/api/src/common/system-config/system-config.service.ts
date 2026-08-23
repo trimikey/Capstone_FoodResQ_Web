@@ -10,6 +10,11 @@ export interface ConfigDef {
   min: number;
   max: number;
   default: number;
+  /**
+   * Gợi ý cách hiển thị cho trang admin. `minute-of-day` = số phút từ 00:00, giao diện
+   * quy đổi sẵn ra giờ (480 → 08:00) để admin khỏi nhẩm.
+   */
+  display?: 'minute-of-day';
 }
 
 /** Các khoá cấu hình admin chỉnh được (không cần deploy). Mirror CLAUDE.md §8. */
@@ -18,8 +23,8 @@ export const CONFIG_DEFS: ConfigDef[] = [
   { key: 'QR_VALIDITY_MINUTES', label: 'Hiệu lực mã QR', description: 'Thời gian mã QR còn dùng được sau khi đặt chỗ.', group: 'Đặt chỗ', unit: 'phút', min: 5, max: 240, default: 30 },
   // Giờ vận hành chung, tính bằng SỐ PHÚT TỪ 00:00 vì cấu hình chỉ nhận số nguyên —
   // đơn vị "giờ" không diễn tả được mốc 22:30.
-  { key: 'PLATFORM_ORDER_OPEN_MINUTE', label: 'Giờ sàn mở nhận đơn', description: 'Số phút tính từ 00:00 — 480 là 08:00. Áp cho MỌI cửa hàng: ngoài khung này không đặt được, tránh đơn lúc 2 giờ sáng rồi tình nguyện viên phải đi giao. Cửa hàng khai giờ riêng hẹp hơn thì lấy phần giao nhau. Đặt 0 và giờ đóng 1440 để mở 24/7 (tiện khi test).', group: 'Đặt chỗ', unit: 'phút từ 00:00', min: 0, max: 1440, default: 480 },
-  { key: 'PLATFORM_ORDER_CLOSE_MINUTE', label: 'Giờ sàn đóng nhận đơn', description: 'Số phút tính từ 00:00 — 1350 là 22:30. Phải lớn hơn giờ mở.', group: 'Đặt chỗ', unit: 'phút từ 00:00', min: 0, max: 1440, default: 1350 },
+  { key: 'PLATFORM_ORDER_OPEN_MINUTE', label: 'Giờ sàn mở nhận đơn', description: 'Áp cho MỌI cửa hàng: ngoài khung này không đặt được, tránh đơn lúc 2 giờ sáng rồi tình nguyện viên phải đi giao. Cửa hàng khai giờ riêng hẹp hơn thì lấy phần giao nhau. Đặt giờ mở 0 và giờ đóng 1440 để mở 24/7 (tiện khi test).', group: 'Đặt chỗ', unit: 'phút', min: 0, max: 1440, default: 480, display: 'minute-of-day' },
+  { key: 'PLATFORM_ORDER_CLOSE_MINUTE', label: 'Giờ sàn đóng nhận đơn', description: 'Phải lớn hơn giờ mở. Ngoài khung này người nhận không đặt được nữa.', group: 'Đặt chỗ', unit: 'phút', min: 0, max: 1440, default: 1350, display: 'minute-of-day' },
   { key: 'HANDOFF_QR_VALIDITY_MINUTES', label: 'Hiệu lực QR nhận suất', description: 'Thời gian QR của người nhận còn dùng được để waiter xác nhận phát suất ăn.', group: 'Chiến dịch', unit: 'phút', min: 1, max: 30, default: 5 },
   { key: 'SEARCH_RADIUS_KM', label: 'Bán kính tìm kiếm mặc định', description: 'Bán kính gợi ý khi người dùng tìm thực phẩm gần.', group: 'Tìm kiếm', unit: 'km', min: 1, max: 50, default: 5 },
   { key: 'CAMPAIGN_MIN_FILL_PERCENT', label: 'Tỉ lệ xác nhận tối thiểu để chạy', description: 'Áp dụng riêng cho từng ngày, ca và vai trò; chỉ tính tình nguyện viên đã xác nhận ca và làm tròn số người tối thiểu lên. Ví dụ 50% của ca cần 5 người là 3 người. Đặt 0 để bỏ ràng buộc.', group: 'Chiến dịch', unit: '%', min: 0, max: 100, default: 50 },
