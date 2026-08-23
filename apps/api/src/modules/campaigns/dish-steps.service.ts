@@ -13,7 +13,9 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 export const FIXED_DISH_STEPS = [
   { order: 1, name: 'Sơ chế' },
   { order: 2, name: 'Nấu' },
-  { order: 3, name: 'Trình bày' },
+  // Tên cũ "Trình bày" gây lệch: màn chef gọi là "QC kiểm tra", màn tổ chức hiện
+  // "Trình bày", trong khi bản chất khâu này là chụp ảnh QC cho tổ chức duyệt.
+  { order: 3, name: 'Kiểm tra QC' },
   { order: 4, name: 'Sẵn sàng phát xuất' },
 ] as const;
 
@@ -151,7 +153,7 @@ export class DishStepsService {
   ): Promise<CampaignDishStep[]> {
     if (scheduledTimes.length !== FIXED_DISH_STEPS.length) {
       throw new BadRequestException(
-        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Trình bày, Sẵn sàng).`,
+        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Kiểm tra QC, Sẵn sàng phát).`,
       );
     }
     for (const t of scheduledTimes) {
@@ -783,6 +785,25 @@ export class DishStepsService {
     return updated;
   }
 
+  /**
+   * Giờ mặc định của 4 khâu, tính từ giờ BẮT ĐẦU vận hành của chiến dịch.
+   *
+   * Nhịp lấy theo bộ giờ chuẩn của ca sáng (bắt đầu 06:00 → 08:00/09:00/10:30/11:30):
+   * sơ chế sau 2 tiếng chuẩn bị, nấu +1h, QC +1h30, sẵn sàng phát +1h. Ca chiều
+   * 12:00 → 14:00/15:00/16:30/17:30; ca tối 18:00 → 20:00/21:00/22:30/23:30 (phút
+   * lấy modulo 24h nên vắt qua nửa đêm vẫn ra HH:mm hợp lệ, luật neo ngày lo phần
+   * ngày). Đây chỉ là GỢI Ý — bếp trưởng vẫn chỉnh lại được từng khâu.
+   */
+  private defaultStepTimes(startTime: string): string[] {
+    const [h, m] = startTime.split(':').map(Number);
+    const startMin = (Number.isFinite(h) ? h : 6) * 60 + (Number.isFinite(m) ? m : 0);
+    const OFFSETS_MIN = [120, 180, 270, 330];
+    return OFFSETS_MIN.map((off) => {
+      const t = (startMin + off) % 1440;
+      return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    });
+  }
+
   /** Trả về danh sách món + 4 step kèm trạng thái hiệu lực cho 1 campaign. */
   async getStepsForCampaign(campaignId: string, currentUserId?: string) {
     const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
@@ -797,8 +818,11 @@ export class DishStepsService {
       select: { id: true, dishSteps: { select: { id: true } } },
     });
 
-    // Nếu món nào chưa có step thì tự sinh với giờ mặc định.
-    const defaultTimes = ['08:00', '09:00', '10:30', '11:30'];
+    // Nếu món nào chưa có step thì tự sinh với giờ mặc định BÁM THEO GIỜ BẮT ĐẦU
+    // chiến dịch. Bộ giờ cứng 08:00–11:30 trước đây chỉ đúng cho ca sáng: chiến dịch
+    // tối 18:00–24:00 sẽ nhận 4 khâu buổi sáng — mà giờ nhỏ hơn startTime lại bị đẩy
+    // sang NGÀY HÔM SAU theo luật neo ngày, tức toàn bộ khâu khoá sạch trong suốt ca.
+    const defaultTimes = this.defaultStepTimes(campaignTiming?.startTime ?? '06:00');
     for (const mi of menuItems) {
       if (mi.dishSteps.length === 0) {
         await this.ensureStepsForMenuItem(campaignId, mi.id, defaultTimes);

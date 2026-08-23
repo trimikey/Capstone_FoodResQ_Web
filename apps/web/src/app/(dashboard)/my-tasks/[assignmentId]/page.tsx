@@ -30,7 +30,7 @@ const STEP_ICONS: Record<number, string> = {
 const STEP_LABELS: Record<number, string> = {
   1: 'Tiếp nhận',
   2: 'Nấu',
-  3: 'QC kiểm tra',
+  3: 'Kiểm tra QC',
   4: 'Sẵn sàng phát xuất',
 };
 
@@ -190,7 +190,7 @@ export default function MyTaskDetailPage() {
         reason: emergencyReason.trim(),
       });
       toast.success(
-        `�ã báo QC fail cho món "${emergencyDish.name}". Tổ chức đã nhận thông báo.`,
+        `Đã báo QC không đạt cho món "${emergencyDish.name}". Tổ chức đã nhận thông báo.`,
       );
       setEmergencyDish(null);
       setEmergencyReason('');

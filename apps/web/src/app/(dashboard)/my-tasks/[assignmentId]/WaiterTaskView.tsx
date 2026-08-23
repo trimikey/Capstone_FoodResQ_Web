@@ -152,8 +152,33 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
           icon="schedule"
           title={assignment.shift.label}
           time={`${assignment.shift.startTime}–${assignment.shift.endTime}`}
-          description="Ca trực tổ chức phân cho bạn. Có mặt đúng giờ để kịp chia suất khi bếp ra món."
-        />
+          description={
+            pickupOrders.length > 0
+              ? `Ca trực tổ chức phân cho bạn — còn ${pickupOrders.length - donePickups.length}/${pickupOrders.length} đơn nguyên liệu cần đi lấy trong ca này.`
+              : 'Ca trực tổ chức phân cho bạn. Có mặt đúng giờ để kịp chia suất khi bếp ra món.'
+          }
+        >
+          {/* Việc lấy nguyên liệu nằm NGAY TRONG thẻ ca — nó là việc của đúng ca này,
+              tách thành thẻ riêng phía dưới khiến người trực tưởng là hai đầu việc ở
+              hai thời điểm khác nhau. Cùng bố cục với màn shipper. */}
+          {pickupOrders.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-emerald-600">inventory</span>
+                <span className="text-xs font-bold text-neutral-800">
+                  Đơn nguyên liệu: {donePickups.length}/{pickupOrders.length} đã lấy
+                </span>
+              </div>
+              <Link
+                href="/deliveries"
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+              >
+                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                Quản lý đơn ở Trung tâm giao hàng
+              </Link>
+            </div>
+          )}
+        </TaskItem>
       )}
 
       {/* 3. Món sẵn sàng phát */}
@@ -217,27 +242,6 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
           </ul>
         )}
       </TaskItem>
-
-      {/* Đơn nguyên liệu tổ chức cử đi lấy — việc THẬT nên có đánh số và tính vào bộ đếm. */}
-      {pickupOrders.length > 0 && (
-        <TaskItem
-          index={nextStep()}
-          icon="inventory"
-          title="Đi lấy nguyên liệu từ nhà cung cấp"
-          done={donePickups.length === pickupOrders.length}
-          locked={!checkedIn}
-          lockedHint="Điểm danh tại bếp trước đã"
-          description={`${donePickups.length}/${pickupOrders.length} đơn đã lấy. Chi tiết từng đơn và nút xác nhận nằm ở Trung tâm giao hàng.`}
-        >
-          <Link
-            href="/deliveries"
-            className="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
-          >
-            <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-            Mở Trung tâm giao hàng
-          </Link>
-        </TaskItem>
-      )}
 
       {/* 4. Đợt phát được phân công */}
       {distributions.length === 0 ? (
