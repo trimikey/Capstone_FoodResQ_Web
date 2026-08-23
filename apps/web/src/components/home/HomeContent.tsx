@@ -266,19 +266,16 @@ export default function HomeContent() {
       {/* 9. HỆ SINH THÁI FOODRESQ SECTION */}
       <section id="about" className="w-full px-6 md:px-16 lg:px-24 py-20 grid grid-cols-1 lg:grid-cols-12 gap-16 items-center animate-fade-in-up [animation-delay:300ms]">
         
-        {/* Lưới ảnh hệ sinh thái — xen ảnh chụp THẬT của hoạt động thiện nguyện vào
-            giữa bộ ảnh dựng có logo. Toàn ảnh dựng thì khối này nhìn như catalogue;
-            có ảnh thật xen kẽ mới ra được cảm giác đây là việc đang diễn ra ngoài đời.
-            Hai ảnh thật lấy đúng file đã dùng ở banner nên trình duyệt đã cache sẵn,
-            không tốn thêm lượt tải. */}
+        {/* Lưới ảnh hệ sinh thái — bốn ảnh chụp THẬT, xếp theo đúng vòng đời thực phẩm
+            kể ở ba trụ cột bên phải: nhận hàng quyên góp → nấu và đóng hộp → chuyển đi
+            → trao tận tay. Bộ ảnh dựng có logo trước đây khiến khối này nhìn như
+            catalogue quảng cáo chứ không phải việc đang diễn ra ngoài đời. */}
         <div className="lg:col-span-6 grid grid-cols-2 gap-3">
           {[
-            { src: '/anhbanner1.jpg', alt: 'Phát bánh mì từ thiện tại công viên' },
-            { src: '/xehang_TC.png', alt: 'Tình nguyện viên bốc dỡ thực phẩm' },
-            { src: '/shipper_TC.png', alt: 'Tình nguyện viên giao hàng bằng xe máy' },
-            { src: '/anhbanner2.jpg', alt: 'Trao quà cho người dân trên phố' },
-            { src: '/giaohang_TC.png', alt: 'Trao thực phẩm tới người nhận' },
-            { src: '/nauan_TC.png', alt: 'Bếp ăn thiện nguyện đang nấu' },
+            { src: '/HST2.webp', alt: 'Bốc dỡ thùng hàng cứu trợ từ xe tải' },
+            { src: '/HST3.jpg', alt: 'Tình nguyện viên đóng hộp suất ăn tại bếp' },
+            { src: '/HST1.jpg', alt: 'Trao quà cứu trợ cho bà con vùng cao' },
+            { src: '/HST4.jpg', alt: 'Phát cơm cho người dân tại bếp ăn thiện nguyện' },
           ].map((img) => (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
