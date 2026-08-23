@@ -1821,6 +1821,11 @@ export interface WeeklyScheduleCampaign {
    * tổ chức duyệt — chưa phải ca chính thức; còn lại là ca đã được nhận.
    */
   assignmentStatus?: 'pending' | 'assigned' | 'checked_in' | 'in_progress' | 'completed';
+  /**
+   * Chỉ ca đã XÁC NHẬN mới khiến khung giờ đó thành bận với đơn giao lẻ — khớp đúng
+   * `isBusyWithCampaignShift` của backend.
+   */
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
   /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */
   shift?: {
     id: string;

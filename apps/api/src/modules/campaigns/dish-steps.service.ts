@@ -1005,6 +1005,9 @@ export class DishStepsService {
             role: a.role,
             // Trạng thái duyệt của chính ca này — FE phân biệt "Chờ duyệt" với ca đã nhận.
             assignmentStatus: a.status,
+            // Cần cho FE đánh dấu ca giao hàng bị vô hiệu vì trùng ca bếp: chỉ ca đã
+            // XÁC NHẬN mới khiến khung giờ đó thành bận (khớp isBusyWithCampaignShift).
+            confirmationStatus: a.confirmationStatus,
             shift: a.shift
               ? {
                   id: a.shift.id,
