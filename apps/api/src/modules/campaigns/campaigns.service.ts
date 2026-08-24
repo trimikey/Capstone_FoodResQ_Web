@@ -758,6 +758,57 @@ export class CampaignsService {
     return marked.count;
   }
 
+  /**
+   * Xoá chiến dịch chờ duyệt đã HẾT Ý NGHĨA — dọn rác cho DB.
+   *
+   * Hai điều kiện, dính một là xoá: chờ duyệt quá N ngày (admin bỏ quên), hoặc đã
+   * qua giờ kết thúc vận hành mà vẫn chưa được duyệt (duyệt nữa cũng vô ích).
+   *
+   * Chỉ đụng `pending_approval` — trạng thái này chưa mở tuyển nên chưa kéo theo
+   * TNV, quyên góp hay đơn NCC nào; các trạng thái khác là lịch sử vận hành, xoá là
+   * mất số liệu thống kê. Assignments không cascade theo schema nên xoá phòng thủ
+   * trước (bình thường phải rỗng).
+   */
+  async purgeStalePendingCampaigns(now = new Date()): Promise<number> {
+    const days = await this.systemConfig.getNumber('CAMPAIGN_PENDING_PURGE_DAYS');
+    if (days <= 0) return 0;
+
+    const cutoff = new Date(now.getTime() - days * 86_400_000);
+    const stale = await this.prisma.kitchenCampaign.findMany({
+      where: {
+        status: 'pending_approval',
+        OR: [{ createdAt: { lte: cutoff } }, { operationEndAt: { lt: now } }],
+      },
+      select: {
+        id: true, title: true, createdAt: true, operationEndAt: true,
+        charityReceiver: { select: { userId: true } },
+      },
+      take: 100,
+    });
+    if (stale.length === 0) return 0;
+
+    const ids = stale.map((c) => c.id);
+    await this.prisma.$transaction([
+      this.prisma.campaignVolunteerAssignment.deleteMany({ where: { campaignId: { in: ids } } }),
+      this.prisma.kitchenCampaign.deleteMany({ where: { id: { in: ids }, status: 'pending_approval' } }),
+    ]);
+
+    for (const c of stale) {
+      const reason =
+        c.operationEndAt < now
+          ? 'đã qua ngày diễn ra mà chưa được duyệt'
+          : `chờ duyệt quá ${days} ngày`;
+      void this.notifications.notify(c.charityReceiver.userId, {
+        type: 'campaign',
+        title: 'Chiến dịch chờ duyệt đã bị xoá',
+        body: `Chiến dịch "${c.title}" ${reason} nên hệ thống đã xoá. Bạn có thể tạo lại với lịch mới bất cứ lúc nào.`,
+        data: { campaignTitle: c.title, purged: true },
+      });
+    }
+    this.logger.log(`purgeStalePendingCampaigns: đã xoá ${ids.length} chiến dịch chờ duyệt quá hạn`);
+    return ids.length;
+  }
+
   async expireOverdueCampaigns(): Promise<number> {
     const now = new Date();
     const overdue = await this.prisma.kitchenCampaign.findMany({
