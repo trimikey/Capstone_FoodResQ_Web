@@ -40,10 +40,13 @@ const PERIODS: Array<{ id: Period; label: string; time: string; start: string; e
   { id: 'evening', label: 'Ca tối', time: '18:00–24:00', start: '18:00', end: '00:00', order: 3, endDayOffset: 1 },
 ];
 
+// Phục vụ và giao hàng đã GỘP thành một vai trò vận hành: cùng một TNV sáng đi lấy
+// nguyên liệu, chiều chia suất rồi đi phát. Không tạo ca "Phục vụ" riêng nữa — tách
+// hai hàng chỉ đẻ ra cảnh có người trực đúng giờ mà hệ thống báo thiếu người vai kia.
+// Chiến dịch cũ đã có ca waiter vẫn hiển thị bình thường (dữ liệu lịch sử).
 const ROLES: Array<{ id: StaffRole; label: string }> = [
   { id: 'chef', label: 'Đầu bếp' },
-  { id: 'waiter', label: 'Phục vụ' },
-  { id: 'shipper', label: 'Giao hàng' },
+  { id: 'shipper', label: 'Giao hàng & phục vụ' },
 ];
 
 const STEPS = [
@@ -90,8 +93,9 @@ function formatDuration(minutes: number) {
 
 function suggestedStaff(servings: number, role: StaffRole) {
   if (role === 'chef') return Math.max(1, Math.ceil(servings / 50));
-  if (role === 'waiter') return Math.max(1, Math.ceil(servings / 40));
-  return Math.max(1, Math.ceil(servings / 80));
+  // Vai trò vận hành gánh cả chia suất (trước là phục vụ, ~40 suất/người) lẫn đi
+  // giao (~80 suất/người) — số gợi ý là tổng hai phần việc, không phải một nửa.
+  return Math.max(1, Math.ceil(servings / 40) + Math.ceil(servings / 80));
 }
 
 /**
@@ -159,7 +163,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   );
   const [recruitmentEndAt, setRecruitmentEndAt] = useState(restored?.recruitmentEndAt ?? '');
   const [staffing, setStaffing] = useState<Record<string, number>>(
-    restored?.staffing ?? { 'morning:chef': 2, 'morning:waiter': 3, 'morning:shipper': 2 },
+    restored?.staffing ?? { 'morning:chef': 2, 'morning:shipper': 4 },
   );
   // Tự lưu nháp sau mỗi thay đổi — không chờ người dùng bấm gì cả, vì cái mất nháp
   // thường là thao tác vô ý: bấm ra ngoài, gõ Escape, lỡ tải lại trang.
@@ -193,7 +197,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     setActivePeriods(['morning']);
     setRecruitmentStartAt(toVnLocalInput(new Date(Date.now() + 3600_000)));
     setRecruitmentEndAt('');
-    setStaffing({ 'morning:chef': 2, 'morning:waiter': 3, 'morning:shipper': 2 });
+    setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
   }
 
   const { data: me } = useMe();
