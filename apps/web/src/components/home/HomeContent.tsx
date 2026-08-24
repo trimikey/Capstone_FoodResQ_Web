@@ -970,9 +970,13 @@ export default function HomeContent() {
           </div>
 
           {impactTab === 'image' ? (
-            <img 
-              src="/impact_kitchen.png" 
-              alt="Impact Kitchen" 
+            /* Ảnh bếp phương Tây stock cũ đã bị xoá khỏi public/ — dùng ảnh bếp ăn
+               thiện nguyện thật (đã có sẵn ở lưới Hệ sinh thái nên trình duyệt cache). */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src="/HST3.jpg"
+              alt="Tình nguyện viên đóng hộp suất ăn trong bếp thiện nguyện"
+              loading="lazy"
               className="w-full aspect-[4/3] object-cover rounded-xl border border-neutral-200"
             />
           ) : (
