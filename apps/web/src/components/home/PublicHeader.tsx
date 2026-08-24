@@ -147,7 +147,10 @@ export default function PublicHeader() {
           // bg trắng ĐẶC (không /95) — nếu còn hở % trong suốt thì ảnh hero cuộn
           // bên dưới sẽ lộ xuyên qua navbar, chữ nav lẫn vào ảnh rất khó đọc.
           ? 'top-0 w-full rounded-none bg-white border-b border-neutral-200 shadow-[0_4px_20px_rgba(0,0,0,0.05)]'
-          : 'top-6 w-[95%] max-w-5xl rounded-full bg-transparent border border-transparent shadow-none'
+          // Chưa cuộn cũng KHÔNG để trong suốt nữa: hero giờ là ảnh chụp thật nhiều
+          // chi tiết (từng để bg-transparent vì hero cũ có lớp phủ trắng đậm đỡ hộ) —
+          // viên thuốc nền kính mờ để chữ nav đọc được trên mọi tấm ảnh.
+          : 'top-6 w-[95%] max-w-5xl rounded-full bg-white/80 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.08)]'
       }`}
     >
       <div className="mx-auto max-w-5xl px-6 h-16 flex items-center justify-between gap-6">
