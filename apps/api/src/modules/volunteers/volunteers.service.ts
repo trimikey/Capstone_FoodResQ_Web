@@ -14,6 +14,46 @@ export class VolunteersService {
     private systemConfig: SystemConfigService,
   ) {}
 
+  private deliverySlotAt(at: Date): { workDate: string; period: string } {
+    const vn = new Date(at.getTime() + 7 * 3600_000);
+    const hour = vn.getUTCHours();
+    const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    return { workDate: vn.toISOString().slice(0, 10), period };
+  }
+
+  private async hasDeliveryShiftNow(volunteerId: string, at = new Date()): Promise<boolean> {
+    const slot = this.deliverySlotAt(at);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM delivery_shift_registrations
+      WHERE volunteer_id = ${volunteerId}::uuid
+        AND work_date = ${slot.workDate}::date
+        AND period = ${slot.period}::campaign_shift_period
+      LIMIT 1
+    `);
+    return rows.length > 0;
+  }
+
+  private async isBusyWithCampaignShiftNow(volunteerId: string, at = new Date()): Promise<boolean> {
+    const slot = this.deliverySlotAt(at);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT a.id
+      FROM campaign_volunteer_assignments a
+      JOIN campaign_shifts cs ON cs.id = a.shift_id
+      WHERE a.volunteer_id = ${volunteerId}::uuid
+        AND a.work_date = ${slot.workDate}::date
+        AND cs.period = ${slot.period}::campaign_shift_period
+        AND a.status IN ('assigned', 'checked_in', 'in_progress')
+        AND a.confirmation_status = 'confirmed'
+      LIMIT 1
+    `);
+    return rows.length > 0;
+  }
+
+  private async effectiveAvailability(volunteerId: string, requestedAvailable: boolean): Promise<boolean> {
+    if (!requestedAvailable) return false;
+    return (await this.hasDeliveryShiftNow(volunteerId)) && !(await this.isBusyWithCampaignShiftNow(volunteerId));
+  }
+
   /** Hồ sơ tình nguyện viên + vị trí hiện tại (geography đọc qua raw). */
   async getMe(userId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
@@ -47,8 +87,17 @@ export class VolunteersService {
       (s) => s.specialization === 'shipper' && s.isVerified,
     );
 
+    const effectiveIsAvailable = await this.effectiveAvailability(volunteer.id, volunteer.isAvailable);
+    if (effectiveIsAvailable !== volunteer.isAvailable) {
+      await this.prisma.volunteerProfile.update({
+        where: { id: volunteer.id },
+        data: { isAvailable: effectiveIsAvailable },
+      });
+    }
+
     return {
       ...volunteer,
+      isAvailable: effectiveIsAvailable,
       avgRating: volunteer.avgRating ? Number(volunteer.avgRating) : null,
       isShipper,
       currentLocation: loc?.lng != null ? { lng: Number(loc.lng), lat: Number(loc.lat) } : null,
@@ -72,23 +121,31 @@ export class VolunteersService {
       );
     }
 
+    const nextIsAvailable = await this.effectiveAvailability(volunteer.id, dto.isAvailable);
+    if (dto.isAvailable && !nextIsAvailable) {
+      const slot = this.deliverySlotAt(new Date());
+      throw new BadRequestException(
+        `Bạn chưa có ca giao hàng đang diễn ra hoặc đang bận ca chiến dịch (${slot.workDate}/${slot.period}). Chỉ bật nhận đơn trong khung giờ đã đăng ký.`,
+      );
+    }
+
     if (dto.lng != null && dto.lat != null) {
       await this.prisma.$executeRaw(Prisma.sql`
         UPDATE volunteer_profiles
         SET current_location = ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
             location_updated_at = NOW(),
-            is_available = ${dto.isAvailable},
+            is_available = ${nextIsAvailable},
             updated_at = NOW()
         WHERE id = ${volunteer.id}::uuid
       `);
     } else {
       await this.prisma.volunteerProfile.update({
         where: { id: volunteer.id },
-        data: { isAvailable: dto.isAvailable },
+        data: { isAvailable: nextIsAvailable },
       });
     }
 
-    return { isAvailable: dto.isAvailable, message: dto.isAvailable ? 'Đã bật sẵn sàng nhận đơn' : 'Đã tắt nhận đơn' };
+    return { isAvailable: nextIsAvailable, message: nextIsAvailable ? 'Đã bật sẵn sàng nhận đơn' : 'Đã tắt nhận đơn' };
   }
 
   /** Cập nhật vị trí hiện tại (dùng cho theo dõi đơn giao trực tiếp). */

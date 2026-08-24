@@ -36,6 +36,38 @@ export class ReservationsService {
     private trust: TrustService,
   ) {}
 
+  private deliverySlotAt(at: Date): { workDate: string; period: string } {
+    const vn = new Date(at.getTime() + 7 * 3600_000);
+    const hour = vn.getUTCHours();
+    const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    return { workDate: vn.toISOString().slice(0, 10), period };
+  }
+
+  private async effectiveAvailabilityForNow(volunteerId: string): Promise<boolean> {
+    const slot = this.deliverySlotAt(new Date());
+    const deliveryShift = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM delivery_shift_registrations
+      WHERE volunteer_id = ${volunteerId}::uuid
+        AND work_date = ${slot.workDate}::date
+        AND period = ${slot.period}::campaign_shift_period
+      LIMIT 1
+    `);
+    if (deliveryShift.length === 0) return false;
+
+    const campaignShift = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT a.id
+      FROM campaign_volunteer_assignments a
+      JOIN campaign_shifts cs ON cs.id = a.shift_id
+      WHERE a.volunteer_id = ${volunteerId}::uuid
+        AND a.work_date = ${slot.workDate}::date
+        AND cs.period = ${slot.period}::campaign_shift_period
+        AND a.status IN ('assigned', 'checked_in', 'in_progress')
+        AND a.confirmation_status = 'confirmed'
+      LIMIT 1
+    `);
+    return campaignShift.length === 0;
+  }
+
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
   private minuteOfDayVN(d: Date): number {
     const parts = new Intl.DateTimeFormat('en-GB', {
@@ -767,10 +799,11 @@ export class ReservationsService {
         }),
       );
       if (reservation.delivery.shipperId) {
+        const isAvailable = await this.effectiveAvailabilityForNow(reservation.delivery.shipperId);
         ops.push(
           this.prisma.volunteerProfile.update({
             where: { id: reservation.delivery.shipperId },
-            data: { isAvailable: true },
+            data: { isAvailable },
           }),
         );
       }
@@ -865,10 +898,11 @@ export class ReservationsService {
         }),
       );
       if (reservation.delivery.shipperId) {
+        const isAvailable = await this.effectiveAvailabilityForNow(reservation.delivery.shipperId);
         ops.push(
           this.prisma.volunteerProfile.update({
             where: { id: reservation.delivery.shipperId },
-            data: { isAvailable: true },
+            data: { isAvailable },
           }),
         );
       }

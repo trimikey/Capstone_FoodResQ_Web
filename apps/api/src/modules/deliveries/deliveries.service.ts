@@ -228,6 +228,44 @@ export class DeliveriesService {
     return rows.length > 0;
   }
 
+  private async effectiveAvailabilityForNow(
+    client: Prisma.TransactionClient | PrismaService,
+    volunteerId: string,
+  ): Promise<boolean> {
+    const slot = deliverySlotAt(new Date());
+    const deliveryShift = await client.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM delivery_shift_registrations
+      WHERE volunteer_id = ${volunteerId}::uuid
+        AND work_date = ${slot.workDate}::date
+        AND period = ${slot.period}::campaign_shift_period
+      LIMIT 1
+    `);
+    if (deliveryShift.length === 0) return false;
+
+    const campaignShift = await client.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT a.id
+      FROM campaign_volunteer_assignments a
+      JOIN campaign_shifts cs ON cs.id = a.shift_id
+      WHERE a.volunteer_id = ${volunteerId}::uuid
+        AND a.work_date = ${slot.workDate}::date
+        AND cs.period = ${slot.period}::campaign_shift_period
+        AND a.status IN ('assigned', 'checked_in', 'in_progress')
+        AND a.confirmation_status = 'confirmed'
+      LIMIT 1
+    `);
+    return campaignShift.length === 0;
+  }
+
+  private async syncVolunteerAvailabilityForNow(
+    client: Prisma.TransactionClient | PrismaService,
+    volunteerId: string,
+  ) {
+    await client.volunteerProfile.update({
+      where: { id: volunteerId },
+      data: { isAvailable: await this.effectiveAvailabilityForNow(client, volunteerId) },
+    });
+  }
+
   /** Xác minh đủ điều kiện làm shipper (dùng chung cho danh sách đơn + nhận đơn). */
   private async requireVerifiedShipper(shipperUserId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
@@ -505,7 +543,7 @@ export class DeliveriesService {
         updateData.deliveryProofAt = new Date();
         const updated = await this.prisma.$transaction(async (tx) => {
           const result = await tx.delivery.update({ where: { id: deliveryId }, data: updateData });
-          await tx.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } });
+          await this.syncVolunteerAvailabilityForNow(tx, volunteer.id);
           await this.syncCampaignTransport(tx, deliveryId, 'delivered');
 
           // Hoàn thành assignment của shipper trong chiến dịch
@@ -551,16 +589,17 @@ export class DeliveriesService {
       // Mark reservation as completed + award dedication points (ảnh proof là tùy chọn)
       // delivery.reservation đã được narrow non-null bởi block if ở trên.
       const reservationId = delivery.reservationId as string;
-      await this.prisma.$transaction([
-        this.prisma.reservation.update({
+      await this.prisma.$transaction(async (tx) => {
+        await tx.reservation.update({
           where: { id: reservationId },
           data: { status: 'completed' },
-        }),
-        this.prisma.volunteerProfile.update({
+        });
+        await tx.volunteerProfile.update({
           where: { id: volunteer.id },
-          data: { isAvailable: true, dedicationPoints: { increment: 5 } },
-        }),
-        this.prisma.dedicationPointsHistory.create({
+          data: { dedicationPoints: { increment: 5 } },
+        });
+        await this.syncVolunteerAvailabilityForNow(tx, volunteer.id);
+        await tx.dedicationPointsHistory.create({
           data: {
             volunteerId: volunteer.id,
             delta: 5,
@@ -570,8 +609,8 @@ export class DeliveriesService {
             pointsBefore: volunteer.dedicationPoints,
             pointsAfter: volunteer.dedicationPoints + 5,
           },
-        }),
-      ]);
+        });
+      });
 
       // Giải cứu thành công → +2 trust cho người nhận (đồng nhất với luồng tự đến lấy)
       void this.trust.applyDelta(
@@ -617,23 +656,18 @@ export class DeliveriesService {
       throw new BadRequestException('Chỉ huỷ được khi chưa lấy hàng. Sau khi đã lấy hàng, hãy báo giao thất bại.');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.delivery.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.delivery.update({
         where: { id: deliveryId },
         data: { shipperId: null, status: 'pending_assignment', assignedAt: null },
-      }),
-      this.prisma.volunteerProfile.update({
-        where: { id: volunteer.id },
-        data: { isAvailable: true },
-      }),
-      this.prisma.shipperTaskOffer.updateMany({
+      });
+      await this.syncVolunteerAvailabilityForNow(tx, volunteer.id);
+      await tx.shipperTaskOffer.updateMany({
         where: { deliveryId, shipperId: volunteer.id, status: 'accepted' },
         data: { status: 'rejected', rejectReason: reason ?? 'Shipper huỷ nhận đơn', respondedAt: new Date() },
-      }),
-      ...(delivery.reservationId
-        ? []
-        : [
-            this.prisma.$executeRaw(Prisma.sql`
+      });
+      if (!delivery.reservationId) {
+        await tx.$executeRaw(Prisma.sql`
               UPDATE campaign_transports
               SET
                 status = 'pending',
@@ -645,9 +679,9 @@ export class DeliveriesService {
                 updated_at = NOW()
               WHERE delivery_id = ${deliveryId}::uuid
                 AND status IN ('assigned', 'heading_to_provider')
-            `),
-          ]),
-    ]);
+            `);
+      }
+    });
 
     // Đơn trở về trạng thái chờ — tự hiện lại trong danh sách "Đơn giao gần bạn"
     // của các shipper đang trong ca (trang poll 20s), không cần mời lại tuần tự.
@@ -713,7 +747,7 @@ export class DeliveriesService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.delivery.update({ where: { id: deliveryId }, data: { status: 'failed', failedReason: reason.trim() } });
-      await tx.volunteerProfile.update({ where: { id: volunteer.id }, data: { isAvailable: true } });
+      await this.syncVolunteerAvailabilityForNow(tx, volunteer.id);
       if (delivery.reservationId) {
         await tx.reservation.update({
           where: { id: delivery.reservationId },
@@ -763,14 +797,6 @@ export class DeliveriesService {
           },
         }),
       ];
-      if (d.shipperId) {
-        ops.push(
-          this.prisma.volunteerProfile.update({
-            where: { id: d.shipperId },
-            data: { isAvailable: true },
-          }),
-        );
-      }
       if (!d.reservation) {
         const reason = `Tự động huỷ: đơn không được cập nhật trạng thái trong ${DELIVERY_STALL_HOURS} giờ.`;
         await this.prisma.$transaction(async (tx) => {
@@ -779,7 +805,7 @@ export class DeliveriesService {
             data: { status: 'failed', failedReason: reason },
           });
           if (d.shipperId) {
-            await tx.volunteerProfile.update({ where: { id: d.shipperId }, data: { isAvailable: true } });
+            await this.syncVolunteerAvailabilityForNow(tx, d.shipperId);
             await tx.shipperTaskOffer.updateMany({
               where: { deliveryId: d.id, shipperId: d.shipperId, status: 'accepted' },
               data: { status: 'expired', respondedAt: new Date(), rejectReason: reason },
@@ -811,6 +837,7 @@ export class DeliveriesService {
         );
       }
       await this.prisma.$transaction(ops);
+      if (d.shipperId) await this.syncVolunteerAvailabilityForNow(this.prisma, d.shipperId);
     }
 
     return stalled.length;

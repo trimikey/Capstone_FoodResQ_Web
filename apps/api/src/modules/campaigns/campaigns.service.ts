@@ -21,11 +21,15 @@ const ASSIGN_POINTS: Record<string, number> = { chef: 15, waiter: 10, shipper: 1
 
 const SLOT_FIELD: Record<string, { needed: keyof CampaignSlots; filled: keyof CampaignSlots }> = {
   chef: { needed: 'chefSlotsNeeded', filled: 'chefSlotsFilled' },
-  waiter: { needed: 'waiterSlotsNeeded', filled: 'waiterSlotsFilled' },
+  waiter: { needed: 'shipperSlotsNeeded', filled: 'shipperSlotsFilled' },
   shipper: { needed: 'shipperSlotsNeeded', filled: 'shipperSlotsFilled' },
 };
 
-const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
+const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Giao hàng / phục vụ', shipper: 'Giao hàng / phục vụ' };
+
+function campaignRole(role: string): 'chef' | 'shipper' {
+  return role === 'chef' ? 'chef' : 'shipper';
+}
 
 /** Việt Nam là UTC+7 quanh năm, không có giờ mùa hè. */
 const VN_UTC_OFFSET_HOURS = 7;
@@ -434,6 +438,7 @@ export class CampaignsService {
 
     if (!dto.menuItems?.length) throw new BadRequestException('Chiến dịch phải có ít nhất một món.');
     if (!dto.shifts?.length) throw new BadRequestException('Chiến dịch phải có ít nhất một định biên ca.');
+    const campaignShifts = dto.shifts.map((s) => ({ ...s, role: campaignRole(s.role) }));
 
     // @MinLength đếm cả khoảng trắng nên "     " (5 dấu cách) vẫn lọt: chiến dịch lên
     // danh sách công khai với tiêu đề rỗng và địa chỉ bếp không geocode được.
@@ -444,7 +449,7 @@ export class CampaignsService {
       throw new BadRequestException('Địa chỉ bếp phải có ít nhất 5 ký tự (không tính khoảng trắng).');
     }
 
-    const periods = [...new Set(dto.shifts.map((s) => s.period))]
+    const periods = [...new Set(campaignShifts.map((s) => s.period))]
       .sort((a, b) => SHIFT_PERIODS[a].order - SHIFT_PERIODS[b].order);
     for (let i = 1; i < periods.length; i += 1) {
       if (SHIFT_PERIODS[periods[i]].order !== SHIFT_PERIODS[periods[i - 1]].order + 1) {
@@ -452,7 +457,7 @@ export class CampaignsService {
       }
     }
     const duplicateStaffing = new Set<string>();
-    for (const s of dto.shifts) {
+    for (const s of campaignShifts) {
       const key = `${s.period}:${s.role}`;
       if (duplicateStaffing.has(key)) {
         throw new BadRequestException(`Định biên ${SHIFT_PERIODS[s.period].label} / ${ROLE_VN[s.role]} bị trùng.`);
@@ -556,8 +561,8 @@ export class CampaignsService {
     if (campaignDays > 30) {
       throw new BadRequestException('Chiến dịch tối đa 30 ngày. Vui lòng kiểm tra lại ngày kết thúc.');
     }
-    const neededByRole = (role: 'chef' | 'waiter' | 'shipper') =>
-      dto.shifts!.filter((s) => s.role === role).reduce((sum, s) => sum + s.slotsNeeded, 0) * campaignDays;
+    const neededByRole = (role: 'chef' | 'shipper') =>
+      campaignShifts.filter((s) => s.role === role).reduce((sum, s) => sum + s.slotsNeeded, 0) * campaignDays;
 
     await this.assertLeadTime(dto.scheduledDate, endDateStr);
 
@@ -585,7 +590,7 @@ export class CampaignsService {
           ${dto.scheduledDate}::date, ${endDateStr}::date, ${firstPeriod.startTime}, ${lastPeriod.endTime},
           ${operationStartAt}, ${operationEndAt},
           ${recruitmentStartAt}, ${recruitmentEndAt}, ${recruitmentBufferHours}, 'scheduled'::recruitment_status,
-          ${neededByRole('chef')}, ${neededByRole('waiter')}, ${neededByRole('shipper')},
+          ${neededByRole('chef')}, ${0}, ${neededByRole('shipper')},
           ${dto.expectedServings ?? null}, ${JSON.stringify(dto.imageUrls ?? [])}::jsonb,
           ${JSON.stringify(menuJson)}::jsonb,
           ${JSON.stringify(dto.scheduleItems ?? [])}::jsonb,
@@ -596,9 +601,9 @@ export class CampaignsService {
       `);
 
       // INSERT shifts (bảng thật, mỗi shift 1 row)
-      if (dto.shifts?.length) {
+      if (campaignShifts.length) {
         await tx.campaignShift.createMany({
-          data: dto.shifts.map((s) => ({
+          data: campaignShifts.map((s) => ({
             campaignId: row.id,
             label: s.label.trim() || `${SHIFT_PERIODS[s.period].label} — ${ROLE_VN[s.role]}`,
             role: s.role,
@@ -2792,6 +2797,7 @@ export class CampaignsService {
 
   /** Volunteer ứng tuyển 1 vai trò trong campaign nếu còn slot. */
   async apply(campaignId: string, userId: string, dto: ApplyCampaignDto) {
+    const requestedRole = campaignRole(dto.role);
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId },
       include: {
@@ -2809,9 +2815,11 @@ export class CampaignsService {
       throw new ForbiddenException('Tài khoản của bạn đang bị hạn chế do uy tín thấp, không thể tham gia chiến dịch.');
     }
 
-    // Chỉ cho ứng tuyển đúng chuyên môn đã đăng ký (chef/waiter/shipper)
-    const roleVN = ROLE_VN[dto.role] ?? dto.role;
-    const hasRole = volunteer.specializations.some((s) => s.specialization === dto.role);
+    // Chỉ còn hai nhóm nghiệp vụ: chef và giao hàng/phục vụ.
+    const roleVN = ROLE_VN[requestedRole] ?? requestedRole;
+    const hasRole = volunteer.specializations.some(
+      (s) => s.specialization === requestedRole || (requestedRole === 'shipper' && s.specialization === 'waiter'),
+    );
     if (!hasRole) {
       throw new BadRequestException(
         `Bạn chưa đăng ký chuyên môn "${roleVN}". Chỉ ứng tuyển được vai trò đúng chuyên môn của mình.`,
@@ -2864,7 +2872,7 @@ export class CampaignsService {
       if (!shift || shift.campaignId !== campaignId) {
         throw new BadRequestException('Ca trực không thuộc chiến dịch này.');
       }
-      if (shift.role && shift.role !== dto.role) {
+      if (shift.role && campaignRole(shift.role) !== requestedRole) {
         throw new BadRequestException(`Ca "${shift.label}" không phù hợp với vai trò ${roleVN}.`);
       }
 
@@ -2924,7 +2932,7 @@ export class CampaignsService {
       where: {
         campaignId,
         volunteerId: volunteer.id,
-        role: dto.role,
+        role: requestedRole,
         // Chiến dịch không chia ca (shiftId = null) thì vẫn giữ quy tắc cũ: 1 lần/vai trò.
         shiftId: shiftId ?? null,
         // Cùng ca nhưng KHÁC NGÀY là hai suất trực khác nhau, không phải đăng ký trùng.
@@ -2956,7 +2964,7 @@ export class CampaignsService {
 
     await this.prisma.campaignVolunteerAssignment.create({
       data: {
-        campaignId, volunteerId: volunteer.id, shiftId, workDate, role: dto.role,
+        campaignId, volunteerId: volunteer.id, shiftId, workDate, role: requestedRole,
         status: 'pending', confirmationStatus: 'pending',
       },
     });
@@ -5919,13 +5927,13 @@ export class CampaignsService {
       where: { campaignId },
       select: { role: true, slotsNeeded: true },
     });
-    const totalFor = (role: 'chef' | 'waiter' | 'shipper') =>
-      shifts.filter((s) => s.role === role).reduce((sum, s) => sum + s.slotsNeeded, 0) * dayCount;
+    const totalFor = (role: 'chef' | 'shipper') =>
+      shifts.filter((s) => s.role && campaignRole(s.role) === role).reduce((sum, s) => sum + s.slotsNeeded, 0) * dayCount;
     await this.prisma.kitchenCampaign.update({
       where: { id: campaignId },
       data: {
         chefSlotsNeeded: totalFor('chef'),
-        waiterSlotsNeeded: totalFor('waiter'),
+        waiterSlotsNeeded: 0,
         shipperSlotsNeeded: totalFor('shipper'),
       },
     });
@@ -5935,21 +5943,22 @@ export class CampaignsService {
   async addShift(campaignId: string, userId: string, dto: CreateShiftDto) {
     const campaign = await this.assertOwner(campaignId, userId);
     if (campaign.status !== 'pending_approval') throw new BadRequestException('Không sửa ca sau khi đã gửi duyệt. Hãy gửi yêu cầu dời lịch.');
+    const role = dto.role ? campaignRole(dto.role) : null;
     const period = (Object.entries(SHIFT_PERIODS) as Array<[CampaignShiftPeriod, typeof SHIFT_PERIODS[CampaignShiftPeriod]]>)
       .find(([, p]) => p.startTime === dto.startTime && p.endTime === dto.endTime)?.[0];
-    if (!period || !dto.role) throw new BadRequestException('Ca phải thuộc một trong bốn khung cố định và có vai trò cụ thể.');
+    if (!period || !role) throw new BadRequestException('Ca phải thuộc một trong bốn khung cố định và có vai trò cụ thể.');
     const duplicate = await this.prisma.campaignShift.findFirst({
-      where: { campaignId, period, role: dto.role },
+      where: { campaignId, period, role },
       select: { id: true },
     });
     if (duplicate) {
-      throw new BadRequestException(`Định biên ${SHIFT_PERIODS[period].label} / ${ROLE_VN[dto.role]} đã tồn tại.`);
+      throw new BadRequestException(`Định biên ${SHIFT_PERIODS[period].label} / ${ROLE_VN[role]} đã tồn tại.`);
     }
     const created = await this.prisma.campaignShift.create({
       data: {
         campaignId,
         label: dto.label.trim(),
-        role: dto.role ?? null,
+        role,
         startTime: dto.startTime,
         endTime: dto.endTime,
         period,
@@ -5980,7 +5989,7 @@ export class CampaignsService {
       where: { id: shiftId },
       data: {
         label: dto.label?.trim(),
-        role: dto.role ?? undefined,
+        role: dto.role ? campaignRole(dto.role) : undefined,
         startTime: dto.startTime,
         endTime: dto.endTime,
         period,
