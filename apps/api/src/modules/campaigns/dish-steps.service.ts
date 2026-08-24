@@ -359,6 +359,21 @@ export class DishStepsService {
     if (step.status === 'done') {
       throw new BadRequestException('Khâu này đã được hoàn thành trước đó.');
     }
+    // Món đã bị tổ chức HUỶ (từ chối ảnh QC) là quyết định cuối — chặn mọi tick trên
+    // món đó, kể cả dữ liệu cũ còn ở trạng thái 'available' theo luật trước đây
+    // (từ chối từng trả khâu 3 về cho chef chụp lại).
+    const qcStep =
+      step.stepOrder === 3
+        ? step
+        : await this.prisma.campaignDishStep.findFirst({
+            where: { menuItemId: step.menuItemId, stepOrder: 3 },
+            select: { reviewStatus: true },
+          });
+    if (qcStep?.reviewStatus === 'rejected') {
+      throw new BadRequestException(
+        'Món này đã bị tổ chức huỷ vì QC không đạt — không thể tiếp tục các khâu.',
+      );
+    }
 
     const proofUrl = await this.storage.saveImage(proof, 'dish-step-proofs');
 

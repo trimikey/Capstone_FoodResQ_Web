@@ -625,6 +625,10 @@ function DishProcessBoard({
   const totalCount = dish.steps.length;
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
   const hasRecipe = !!dish.recipe;
+  // QC bị từ chối = món đã bị tổ chức huỷ — trạng thái cuối.
+  const dishCancelled = dish.steps.some(
+    (st) => st.stepOrder === 3 && st.reviewStatus === 'rejected',
+  );
   const isRecipeOpen = expandedRecipe === dish.id;
 
   return (
@@ -772,7 +776,9 @@ function DishProcessBoard({
           <StepCell
             key={step.id}
             step={step}
-            canAct={canAct}
+            // Món đã bị tổ chức huỷ (QC rejected) → khoá mọi thao tác, kể cả khi dữ
+            // liệu cũ còn để khâu 3 ở 'available' theo luật chụp-lại trước đây.
+            canAct={canAct && !dishCancelled}
             onTick={() => onTick(step)}
             pending={pending}
             prevStepDone={idx === 0 || dish.steps[idx - 1]?.effectiveStatus === 'done'}
