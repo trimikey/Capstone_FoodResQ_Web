@@ -385,8 +385,6 @@ export const endpoints = {
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
     completeDishStep: (campaignId: string, stepId: string) =>
       `/campaigns/${campaignId}/dish-steps/${stepId}/complete`,
-    flagDishStepQcFail: (campaignId: string, stepId: string) =>
-      `/campaigns/${campaignId}/dish-steps/${stepId}/qc-fail`,
     supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
     completeDistribution: (distributionId: string) =>
       `/campaigns/distributions/${distributionId}/complete`,

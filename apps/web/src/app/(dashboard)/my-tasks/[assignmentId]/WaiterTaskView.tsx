@@ -42,8 +42,14 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
   const lateMinutes = assignment.checkInLateMinutes ?? 0;
   const campaignRunning = campaign.status === 'in_progress';
 
-  // Khâu 4 ("Sẵn sàng phát xuất") xong = món đã có thể chia suất.
-  const readyDishes = dishes.filter((d) =>
+  // Món bị tổ chức HUỶ vì QC không đạt — không bao giờ tới lượt chia suất, tách
+  // riêng để không kẹt vĩnh viễn trong mẫu số "X/Y món sẵn sàng".
+  const isCancelled = (d: (typeof dishes)[number]) =>
+    d.steps.some((s) => s.stepOrder === 3 && s.reviewStatus === 'rejected');
+  const activeDishes = dishes.filter((d) => !isCancelled(d));
+  const cancelledDishes = dishes.filter(isCancelled);
+  // Khâu 4 ("Sẵn sàng xuất phát") xong = món đã có thể chia suất.
+  const readyDishes = activeDishes.filter((d) =>
     d.steps.some((s) => s.stepOrder === 4 && s.effectiveStatus === 'done'),
   );
   const doneDistributions = distributions.filter((d) => d.completedAt);
@@ -191,7 +197,8 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
         description={
           dishes.length === 0
             ? 'Chiến dịch chưa có món nào trong thực đơn.'
-            : `${readyDishes.length}/${dishes.length} món đã qua khâu "Sẵn sàng phát xuất" của bếp.`
+            : `${readyDishes.length}/${activeDishes.length} món đã qua khâu "Sẵn sàng xuất phát" của bếp.`
+              + (cancelledDishes.length ? ` ${cancelledDishes.length} món bị huỷ vì QC không đạt.` : '')
         }
       >
         {dishes.length > 0 && (
@@ -216,11 +223,13 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
                     {ready ? 'check_circle' : 'hourglass_top'}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-bold text-neutral-800">{d.name}</span>
+                    <span className={`block font-bold ${isCancelled(d) ? 'text-neutral-400 line-through' : 'text-neutral-800'}`}>{d.name}</span>
                     <span className="block text-neutral-500">
-                      {ready
-                        ? `Sẵn sàng phát${last?.completedAt ? ` lúc ${new Date(last.completedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}`
-                        : `Bếp đang ở khâu "${current?.stepName ?? '—'}"${current?.scheduledTime ? ` · dự kiến ${current.scheduledTime}` : ''}`}
+                      {isCancelled(d)
+                        ? 'Món đã bị huỷ — QC không đạt'
+                        : ready
+                          ? `Sẵn sàng phát${last?.completedAt ? ` lúc ${new Date(last.completedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}`
+                          : `Bếp đang ở khâu "${current?.stepName ?? '—'}"${current?.scheduledTime ? ` · dự kiến ${current.scheduledTime}` : ''}`}
                     </span>
                   </span>
                   {d.plannedServings != null && d.plannedServings > 0 && (

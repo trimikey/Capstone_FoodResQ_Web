@@ -16,7 +16,7 @@ export const FIXED_DISH_STEPS = [
   // Tên cũ "Trình bày" gây lệch: màn chef gọi là "QC kiểm tra", màn tổ chức hiện
   // "Trình bày", trong khi bản chất khâu này là chụp ảnh QC cho tổ chức duyệt.
   { order: 3, name: 'Kiểm tra QC' },
-  { order: 4, name: 'Sẵn sàng phát xuất' },
+  { order: 4, name: 'Sẵn sàng xuất phát' },
 ] as const;
 
 /** VN là UTC+7 cố định, không có giờ mùa hè. */
@@ -352,7 +352,7 @@ export class DishStepsService {
     if (effective === 'locked') {
       throw new BadRequestException(
         step.stepOrder === 4 && prevStep?.status === 'done' && prevStep.reviewStatus !== 'approved'
-          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng phát xuất.'
+          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng xuất phát.'
           : 'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
       );
     }
@@ -389,7 +389,7 @@ export class DishStepsService {
         title: `Ảnh QC món "${dishName}" đang chờ duyệt`,
         body:
           `Bếp đã hoàn tất khâu QC và tải ảnh lên. Vào tab "Quy trình bếp" để duyệt — `
-          + `món chỉ được chuyển sang "Sẵn sàng phát xuất" sau khi bạn duyệt ảnh.`,
+          + `món chỉ được chuyển sang "Sẵn sàng xuất phát" sau khi bạn duyệt ảnh.`,
         data: { campaignId, stepId, menuItemId: step.menuItemId },
       });
     } else {
@@ -411,7 +411,7 @@ export class DishStepsService {
       }
     }
 
-    // Nếu là khâu cuối (sẵn sàng phát xuất) → đánh dấu assignment hoàn thành (nếu chef)
+    // Nếu là khâu cuối (sẵn sàng xuất phát) → đánh dấu assignment hoàn thành (nếu chef)
     if (step.stepOrder === 4) {
       await this.maybeCompleteAssignment(campaignId, volunteer.id);
     }
@@ -444,10 +444,11 @@ export class DishStepsService {
   /**
    * TỔ CHỨC duyệt / từ chối ẢNH khâu QC (stepOrder=3) mà chef đã tải lên.
    *
-   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng phát xuất" được mở
+   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng xuất phát" được mở
    *    (tự mở luôn nếu đã đến giờ); báo chef.
-   *  - reject:  reviewStatus='rejected' + lưu lý do; khâu 3 quay về `available`
-   *    để chef chụp lại (chụp lại xong tự về 'pending' chờ duyệt lần nữa); báo chef.
+   *  - reject:  reviewStatus='rejected' + lưu lý do và MÓN BỊ HUỶ hẳn — QC không
+   *    đạt nghĩa là đồ ăn không an toàn để phát, không có chuyện chụp lại ảnh là
+   *    dùng được; khâu 4 vĩnh viễn không mở (gate đòi reviewStatus='approved').
    */
   async reviewQcStep(
     campaignId: string,
@@ -510,7 +511,7 @@ export class DishStepsService {
         void this.notifications.notify(chefUserId, {
           type: 'campaign',
           title: `Ảnh QC món "${dishName}" đã được duyệt`,
-          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng phát xuất" khi đến giờ.',
+          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng xuất phát" khi đến giờ.',
           data: { campaignId, stepId, menuItemId: step.menuItemId },
         });
       }
@@ -528,24 +529,24 @@ export class DishStepsService {
         reviewStatus: 'rejected',
         reviewedAt: new Date(),
         reviewNote: trimmed,
-        // Trả khâu 3 về available để chef làm lại — ảnh cũ vẫn giữ để đối chiếu.
-        status: 'available',
+        // GIỮ status='done': từ chối là quyết định cuối — món bị huỷ, không mở lại
+        // khâu 3 cho chef chụp lại. Khâu 4 không bao giờ mở vì gate đòi 'approved'.
       },
     });
     if (chefUserId) {
       void this.notifications.notify(chefUserId, {
         type: 'campaign',
-        title: `Ảnh QC món "${dishName}" bị từ chối`,
-        body: `Tổ chức từ chối ảnh QC: ${trimmed}. Vui lòng kiểm tra lại món và chụp ảnh mới.`,
-        data: { campaignId, stepId, menuItemId: step.menuItemId },
+        title: `Món "${dishName}" đã bị huỷ — QC không đạt`,
+        body: `Tổ chức từ chối ảnh QC và huỷ món này. Lý do: ${trimmed}. Món sẽ không được phát; các món khác vẫn chạy bình thường.`,
+        data: { campaignId, stepId, menuItemId: step.menuItemId, cancelled: true },
       });
     }
     return { id: updated.id, reviewStatus: updated.reviewStatus, dishName };
   }
 
   /**
-   * Tổ chức duyệt step cuối (sẵn sàng phát xuất) của một món.
-   * Chef đã tick "Sẵn sàng phát xuất" → tổ chức kiểm tra và duyệt.
+   * Tổ chức duyệt step cuối (sẵn sàng xuất phát) của một món.
+   * Chef đã tick "Sẵn sàng xuất phát" → tổ chức kiểm tra và duyệt.
    * Sau khi duyệt → món có thể chuyển sang phân phát.
    */
   async approveDishFinalStep(
@@ -560,7 +561,7 @@ export class DishStepsService {
       include: { menuItem: { select: { customName: true } } },
     });
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
     if (step.status !== 'available') {
       throw new BadRequestException('Bước này chưa được chef tick hoặc đã được duyệt trước đó.');
@@ -593,7 +594,7 @@ export class DishStepsService {
       include: { menuItem: { select: { customName: true } } },
     });
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
 
     // Reset về available để chef làm lại
@@ -709,81 +710,6 @@ export class DishStepsService {
     };
   }
 
-  /**
-   * Bếp trưởng / TNV QC đánh dấu 1 khâu fail chất lượng (ngắt khẩn cấp).
-   * Hành vi:
-   *   - Set qcFailedAt + qcFailedByVolunteerId + qcFailureReason.
-   *   - Không xoá step, không ảnh hưởng step khác / món khác.
-   *   - Gửi notification khẩn cho charity owner qua NotificationsGateway.
-   * Điều kiện:
-   *   - User là chef/waiter đang assigned vào campaign.
-   *   - Step đang `available` (chưa done, chưa fail).
-   */
-  async flagStepQualityFail(
-    campaignId: string,
-    userId: string,
-    stepId: string,
-    reason: string,
-  ) {
-    const trimmed = reason?.trim();
-    if (!trimmed) {
-      throw new BadRequestException('Vui lòng nhập lý do ngắt khẩn cấp.');
-    }
-    if (trimmed.length > 500) {
-      throw new BadRequestException('Lý do tối đa 500 ký tự.');
-    }
-
-    const { volunteer } = await this.assertAssignedVolunteer(campaignId, userId);
-
-    const step = await this.prisma.campaignDishStep.findUnique({
-      where: { id: stepId },
-      include: {
-        menuItem: {
-          select: { id: true, customName: true, recipe: { select: { name: true } } },
-        },
-      },
-    });
-    if (!step || step.campaignId !== campaignId) {
-      throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
-    }
-    if (step.status === 'done') {
-      throw new BadRequestException('Khâu này đã hoàn thành — không thể đánh dấu fail.');
-    }
-    if (step.qcFailedAt) {
-      throw new BadRequestException('Khâu này đã được đánh dấu fail trước đó.');
-    }
-
-    const dishName =
-      step.menuItem.customName ?? step.menuItem.recipe?.name ?? 'Món chưa đặt tên';
-
-    const updated = await this.prisma.campaignDishStep.update({
-      where: { id: stepId },
-      data: {
-        qcFailedAt: new Date(),
-        qcFailedByVolunteerId: volunteer.id,
-        qcFailureReason: trimmed,
-      },
-    });
-
-    // Gửi notification khẩn cho charity owner (best-effort, không block).
-    await this.notifications.notifyCampaignOwner(campaignId, {
-      type: 'campaign.qc_failure',
-      title: `⚠️ Ngắt khẩn cấp: ${dishName}`,
-      body: `Bếp trưởng đã báo QC không đạt ở khâu "${step.stepName}". Lý do: ${trimmed}. Vui lòng xem và đưa ra phương án xử lý.`,
-      data: {
-        campaignId,
-        stepId,
-        dishId: step.menuItemId,
-        dishName,
-        stepOrder: step.stepOrder,
-        stepName: step.stepName,
-        reason: trimmed,
-        reportedByVolunteerId: volunteer.id,
-      },
-    });
-
-    return updated;
-  }
 
   /**
    * Giờ mặc định của 4 khâu, tính từ giờ BẮT ĐẦU vận hành của chiến dịch.

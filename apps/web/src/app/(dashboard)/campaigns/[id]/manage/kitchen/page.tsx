@@ -9,7 +9,7 @@ import { errMsg, mediaUrl } from '@/lib/utils';
 /**
  * Tab "Quy trình bếp" — tổ chức theo dõi TNV đang làm gì trong bếp (4 khâu mỗi món,
  * ai làm, ảnh bằng chứng) và DUYỆT ẢNH khâu QC: chef chụp ảnh QC xong thì món bị
- * giữ ở trạng thái chờ duyệt, tổ chức duyệt xong khâu "Sẵn sàng phát xuất" mới mở.
+ * giữ ở trạng thái chờ duyệt, tổ chức duyệt xong khâu "Sẵn sàng xuất phát" mới mở.
  */
 
 const STEP_STATUS_LABEL: Record<string, string> = {
@@ -37,7 +37,7 @@ export default function KitchenProcessPage() {
         </h2>
         <p className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-6 text-center text-xs text-neutral-500">
           Quy trình bếp chỉ hiển thị khi chiến dịch đang diễn ra. Bắt đầu chiến dịch để theo dõi
-          các khâu Sơ chế → Nấu → QC → Sẵn sàng phát xuất của từng món.
+          các khâu Sơ chế → Nấu → QC → Sẵn sàng xuất phát của từng món.
         </p>
       </section>
     );
@@ -54,7 +54,7 @@ export default function KitchenProcessPage() {
             </h2>
             <p className="cm-manage-card-sub !mt-0">
               Theo dõi TNV làm từng khâu và duyệt ảnh QC — món chỉ được chuyển sang
-              &quot;Sẵn sàng phát xuất&quot; sau khi bạn duyệt ảnh.
+              &quot;Sẵn sàng xuất phát&quot; sau khi bạn duyệt ảnh.
             </p>
           </div>
           {pendingReviews > 0 && (
@@ -94,7 +94,7 @@ function DishCard({ dish, campaignId }: { dish: DishProcessItem; campaignId: str
         </div>
         {finalDone ? (
           <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800">
-            ✓ Sẵn sàng phát xuất
+            ✓ Sẵn sàng xuất phát
           </span>
         ) : (
           <span className="shrink-0 rounded-full bg-neutral-100 px-3 py-1 text-xs font-bold text-neutral-600">
@@ -135,7 +135,7 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
       });
       toast.success(
         action === 'approve'
-          ? 'Đã duyệt ảnh QC — khâu "Sẵn sàng phát xuất" được mở cho chef.'
+          ? 'Đã duyệt ảnh QC — khâu "Sẵn sàng xuất phát" được mở cho chef.'
           : 'Đã từ chối — chef sẽ được báo để kiểm tra lại món và chụp ảnh mới.',
       );
       setRejecting(false);
@@ -199,7 +199,7 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
       {needsReview && (
         <div className="mt-auto space-y-1.5 rounded-lg border border-amber-200 bg-white p-2">
           <p className="text-[11px] font-extrabold text-amber-800">
-            Ảnh QC chờ bạn duyệt — duyệt xong chef mới xác nhận được &quot;Sẵn sàng phát xuất&quot;.
+            Ảnh QC chờ bạn duyệt — duyệt xong chef mới xác nhận được &quot;Sẵn sàng xuất phát&quot;.
           </p>
           {rejecting ? (
             <>
@@ -264,7 +264,7 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
       )}
       {isQcStep && step.reviewStatus === 'rejected' && (
         <p className="rounded-md bg-rose-50 px-2 py-1.5 text-[11px] font-semibold text-rose-700">
-          Đã từ chối: {step.reviewNote} — đang chờ chef chụp lại.
+          Món đã bị huỷ — QC không đạt: {step.reviewNote}
         </p>
       )}
     </li>

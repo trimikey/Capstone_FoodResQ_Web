@@ -1026,7 +1026,7 @@ export function useCampaignManageDetail(id: string) {
 export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'participants'> {
   participants: CampaignManageParticipant[];
   menuItemRefs?: Array<{ id: string; customName: string; plannedServings: number | null; recipeId: string | null; sortOrder: number }>;
-  /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng phát xuất" từ chef */
+  /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng xuất phát" từ chef */
   dishSteps?: DishProcessItem[];
   /**
    * Nhân sự đã tuyển so với ngưỡng tối thiểu (`CAMPAIGN_MIN_FILL_PERCENT` do admin
@@ -1247,7 +1247,7 @@ export interface DishStep {
   qcFailedAt?: string | null;
   qcFailureReason?: string | null;
   /// Duyệt ảnh khâu QC (stepOrder=3) bởi tổ chức — 'pending' sau khi chef chụp,
-  /// 'approved' mới mở khâu 4, 'rejected' kèm reviewNote để chef chụp lại.
+  /// 'approved' mới mở khâu 4; 'rejected' kèm reviewNote = MÓN BỊ HUỶ hẳn.
   reviewStatus?: 'pending' | 'approved' | 'rejected' | null;
   reviewedAt?: string | null;
   reviewNote?: string | null;
@@ -1674,7 +1674,7 @@ export function useSetDishStepTimes() {
 
 /**
  * Tổ chức: duyệt / từ chối ẢNH khâu QC (khâu 3) chef đã tải lên.
- * Duyệt xong khâu 4 "Sẵn sàng phát xuất" mới mở; từ chối → khâu QC về lại
+ * Duyệt xong khâu 4 "Sẵn sàng xuất phát" mới mở; từ chối → khâu QC về lại
  * available để chef chụp lại (reason bắt buộc khi reject).
  */
 export function useReviewQcStep() {
@@ -1699,7 +1699,7 @@ export function useReviewQcStep() {
   });
 }
 
-// Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món
+// Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món
 export function useApproveDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
@@ -1714,7 +1714,7 @@ export function useApproveDishFinalStep() {
   });
 }
 
-// Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món
+// Tổ chức: từ chối bước "Sẵn sàng xuất phát" của một món
 export function useRejectDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
@@ -1789,23 +1789,6 @@ export function useCampaignSupplies(campaignId: string | null | undefined) {
   });
 }
 
-/** Bếp trưởng / TNV: QC fail / ngắt khẩn cấp 1 step. */
-export function useFlagStepQualityFail() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { campaignId: string; stepId: string; reason: string }) => {
-      const { data } = await api.post(
-        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/qc-fail`,
-        { reason: p.reason },
-      );
-      return data.data as DishStep;
-    },
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'supplies', p.campaignId] });
-    },
-  });
-}
 
 // ─── Lịch tuần ─────────────────────────────────────────────────────────────
 

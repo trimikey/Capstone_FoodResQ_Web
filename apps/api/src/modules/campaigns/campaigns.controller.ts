@@ -736,7 +736,7 @@ export class CampaignsController {
   @Post(':id/dishes/:menuItemId/approve')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món — món đã được chef tick xong' })
+  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món — món đã được chef tick xong' })
   approveDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,
@@ -748,7 +748,7 @@ export class CampaignsController {
   @Post(':id/dishes/:menuItemId/reject')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món — chef phải làm lại' })
+  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng xuất phát" của một món — chef phải làm lại' })
   rejectDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,

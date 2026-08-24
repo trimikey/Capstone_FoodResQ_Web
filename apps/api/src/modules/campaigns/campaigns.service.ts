@@ -6323,12 +6323,12 @@ export class CampaignsService {
     };
   }
 
-  /** Tổ chức duyệt bước "Sẵn sàng phát xuất" của một món (delegate sang DishStepsService). */
+  /** Tổ chức duyệt bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
   async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string) {
     return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId);
   }
 
-  /** Tổ chức từ chối bước "Sẵn sàng phát xuất" của một món (delegate sang DishStepsService). */
+  /** Tổ chức từ chối bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
   async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string) {
     return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason);
   }

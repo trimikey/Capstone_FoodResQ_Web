@@ -9,7 +9,6 @@ import {
   useTickDishStep,
   useAdvanceTask,
   useCampaignSupplies,
-  useFlagStepQualityFail,
   type DishStep,
   type DishProcessItem,
   type CookingTeamMember,
@@ -27,18 +26,20 @@ const STEP_ICONS: Record<number, string> = {
   4: 'local_shipping',
 };
 
+// Nhãn 4 khâu — PHẢI khớp từng chữ với FIXED_DISH_STEPS của backend và dữ liệu
+// campaign_dish_steps, nếu không hai màn chef/tổ chức gọi cùng một khâu bằng hai tên.
 const STEP_LABELS: Record<number, string> = {
-  1: 'Tiếp nhận',
+  1: 'Sơ chế',
   2: 'Nấu',
   3: 'Kiểm tra QC',
-  4: 'Sẵn sàng phát xuất',
+  4: 'Sẵn sàng xuất phát',
 };
 
 const STEP_DESCRIPTIONS: Record<number, string> = {
-  1: 'Chụp ảnh nguyên liệu để check đồ còn dùng được',
+  1: 'Sơ chế nguyên liệu, chụp ảnh đối chiếu đồ còn dùng được',
   2: 'Chế biến món theo công thức đã định',
   3: 'Kiểm tra chất lượng, vệ sinh, nhiệt độ…',
-  4: 'Hoàn tất và sẵn sàng phát xuất',
+  4: 'Hoàn tất và sẵn sàng xuất phát',
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -73,15 +74,12 @@ export default function MyTaskDetailPage() {
   const { data: detail, isLoading, refetch } = useMyTaskDetail(params.assignmentId);
   const tick = useTickDishStep();
   const advance = useAdvanceTask();
-  const flagFail = useFlagStepQualityFail();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingStep, setPendingStep] = useState<DishStep | null>(null);
   const [note, setNote] = useState('');
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [safetyLogOpen, setSafetyLogOpen] = useState(false);
-  const [emergencyDish, setEmergencyDish] = useState<DishProcessItem | null>(null);
-  const [emergencyReason, setEmergencyReason] = useState('');
   const [suppliesOpen, setSuppliesOpen] = useState(true);
   const campaignId = detail?.campaign?.id;
   const { data: supplies } = useCampaignSupplies(campaignId);
@@ -161,42 +159,6 @@ export default function MyTaskDetailPage() {
       setNote('');
     } catch (error) {
       toast.error(errMsg(error, 'Không thể xác nhận — thử lại'));
-    }
-  }
-
-  function handleEmergencyBreak(dishId: string) {
-    const dish = dishes.find((d) => d.id === dishId);
-    if (!dish) return;
-    const qcStep = dish.steps.find((s) => s.stepOrder === 3);
-    if (!qcStep) {
-      toast.error('Món này không có khâu QC.');
-      return;
-    }
-    setEmergencyDish(dish);
-    setEmergencyReason('');
-    setPendingStep(qcStep); // dùng pendingStep để tick step id khi gọi API
-  }
-
-  async function confirmEmergencyBreak() {
-    if (!emergencyDish || !pendingStep || !detail) return;
-    if (!emergencyReason.trim()) {
-      toast.error('Vui lòng nhập lý do ngắt khẩn cấp.');
-      return;
-    }
-    try {
-      await flagFail.mutateAsync({
-        campaignId: detail.campaign.id,
-        stepId: pendingStep.id,
-        reason: emergencyReason.trim(),
-      });
-      toast.success(
-        `Đã báo QC không đạt cho món "${emergencyDish.name}". Tổ chức đã nhận thông báo.`,
-      );
-      setEmergencyDish(null);
-      setEmergencyReason('');
-      setPendingStep(null);
-    } catch (error) {
-      toast.error(errMsg(error, 'Không thể gửi báo cáo — thử lại'));
     }
   }
 
@@ -565,7 +527,6 @@ export default function MyTaskDetailPage() {
               expandedRecipe={expandedRecipe}
               onToggleRecipe={(id) => setExpandedRecipe((prev) => (prev === id ? null : id))}
               isChef={isChef}
-              onEmergencyBreak={isChef ? handleEmergencyBreak : undefined}
             />
           ))
         )}
@@ -587,89 +548,6 @@ export default function MyTaskDetailPage() {
         </p>
       )}
 
-      {/* Modal ngắt khẩn cấp — chỉ QC step, đồ ăn không đảm bảo chất lượng */}
-      {emergencyDish && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            onClick={() => setEmergencyDish(null)}
-            aria-hidden
-          />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="bg-gradient-to-br from-rose-600 to-rose-700 text-white p-5">
-              <div className="flex items-center gap-3">
-                <span className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[22px]">emergency</span>
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-base">Ngắt khẩn cấp — QC</h3>
-                  <p className="text-xs text-rose-100 mt-0.5">
-                    Đánh dấu QC fail cho món này. Tổ chức sẽ nhận thông báo ngay.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="p-5">
-              <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 flex items-start gap-2">
-                <span className="material-symbols-outlined text-rose-600 text-[18px] mt-0.5">warning</span>
-                <div className="text-xs text-rose-900">
-                  <p className="font-bold">Bạn xác nhận đồ ăn không đảm bảo chất lượng?</p>
-                  <p className="mt-1 text-rose-800">
-                    Bếp trưởng sẽ được thông báo ngay để xử lý. Vui lòng chỉ sử dụng khi thực sự
-                    cần thiết (nhiệt độ sai, có dấu hiệu hỏng, vệ sinh không đạt…).
-                  </p>
-                </div>
-              </div>
-              <p className="mt-4 text-sm text-neutral-700">
-                Món: <b>{emergencyDish.name}</b>
-              </p>
-              <p className="text-xs text-neutral-500 mt-1">
-                Món sẽ được đánh dấu QC fail. Các món khác trong chiến dịch vẫn chạy bình thường.
-              </p>
-
-              <label className="block mt-4">
-                <span className="text-xs font-bold text-neutral-700">
-                  Lý do ngắt khẩn cấp <span className="text-rose-600">*</span>
-                </span>
-                <textarea
-                  value={emergencyReason}
-                  onChange={(e) => setEmergencyReason(e.target.value)}
-                  maxLength={500}
-                  rows={3}
-                  placeholder="VD: Nhiệt độ món không đạt, có mùi lạ, bao bì rách…"
-                  className="mt-1 w-full px-3 py-2 text-sm border border-neutral-200 rounded-xl focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none resize-none"
-                />
-                <span className="text-[10px] text-neutral-400 mt-1 block text-right">
-                  {emergencyReason.length}/500
-                </span>
-              </label>
-
-              <div className="mt-5 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmergencyDish(null);
-                    setEmergencyReason('');
-                    setPendingStep(null);
-                  }}
-                  className="flex-1 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-sm font-bold rounded-xl transition-colors"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmEmergencyBreak}
-                  disabled={flagFail.isPending || !emergencyReason.trim()}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-[16px]">emergency</span>
-                  {flagFail.isPending ? 'Đang gửi…' : 'Xác nhận ngắt'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       </>
       )}
     </div>
@@ -732,7 +610,6 @@ function DishProcessBoard({
   expandedRecipe,
   onToggleRecipe,
   isChef,
-  onEmergencyBreak,
 }: {
   dish: DishProcessItem;
   canAct: boolean;
@@ -743,7 +620,6 @@ function DishProcessBoard({
   expandedRecipe: string | null;
   onToggleRecipe: (id: string) => void;
   isChef: boolean;
-  onEmergencyBreak?: (dishId: string) => void;
 }) {
   const doneCount = dish.steps.filter((s) => s.effectiveStatus === 'done').length;
   const totalCount = dish.steps.length;
@@ -760,6 +636,24 @@ function DishProcessBoard({
             <h3 className="font-extrabold text-neutral-900 text-base md:text-lg">
               🍲 {dish.name}
             </h3>
+            {/* Tổ chức từ chối ảnh QC = món bị HUỶ hẳn — báo rõ để chef không chờ
+                khâu 4 mở hay cố chụp lại ảnh. */}
+            {(() => {
+              const qc = dish.steps.find((st) => st.stepOrder === 3);
+              if (qc?.reviewStatus !== 'rejected') return null;
+              return (
+                <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-extrabold text-rose-700">
+                    <span className="material-symbols-outlined text-[16px]">block</span>
+                    Món đã bị huỷ — QC không đạt
+                  </p>
+                  <p className="mt-1 text-xs text-rose-800">
+                    Lý do từ tổ chức: {qc.reviewNote || 'không ghi rõ'}. Món này sẽ không được
+                    phát; các món khác vẫn tiếp tục bình thường.
+                  </p>
+                </div>
+              );
+            })()}
             {dish.steps.some((s) => s.qcFailedAt) && (() => {
               const failStep = dish.steps.find((s) => s.qcFailedAt)!;
               const failerName = failStep.qcFailedByVolunteer?.user.fullName;
@@ -890,11 +784,6 @@ function DishProcessBoard({
             }
             myAvatarUrl={myAvatarUrl}
             myName={myName}
-            onEmergencyBreak={
-              step.stepOrder === 3 && onEmergencyBreak
-                ? () => onEmergencyBreak(dish.id)
-                : undefined
-            }
           />
         ))}
       </ol>
@@ -911,7 +800,6 @@ function StepCell({
   awaitingQcReview,
   myAvatarUrl,
   myName,
-  onEmergencyBreak,
 }: {
   step: DishStep;
   canAct: boolean;
@@ -922,7 +810,6 @@ function StepCell({
   awaitingQcReview?: boolean;
   myAvatarUrl: string | null;
   myName: string;
-  onEmergencyBreak?: () => void;
 }) {
   const eff = step.effectiveStatus;
   const isDone = eff === 'done';
@@ -1085,17 +972,6 @@ function StepCell({
             </span>
             {pending ? 'Đang upload…' : isQCStep ? 'Kiểm tra & xác nhận' : 'Chụp ảnh & xác nhận'}
           </button>
-          {isQCStep && onEmergencyBreak && (
-            <button
-              type="button"
-              onClick={onEmergencyBreak}
-              disabled={!canAct}
-              className="w-full py-2 bg-white hover:bg-rose-50 text-rose-700 text-xs font-bold rounded-xl transition-colors border border-rose-200 disabled:opacity-50 flex items-center justify-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">emergency</span>
-              Ngắt khẩn cấp
-            </button>
-          )}
         </div>
       )}
     </li>
