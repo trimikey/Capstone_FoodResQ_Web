@@ -1759,6 +1759,171 @@ export class CampaignsService {
     }
   }
 
+  /**
+   * Báo cáo tổng hợp một chiến dịch cho TỔ CHỨC chủ bếp — nguồn số liệu của trang
+   * "Báo cáo": suất ăn đã phát, kg nguyên liệu về bếp, TNV tham gia theo vai trò và
+   * chuỗi thời gian để vẽ biểu đồ.
+   */
+  async getCampaignReport(campaignId: string, userId: string) {
+    const campaign = await this.assertOwner(campaignId, userId);
+
+    const [distributions, pickups, donations, assignments] = await Promise.all([
+      this.prisma.mealDistribution.findMany({
+        where: { campaignId, completedAt: { not: null } },
+        select: {
+          roundLabel: true, servingsServed: true, actualServings: true,
+          actualPeopleServed: true, peopleServed: true, completedAt: true,
+        },
+        orderBy: { completedAt: 'asc' },
+      }),
+      this.prisma.campaignIngredientPickup.findMany({
+        where: { campaignId },
+        select: { receivedKg: true, confirmedAt: true },
+        orderBy: { confirmedAt: 'asc' },
+      }),
+      this.prisma.campaignDonation.findMany({
+        where: { campaignId, status: 'received' },
+        select: { itemName: true, quantity: true, receivedAt: true, providerRequestId: true },
+      }),
+      this.prisma.campaignVolunteerAssignment.findMany({
+        where: {
+          campaignId,
+          status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+          confirmationStatus: 'confirmed',
+        },
+        select: { role: true, volunteerId: true, status: true },
+      }),
+    ]);
+
+    // Suất ăn: ưu tiên số THỰC TẾ shipper chốt; kế hoạch chỉ là dự phòng cho đợt cũ.
+    const servingsSeries = distributions.map((d) => ({
+      label: d.roundLabel ?? 'Đợt phát',
+      at: d.completedAt,
+      servings: d.actualServings ?? d.servingsServed,
+      people: d.actualPeopleServed ?? d.peopleServed,
+    }));
+    const totalServings = servingsSeries.reduce((sum, d) => sum + d.servings, 0);
+    const totalPeople = servingsSeries.reduce((sum, d) => sum + d.people, 0);
+
+    // Kg nguyên liệu về bếp theo NGÀY (giờ VN) — nguồn là sổ ký nhận; khoản góp thẳng
+    // (không qua đơn) cộng thêm nếu ghi số kg đọc được.
+    const kgByDay = new Map<string, number>();
+    const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+    for (const pk of pickups) {
+      const key = dayKey(pk.confirmedAt);
+      kgByDay.set(key, (kgByDay.get(key) ?? 0) + Number(pk.receivedKg));
+    }
+    for (const don of donations) {
+      if (don.providerRequestId) continue; // đã tính qua sổ ký nhận của đơn
+      const kg = this.parseDonationQuantity(don.quantity, 'kg');
+      if (kg != null && don.receivedAt) {
+        const key = dayKey(don.receivedAt);
+        kgByDay.set(key, (kgByDay.get(key) ?? 0) + kg);
+      }
+    }
+    const kgSeries = [...kgByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, kg]) => ({ date, kg: Math.round(kg * 10) / 10 }));
+    const totalKg = Math.round(kgSeries.reduce((sum, r) => sum + r.kg, 0) * 10) / 10;
+
+    // TNV: đếm NGƯỜI duy nhất theo vai trò (một người trực nhiều ca vẫn là một người).
+    const byRole = new Map<string, Set<string>>();
+    for (const a of assignments) {
+      const set = byRole.get(a.role) ?? new Set<string>();
+      set.add(a.volunteerId);
+      byRole.set(a.role, set);
+    }
+    const volunteersByRole = [...byRole.entries()].map(([role, set]) => ({
+      role,
+      count: set.size,
+    }));
+    const uniqueVolunteers = new Set(assignments.map((a) => a.volunteerId)).size;
+
+    return {
+      campaign: { id: campaign.id, title: campaign.title, status: campaign.status },
+      totals: {
+        servings: totalServings,
+        people: totalPeople,
+        kgReceived: totalKg,
+        volunteers: uniqueVolunteers,
+        distributionRounds: servingsSeries.length,
+      },
+      servingsSeries,
+      kgSeries,
+      volunteersByRole,
+    };
+  }
+
+  /**
+   * Thống kê phía NHÀ CUNG CẤP: từng chiến dịch họ đã cung cấp — kg đặt, kg ký nhận
+   * thực tế, số đơn — kèm chuỗi kg theo ngày để vẽ biểu đồ.
+   */
+  async getProviderSupplyStats(providerUserId: string) {
+    const provider = await this.prisma.providerProfile.findUnique({
+      where: { userId: providerUserId },
+      select: { id: true },
+    });
+    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ nhà cung cấp.');
+
+    const requests = await this.prisma.campaignProviderRequest.findMany({
+      where: { providerId: provider.id, status: 'accepted', campaignId: { not: '00000000-0000-0000-0000-000000000000' } },
+      select: {
+        id: true, campaignId: true, demandDetails: true,
+        campaign: { select: { title: true, status: true, scheduledDate: true } },
+        ingredientPickup: { select: { receivedKg: true, confirmedAt: true } },
+      },
+    });
+
+    const byCampaign = new Map<string, {
+      campaignId: string; title: string; status: string; scheduledDate: Date;
+      orderedKg: number; receivedKg: number; orders: number; lastDeliveredAt: Date | null;
+    }>();
+    const kgByDay = new Map<string, number>();
+    const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+
+    for (const r of requests) {
+      const demand = (r.demandDetails ?? {}) as Record<string, unknown>;
+      const ordered = demand.quantityKg == null ? 0 : Number(demand.quantityKg) || 0;
+      const received = r.ingredientPickup ? Number(r.ingredientPickup.receivedKg) : 0;
+      const row = byCampaign.get(r.campaignId) ?? {
+        campaignId: r.campaignId, title: r.campaign.title, status: r.campaign.status,
+        scheduledDate: r.campaign.scheduledDate, orderedKg: 0, receivedKg: 0, orders: 0,
+        lastDeliveredAt: null,
+      };
+      row.orderedKg += ordered;
+      row.receivedKg += received;
+      row.orders += 1;
+      if (r.ingredientPickup) {
+        const at = r.ingredientPickup.confirmedAt;
+        if (!row.lastDeliveredAt || at > row.lastDeliveredAt) row.lastDeliveredAt = at;
+        const key = dayKey(at);
+        kgByDay.set(key, (kgByDay.get(key) ?? 0) + received);
+      }
+      byCampaign.set(r.campaignId, row);
+    }
+
+    const campaigns = [...byCampaign.values()]
+      .map((row) => ({
+        ...row,
+        orderedKg: Math.round(row.orderedKg * 10) / 10,
+        receivedKg: Math.round(row.receivedKg * 10) / 10,
+      }))
+      .sort((a, b) => b.receivedKg - a.receivedKg);
+
+    return {
+      totals: {
+        campaigns: campaigns.length,
+        orders: requests.length,
+        orderedKg: Math.round(campaigns.reduce((sum, c) => sum + c.orderedKg, 0) * 10) / 10,
+        receivedKg: Math.round(campaigns.reduce((sum, c) => sum + c.receivedKg, 0) * 10) / 10,
+      },
+      campaigns,
+      kgSeries: [...kgByDay.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, kg]) => ({ date, kg: Math.round(kg * 10) / 10 })),
+    };
+  }
+
   /** Việc của tình nguyện viên: các campaign đã đăng ký + vai trò + trạng thái. */
   async myAssignments(userId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId } });

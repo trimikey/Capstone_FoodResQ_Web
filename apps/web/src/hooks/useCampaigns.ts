@@ -1963,6 +1963,57 @@ export function useMyIntakeHistory(enabled = true) {
   });
 }
 
+// ─── Báo cáo & thống kê ──────────────────────────────────────────────────────
+
+export interface CampaignReport {
+  campaign: { id: string; title: string; status: string };
+  totals: {
+    servings: number;
+    people: number;
+    kgReceived: number;
+    volunteers: number;
+    distributionRounds: number;
+  };
+  servingsSeries: Array<{ label: string; at: string; servings: number; people: number }>;
+  kgSeries: Array<{ date: string; kg: number }>;
+  volunteersByRole: Array<{ role: string; count: number }>;
+}
+
+export function useCampaignReport(campaignId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'report', campaignId],
+    queryFn: async () =>
+      (await api.get(`/campaigns/${campaignId}/report`)).data.data as CampaignReport,
+    enabled: enabled && !!campaignId,
+    staleTime: 30_000,
+  });
+}
+
+export interface ProviderSupplyStats {
+  totals: { campaigns: number; orders: number; orderedKg: number; receivedKg: number };
+  campaigns: Array<{
+    campaignId: string;
+    title: string;
+    status: string;
+    scheduledDate: string;
+    orderedKg: number;
+    receivedKg: number;
+    orders: number;
+    lastDeliveredAt: string | null;
+  }>;
+  kgSeries: Array<{ date: string; kg: number }>;
+}
+
+export function useProviderSupplyStats(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'provider-supply-stats'],
+    queryFn: async () =>
+      (await api.get('/campaigns/provider/supply-stats')).data.data as ProviderSupplyStats,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
 /** Volunteer: lời mời nhận ca do tổ chức gửi, đang chờ phản hồi. */
 export interface ShiftInvite {
   notificationId: string;

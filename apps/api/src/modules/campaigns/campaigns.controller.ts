@@ -453,6 +453,22 @@ export class CampaignsController {
     return this.campaignsService.getCreateConstraints();
   }
 
+  @Get('provider/supply-stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: thống kê kg đã cung cấp theo từng chiến dịch + chuỗi ngày' })
+  providerSupplyStats(@CurrentUser() user: User) {
+    return this.campaignsService.getProviderSupplyStats(user.id);
+  }
+
+  @Get(':id/report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo tổng hợp chiến dịch (suất ăn, kg nguyên liệu, TNV)' })
+  campaignReport(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.getCampaignReport(id, user.id);
+  }
+
   @Get('my-pickup-orders')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)

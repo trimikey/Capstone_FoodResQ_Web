@@ -4,6 +4,7 @@ import { useProviderBulkRuns } from '@/hooks/useBulkRuns';
 import { useProviderRequests } from '@/hooks/useCampaigns';
 import BulkRunRequests from '@/components/deliveries/BulkRunRequests';
 import ProviderRequestsSection from '@/components/campaigns/ProviderRequestsSection';
+import ProviderSupplyStats from '@/components/campaigns/ProviderSupplyStats';
 
 /**
  * Hộp thư yêu cầu của nhà cung cấp — gom hai nguồn cần cửa hàng phản hồi:
@@ -57,6 +58,9 @@ export default function ProviderRequestsPage() {
           <p className="text-[11px] text-neutral-400">chờ phản hồi</p>
         </div>
       </div>
+
+      {/* Thống kê cung ứng — cửa hàng thấy đóng góp của mình trước khi xử lý yêu cầu mới. */}
+      <ProviderSupplyStats />
 
       {/* Khối này tự ẩn khi không có chuyến nào để duyệt/theo dõi */}
       <BulkRunRequests />

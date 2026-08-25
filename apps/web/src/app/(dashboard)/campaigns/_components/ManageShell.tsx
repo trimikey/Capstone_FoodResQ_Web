@@ -56,7 +56,7 @@ export function daysUntilUtc(input: string | Date | null | undefined, ref = new 
   return Math.round((a - b) / 86_400_000);
 }
 
-type NavKey = 'progress' | 'registrations' | 'kitchen' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'status';
+type NavKey = 'progress' | 'registrations' | 'kitchen' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'report' | 'status';
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'progress', label: 'Tổng quan', icon: 'monitoring' },
@@ -66,6 +66,7 @@ const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'logistics', label: 'Giao & nhận hàng', icon: 'local_shipping' },
   { key: 'menu', label: 'Thực đơn & Vật phẩm', icon: 'restaurant_menu' },
   { key: 'schedule', label: 'Lịch trình', icon: 'event' },
+  { key: 'report', label: 'Báo cáo', icon: 'bar_chart' },
   { key: 'status', label: 'Trạng thái', icon: 'flag' },
 ];
 
@@ -77,6 +78,7 @@ const NAV_PATH: Record<NavKey, string | null> = {
   logistics: 'logistics',
   menu: 'menu',
   schedule: 'schedule',
+  report: 'report',
   status: 'status',
 };
 const CAMPAIGN_HERO_FALLBACK = '/vn-pho.jpg';
