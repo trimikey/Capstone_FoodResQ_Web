@@ -9,20 +9,23 @@ interface CharityOverviewReport {
   servingsSeries: Array<{ date: string; servings: number; people: number }>;
   kgSeries: Array<{ date: string; kg: number }>;
   volunteersByRole: Array<{ role: string; count: number }>;
+  campaignsByOutcome: Array<{ key: string; count: number }>;
 }
 
-const ROLE_VN: Record<string, string> = {
-  chef: 'Đầu bếp',
-  waiter: 'Phục vụ',
-  shipper: 'Giao hàng & phục vụ',
+const OUTCOME_VN: Record<string, string> = {
+  completed: 'Thành công',
+  cancelled: 'Đã hủy',
+  expired: 'Quá hạn',
 };
 
 /**
  * Biểu đồ gộp toàn tổ chức trên dashboard Tổng quan — mọi chiến dịch cộng lại.
  *
- * Hàng KPI phía trên đã lo các con số đầu bảng, khối này lo phần HÌNH: phần-trên-tổng
- * (TNV theo vai trò) là biểu đồ tròn, diễn biến theo ngày (suất phát, kg nguyên liệu)
- * là biểu đồ núi. Mỗi biểu đồ kèm bảng số liệu — nghĩa vụ của palette contrast thấp.
+ * Hàng KPI phía trên đã lo các con số đầu bảng, khối này lo phần HÌNH: kết cục
+ * chiến dịch (thành công / hủy / quá hạn) là biểu đồ tròn, suất phát theo ngày là
+ * biểu đồ núi. Thống kê kg nguyên liệu theo ngày nằm bên dashboard NHÀ CUNG CẤP —
+ * không lặp lại ở đây. Mỗi biểu đồ kèm bảng số liệu — nghĩa vụ của palette
+ * contrast thấp.
  */
 export default function CharityOverviewCharts() {
   const { data: report, isLoading } = useQuery({
@@ -35,8 +38,12 @@ export default function CharityOverviewCharts() {
   if (isLoading) {
     return <div className="h-48 animate-pulse rounded-2xl bg-neutral-100" />;
   }
+  // Giữ đủ 3 mục theo THỨ TỰ CỐ ĐỊNH kể cả khi đếm 0 — lọc bớt sẽ làm màu trôi
+  // theo chỉ số (VD "Đã hủy" nhận màu xanh lá của "Thành công").
+  const outcomes = report?.campaignsByOutcome ?? [];
+  const outcomeTotal = outcomes.reduce((sum, o) => sum + o.count, 0);
   // Chưa có dữ liệu nào thì đừng chiếm chỗ — hàng KPI phía trên đã nói lên điều đó.
-  if (!report || (report.totals.servings === 0 && report.totals.kgReceived === 0 && report.totals.volunteers === 0)) {
+  if (!report || (report.totals.servings === 0 && outcomeTotal === 0)) {
     return null;
   }
 
@@ -56,18 +63,17 @@ export default function CharityOverviewCharts() {
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="cm-card p-4">
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
-            Tình nguyện viên theo vai trò
+            Kết cục chiến dịch
           </p>
+          {/* Chỉ đếm chiến dịch ĐÃ NGÃ NGŨ — chiến dịch đang chạy/chờ duyệt chưa có
+              kết cục nên không vào phần-trên-tổng này. */}
           <DonutChart
-            data={report.volunteersByRole.map((r) => ({
-              label: ROLE_VN[r.role] ?? r.role,
-              value: r.count,
-            }))}
-            unit="người"
+            data={outcomes.map((o) => ({ label: OUTCOME_VN[o.key] ?? o.key, value: o.count }))}
+            unit="chiến dịch"
           />
           <DataTable
-            headers={['Vai trò', 'Số người']}
-            rows={report.volunteersByRole.map((r) => [ROLE_VN[r.role] ?? r.role, r.count])}
+            headers={['Kết cục', 'Số chiến dịch']}
+            rows={outcomes.map((o) => [OUTCOME_VN[o.key] ?? o.key, o.count])}
           />
         </div>
         <div className="cm-card p-4">
@@ -81,19 +87,6 @@ export default function CharityOverviewCharts() {
           <DataTable
             headers={['Ngày', 'Suất phát', 'Người nhận']}
             rows={report.servingsSeries.map((r) => [r.date, r.servings, r.people])}
-          />
-        </div>
-        <div className="cm-card p-4 lg:col-span-2">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
-            Nguyên liệu về bếp theo ngày (kg)
-          </p>
-          <AreaChart
-            data={report.kgSeries.map((r) => ({ label: dm(r.date), value: r.kg }))}
-            unit="kg"
-          />
-          <DataTable
-            headers={['Ngày', 'Kg nhận']}
-            rows={report.kgSeries.map((r) => [r.date, r.kg])}
           />
         </div>
       </div>

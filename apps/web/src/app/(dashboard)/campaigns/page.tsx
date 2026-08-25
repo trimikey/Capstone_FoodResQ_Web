@@ -1300,15 +1300,32 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
     Boolean(t.campaign.scheduledDate?.slice(0, 10) === todayKey);
 
   // 1 TNV nhận nhiều ca cùng chiến dịch → BE trả nhiều task giống hệt nhau ngoài
-  // ca trực. Gộp theo chiến dịch + vai trò + trạng thái thành 1 thẻ; thẻ tự liệt
-  // kê các ca bên trong (mỗi ca vẫn có link nhiệm vụ riêng).
-  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}:${t.status}`;
+  // ca trực. Gộp theo chiến dịch + vai trò thành 1 thẻ (KHÔNG theo trạng thái —
+  // ca sáng đã điểm danh còn ca chiều mới nhận việc vẫn là một chiến dịch, tách ra
+  // sẽ ra 2 thẻ trùng nhau); thẻ tự liệt kê các ca bên trong, mỗi ca kèm trạng
+  // thái và link nhiệm vụ riêng.
+  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}`;
   const taskGroups = new Map<string, MyTask[]>();
   for (const t of myTasks) {
     const k = taskGroupKey(t);
     taskGroups.set(k, [...(taskGroups.get(k) ?? []), t]);
   }
-  const dedupedTasks = myTasks.filter((t) => taskGroups.get(taskGroupKey(t))![0].id === t.id);
+  // Trong nhóm: ca hiển thị theo thứ tự thời gian; thẻ đại diện lấy ca "đang
+  // hoạt động" nhất để chip trạng thái đầu thẻ phản ánh việc cần làm ngay.
+  const STATUS_RANK = ['in_progress', 'checked_in', 'assigned', 'pending', 'rejected', 'completed', 'absent', 'cancelled'];
+  const rank = (t: MyTask) => {
+    const i = STATUS_RANK.indexOf(t.status);
+    return i === -1 ? STATUS_RANK.length : i;
+  };
+  for (const list of taskGroups.values()) {
+    list.sort((a, b) =>
+      `${a.workDate ?? ''}:${a.shift?.startTime ?? ''}`.localeCompare(
+        `${b.workDate ?? ''}:${b.shift?.startTime ?? ''}`,
+      ),
+    );
+  }
+  const repOf = (list: MyTask[]) => [...list].sort((a, b) => rank(a) - rank(b))[0];
+  const dedupedTasks = myTasks.filter((t) => repOf(taskGroups.get(taskGroupKey(t))!).id === t.id);
   const groupOf = (t: MyTask) => taskGroups.get(taskGroupKey(t));
 
   const todayTasks = dedupedTasks.filter(isToday);

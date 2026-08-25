@@ -169,8 +169,20 @@ export default function MyTaskDetailPage() {
   );
   const overallPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
 
-  const myTeamMembers = cookingTeam.filter((m) => m.isMe);
-  const otherChefs = cookingTeam.filter((m) => !m.isMe);
+  // 1 đầu bếp trực nhiều ca → BE trả một dòng mỗi ASSIGNMENT nên cùng một người
+  // xuất hiện nhiều lần (trùng key volunteerId khi render). Gộp về một thẻ mỗi
+  // người, nối nhãn các ca họ trực.
+  const team = cookingTeam.reduce<
+    Array<(typeof cookingTeam)[number] & { shiftLabels: string[] }>
+  >((acc, m) => {
+    const hit = acc.find((x) => x.volunteerId === m.volunteerId);
+    if (hit) {
+      if (m.shift && !hit.shiftLabels.includes(m.shift.label)) hit.shiftLabels.push(m.shift.label);
+      return acc;
+    }
+    acc.push({ ...m, shiftLabels: m.shift ? [m.shift.label] : [] });
+    return acc;
+  }, []);
 
   return (
     <div className="cm-scope p-4 md:p-6 max-w-5xl mx-auto pb-24">
@@ -270,16 +282,16 @@ export default function MyTaskDetailPage() {
       </header>
 
       {/* Đội bếp */}
-      {isChef && cookingTeam.length > 0 && (
+      {isChef && team.length > 0 && (
         <section className="mt-5">
           <div className="cm-section-head">
             <h2 className="cm-section-title">
               <span className="material-symbols-outlined text-emerald-600">groups</span>
-              Đội bếp ({cookingTeam.length} người)
+              Đội bếp ({team.length} người)
             </h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {cookingTeam.map((m) => (
+            {team.map((m) => (
               <div key={m.volunteerId} className="cm-card !p-3 flex items-center gap-2">
                 <div className="relative shrink-0">
                   {m.avatarUrl ? (
@@ -299,8 +311,8 @@ export default function MyTaskDetailPage() {
                     {m.fullName}
                     {m.isMe && ' (bạn)'}
                   </p>
-                  {m.shift && (
-                    <p className="text-[10px] text-neutral-500">{m.shift.label}</p>
+                  {m.shiftLabels.length > 0 && (
+                    <p className="text-[10px] text-neutral-500">{m.shiftLabels.join(' · ')}</p>
                   )}
                 </div>
               </div>

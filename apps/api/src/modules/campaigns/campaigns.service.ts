@@ -1868,14 +1868,24 @@ export class CampaignsService {
 
     const campaigns = await this.prisma.kitchenCampaign.findMany({
       where: { charityReceiverId: receiver.id },
-      select: { id: true },
+      select: { id: true, status: true, operationEndAt: true },
     });
     const ids = campaigns.map((c) => c.id);
     if (ids.length === 0) {
       return {
         totals: { servings: 0, people: 0, kgReceived: 0, volunteers: 0, campaigns: 0 },
-        servingsSeries: [], kgSeries: [], volunteersByRole: [],
+        servingsSeries: [], kgSeries: [], volunteersByRole: [], campaignsByOutcome: [],
       };
+    }
+
+    // Kết cục chiến dịch cho biểu đồ tròn: thành công / hủy / quá hạn (đã qua mốc
+    // kết thúc mà chưa từng chạy xong — kể cả còn treo chờ duyệt).
+    const nowTs = Date.now();
+    const outcome = { completed: 0, cancelled: 0, expired: 0 };
+    for (const c of campaigns) {
+      if (c.status === 'completed') outcome.completed += 1;
+      else if (c.status === 'cancelled') outcome.cancelled += 1;
+      else if (c.operationEndAt.getTime() < nowTs) outcome.expired += 1;
     }
 
     const [distributions, pickups, donations, assignments] = await Promise.all([
@@ -1949,6 +1959,11 @@ export class CampaignsService {
       servingsSeries,
       kgSeries,
       volunteersByRole: [...byRole.entries()].map(([role, set]) => ({ role, count: set.size })),
+      campaignsByOutcome: [
+        { key: 'completed', count: outcome.completed },
+        { key: 'cancelled', count: outcome.cancelled },
+        { key: 'expired', count: outcome.expired },
+      ],
     };
   }
 
