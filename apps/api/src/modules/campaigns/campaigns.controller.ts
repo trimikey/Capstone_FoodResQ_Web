@@ -461,6 +461,14 @@ export class CampaignsController {
     return this.campaignsService.getProviderSupplyStats(user.id);
   }
 
+  @Get('charity/overview-report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo gộp toàn tổ chức cho dashboard Tổng quan' })
+  charityOverviewReport(@CurrentUser() user: User) {
+    return this.campaignsService.getCharityOverviewReport(user.id);
+  }
+
   @Get(':id/report')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)

@@ -27,6 +27,7 @@ import DonationDetailModal from './_components/DonationDetailModal';
 import MyCampaignCard from './_components/MyCampaignCard';
 import CompletedCampaignsSection from './_components/CompletedCampaignsSection';
 import CreateCampaignModal from './_components/CreateCampaignModal';
+import CharityOverviewCharts from '@/components/campaigns/CharityOverviewCharts';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
@@ -488,6 +489,9 @@ function OverviewDashboard({
           onClick={() => onJumpTo('mine')}
         />
       </div>
+
+      {/* Biểu đồ gộp toàn tổ chức — chỉ charity; TNV/NCC có dashboard riêng. */}
+      {isCharity && isAccountActive && <CharityOverviewCharts />}
 
       {/* Pending approval alert (charity, only when there's something pending) */}
       {isCharity && stats.pendingApprovals > 0 && (

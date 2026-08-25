@@ -1855,6 +1855,104 @@ export class CampaignsService {
   }
 
   /**
+   * Báo cáo GỘP toàn tổ chức — mọi chiến dịch của charity cộng lại, cho dashboard
+   * Tổng quan. Suất ăn gộp theo NGÀY (gộp theo từng đợt sẽ nổ nhãn khi có nhiều
+   * chiến dịch); phần còn lại cùng cách tính với báo cáo từng chiến dịch.
+   */
+  async getCharityOverviewReport(userId: string) {
+    const receiver = await this.prisma.receiverProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!receiver) throw new NotFoundException('Không tìm thấy hồ sơ tổ chức.');
+
+    const campaigns = await this.prisma.kitchenCampaign.findMany({
+      where: { charityReceiverId: receiver.id },
+      select: { id: true },
+    });
+    const ids = campaigns.map((c) => c.id);
+    if (ids.length === 0) {
+      return {
+        totals: { servings: 0, people: 0, kgReceived: 0, volunteers: 0, campaigns: 0 },
+        servingsSeries: [], kgSeries: [], volunteersByRole: [],
+      };
+    }
+
+    const [distributions, pickups, donations, assignments] = await Promise.all([
+      this.prisma.mealDistribution.findMany({
+        where: { campaignId: { in: ids }, completedAt: { not: null } },
+        select: { servingsServed: true, actualServings: true, actualPeopleServed: true, peopleServed: true, completedAt: true },
+      }),
+      this.prisma.campaignIngredientPickup.findMany({
+        where: { campaignId: { in: ids } },
+        select: { receivedKg: true, confirmedAt: true },
+      }),
+      this.prisma.campaignDonation.findMany({
+        where: { campaignId: { in: ids }, status: 'received', providerRequestId: null },
+        select: { quantity: true, receivedAt: true },
+      }),
+      this.prisma.campaignVolunteerAssignment.findMany({
+        where: {
+          campaignId: { in: ids },
+          status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+          confirmationStatus: 'confirmed',
+        },
+        select: { role: true, volunteerId: true },
+      }),
+    ]);
+
+    const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+
+    const servingsByDay = new Map<string, { servings: number; people: number }>();
+    for (const d of distributions) {
+      const key = dayKey(d.completedAt!);
+      const row = servingsByDay.get(key) ?? { servings: 0, people: 0 };
+      row.servings += d.actualServings ?? d.servingsServed;
+      row.people += d.actualPeopleServed ?? d.peopleServed;
+      servingsByDay.set(key, row);
+    }
+    const servingsSeries = [...servingsByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, r]) => ({ date, ...r }));
+
+    const kgByDay = new Map<string, number>();
+    for (const pk of pickups) {
+      const key = dayKey(pk.confirmedAt);
+      kgByDay.set(key, (kgByDay.get(key) ?? 0) + Number(pk.receivedKg));
+    }
+    for (const don of donations) {
+      const kg = this.parseDonationQuantity(don.quantity, 'kg');
+      if (kg != null && don.receivedAt) {
+        const key = dayKey(don.receivedAt);
+        kgByDay.set(key, (kgByDay.get(key) ?? 0) + kg);
+      }
+    }
+    const kgSeries = [...kgByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, kg]) => ({ date, kg: Math.round(kg * 10) / 10 }));
+
+    const byRole = new Map<string, Set<string>>();
+    for (const a of assignments) {
+      const set = byRole.get(a.role) ?? new Set<string>();
+      set.add(a.volunteerId);
+      byRole.set(a.role, set);
+    }
+
+    return {
+      totals: {
+        servings: servingsSeries.reduce((sum, r) => sum + r.servings, 0),
+        people: servingsSeries.reduce((sum, r) => sum + r.people, 0),
+        kgReceived: Math.round(kgSeries.reduce((sum, r) => sum + r.kg, 0) * 10) / 10,
+        volunteers: new Set(assignments.map((a) => a.volunteerId)).size,
+        campaigns: ids.length,
+      },
+      servingsSeries,
+      kgSeries,
+      volunteersByRole: [...byRole.entries()].map(([role, set]) => ({ role, count: set.size })),
+    };
+  }
+
+  /**
    * Thống kê phía NHÀ CUNG CẤP: từng chiến dịch họ đã cung cấp — kg đặt, kg ký nhận
    * thực tế, số đơn — kèm chuỗi kg theo ngày để vẽ biểu đồ.
    */
