@@ -23,6 +23,8 @@ describe('CampaignsService', () => {
     campaignTransport: { findFirst: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
     // Xác nhận nhận chuyến chốt luôn khoản ghi sổ kho của cùng lô hàng.
     campaignDonation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    // Biên nhận ký tên: xác nhận nhận chuyến giờ tra sổ ký nhận để báo NCC số kg + người lấy.
+    campaignIngredientPickup: { findUnique: jest.fn().mockResolvedValue(null) },
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
     $transaction: jest.fn(),

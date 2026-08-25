@@ -809,7 +809,9 @@ model CampaignProviderRequest {
   /// Khoản ghi sổ kho sinh ra khi NCC đồng ý đơn này — cùng một lô hàng.
   donations        CampaignDonation[]        @relation("DonationFromProviderRequest")
 
-  @@unique([campaignId, providerId])
+  // Unique (campaignId, providerId) đã gỡ: một chiến dịch được gửi NHIỀU đơn nguyên
+  // liệu tới cùng một NCC (mỗi món một đơn); service chỉ sửa-tại-chỗ đơn còn pending.
+  @@index([campaignId, providerId])
   @@index([campaignId])
   @@index([providerId])
   @@index([status])

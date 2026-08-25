@@ -781,6 +781,56 @@ export default function DeliveriesPage() {
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </Link>
             </div>
+            {/* Lộ trình tổng khi phải ghé NHIỀU nhà cung cấp: chiến dịch giờ đặt được
+                nhiều đơn / nhiều NCC, shipper cần thấy toàn bộ các điểm trên một bảng
+                để tự xếp thứ tự đường đi, thay vì lần từng thẻ. Sắp theo giờ hẹn lấy. */}
+            {pendingPickups.length > 1 && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <p className="flex items-center gap-1.5 text-sm font-extrabold text-emerald-900">
+                  <span className="material-symbols-outlined text-[18px]">route</span>
+                  Lộ trình lấy hàng — {pendingPickups.length} điểm
+                </p>
+                <ol className="mt-2 space-y-2">
+                  {[...pendingPickups]
+                    .sort((a, b) => (a.pickupStartTime ?? '99').localeCompare(b.pickupStartTime ?? '99'))
+                    .map((o, idx) => (
+                      <li key={o.id} className="flex items-start gap-2.5 text-xs">
+                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                          {idx + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="font-bold text-neutral-900">
+                            {o.providerName}
+                            {o.ingredientName ? ` — ${o.ingredientName}` : ''}
+                            {o.quantityKg != null ? ` (${o.quantityKg} kg)` : ''}
+                          </span>
+                          <span className="block text-neutral-600">
+                            {o.providerAddress || 'Chưa có địa chỉ'}
+                            {o.distanceKm != null ? ` · cách bếp ~${o.distanceKm} km` : ''}
+                          </span>
+                          <span className="block text-neutral-500">
+                            {o.pickupStartTime && o.pickupEndTime
+                              ? `Khung lấy ${o.pickupStartTime.slice(0, 5)}–${o.pickupEndTime.slice(0, 5)}`
+                              : 'Chưa hẹn khung giờ'}
+                            {' · '}chiến dịch “{o.campaignTitle}”
+                          </span>
+                        </span>
+                        {o.lng != null && o.lat != null && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 inline-flex items-center gap-0.5 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">directions</span>
+                            Chỉ đường
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                </ol>
+              </div>
+            )}
             <div className="space-y-3">
               {pendingPickups.map((o) => (
                 <PickupOrderCard key={o.id} order={o} onConfirm={setPickingUp} />

@@ -2460,7 +2460,7 @@ export class CampaignsService {
         status: true,
         needsTransport: true,
         demandDetails: true,
-        provider: { select: { businessName: true } },
+        provider: { select: { businessName: true, userId: true } },
         delivery: { select: { id: true, status: true, shipperId: true } },
         campaign: {
           select: { title: true, charityReceiver: { select: { userId: true } } },
@@ -2564,6 +2564,30 @@ export class CampaignsService {
     });
 
     const shortfall = requestedKg == null ? 0 : Math.max(0, requestedKg - dto.receivedKg);
+
+    // Ký nhận cho NHÀ CUNG CẤP: hàng rời kho của họ là phải biết ai lấy, bao nhiêu,
+    // lúc nào — kèm ảnh làm bằng chứng. Trước đây chỉ tổ chức được báo, NCC giao hàng
+    // xong không nhận được dòng nào.
+    void this.notifications.notify(request.provider.userId, {
+      type: 'provider_request',
+      title: `Đã giao ${dto.receivedKg} kg cho chiến dịch "${request.campaign.title}"`,
+      body:
+        `Người lấy: ${volunteer.user.fullName} — ký nhận lúc ` +
+        `${now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}. ` +
+        `Số lượng: ${dto.receivedKg} kg` +
+        (requestedKg != null ? ` trên đơn ${requestedKg} kg` : '') +
+        (shortfall > 0 ? ` (thiếu ${Math.round(shortfall * 10) / 10} kg)` : '') +
+        '. Có ảnh xác nhận kèm theo trong đơn.',
+      data: {
+        providerRequestId,
+        campaignId: request.campaignId,
+        receivedKg: dto.receivedKg,
+        pickedBy: volunteer.user.fullName,
+        pickedAt: now.toISOString(),
+        photoUrl,
+      },
+    });
+
     void this.notifications.notify(request.campaign.charityReceiver.userId, {
       type: 'campaign',
       title: shortfall > 0 ? 'Nguyên liệu về THIẾU so với đơn' : 'Đã lấy nguyên liệu',
@@ -5060,12 +5084,13 @@ export class CampaignsService {
     const orgName = receiver.user.fullName;
     const providerName = provider.providerProfile.businessName ?? provider.fullName;
 
-    // Tìm request đã tồn tại cho (campaignId, providerId) để upsert thủ công.
-    // Tránh dùng prisma.upsert() vì Postgres cần full unique constraint cho ON CONFLICT,
-    // còn DB hiện chỉ có partial unique index (loại trừ zero-UUID) → upsert báo 42P10.
+    // CHỈ ghi đè khi đơn cũ còn PENDING (gửi lại = sửa lời đề nghị đang chờ).
+    // Trước đây upsert theo (campaignId, providerId) bất kể trạng thái: đặt gạo xong
+    // quay lại đặt thêm thịt từ CÙNG một NCC là đơn gạo bị ghi đè mất — một chiến
+    // dịch vì thế chỉ đặt được đúng một món từ mỗi nhà cung cấp.
     const campaignId = dto.campaignId ?? '00000000-0000-0000-0000-000000000000';
     const existing = await this.prisma.campaignProviderRequest.findFirst({
-      where: { campaignId, providerId: provider.providerProfile.id },
+      where: { campaignId, providerId: provider.providerProfile.id, status: 'pending' },
       select: { id: true },
     });
 
@@ -5097,13 +5122,17 @@ export class CampaignsService {
           },
         });
 
-    // Gửi notification cho provider
+    // Gửi notification cho provider — nêu rõ món + số kg để NCC không phải mở app
+    // mới biết đơn hỏi gì (một chiến dịch giờ có thể gửi nhiều đơn tới cùng NCC).
+    const askedItem = dto.demandDetails?.ingredientName
+      ? `${dto.demandDetails.ingredientName}${dto.demandDetails.quantityKg ? ` (${dto.demandDetails.quantityKg} kg)` : ''}`
+      : null;
     await this.notifications.notify(provider.id, {
       type: 'provider_request',
-      title: 'Yêu cầu hợp tác mới',
+      title: askedItem ? `Yêu cầu nguyên liệu: ${askedItem}` : 'Yêu cầu hợp tác mới',
       body: `Tổ chức "${orgName}" muốn hợp tác cung cấp thực phẩm cho chiến dịch.${
-        dto.message ? ` Ghi chú: ${dto.message}` : ''
-      }`,
+        askedItem ? ` Món cần: ${askedItem}.` : ''
+      }${dto.message ? ` Ghi chú: ${dto.message}` : ''}`,
       data: { requestId: request.id, charityUserId, providerId: provider.id },
     });
 
@@ -5463,11 +5492,32 @@ export class CampaignsService {
       },
     });
     if (result?.providerRequest) {
+      // Kèm số lượng tổ chức báo + giờ chốt + người lấy — NCC cần đối chiếu sổ sách,
+      // một câu "đã xác nhận nhận hàng" trống trơn không dùng làm gì được.
+      // Bảng ký nhận không khai quan hệ volunteer trong Prisma — tra tên qua hồ sơ.
+      const pickupRow = await this.prisma.campaignIngredientPickup.findUnique({
+        where: { providerRequestId: transport.providerRequestId },
+        select: { receivedKg: true, confirmedAt: true, volunteerId: true },
+      });
+      const pickerProfile = pickupRow
+        ? await this.prisma.volunteerProfile.findUnique({
+            where: { id: pickupRow.volunteerId },
+            select: { user: { select: { fullName: true } } },
+          })
+        : null;
+      const confirmedAtVn = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
       await this.notifications.notify(result.providerRequest.provider.userId, {
         type: 'campaign',
         title: 'Tổ chức đã xác nhận nhận hàng',
-        body: `Tổ chức đã xác nhận nhận thực phẩm cho chiến dịch "${result.providerRequest.campaign.title}".`,
-        data: { campaignId, transportId, deliveryId: transport.deliveryId, status: 'received' },
+        body:
+          `Tổ chức xác nhận đã nhận thực phẩm cho chiến dịch "${result.providerRequest.campaign.title}" lúc ${confirmedAtVn}.` +
+          (pickupRow ? ` Số lượng ký nhận: ${Number(pickupRow.receivedKg)} kg — người lấy: ${pickerProfile?.user.fullName ?? 'TNV'}.` : '') +
+          (dto.note?.trim() ? ` Ghi chú của bếp: ${dto.note.trim()}` : ''),
+        data: {
+          campaignId, transportId, deliveryId: transport.deliveryId, status: 'received',
+          receivedKg: pickupRow ? Number(pickupRow.receivedKg) : null,
+          pickedBy: pickerProfile?.user.fullName ?? null,
+        },
       });
     }
     return result;
