@@ -429,14 +429,14 @@ function ListingsPageContent() {
               onClick={() => setMobileView('list')}
               className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'list' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
             >
-              Danh sÃ¡ch
+              Danh sách
             </button>
             <button
               type="button"
               onClick={() => setMobileView('map')}
               className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'map' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
             >
-              Báº£n Ä‘á»“
+              Bản đồ
             </button>
           </div>
 
@@ -527,7 +527,7 @@ function ListingsPageContent() {
             onClick={() => setMobileView('list')}
             className="w-full min-h-11 rounded-xl bg-[#236c2a] text-white text-sm font-bold"
           >
-            Xem {listings.length} káº¿t quáº£
+            Xem {listings.length} kết quả
           </button>
         </div>
       </div>

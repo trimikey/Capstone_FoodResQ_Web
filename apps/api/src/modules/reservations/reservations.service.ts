@@ -1,11 +1,15 @@
 import {
   Injectable,
+  Inject,
   Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
@@ -40,6 +44,9 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
+    // Optional + cuối danh sách: spec khởi tạo service bằng positional args,
+    // thêm bắt buộc ở giữa sẽ vỡ toàn bộ mock. Chỉ dùng để đọc trạng thái kết nối.
+    @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -196,7 +203,17 @@ export class ReservationsService {
     const lockKey = `lock:reservation:${dto.listingId}`;
     const lock = await this.redlock
       .acquire([lockKey], LOCK_TTL_MS)
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Khi Redis rớt kết nối thì MỌI đơn đều văng lỗi này oan — log nguyên nhân
+        // thật để soi được trên server, và trả 503 thay vì đổ cho "có người đang đặt".
+        this.logger.error(
+          `Không lấy được khóa ${lockKey}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        if (this.redis && this.redis.status !== 'ready') {
+          throw new ServiceUnavailableException(
+            'Hệ thống đặt món đang gián đoạn, vui lòng thử lại sau ít phút.',
+          );
+        }
         throw new ConflictException('Có người đang đặt món này. Vui lòng thử lại sau vài giây.');
       });
 
