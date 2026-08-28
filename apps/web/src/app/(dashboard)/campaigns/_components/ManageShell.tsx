@@ -477,7 +477,6 @@ function RecruitmentReadinessPanel({
   // Đồng hồ chốt một lần lúc mở panel — chỉ để so mốc cỡ NGÀY (giờ vận hành còn xa
   // không), nên không cần tick; đọc Date.now() giữa render thì lint cấm vì render
   // phải thuần khiết.
-  const [mountedAt] = useState(() => Date.now());
   const [newDeadline, setNewDeadline] = useState('');
   const [continueRecruiting, setContinueRecruiting] = useState(false);
   // Bảng ma trận ngày·ca·vai trò có thể rất dài — mặc định thu gọn thành 1 dòng
@@ -636,8 +635,6 @@ function RecruitmentReadinessPanel({
         // chiến dịch trống người vẫn "đủ điều kiện", và bắt đầu-sớm thì nút bật trước
         // giờ vận hành nhiều ngày. Không ghi rõ, tổ chức nhìn vào tưởng hệ thống loạn.
         const zeroThreshold = readiness.minimumFillPercent === 0;
-        const earlyOverride =
-          readiness.canStartNow && mountedAt < new Date(readiness.operationStartAt).getTime();
         return (
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-sm font-extrabold text-emerald-900">
@@ -652,25 +649,6 @@ function RecruitmentReadinessPanel({
               ? 'Bạn có thể bắt đầu chiến dịch ngay bây giờ.'
               : `Tất cả ca/vai trò đã đạt tối thiểu ${readiness.minimumFillPercent}% theo cấu hình Admin. Nút bắt đầu sẽ bật khi tới giờ vận hành (hoặc khi admin bật "Cho phép bắt đầu sớm").`}
           </p>
-          {earlyOverride && (
-            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-100/70 px-2.5 py-1.5 text-[11px] font-semibold text-amber-900">
-              <span className="material-symbols-outlined text-[14px]">science</span>
-              <span>
-                Nút đang bật SỚM vì admin mở &quot;Cho phép bắt đầu/điểm danh sớm&quot; (chế độ
-                test). Giờ vận hành thực tế:{' '}
-                {new Date(readiness.operationStartAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.
-              </span>
-            </p>
-          )}
-          {zeroThreshold && !readiness.ready && (
-            <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-amber-100/70 px-2.5 py-1.5 text-[11px] font-semibold text-amber-900">
-              <span className="material-symbols-outlined text-[14px]">science</span>
-              <span>
-                Mới {readiness.confirmedShiftSlots}/{readiness.requiredShiftSlots} lượt ca được xác
-                nhận — chiến dịch được coi là đủ người chỉ vì admin đặt ngưỡng 0% để test.
-              </span>
-            </p>
-          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => void startNow()} disabled={!readiness.canStartNow || startCampaign.isPending} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50">
               {startCampaign.isPending ? 'Đang bắt đầu…' : readiness.canStartNow ? 'Bắt đầu chiến dịch' : 'Chưa tới giờ vận hành'}

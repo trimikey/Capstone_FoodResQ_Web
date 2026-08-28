@@ -1,15 +1,19 @@
 import {
   Injectable,
+  Inject,
   Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
+import { safeRelease, tryAcquireLock } from '@/common/redlock/try-acquire';
 import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
@@ -40,6 +44,9 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
+    // Optional + cuối danh sách: spec khởi tạo service bằng positional args,
+    // thêm bắt buộc ở giữa sẽ vỡ toàn bộ mock. Chỉ dùng để đọc trạng thái kết nối.
+    @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -194,11 +201,10 @@ export class ReservationsService {
 
     // 3. Acquire distributed lock on this listing
     const lockKey = `lock:reservation:${dto.listingId}`;
-    const lock = await this.redlock
-      .acquire([lockKey], LOCK_TTL_MS)
-      .catch(() => {
-        throw new ConflictException('Có người đang đặt món này. Vui lòng thử lại sau vài giây.');
-      });
+    // Khóa Redis chỉ là lớp GIẢM va chạm; chốt chống bán lố thật nằm ở UPDATE có
+    // điều kiện trong transaction bên dưới. Vì vậy Redis rớt/treo thì đi tiếp
+    // KHÔNG khóa (kèm log) — trước đây mọi đơn trên deploy treo ở đây rồi 503.
+    const lock = await tryAcquireLock(this.redlock, this.redis, this.logger, lockKey, LOCK_TTL_MS);
 
     try {
       // 4. Re-read listing inside the lock (prevent race condition)
@@ -320,8 +326,10 @@ export class ReservationsService {
       const qrExpiresAt = new Date(Date.now() + qrValidMinutes * 60 * 1000);
 
       const reservation = await this.prisma.$transaction(async (tx) => {
-        // Decrement quantity — use SELECT FOR UPDATE equivalent via raw SQL
-        await tx.$executeRaw(Prisma.sql`
+        // Trừ kho CÓ ĐIỀU KIỆN — Postgres tuần tự hoá trên dòng này nên kể cả hai
+        // đơn cùng lọt qua pre-check (lúc chạy không khóa), đơn sau bắt buộc fail
+        // ở đây thay vì đẩy quantity_remaining xuống âm.
+        const affected = await tx.$executeRaw(Prisma.sql`
           UPDATE food_listings
           SET
             quantity_remaining = quantity_remaining - ${dto.quantity},
@@ -331,7 +339,13 @@ export class ReservationsService {
             END,
             updated_at = NOW()
           WHERE id = ${dto.listingId}::uuid
+            AND quantity_remaining >= ${dto.quantity}
         `);
+        if (affected === 0) {
+          throw new ConflictException(
+            'Món này vừa được người khác đặt trước — số lượng còn lại không đủ. Vui lòng tải lại trang.',
+          );
+        }
 
         // Create reservation with crypto QR token
         const [newReservation] = await tx.$queryRaw<{ id: string; qr_token: string }[]>(
@@ -393,7 +407,7 @@ export class ReservationsService {
         message: 'Đặt chỗ thành công! Trình mã QR cho nhà cung cấp để nhận hàng.',
       };
     } finally {
-      await lock.release();
+      await safeRelease(lock);
     }
   }
 

@@ -76,11 +76,12 @@ export function useCreateReservation() {
   });
 }
 
-export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20) {
+export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20, enabled = true) {
   return useQuery({
     queryKey: ['reservations', 'my', page, group, limit],
     queryFn: () => fetchMyReservations(page, group, limit),
     staleTime: 30_000,
+    enabled,
     // Giữ dữ liệu trang cũ khi đang tải trang mới → không nhấp nháy khi phân trang
     placeholderData: (prev) => prev,
   });

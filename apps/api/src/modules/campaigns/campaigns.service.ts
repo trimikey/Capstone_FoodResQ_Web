@@ -1627,7 +1627,7 @@ export class CampaignsService {
     }
 
     // 3) Không nhận hai ca chồng giờ, kể cả ở chiến dịch khác.
-    await this.assertShiftNotOverlapping(campaignId, volunteer.id, shift.id, workDate);
+    await this.assertShiftNotOverlapping(this.prisma, campaignId, volunteer.id, shift.id, workDate);
     await this.assertNoActiveDeliveryInShift(volunteer.id, shift.period, workDateKey);
 
     const alreadyIn = await this.prisma.campaignVolunteerAssignment.findFirst({
@@ -3403,7 +3403,7 @@ export class CampaignsService {
     }
 
     if (shiftId) {
-      await this.assertShiftNotOverlapping(campaignId, volunteer.id, shiftId, workDate);
+      await this.assertShiftNotOverlapping(this.prisma, campaignId, volunteer.id, shiftId, workDate);
       const shiftRow = await this.prisma.campaignShift.findUnique({
         where: { id: shiftId },
         select: { period: true },
@@ -3534,6 +3534,9 @@ export class CampaignsService {
    * ở đây vì phần tạo ca đã validate riêng.
    */
   private async assertShiftNotOverlapping(
+    // Gọi bên trong $transaction phải truyền tx vào đây — pool pgbouncer chỉ có
+    // 1 connection, query bằng client gốc trong lúc tx giữ connection là deadlock (P2024).
+    client: Prisma.TransactionClient,
     _campaignId: string,
     volunteerId: string,
     shiftId: string,
@@ -3545,17 +3548,9 @@ export class CampaignsService {
       statuses?: AssignmentStatus[];
       /** true = thông điệp cho tổ chức đang duyệt (thay vì cho TNV đăng ký). */
       orgView?: boolean;
-      /**
-       * Client dùng để truy vấn. Gọi TRONG `$transaction` thì PHẢI truyền `tx`:
-       * query bằng client ngoài sẽ xin thêm một connection từ pool trong khi
-       * transaction vẫn đang giữ connection của nó — đủ vài lượt duyệt đồng thời
-       * là cạn pool, transaction quá hạn 5s và ném P2028.
-       */
-      client?: Prisma.TransactionClient;
     },
   ): Promise<void> {
-    const db = opts?.client ?? this.prisma;
-    const target = await db.campaignShift.findUnique({
+    const target = await client.campaignShift.findUnique({
       where: { id: shiftId },
       select: { startTime: true, endTime: true, endDayOffset: true },
     });
@@ -3569,7 +3564,7 @@ export class CampaignsService {
     ));
     const rangeStart = new Date(targetDay.getTime() - 86_400_000);
     const rangeEnd = new Date(targetDay.getTime() + 86_400_000);
-    const held = await db.campaignVolunteerAssignment.findMany({
+    const held = await client.campaignVolunteerAssignment.findMany({
       where: {
         volunteerId,
         shiftId: { not: null },
@@ -3899,7 +3894,6 @@ export class CampaignsService {
   private async getStaffingReadinessWith(
     client: Prisma.TransactionClient,
     campaignId: string,
-    config?: { minimumFillPercent: number; allowEarlyStartAndCheckIn: number },
   ) {
     const campaign = await client.kitchenCampaign.findUnique({
       where: { id: campaignId },
@@ -3933,8 +3927,10 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    const { minimumFillPercent, allowEarlyStartAndCheckIn } =
-      config ?? (await this.readStaffingConfig());
+    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+    ]);
     const days = this.campaignDays(campaign.scheduledDate, campaign.endDate ?? campaign.scheduledDate);
     const matrix = days.flatMap((day) => campaign.shifts.map((shift) => {
       const dayKey = this.toDateKey(day);
@@ -4089,6 +4085,11 @@ export class CampaignsService {
       await this.refreshRecruitmentStatus(campaign.id, now);
       refreshed += 1;
       if (now < campaign.operationStartAt) continue;
+      // Đọc config TRƯỚC khi mở transaction — xem ghi chú ở getStaffingReadinessWith.
+      const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+        this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+        this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+      ]);
       const didStart = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw(Prisma.sql`
           SELECT id FROM kitchen_campaigns WHERE id = ${campaign.id}::uuid FOR UPDATE
@@ -4098,7 +4099,7 @@ export class CampaignsService {
           select: { status: true, operationStartAt: true },
         });
         if (!current || current.status !== 'approved' || now < current.operationStartAt) return false;
-        const readiness = await this.getStaffingReadinessWith(tx, campaign.id, staffingConfig);
+        const readiness = await this.getStaffingReadinessWith(tx, campaign.id);
         if (!readiness.eligibleToStart) {
           await tx.kitchenCampaign.update({
             where: { id: campaign.id },
@@ -4120,6 +4121,11 @@ export class CampaignsService {
           data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
         });
         return true;
+      }, {
+        // Cron can briefly wait on the row lock while an admin/user action is updating
+        // the same campaign. Prisma's 5s default is too low for that lock-bearing path.
+        maxWait: 10_000,
+        timeout: 30_000,
       });
       if (didStart) {
         started += 1;
@@ -5960,12 +5966,10 @@ export class CampaignsService {
       // khác lúc duyệt (dto.shiftId). Chỉ so với ca ĐÃ NHẬN — các đăng ký
       // pending khác chưa giữ chỗ thật; loại trừ chính bản ghi đang duyệt.
       if (selectedShiftId && a.workDate) {
-        await this.assertShiftNotOverlapping(campaignId, a.volunteerId, selectedShiftId, a.workDate, {
+        await this.assertShiftNotOverlapping(tx, campaignId, a.volunteerId, selectedShiftId, a.workDate, {
           excludeAssignmentId: assignmentId,
           statuses: ['assigned', 'checked_in', 'in_progress', 'completed'],
           orgView: true,
-          // Đang trong $transaction → dùng chính tx, không mượn connection khác.
-          client: tx,
         });
       }
 

@@ -8,6 +8,7 @@ import { UserRole } from '@foodresq/types';
 import { useMe } from '@/hooks/useProfile';
 import { useMyCampaigns } from '@/hooks/useCampaigns';
 import { useVolunteerMe } from '@/hooks/useDeliveries';
+import { useMyReservations } from '@/hooks/useReservation';
 import { useAuthStore } from '@/stores/auth.store';
 import CharitySidebar, {
   type Section,
@@ -67,6 +68,10 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
   // Pre-compute rail entries theo role để hiển thị badge số campaign của charity
   const { data: myCampaigns } = useMyCampaigns(isCharity);
   const { data: vol } = useVolunteerMe(isVolunteer);
+  // Tổ chức bếp ăn thường không đặt lẻ — tab "Đơn nhận"/"Lịch sử đơn" trống chỉ
+  // gây nhiễu, nên chỉ hiện khi tài khoản THẬT SỰ từng có đơn.
+  const { data: myOrders } = useMyReservations(1, undefined, 1, isCharity);
+  const hasOrders = (myOrders?.counts?.allOrders ?? 0) > 0;
 
   const railEntries = useMemo(() => {
     const entries: Array<{ key: Section; label: string; icon: string; badge?: string | number }> = [
@@ -86,8 +91,14 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
           badge: activeCount || undefined,
         },
         { key: 'suppliers', label: 'Nhà cung cấp', icon: 'storefront' },
-        { key: 'orders', label: 'Đơn nhận', icon: 'bookmark' },
-        { key: 'history', label: 'Lịch sử đơn', icon: 'history' },
+      );
+      if (hasOrders) {
+        entries.push(
+          { key: 'orders', label: 'Đơn nhận', icon: 'bookmark' },
+          { key: 'history', label: 'Lịch sử đơn', icon: 'history' },
+        );
+      }
+      entries.push(
         { key: 'schedule', label: 'Lịch làm việc', icon: 'calendar_month' },
       );
     }
@@ -104,7 +115,7 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
     // Suppress unused warning for vol — giữ lại vì có thể dùng sau
     void vol;
     return entries;
-  }, [isCharity, isVolunteer, isProvider, myCampaigns, vol]);
+  }, [isCharity, isVolunteer, isProvider, myCampaigns, vol, hasOrders]);
 
   const handleSectionChange = (key: Section) => {
     // 'schedule' là trang riêng (full-screen grid tuần) — navigate trực tiếp

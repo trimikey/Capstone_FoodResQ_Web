@@ -1,4 +1,7 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '@/prisma/prisma.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { join, dirname } from 'path';
 import * as jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
@@ -28,6 +31,42 @@ export class FaceMatchService {
     Number(process.env['FACE_MATCH_THRESHOLD']) > 0
       ? Number(process.env['FACE_MATCH_THRESHOLD'])
       : DEFAULT_MATCH_THRESHOLD;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly systemConfig: SystemConfigService,
+  ) {}
+
+  /**
+   * Chặn một khuôn mặt gắn cho nhiều tài khoản: so descriptor mới với TOÀN BỘ
+   * descriptor đã lưu (receiver + volunteer, mỗi bảng vài trăm dòng — so local
+   * bằng euclidean nên rẻ). Bật/tắt qua system_configs FACE_DUPLICATE_CHECK
+   * để admin tạo nhanh tài khoản test khi cần.
+   *
+   * @param excludeUserId bỏ qua chính chủ — ghi danh lại khuôn mặt của mình
+   *   không được tính là trùng.
+   */
+  async assertNotDuplicateFace(descriptor: number[], excludeUserId?: string): Promise<void> {
+    const enabled = await this.systemConfig.getNumber('FACE_DUPLICATE_CHECK');
+    if (!enabled) return;
+    const rows = await this.prisma.$queryRaw<{ user_id: string; face_descriptor: unknown }[]>(
+      Prisma.sql`
+        SELECT user_id, face_descriptor FROM receiver_profiles WHERE face_descriptor IS NOT NULL
+        UNION ALL
+        SELECT user_id, face_descriptor FROM volunteer_profiles WHERE face_descriptor IS NOT NULL
+      `,
+    );
+    for (const row of rows) {
+      if (excludeUserId && row.user_id === excludeUserId) continue;
+      const stored = row.face_descriptor;
+      if (!Array.isArray(stored) || stored.length !== descriptor.length) continue;
+      if (this.compare(descriptor, stored as number[]).matched) {
+        throw new ConflictException(
+          'Khuôn mặt này đã được đăng ký cho một tài khoản khác — mỗi người chỉ dùng một tài khoản. Nếu bạn cho rằng có nhầm lẫn, vui lòng liên hệ quản trị viên.',
+        );
+      }
+    }
+  }
 
   /** Load tfjs backend + model weights một lần duy nhất (lazy, gọi ở request đầu tiên). */
   private init(): Promise<void> {
@@ -73,14 +112,25 @@ export class FaceMatchService {
     const tf = faceapi.tf;
     const { data, width, height } = this.decodeImage(file);
 
-    // RGBA → RGB tensor (face-api nhận Tensor3D thay cho HTMLImageElement trên Node)
-    const rgb = new Uint8Array(width * height * 3);
-    for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
-      rgb[j] = data[i]!;
-      rgb[j + 1] = data[i + 1]!;
-      rgb[j + 2] = data[i + 2]!;
+    // RGBA → RGB tensor, THU NHỎ về tối đa 800px cạnh dài ngay tại đây: ảnh camera
+    // gốc ~12MP cho ra tensor int32 ~144MB — server 512MB (Render free) bị OOM kill
+    // giữa request và trả 502. Detector chỉ nhìn 512px nên không mất độ chính xác.
+    const MAX_DIM = 800;
+    const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
+    const rgb = new Uint8Array(w * h * 3);
+    for (let y = 0; y < h; y++) {
+      const sy = Math.min(height - 1, Math.round(y / scale));
+      for (let x = 0; x < w; x++) {
+        const si = (sy * width + Math.min(width - 1, Math.round(x / scale))) * 4;
+        const di = (y * w + x) * 3;
+        rgb[di] = data[si]!;
+        rgb[di + 1] = data[si + 1]!;
+        rgb[di + 2] = data[si + 2]!;
+      }
     }
-    const tensor = tf.tensor3d(rgb, [height, width, 3], 'int32');
+    const tensor = tf.tensor3d(rgb, [h, w, 3], 'int32');
 
     try {
       const detection = await faceapi

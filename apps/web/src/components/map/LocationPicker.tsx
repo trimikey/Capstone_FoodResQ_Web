@@ -224,9 +224,11 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
         className="w-full h-full relative z-0"
         zoomControl={interactive}
       >
+        {/* Tile OSM chuẩn như các map khác — CARTO chỉ miễn phí trên localhost,
+            lên domain deploy sẽ in chìm "API KEY REQUIRED" lên bản đồ. */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MapClickHandler 
           onMapClick={handleMapClick} 
