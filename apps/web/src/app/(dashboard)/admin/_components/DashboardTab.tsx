@@ -92,7 +92,7 @@ export default function DashboardTab() {
         <p className="text-sm text-neutral-500 mt-1">Dữ liệu thật, tổng hợp toàn hệ thống cứu trợ thực phẩm.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <StatCard icon="eco" tone="emerald" label="Thực phẩm đã cứu trợ" value={fmtKg(data.kgRescued)} />
         <StatCard icon="group" tone="honey" label="Người dùng" value={data.users.toLocaleString('vi-VN')} sub={`${data.providers} cửa hàng · ${data.volunteers} TNV`} />
         <StatCard icon="restaurant" tone="emerald" label="Bữa ăn đã trao" value={`${data.mealsServed.toLocaleString('vi-VN')} suất`} />
@@ -177,7 +177,7 @@ export default function DashboardTab() {
           <h3 className="font-extrabold text-lg text-neutral-900">Mục tiêu Cộng đồng</h3>
           <p className="text-sm text-neutral-600 mt-1">Mục tiêu cứu trợ {MONTH_TARGET_KG.toLocaleString('vi-VN')} kg thực phẩm.</p>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
           <div className="w-full md:w-80 h-6 bg-neutral-200 rounded-full overflow-hidden relative">
             <div className="absolute top-0 left-0 h-full bg-[#86efac] flex items-center justify-end pr-2 text-[10px] font-bold text-emerald-900 transition-all" style={{ width: `${Math.max(8, goalPct)}%` }}>
               {goalPct}%

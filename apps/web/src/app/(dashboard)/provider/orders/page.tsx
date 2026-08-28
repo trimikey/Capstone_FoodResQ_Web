@@ -345,7 +345,7 @@ export default function ProviderOrdersPage() {
         {/* Stats */}
         {/* Có sẵn bộ lọc "Đã hủy" nhưng lại không có thẻ đếm — người bán không biết
             mình bị huỷ bao nhiêu đơn nếu không tự bấm sang tab đó. */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
           <StatCard icon="inventory_2" label="Tổng đơn" value={counts.all} tone="sage" />
           <StatCard icon="hourglass_top" label="Chờ xử lý" value={counts.pending} tone="amber" />
           <StatCard icon="local_shipping" label="Đang giao / đã nhận" value={counts.confirmed} tone="sky" />

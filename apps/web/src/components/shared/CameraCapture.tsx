@@ -173,7 +173,7 @@ export default function CameraCapture({ mode, hint, confirmLabel = 'Xác nhận'
 
       {!cameraError ? (
         <>
-          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4] max-h-[50vh] sm:max-h-none">
             <video
               ref={videoRef}
               autoPlay

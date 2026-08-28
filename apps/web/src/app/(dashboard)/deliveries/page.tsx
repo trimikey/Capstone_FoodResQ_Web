@@ -404,7 +404,7 @@ export default function DeliveriesPage() {
 
             {/* Cảnh báo pickup time — chỉ hiện khi có thông tin giờ lấy hàng (campaign transport) */}
             {active.source === 'campaign_transport' && active.campaignTransport && (
-              <div className="mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <span className="material-symbols-outlined text-amber-600 text-[20px] mt-0.5 shrink-0">schedule</span>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-amber-800">

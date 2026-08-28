@@ -123,6 +123,9 @@ export default function PublicHeader() {
   const currentUserName = me?.fullName ?? user?.fullName ?? '';
   const avatarSrc = mediaUrl(me?.avatarUrl ?? user?.avatarUrl ?? '');
   const [avatarFailed, setAvatarFailed] = useState(false);
+  // Dưới md nav chính bị ẩn — không có menu thay thế thì khách mobile mất toàn bộ
+  // đường vào (Tìm thực phẩm, Về chúng tôi, Liên hệ).
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     setAvatarFailed(false);
@@ -153,7 +156,16 @@ export default function PublicHeader() {
           : 'top-6 w-[95%] max-w-5xl rounded-full bg-white/80 backdrop-blur-md border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.08)]'
       }`}
     >
-      <div className="mx-auto max-w-5xl px-6 h-16 flex items-center justify-between gap-6">
+      <div className="mx-auto max-w-5xl px-4 md:px-6 h-16 flex items-center justify-between gap-2 md:gap-6">
+        {/* Nút mở menu mobile */}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen((v) => !v)}
+          aria-label="Mở menu điều hướng"
+          className="md:hidden -ml-1 p-2 rounded-lg text-neutral-700 hover:bg-neutral-100 transition-colors"
+        >
+          <span className="material-symbols-outlined">{mobileNavOpen ? 'close' : 'menu'}</span>
+        </button>
         {/* Logo */}
         <Link href="/" className="flex items-center shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -307,6 +319,50 @@ export default function PublicHeader() {
           )}
         </div>
       </div>
+
+      {/* Menu mobile — panel xổ dưới thanh header, chứa đúng 4 link của nav desktop */}
+      {mobileNavOpen && (
+        <nav className="md:hidden border-t border-neutral-100 bg-white rounded-b-2xl shadow-lg overflow-hidden">
+          <Link
+            href="/"
+            onClick={() => {
+              setActiveHash('');
+              setMobileNavOpen(false);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="block px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            Trang chủ
+          </Link>
+          <Link
+            href={foodNavLink.href}
+            onClick={() => setMobileNavOpen(false)}
+            className="block px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            {foodNavLink.label}
+          </Link>
+          <a
+            href="#about"
+            onClick={(e) => {
+              handleAnchorClick(e, 'about');
+              setMobileNavOpen(false);
+            }}
+            className="block px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            Về chúng tôi
+          </a>
+          <a
+            href="#contact"
+            onClick={(e) => {
+              handleAnchorClick(e, 'contact');
+              setMobileNavOpen(false);
+            }}
+            className="block px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            Liên hệ
+          </a>
+        </nav>
+      )}
     </header>
   );
 }

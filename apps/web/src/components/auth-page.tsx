@@ -1256,7 +1256,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               )}
 
                               {/* Danh sách URL đã upload */}
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {evidenceUrls.map((u: string, idx: number) => (
                                   <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
                                     {/* Ảnh lưu ở API (/uploads/...) — phải ghép origin :3001, để trần sẽ 404 vì trỏ vào :3000 */}

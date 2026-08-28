@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import ShipperSidebar from './_components/ShipperSidebar';
+import ShipperSidebar, { ShipperMobileNav } from './_components/ShipperSidebar';
 
 /**
  * Vỏ chung cho khu vực giao hàng: sidebar cố định bên trái trên màn lớn.
@@ -12,6 +12,7 @@ export default function DeliveriesLayout({ children }: { children: ReactNode }) 
   return (
     <div className="min-h-screen bg-neutral-50 md:-mt-[104px] md:pt-[104px]">
       <ShipperSidebar />
+      <ShipperMobileNav />
       <div className="lg:ml-56">{children}</div>
     </div>
   );

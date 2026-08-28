@@ -495,12 +495,12 @@ export default function ReservationDetailsPage() {
     <div className="min-h-screen bg-neutral-50 pb-20">
       {/* Top Breadcrumb Navigation */}
       <div className="bg-white border-b border-neutral-200 py-3 px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-xs text-xs font-medium text-neutral-500">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-xs text-xs font-medium text-neutral-500">
           <Link href="/listings" className="hover:text-primary transition-colors">Tìm thực phẩm</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
           <Link href="/reservations" className="hover:text-primary transition-colors">Đơn hàng của tôi</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-neutral-800 font-semibold">{reservation.listing.title}</span>
+          <span className="min-w-0 max-w-full truncate text-neutral-800 font-semibold">{reservation.listing.title}</span>
         </div>
       </div>
 
@@ -1019,7 +1019,7 @@ export default function ReservationDetailsPage() {
                   </div>
 
                   {/* Camera Screen view */}
-                  <div className="bg-neutral-900 aspect-video relative flex items-center justify-center group overflow-hidden">
+                  <div className="bg-neutral-900 min-h-[420px] sm:min-h-0 sm:aspect-video relative flex items-center justify-center group overflow-hidden">
                     
                     {isOrderClosed ? (
                       /* Đơn đã đóng (không đến / huỷ / hết hạn) — KHÔNG hiện mã nữa,
@@ -1093,7 +1093,7 @@ export default function ReservationDetailsPage() {
                         }} />
 
                         {/* Scanner square overlay */}
-                        <div className="relative w-64 h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
+                        <div className="relative w-48 h-48 sm:w-64 sm:h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
                           {/* Pulsing scanning red line */}
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 animate-bounce" />
                           
@@ -1311,7 +1311,7 @@ export default function ReservationDetailsPage() {
       </div>
 
       {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+      <div className="fixed bottom-[5.5rem] md:bottom-6 right-4 md:right-6 z-40 flex flex-col gap-2 items-end">
         {/* Báo cáo vấn đề (chỉ đơn thật, có ID thật) */}
         {!isMock && (
           <button
