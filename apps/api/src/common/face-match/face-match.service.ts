@@ -112,14 +112,25 @@ export class FaceMatchService {
     const tf = faceapi.tf;
     const { data, width, height } = this.decodeImage(file);
 
-    // RGBA → RGB tensor (face-api nhận Tensor3D thay cho HTMLImageElement trên Node)
-    const rgb = new Uint8Array(width * height * 3);
-    for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
-      rgb[j] = data[i]!;
-      rgb[j + 1] = data[i + 1]!;
-      rgb[j + 2] = data[i + 2]!;
+    // RGBA → RGB tensor, THU NHỎ về tối đa 800px cạnh dài ngay tại đây: ảnh camera
+    // gốc ~12MP cho ra tensor int32 ~144MB — server 512MB (Render free) bị OOM kill
+    // giữa request và trả 502. Detector chỉ nhìn 512px nên không mất độ chính xác.
+    const MAX_DIM = 800;
+    const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
+    const rgb = new Uint8Array(w * h * 3);
+    for (let y = 0; y < h; y++) {
+      const sy = Math.min(height - 1, Math.round(y / scale));
+      for (let x = 0; x < w; x++) {
+        const si = (sy * width + Math.min(width - 1, Math.round(x / scale))) * 4;
+        const di = (y * w + x) * 3;
+        rgb[di] = data[si]!;
+        rgb[di + 1] = data[si + 1]!;
+        rgb[di + 2] = data[si + 2]!;
+      }
     }
-    const tensor = tf.tensor3d(rgb, [height, width, 3], 'int32');
+    const tensor = tf.tensor3d(rgb, [h, w, 3], 'int32');
 
     try {
       const detection = await faceapi
