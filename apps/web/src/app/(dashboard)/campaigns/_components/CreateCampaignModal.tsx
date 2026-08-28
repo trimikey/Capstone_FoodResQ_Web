@@ -57,6 +57,19 @@ const STEPS = [
   ['Kiểm tra & gửi', 'fact_check'],
 ] as const;
 
+/**
+ * Ô <input type="date"> hiển thị theo NGÔN NGỮ TRÌNH DUYỆT — Chrome tiếng Anh in
+ * MM/DD/YYYY và không có cách nào ép về dd/mm. In kèm dạng Việt Nam ngay dưới ô
+ * để người dùng không đọc nhầm tháng thành ngày.
+ */
+function vnDatePreview(value: string): string | null {
+  if (!value) return null;
+  const [datePart, timePart] = value.split('T');
+  const [y, m, d] = (datePart ?? '').split('-');
+  if (!y || !m || !d) return null;
+  return `${d}/${m}/${y}${timePart ? ` · ${timePart}` : ''}`;
+}
+
 function dateAfter(days: number) {
   const d = new Date(Date.now() + 7 * 3600_000);
   d.setUTCDate(d.getUTCDate() + days);
@@ -730,10 +743,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                   <label className="text-xs font-bold text-neutral-600">
                     Mở tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentStartAt} min={minRecruitmentStartAt} onChange={(e) => setRecruitmentStartAt(e.target.value)} />
+                    {vnDatePreview(recruitmentStartAt) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(recruitmentStartAt)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Đóng tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} min={recruitmentStartAt || minRecruitmentStartAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
+                    {vnDatePreview(recruitmentEndAt) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(recruitmentEndAt)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                 </div>
                 <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu 6 giờ.</p>
@@ -751,10 +774,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                       aria-invalid={recruitmentBufferIsTooShort}
                       aria-describedby={recruitmentBufferMinutes !== null ? 'cm-operation-date-rule' : undefined}
                     />
+                    {vnDatePreview(scheduledDate) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(scheduledDate)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Ngày kết thúc
                     <input type="date" className="cm-input mt-1" value={endDate} min={scheduledDate} onChange={(e) => setEndDate(e.target.value)} />
+                    {vnDatePreview(endDate) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(endDate)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                 </div>
                 {recruitmentBufferMinutes !== null && (
