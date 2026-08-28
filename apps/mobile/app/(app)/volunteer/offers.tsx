@@ -10,12 +10,13 @@ import {
 } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { Redirect, router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
   useAcceptOffer,
   useRejectOffer,
   useActiveDelivery,
+  useMyDeliveryShifts,
   type TaskOffer,
   type ActiveDelivery,
 } from '@/hooks/useDeliveries';
@@ -28,6 +29,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { getCurrentCoords, getLocationLabel } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
@@ -35,6 +37,22 @@ import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const OFFER_SHEET_SNAP_POINTS = ['46%'];
+const PERIOD_LABEL: Record<string, string> = {
+  midnight: 'Ca khuya 00:00-06:00',
+  morning: 'Ca sáng 06:00-12:00',
+  afternoon: 'Ca chiều 12:00-18:00',
+  evening: 'Ca tối 18:00-24:00',
+};
+
+function vnTodayKey(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+function dayLabel(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  const names = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  return `${names[d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+}
 
 function formatKm(km: unknown): string | null {
   if (km == null) return null;
@@ -52,7 +70,7 @@ function formatTime(value: string): string {
   return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
-/** Đếm ngược tới hạn hết hiệu lực lời mời. */
+/** Đếm ngược tới hạn nhận đơn. */
 function countdown(expiresAt: string, now: number): string {
   const ms = new Date(expiresAt).getTime() - now;
   if (ms <= 0) return 'Đã hết hạn';
@@ -86,15 +104,30 @@ function offerDetails(offer: TaskOffer) {
     pickupAddress: delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
     dropoffAddress: delivery.destination.address ?? reservation?.receiver?.address ?? 'Chưa có địa chỉ giao hàng',
     distanceLabel: formatKm(delivery.distanceKm),
+    distanceFromMeLabel: formatKm(offer.distanceFromMeKm),
     offeredTime: formatTime(offer.offeredAt),
+    scheduledLabel: offer.deliveryScheduledAt
+      ? new Date(offer.deliveryScheduledAt).toLocaleString('vi-VN', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : null,
     isCampaignTransport: delivery.source === 'campaign_transport',
   };
+}
+
+function claimBlockedReason(offer: TaskOffer): string | null {
+  if (offer.canClaim !== false) return null;
+  if (offer.busyWithCampaign) return 'Bận ca chiến dịch khung giờ này';
+  return 'Ngoài ca giao hàng đã đăng ký';
 }
 
 /**
  * Đơn cần giao (tab volunteer) — đơn đang chờ trong bán kính 5km quanh shipper.
  *
- * Hệ "lời mời tuần tự 15s" đã gỡ: đơn không gán riêng cho ai, shipper trong ca tự
+ * Hệ mời tuần tự 15s đã gỡ: đơn không gán riêng cho ai, shipper trong ca tự
  * chọn đơn. Đếm ngược giờ là HẠN CỦA ĐƠN (quá hạn không ai nhận thì đơn bị huỷ),
  * "Bỏ qua" chỉ ẩn khỏi danh sách của bạn. Poll 20s. Nhận xong → tab "Đang giao".
  */
@@ -142,14 +175,22 @@ export default function VolunteerOffersScreen() {
     () => [...(data ?? [])].sort((a, b) => offerSortValue(a) - offerSortValue(b)),
     [data]
   );
+  const visibleOffers = useMemo(
+    () => offers.filter((offer) => !isExpired(offer, renderNow)),
+    [offers, renderNow]
+  );
 
   const activeOffer = useMemo(
-    () => offers.find((offer) => !deferredIds.includes(offer.id) && !isExpired(offer, renderNow)) ?? null,
-    [deferredIds, offers, renderNow]
+    () => visibleOffers.find((offer) => offer.canClaim !== false && !deferredIds.includes(offer.id)) ?? null,
+    [deferredIds, visibleOffers]
   );
   const queueOffers = useMemo(
-    () => offers.filter((offer) => offer.id !== activeOffer?.id),
-    [activeOffer?.id, offers]
+    () => visibleOffers.filter((offer) => offer.id !== activeOffer?.id),
+    [activeOffer?.id, visibleOffers]
+  );
+  const claimableOfferCount = useMemo(
+    () => visibleOffers.filter((offer) => offer.canClaim !== false).length,
+    [visibleOffers]
   );
   const rawCurrentLocation = volunteer?.currentLocation ?? null;
   const currentLocation =
@@ -217,10 +258,7 @@ export default function VolunteerOffersScreen() {
   }, [currentLocation, currentLocationKey, currentLocationLabel]);
 
   useEffect(() => {
-    if (!volunteer?.isAvailable) {
-      syncedDeviceLocationRef.current = false;
-      return;
-    }
+    if (!volunteer) return;
     if (syncedDeviceLocationRef.current || isUpdatingLocation) return;
     syncedDeviceLocationRef.current = true;
     let active = true;
@@ -235,7 +273,7 @@ export default function VolunteerOffersScreen() {
     return () => {
       active = false;
     };
-  }, [isUpdatingLocation, updateLocationAsync, volunteer?.isAvailable]);
+  }, [isUpdatingLocation, updateLocationAsync, volunteer]);
 
   useEffect(() => {
     if (!activeOffer || activeOffer.id === lastPromptedIdRef.current || actingId) return;
@@ -261,7 +299,7 @@ export default function VolunteerOffersScreen() {
       Toast.show({
         type: 'success',
         text1: 'Đã cập nhật khuôn mặt',
-        text2: 'Bạn có thể bật nhận đơn ngay bây giờ.',
+        text2: 'Bạn có thể xác minh khi giao nhận đơn.',
       });
     } catch (e: any) {
       void notifyError();
@@ -274,6 +312,11 @@ export default function VolunteerOffersScreen() {
   };
 
   const handleAccept = async (offer: TaskOffer) => {
+    const blocked = claimBlockedReason(offer);
+    if (blocked) {
+      Popup.show({ type: 'warning', text1: 'Chưa thể nhận đơn', text2: blocked });
+      return;
+    }
     setActingId(offer.id);
     try {
       await accept.mutateAsync(offer.deliveryId);
@@ -286,7 +329,7 @@ export default function VolunteerOffersScreen() {
       Popup.show({
         type: 'error',
         text1: 'Nhận đơn thất bại',
-        text2: e?.response?.data?.error?.message ?? 'Lời mời có thể đã hết hạn hoặc được nhận bởi người khác.',
+        text2: e?.response?.data?.error?.message ?? 'Đơn có thể đã hết hạn hoặc được nhận bởi người khác.',
       });
     } finally {
       setActingId(null);
@@ -308,7 +351,7 @@ export default function VolunteerOffersScreen() {
     try {
       await reject.mutateAsync({ deliveryId: offer.deliveryId, reason: 'Shipper bỏ qua' });
       void notifySuccess();
-      Toast.show({ type: 'info', text1: 'Đã bỏ qua lời mời', text2: 'Đơn sẽ chuyển cho shipper tiếp theo.' });
+      Toast.show({ type: 'info', text1: 'Đã ẩn đơn', text2: 'Đơn vẫn còn để tình nguyện viên khác tự nhận.' });
     } catch (e: any) {
       void notifyError();
       Popup.show({
@@ -329,9 +372,10 @@ export default function VolunteerOffersScreen() {
     const details = offerDetails(offer);
     const expired = isExpired(offer, renderNow);
     const busy = actingId === offer.id;
+    const blocked = claimBlockedReason(offer);
 
     return (
-      <View style={styles.priorityCard}>
+      <View style={[styles.priorityCard, blocked && styles.cardDisabled]}>
         <View style={styles.priorityTop}>
           <View style={styles.priorityIcon}>
             <MaterialCommunityIcons name="navigation-variant-outline" size={22} color={COLORS.blue} />
@@ -342,7 +386,10 @@ export default function VolunteerOffersScreen() {
               {details.title}
             </Text>
             <View style={styles.priorityStatusRow}>
-              <StatusBadge label={expired ? 'Đã hết hạn' : 'Chờ nhận đơn'} tone={expired ? 'danger' : 'info'} />
+              <StatusBadge
+                label={expired ? 'Đã hết hạn' : blocked ?? 'Có thể tự nhận'}
+                tone={expired || blocked ? 'danger' : 'info'}
+              />
             </View>
           </View>
           {details.distanceLabel ? (
@@ -368,6 +415,13 @@ export default function VolunteerOffersScreen() {
           />
         </View>
 
+        {blocked ? (
+          <View style={styles.blockedBox}>
+            <MaterialCommunityIcons name="lock-clock" size={18} color={COLORS.warning} />
+            <Text style={styles.blockedText}>{blocked}</Text>
+          </View>
+        ) : null}
+
         {/* Bằng chứng người nhận khó di chuyển — xem trước khi quyết định nhận đơn */}
         {offer.delivery.reservation?.deliveryEvidenceUrl ? (
           <View style={styles.evidenceBox}>
@@ -388,6 +442,8 @@ export default function VolunteerOffersScreen() {
             onExpire={handleOfferExpired}
           />
           {details.quantity != null ? <MetaPill icon="basket-outline" text={`${details.quantity} phần`} tone="purple" /> : null}
+          {details.distanceFromMeLabel ? <MetaPill icon="crosshairs-gps" text={`Cách bạn ${details.distanceFromMeLabel}`} tone="orange" /> : null}
+          {details.scheduledLabel ? <MetaPill icon="calendar-clock" text={`Hẹn ${details.scheduledLabel}`} tone="blue" /> : null}
           {details.offeredTime ? <MetaPill icon="clock-outline" text={details.offeredTime} tone="blue" /> : null}
         </View>
 
@@ -405,13 +461,13 @@ export default function VolunteerOffersScreen() {
           <Button
             mode="contained"
             onPress={() => handleAccept(offer)}
-            disabled={busy || expired}
+            disabled={busy || expired || !!blocked}
             loading={busy && accept.isPending}
             buttonColor={COLORS.primary}
             style={styles.priorityPrimaryBtn}
             labelStyle={styles.actionLabel}
           >
-            Nhận đơn
+            {blocked ? 'Không trong ca' : 'Nhận đơn'}
           </Button>
         </View>
       </View>
@@ -419,18 +475,21 @@ export default function VolunteerOffersScreen() {
   };
 
   const renderEmpty = () => {
-    if (isLoading) return <ScreenState kind="loading" title="Đang tải lời mời" />;
-    if (isError) return <ScreenState kind="error" title="Không tải được lời mời" onAction={() => refetch()} />;
-    if (volunteer && (!volunteer.isAvailable || !volunteer.currentLocation)) {
+    if (isLoading) return <ScreenState kind="loading" title="Đang tải đơn gần bạn" />;
+    if (isError) return <ScreenState kind="error" title="Không tải được đơn gần bạn" onAction={() => refetch()} />;
+    if (volunteer && !volunteer.currentLocation) {
       return <EligibilityEmptyState />;
     }
     return (
-      <OffersEmptyState
-        listings={mapListings}
-        center={mapCenter}
-        isLoading={nearbyListings.isLoading}
-        onSelectListing={handleSelectListing}
-      />
+      <>
+        <DeliveryShiftSummaryCard />
+        <OffersEmptyState
+          listings={mapListings}
+          center={mapCenter}
+          isLoading={nearbyListings.isLoading}
+          onSelectListing={handleSelectListing}
+        />
+      </>
     );
   };
 
@@ -439,17 +498,18 @@ export default function VolunteerOffersScreen() {
     const busy = actingId === item.id;
     const deferred = deferredIds.includes(item.id);
     const details = offerDetails(item);
+    const blocked = claimBlockedReason(item);
 
     return (
-      <View style={[styles.queueCard, expired && styles.queueCardMuted]}>
+      <View style={[styles.queueCard, (expired || blocked) && styles.queueCardMuted]}>
         <View style={styles.queueHead}>
           <View style={{ flex: 1 }}>
             <Text style={styles.queueTitle} numberOfLines={1}>
               {details.title}
             </Text>
             <StatusBadge
-              label={expired ? 'Đã hết hạn' : deferred ? 'Đã để sau' : 'Chờ phản hồi'}
-              tone={expired ? 'danger' : deferred ? 'neutral' : 'info'}
+              label={expired ? 'Đã hết hạn' : blocked ?? (deferred ? 'Đã để sau' : 'Có thể tự nhận')}
+              tone={expired || blocked ? 'danger' : deferred ? 'neutral' : 'info'}
               style={styles.queueStatus}
             />
           </View>
@@ -465,6 +525,13 @@ export default function VolunteerOffersScreen() {
           <CompactLine icon="storefront-outline" value={details.pickupAddress} />
           <CompactLine icon="map-marker-radius-outline" value={details.dropoffAddress} />
         </View>
+
+        {blocked ? (
+          <View style={styles.blockedBoxCompact}>
+            <MaterialCommunityIcons name="lock-clock" size={15} color={COLORS.warning} />
+            <Text style={styles.blockedText}>{blocked}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.queueFooter}>
           <View style={styles.queueTimer}>
@@ -494,7 +561,7 @@ export default function VolunteerOffersScreen() {
             <Button
               mode="contained-tonal"
               onPress={() => handleAccept(item)}
-              disabled={busy || expired}
+              disabled={busy || expired || !!blocked}
               loading={busy && accept.isPending}
               buttonColor={COLORS.blueContainer}
               textColor={COLORS.blue}
@@ -502,7 +569,7 @@ export default function VolunteerOffersScreen() {
               style={styles.queueAcceptBtn}
               labelStyle={styles.queueActionLabel}
             >
-              Nhận
+              {blocked ? 'Khoá' : 'Nhận'}
             </Button>
           </View>
         </View>
@@ -511,10 +578,11 @@ export default function VolunteerOffersScreen() {
   };
 
   const renderListHeader = () => {
-    if (isLoading || isError || offers.length === 0) return null;
+    if (isLoading || isError || visibleOffers.length === 0) return null;
 
     return (
       <View style={styles.listHeader}>
+        <DeliveryShiftSummaryCard />
         <MapWatchCard
           listings={mapListings}
           center={mapCenter}
@@ -528,11 +596,11 @@ export default function VolunteerOffersScreen() {
           <View>
             <Text style={styles.queueHeaderTitle}>Hàng chờ</Text>
             <Text style={styles.queueHeaderSub}>
-              {queueOffers.length > 0 ? `${queueOffers.length} đơn có thể nhận sau` : 'Không còn đơn trong hàng chờ'}
+              {queueOffers.length > 0 ? `${queueOffers.length} đơn quanh bạn` : 'Không còn đơn trong hàng chờ'}
             </Text>
           </View>
           <View style={styles.queueCount}>
-            <Text style={styles.queueCountText}>{offers.length}</Text>
+            <Text style={styles.queueCountText}>{queueOffers.length}</Text>
           </View>
         </View>
       </View>
@@ -564,7 +632,7 @@ export default function VolunteerOffersScreen() {
                 {details.title}
               </Text>
               <View style={styles.priorityStatusRow}>
-                <StatusBadge label={expired ? 'Đã hết hạn' : 'Cần phản hồi'} tone={expired ? 'danger' : 'info'} />
+                <StatusBadge label={expired ? 'Đã hết hạn' : 'Có thể tự nhận'} tone={expired ? 'danger' : 'info'} />
               </View>
             </View>
           </View>
@@ -625,22 +693,20 @@ export default function VolunteerOffersScreen() {
   const locationStatus = (() => {
     if (isVolunteerLoading && !volunteer) return 'Đang tải vị trí shipper...';
     if (isVolunteerError) return 'Không tải được vị trí shipper';
-    if (!volunteer?.isAvailable) return 'Đang tắt nhận đơn';
     if (!currentLocation) return 'Chưa có vị trí hiện tại';
     return locationAddress || currentLocationLabel;
   })();
 
   const locationHint = (() => {
     if (isVolunteerError) return 'Kéo để tải lại hoặc mở tab Hồ sơ kiểm tra trạng thái.';
-    if (!volunteer?.isAvailable) return 'Bật sẵn sàng để nhận lời mời giao hàng gần vị trí này.';
-    if (!currentLocation) return 'Backend cần vị trí shipper để phát lời mời gần điểm lấy hàng.';
-    return offers.length > 0
-      ? `${offers.length} lời mời đang chờ, ${queueOffers.length} đơn trong hàng chờ`
-      : 'Nếu chưa có lời mời, hãy kiểm tra đơn gần vị trí này đã chọn giao hàng.';
+    if (!currentLocation) return 'Ứng dụng cần GPS để tìm đơn quanh bạn trong bán kính 5km.';
+    return visibleOffers.length > 0
+      ? `${visibleOffers.length} đơn quanh bạn, ${claimableOfferCount} đơn có thể nhận`
+      : 'Nếu chưa có đơn, hãy kiểm tra ca giao hàng và vị trí lấy hàng của tin.';
   })();
 
   if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
-    return <Redirect href="/(app)/volunteer/campaigns" />;
+    return <DeferredRedirect href="/(app)/volunteer/campaigns" />;
   }
 
   return (
@@ -648,19 +714,19 @@ export default function VolunteerOffersScreen() {
       <ScreenHeader
         title="Đơn cần giao"
         right={
-          <View style={[styles.headerStatus, volunteer?.isAvailable ? styles.headerStatusOn : styles.headerStatusOff]}>
+          <View style={[styles.headerStatus, currentLocation ? styles.headerStatusOn : styles.headerStatusOff]}>
             <MaterialCommunityIcons
-              name={volunteer?.isAvailable ? 'access-point' : 'access-point-off'}
+              name={currentLocation ? 'crosshairs-gps' : 'crosshairs-question'}
               size={14}
-              color={volunteer?.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
+              color={currentLocation ? COLORS.teal : COLORS.onSurfaceVariant}
             />
             <Text
               style={[
                 styles.headerStatusText,
-                volunteer?.isAvailable ? styles.headerStatusTextOn : styles.headerStatusTextOff,
+                currentLocation ? styles.headerStatusTextOn : styles.headerStatusTextOff,
               ]}
             >
-              {volunteer?.isAvailable ? 'Đang nhận' : 'Đang tắt'}
+              {currentLocation ? 'Có GPS' : 'Cần GPS'}
             </Text>
           </View>
         }
@@ -671,16 +737,21 @@ export default function VolunteerOffersScreen() {
             <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
           </View>
           <View style={styles.dispatchCopy}>
-            <Text style={styles.dispatchKicker}>Shipper dispatch</Text>
+            <Text style={styles.dispatchKicker}>Tự chọn đơn</Text>
             <Text style={styles.dispatchTitle}>
-              {activeOffer ? 'Có đơn cần phản hồi ngay' : volunteer?.isAvailable ? 'Đang quét đơn gần bạn' : 'Bật nhận đơn để bắt đầu'}
+              {activeOffer ? 'Có đơn có thể tự nhận' : currentLocation ? 'Đang tìm đơn gần bạn' : 'Bật GPS để bắt đầu'}
             </Text>
           </View>
         </View>
         <View style={styles.dispatchStats}>
           <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{offers.length}</Text>
-            <Text style={styles.dispatchStatLabel}>lời mời</Text>
+            <Text style={styles.dispatchStatValue}>{visibleOffers.length}</Text>
+            <Text style={styles.dispatchStatLabel}>đơn gần</Text>
+          </View>
+          <View style={styles.dispatchDivider} />
+          <View style={styles.dispatchStat}>
+            <Text style={styles.dispatchStatValue}>{claimableOfferCount}</Text>
+            <Text style={styles.dispatchStatLabel}>có thể nhận</Text>
           </View>
           <View style={styles.dispatchDivider} />
           <View style={styles.dispatchStat}>
@@ -714,7 +785,7 @@ export default function VolunteerOffersScreen() {
           <View style={styles.faceBannerText}>
             <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
             <Text style={styles.faceBannerSub} numberOfLines={2}>
-              Cập nhật để bật nhận đơn và xác minh khi giao nhận.
+              Cập nhật để xác minh khi giao nhận đơn.
             </Text>
           </View>
           <Button
@@ -730,7 +801,7 @@ export default function VolunteerOffersScreen() {
           </Button>
         </View>
       ) : null}
-      {offers.length === 0 ? (
+      {visibleOffers.length === 0 ? (
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {renderEmpty()}
         </ScrollView>
@@ -777,7 +848,7 @@ function FaceEnrollmentPrompt({
           </View>
           <Text style={styles.faceDialogTitle}>Cần cập nhật khuôn mặt</Text>
           <Text style={styles.faceDialogText}>
-            Bạn cần đăng ký khuôn mặt trước khi bật nhận đơn. Thông tin này dùng để xác minh khi giao nhận.
+            Bạn cần đăng ký khuôn mặt để xác minh khi giao nhận.
           </Text>
         </Dialog.Content>
         <Dialog.Actions>
@@ -843,6 +914,83 @@ function ActiveDeliveryBanner({ delivery }: { delivery: ActiveDelivery }) {
         <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
       </View>
     </Pressable>
+  );
+}
+
+function DeliveryShiftSummaryCard() {
+  const shifts = useMyDeliveryShifts();
+  const data = shifts.data;
+  const todayKey = vnTodayKey();
+  const todaySlots = useMemo(
+    () => (data?.slots ?? []).filter((slot) => slot.workDate === todayKey),
+    [data?.slots, todayKey],
+  );
+  const upcomingSlots = useMemo(
+    () => (data?.slots ?? [])
+      .filter((slot) => slot.workDate > todayKey)
+      .sort((a, b) => `${a.workDate}:${a.period}`.localeCompare(`${b.workDate}:${b.period}`))
+      .slice(0, 2),
+    [data?.slots, todayKey],
+  );
+
+  if (shifts.isLoading) {
+    return (
+      <View style={styles.shiftSummaryCard}>
+        <ActivityIndicator color={COLORS.primary} size={18} />
+        <Text style={styles.shiftSummaryHint}>Đang tải ca giao hàng...</Text>
+      </View>
+    );
+  }
+  if (!data?.isShipper) return null;
+
+  return (
+    <View style={styles.shiftSummaryCard}>
+      <View style={styles.shiftSummaryTop}>
+        <View style={styles.shiftSummaryIcon}>
+          <MaterialCommunityIcons name="calendar-check-outline" size={22} color={COLORS.teal} />
+        </View>
+        <View style={styles.shiftSummaryCopy}>
+          <Text style={styles.shiftSummaryTitle}>Ca giao hàng của bạn</Text>
+          <Text style={styles.shiftSummaryHint}>
+            {todaySlots.length
+              ? `Hôm nay có ${todaySlots.length} ca. Chỉ nhận đơn trong ca đã đăng ký.`
+              : 'Hôm nay chưa có ca. Đơn ngoài ca sẽ bị khoá.'}
+          </Text>
+        </View>
+        <Button
+          mode="contained-tonal"
+          compact
+          icon="pencil"
+          onPress={() => router.push('/(app)/volunteer/delivery-shifts')}
+          buttonColor={COLORS.tealContainer}
+          textColor={COLORS.teal}
+          labelStyle={styles.shiftSummaryButtonLabel}
+        >
+          Sửa ca
+        </Button>
+      </View>
+
+      <View style={styles.shiftSummaryChips}>
+        {todaySlots.length ? (
+          todaySlots.map((slot) => (
+            <View key={`${slot.workDate}:${slot.period}`} style={styles.shiftSummaryChip}>
+              <Text style={styles.shiftSummaryChipText}>{PERIOD_LABEL[slot.period] ?? slot.period}</Text>
+            </View>
+          ))
+        ) : (
+          <View style={styles.shiftSummaryChipMuted}>
+            <Text style={styles.shiftSummaryChipMutedText}>Chưa có ca hôm nay</Text>
+          </View>
+        )}
+        {upcomingSlots.map((slot) => (
+          <View key={`${slot.workDate}:${slot.period}`} style={styles.shiftSummaryChipMuted}>
+            <Text style={styles.shiftSummaryChipMutedText}>
+              {dayLabel(slot.workDate)} - {PERIOD_LABEL[slot.period] ?? slot.period}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -979,12 +1127,12 @@ const OffersEmptyState = memo(function OffersEmptyState({
       <View style={styles.reasonCard}>
         <Text style={styles.emptyTitle}>Chưa có đơn cần giao</Text>
         <Text style={styles.emptyText}>
-          Lời mời giao hàng sẽ tự hiện khi có đơn phù hợp gần vị trí của bạn.
+          Đơn giao hàng sẽ tự hiện khi có đơn phù hợp gần vị trí và ca giao hàng của bạn.
         </Text>
         <View style={styles.checkList}>
-          <CheckRow text="Đang bật trạng thái nhận đơn." />
+          <CheckRow text="Đã đăng ký ca giao hàng phù hợp." />
           <CheckRow text="GPS đã có vị trí hiện tại." />
-          <CheckRow text="Đơn giao hàng sẽ tự xuất hiện khi có lời mời." />
+          <CheckRow text="Đơn giao hàng sẽ tự xuất hiện khi còn trong hạn nhận." />
         </View>
       </View>
     </View>
@@ -998,14 +1146,13 @@ function EligibilityEmptyState() {
         <View style={styles.emptyIcon}>
           <MaterialCommunityIcons name="map-marker-alert-outline" size={34} color={COLORS.blue} />
         </View>
-        <Text style={styles.emptyTitle}>Chưa sẵn sàng nhận đơn</Text>
+        <Text style={styles.emptyTitle}>Chưa có vị trí hiện tại</Text>
         <Text style={styles.emptyText}>
-          Backend cần trạng thái sẵn sàng và vị trí hiện tại để gửi lời mời gần bạn.
+          Ứng dụng cần vị trí hiện tại để tìm đơn gần bạn.
         </Text>
         <View style={styles.checkList}>
-          <CheckRow text="Bật sẵn sàng nhận đơn trong Hồ sơ." />
           <CheckRow text="Cho phép định vị chính xác trên thiết bị thật." />
-          <CheckRow text="Đơn sẽ xuất hiện khi hệ thống có lời mời phù hợp." />
+          <CheckRow text="Đăng ký ca giao hàng để tự nhận đơn phù hợp." />
         </View>
       </View>
     </View>
@@ -1141,8 +1288,67 @@ function MetaPill({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  flex: { flex: 1 },
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 104 },
   listHeader: { gap: spacing.md, paddingBottom: spacing.sm },
+  shiftSummaryCard: {
+    padding: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+    gap: spacing.xs,
+    ...elevation.card,
+  },
+  shiftSummaryTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  shiftSummaryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.tealContainer,
+  },
+  shiftSummaryCopy: { flex: 1 },
+  shiftSummaryTitle: { color: COLORS.onSurface, fontSize: 15, fontWeight: '900' },
+  shiftSummaryHint: { color: COLORS.onSurfaceVariant, fontSize: 11, lineHeight: 15 },
+  shiftSummaryButtonLabel: { fontSize: 12, fontWeight: '900' },
+  shiftSummaryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  shiftSummaryChip: {
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.tealContainer,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  shiftSummaryChipText: { color: COLORS.teal, fontSize: 11, fontWeight: '900' },
+  shiftSummaryChipMuted: {
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.surfaceVariant,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  shiftSummaryChipMutedText: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '800' },
+  cardDisabled: { opacity: 0.82 },
+  blockedBox: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    backgroundColor: COLORS.warningContainer,
+  },
+  blockedBoxCompact: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    backgroundColor: COLORS.warningContainer,
+  },
+  blockedText: { flex: 1, color: COLORS.onSurface, fontSize: 11, fontWeight: '800' },
   dispatchHero: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.sm,

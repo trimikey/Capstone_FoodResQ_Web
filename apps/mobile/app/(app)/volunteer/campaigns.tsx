@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useCampaigns,
@@ -18,6 +18,7 @@ import { CampaignCard } from '@/components/CampaignCard';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
@@ -58,13 +59,13 @@ export default function VolunteerCampaignsScreen() {
   useFocusEffect(
     useCallback(() => {
       const nextSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
-      setSegment(nextSegment);
+      setSegment((current) => (current === nextSegment ? current : nextSegment));
     }, [params.segment])
   );
 
   // Chỉ volunteer dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'volunteer') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   const handleAdvance = async (task: CampaignTask) => {
@@ -259,7 +260,7 @@ function TaskCard({
   const sm = assignmentStatusMeta(task.status);
   const currentIndex = ASSIGNMENT_STEP_ORDER.indexOf(task.status);
   const canAdvance = nextAssignmentStatus(task.status) != null;
-  const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter';
+  const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter' || task.role === 'shipper';
   const needsConfirmation = task.status === 'assigned' && task.confirmationStatus === 'pending';
 
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -226,14 +227,16 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const nextItems = data?.items ?? [];
-    if (page === 1) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFeedItems(nextItems);
-      return;
-    }
-    if (nextItems.length > 0) {
-      setFeedItems((items) => mergeListings(items, nextItems));
-    }
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (page === 1) {
+        setFeedItems(nextItems);
+        return;
+      }
+      if (nextItems.length > 0) {
+        setFeedItems((items) => mergeListings(items, nextItems));
+      }
+    });
+    return () => task.cancel?.();
   }, [data?.items, page]);
 
   const visibleItems = useMemo(() => {

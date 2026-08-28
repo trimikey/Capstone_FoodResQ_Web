@@ -128,13 +128,18 @@ interface DeliverySourceFields {
   destination: { address: string | null; lng: number | null; lat: number | null };
 }
 
-/** Một lời mời giao hàng đang chờ (GET /deliveries/my/offers). */
+/** Một đơn giao hàng đang chờ quanh shipper. */
 export interface TaskOffer {
   id: string;
   deliveryId: string;
   status: string;
   offeredAt: string;
   expiresAt: string;
+  canClaim?: boolean;
+  busyWithCampaign?: boolean;
+  claimSlot?: DeliveryShiftSlot;
+  deliveryScheduledAt?: string | null;
+  distanceFromMeKm?: number;
   delivery: DeliverySourceFields & {
     id: string;
     status: DeliveryStatus;
@@ -209,7 +214,33 @@ interface Paginated<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
-/** Lời mời giao hàng đang chờ. Poll 15s để bắt offer mới. */
+export type ShiftPeriod = 'midnight' | 'morning' | 'afternoon' | 'evening';
+
+export interface DeliveryShiftSlot {
+  workDate: string;
+  period: ShiftPeriod;
+}
+
+export interface DeliveryShiftsData {
+  isShipper: boolean;
+  slots: DeliveryShiftSlot[];
+  window: {
+    alwaysOpen: boolean;
+    open: boolean;
+    opensAt: string | null;
+    closesAt: string | null;
+    nextOpensAt: string | null;
+    editableFrom: string | null;
+    editableTo: string | null;
+  };
+}
+
+export interface SetDeliveryShiftsInput {
+  slots: DeliveryShiftSlot[];
+  from?: string;
+  to?: string;
+}
+
 /** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
 interface NearbyDeliveryRow {
   deliveryId: string;
@@ -224,6 +255,7 @@ interface NearbyDeliveryRow {
   deliveryEvidenceUrl: string | null;
   canClaim: boolean;
   busyWithCampaign?: boolean;
+  claimSlot: DeliveryShiftSlot;
   claimExpiresAt: string;
 }
 
@@ -261,15 +293,20 @@ export function useMyOffers(enabled = true) {
         endpoints.deliveries.nearby,
         { params: coords! },
       );
-      // Map sang shape lời mời cũ để không phải viết lại toàn bộ màn hình.
+      // Map sang shape cũ để giữ UI, nhưng KHÔNG lọc canClaim=false: màn hình cần
+      // giải thích "ngoài ca" hoặc "bận ca chiến dịch" thay vì trống khó hiểu.
       return res.data.data
-        .filter((row) => row.canClaim)
         .map<TaskOffer>((row) => ({
           id: row.deliveryId,
           deliveryId: row.deliveryId,
           status: 'pending',
           offeredAt: row.createdAt,
           expiresAt: row.claimExpiresAt,
+          canClaim: row.canClaim,
+          busyWithCampaign: row.busyWithCampaign,
+          claimSlot: row.claimSlot,
+          deliveryScheduledAt: row.deliveryScheduledAt,
+          distanceFromMeKm: row.distanceKm,
           delivery: {
             id: row.deliveryId,
             status: 'pending_assignment' as DeliveryStatus,
@@ -291,6 +328,38 @@ export function useMyOffers(enabled = true) {
             coords: null,
           },
         }));
+    },
+  });
+}
+
+export function useMyDeliveryShifts(enabled = true) {
+  const { isOnline } = useNetworkStatus();
+  return useQuery({
+    queryKey: ['volunteer', 'delivery-shifts'],
+    enabled: enabled && isOnline,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<DeliveryShiftsData>>(
+        endpoints.volunteers.deliveryShifts
+      );
+      return res.data.data;
+    },
+  });
+}
+
+export function useSetMyDeliveryShifts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SetDeliveryShiftsInput) => {
+      const res = await apiClient.put<ApiResponse<DeliveryShiftsData>>(
+        endpoints.volunteers.deliveryShifts,
+        input
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['volunteer', 'delivery-shifts'] });
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
     },
   });
 }
@@ -339,7 +408,7 @@ export function useDeliveryStats() {
   });
 }
 
-/** Chấp nhận lời mời. POST /deliveries/:id/accept */
+/** Tự nhận đơn. POST /deliveries/:id/claim */
 export function useAcceptOffer() {
   const qc = useQueryClient();
   return useMutation({

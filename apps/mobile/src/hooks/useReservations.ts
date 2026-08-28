@@ -72,6 +72,8 @@ export interface CreateReservationInput {
   requestDelivery?: boolean;
   /** Ảnh bằng chứng khó di chuyển — bắt buộc khi requestDelivery (BE chặn nếu thiếu). */
   deliveryEvidenceUrl?: string;
+  /** Giờ hẹn giao ISO. Bỏ trống = giao ngay khi có tình nguyện viên nhận. */
+  deliveryScheduledAt?: string;
 }
 
 /** Kết quả POST /reservations — KHÔNG phải full reservation. */

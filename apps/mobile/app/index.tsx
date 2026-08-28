@@ -1,9 +1,9 @@
-import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/hooks/useAuth';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 
 export default function Index() {
-  const { isInitialized, isAuthenticated } = useAuth();
+  const { isInitialized, isAuthenticated, user } = useAuth();
 
   if (!isInitialized) {
     return (
@@ -13,5 +13,8 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={isAuthenticated ? '/home' : '/sign-in'} />;
+  if (!isAuthenticated) return <DeferredRedirect href="/sign-in" />;
+  if (user?.role === 'provider') return <DeferredRedirect href="/(app)/provider/listings" />;
+  if (user?.role === 'volunteer') return <DeferredRedirect href="/(app)/volunteer/campaigns" />;
+  return <DeferredRedirect href="/(app)/home" />;
 }

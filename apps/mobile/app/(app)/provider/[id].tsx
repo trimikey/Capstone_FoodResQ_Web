@@ -6,7 +6,7 @@ import {
   Button,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useListingDetail } from '@/hooks/useListings';
 import { usePublishListing, useCancelListing } from '@/hooks/useProviderListings';
@@ -21,6 +21,7 @@ import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { Popup } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { BackButton } from '@/components/ui/BackButton';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS } from '@/theme/design';
 
 export default function ProviderListingDetailScreen() {
@@ -65,7 +66,7 @@ export default function ProviderListingDetailScreen() {
   const canEdit = listing?.status === 'draft' || listing?.status === 'active' || listing?.status === 'fully_reserved';
 
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   return (

@@ -11,7 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -47,6 +47,7 @@ import {
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
 import { AddressPicker } from '@/components/AddressPicker';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
@@ -245,7 +246,7 @@ export default function CreateListingScreen() {
   }, [isEdit, pickupAddress, setValue, storePickup]);
 
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   const openCategorySheet = () => {

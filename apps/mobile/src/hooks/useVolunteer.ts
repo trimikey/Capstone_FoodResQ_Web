@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 
 /**
- * Hồ sơ tình nguyện viên (shipper) — khớp shape GET /volunteers/me.
- * Backend trả thêm `isShipper` (đã verify chuyên môn shipper) + `currentLocation`.
+ * Hồ sơ tình nguyện viên — khớp shape GET /volunteers/me.
+ * `isAvailable` còn từ API legacy; luồng nhận đơn mới dùng ca giao hàng + GPS.
  */
 export interface VolunteerProfile {
   id: string;
@@ -33,8 +33,8 @@ export function useVolunteerMe() {
 }
 
 /**
- * Bật/tắt sẵn sàng nhận đơn (kèm vị trí). PATCH /volunteers/me/availability
- * Khi bật, backend BẮT BUỘC có lng+lat → màn hình phải lấy vị trí trước.
+ * Legacy: bật/tắt sẵn sàng nhận đơn. Luồng giao hàng mới không dùng mutation này
+ * để quyết định claim; giữ lại để tương thích nếu màn cũ còn gọi.
  */
 export function useSetAvailability() {
   const qc = useQueryClient();

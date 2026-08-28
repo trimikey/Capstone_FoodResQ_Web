@@ -84,7 +84,7 @@ export function canCompleteCampaign(status: CampaignStatus): boolean {
 export const ASSIGNMENT_ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
   waiter: 'Phục vụ',
-  shipper: 'Giao hàng',
+  shipper: 'Giao nhận / phục vụ',
 };
 
 /** "2026-07-15" → "15/07/2026"; chuỗi rỗng nếu không hợp lệ. */
@@ -154,6 +154,6 @@ export function slotProgress(c: Campaign): SlotProgress[] {
   return [
     { role: 'chef' as const, label: 'Đầu bếp', filled: c.chefSlotsFilled, needed: c.chefSlotsNeeded },
     { role: 'waiter' as const, label: 'Phục vụ', filled: c.waiterSlotsFilled, needed: c.waiterSlotsNeeded },
-    { role: 'shipper' as const, label: 'Giao hàng', filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
+    { role: 'shipper' as const, label: 'Giao nhận / phục vụ', filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
   ].filter((s) => s.needed > 0);
 }

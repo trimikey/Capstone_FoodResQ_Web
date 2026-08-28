@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { InteractionManager, View, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
@@ -326,7 +326,12 @@ export default function VolunteerHistoryScreen() {
     toDate
   );
 
-  useEffect(() => { setLimit(20); }, [fromDate, toDate]);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setLimit(20);
+    });
+    return () => task.cancel?.();
+  }, [fromDate, toDate]);
 
   const openDetail = useCallback((item: DeliveryHistoryItem) => {
     setSelectedItem(item);

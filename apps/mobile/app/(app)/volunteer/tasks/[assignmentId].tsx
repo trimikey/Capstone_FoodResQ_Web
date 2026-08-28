@@ -6,7 +6,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, type Href, useLocalSearchParams } from 'expo-router';
 import {
   type AssignedDistribution,
-  type DishProcessItem,
   type DishStep,
   useAdvanceTask,
   useCampaignSupplies,
@@ -115,7 +114,7 @@ export default function VolunteerTaskDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca phục vụ của tôi'} />
+      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca vận hành của tôi'} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -124,7 +123,7 @@ export default function VolunteerTaskDetailScreen() {
       >
         <View style={styles.hero}>
           <Text style={styles.heroKicker}>
-            {detail.assignment.role === 'chef' ? 'Đầu bếp' : 'Phục vụ'}
+            {detail.assignment.role === 'chef' ? 'Đầu bếp' : 'Giao nhận / phục vụ'}
             {detail.assignment.shift ? ` · ${detail.assignment.shift.label}` : ''}
           </Text>
           <Text style={styles.heroTitle}>{detail.campaign.title}</Text>
@@ -170,7 +169,7 @@ export default function VolunteerTaskDetailScreen() {
 
         {detail.assignment.role === 'chef' ? (
           <ChefTask detail={detail} checkedIn={checkedIn} onRefresh={() => taskQuery.refetch()} />
-        ) : detail.assignment.role === 'waiter' ? (
+        ) : detail.assignment.role === 'waiter' || detail.assignment.role === 'shipper' ? (
           <WaiterTask detail={detail} checkedIn={checkedIn} onRefresh={() => taskQuery.refetch()} />
         ) : (
           <ScreenState kind="empty" title="Nhiệm vụ này thuộc luồng giao hàng" />

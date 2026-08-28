@@ -22,7 +22,7 @@ import {
   type DeliveryStatus,
 } from '@/hooks/useDeliveries';
 import { useVolunteerMe } from '@/hooks/useVolunteer';
-import { Redirect } from 'expo-router';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ReportDialog } from '@/components/ReportDialog';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -637,7 +637,7 @@ export default function VolunteerActiveScreen() {
   };
 
   if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
-    return <Redirect href="/(app)/volunteer/campaigns" />;
+    return <DeferredRedirect href="/(app)/volunteer/campaigns" />;
   }
 
   if (isLoading && !delivery) {
@@ -662,7 +662,7 @@ export default function VolunteerActiveScreen() {
           <Text style={styles.emptySub}>
             {isError
               ? 'Không tải được dữ liệu. Kéo để thử lại.'
-              : 'Hãy bật "Sẵn sàng nhận đơn" và nhận lời mời ở tab Đơn cần giao.'}
+              : 'Hãy đăng ký ca giao hàng rồi tự nhận đơn phù hợp ở tab Giao hàng.'}
           </Text>
         </ScrollView>
         <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
