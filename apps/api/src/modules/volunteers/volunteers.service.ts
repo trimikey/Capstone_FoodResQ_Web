@@ -282,15 +282,25 @@ export class VolunteersService {
 
     const todayVn = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
     // Phạm vi được sửa: luôn mở → mọi ngày tương lai; có cửa sổ → đúng tuần kế tiếp.
-    const from = window.alwaysOpen ? todayVn : window.editableFrom!;
-    const to = window.alwaysOpen ? null : window.editableTo!;
+    const allowedFrom = window.alwaysOpen ? todayVn : window.editableFrom!;
+    const allowedTo = window.alwaysOpen ? null : window.editableTo!;
+
+    // Thu hẹp về đúng tuần client đang sửa (nếu có gửi), nhưng không bao giờ nới rộng
+    // quá khoảng được phép. Chế độ luôn mở cho sửa vô hạn ngày tương lai — nếu ghi đè
+    // cả khoảng đó trong khi lưới chỉ hiện một tuần thì ca của các tuần sau bị xoá sạch
+    // mà người dùng không hề thấy.
+    const from = dto.from && dto.from > allowedFrom ? dto.from : allowedFrom;
+    const to = dto.to && (!allowedTo || dto.to < allowedTo) ? dto.to : allowedTo;
+    if (to && from > to) {
+      throw new BadRequestException('Khoảng ngày cần sửa không hợp lệ.');
+    }
 
     const unique = new Map<string, { workDate: string; period: string }>();
     for (const slot of dto.slots) {
       if (slot.workDate < from || (to && slot.workDate > to)) {
         throw new BadRequestException(
           to
-            ? `Cửa sổ hiện tại chỉ đăng ký được cho tuần ${from} → ${to}.`
+            ? `Lần lưu này chỉ nhận ca trong khoảng ${from} → ${to}.`
             : `Chỉ đăng ký được cho ngày từ hôm nay (${from}) trở đi.`,
         );
       }

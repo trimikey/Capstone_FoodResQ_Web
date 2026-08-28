@@ -1,18 +1,28 @@
 import {
   Injectable,
+  Inject,
   Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
+import { safeRelease, tryAcquireLock } from '@/common/redlock/try-acquire';
 import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
+import {
+  effectiveOrderWindow,
+  formatMinuteOfDay,
+  isEmptyWindow,
+  minuteOfDayVN,
+} from '@/common/utils/order-window';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TrustService } from '@/modules/trust/trust.service';
 import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
@@ -34,9 +44,21 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
+    // Optional + cuối danh sách: spec khởi tạo service bằng positional args,
+    // thêm bắt buộc ở giữa sẽ vỡ toàn bộ mock. Chỉ dùng để đọc trạng thái kết nối.
+    @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
+  /** Khung giờ nhận đơn thực tế của một tin = giờ sàn ∩ giờ riêng cửa hàng khai. */
+  private async orderWindowFor(listingOpen: number | null, listingClose: number | null) {
+    const [openMinute, closeMinute] = await Promise.all([
+      this.systemConfig.getNumber('PLATFORM_ORDER_OPEN_MINUTE'),
+      this.systemConfig.getNumber('PLATFORM_ORDER_CLOSE_MINUTE'),
+    ]);
+    return effectiveOrderWindow({ openMinute, closeMinute }, listingOpen, listingClose);
+  }
+
   private minuteOfDayVN(d: Date): number {
     const parts = new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
@@ -179,11 +201,10 @@ export class ReservationsService {
 
     // 3. Acquire distributed lock on this listing
     const lockKey = `lock:reservation:${dto.listingId}`;
-    const lock = await this.redlock
-      .acquire([lockKey], LOCK_TTL_MS)
-      .catch(() => {
-        throw new ConflictException('Có người đang đặt món này. Vui lòng thử lại sau vài giây.');
-      });
+    // Khóa Redis chỉ là lớp GIẢM va chạm; chốt chống bán lố thật nằm ở UPDATE có
+    // điều kiện trong transaction bên dưới. Vì vậy Redis rớt/treo thì đi tiếp
+    // KHÔNG khóa (kèm log) — trước đây mọi đơn trên deploy treo ở đây rồi 503.
+    const lock = await tryAcquireLock(this.redlock, this.redis, this.logger, lockKey, LOCK_TTL_MS);
 
     try {
       // 4. Re-read listing inside the lock (prevent race condition)
@@ -218,8 +239,6 @@ export class ReservationsService {
       // lúc 2h sáng (cửa hàng chưa mở) thì QR hết hạn trước khi mở cửa → bị đánh
       // no_show oan. Vì vậy chặn từ đầu, báo rõ khung giờ cho người dùng.
       const nowTs = new Date();
-      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
-      const hasDailyWindow = dayStart != null && dayEnd != null;
 
       if (nowTs > listingRow.pickup_end_time || nowTs > listingRow.expiry_time) {
         throw new BadRequestException(
@@ -227,35 +246,57 @@ export class ReservationsService {
         );
       }
 
-      if (hasDailyWindow) {
-        // Khi provider có khai báo giờ mở/đóng hằng ngày, daily window là thẩm quyền
-        // cho GIỜ trong ngày. Mốc absolute chỉ giữ vai trò giới hạn khoảng NGÀY và hạn
-        // cứng, để các listing cũ từng lưu lệch UTC không bị chặn oan.
-        const today = this.dateKeyVN(nowTs);
-        const startDate = this.dateKeyVN(listingRow.pickup_start_time);
-        const endDate = this.dateKeyVN(listingRow.pickup_end_time);
-        if (today < startDate) {
-          throw new BadRequestException(
-            `Chưa đến ngày nhận hàng. Cửa hàng nhận từ ${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}.`,
-          );
-        }
-        if (today > endDate) {
-          throw new BadRequestException(
-            'Đã quá ngày nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
-          );
-        }
-
-        const nowMinute = this.minuteOfDayVN(nowTs);
-        if (nowMinute < dayStart || nowMinute >= dayEnd) {
-          throw new BadRequestException(
-            `Ngoài giờ nhận hàng của cửa hàng (${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}). Vui lòng quay lại trong khung giờ này.`,
-          );
-        }
-      } else if (nowTs < listingRow.pickup_start_time) {
-        // Tin cũ không có daily window vẫn dùng đúng mốc tuyệt đối đã lưu.
+      // Khung giờ trong ngày = giờ sàn ∩ giờ riêng của cửa hàng. Mốc tuyệt đối
+      // (pickup_start/end) chỉ còn giới hạn khoảng NGÀY, để các tin cũ từng lưu lệch
+      // múi giờ không bị chặn oan.
+      const window = await this.orderWindowFor(
+        listingRow.daily_start_minute,
+        listingRow.daily_end_minute,
+      );
+      if (isEmptyWindow(window)) {
         throw new BadRequestException(
-          `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
+          'Tin này khai giờ nhận nằm ngoài giờ hoạt động của hệ thống nên không đặt được. '
+          + 'Vui lòng chọn tin khác hoặc báo cửa hàng cập nhật lại giờ.',
         );
+      }
+      const windowLabel = `${formatMinuteOfDay(window.openMinute)}–${formatMinuteOfDay(window.closeMinute)}`;
+
+      const today = this.dateKeyVN(nowTs);
+      if (today < this.dateKeyVN(listingRow.pickup_start_time)) {
+        throw new BadRequestException(
+          `Chưa đến ngày nhận hàng — tin này nhận từ ngày ${this.formatVN(listingRow.pickup_start_time)}.`,
+        );
+      }
+      if (today > this.dateKeyVN(listingRow.pickup_end_time)) {
+        throw new BadRequestException(
+          'Đã quá ngày nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
+        );
+      }
+
+      const nowMinute = minuteOfDayVN(nowTs);
+      if (nowMinute < window.openMinute || nowMinute >= window.closeMinute) {
+        throw new BadRequestException(
+          `Ngoài giờ nhận đơn (${windowLabel}). Vui lòng quay lại trong khung giờ này.`,
+        );
+      }
+
+      // Giờ hẹn giao cũng phải nằm trong khung — nếu không, đơn hẹn 2h sáng vẫn lọt
+      // qua chỉ vì lúc ĐẶT đang trong giờ mở cửa.
+      // Kiểm mọi lúc trường này có mặt, không chỉ khi requestDelivery: giờ hẹn vô lý
+      // là dữ liệu hỏng dù đơn có chọn giao hay không.
+      if (dto.deliveryScheduledAt) {
+        const scheduledAt = new Date(dto.deliveryScheduledAt);
+        const scheduledMinute = minuteOfDayVN(scheduledAt);
+        if (scheduledMinute < window.openMinute || scheduledMinute >= window.closeMinute) {
+          throw new BadRequestException(
+            `Giờ hẹn giao phải nằm trong khung ${windowLabel}. Vui lòng chọn lại giờ.`,
+          );
+        }
+        if (this.dateKeyVN(scheduledAt) > this.dateKeyVN(listingRow.pickup_end_time)) {
+          throw new BadRequestException(
+            'Giờ hẹn giao vượt quá ngày nhận hàng của tin. Vui lòng chọn giờ sớm hơn.',
+          );
+        }
       }
 
       if (listingRow.quantity_remaining < dto.quantity) {
@@ -285,8 +326,10 @@ export class ReservationsService {
       const qrExpiresAt = new Date(Date.now() + qrValidMinutes * 60 * 1000);
 
       const reservation = await this.prisma.$transaction(async (tx) => {
-        // Decrement quantity — use SELECT FOR UPDATE equivalent via raw SQL
-        await tx.$executeRaw(Prisma.sql`
+        // Trừ kho CÓ ĐIỀU KIỆN — Postgres tuần tự hoá trên dòng này nên kể cả hai
+        // đơn cùng lọt qua pre-check (lúc chạy không khóa), đơn sau bắt buộc fail
+        // ở đây thay vì đẩy quantity_remaining xuống âm.
+        const affected = await tx.$executeRaw(Prisma.sql`
           UPDATE food_listings
           SET
             quantity_remaining = quantity_remaining - ${dto.quantity},
@@ -296,7 +339,13 @@ export class ReservationsService {
             END,
             updated_at = NOW()
           WHERE id = ${dto.listingId}::uuid
+            AND quantity_remaining >= ${dto.quantity}
         `);
+        if (affected === 0) {
+          throw new ConflictException(
+            'Món này vừa được người khác đặt trước — số lượng còn lại không đủ. Vui lòng tải lại trang.',
+          );
+        }
 
         // Create reservation with crypto QR token
         const [newReservation] = await tx.$queryRaw<{ id: string; qr_token: string }[]>(
@@ -358,7 +407,7 @@ export class ReservationsService {
         message: 'Đặt chỗ thành công! Trình mã QR cho nhà cung cấp để nhận hàng.',
       };
     } finally {
-      await lock.release();
+      await safeRelease(lock);
     }
   }
 
@@ -724,9 +773,22 @@ export class ReservationsService {
       );
     }
 
+    // Đơn giao CHƯA tìm được người nhận thì huỷ không bao giờ bị phạt.
+    //
+    // Phạt huỷ trễ sinh ra để bù cho bên bị thiệt: cửa hàng đã để dành suất, hoặc shipper
+    // đã chạy tới lấy. Khi chưa ai nhận đơn thì không có thiệt hại đó — mà nếu người nhận
+    // cứ ngồi im, cron sẽ tự huỷ lúc hết hạn nhận và KHÔNG phạt gì cả. Phạt người bấm huỷ
+    // sớm hơn hoá ra là thưởng cho việc ngồi im, trong khi huỷ sớm mới là cái trả suất về
+    // kho kịp cho người khác đặt.
+    const waitingForShipper =
+      !!reservation.delivery
+      && reservation.delivery.status === 'pending_assignment'
+      && !reservation.delivery.shipperId;
+
     // Huỷ trễ = còn dưới 30 phút trước giờ kết thúc nhận hàng (CLAUDE.md §9)
     const isLateCancellation =
-      reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
+      !waitingForShipper
+      && reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
 
     const ops: Prisma.PrismaPromise<unknown>[] = [
       // Cancel reservation

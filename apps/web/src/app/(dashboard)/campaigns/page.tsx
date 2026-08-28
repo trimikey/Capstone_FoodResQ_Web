@@ -5,7 +5,7 @@ import './campaign-tokens.css';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { AssignmentRole, UserRole } from '@foodresq/types';
+import { UserRole } from '@foodresq/types';
 import { toast } from 'sonner';
 import {
   useCampaigns,
@@ -27,6 +27,7 @@ import DonationDetailModal from './_components/DonationDetailModal';
 import MyCampaignCard from './_components/MyCampaignCard';
 import CompletedCampaignsSection from './_components/CompletedCampaignsSection';
 import CreateCampaignModal from './_components/CreateCampaignModal';
+import CharityOverviewCharts from '@/components/campaigns/CharityOverviewCharts';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
@@ -100,7 +101,7 @@ function CampaignsPageInner() {
   // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì tổ chức được bấm Bắt đầu trước
   // giờ vận hành — card phải biết cấu hình này mới hiện đúng nút.
   const { data: campaignConstraints } = useCampaignCreateConstraints(isCharity);
-  // Đăng ký ca thực hiện ở trang chi tiết (cần chọn ca + ngày) — xem handleApply.
+  // Đăng ký ca chỉ thực hiện ở TRANG CHI TIẾT chiến dịch (nơi chọn được ca + ngày trực).
   const create = useCreateCampaign();
 
   const [showForm, setShowForm] = useState(false);
@@ -233,15 +234,6 @@ function CampaignsPageInner() {
     return entries;
   }, [isCharity, isProvider, isVolunteer, stats, myTasks]);
 
-  // Mọi chiến dịch đều bắt buộc có ít nhất một ca (BE chặn tạo nếu không), mà đăng ký
-  // theo ca thì cần cả shiftId lẫn ngày trực — thông tin card này không có. Trước đây
-  // nút bấm gọi thẳng API với mỗi {id, role} nên LUÔN nhận 400 "vui lòng đăng ký trực
-  // tiếp theo từng ca". Giờ đưa TNV sang trang chi tiết, nơi có bảng chọn ca + ngày.
-  function handleApply(id: string, role: AssignmentRole) {
-    toast.info(`Chọn ca và ngày trực cho vai trò ${ROLE_LABEL[role]} ở trang chiến dịch.`);
-    router.push(`/campaigns/${id}?role=${role}`);
-  }
-
   const greetingName = me?.receiver?.organizationName ?? me?.fullName?.split(' ')[0] ?? 'bạn';
   const greetingSubtitle = isCharity
     ? 'Quản lý chiến dịch, duyệt tình nguyện viên, theo dõi tiến độ.'
@@ -296,8 +288,6 @@ function CampaignsPageInner() {
               isCharity={isCharity}
               isAccountActive={isAccountActive}
               myRoles={myRoles}
-              onApply={handleApply}
-              applying={false}
               onClear={() => setSearch('')}
             />
           )}
@@ -353,8 +343,6 @@ function CampaignsPageInner() {
               isCharity={isCharity}
               isAccountActive={isAccountActive}
               myRoles={myRoles}
-              onApply={handleApply}
-              applying={false}
             />
           )}
           {!searching && section === 'suppliers' && isCharity && (
@@ -502,6 +490,9 @@ function OverviewDashboard({
         />
       </div>
 
+      {/* Biểu đồ gộp toàn tổ chức — chỉ charity; TNV/NCC có dashboard riêng. */}
+      {isCharity && isAccountActive && <CharityOverviewCharts />}
+
       {/* Pending approval alert (charity, only when there's something pending) */}
       {isCharity && stats.pendingApprovals > 0 && (
         <div className="cm-alert">
@@ -581,8 +572,6 @@ function OverviewDashboard({
                   key={c.id}
                   c={c}
                   myRoles={isVolunteer ? (myTasks ?? []).map((t) => t.role) : []}
-                  onApply={() => undefined}
-                  applying={false}
                   isProvider={isProvider}
                   disabled={!isAccountActive}
                 />
@@ -1311,15 +1300,32 @@ function TasksSection({ myTasks }: { myTasks: MyTask[] }) {
     Boolean(t.campaign.scheduledDate?.slice(0, 10) === todayKey);
 
   // 1 TNV nhận nhiều ca cùng chiến dịch → BE trả nhiều task giống hệt nhau ngoài
-  // ca trực. Gộp theo chiến dịch + vai trò + trạng thái thành 1 thẻ; thẻ tự liệt
-  // kê các ca bên trong (mỗi ca vẫn có link nhiệm vụ riêng).
-  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}:${t.status}`;
+  // ca trực. Gộp theo chiến dịch + vai trò thành 1 thẻ (KHÔNG theo trạng thái —
+  // ca sáng đã điểm danh còn ca chiều mới nhận việc vẫn là một chiến dịch, tách ra
+  // sẽ ra 2 thẻ trùng nhau); thẻ tự liệt kê các ca bên trong, mỗi ca kèm trạng
+  // thái và link nhiệm vụ riêng.
+  const taskGroupKey = (t: MyTask) => `${t.campaign.id}:${t.role}`;
   const taskGroups = new Map<string, MyTask[]>();
   for (const t of myTasks) {
     const k = taskGroupKey(t);
     taskGroups.set(k, [...(taskGroups.get(k) ?? []), t]);
   }
-  const dedupedTasks = myTasks.filter((t) => taskGroups.get(taskGroupKey(t))![0].id === t.id);
+  // Trong nhóm: ca hiển thị theo thứ tự thời gian; thẻ đại diện lấy ca "đang
+  // hoạt động" nhất để chip trạng thái đầu thẻ phản ánh việc cần làm ngay.
+  const STATUS_RANK = ['in_progress', 'checked_in', 'assigned', 'pending', 'rejected', 'completed', 'absent', 'cancelled'];
+  const rank = (t: MyTask) => {
+    const i = STATUS_RANK.indexOf(t.status);
+    return i === -1 ? STATUS_RANK.length : i;
+  };
+  for (const list of taskGroups.values()) {
+    list.sort((a, b) =>
+      `${a.workDate ?? ''}:${a.shift?.startTime ?? ''}`.localeCompare(
+        `${b.workDate ?? ''}:${b.shift?.startTime ?? ''}`,
+      ),
+    );
+  }
+  const repOf = (list: MyTask[]) => [...list].sort((a, b) => rank(a) - rank(b))[0];
+  const dedupedTasks = myTasks.filter((t) => repOf(taskGroups.get(taskGroupKey(t))!).id === t.id);
   const groupOf = (t: MyTask) => taskGroups.get(taskGroupKey(t));
 
   const todayTasks = dedupedTasks.filter(isToday);
@@ -1406,8 +1412,6 @@ function SearchResultsSection({
   isProvider,
   isAccountActive,
   myRoles,
-  onApply,
-  applying,
   onClear,
 }: {
   query: string;
@@ -1420,8 +1424,6 @@ function SearchResultsSection({
   isCharity: boolean;
   isAccountActive: boolean;
   myRoles: string[];
-  onApply: (id: string, role: AssignmentRole) => void;
-  applying: boolean;
   onClear: () => void;
 }) {
   return (
@@ -1481,8 +1483,6 @@ function SearchResultsSection({
               key={c.id}
               c={c}
               myRoles={isVolunteer ? myRoles : []}
-              onApply={onApply}
-              applying={applying}
               isProvider={isProvider}
               disabled={!isAccountActive}
             />
@@ -1503,8 +1503,6 @@ function BrowseSection({
   isCharity,
   isAccountActive,
   myRoles,
-  onApply,
-  applying,
 }: {
   isLoading: boolean;
   filtered: Campaign[];
@@ -1516,8 +1514,6 @@ function BrowseSection({
   isCharity: boolean;
   isAccountActive: boolean;
   myRoles: string[];
-  onApply: (id: string, role: AssignmentRole) => void;
-  applying: boolean;
 }) {
   return (
     <section>
@@ -1579,8 +1575,6 @@ function BrowseSection({
               key={c.id}
               c={c}
               myRoles={isVolunteer ? myRoles : []}
-              onApply={onApply}
-              applying={applying}
               isProvider={isProvider}
               // Khi tài khoản chưa active: vô hiệu hoá nút đăng ký (đi qua wrapper).
               disabled={!isAccountActive}

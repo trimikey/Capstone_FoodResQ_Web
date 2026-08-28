@@ -20,7 +20,6 @@ import {
   useUpdateMyLocation,
   type ActiveDelivery,
   type DeliveryHistoryItem,
-  type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
 import PickupOrderCard from '@/components/deliveries/PickupOrderCard';
@@ -35,7 +34,8 @@ const HandoverConfirmModal = dynamic(
   { ssr: false },
 );
 
-import DeliveryShiftPanel from './DeliveryShiftPanel';
+import ClaimCountdown from './ClaimCountdown';
+import DeliveryShiftSummary from './DeliveryShiftSummary';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -69,11 +69,11 @@ const STEPS = [
   { key: 'delivered', label: 'Hoàn tất' },
 ];
 
-function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
 }
 
-function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.imageUrls?.[0] ?? null;
 }
 
@@ -101,7 +101,10 @@ export default function DeliveriesPage() {
   const claimDelivery = useClaimDelivery();
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
-  const { data: pickupData } = useMyPickupOrders(!!me?.isShipper);
+  // KHÔNG khoá theo isShipper: vai trò phục vụ và giao hàng đã gộp, nên một TNV chỉ
+  // có chuyên môn phục vụ vẫn có thể được tổ chức cử đi lấy nguyên liệu. Backend đã
+  // lọc theo ca đang trực nên gọi thẳng là đủ.
+  const { data: pickupData } = useMyPickupOrders();
   const updateStatus = useUpdateDeliveryStatus();
   const cancelDelivery = useCancelDelivery();
   const failDelivery = useFailDelivery();
@@ -628,7 +631,7 @@ export default function DeliveriesPage() {
         ) : (
           /* DANH SÁCH ĐƠN CHỜ — shipper tự chọn (thay lời mời tuần tự 15s) */
           <div className="space-y-4">
-            <DeliveryShiftPanel />
+            <DeliveryShiftSummary />
 
             <h2 className="font-extrabold text-xl text-neutral-900">
               Đơn giao gần bạn {nearby && nearby.length > 0 ? `(${nearby.length})` : ''}
@@ -683,18 +686,27 @@ export default function DeliveriesPage() {
                         <span className="font-semibold text-emerald-700">Cách bạn ~{o.distanceKm} km</span>
                         {o.tripKm != null && <span>· Lấy→giao ~{o.tripKm} km</span>}
                       </p>
-                      {/* Giờ hẹn giao — khác đơn giao ngay */}
-                      {o.deliveryScheduledAt ? (
-                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
-                          <span className="material-symbols-outlined text-[13px]">schedule</span>
-                          Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-                        </p>
-                      ) : (
-                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                          <span className="material-symbols-outlined text-[13px]">bolt</span>
-                          Giao ngay
-                        </p>
-                      )}
+                      {/* Giờ hẹn giao — khác đơn giao ngay. Kèm hạn nhận vì đơn là hàng
+                          chung: ai bấm trước được trước, và hết hạn thì đơn bị huỷ. */}
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {o.deliveryScheduledAt ? (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                            <span className="material-symbols-outlined text-[13px]">schedule</span>
+                            Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                          </span>
+                        ) : (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                            <span className="material-symbols-outlined text-[13px]">bolt</span>
+                            Giao ngay
+                          </span>
+                        )}
+                        {o.claimExpiresAt && (
+                          <ClaimCountdown
+                            expiresAt={o.claimExpiresAt}
+                            scheduled={!!o.deliveryScheduledAt}
+                          />
+                        )}
+                      </span>
                     </div>
                   </div>
 
@@ -754,7 +766,7 @@ export default function DeliveriesPage() {
         {/* ĐƠN LẤY NGUYÊN LIỆU CHIẾN DỊCH
             Không phải bản ghi `deliveries` nên không nằm trong luồng nhận/giao ở trên,
             nhưng vẫn là "đơn phải đi lấy" của shipper — gom về đây để quản lý một chỗ. */}
-        {me?.isShipper && pendingPickups.length > 0 && (
+        {pendingPickups.length > 0 && (
           <div className="space-y-4 mt-8">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">
@@ -769,6 +781,56 @@ export default function DeliveriesPage() {
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </Link>
             </div>
+            {/* Lộ trình tổng khi phải ghé NHIỀU nhà cung cấp: chiến dịch giờ đặt được
+                nhiều đơn / nhiều NCC, shipper cần thấy toàn bộ các điểm trên một bảng
+                để tự xếp thứ tự đường đi, thay vì lần từng thẻ. Sắp theo giờ hẹn lấy. */}
+            {pendingPickups.length > 1 && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <p className="flex items-center gap-1.5 text-sm font-extrabold text-emerald-900">
+                  <span className="material-symbols-outlined text-[18px]">route</span>
+                  Lộ trình lấy hàng — {pendingPickups.length} điểm
+                </p>
+                <ol className="mt-2 space-y-2">
+                  {[...pendingPickups]
+                    .sort((a, b) => (a.pickupStartTime ?? '99').localeCompare(b.pickupStartTime ?? '99'))
+                    .map((o, idx) => (
+                      <li key={o.id} className="flex items-start gap-2.5 text-xs">
+                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                          {idx + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="font-bold text-neutral-900">
+                            {o.providerName}
+                            {o.ingredientName ? ` — ${o.ingredientName}` : ''}
+                            {o.quantityKg != null ? ` (${o.quantityKg} kg)` : ''}
+                          </span>
+                          <span className="block text-neutral-600">
+                            {o.providerAddress || 'Chưa có địa chỉ'}
+                            {o.distanceKm != null ? ` · cách bếp ~${o.distanceKm} km` : ''}
+                          </span>
+                          <span className="block text-neutral-500">
+                            {o.pickupStartTime && o.pickupEndTime
+                              ? `Khung lấy ${o.pickupStartTime.slice(0, 5)}–${o.pickupEndTime.slice(0, 5)}`
+                              : 'Chưa hẹn khung giờ'}
+                            {' · '}chiến dịch “{o.campaignTitle}”
+                          </span>
+                        </span>
+                        {o.lng != null && o.lat != null && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 inline-flex items-center gap-0.5 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">directions</span>
+                            Chỉ đường
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                </ol>
+              </div>
+            )}
             <div className="space-y-3">
               {pendingPickups.map((o) => (
                 <PickupOrderCard key={o.id} order={o} onConfirm={setPickingUp} />

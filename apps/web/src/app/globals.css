@@ -134,6 +134,15 @@
   --color-honey-600: #a66a13;
   --color-honey-700: #7f4f13;
 
+  /* Bảng màu BANNER — lấy thẳng từ ba ảnh tài liệu ở hero: phát bánh mì dưới tán cây,
+     phát quà trên phố, tình nguyện viên chơi với trẻ vùng cao. Điểm chung là trời
+     xanh, cây lá xanh và những mảng áo cam/đỏ rực. Bảng sage mặc định quá trầm nên
+     hero nhìn xám xịt và "máy móc". */
+  --color-sky-brand: #3aa6dd;
+  --color-leaf-brand: #4fb14f;
+  /* Cam ấm — áo tình nguyện viên và biển hiệu đỏ xuất hiện ở cả ba ảnh. */
+  --color-warm-brand: #e07a2f;
+
   /* Box-shadow scale (Material-ish elevation) */
   --shadow-12: 0 18px 40px -12px rgba(35, 108, 42, 0.22);
 }

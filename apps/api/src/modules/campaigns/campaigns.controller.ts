@@ -100,6 +100,17 @@ export class CampaignsController {
     return this.campaignsService.acceptShiftInvite(id, user.id, dto.notificationId);
   }
 
+  @Post('shift-invites/:notificationId/dismiss')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: bỏ qua một lời mời nhận ca (đánh dấu đã phản hồi)' })
+  dismissShiftInvite(
+    @Param('notificationId', ParseUUIDPipe) notificationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.dismissShiftInvite(user.id, notificationId);
+  }
+
   @Get('my-shift-invites')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)
@@ -442,6 +453,30 @@ export class CampaignsController {
     return this.campaignsService.getCreateConstraints();
   }
 
+  @Get('provider/supply-stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: thống kê kg đã cung cấp theo từng chiến dịch + chuỗi ngày' })
+  providerSupplyStats(@CurrentUser() user: User) {
+    return this.campaignsService.getProviderSupplyStats(user.id);
+  }
+
+  @Get('charity/overview-report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo gộp toàn tổ chức cho dashboard Tổng quan' })
+  charityOverviewReport(@CurrentUser() user: User) {
+    return this.campaignsService.getCharityOverviewReport(user.id);
+  }
+
+  @Get(':id/report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo tổng hợp chiến dịch (suất ăn, kg nguyên liệu, TNV)' })
+  campaignReport(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.getCampaignReport(id, user.id);
+  }
+
   @Get('my-pickup-orders')
   @UseGuards(RolesGuard)
   @Roles(UserRole.VOLUNTEER)
@@ -725,7 +760,7 @@ export class CampaignsController {
   @Post(':id/dishes/:menuItemId/approve')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món — món đã được chef tick xong' })
+  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món — món đã được chef tick xong' })
   approveDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,
@@ -737,7 +772,7 @@ export class CampaignsController {
   @Post(':id/dishes/:menuItemId/reject')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món — chef phải làm lại' })
+  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng xuất phát" của một món — chef phải làm lại' })
   rejectDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,

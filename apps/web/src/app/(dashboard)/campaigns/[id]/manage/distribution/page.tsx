@@ -75,7 +75,7 @@ export default function DistributionPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   // "Đi phát" chỉ mở khi có món đã qua đủ quy trình bếp: chef hoàn tất khâu 4
-  // "Sẵn sàng phát xuất" (sau khi tổ chức duyệt ảnh QC). Chưa món nào sẵn sàng
+  // "Sẵn sàng xuất phát" (sau khi tổ chức duyệt ảnh QC). Chưa món nào sẵn sàng
   // → khoá nút Tạo đợt mới, rê chuột hiện lý do. Chiến dịch completed (dữ liệu
   // cũ có thể không còn dishSteps) thì không chặn.
   const readyDishes = (c.dishSteps ?? []).filter((d) =>
@@ -86,7 +86,7 @@ export default function DistributionPage() {
   const createDisabledReason = !['in_progress', 'completed'].includes(c.status)
     ? 'Chỉ ghi đợt khi chiến dịch đang diễn ra hoặc đã hoàn tất'
     : dishesNotReady
-      ? 'Món chưa sẵn sàng — cần chef hoàn tất "Sẵn sàng phát xuất" (sau khi tổ chức duyệt ảnh QC) rồi mới tạo đợt phát.'
+      ? 'Món chưa sẵn sàng — cần chef hoàn tất "Sẵn sàng xuất phát" (sau khi tổ chức duyệt ảnh QC) rồi mới tạo đợt phát.'
       : '';
   /** Đợt đang mở xem đủ danh sách điểm phát (chỉ một đợt tại một thời điểm). */
   const [expandedId, setExpandedId] = useState<string | null>(null);

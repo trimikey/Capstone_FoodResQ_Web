@@ -603,7 +603,9 @@ function OrderCard({
           <span className={`self-start md:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
             {meta.label}
           </span>
-          <div className="grid grid-cols-2 min-[420px]:flex gap-2 min-[420px]:gap-1.5 mt-auto">
+          {/* flex-wrap + justify-end: cột md:w-44 chỉ đủ 2 nút ngắn — nút thứ 3
+              ("Đăng lại"…) phải rơi xuống hàng dưới thay vì tràn ra ngoài thẻ. */}
+          <div className="grid grid-cols-2 min-[420px]:flex min-[420px]:flex-wrap md:justify-end gap-2 min-[420px]:gap-1.5 mt-auto">
             <button
               className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
               title="Xem chi tiết"
@@ -637,10 +639,16 @@ function OrderCard({
               </button>
             )}
             {meta.group === 'cancelled' && (
-              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
+              /* Trước đây là <button> không có onClick — bấm không làm gì. Dẫn về
+                 trang tin, nơi có sẵn hành động "Đăng lại (nhân bản)" thật. */
+              <Link
+                href={`/listings/${item.listing.id}`}
+                title="Mở trang tin để đăng lại (nhân bản thành bản nháp mới)"
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              >
                 <span className="material-symbols-outlined text-[14px]">refresh</span>
                 Đăng lại
-              </button>
+              </Link>
             )}
           </div>
         </div>

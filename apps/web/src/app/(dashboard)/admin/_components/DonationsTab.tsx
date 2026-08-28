@@ -32,12 +32,14 @@ export default function DonationsTab() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Quyên góp</h2>
-        <p className="text-sm text-neutral-500 mt-1">Theo dõi nguồn thực phẩm hỗ trợ cộng đồng (số liệu thật).</p>
+        {/* Trang này liệt kê ĐƠN ĐẶT CHỖ của người nhận — tên cũ "Quản lý Quyên góp"
+            khiến admin tìm khoản quyên góp chiến dịch ở nhầm chỗ. */}
+        <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Đơn nhận thực phẩm</h2>
+        <p className="text-sm text-neutral-500 mt-1">Theo dõi các đơn người nhận đặt từ tin thực phẩm và khối lượng đã cứu.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <DonStat icon="assignment" label="Đã xác nhận" value={ov?.donations.confirmed ?? 0} />
+        <DonStat icon="assignment" label="Đang chờ nhận" value={ov?.donations.confirmed ?? 0} />
         <DonStat icon="hourglass_top" label="Chờ bàn giao" value={ov?.donations.pickedUp ?? 0} />
         <DonStat icon="check_circle" label="Hoàn thành" value={ov?.donations.completed ?? 0} />
         <div className="bg-[#166534] rounded-3xl p-6 shadow-sm flex items-center gap-4 text-white">

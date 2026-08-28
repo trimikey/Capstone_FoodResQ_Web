@@ -13,8 +13,10 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 export const FIXED_DISH_STEPS = [
   { order: 1, name: 'Sơ chế' },
   { order: 2, name: 'Nấu' },
-  { order: 3, name: 'Trình bày' },
-  { order: 4, name: 'Sẵn sàng phát xuất' },
+  // Tên cũ "Trình bày" gây lệch: màn chef gọi là "QC kiểm tra", màn tổ chức hiện
+  // "Trình bày", trong khi bản chất khâu này là chụp ảnh QC cho tổ chức duyệt.
+  { order: 3, name: 'Kiểm tra QC' },
+  { order: 4, name: 'Sẵn sàng xuất phát' },
 ] as const;
 
 /** VN là UTC+7 cố định, không có giờ mùa hè. */
@@ -151,7 +153,7 @@ export class DishStepsService {
   ): Promise<CampaignDishStep[]> {
     if (scheduledTimes.length !== FIXED_DISH_STEPS.length) {
       throw new BadRequestException(
-        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Trình bày, Sẵn sàng).`,
+        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Kiểm tra QC, Sẵn sàng phát).`,
       );
     }
     for (const t of scheduledTimes) {
@@ -350,12 +352,27 @@ export class DishStepsService {
     if (effective === 'locked') {
       throw new BadRequestException(
         step.stepOrder === 4 && prevStep?.status === 'done' && prevStep.reviewStatus !== 'approved'
-          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng phát xuất.'
+          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng xuất phát.'
           : 'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
       );
     }
     if (step.status === 'done') {
       throw new BadRequestException('Khâu này đã được hoàn thành trước đó.');
+    }
+    // Món đã bị tổ chức HUỶ (từ chối ảnh QC) là quyết định cuối — chặn mọi tick trên
+    // món đó, kể cả dữ liệu cũ còn ở trạng thái 'available' theo luật trước đây
+    // (từ chối từng trả khâu 3 về cho chef chụp lại).
+    const qcStep =
+      step.stepOrder === 3
+        ? step
+        : await this.prisma.campaignDishStep.findFirst({
+            where: { menuItemId: step.menuItemId, stepOrder: 3 },
+            select: { reviewStatus: true },
+          });
+    if (qcStep?.reviewStatus === 'rejected') {
+      throw new BadRequestException(
+        'Món này đã bị tổ chức huỷ vì QC không đạt — không thể tiếp tục các khâu.',
+      );
     }
 
     const proofUrl = await this.storage.saveImage(proof, 'dish-step-proofs');
@@ -387,7 +404,7 @@ export class DishStepsService {
         title: `Ảnh QC món "${dishName}" đang chờ duyệt`,
         body:
           `Bếp đã hoàn tất khâu QC và tải ảnh lên. Vào tab "Quy trình bếp" để duyệt — `
-          + `món chỉ được chuyển sang "Sẵn sàng phát xuất" sau khi bạn duyệt ảnh.`,
+          + `món chỉ được chuyển sang "Sẵn sàng xuất phát" sau khi bạn duyệt ảnh.`,
         data: { campaignId, stepId, menuItemId: step.menuItemId },
       });
     } else {
@@ -409,7 +426,7 @@ export class DishStepsService {
       }
     }
 
-    // Nếu là khâu cuối (sẵn sàng phát xuất) → đánh dấu assignment hoàn thành (nếu chef)
+    // Nếu là khâu cuối (sẵn sàng xuất phát) → đánh dấu assignment hoàn thành (nếu chef)
     if (step.stepOrder === 4) {
       await this.maybeCompleteAssignment(campaignId, volunteer.id);
     }
@@ -442,10 +459,11 @@ export class DishStepsService {
   /**
    * TỔ CHỨC duyệt / từ chối ẢNH khâu QC (stepOrder=3) mà chef đã tải lên.
    *
-   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng phát xuất" được mở
+   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng xuất phát" được mở
    *    (tự mở luôn nếu đã đến giờ); báo chef.
-   *  - reject:  reviewStatus='rejected' + lưu lý do; khâu 3 quay về `available`
-   *    để chef chụp lại (chụp lại xong tự về 'pending' chờ duyệt lần nữa); báo chef.
+   *  - reject:  reviewStatus='rejected' + lưu lý do và MÓN BỊ HUỶ hẳn — QC không
+   *    đạt nghĩa là đồ ăn không an toàn để phát, không có chuyện chụp lại ảnh là
+   *    dùng được; khâu 4 vĩnh viễn không mở (gate đòi reviewStatus='approved').
    */
   async reviewQcStep(
     campaignId: string,
@@ -508,7 +526,7 @@ export class DishStepsService {
         void this.notifications.notify(chefUserId, {
           type: 'campaign',
           title: `Ảnh QC món "${dishName}" đã được duyệt`,
-          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng phát xuất" khi đến giờ.',
+          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng xuất phát" khi đến giờ.',
           data: { campaignId, stepId, menuItemId: step.menuItemId },
         });
       }
@@ -526,24 +544,24 @@ export class DishStepsService {
         reviewStatus: 'rejected',
         reviewedAt: new Date(),
         reviewNote: trimmed,
-        // Trả khâu 3 về available để chef làm lại — ảnh cũ vẫn giữ để đối chiếu.
-        status: 'available',
+        // GIỮ status='done': từ chối là quyết định cuối — món bị huỷ, không mở lại
+        // khâu 3 cho chef chụp lại. Khâu 4 không bao giờ mở vì gate đòi 'approved'.
       },
     });
     if (chefUserId) {
       void this.notifications.notify(chefUserId, {
         type: 'campaign',
-        title: `Ảnh QC món "${dishName}" bị từ chối`,
-        body: `Tổ chức từ chối ảnh QC: ${trimmed}. Vui lòng kiểm tra lại món và chụp ảnh mới.`,
-        data: { campaignId, stepId, menuItemId: step.menuItemId },
+        title: `Món "${dishName}" đã bị huỷ — QC không đạt`,
+        body: `Tổ chức từ chối ảnh QC và huỷ món này. Lý do: ${trimmed}. Món sẽ không được phát; các món khác vẫn chạy bình thường.`,
+        data: { campaignId, stepId, menuItemId: step.menuItemId, cancelled: true },
       });
     }
     return { id: updated.id, reviewStatus: updated.reviewStatus, dishName };
   }
 
   /**
-   * Tổ chức duyệt step cuối (sẵn sàng phát xuất) của một món.
-   * Chef đã tick "Sẵn sàng phát xuất" → tổ chức kiểm tra và duyệt.
+   * Tổ chức duyệt step cuối (sẵn sàng xuất phát) của một món.
+   * Chef đã tick "Sẵn sàng xuất phát" → tổ chức kiểm tra và duyệt.
    * Sau khi duyệt → món có thể chuyển sang phân phát.
    */
   async approveDishFinalStep(
@@ -558,7 +576,7 @@ export class DishStepsService {
       include: { menuItem: { select: { customName: true } } },
     });
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
     if (step.status !== 'available') {
       throw new BadRequestException('Bước này chưa được chef tick hoặc đã được duyệt trước đó.');
@@ -591,7 +609,7 @@ export class DishStepsService {
       include: { menuItem: { select: { customName: true } } },
     });
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
 
     // Reset về available để chef làm lại
@@ -707,80 +725,24 @@ export class DishStepsService {
     };
   }
 
+
   /**
-   * Bếp trưởng / TNV QC đánh dấu 1 khâu fail chất lượng (ngắt khẩn cấp).
-   * Hành vi:
-   *   - Set qcFailedAt + qcFailedByVolunteerId + qcFailureReason.
-   *   - Không xoá step, không ảnh hưởng step khác / món khác.
-   *   - Gửi notification khẩn cho charity owner qua NotificationsGateway.
-   * Điều kiện:
-   *   - User là chef/waiter đang assigned vào campaign.
-   *   - Step đang `available` (chưa done, chưa fail).
+   * Giờ mặc định của 4 khâu, tính từ giờ BẮT ĐẦU vận hành của chiến dịch.
+   *
+   * Nhịp lấy theo bộ giờ chuẩn của ca sáng (bắt đầu 06:00 → 08:00/09:00/10:30/11:30):
+   * sơ chế sau 2 tiếng chuẩn bị, nấu +1h, QC +1h30, sẵn sàng phát +1h. Ca chiều
+   * 12:00 → 14:00/15:00/16:30/17:30; ca tối 18:00 → 20:00/21:00/22:30/23:30 (phút
+   * lấy modulo 24h nên vắt qua nửa đêm vẫn ra HH:mm hợp lệ, luật neo ngày lo phần
+   * ngày). Đây chỉ là GỢI Ý — bếp trưởng vẫn chỉnh lại được từng khâu.
    */
-  async flagStepQualityFail(
-    campaignId: string,
-    userId: string,
-    stepId: string,
-    reason: string,
-  ) {
-    const trimmed = reason?.trim();
-    if (!trimmed) {
-      throw new BadRequestException('Vui lòng nhập lý do ngắt khẩn cấp.');
-    }
-    if (trimmed.length > 500) {
-      throw new BadRequestException('Lý do tối đa 500 ký tự.');
-    }
-
-    const { volunteer } = await this.assertAssignedVolunteer(campaignId, userId);
-
-    const step = await this.prisma.campaignDishStep.findUnique({
-      where: { id: stepId },
-      include: {
-        menuItem: {
-          select: { id: true, customName: true, recipe: { select: { name: true } } },
-        },
-      },
+  private defaultStepTimes(startTime: string): string[] {
+    const [h, m] = startTime.split(':').map(Number);
+    const startMin = (Number.isFinite(h) ? h : 6) * 60 + (Number.isFinite(m) ? m : 0);
+    const OFFSETS_MIN = [120, 180, 270, 330];
+    return OFFSETS_MIN.map((off) => {
+      const t = (startMin + off) % 1440;
+      return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
     });
-    if (!step || step.campaignId !== campaignId) {
-      throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
-    }
-    if (step.status === 'done') {
-      throw new BadRequestException('Khâu này đã hoàn thành — không thể đánh dấu fail.');
-    }
-    if (step.qcFailedAt) {
-      throw new BadRequestException('Khâu này đã được đánh dấu fail trước đó.');
-    }
-
-    const dishName =
-      step.menuItem.customName ?? step.menuItem.recipe?.name ?? 'Món chưa đặt tên';
-
-    const updated = await this.prisma.campaignDishStep.update({
-      where: { id: stepId },
-      data: {
-        qcFailedAt: new Date(),
-        qcFailedByVolunteerId: volunteer.id,
-        qcFailureReason: trimmed,
-      },
-    });
-
-    // Gửi notification khẩn cho charity owner (best-effort, không block).
-    await this.notifications.notifyCampaignOwner(campaignId, {
-      type: 'campaign.qc_failure',
-      title: `⚠️ Ngắt khẩn cấp: ${dishName}`,
-      body: `Bếp trưởng đã báo QC không đạt ở khâu "${step.stepName}". Lý do: ${trimmed}. Vui lòng xem và đưa ra phương án xử lý.`,
-      data: {
-        campaignId,
-        stepId,
-        dishId: step.menuItemId,
-        dishName,
-        stepOrder: step.stepOrder,
-        stepName: step.stepName,
-        reason: trimmed,
-        reportedByVolunteerId: volunteer.id,
-      },
-    });
-
-    return updated;
   }
 
   /** Trả về danh sách món + 4 step kèm trạng thái hiệu lực cho 1 campaign. */
@@ -797,8 +759,11 @@ export class DishStepsService {
       select: { id: true, dishSteps: { select: { id: true } } },
     });
 
-    // Nếu món nào chưa có step thì tự sinh với giờ mặc định.
-    const defaultTimes = ['08:00', '09:00', '10:30', '11:30'];
+    // Nếu món nào chưa có step thì tự sinh với giờ mặc định BÁM THEO GIỜ BẮT ĐẦU
+    // chiến dịch. Bộ giờ cứng 08:00–11:30 trước đây chỉ đúng cho ca sáng: chiến dịch
+    // tối 18:00–24:00 sẽ nhận 4 khâu buổi sáng — mà giờ nhỏ hơn startTime lại bị đẩy
+    // sang NGÀY HÔM SAU theo luật neo ngày, tức toàn bộ khâu khoá sạch trong suốt ca.
+    const defaultTimes = this.defaultStepTimes(campaignTiming?.startTime ?? '06:00');
     for (const mi of menuItems) {
       if (mi.dishSteps.length === 0) {
         await this.ensureStepsForMenuItem(campaignId, mi.id, defaultTimes);
@@ -1005,6 +970,9 @@ export class DishStepsService {
             role: a.role,
             // Trạng thái duyệt của chính ca này — FE phân biệt "Chờ duyệt" với ca đã nhận.
             assignmentStatus: a.status,
+            // Cần cho FE đánh dấu ca giao hàng bị vô hiệu vì trùng ca bếp: chỉ ca đã
+            // XÁC NHẬN mới khiến khung giờ đó thành bận (khớp isBusyWithCampaignShift).
+            confirmationStatus: a.confirmationStatus,
             shift: a.shift
               ? {
                   id: a.shift.id,

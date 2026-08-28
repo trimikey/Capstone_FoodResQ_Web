@@ -7,6 +7,7 @@ import { type CreateCampaignInput, useUploadCampaignImage } from '@/hooks/useCam
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
 import { errMsg, mediaUrl } from '@/lib/utils';
+import { clearDraft, loadDraft, saveDraftJson } from '@/lib/form-draft';
 import {
   MenuSuggestions,
   SupplySuggestions,
@@ -39,10 +40,13 @@ const PERIODS: Array<{ id: Period; label: string; time: string; start: string; e
   { id: 'evening', label: 'Ca tối', time: '18:00–24:00', start: '18:00', end: '00:00', order: 3, endDayOffset: 1 },
 ];
 
+// Phục vụ và giao hàng đã GỘP thành một vai trò vận hành: cùng một TNV sáng đi lấy
+// nguyên liệu, chiều chia suất rồi đi phát. Không tạo ca "Phục vụ" riêng nữa — tách
+// hai hàng chỉ đẻ ra cảnh có người trực đúng giờ mà hệ thống báo thiếu người vai kia.
+// Chiến dịch cũ đã có ca waiter vẫn hiển thị bình thường (dữ liệu lịch sử).
 const ROLES: Array<{ id: StaffRole; label: string }> = [
   { id: 'chef', label: 'Đầu bếp' },
-  { id: 'waiter', label: 'Phục vụ' },
-  { id: 'shipper', label: 'Giao hàng' },
+  { id: 'shipper', label: 'Giao hàng & phục vụ' },
 ];
 
 const STEPS = [
@@ -52,6 +56,19 @@ const STEPS = [
   ['Tuyển & ngày vận hành', 'event'],
   ['Kiểm tra & gửi', 'fact_check'],
 ] as const;
+
+/**
+ * Ô <input type="date"> hiển thị theo NGÔN NGỮ TRÌNH DUYỆT — Chrome tiếng Anh in
+ * MM/DD/YYYY và không có cách nào ép về dd/mm. In kèm dạng Việt Nam ngay dưới ô
+ * để người dùng không đọc nhầm tháng thành ngày.
+ */
+function vnDatePreview(value: string): string | null {
+  if (!value) return null;
+  const [datePart, timePart] = value.split('T');
+  const [y, m, d] = (datePart ?? '').split('-');
+  if (!y || !m || !d) return null;
+  return `${d}/${m}/${y}${timePart ? ` · ${timePart}` : ''}`;
+}
 
 function dateAfter(days: number) {
   const d = new Date(Date.now() + 7 * 3600_000);
@@ -89,9 +106,38 @@ function formatDuration(minutes: number) {
 
 function suggestedStaff(servings: number, role: StaffRole) {
   if (role === 'chef') return Math.max(1, Math.ceil(servings / 50));
-  if (role === 'waiter') return Math.max(1, Math.ceil(servings / 40));
-  return Math.max(1, Math.ceil(servings / 80));
+  // Vai trò vận hành gánh cả chia suất (trước là phục vụ, ~40 suất/người) lẫn đi
+  // giao (~80 suất/người) — số gợi ý là tổng hai phần việc, không phải một nửa.
+  return Math.max(1, Math.ceil(servings / 40) + Math.ceil(servings / 80));
 }
+
+/**
+ * Nháp của form tạo chiến dịch.
+ *
+ * Chỉ giữ những gì người dùng GÕ VÀO. Cố tình bỏ `confirmedReview` (phải tick lại mỗi
+ * lần gửi, không được khôi phục hộ) và các cờ tạm như đang định vị / lỗi validate.
+ */
+interface CampaignDraft {
+  step: Step;
+  title: string;
+  description: string;
+  kitchenAddress: string;
+  addressSource: 'manual' | 'profile' | 'current';
+  lng: number;
+  lat: number;
+  imageUrl: string | null;
+  expectedServings: number | '';
+  menu: MenuRow[];
+  supplies: Array<{ name: string; quantity?: number; unit?: string }>;
+  scheduledDate: string;
+  endDate: string;
+  activePeriods: Period[];
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  staffing: Record<string, number>;
+}
+
+const DRAFT_KEY = 'foodresq:draft:create-campaign';
 
 interface Props {
   onClose: () => void;
@@ -100,31 +146,73 @@ interface Props {
 }
 
 export default function CreateCampaignModal({ onClose, onSubmit, pending }: Props) {
-  const [step, setStep] = useState<Step>(1);
+  // Đọc nháp MỘT lần lúc mở form. Dùng initializer của useState thay vì useEffect để
+  // không phải setState sau render (gây nháy) và để giá trị có ngay ở lần vẽ đầu tiên.
+  const [restored] = useState(() => loadDraft<CampaignDraft>(DRAFT_KEY));
+  const [draftRestored, setDraftRestored] = useState(!!restored);
+
+  const [step, setStep] = useState<Step>(restored?.step ?? 1);
   // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
   const [confirmedReview, setConfirmedReview] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [kitchenAddress, setKitchenAddress] = useState('');
-  const [addressSource, setAddressSource] = useState<'manual' | 'profile' | 'current'>('manual');
+  const [title, setTitle] = useState(restored?.title ?? '');
+  const [description, setDescription] = useState(restored?.description ?? '');
+  const [kitchenAddress, setKitchenAddress] = useState(restored?.kitchenAddress ?? '');
+  const [addressSource, setAddressSource] = useState<'manual' | 'profile' | 'current'>(restored?.addressSource ?? 'manual');
   const [locating, setLocating] = useState(false);
-  const [lng, setLng] = useState(106.6297);
-  const [lat, setLat] = useState(10.8231);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [expectedServings, setExpectedServings] = useState<number | ''>('');
+  const [lng, setLng] = useState(restored?.lng ?? 106.6297);
+  const [lat, setLat] = useState(restored?.lat ?? 10.8231);
+  const [imageUrl, setImageUrl] = useState<string | null>(restored?.imageUrl ?? null);
+  const [expectedServings, setExpectedServings] = useState<number | ''>(restored?.expectedServings ?? '');
   const [expectedServingsError, setExpectedServingsError] = useState<string | null>(null);
-  const [menu, setMenu] = useState<MenuRow[]>([
-    { name: '', type: 'lunch' },
-  ]);
-  const [supplies, setSupplies] = useState<Array<{ name: string; quantity?: number; unit?: string }>>([]);
-  const [scheduledDate, setScheduledDate] = useState(dateAfter(7));
-  const [endDate, setEndDate] = useState('');
-  const [activePeriods, setActivePeriods] = useState<Period[]>(['morning']);
-  const [recruitmentStartAt, setRecruitmentStartAt] = useState(() => toVnLocalInput(new Date(Date.now() + 3600_000)));
-  const [recruitmentEndAt, setRecruitmentEndAt] = useState('');
-  const [staffing, setStaffing] = useState<Record<string, number>>({
-    'morning:chef': 2, 'morning:waiter': 3, 'morning:shipper': 2,
-  });
+  const [menu, setMenu] = useState<MenuRow[]>(
+    restored?.menu ?? [{ name: '', type: 'lunch' }],
+  );
+  const [supplies, setSupplies] = useState<Array<{ name: string; quantity?: number; unit?: string }>>(restored?.supplies ?? []);
+  const [scheduledDate, setScheduledDate] = useState(restored?.scheduledDate ?? dateAfter(7));
+  const [endDate, setEndDate] = useState(restored?.endDate ?? '');
+  const [activePeriods, setActivePeriods] = useState<Period[]>(restored?.activePeriods ?? ['morning']);
+  const [recruitmentStartAt, setRecruitmentStartAt] = useState(
+    () => restored?.recruitmentStartAt ?? toVnLocalInput(new Date(Date.now() + 3600_000)),
+  );
+  const [recruitmentEndAt, setRecruitmentEndAt] = useState(restored?.recruitmentEndAt ?? '');
+  const [staffing, setStaffing] = useState<Record<string, number>>(
+    restored?.staffing ?? { 'morning:chef': 2, 'morning:shipper': 4 },
+  );
+  // Tự lưu nháp sau mỗi thay đổi — không chờ người dùng bấm gì cả, vì cái mất nháp
+  // thường là thao tác vô ý: bấm ra ngoài, gõ Escape, lỡ tải lại trang.
+  // So chuỗi JSON để chỉ ghi khi nội dung thật sự đổi, tránh ghi lại mỗi lần render.
+  const draftJson = JSON.stringify({
+    step, title, description, kitchenAddress, addressSource, lng, lat, imageUrl,
+    expectedServings, menu, supplies, scheduledDate, endDate, activePeriods,
+    recruitmentStartAt, recruitmentEndAt, staffing,
+  } satisfies CampaignDraft);
+  useEffect(() => {
+    saveDraftJson(DRAFT_KEY, draftJson);
+  }, [draftJson]);
+
+  /** Bỏ nháp và đưa form về mặc định — dùng khi người dùng muốn nhập lại từ đầu. */
+  function discardDraft() {
+    clearDraft(DRAFT_KEY);
+    setDraftRestored(false);
+    setStep(1);
+    setTitle('');
+    setDescription('');
+    setKitchenAddress('');
+    setAddressSource('manual');
+    setLng(106.6297);
+    setLat(10.8231);
+    setImageUrl(null);
+    setExpectedServings('');
+    setMenu([{ name: '', type: 'lunch' }]);
+    setSupplies([]);
+    setScheduledDate(dateAfter(7));
+    setEndDate('');
+    setActivePeriods(['morning']);
+    setRecruitmentStartAt(toVnLocalInput(new Date(Date.now() + 3600_000)));
+    setRecruitmentEndAt('');
+    setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
+  }
+
   const { data: me } = useMe();
   const profileAddress = me?.receiver?.address ?? me?.provider?.address ?? '';
   const profileLat = me?.receiver?.lat ?? me?.provider?.lat ?? null;
@@ -461,6 +549,9 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         supplyItems: supplies.filter((item) => item.name.trim()).map((item) => ({ ...item, name: item.name.trim(), unit: item.unit?.trim() || undefined })),
         shifts,
       });
+      // Gửi thành công thì nháp hết ý nghĩa — giữ lại sẽ khiến lần tạo sau bị điền
+      // sẵn nội dung của chiến dịch vừa gửi.
+      clearDraft(DRAFT_KEY);
       toast.success('Đã gửi kế hoạch chiến dịch để admin duyệt.');
       onClose();
     } catch (error) {
@@ -493,6 +584,23 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
           </nav>
 
           <div className="cm-modal-body"><div className="mx-auto w-full max-w-5xl space-y-4">
+            {/* Nói rõ form đang có nội dung cũ — nếu im lặng điền sẵn, người dùng dễ gửi
+                nhầm kế hoạch của lần trước mà không để ý. */}
+            {draftRestored && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-900">
+                  <span className="material-symbols-outlined text-[16px]">history</span>
+                  Đã khôi phục nội dung bạn nhập dở lần trước.
+                </p>
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="shrink-0 text-xs font-bold text-sky-700 underline hover:text-sky-900"
+                >
+                  Xoá, nhập lại từ đầu
+                </button>
+              </div>
+            )}
             {step === 1 && <>
               <Block title="Thông tin cơ bản" icon="info"><input className="cm-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên chiến dịch *" maxLength={255} /><textarea className="cm-input mt-2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Mô tả đối tượng phục vụ và mục tiêu chiến dịch" rows={3} maxLength={5000} /></Block>
               <Block
@@ -635,10 +743,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                   <label className="text-xs font-bold text-neutral-600">
                     Mở tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentStartAt} min={minRecruitmentStartAt} onChange={(e) => setRecruitmentStartAt(e.target.value)} />
+                    {vnDatePreview(recruitmentStartAt) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(recruitmentStartAt)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Đóng tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} min={recruitmentStartAt || minRecruitmentStartAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
+                    {vnDatePreview(recruitmentEndAt) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(recruitmentEndAt)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                 </div>
                 <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu 6 giờ.</p>
@@ -656,10 +774,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                       aria-invalid={recruitmentBufferIsTooShort}
                       aria-describedby={recruitmentBufferMinutes !== null ? 'cm-operation-date-rule' : undefined}
                     />
+                    {vnDatePreview(scheduledDate) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(scheduledDate)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Ngày kết thúc
                     <input type="date" className="cm-input mt-1" value={endDate} min={scheduledDate} onChange={(e) => setEndDate(e.target.value)} />
+                    {vnDatePreview(endDate) && (
+                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
+                        = {vnDatePreview(endDate)} (ngày/tháng/năm)
+                      </span>
+                    )}
                   </label>
                 </div>
                 {recruitmentBufferMinutes !== null && (

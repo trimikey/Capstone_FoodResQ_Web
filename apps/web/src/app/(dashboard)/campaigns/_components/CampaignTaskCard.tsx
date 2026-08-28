@@ -135,20 +135,28 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
           <p className="text-[10px] font-extrabold uppercase tracking-wide text-neutral-500">
             {groupMembers.length} ca trong chiến dịch này
           </p>
-          {groupMembers.map((m) => (
-            <div key={m.id} className="flex items-center justify-between gap-2 text-[11px]">
-              <span className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-neutral-700">
-                <span className="material-symbols-outlined text-[13px]">schedule</span>
-                {m.workDate ? `${formatVnDate(m.workDate)} · ` : ''}
-                {m.shift ? `${m.shift.label} · ${m.shift.startTime}-${m.shift.endTime}` : 'Ca chung'}
-              </span>
-              {!['pending', 'rejected'].includes(m.status) && (
-                <Link href={`/my-tasks/${m.id}`} className="shrink-0 font-bold text-honey-700 hover:underline">
-                  Vào nhiệm vụ →
-                </Link>
-              )}
-            </div>
-          ))}
+          {groupMembers.map((m) => {
+            const ms = TASK_STATUS_META[m.status] ?? { label: m.status, chip: 'cm-chip cm-chip--ink' };
+            return (
+              <div key={m.id} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-neutral-700">
+                  <span className="material-symbols-outlined text-[13px]">schedule</span>
+                  {m.workDate ? `${formatVnDate(m.workDate)} · ` : ''}
+                  {m.shift ? `${m.shift.label} · ${m.shift.startTime}-${m.shift.endTime}` : 'Ca chung'}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {/* Mỗi ca một trạng thái riêng (ca sáng đã điểm danh, ca chiều mới
+                      nhận việc) — chip đầu thẻ chỉ nói được ca "nóng" nhất. */}
+                  <span className={`${ms.chip} !px-2 !py-0 !text-[10px]`}>{ms.label}</span>
+                  {!['pending', 'rejected'].includes(m.status) && (
+                    <Link href={`/my-tasks/${m.id}`} className="font-bold text-honey-700 hover:underline">
+                      Vào nhiệm vụ →
+                    </Link>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 

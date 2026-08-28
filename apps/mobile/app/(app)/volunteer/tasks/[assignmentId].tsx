@@ -12,7 +12,6 @@ import {
   useCampaignSupplies,
   useCompleteAssignedDistribution,
   useCompleteDishStep,
-  useFlagDishStepQcFail,
   useMyTaskDetail,
 } from '@/hooks/useCampaigns';
 import { VolunteerKitchenOpsPanel } from '@/components/kitchen/VolunteerKitchenOpsPanel';
@@ -198,10 +197,7 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
 }) {
   const supplies = useCampaignSupplies(detail.campaign.id);
   const completeStep = useCompleteDishStep();
-  const flagFail = useFlagDishStepQcFail();
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
-  const [qcTarget, setQcTarget] = useState<{ dish: DishProcessItem; step: DishStep } | null>(null);
-  const [qcReason, setQcReason] = useState('');
 
   const dishes = detail.dishes ?? [];
   const team = detail.cookingTeam ?? [];
@@ -226,24 +222,6 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
     }
   };
 
-  const submitQcFail = async () => {
-    if (!qcTarget || !qcReason.trim()) return;
-    try {
-      await flagFail.mutateAsync({
-        campaignId: detail.campaign.id,
-        stepId: qcTarget.step.id,
-        reason: qcReason.trim(),
-      });
-      void notifySuccess();
-      Popup.show({ type: 'success', text1: 'Đã báo QC không đạt', text2: 'Tổ chức đã nhận cảnh báo.' });
-      setQcTarget(null);
-      setQcReason('');
-      await onRefresh();
-    } catch (error) {
-      void notifyError();
-      Popup.show({ type: 'error', text1: 'Không gửi được cảnh báo', text2: getErrorMessage(error) });
-    }
-  };
 
   return (
     <>
@@ -346,9 +324,8 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
                 step={step}
                 previousDone={index === 0 || dish.steps[index - 1]?.effectiveStatus === 'done'}
                 canAct={checkedIn && detail.assignment.status !== 'completed'}
-                pending={completeStep.isPending || flagFail.isPending}
+                pending={completeStep.isPending}
                 onComplete={() => handleComplete(step)}
-                onQcFail={step.stepOrder === 3 ? () => setQcTarget({ dish, step }) : undefined}
               />
             ))}
           </View>
@@ -357,38 +334,16 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
 
       <VolunteerKitchenOpsPanel campaignId={detail.campaign.id} isChef isWaiter={false} />
 
-      <Portal>
-        <Dialog visible={!!qcTarget} onDismiss={() => !flagFail.isPending && setQcTarget(null)}>
-          <Dialog.Title>Ngắt khẩn cấp — QC</Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.body}>Món: {qcTarget?.dish.name}. Tổ chức sẽ nhận cảnh báo ngay.</Text>
-            <TextInput
-              mode="outlined"
-              label="Lý do không đạt *"
-              value={qcReason}
-              onChangeText={setQcReason}
-              multiline
-              numberOfLines={3}
-              style={styles.dialogInput}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setQcTarget(null)} disabled={flagFail.isPending}>Huỷ</Button>
-            <Button textColor={COLORS.error} loading={flagFail.isPending} disabled={!qcReason.trim() || flagFail.isPending} onPress={submitQcFail}>Báo không đạt</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
     </>
   );
 }
 
-function DishStepRow({ step, previousDone, canAct, pending, onComplete, onQcFail }: {
+function DishStepRow({ step, previousDone, canAct, pending, onComplete }: {
   step: DishStep;
   previousDone: boolean;
   canAct: boolean;
   pending: boolean;
   onComplete: () => void;
-  onQcFail?: () => void;
 }) {
   const done = step.effectiveStatus === 'done';
   const available = step.effectiveStatus === 'available';
@@ -414,7 +369,6 @@ function DishStepRow({ step, previousDone, canAct, pending, onComplete, onQcFail
             <Button mode="contained" compact icon="camera" loading={pending} disabled={pending} onPress={onComplete}>
               {step.stepOrder === 3 ? 'Kiểm tra & xác nhận' : 'Chụp ảnh & xác nhận'}
             </Button>
-            {onQcFail ? <Button compact textColor={COLORS.error} disabled={pending} onPress={onQcFail}>QC không đạt</Button> : null}
           </View>
         ) : null}
       </View>

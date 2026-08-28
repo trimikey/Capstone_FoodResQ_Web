@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { DeliveriesService } from './deliveries.service';
+import { DeliveriesService, claimDeadline } from './deliveries.service';
 
 describe('DeliveriesService', () => {
   const prisma = {
@@ -174,5 +174,108 @@ describe('DeliveriesService', () => {
     ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
 
     expect(prisma.reservation.update).toHaveBeenCalled();
+  });
+
+  /**
+   * Hạn nhận đơn được dùng chung ở bốn nơi (danh sách đơn gần, lúc bấm nhận, cron dọn
+   * đơn, đồng hồ đếm ngược bên người nhận). Lệch công thức là sinh ra đơn hiện trên app
+   * nhưng bấm vào báo hết hạn, hoặc hai bên nhìn hai con số khác nhau.
+   */
+  describe('claimDeadline', () => {
+    const created = new Date('2026-08-23T08:00:00Z');
+
+    it('đơn hẹn giờ: đóng nhận TRƯỚC giờ hẹn theo mốc cấu hình', () => {
+      const scheduled = new Date('2026-08-23T10:40:00Z'); // 17:40 giờ VN
+      expect(claimDeadline(created, scheduled, 30, 15).toISOString())
+        .toBe('2026-08-23T10:25:00.000Z');
+      expect(claimDeadline(created, scheduled, 30, 45).toISOString())
+        .toBe('2026-08-23T09:55:00.000Z');
+    });
+
+    it('mốc cắt 0 (chế độ test): cho nhận tới tận phút hẹn', () => {
+      const scheduled = new Date('2026-08-23T10:40:00Z');
+      expect(claimDeadline(created, scheduled, 30, 0).getTime()).toBe(scheduled.getTime());
+    });
+
+    it('đơn giao ngay: đếm từ lúc tạo theo cửa sổ admin cấu hình', () => {
+      expect(claimDeadline(created, null, 30, 15).toISOString()).toBe('2026-08-23T08:30:00.000Z');
+      expect(claimDeadline(created, undefined, 45, 15).toISOString()).toBe('2026-08-23T08:45:00.000Z');
+    });
+
+    it('đơn hẹn giờ KHÔNG phụ thuộc cửa sổ đơn giao ngay', () => {
+      const scheduled = new Date('2026-08-25T02:00:00Z');
+      expect(claimDeadline(created, scheduled, 30, 15).getTime())
+        .toBe(claimDeadline(created, scheduled, 120, 15).getTime());
+    });
+  });
+});
+
+/**
+ * Mặt còn lại của luật "có ca bếp thì không nhận đơn giao": đang cầm đơn chưa giao xong
+ * thì cũng không được nhận ca bếp trùng khung. Thiếu chiều này thì chỉ cần đổi thứ tự
+ * thao tác là kẹt hai chỗ cùng lúc.
+ */
+describe('DeliveriesService.hasActiveDeliveryInSlot', () => {
+  const prisma = { delivery: { findMany: jest.fn() } };
+  let service: DeliveriesService;
+
+  /** 15:00 giờ VN ngày 24/8 → ca chiều (12–18h). */
+  const scheduled = new Date('2026-08-24T08:00:00.000Z');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DeliveriesService(
+      prisma as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+  });
+
+  it('đơn hẹn giờ rơi đúng ca → báo bận', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' }),
+    ).resolves.toBe(true);
+  });
+
+  it('cùng ngày nhưng khác ca → KHÔNG chặn oan', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'morning' }),
+    ).resolves.toBe(false);
+  });
+
+  it('khác ngày → KHÔNG chặn oan', async () => {
+    prisma.delivery.findMany.mockResolvedValue([
+      { id: 'd1', reservation: { deliveryScheduledAt: scheduled } },
+    ]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-30', period: 'afternoon' }),
+    ).resolves.toBe(false);
+  });
+
+  it('không có đơn nào đang cầm → rảnh', async () => {
+    prisma.delivery.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' }),
+    ).resolves.toBe(false);
+  });
+
+  it('chỉ xét đơn CHƯA hoàn tất', async () => {
+    await service.hasActiveDeliveryInSlot('vol-1', { workDate: '2026-08-24', period: 'afternoon' });
+
+    expect(prisma.delivery.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'] },
+        }),
+      }),
+    );
   });
 });

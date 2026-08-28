@@ -134,10 +134,6 @@ async function fetchVolunteerMe(): Promise<VolunteerMe> {
   const { data } = await api.get<ApiResponse<VolunteerMe>>('/volunteers/me');
   return data.data;
 }
-async function fetchMyOffers(): Promise<TaskOffer[]> {
-  const { data } = await api.get<ApiResponse<TaskOffer[]>>('/deliveries/my/offers');
-  return data.data;
-}
 async function fetchActiveDelivery(): Promise<ActiveDelivery | null> {
   const { data } = await api.get<ApiResponse<ActiveDelivery | null>>('/deliveries/my/active');
   return data.data;
@@ -151,17 +147,6 @@ async function fetchDeliveryHistory(page: number, limit: number): Promise<Delive
 // ── Queries ──────────────────────────────────────────────────────────────────
 export function useVolunteerMe(enabled = true) {
   return useQuery({ queryKey: ['volunteers', 'me'], queryFn: fetchVolunteerMe, staleTime: 60_000, enabled });
-}
-export function useMyOffers(enabled = true) {
-  return useQuery({
-    queryKey: ['deliveries', 'offers'],
-    queryFn: fetchMyOffers,
-    enabled,
-    refetchInterval: 15_000, // poll nhẹ để bắt offer mới
-    // Vẫn poll khi tab chạy nền — shipper thường để tab background trong lúc làm
-    // việc khác; mặc định React Query dừng poll nền khiến popup không nổ kịp.
-    refetchIntervalInBackground: true,
-  });
 }
 export interface ShipperStats {
   totalDelivered: number;
@@ -232,39 +217,6 @@ export function useMyRatings(page = 1, enabled = true) {
   });
 }
 
-/** Nghe socket `delivery:offer` để bật popup nhận đơn NGAY khi có (không chờ poll 15s). */
-export function useOfferSocket(enabled: boolean) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const qc = useQueryClient();
-  useEffect(() => {
-    if (!enabled || !accessToken) return;
-    const socket: Socket = io(socketUrl(), {
-      auth: { token: accessToken },
-      transports: ['websocket'],
-      reconnection: true,
-    });
-    socket.on('delivery:offer', () => {
-      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
-    });
-    // Để trôi lời mời → BE tắt sẵn sàng. Đồng bộ lại nút gạt, nếu không nó vẫn
-    // hiện "Đang sẵn sàng" trong khi thực tế đã offline.
-    socket.on('shipper:auto_offline', () => {
-      void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
-      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
-      toast.warning('Đã tắt chế độ nhận đơn', {
-        // Không nêu số giây cụ thể: cửa sổ phản hồi do admin cấu hình
-        // (system_configs SHIPPER_OFFER_EXPIRY_SECONDS), nêu cứng là sai khi đổi.
-        description: 'Bạn không phản hồi lời mời trong thời gian cho phép. Bật lại để tiếp tục nhận đơn.',
-      });
-    });
-    return () => {
-      socket.off('delivery:offer');
-      socket.off('shipper:auto_offline');
-      socket.disconnect();
-    };
-  }, [enabled, accessToken, qc]);
-}
-
 // ── Mutations ──────────────────────────────────────────────────────────────
 export function useSetAvailability() {
   const qc = useQueryClient();
@@ -275,36 +227,6 @@ export function useSetAvailability() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
-      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
-    },
-  });
-}
-
-export function useAcceptOffer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (deliveryId: string) => {
-      const { data } = await api.post(`/deliveries/${deliveryId}/accept`);
-      return data.data;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['deliveries'] });
-      void qc.invalidateQueries({ queryKey: ['volunteers', 'me'] });
-    },
-  });
-}
-
-export function useRejectOffer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (params: { deliveryId: string; reason?: string }) => {
-      const { data } = await api.post(`/deliveries/${params.deliveryId}/reject`, {
-        reason: params.reason,
-      });
-      return data.data;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
     },
   });
 }
@@ -516,12 +438,20 @@ export function useMyDeliveryShifts(enabled = true) {
   });
 }
 
+/**
+ * Ghi đè ca giao hàng trong ĐÚNG khoảng `from → to` đang hiển thị.
+ *
+ * Phải gửi kèm khoảng: lưới chỉ hiện một tuần, còn quyền sửa có thể trải rộng hơn —
+ * thiếu khoảng thì server ghi đè toàn bộ và xoá mất ca của những tuần không nhìn thấy.
+ */
 export function useSetMyDeliveryShifts() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (slots: DeliveryShiftSlot[]) =>
-      (await api.put('/volunteers/me/delivery-shifts', { slots })).data.data,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
+    mutationFn: async (p: { slots: DeliveryShiftSlot[]; from: string; to: string }) =>
+      (await api.put('/volunteers/me/delivery-shifts', p)).data.data,
+    // Chờ refetch xong rồi mới trả về: lưới điền sẵn gợi ý cho tuần CHƯA có ca nào, nên
+    // nếu trả sớm khi cache còn cũ thì gợi ý bật lại ngay sau khi vừa lưu.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['volunteers', 'delivery-shifts'] }),
   });
 }
 
@@ -543,6 +473,11 @@ export interface NearbyDelivery {
   /** Khung giờ này shipper đã xác nhận một ca chiến dịch → bận, không nhận đơn lẻ. */
   busyWithCampaign?: boolean;
   claimSlot: { workDate: string; period: ShiftPeriod };
+  /**
+   * Hạn cuối còn nhận được đơn — hết hạn thì đơn bị huỷ và người nhận phải đặt lại.
+   * Đơn hẹn giờ đóng trước giờ hẹn 15 phút; đơn giao ngay theo cửa sổ admin cấu hình.
+   */
+  claimExpiresAt: string;
 }
 
 export function useNearbyDeliveries(coords: { lng: number; lat: number } | null) {

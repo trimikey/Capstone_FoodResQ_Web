@@ -65,6 +65,12 @@ export interface CampaignDonationItem {
   pickupEndTime?: string | null;
   /** DS assignment id shipper được cử đi nhận — tra tên qua campaign.assignments. */
   pickupAssigneeIds?: string[];
+  /**
+   * Có giá trị = khoản này sinh ra từ một đơn nguyên liệu, tức CÙNG MỘT LÔ HÀNG với
+   * đơn đó. Lịch đi nhận và xác nhận thực nhận do đơn quản, nên không hiện thành lô
+   * riêng ở mục quyên góp nữa.
+   */
+  providerRequestId?: string | null;
 }
 
 export interface SupplyProgressItem {
@@ -1020,7 +1026,7 @@ export function useCampaignManageDetail(id: string) {
 export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'participants'> {
   participants: CampaignManageParticipant[];
   menuItemRefs?: Array<{ id: string; customName: string; plannedServings: number | null; recipeId: string | null; sortOrder: number }>;
-  /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng phát xuất" từ chef */
+  /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng xuất phát" từ chef */
   dishSteps?: DishProcessItem[];
   /**
    * Nhân sự đã tuyển so với ngưỡng tối thiểu (`CAMPAIGN_MIN_FILL_PERCENT` do admin
@@ -1241,7 +1247,7 @@ export interface DishStep {
   qcFailedAt?: string | null;
   qcFailureReason?: string | null;
   /// Duyệt ảnh khâu QC (stepOrder=3) bởi tổ chức — 'pending' sau khi chef chụp,
-  /// 'approved' mới mở khâu 4, 'rejected' kèm reviewNote để chef chụp lại.
+  /// 'approved' mới mở khâu 4; 'rejected' kèm reviewNote = MÓN BỊ HUỶ hẳn.
   reviewStatus?: 'pending' | 'approved' | 'rejected' | null;
   reviewedAt?: string | null;
   reviewNote?: string | null;
@@ -1668,7 +1674,7 @@ export function useSetDishStepTimes() {
 
 /**
  * Tổ chức: duyệt / từ chối ẢNH khâu QC (khâu 3) chef đã tải lên.
- * Duyệt xong khâu 4 "Sẵn sàng phát xuất" mới mở; từ chối → khâu QC về lại
+ * Duyệt xong khâu 4 "Sẵn sàng xuất phát" mới mở; từ chối → khâu QC về lại
  * available để chef chụp lại (reason bắt buộc khi reject).
  */
 export function useReviewQcStep() {
@@ -1693,7 +1699,7 @@ export function useReviewQcStep() {
   });
 }
 
-// Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món
+// Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món
 export function useApproveDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
@@ -1708,7 +1714,7 @@ export function useApproveDishFinalStep() {
   });
 }
 
-// Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món
+// Tổ chức: từ chối bước "Sẵn sàng xuất phát" của một món
 export function useRejectDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
@@ -1783,23 +1789,6 @@ export function useCampaignSupplies(campaignId: string | null | undefined) {
   });
 }
 
-/** Bếp trưởng / TNV: QC fail / ngắt khẩn cấp 1 step. */
-export function useFlagStepQualityFail() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (p: { campaignId: string; stepId: string; reason: string }) => {
-      const { data } = await api.post(
-        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/qc-fail`,
-        { reason: p.reason },
-      );
-      return data.data as DishStep;
-    },
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'supplies', p.campaignId] });
-    },
-  });
-}
 
 // ─── Lịch tuần ─────────────────────────────────────────────────────────────
 
@@ -1821,6 +1810,11 @@ export interface WeeklyScheduleCampaign {
    * tổ chức duyệt — chưa phải ca chính thức; còn lại là ca đã được nhận.
    */
   assignmentStatus?: 'pending' | 'assigned' | 'checked_in' | 'in_progress' | 'completed';
+  /**
+   * Chỉ ca đã XÁC NHẬN mới khiến khung giờ đó thành bận với đơn giao lẻ — khớp đúng
+   * `isBusyWithCampaignShift` của backend.
+   */
+  confirmationStatus?: 'pending' | 'confirmed' | 'declined';
   /** Chỉ có khi isPersonalView=true (TNV) — ca được giao */
   shift?: {
     id: string;
@@ -1931,6 +1925,8 @@ export function useInviteVolunteers(campaignId: string) {
         invited: number;
         /** Số người bị bỏ qua vì vừa bỏ khung giờ này khỏi lịch rảnh / bị khoá tài khoản. */
         skipped: number;
+        /** Số người đã có lời mời cho đúng ca này và chưa trả lời — không gửi lại. */
+        duplicated: number;
       },
   });
 }
@@ -1962,6 +1958,57 @@ export function useMyIntakeHistory(enabled = true) {
   return useQuery({
     queryKey: ['campaigns', 'intake-history'],
     queryFn: async () => (await api.get('/campaigns/my-intake-history')).data.data as IntakeHistory,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+// ─── Báo cáo & thống kê ──────────────────────────────────────────────────────
+
+export interface CampaignReport {
+  campaign: { id: string; title: string; status: string };
+  totals: {
+    servings: number;
+    people: number;
+    kgReceived: number;
+    volunteers: number;
+    distributionRounds: number;
+  };
+  servingsSeries: Array<{ label: string; at: string; servings: number; people: number }>;
+  kgSeries: Array<{ date: string; kg: number }>;
+  volunteersByRole: Array<{ role: string; count: number }>;
+}
+
+export function useCampaignReport(campaignId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'report', campaignId],
+    queryFn: async () =>
+      (await api.get(`/campaigns/${campaignId}/report`)).data.data as CampaignReport,
+    enabled: enabled && !!campaignId,
+    staleTime: 30_000,
+  });
+}
+
+export interface ProviderSupplyStats {
+  totals: { campaigns: number; orders: number; orderedKg: number; receivedKg: number };
+  campaigns: Array<{
+    campaignId: string;
+    title: string;
+    status: string;
+    scheduledDate: string;
+    orderedKg: number;
+    receivedKg: number;
+    orders: number;
+    lastDeliveredAt: string | null;
+  }>;
+  kgSeries: Array<{ date: string; kg: number }>;
+}
+
+export function useProviderSupplyStats(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'provider-supply-stats'],
+    queryFn: async () =>
+      (await api.get('/campaigns/provider/supply-stats')).data.data as ProviderSupplyStats,
     enabled,
     staleTime: 60_000,
   });
@@ -2006,6 +2053,28 @@ export function useAcceptShiftInvite() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] }),
         qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Volunteer: bỏ qua lời mời.
+ *
+ * Khác "đánh dấu đã đọc" của chuông thông báo — đọc thông báo không phải là đã
+ * quyết định, nên lời mời chỉ rời danh sách chờ khi bấm đúng nút này.
+ */
+export function useDismissShiftInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: string) =>
+      (await api.post(`/campaigns/shift-invites/${notificationId}/dismiss`)).data.data as {
+        ok: boolean;
+      },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] }),
         qc.invalidateQueries({ queryKey: ['notifications'] }),
       ]);
     },

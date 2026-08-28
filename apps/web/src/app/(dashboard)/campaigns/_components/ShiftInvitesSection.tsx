@@ -3,8 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { useMyShiftInvites, useAcceptShiftInvite, type ShiftInvite } from '@/hooks/useCampaigns';
-import { useMarkRead } from '@/hooks/useNotifications';
+import {
+  useMyShiftInvites,
+  useAcceptShiftInvite,
+  useDismissShiftInvite,
+  type ShiftInvite,
+} from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 
 const PERIOD_LABEL: Record<string, string> = {
@@ -33,7 +37,8 @@ function formatDay(dateKey: string) {
 export default function ShiftInvitesSection() {
   const { data: invites, isLoading } = useMyShiftInvites();
   const accept_ = useAcceptShiftInvite();
-  const markRead = useMarkRead();
+  // Bỏ qua ≠ đánh dấu đã đọc: mở chuông thông báo không được làm mất lời mời.
+  const dismiss = useDismissShiftInvite();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (isLoading || !invites || invites.length === 0) return null;
@@ -56,7 +61,7 @@ export default function ShiftInvitesSection() {
   async function decline(invite: ShiftInvite) {
     setBusyId(invite.notificationId);
     try {
-      await markRead.mutateAsync(invite.notificationId);
+      await dismiss.mutateAsync(invite.notificationId);
       toast.info('Đã bỏ qua lời mời này.');
     } catch (e) {
       toast.error(errMsg(e, 'Không bỏ qua được lời mời'));

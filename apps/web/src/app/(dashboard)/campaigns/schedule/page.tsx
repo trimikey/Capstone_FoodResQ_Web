@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useWeeklySchedule } from '@/hooks/useCampaigns';
 import AvailabilityGrid from './AvailabilityGrid';
+import DeliveryShiftsGrid from './DeliveryShiftsGrid';
 import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { errMsg } from '@/lib/utils';
 
@@ -48,10 +49,34 @@ export default function WeeklySchedulePage() {
   const DELIVERY_PERIOD_LABEL: Record<string, string> = {
     midnight: '00:00–06:00', morning: '06:00–12:00', afternoon: '12:00–18:00', evening: '18:00–24:00',
   };
-  const deliveryByDate = new Map<string, string[]>();
+
+  /**
+   * Ngày+ca đã bị ca bếp ĐÃ XÁC NHẬN chiếm chỗ.
+   *
+   * Ca chiến dịch luôn khớp một trong 4 khung cố định nên suy ra từ giờ bắt đầu là đủ.
+   * Điều kiện phải khớp `isBusyWithCampaignShift` của backend: chỉ ca đã xác nhận và
+   * chưa kết thúc mới tính, ca đang chờ tổ chức duyệt thì không.
+   */
+  const BUSY_ASSIGNMENT_STATUSES = ['assigned', 'checked_in', 'in_progress'];
+  const busySlots = new Set<string>();
+  for (const day of days) {
+    for (const c of day.campaigns) {
+      if (!c.shift?.startTime) continue;
+      if (c.confirmationStatus !== 'confirmed') continue;
+      if (!BUSY_ASSIGNMENT_STATUSES.includes(c.assignmentStatus ?? '')) continue;
+      const hour = Number(c.shift.startTime.slice(0, 2));
+      const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+      busySlots.add(`${day.date}:${period}`);
+    }
+  }
+
+  const deliveryByDate = new Map<string, Array<{ time: string; busy: boolean }>>();
   for (const slot of deliveryShifts?.slots ?? []) {
     const list = deliveryByDate.get(slot.workDate) ?? [];
-    list.push(DELIVERY_PERIOD_LABEL[slot.period] ?? slot.period);
+    list.push({
+      time: DELIVERY_PERIOD_LABEL[slot.period] ?? slot.period,
+      busy: busySlots.has(`${slot.workDate}:${slot.period}`),
+    });
     deliveryByDate.set(slot.workDate, list);
   }
 
@@ -71,24 +96,30 @@ export default function WeeklySchedulePage() {
   return (
     <div className="cm-scope p-4 md:p-6 max-w-7xl mx-auto pb-24">
       <header className="mb-5">
+        {/* Trang này gom lịch của CẢ HAI mảng việc, nên không gắn nhãn "Bếp ăn cộng
+            đồng" nữa — nhãn đó khiến lưới ca giao hàng bên dưới bị hiểu nhầm là ca trực
+            bếp của chiến dịch. */}
         <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
-          Bếp ăn cộng đồng
+          {isPersonal ? 'Tình nguyện viên' : 'Bếp ăn cộng đồng'}
         </div>
         <h1 className="text-2xl md:text-3xl font-extrabold text-neutral-900 mt-1">
-          {isPersonal ? 'Lịch ca của tôi' : 'Lịch chiến dịch tổ chức'}
+          {isPersonal ? 'Lịch làm việc của tôi' : 'Lịch chiến dịch tổ chức'}
         </h1>
         <p className="text-sm text-neutral-500 mt-1">
           {isPersonal
-            ? 'Các ca trực bạn đã đăng ký trong tuần này.'
+            ? 'Gồm hai mảng việc tách biệt: ca trực bếp của chiến dịch, và ca giao đơn cho người nhận.'
             : 'Danh sách chiến dịch của tổ chức trong tuần.'}
         </p>
       </header>
 
-      {/* Khai báo khung giờ rảnh — chỉ TNV mới có (tổ chức xem lịch chiến dịch).
-          Đặt TRÊN lịch tuần vì đây là đầu vào, còn lịch tuần là hệ quả. */}
+      {/* Hai lưới đầu vào của TNV, đặt cạnh nhau vì trước đây chúng nằm hai trang khác
+          nhau và trông y hệt nhau nên ai cũng tưởng là một: khai rảnh cả tuần rồi ngồi
+          đợi đơn mà không hiểu sao không có. Xếp theo mức ràng buộc tăng dần — khai báo
+          trước, cam kết sau — rồi mới tới lịch tuần vốn là HỆ QUẢ của cả hai. */}
       {isPersonal && (
-        <div className="mb-4">
+        <div className="mb-4 space-y-3">
           <AvailabilityGrid />
+          <DeliveryShiftsGrid />
         </div>
       )}
 
@@ -160,16 +191,35 @@ export default function WeeklySchedulePage() {
                 {/* Campaigns */}
                 <div className="p-2 space-y-1.5 flex-1 min-h-[120px]">
                   {/* Ca giao hàng của chính TNV trong ngày này */}
-                  {(deliveryByDate.get(day.date) ?? []).map((time) => (
+                  {/* Ca giao hàng trùng khung với ca bếp ĐÃ XÁC NHẬN thì vẫn còn đăng
+                      ký nhưng không nhận được đơn — làm mờ và nói rõ, nếu không TNV nhìn
+                      hai dòng cùng giờ sẽ tưởng mình nhận việc hai nơi cùng lúc. */}
+                  {(deliveryByDate.get(day.date) ?? []).map((slot) => (
                     <div
-                      key={`dlv-${day.date}-${time}`}
-                      className="rounded-xl border border-teal-200 bg-teal-50 px-2 py-1.5"
+                      key={`dlv-${day.date}-${slot.time}`}
+                      className={`rounded-xl border px-2 py-1.5 ${
+                        slot.busy
+                          ? 'border-neutral-200 bg-neutral-50'
+                          : 'border-teal-200 bg-teal-50'
+                      }`}
                     >
-                      <p className="flex items-center gap-1 text-[11px] font-bold text-teal-800">
+                      <p
+                        className={`flex items-center gap-1 text-[11px] font-bold ${
+                          slot.busy ? 'text-neutral-400 line-through' : 'text-teal-800'
+                        }`}
+                      >
                         <span className="material-symbols-outlined text-[13px]">local_shipping</span>
                         Ca giao hàng
                       </p>
-                      <p className="text-[10px] text-teal-700">{time}</p>
+                      <p className={`text-[10px] ${slot.busy ? 'text-neutral-400' : 'text-teal-700'}`}>
+                        {slot.time}
+                      </p>
+                      {slot.busy && (
+                        <p className="mt-0.5 flex items-start gap-1 text-[10px] font-semibold text-amber-700">
+                          <span className="material-symbols-outlined text-[12px]">block</span>
+                          Bận ca bếp — không nhận đơn giao
+                        </p>
+                      )}
                     </div>
                   ))}
                   {day.campaigns.length === 0 && (deliveryByDate.get(day.date) ?? []).length === 0 ? (

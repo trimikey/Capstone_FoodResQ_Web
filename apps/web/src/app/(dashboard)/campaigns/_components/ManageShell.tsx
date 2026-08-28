@@ -56,7 +56,7 @@ export function daysUntilUtc(input: string | Date | null | undefined, ref = new 
   return Math.round((a - b) / 86_400_000);
 }
 
-type NavKey = 'progress' | 'registrations' | 'kitchen' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'status';
+type NavKey = 'progress' | 'registrations' | 'kitchen' | 'distribution' | 'logistics' | 'menu' | 'schedule' | 'report' | 'status';
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'progress', label: 'Tổng quan', icon: 'monitoring' },
@@ -66,6 +66,7 @@ const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'logistics', label: 'Giao & nhận hàng', icon: 'local_shipping' },
   { key: 'menu', label: 'Thực đơn & Vật phẩm', icon: 'restaurant_menu' },
   { key: 'schedule', label: 'Lịch trình', icon: 'event' },
+  { key: 'report', label: 'Báo cáo', icon: 'bar_chart' },
   { key: 'status', label: 'Trạng thái', icon: 'flag' },
 ];
 
@@ -77,6 +78,7 @@ const NAV_PATH: Record<NavKey, string | null> = {
   logistics: 'logistics',
   menu: 'menu',
   schedule: 'schedule',
+  report: 'report',
   status: 'status',
 };
 const CAMPAIGN_HERO_FALLBACK = '/vn-pho.jpg';
@@ -135,6 +137,11 @@ type CampaignData = {
     pickupEndTime?: string | null;
     /** DS assignment id shipper được cử đi nhận — tra tên qua participants. */
     pickupAssigneeIds?: string[];
+    /**
+     * Có giá trị = khoản này sinh ra từ một đơn nguyên liệu, tức CÙNG MỘT LÔ HÀNG với
+     * đơn đó — lịch đi nhận và xác nhận thực nhận do đơn quản.
+     */
+    providerRequestId?: string | null;
     provider?: { businessName?: string | null; address?: string | null; contactPhone?: string | null };
   }>;
   expectedServings?: number | null;
@@ -467,6 +474,9 @@ function RecruitmentReadinessPanel({
 }) {
   const extend = useExtendRecruitment();
   const startCampaign = useStartCampaign();
+  // Đồng hồ chốt một lần lúc mở panel — chỉ để so mốc cỡ NGÀY (giờ vận hành còn xa
+  // không), nên không cần tick; đọc Date.now() giữa render thì lint cấm vì render
+  // phải thuần khiết.
   const [newDeadline, setNewDeadline] = useState('');
   const [continueRecruiting, setContinueRecruiting] = useState(false);
   // Bảng ma trận ngày·ca·vai trò có thể rất dài — mặc định thu gọn thành 1 dòng
@@ -620,10 +630,19 @@ function RecruitmentReadinessPanel({
       {/* Bỏ điều kiện `!readiness.ready`: khi đã đủ 100% người, khối này bị ẩn nên
           KHÔNG còn nút bắt đầu thủ công nào — tổ chức chỉ biết ngồi chờ cron. Đủ
           điều kiện là phải luôn có nút, còn bấm được hay chưa do canStartNow quyết. */}
-      {readiness.eligibleToStart && !continueRecruiting && (
+      {readiness.eligibleToStart && !continueRecruiting && (() => {
+        // Hai chế độ test của Admin làm panel nói dối nếu không khai ra: ngưỡng 0% thì
+        // chiến dịch trống người vẫn "đủ điều kiện", và bắt đầu-sớm thì nút bật trước
+        // giờ vận hành nhiều ngày. Không ghi rõ, tổ chức nhìn vào tưởng hệ thống loạn.
+        const zeroThreshold = readiness.minimumFillPercent === 0;
+        return (
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-sm font-extrabold text-emerald-900">
-            {readiness.ready ? 'Đã đủ 100% nhân sự' : 'Đã đủ điều kiện nhân sự để bắt đầu'}
+            {readiness.ready
+              ? 'Đã đủ 100% nhân sự'
+              : zeroThreshold
+                ? 'Ngưỡng nhân sự đang đặt 0% — luôn coi là đủ người'
+                : 'Đã đủ điều kiện nhân sự để bắt đầu'}
           </p>
           <p className="mt-1 text-xs text-emerald-800">
             {readiness.canStartNow
@@ -637,7 +656,8 @@ function RecruitmentReadinessPanel({
             <button type="button" onClick={() => { setContinueRecruiting(true); toast.success('Chiến dịch sẽ tiếp tục tuyển đến hạn đã đặt.'); }} className="rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-xs font-extrabold text-emerald-800">Tiếp tục tuyển thêm</button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {canExtend && (
         <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl bg-amber-50 p-3">
@@ -692,10 +712,15 @@ function AvailableVolunteersHint({
       });
       // Lịch rảnh sửa được bất cứ lúc nào nên danh sách đang mở có thể đã cũ — nói rõ
       // ai bị bỏ qua, đừng để tổ chức tưởng đã mời đủ số người mình chọn.
+      const reasons: string[] = [];
       if (res.skipped > 0) {
-        toast.warning(
-          `Đã mời ${res.invited} người. ${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh nên không được mời.`,
-        );
+        reasons.push(`${res.skipped} người vừa bỏ khung giờ này khỏi lịch rảnh`);
+      }
+      if (res.duplicated > 0) {
+        reasons.push(`${res.duplicated} người đã có lời mời cho ca này và chưa trả lời`);
+      }
+      if (reasons.length > 0) {
+        toast.warning(`Đã mời ${res.invited} người. Bỏ qua: ${reasons.join('; ')}.`);
       } else {
         toast.success(`Đã gửi lời mời tới ${res.invited} tình nguyện viên.`);
       }

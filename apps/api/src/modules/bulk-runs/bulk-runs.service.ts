@@ -1,15 +1,20 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { TrustScoreReason } from '@foodresq/types';
 import { randomBytes } from 'crypto';
 import Redlock from 'redlock';
+import type Redis from 'ioredis';
 import { PrismaService } from '@/prisma/prisma.service';
+import { safeRelease, tryAcquireLock } from '@/common/redlock/try-acquire';
 import { StorageService } from '@/common/storage/storage.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
@@ -41,6 +46,7 @@ const ACTIVE_DELIVERY_STATUSES = ['assigned', 'heading_to_provider', 'qc_complet
 
 @Injectable()
 export class BulkRunsService implements OnModuleInit {
+  private readonly logger = new Logger(BulkRunsService.name);
   // Cache placeholder receiver ID sau khi upsert
   private bulkPlaceholderReceiverId: string | null = null;
 
@@ -51,6 +57,9 @@ export class BulkRunsService implements OnModuleInit {
     private notifications: NotificationsService,
     private systemConfig: SystemConfigService,
     private trust: TrustService,
+    // Optional + cuối danh sách: spec khởi tạo bằng positional args. Chỉ dùng để
+    // đọc trạng thái kết nối trong tryAcquireLock.
+    @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
   ) {}
 
   /** Chạy 1 lần khi module khởi tạo — đảm bảo placeholder receiver luôn tồn tại. */
@@ -295,12 +304,16 @@ export class BulkRunsService implements OnModuleInit {
       throw new BadRequestException('Yêu cầu này đã được xử lý hoặc không còn hiệu lực.');
     }
 
-    // Khoá listing như luồng reservation để không đụng độ khách đặt lẻ cùng lúc
-    const lock = await this.redlock
-      .acquire([`lock:reservation:${run.listingId}`], 10_000)
-      .catch(() => {
-        throw new BadRequestException('Tin đang có người thao tác. Vui lòng thử lại sau vài giây.');
-      });
+    // Khoá listing như luồng reservation để không đụng độ khách đặt lẻ cùng lúc.
+    // Best-effort: Redis rớt thì đi tiếp không khóa — chốt chống bán lố nằm ở
+    // UPDATE có điều kiện bên dưới, không phải ở khóa.
+    const lock = await tryAcquireLock(
+      this.redlock,
+      this.redis,
+      this.logger,
+      `lock:reservation:${run.listingId}`,
+      10_000,
+    );
     try {
       const [row] = await this.prisma.$queryRaw<
         { quantity_remaining: number; status: string; pickup_end_time: Date }[]
@@ -319,22 +332,30 @@ export class BulkRunsService implements OnModuleInit {
         );
       }
 
-      await this.prisma.$transaction([
-        this.prisma.$executeRaw(Prisma.sql`
+      await this.prisma.$transaction(async (tx) => {
+        // Trừ kho CÓ ĐIỀU KIỆN — nếu khách lẻ vừa đặt thêm trong khe hở (nhất là
+        // lúc chạy không khóa) thì 0 dòng bị sửa và toàn bộ duyệt rollback.
+        const affected = await tx.$executeRaw(Prisma.sql`
           UPDATE food_listings
           SET
             quantity_remaining = quantity_remaining - ${run.quantity},
             status = CASE WHEN quantity_remaining - ${run.quantity} <= 0 THEN 'fully_reserved'::listing_status ELSE status END,
             updated_at = NOW()
           WHERE id = ${run.listingId}::uuid
-        `),
-        this.prisma.bulkRun.update({
+            AND quantity_remaining >= ${run.quantity}
+        `);
+        if (affected === 0) {
+          throw new BadRequestException(
+            'Khách lẻ vừa đặt thêm — số phần còn lại không đủ cho yêu cầu này. Hãy từ chối hoặc chờ khách huỷ.',
+          );
+        }
+        await tx.bulkRun.update({
           where: { id: runId },
           data: { status: 'approved', approvedAt: new Date() },
-        }),
-      ]);
+        });
+      });
     } finally {
-      await lock.release();
+      await safeRelease(lock);
     }
 
     void this.notifications.notify(run.shipper.userId, {

@@ -1,5 +1,5 @@
-import { ArrayMaxSize, IsArray, IsIn, IsInt, Matches, Max, Min, ValidateNested } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, Matches, Max, Min, ValidateNested } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export const SHIFT_PERIOD_VALUES = ['midnight', 'morning', 'afternoon', 'evening'] as const;
@@ -47,11 +47,24 @@ export class DeliveryShiftSlotDto {
 export class SetDeliveryShiftsDto {
   @ApiProperty({
     type: [DeliveryShiftSlotDto],
-    description: 'Toàn bộ ca giao hàng trong TUẦN ĐANG MỞ ĐĂNG KÝ (ghi đè). Mảng rỗng = bỏ hết ca tuần đó.',
+    description: 'Toàn bộ ca giao hàng trong TUẦN ĐANG SỬA (ghi đè). Mảng rỗng = bỏ hết ca tuần đó.',
   })
   @IsArray({ message: 'Danh sách ca phải là mảng' })
   @ArrayMaxSize(28, { message: 'Tối đa 28 ca (7 ngày × 4 ca)' })
   @ValidateNested({ each: true })
   @Type(() => DeliveryShiftSlotDto)
   slots!: DeliveryShiftSlotDto[];
+
+  // Phạm vi mà `slots` đại diện. Bắt buộc khi lưới chỉ hiển thị MỘT tuần trong khoảng
+  // được phép sửa: không có nó, server ghi đè cả khoảng và cuốn luôn ca của những tuần
+  // người dùng không hề nhìn thấy. Bỏ trống = ghi đè toàn bộ khoảng được phép.
+  @ApiPropertyOptional({ example: '2026-08-24', description: 'Ngày đầu của tuần đang sửa' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày bắt đầu phải theo định dạng YYYY-MM-DD' })
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-08-30', description: 'Ngày cuối của tuần đang sửa' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày kết thúc phải theo định dạng YYYY-MM-DD' })
+  to?: string;
 }

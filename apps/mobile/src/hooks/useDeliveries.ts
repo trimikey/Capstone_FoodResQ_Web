@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -210,15 +210,87 @@ interface Paginated<T> {
 }
 
 /** Lời mời giao hàng đang chờ. Poll 15s để bắt offer mới. */
+/** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
+interface NearbyDeliveryRow {
+  deliveryId: string;
+  createdAt: string;
+  distanceKm: number;
+  tripKm: number | null;
+  listingTitle: string;
+  pickupAddress: string;
+  imageUrls: string[];
+  deliveryAddress: string | null;
+  deliveryScheduledAt: string | null;
+  deliveryEvidenceUrl: string | null;
+  canClaim: boolean;
+  busyWithCampaign?: boolean;
+  claimExpiresAt: string;
+}
+
+/**
+ * Đơn đang chờ quanh shipper — thay hệ "lời mời tuần tự 15s" đã gỡ bỏ.
+ *
+ * Vẫn trả về shape `TaskOffer` để màn hình dùng lại nguyên vẹn. Khác biệt ý nghĩa:
+ * `expiresAt` giờ là HẠN CỦA ĐƠN (quá hạn không ai nhận thì đơn bị huỷ), không còn
+ * là "hạn bạn phải trả lời lời mời" — đơn không bị gán riêng cho ai nữa.
+ */
 export function useMyOffers(enabled = true) {
   const { isOnline } = useNetworkStatus();
+  const [coords, setCoords] = useState<{ lng: number; lat: number } | null>(null);
+
+  // Danh sách lọc theo vị trí hiện tại nên phải có GPS trước khi gọi.
+  useEffect(() => {
+    if (!enabled || !isOnline) return;
+    let mounted = true;
+    const read = async () => {
+      // getCurrentCoords đã bọc sẵn xin quyền + timeout + fallback của app.
+      const { coords: got } = await getCurrentCoords();
+      if (mounted && got) setCoords({ lng: got.lng, lat: got.lat });
+    };
+    void read();
+    const timer = setInterval(read, 120_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [enabled, isOnline]);
+
   return useQuery({
-    queryKey: ['deliveries', 'offers'],
-    enabled: enabled && isOnline,
-    refetchInterval: isOnline ? 15_000 : false,
+    queryKey: ['deliveries', 'offers', coords],
+    enabled: enabled && isOnline && !!coords,
+    refetchInterval: isOnline ? 20_000 : false,
     queryFn: async () => {
-      const res = await apiClient.get<ApiResponse<TaskOffer[]>>(endpoints.deliveries.myOffers);
-      return res.data.data;
+      const res = await apiClient.get<ApiResponse<NearbyDeliveryRow[]>>(
+        endpoints.deliveries.nearby,
+        { params: coords! },
+      );
+      // Map sang shape lời mời cũ để không phải viết lại toàn bộ màn hình.
+      return res.data.data
+        .filter((row) => row.canClaim)
+        .map<TaskOffer>((row) => ({
+          id: row.deliveryId,
+          deliveryId: row.deliveryId,
+          status: 'pending',
+          offeredAt: row.createdAt,
+          expiresAt: row.claimExpiresAt,
+          delivery: {
+            id: row.deliveryId,
+            status: 'pending_assignment' as DeliveryStatus,
+            distanceKm: row.tripKm,
+            source: 'reservation',
+            campaignTransport: null,
+            pickup: { address: row.pickupAddress, lng: null, lat: null },
+            destination: { address: row.deliveryAddress, lng: null, lat: null },
+            reservation: {
+              quantity: 1,
+              listing: {
+                title: row.listingTitle,
+                pickupAddress: row.pickupAddress,
+                imageUrls: row.imageUrls,
+              } as TaskOffer['delivery']['reservation'] extends null ? never : ListingBrief,
+              receiver: { address: row.deliveryAddress },
+              deliveryEvidenceUrl: row.deliveryEvidenceUrl,
+            },
+            coords: null,
+          },
+        }));
     },
   });
 }
@@ -272,7 +344,8 @@ export function useAcceptOffer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (deliveryId: string) => {
-      const res = await apiClient.post<ApiResponse<unknown>>(endpoints.deliveries.accept(deliveryId));
+      // Mô hình mới: shipper TỰ NHẬN đơn (cần ca giao hàng phủ thời điểm giao).
+      const res = await apiClient.post<ApiResponse<unknown>>(endpoints.deliveries.claim(deliveryId));
       return res.data.data;
     },
     onSuccess: () => {
@@ -282,17 +355,16 @@ export function useAcceptOffer() {
   });
 }
 
-/** Từ chối lời mời. POST /deliveries/:id/reject {reason?} */
+/**
+ * "Bỏ qua" một đơn — chỉ là thao tác phía client.
+ *
+ * Hệ mời tuần tự đã gỡ: đơn không được gán riêng cho ai nên không có gì để "từ chối".
+ * Bỏ qua chỉ nghĩa là bạn không chọn đơn đó; người khác vẫn thấy và nhận được.
+ */
 export function useRejectOffer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { deliveryId: string; reason?: string }) => {
-      const res = await apiClient.post<ApiResponse<unknown>>(
-        endpoints.deliveries.reject(params.deliveryId),
-        params.reason ? { reason: params.reason } : {}
-      );
-      return res.data.data;
-    },
+    mutationFn: async (_params: { deliveryId: string; reason?: string }) => ({ skipped: true }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
     },
@@ -366,40 +438,6 @@ export function useUpdateDeliveryStatus() {
   });
 }
 
-/**
- * Shipper: nghe `delivery:offer` để làm mới danh sách lời mời NGAY khi backend
- * broadcast (không chờ poll 15s). Gọi ở màn "Đơn cần giao".
- */
-export function useDeliveryOfferSocket(enabled = true) {
-  const qc = useQueryClient();
-  const accessToken = useAuthStore((s) => s.accessToken);
-
-  useEffect(() => {
-    if (!enabled || !accessToken) return;
-    let socket: Socket | null = null;
-    let cancelled = false;
-    (async () => {
-      const token = (await AsyncStorage.getItem('accessToken')) || accessToken;
-      if (cancelled) return;
-      socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
-      socket.on('delivery:offer', () => {
-        void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
-      });
-      // Để trôi lời mời → BE tắt sẵn sàng. Đồng bộ lại nút gạt, nếu không nó vẫn
-      // hiện "Đang sẵn sàng" trong khi thực tế đã offline.
-      socket.on('shipper:auto_offline', () => {
-        void qc.invalidateQueries({ queryKey: ['volunteer', 'me'] });
-        void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
-      });
-    })();
-    return () => {
-      cancelled = true;
-      socket?.off('delivery:offer');
-      socket?.off('shipper:auto_offline');
-      socket?.disconnect();
-    };
-  }, [enabled, accessToken, qc]);
-}
 
 /**
  * Shipper đang giao: đẩy vị trí hiện tại lên backend định kỳ (PATCH

@@ -317,13 +317,12 @@ export const endpoints = {
     // Receiver theo dõi đơn giao tận nơi (trạng thái + vị trí shipper)
     track: (reservationId: string) => `/deliveries/track/${reservationId}`,
     // Volunteer (shipper): danh sách lời mời / đơn đang giao / lịch sử / thành tích
-    myOffers: '/deliveries/my/offers',
+    nearby: '/deliveries/nearby',
     myActive: '/deliveries/my/active',
     myHistory: '/deliveries/my/history',
     myStats: '/deliveries/my/stats',
     // Volunteer: phản hồi lời mời + điều khiển vòng đời đơn giao
-    accept: (id: string) => `/deliveries/${id}/accept`,
-    reject: (id: string) => `/deliveries/${id}/reject`,
+    claim: (id: string) => `/deliveries/${id}/claim`,
     cancel: (id: string) => `/deliveries/${id}/cancel`,
     fail: (id: string) => `/deliveries/${id}/fail`,
     // PATCH multipart {status, photo?} — chuyển bước (kèm ảnh QC/proof)
@@ -386,8 +385,6 @@ export const endpoints = {
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
     completeDishStep: (campaignId: string, stepId: string) =>
       `/campaigns/${campaignId}/dish-steps/${stepId}/complete`,
-    flagDishStepQcFail: (campaignId: string, stepId: string) =>
-      `/campaigns/${campaignId}/dish-steps/${stepId}/qc-fail`,
     supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
     completeDistribution: (distributionId: string) =>
       `/campaigns/distributions/${distributionId}/complete`,

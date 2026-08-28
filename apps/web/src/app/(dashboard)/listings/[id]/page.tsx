@@ -30,6 +30,28 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+/** 480 → "08:00". Khung giờ đặt hàng lưu bằng số phút từ 00:00 giờ VN. */
+function minuteLabel(min: number): string {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Mốc thời gian → chuỗi cho `<input type="datetime-local">`, tính theo GIỜ VIỆT NAM.
+ *
+ * Dịch +7h rồi đọc phần UTC chính là đồng hồ treo tường VN. Bắt buộc phải khớp cách
+ * submit (`${value}:00+07:00`), nếu không người dùng ở múi giờ khác sẽ thấy min/max
+ * lệch vài tiếng so với giờ họ thật sự chọn được.
+ */
+function toVnInputValue(d: Date | string | number): string {
+  return new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 16);
+}
+
+/** Số phút từ 00:00 của chuỗi datetime-local (vốn đã là giờ VN). */
+function minuteOfInput(value: string): number | null {
+  const m = /T(\d{2}):(\d{2})/.exec(value);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
 const CATEGORIES: Record<string, string> = {
   cooked_meal: 'Đồ chín',
   bakery: 'Bánh ngọt',
@@ -207,6 +229,21 @@ export default function ListingDetailPage({ params }: Props) {
         toast.error('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
         return;
       }
+      // Quá hạn nhận của tin thì shipper tới nơi cũng không còn hàng để lấy.
+      if (at.getTime() > new Date(listing.pickupEndTime).getTime()) {
+        toast.error(
+          `Giờ hẹn giao vượt quá hạn nhận hàng của tin (${formatVietnamDateTime(listing.pickupEndTime)}).`,
+        );
+        return;
+      }
+      // Chặn ngay tại đây thay vì để backend trả lỗi: người dùng chọn 2h sáng rồi mới
+      // biết sai thì phải làm lại từ đầu cả form (kể cả ảnh bằng chứng đã tải lên).
+      const minute = minuteOfInput(scheduledTime);
+      if (orderWindow && minute != null
+        && (minute < orderWindow.openMinute || minute >= orderWindow.closeMinute)) {
+        toast.error(`Giờ hẹn giao phải nằm trong khung ${windowLabel}.`);
+        return;
+      }
     }
     try {
       let deliveryEvidenceUrl: string | undefined;
@@ -262,6 +299,20 @@ export default function ListingDetailPage({ params }: Props) {
 
   // Luôn hiển thị giờ Việt Nam, kể cả khi người nhận mở app ở múi giờ khác.
   const fmtTime = formatVietnamTime;
+  const fmtVnDate = formatVietnamDate;
+
+  // Khung giờ trong ngày còn đặt được — backend đã tính sẵn phần giao giữa giờ sàn và
+  // giờ cửa hàng, FE chỉ hiển thị và khoá ô chọn giờ theo đúng con số đó.
+  const orderWindow = listing.orderWindow;
+  const windowLabel = orderWindow
+    ? `${minuteLabel(orderWindow.openMinute)}–${minuteLabel(orderWindow.closeMinute)}`
+    : '';
+  // Sớm nhất: 30 phút nữa (shipper cần thời gian di chuyển) và không sớm hơn giờ tin
+  // mở nhận. Muộn nhất: hạn nhận hàng của tin.
+  const scheduleMin = toVnInputValue(
+    Math.max(pickupWindow.now + 30 * 60_000, new Date(listing.pickupStartTime).getTime()),
+  );
+  const scheduleMax = toVnInputValue(listing.pickupEndTime);
 
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -423,14 +474,23 @@ export default function ListingDetailPage({ params }: Props) {
                 <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">schedule</span>
                 <div>
                   <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Giờ nhận hàng</p>
+                  {/* Trước đây chỉ in giờ, không có ngày — hai mốc cùng giờ trông như
+                      "20:49 – 20:49" và không ai biết tin còn hiệu lực tới ngày nào. */}
                   <p className="font-label-sm text-xs text-on-surface font-semibold">
-                    {fmtTime(listing.pickupStartTime)} – {fmtTime(listing.pickupEndTime)}
+                    {fmtVnDate(listing.pickupStartTime)} {fmtTime(listing.pickupStartTime)}
+                    {' → '}
+                    {fmtVnDate(listing.pickupEndTime)} {fmtTime(listing.pickupEndTime)}
                     {(notYetOpen || windowClosed) && (
                       <span className="ml-1 text-error font-semibold">
                         ({notYetOpen ? 'chưa mở' : 'đã đóng'})
                       </span>
                     )}
                   </p>
+                  {orderWindow && (
+                    <p className="text-[11px] text-on-surface-variant">
+                      Mỗi ngày chỉ đặt được {windowLabel}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -805,11 +865,21 @@ export default function ListingDetailPage({ params }: Props) {
                           />
                           <span className="min-w-0 flex-1">
                             <span className="block text-xs font-semibold text-on-surface">Hẹn giờ nhận</span>
-                            <span className="block text-[11px] text-on-surface-variant">Tối thiểu 30 phút nữa, trong khung giờ nhận của tin</span>
+                            <span className="block text-[11px] text-on-surface-variant">
+                              Tối thiểu 30 phút nữa
+                              {orderWindow ? `, trong khung ${windowLabel} mỗi ngày` : ''}, chậm nhất{' '}
+                              {formatVietnamDateTime(listing.pickupEndTime)}
+                            </span>
                             {!!scheduledTime && (
                               <input
                                 type="datetime-local"
                                 value={scheduledTime}
+                                // min/max chặn ngay ở bộ chọn: quá khứ và ngày sau hạn nhận
+                                // hàng không bấm được, thay vì chọn xong mới ăn lỗi.
+                                // Khung giờ TRONG NGÀY thì datetime-local không diễn tả
+                                // được, nên kiểm khi bấm đặt (và backend kiểm lại).
+                                min={scheduleMin}
+                                max={scheduleMax}
                                 onChange={(e) => setScheduledTime(e.target.value)}
                                 className="mt-1.5 w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
                               />

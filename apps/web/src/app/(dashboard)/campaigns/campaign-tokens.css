@@ -1717,12 +1717,16 @@ padding: 14px 24px;
   .cm-detail-page {
     max-width: 1180px;
     margin: 0 auto;
-    padding: 28px 24px 80px;
+    /* PublicHeader là thanh FIXED (cao ~84px, cách mép 24px khi chưa cuộn) nên phải
+       chừa chỗ ở trên, nếu không nó đè lên phần đầu ảnh bìa và nút quay lại. */
+    padding: 124px 24px 80px;
   }
 
   .cm-detail-hero {
     position: relative;
-    height: 320px;
+    /* Hạ từ 320px: ảnh bìa chiếm ít chỗ hơn, phần thông tin chiến dịch lên cao,
+       người xem thấy ngay tên + ngày giờ mà không phải cuộn. */
+    height: 260px;
     border-radius: 24px;
     overflow: hidden;
     background: linear-gradient(135deg, #2a662e 0%, #1e4d21 100%);
@@ -1818,7 +1822,9 @@ padding: 14px 24px;
   }
   @media (max-width: 768px) {
     .cm-info-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .cm-detail-hero { height: 240px; }
+    /* Màn hẹp: thanh điều hướng bám sát mép trên nên cần ít khoảng đệm hơn. */
+    .cm-detail-page { padding-top: 96px; }
+    .cm-detail-hero { height: 200px; }
     .cm-detail-hero-title { font-size: 24px; }
   }
   .cm-info-cell {

@@ -6,20 +6,50 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { UserRole } from '@foodresq/types';
-import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 import NotificationBell from '@/components/shared/NotificationBell';
 
-const ADMIN_NAV = [
-  { href: '/admin', label: 'Tổng quan thống kê', icon: 'dashboard' },
-  { href: '/admin/map', label: 'Bản đồ trực tiếp', icon: 'map' },
-  { href: '/admin/donations', label: 'Quản lý Quyên góp', icon: 'volunteer_activism' },
-  { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
-  { href: '/admin/food', label: 'Quản lý thức ăn', icon: 'restaurant_menu' },
-  { href: '/admin/catalog', label: 'Danh mục thực phẩm', icon: 'category' },
-  { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
-  { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+/**
+ * Sidebar chia theo BA nhóm việc thật của admin, thay vì tám mục ngang hàng:
+ *  - Theo dõi: nhìn là hiểu chuyện gì đang diễn ra (tổng quan, bản đồ).
+ *  - Vận hành: các đối tượng nghiệp vụ phải xử lý hằng ngày (đơn, chiến dịch, tin đăng).
+ *  - Hệ thống: dữ liệu nền và con người (danh mục, khiếu nại, tài khoản).
+ *
+ * "Quản lý Quyên góp" đổi thành "Đơn nhận thực phẩm": trang đó liệt kê các ĐƠN ĐẶT
+ * CHỖ của người nhận (confirmed/picked_up/completed), không phải khoản quyên góp —
+ * tên cũ khiến admin tìm quyên góp chiến dịch ở nhầm chỗ.
+ */
+const ADMIN_NAV_GROUPS: Array<{
+  title: string;
+  items: Array<{ href: string; label: string; icon: string }>;
+}> = [
+  {
+    title: 'Theo dõi',
+    items: [
+      { href: '/admin', label: 'Tổng quan thống kê', icon: 'dashboard' },
+      { href: '/admin/map', label: 'Bản đồ trực tiếp', icon: 'map' },
+    ],
+  },
+  {
+    title: 'Vận hành',
+    items: [
+      { href: '/admin/donations', label: 'Đơn nhận thực phẩm', icon: 'receipt_long' },
+      { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
+      { href: '/admin/food', label: 'Tin đăng thực phẩm', icon: 'restaurant_menu' },
+    ],
+  },
+  {
+    title: 'Hệ thống',
+    items: [
+      { href: '/admin/catalog', label: 'Danh mục thực phẩm', icon: 'category' },
+      { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
+      { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+    ],
+  },
 ];
+
+/** Danh sách phẳng — cho tra tiêu đề trang và menu mobile. */
+const ADMIN_NAV = ADMIN_NAV_GROUPS.flatMap((g) => g.items);
 
 /**
  * Mục neo ở đáy sidebar, chung khối với nút Đăng xuất — đây là nhóm "tài khoản &
@@ -98,7 +128,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="h-screen overflow-hidden bg-[#FAFBF9] font-body-md flex flex-col">
-      {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
@@ -175,18 +204,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <img src="/Logo_FoodResQ.png" alt="FoodResQ" className="h-12 w-auto object-contain" />
         </div>
 
-        {/* Navigation */}
-        <nav className="flex flex-col gap-1 p-3 flex-grow">
-          {ADMIN_NAV.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link key={item.href} href={item.href}
-                className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
-                <span className="material-symbols-outlined text-lg">{item.icon}</span>
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
+        {/* Navigation — nhóm theo loại việc để 8 mục không nằm ngang hàng nhau */}
+        <nav className="flex flex-col gap-1 p-3 flex-grow overflow-y-auto">
+          {ADMIN_NAV_GROUPS.map((group) => (
+            <div key={group.title} className="mb-2">
+              <p className="px-4 pb-1 pt-2 text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                {group.title}
+              </p>
+              {group.items.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link key={item.href} href={item.href}
+                    className={`${isActive ? 'bg-[#236c2a] text-white' : 'text-neutral-700 hover:bg-neutral-100'} rounded-lg px-4 py-3 flex items-center gap-3 transition-colors text-sm`}>
+                    <span className="material-symbols-outlined text-lg">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Bottom Section — cài đặt + đăng xuất neo chung ở đáy */}
