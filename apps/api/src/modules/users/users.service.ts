@@ -524,6 +524,13 @@ export class UsersService {
       matchDistance = result.distance;
     }
 
+    // 1 khuôn mặt = 1 tài khoản — chặn TRƯỚC khi upload ảnh; bỏ qua chính chủ
+    // để ghi danh lại khuôn mặt của mình không bị tính trùng.
+    await this.faceMatch.assertNotDuplicateFace(
+      (selfieDescriptor ?? idCardDescriptor)!,
+      userId,
+    );
+
     const [idCardUrl, faceUrl] = await Promise.all([
       idCardPhoto ? this.storage.saveImage(idCardPhoto, 'id-cards') : Promise.resolve(null),
       selfiePhoto ? this.storage.saveImage(selfiePhoto, 'faces') : Promise.resolve(null),

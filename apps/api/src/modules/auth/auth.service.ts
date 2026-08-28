@@ -103,6 +103,8 @@ export class AuthService {
           'Không nhận diện được khuôn mặt trong ảnh — đăng ký thất bại. Vui lòng chụp lại nơi đủ sáng, thấy rõ khuôn mặt.',
         );
       }
+      // 1 khuôn mặt = 1 tài khoản (admin bật/tắt qua FACE_DUPLICATE_CHECK).
+      await this.faceMatch.assertNotDuplicateFace(faceDescriptor);
     }
 
     // Chuẩn hoá chuỗi để giảm khoảng trắng trước khi validate/insert.

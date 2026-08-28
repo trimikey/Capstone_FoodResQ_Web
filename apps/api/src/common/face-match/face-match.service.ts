@@ -1,4 +1,7 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '@/prisma/prisma.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
 import { join, dirname } from 'path';
 import * as jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
@@ -28,6 +31,42 @@ export class FaceMatchService {
     Number(process.env['FACE_MATCH_THRESHOLD']) > 0
       ? Number(process.env['FACE_MATCH_THRESHOLD'])
       : DEFAULT_MATCH_THRESHOLD;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly systemConfig: SystemConfigService,
+  ) {}
+
+  /**
+   * Chặn một khuôn mặt gắn cho nhiều tài khoản: so descriptor mới với TOÀN BỘ
+   * descriptor đã lưu (receiver + volunteer, mỗi bảng vài trăm dòng — so local
+   * bằng euclidean nên rẻ). Bật/tắt qua system_configs FACE_DUPLICATE_CHECK
+   * để admin tạo nhanh tài khoản test khi cần.
+   *
+   * @param excludeUserId bỏ qua chính chủ — ghi danh lại khuôn mặt của mình
+   *   không được tính là trùng.
+   */
+  async assertNotDuplicateFace(descriptor: number[], excludeUserId?: string): Promise<void> {
+    const enabled = await this.systemConfig.getNumber('FACE_DUPLICATE_CHECK');
+    if (!enabled) return;
+    const rows = await this.prisma.$queryRaw<{ user_id: string; face_descriptor: unknown }[]>(
+      Prisma.sql`
+        SELECT user_id, face_descriptor FROM receiver_profiles WHERE face_descriptor IS NOT NULL
+        UNION ALL
+        SELECT user_id, face_descriptor FROM volunteer_profiles WHERE face_descriptor IS NOT NULL
+      `,
+    );
+    for (const row of rows) {
+      if (excludeUserId && row.user_id === excludeUserId) continue;
+      const stored = row.face_descriptor;
+      if (!Array.isArray(stored) || stored.length !== descriptor.length) continue;
+      if (this.compare(descriptor, stored as number[]).matched) {
+        throw new ConflictException(
+          'Khuôn mặt này đã được đăng ký cho một tài khoản khác — mỗi người chỉ dùng một tài khoản. Nếu bạn cho rằng có nhầm lẫn, vui lòng liên hệ quản trị viên.',
+        );
+      }
+    }
+  }
 
   /** Load tfjs backend + model weights một lần duy nhất (lazy, gọi ở request đầu tiên). */
   private init(): Promise<void> {
