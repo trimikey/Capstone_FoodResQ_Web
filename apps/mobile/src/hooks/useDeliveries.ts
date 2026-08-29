@@ -241,6 +241,15 @@ export interface SetDeliveryShiftsInput {
   to?: string;
 }
 
+export interface WeeklyAvailabilitySlot {
+  dayOfWeek: number;
+  period: ShiftPeriod;
+}
+
+export interface WeeklyAvailabilityData {
+  slots: WeeklyAvailabilitySlot[];
+}
+
 /** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
 interface NearbyDeliveryRow {
   deliveryId: string;
@@ -360,6 +369,21 @@ export function useSetMyDeliveryShifts() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['volunteer', 'delivery-shifts'] });
       void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+    },
+  });
+}
+
+export function useMyWeeklyAvailability(enabled = true) {
+  const { isOnline } = useNetworkStatus();
+  return useQuery({
+    queryKey: ['volunteer', 'weekly-availability'],
+    enabled: enabled && isOnline,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<WeeklyAvailabilityData>>(
+        endpoints.volunteers.weeklyAvailability
+      );
+      return res.data.data;
     },
   });
 }

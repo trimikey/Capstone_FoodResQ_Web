@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager, Pressable, ScrollView, View, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
+import { InteractionManager, Pressable, RefreshControl, ScrollView, View, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Dialog, Portal, Text, Button } from 'react-native-paper';
 import {
@@ -9,7 +9,6 @@ import {
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
@@ -133,7 +132,7 @@ function claimBlockedReason(offer: TaskOffer): string | null {
  */
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
-  const { data, isLoading, isError, refetch, isRefetching } = useMyOffers();
+  const { data, isLoading, isError, refetch } = useMyOffers();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,
@@ -157,6 +156,7 @@ export default function VolunteerOffersScreen() {
   const [resolvedAddress, setResolvedAddress] = useState<{ key: string; value: string } | null>(null);
   const [deferredIds, setDeferredIds] = useState<string[]>([]);
   const [facePromptVisible, setFacePromptVisible] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [renderNow, setRenderNow] = useState(() => Date.now());
   const lastPromptedIdRef = useRef<string | null>(null);
   const syncedDeviceLocationRef = useRef(false);
@@ -364,9 +364,14 @@ export default function VolunteerOffersScreen() {
     }
   };
 
-  const refreshNearbyData = () => {
-    void Promise.all([refetch(), nearbyListings.refetch()]);
-  };
+  const refreshNearbyData = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await Promise.all([refetch(), nearbyListings.refetch()]);
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [nearbyListings, refetch]);
 
   const renderPriorityCard = (offer: TaskOffer) => {
     const details = offerDetails(offer);
@@ -731,92 +736,107 @@ export default function VolunteerOffersScreen() {
           </View>
         }
       />
-      <View style={styles.dispatchHero}>
-        <View style={styles.dispatchTop}>
-          <View style={styles.dispatchIcon}>
-            <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
+      <ScrollView
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        refreshControl={
+          <RefreshControl
+            refreshing={manualRefreshing}
+            onRefresh={refreshNearbyData}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
+        <View style={styles.dispatchHero}>
+          <View style={styles.dispatchTop}>
+            <View style={styles.dispatchIcon}>
+              <MaterialCommunityIcons name="radar" size={24} color={COLORS.onPrimary} />
+            </View>
+            <View style={styles.dispatchCopy}>
+              <Text style={styles.dispatchKicker}>Tự chọn đơn</Text>
+              <Text style={styles.dispatchTitle}>
+                {activeOffer ? 'Có đơn có thể tự nhận' : currentLocation ? 'Đang tìm đơn gần bạn' : 'Bật GPS để bắt đầu'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.dispatchCopy}>
-            <Text style={styles.dispatchKicker}>Tự chọn đơn</Text>
-            <Text style={styles.dispatchTitle}>
-              {activeOffer ? 'Có đơn có thể tự nhận' : currentLocation ? 'Đang tìm đơn gần bạn' : 'Bật GPS để bắt đầu'}
+          <View style={styles.dispatchStats}>
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{visibleOffers.length}</Text>
+              <Text style={styles.dispatchStatLabel}>đơn gần</Text>
+            </View>
+            <View style={styles.dispatchDivider} />
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{claimableOfferCount}</Text>
+              <Text style={styles.dispatchStatLabel}>có thể nhận</Text>
+            </View>
+            <View style={styles.dispatchDivider} />
+            <View style={styles.dispatchStat}>
+              <Text style={styles.dispatchStatValue}>{queueOffers.length}</Text>
+              <Text style={styles.dispatchStatLabel}>hàng chờ</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.locationBar}>
+          <View style={styles.locationIcon}>
+            <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.blue} />
+          </View>
+          <View style={styles.locationContent}>
+            <Text style={styles.locationLabel}>Vị trí hiện tại</Text>
+            <Text style={styles.locationValue} numberOfLines={2}>
+              {locationStatus}
+            </Text>
+            <Text style={styles.locationHint} numberOfLines={2}>
+              {locationHint}
             </Text>
           </View>
         </View>
-        <View style={styles.dispatchStats}>
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{visibleOffers.length}</Text>
-            <Text style={styles.dispatchStatLabel}>đơn gần</Text>
+
+        {activeDelivery.data ? (
+          <ActiveDeliveryBanner delivery={activeDelivery.data} />
+        ) : null}
+
+        {needsFaceEnrollment ? (
+          <View style={styles.faceBanner}>
+            <View style={styles.faceBannerIcon}>
+              <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.purple} />
+            </View>
+            <View style={styles.faceBannerText}>
+              <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
+              <Text style={styles.faceBannerSub} numberOfLines={2}>
+                Cập nhật để xác minh khi giao nhận đơn.
+              </Text>
+            </View>
+            <Button
+              mode="contained-tonal"
+              compact
+              onPress={() => setFacePromptVisible(true)}
+              buttonColor={COLORS.purpleContainer}
+              textColor={COLORS.purple}
+              labelStyle={styles.faceBannerActionLabel}
+              style={styles.faceBannerAction}
+            >
+              Cập nhật
+            </Button>
           </View>
-          <View style={styles.dispatchDivider} />
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{claimableOfferCount}</Text>
-            <Text style={styles.dispatchStatLabel}>có thể nhận</Text>
-          </View>
-          <View style={styles.dispatchDivider} />
-          <View style={styles.dispatchStat}>
-            <Text style={styles.dispatchStatValue}>{queueOffers.length}</Text>
-            <Text style={styles.dispatchStatLabel}>hàng chờ</Text>
-          </View>
-        </View>
-      </View>
-      <View style={styles.locationBar}>
-        <View style={styles.locationIcon}>
-          <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.blue} />
-        </View>
-        <View style={styles.locationContent}>
-          <Text style={styles.locationLabel}>Vị trí hiện tại</Text>
-          <Text style={styles.locationValue} numberOfLines={2}>
-            {locationStatus}
-          </Text>
-          <Text style={styles.locationHint} numberOfLines={2}>
-            {locationHint}
-          </Text>
-        </View>
-      </View>
-      {activeDelivery.data ? (
-        <ActiveDeliveryBanner delivery={activeDelivery.data} />
-      ) : null}
-      {needsFaceEnrollment ? (
-        <View style={styles.faceBanner}>
-          <View style={styles.faceBannerIcon}>
-            <MaterialCommunityIcons name="face-recognition" size={20} color={COLORS.purple} />
-          </View>
-          <View style={styles.faceBannerText}>
-            <Text style={styles.faceBannerTitle}>Chưa cập nhật khuôn mặt</Text>
-            <Text style={styles.faceBannerSub} numberOfLines={2}>
-              Cập nhật để xác minh khi giao nhận đơn.
-            </Text>
-          </View>
-          <Button
-            mode="contained-tonal"
-            compact
-            onPress={() => setFacePromptVisible(true)}
-            buttonColor={COLORS.purpleContainer}
-            textColor={COLORS.purple}
-            labelStyle={styles.faceBannerActionLabel}
-            style={styles.faceBannerAction}
-          >
-            Cập nhật
-          </Button>
-        </View>
-      ) : null}
-      {visibleOffers.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-          {renderEmpty()}
-        </ScrollView>
-      ) : (
-        <FlashList
-          data={queueOffers}
-          keyExtractor={(item: TaskOffer, index) => item.id ?? `${item.deliveryId}-${index}`}
-          renderItem={renderItem}
-          extraData={{ actingId, deferredIds, activeOfferId: activeOffer?.id, renderNow }}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={renderListHeader}
-          refreshing={isRefetching}
-          onRefresh={refreshNearbyData}
-        />
-      )}
+        ) : null}
+
+        {visibleOffers.length === 0 ? (
+          renderEmpty()
+        ) : (
+          <>
+            {renderListHeader()}
+            {queueOffers.map((item, index) => (
+              <View key={item.id ?? `${item.deliveryId}-${index}`}>
+                {renderItem({ item })}
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
       {renderOfferSheet()}
       <FaceEnrollmentPrompt
         visible={facePromptVisible}

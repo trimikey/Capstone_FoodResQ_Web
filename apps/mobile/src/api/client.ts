@@ -341,6 +341,7 @@ export const endpoints = {
     // Hồ sơ tình nguyện viên + vị trí hiện tại; availability là endpoint legacy.
     me: '/volunteers/me',
     availability: '/volunteers/me/availability',
+    weeklyAvailability: '/volunteers/me/weekly-availability',
     location: '/volunteers/me/location',
     deliveryShifts: '/volunteers/me/delivery-shifts',
   },
@@ -389,6 +390,8 @@ export const endpoints = {
     supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
     completeDistribution: (distributionId: string) =>
       `/campaigns/distributions/${distributionId}/complete`,
+    myPickupOrders: '/campaigns/my-pickup-orders',
+    confirmPickupOrder: (requestId: string) => `/campaigns/pickup-orders/${requestId}/confirm`,
   },
   recipes: {
     // Thư viện công thức nấu ăn (đầu bếp/chef đóng góp). List + detail công khai.

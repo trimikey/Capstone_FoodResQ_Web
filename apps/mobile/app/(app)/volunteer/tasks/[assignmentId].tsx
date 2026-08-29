@@ -7,8 +7,10 @@ import { router, type Href, useLocalSearchParams } from 'expo-router';
 import {
   type AssignedDistribution,
   type DishStep,
+  type PickupOrder,
   useAdvanceTask,
   useCampaignSupplies,
+  useConfirmIngredientPickup,
   useCompleteAssignedDistribution,
   useCompleteDishStep,
   useMyTaskDetail,
@@ -381,12 +383,16 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   onRefresh: () => Promise<unknown> | void;
 }) {
   const complete = useCompleteAssignedDistribution();
+  const confirmPickup = useConfirmIngredientPickup();
   const [closing, setClosing] = useState<AssignedDistribution | null>(null);
+  const [confirmingPickup, setConfirmingPickup] = useState<PickupOrder | null>(null);
   const [actualServings, setActualServings] = useState('');
+  const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
 
   const dishes = detail.dishes ?? [];
   const distributions = detail.distributions ?? [];
+  const pickupOrders = detail.pickupOrders ?? [];
   const readyDishes = dishes.filter((dish) =>
     dish.steps.some((step) => step.stepOrder === 4 && step.effectiveStatus === 'done')
   );
@@ -394,6 +400,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const openClose = (distribution: AssignedDistribution) => {
     setClosing(distribution);
     setActualServings(String(distribution.servingsServed));
+    setNote('');
+  };
+
+  const openPickupConfirm = (order: PickupOrder) => {
+    setConfirmingPickup(order);
+    setReceivedKg(order.quantityKg != null ? String(order.quantityKg) : '');
     setNote('');
   };
 
@@ -431,6 +443,36 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
   };
 
+  const submitPickupConfirm = async () => {
+    if (!confirmingPickup) return;
+    const kg = Number.parseFloat(receivedKg.replace(',', '.').trim());
+    if (!Number.isFinite(kg) || kg < 0) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Số kg không hợp lệ',
+        text2: 'Nhập số kg thực nhận trước khi xác nhận.',
+      });
+      return;
+    }
+    try {
+      const photo = await captureImage('id_card', 'proof');
+      if (!photo) return;
+      await confirmPickup.mutateAsync({
+        requestId: confirmingPickup.providerRequestId,
+        receivedKg: kg,
+        photo,
+        note: note.trim() || undefined,
+      });
+      void notifySuccess();
+      Popup.show({ type: 'success', text1: `Đã xác nhận lấy ${kg} kg nguyên liệu` });
+      setConfirmingPickup(null);
+      await onRefresh();
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không xác nhận được đơn nguyên liệu', text2: getErrorMessage(error) });
+    }
+  };
+
   return (
     <>
       {detail.assignment.shift ? (
@@ -462,6 +504,81 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
           );
         })}
       </Section>
+
+      {pickupOrders.length > 0 ? (
+        <>
+          <View style={styles.sectionHeaderOutside}>
+            <MaterialCommunityIcons name="truck-delivery-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.sectionOutsideTitle}>Đơn nguyên liệu cần lấy ({pickupOrders.length})</Text>
+          </View>
+          {pickupOrders.map((order) => {
+            const done = !!order.pickup || order.delivery?.status === 'delivered';
+            return (
+              <View key={order.id} style={styles.pickupCard}>
+                <View style={styles.dishHead}>
+                  <View style={styles.flex}>
+                    <Text style={styles.dishTitle}>{order.providerName}</Text>
+                    <Text style={styles.muted}>
+                      {order.ingredientName ?? 'Nguyên liệu chiến dịch'}
+                      {order.quantityKg != null ? ` · cần lấy ${order.quantityKg} kg` : ''}
+                    </Text>
+                    <Text style={styles.smallMuted}>
+                      {order.pickupStartTime && order.pickupEndTime
+                        ? `Khung lấy ${formatTime(order.pickupStartTime)}–${formatTime(order.pickupEndTime)}`
+                        : 'Chưa hẹn khung lấy'}
+                      {order.distanceKm != null ? ` · cách bếp ~${order.distanceKm} km` : ''}
+                    </Text>
+                  </View>
+                  <StatusBadge label={done ? 'Đã lấy' : 'Cần lấy'} tone={done ? 'success' : 'warning'} />
+                </View>
+
+                <View style={styles.pickupBody}>
+                  <InfoLine
+                    icon="store-marker-outline"
+                    title="Điểm lấy"
+                    subtitle={order.providerAddress ?? 'Chưa có địa chỉ NCC'}
+                  />
+                  <InfoLine
+                    icon="home-map-marker"
+                    title="Giao về bếp"
+                    subtitle={order.kitchenAddress}
+                  />
+                  {order.message ? (
+                    <InfoLine icon="message-text-outline" title="Ghi chú" subtitle={order.message} />
+                  ) : null}
+                  {order.pickup ? (
+                    <View style={styles.completedBox}>
+                      <Text style={styles.completedText}>
+                        Đã nhận {order.pickup.receivedKg} kg
+                        {order.pickup.requestedKg != null ? ` / đặt ${order.pickup.requestedKg} kg` : ''}
+                        {order.pickup.confirmedAt ? ` · ${formatDateTime(order.pickup.confirmedAt)}` : ''}
+                      </Text>
+                      {order.pickup.photoUrl ? (
+                        <AppImage source={{ uri: order.pickup.photoUrl }} style={styles.pickupProof} />
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.distributionActions}>
+                  {order.lat != null && order.lng != null ? (
+                    <Button compact icon="directions" onPress={() => openDirections(order.lat, order.lng)}>Đi NCC</Button>
+                  ) : null}
+                  <Button
+                    mode="contained"
+                    icon="camera"
+                    disabled={!checkedIn || done || confirmPickup.isPending}
+                    loading={confirmPickup.isPending && confirmingPickup?.id === order.id}
+                    onPress={() => openPickupConfirm(order)}
+                  >
+                    Xác nhận lấy
+                  </Button>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      ) : null}
 
       <View style={styles.sectionHeaderOutside}>
         <MaterialCommunityIcons name="food-takeout-box-outline" size={22} color={COLORS.primary} />
@@ -529,6 +646,42 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
           <Dialog.Actions>
             <Button onPress={() => setClosing(null)} disabled={complete.isPending}>Huỷ</Button>
             <Button mode="contained" loading={complete.isPending} disabled={complete.isPending} onPress={submitClose}>Xác nhận</Button>
+          </Dialog.Actions>
+        </Dialog>
+        <Dialog visible={!!confirmingPickup} onDismiss={() => !confirmPickup.isPending && setConfirmingPickup(null)}>
+          <Dialog.Title>Xác nhận lấy nguyên liệu</Dialog.Title>
+          <Dialog.Content style={styles.dialogBody}>
+            <Text style={styles.muted}>
+              {confirmingPickup?.providerName ?? 'Nhà cung cấp'}
+              {confirmingPickup?.ingredientName ? ` · ${confirmingPickup.ingredientName}` : ''}
+            </Text>
+            <TextInput
+              mode="outlined"
+              label="Kg thực nhận *"
+              value={receivedKg}
+              onChangeText={setReceivedKg}
+              keyboardType="decimal-pad"
+            />
+            <TextInput
+              mode="outlined"
+              label="Ghi chú"
+              value={note}
+              onChangeText={setNote}
+              multiline
+              numberOfLines={3}
+            />
+            <Text style={styles.muted}>Khi bấm xác nhận, ứng dụng sẽ mở camera để chụp ảnh nguyên liệu tại NCC.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setConfirmingPickup(null)} disabled={confirmPickup.isPending}>Huỷ</Button>
+            <Button
+              mode="contained"
+              loading={confirmPickup.isPending}
+              disabled={confirmPickup.isPending}
+              onPress={submitPickupConfirm}
+            >
+              Chụp & xác nhận
+            </Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -618,6 +771,9 @@ const styles = StyleSheet.create({
   stepProof: { width: '100%', height: 110, borderRadius: radius.md, marginTop: 8 },
   stepActions: { alignItems: 'flex-start', gap: 2, marginTop: 8 },
   distributionCard: { padding: spacing.lg, borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, ...elevation.card },
+  pickupCard: { borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, overflow: 'hidden', ...elevation.card },
+  pickupBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6 },
+  pickupProof: { width: '100%', height: 130, borderRadius: radius.md, marginTop: 8 },
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.outlineVariant },
   pointIndex: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primaryContainer },
   pointIndexText: { color: COLORS.primary, fontSize: 11, fontWeight: '900' },

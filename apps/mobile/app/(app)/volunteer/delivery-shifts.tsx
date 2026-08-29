@@ -5,6 +5,7 @@ import { ActivityIndicator, Button, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   useMyDeliveryShifts,
+  useMyWeeklyAvailability,
   useSetMyDeliveryShifts,
   type DeliveryShiftSlot,
   type ShiftPeriod,
@@ -40,6 +41,11 @@ function mondayOfKey(dateKey: string): string {
   return addDaysKey(dateKey, -diffToMonday);
 }
 
+function isoDowOfKey(dateKey: string): number {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  return d.getUTCDay() || 7;
+}
+
 function dayLabel(dateKey: string): string {
   const d = new Date(`${dateKey}T00:00:00Z`);
   const names = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -59,6 +65,7 @@ function fmtVn(iso: string | null): string {
 
 export default function DeliveryShiftsScreen() {
   const shifts = useMyDeliveryShifts();
+  const availability = useMyWeeklyAvailability();
   const save = useSetMyDeliveryShifts();
   const [draft, setDraft] = useState<Set<string> | null>(null);
 
@@ -73,7 +80,23 @@ export default function DeliveryShiftsScreen() {
     () => new Set((data?.slots ?? []).map((slot) => cellKey(slot.workDate, slot.period))),
     [data?.slots],
   );
-  const selected = draft ?? serverSelected;
+  const weekHasSaved = days.some((day) =>
+    SHIFT_PERIODS.some((period) => serverSelected.has(cellKey(day, period.id))),
+  );
+  const suggested = useMemo(() => {
+    const next = new Set<string>();
+    if (!editable || weekHasSaved) return next;
+    for (const day of days) {
+      if (day < todayKey) continue;
+      const dow = isoDowOfKey(day);
+      for (const slot of availability.data?.slots ?? []) {
+        if (slot.dayOfWeek === dow) next.add(cellKey(day, slot.period));
+      }
+    }
+    return next;
+  }, [availability.data?.slots, days, editable, todayKey, weekHasSaved]);
+  const selected = draft ?? (suggested.size ? new Set([...serverSelected, ...suggested]) : serverSelected);
+  const dirty = draft !== null || suggested.size > 0;
   const selectedCount = days.reduce(
     (total, day) => total + SHIFT_PERIODS.filter((period) => selected.has(cellKey(day, period.id))).length,
     0,
@@ -82,7 +105,7 @@ export default function DeliveryShiftsScreen() {
   const toggle = (workDate: string, period: ShiftPeriod) => {
     if (!editable || workDate < todayKey) return;
     setDraft((prev) => {
-      const next = new Set(prev ?? serverSelected);
+      const next = new Set(prev ?? selected);
       const key = cellKey(workDate, period);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -153,11 +176,13 @@ export default function DeliveryShiftsScreen() {
                   {editable ? 'Đang mở đăng ký' : 'Ngoài cửa sổ đăng ký'}
                 </Text>
                 <Text style={styles.windowText}>
-                  {window_?.alwaysOpen
-                    ? 'Bạn có thể cập nhật ca giao hàng bất cứ lúc nào.'
-                    : editable
-                      ? `Có thể sửa đến ${fmtVn(window_?.closesAt ?? null)}.`
-                      : `Chỉ xem lịch. Mở lại ${fmtVn(window_?.nextOpensAt ?? null) || 'theo lịch hệ thống'}.`}
+                  {suggested.size > 0
+                    ? 'Đã gợi ý ca từ khung giờ bạn rảnh. Bấm Lưu ca để đăng ký thật.'
+                    : window_?.alwaysOpen
+                      ? 'Bạn có thể cập nhật ca giao hàng bất cứ lúc nào.'
+                      : editable
+                        ? `Có thể sửa đến ${fmtVn(window_?.closesAt ?? null)}.`
+                        : `Chỉ xem lịch. Mở lại ${fmtVn(window_?.nextOpensAt ?? null) || 'theo lịch hệ thống'}.`}
                 </Text>
               </View>
               <View style={styles.countBadge}>
@@ -170,7 +195,11 @@ export default function DeliveryShiftsScreen() {
               <View style={styles.gridHeader}>
                 <View>
                   <Text style={styles.gridTitle}>Lịch 7 ngày</Text>
-                  <Text style={styles.gridHint}>Ngày/ca đã qua hoặc ngoài cửa sổ đăng ký sẽ bị khoá.</Text>
+                  <Text style={styles.gridHint}>
+                    {suggested.size > 0
+                      ? `${suggested.size} ca đang được gợi ý từ “Khung giờ tôi rảnh”.`
+                      : 'Ngày/ca đã qua hoặc ngoài cửa sổ đăng ký sẽ bị khoá.'}
+                  </Text>
                 </View>
               </View>
 
@@ -216,7 +245,7 @@ export default function DeliveryShiftsScreen() {
             mode="contained"
             icon="content-save-outline"
             onPress={onSave}
-            disabled={!editable || draft == null || save.isPending}
+            disabled={!editable || !dirty || save.isPending}
             loading={save.isPending}
             buttonColor={COLORS.primary}
             style={styles.saveButton}

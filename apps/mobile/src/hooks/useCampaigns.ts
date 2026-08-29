@@ -793,6 +793,49 @@ export interface AssignedDistribution {
   points: DistributionPoint[];
 }
 
+export interface PickupOrder {
+  id: string;
+  providerRequestId: string;
+  campaignId: string;
+  campaignTitle: string;
+  campaignDate: string | null;
+  campaignTimeRange: string;
+  kitchenAddress: string;
+  providerName: string;
+  providerAddress: string | null;
+  providerPhone: string | null;
+  lng: number | null;
+  lat: number | null;
+  distanceKm: number | null;
+  needsTransport: boolean;
+  message: string | null;
+  ingredientName: string | null;
+  foodCategory: string | null;
+  expectedServings: number | null;
+  requireColdChain: boolean;
+  requireQcPhoto: boolean;
+  requireAtvstpCert: boolean;
+  scheduledDate: string | null;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+  quantityKg: number | null;
+  pickup: {
+    id: string;
+    receivedKg: number;
+    requestedKg: number | null;
+    shortfallKg: number;
+    photoUrl: string;
+    note: string | null;
+    confirmedAt: string;
+  } | null;
+  delivery: {
+    id: string;
+    status: string;
+  } | null;
+  assignmentId?: string | null;
+  checkedIn?: boolean;
+}
+
 export interface MyTaskDetail {
   assignment: {
     id: string;
@@ -826,6 +869,7 @@ export interface MyTaskDetail {
     charityReceiver: { organizationName: string | null; user: { fullName: string; phone: string | null } };
   };
   distributions?: AssignedDistribution[];
+  pickupOrders?: PickupOrder[];
   dishes?: DishProcessItem[];
   cookingTeam?: CookingTeamMember[];
 }
@@ -976,6 +1020,51 @@ export function useCompleteAssignedDistribution() {
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+    },
+  });
+}
+
+export function useMyPickupOrders(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-pickup-orders'],
+    enabled,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<PickupOrder[]>>(endpoints.campaigns.myPickupOrders);
+      return res.data.data;
+    },
+  });
+}
+
+export function useConfirmIngredientPickup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      receivedKg,
+      photo,
+      note,
+    }: {
+      requestId: string;
+      receivedKg: number;
+      photo: CapturedImage;
+      note?: string;
+    }) => {
+      const form = new FormData();
+      form.append('receivedKg', String(receivedKg));
+      form.append('photo', photo as unknown as Blob);
+      if (note) form.append('note', note);
+      const res = await apiClient.post<ApiResponse<PickupOrder['pickup']>>(
+        endpoints.campaigns.confirmPickupOrder(requestId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-pickup-orders'] });
     },
   });
 }
