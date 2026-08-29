@@ -520,6 +520,7 @@ model Reservation {
   receiver    ReceiverProfile @relation(fields: [receiverId], references: [id])
   delivery    Delivery?
   bulkRunStop BulkRunStop?    @relation(fields: [bulkRunStopId], references: [id])
+  messages    ReservationMessage[]
 
   @@index([listingId, receiverId])
   @@index([receiverId])
@@ -527,6 +528,19 @@ model Reservation {
   @@index([status])
   @@index([receiverId, createdAt])
   @@map("reservations")
+}
+
+/// Chat theo đơn giữa NGƯỜI NHẬN và CỬA HÀNG — chỉ hai bên của đơn được đọc/gửi.
+model ReservationMessage {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  reservationId String      @map("reservation_id") @db.Uuid
+  senderUserId  String      @map("sender_user_id") @db.Uuid
+  content       String
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, createdAt])
+  @@map("reservation_messages")
 }
 
 model Delivery {

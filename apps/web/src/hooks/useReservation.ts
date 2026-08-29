@@ -76,6 +76,43 @@ export function useCreateReservation() {
   });
 }
 
+// ── Chat theo đơn: người nhận ↔ cửa hàng ─────────────────────────────────────
+export interface ReservationChatMessage {
+  id: string;
+  senderUserId: string;
+  content: string;
+  createdAt: string;
+}
+export interface ReservationChatData {
+  messages: ReservationChatMessage[];
+  me: string;
+  partner: { name: string; phone: string | null };
+  partnerUserId: string;
+}
+
+export function useReservationMessages(reservationId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['reservations', 'chat', reservationId],
+    queryFn: async () =>
+      (await api.get(`/reservations/${reservationId}/messages`)).data.data as ReservationChatData,
+    enabled: enabled && !!reservationId,
+    // Poll 5s khi panel đang mở — đơn giản, đủ "gần realtime" cho chat theo đơn
+    refetchInterval: 5_000,
+  });
+}
+
+export function useSendReservationMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { reservationId: string; content: string }) =>
+      (await api.post(`/reservations/${p.reservationId}/messages`, { content: p.content })).data
+        .data as ReservationChatMessage,
+    onSuccess: (_d, p) => {
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'chat', p.reservationId] });
+    },
+  });
+}
+
 export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20, enabled = true) {
   return useQuery({
     queryKey: ['reservations', 'my', page, group, limit],

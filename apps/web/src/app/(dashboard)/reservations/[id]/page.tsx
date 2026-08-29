@@ -21,6 +21,7 @@ import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
 import RateProviderModal from '@/components/reservations/RateProviderModal';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -97,6 +98,8 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  // Chat THẬT với cửa hàng (lưu DB, 2 chiều) — khác drawer chat shipper mock ở dưới
+  const [providerChatOpen, setProviderChatOpen] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showDropOrder, setShowDropOrder] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -1291,9 +1294,29 @@ export default function ReservationDetailsPage() {
                       <p className="text-neutral-400 text-[10px]">Giờ mở cửa</p>
                       <p className="font-bold text-emerald-700">08:00 - 21:00</p>
                     </div>
+                    {reservation.listing.provider.contactPhone && (
+                      <div>
+                        <p className="text-neutral-400 text-[10px]">Số điện thoại</p>
+                        <a
+                          href={`tel:${reservation.listing.provider.contactPhone}`}
+                          className="font-bold text-emerald-700 hover:underline"
+                        >
+                          {reservation.listing.provider.contactPhone}
+                        </a>
+                      </div>
+                    )}
                   </div>
 
-                  <button 
+                  {!isMock && (
+                    <button
+                      onClick={() => setProviderChatOpen(true)}
+                      className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">forum</span>
+                      Nhắn tin với cửa hàng
+                    </button>
+                  )}
+                  <button
                     onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reservation.listing.provider.address)}`, '_blank')}
                     className="w-full py-2.5 border border-emerald-700 hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
                   >
@@ -1342,6 +1365,15 @@ export default function ReservationDetailsPage() {
           targetId={id}
           listingTitle={reservation.listing.title}
           onClose={() => setReportOpen(false)}
+        />
+      )}
+
+      {/* Chat THẬT với cửa hàng — lưu DB, cửa hàng thấy cùng cuộc trò chuyện */}
+      {!isMock && (
+        <ReservationChatPanel
+          reservationId={String(reservation.id)}
+          open={providerChatOpen}
+          onClose={() => setProviderChatOpen(false)}
         />
       )}
 

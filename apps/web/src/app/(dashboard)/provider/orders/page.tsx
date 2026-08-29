@@ -6,6 +6,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
@@ -530,6 +531,7 @@ function OrderCard({
   onCancelRequest: () => void;
 }) {
   const meta = getStatus(item);
+  const [chatOpen, setChatOpen] = useState(false);
   const phone = item.receiver.user.phone ?? '—';
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
@@ -559,7 +561,13 @@ function OrderCard({
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-neutral-800 text-sm truncate">{fullName}</p>
-            <p className="text-xs text-neutral-500 font-normal truncate">{phone}</p>
+            {phone !== '—' ? (
+              <a href={`tel:${phone}`} className="text-xs text-emerald-700 font-semibold truncate hover:underline">
+                {phone}
+              </a>
+            ) : (
+              <p className="text-xs text-neutral-500 font-normal truncate">{phone}</p>
+            )}
           </div>
         </div>
 
@@ -613,6 +621,14 @@ function OrderCard({
               <span className="material-symbols-outlined text-[14px]">visibility</span>
               Chi tiết
             </button>
+            <button
+              onClick={() => setChatOpen(true)}
+              title="Nhắn tin với người nhận"
+              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-700 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[14px]">forum</span>
+              Nhắn tin
+            </button>
             {meta.group === 'pending' && (
               <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
@@ -653,6 +669,13 @@ function OrderCard({
           </div>
         </div>
       </div>
+
+      {/* Chat với người nhận của đơn này — cùng cuộc trò chuyện họ thấy ở trang theo dõi đơn */}
+      <ReservationChatPanel
+        reservationId={item.id}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   );
 }
