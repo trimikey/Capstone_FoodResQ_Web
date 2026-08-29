@@ -1406,10 +1406,11 @@ export class ReservationsService {
     return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
   }
 
-  // ── Chat theo đơn: người nhận ↔ cửa hàng ───────────────────────────────────
+  // ── Chat theo đơn: người nhận ↔ cửa hàng ↔ shipper (nếu có) ─────────────────
 
-  /** Chỉ HAI BÊN của đơn (người nhận & chủ cửa hàng) được đọc/gửi tin nhắn. */
-  private async assertChatParty(reservationId: string, userId: string) {
+  /** Các bên của đơn — chỉ họ được đọc/gửi tin nhắn. Shipper vào cuộc khi đơn
+   *  có chuyến giao và đã có người nhận chuyến. */
+  private async getChatParties(reservationId: string, userId: string) {
     const r = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
       select: {
@@ -1422,47 +1423,66 @@ export class ReservationsService {
             provider: { select: { userId: true, businessName: true, contactPhone: true } },
           },
         },
+        delivery: {
+          select: {
+            shipper: { select: { userId: true, user: { select: { fullName: true, phone: true } } } },
+          },
+        },
       },
     });
     if (!r) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
-    const receiverUserId = r.receiver.userId;
-    const providerUserId = r.listing.provider.userId;
-    if (userId !== receiverUserId && userId !== providerUserId) {
-      throw new ForbiddenException('Chỉ hai bên của đơn được xem cuộc trò chuyện này.');
+    const participants = [
+      {
+        userId: r.receiver.userId,
+        role: 'receiver' as const,
+        name: r.receiver.user.fullName,
+        phone: r.receiver.user.phone,
+      },
+      {
+        userId: r.listing.provider.userId,
+        role: 'provider' as const,
+        name: r.listing.provider.businessName,
+        phone: r.listing.provider.contactPhone,
+      },
+      ...(r.delivery?.shipper
+        ? [{
+            userId: r.delivery.shipper.userId,
+            role: 'shipper' as const,
+            name: r.delivery.shipper.user.fullName,
+            phone: r.delivery.shipper.user.phone,
+          }]
+        : []),
+    ];
+    if (!participants.some((p) => p.userId === userId)) {
+      throw new ForbiddenException('Chỉ các bên của đơn được xem cuộc trò chuyện này.');
     }
-    return { r, receiverUserId, providerUserId };
+    return participants;
   }
 
   async getMessages(reservationId: string, userId: string) {
-    const { r, receiverUserId, providerUserId } = await this.assertChatParty(reservationId, userId);
+    const participants = await this.getChatParties(reservationId, userId);
     const messages = await this.prisma.reservationMessage.findMany({
       where: { reservationId },
       orderBy: { createdAt: 'asc' },
       take: 200,
       select: { id: true, senderUserId: true, content: true, createdAt: true },
     });
-    const isReceiver = userId === receiverUserId;
-    return {
-      messages,
-      me: userId,
-      // Thông tin bên kia để FE vẽ header chat + nút gọi điện
-      partner: isReceiver
-        ? { name: r.listing.provider.businessName, phone: r.listing.provider.contactPhone }
-        : { name: r.receiver.user.fullName, phone: r.receiver.user.phone },
-      partnerUserId: isReceiver ? providerUserId : receiverUserId,
-    };
+    return { messages, me: userId, participants };
   }
 
   async sendMessage(reservationId: string, userId: string, content: string) {
-    const { receiverUserId, providerUserId } = await this.assertChatParty(reservationId, userId);
+    const participants = await this.getChatParties(reservationId, userId);
     const message = await this.prisma.reservationMessage.create({
       data: { reservationId, senderUserId: userId, content: content.trim() },
       select: { id: true, senderUserId: true, content: true, createdAt: true },
     });
-    // Đẩy realtime cho bên kia — đang mở trang thì thấy ngay, không thì lần mở
-    // chat sau vẫn đọc được từ DB (không tạo notification DB để khỏi spam chuông).
-    const otherUserId = userId === receiverUserId ? providerUserId : receiverUserId;
-    this.gateway?.emitToUser(otherUserId, 'reservation:message', { reservationId, message });
+    // Đẩy realtime cho các bên còn lại — đang mở trang thì thấy ngay, không thì
+    // lần mở chat sau vẫn đọc từ DB (không tạo notification DB để khỏi spam chuông).
+    for (const p of participants) {
+      if (p.userId !== userId) {
+        this.gateway?.emitToUser(p.userId, 'reservation:message', { reservationId, message });
+      }
+    }
     return message;
   }
 }

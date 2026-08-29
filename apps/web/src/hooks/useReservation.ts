@@ -83,11 +83,17 @@ export interface ReservationChatMessage {
   content: string;
   createdAt: string;
 }
+export interface ReservationChatParticipant {
+  userId: string;
+  role: 'receiver' | 'provider' | 'shipper';
+  name: string;
+  phone: string | null;
+}
 export interface ReservationChatData {
   messages: ReservationChatMessage[];
   me: string;
-  partner: { name: string; phone: string | null };
-  partnerUserId: string;
+  /** Các bên của đơn: người nhận + cửa hàng (+ shipper khi đơn có chuyến giao). */
+  participants: ReservationChatParticipant[];
 }
 
 export function useReservationMessages(reservationId: string | null, enabled: boolean) {

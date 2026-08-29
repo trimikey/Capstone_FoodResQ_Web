@@ -863,7 +863,17 @@ export default function ReservationDetailsPage() {
                           <div>
                             <h5 className="font-bold text-neutral-800">{shipperName}</h5>
                             {useRealDelivery ? (
-                              <p className="text-xs text-neutral-500 mt-0.5">Tình nguyện viên FoodResQ</p>
+                              <p className="text-xs text-neutral-500 mt-0.5">
+                                Tình nguyện viên FoodResQ
+                                {shipperPhone && (
+                                  <>
+                                    {' · '}
+                                    <a href={`tel:${shipperPhone}`} className="font-semibold text-emerald-700 hover:underline">
+                                      {shipperPhone}
+                                    </a>
+                                  </>
+                                )}
+                              </p>
                             ) : (
                               <div className="flex items-center gap-1.5 mt-0.5 text-xs text-neutral-500 font-medium">
                                 <span className="material-symbols-outlined text-[14px] text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
@@ -885,7 +895,9 @@ export default function ReservationDetailsPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => setIsChatOpen(true)}
+                            /* Đơn thật → mở chat THẬT theo đơn (shipper cùng phòng);
+                               đơn demo vẫn dùng drawer chat mock bên dưới. */
+                            onClick={() => (useRealDelivery ? setProviderChatOpen(true) : setIsChatOpen(true))}
                             className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
                             title="Nhắn tin"
                           >
