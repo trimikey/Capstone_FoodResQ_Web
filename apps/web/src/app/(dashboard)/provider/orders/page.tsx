@@ -523,6 +523,116 @@ function StatCard({
   );
 }
 
+// Trạng thái chuyến giao — đủ để NCC biết shipper đang ở khâu nào
+const DELIVERY_STATUS_VN: Record<string, string> = {
+  pending_assignment: 'Đang tìm tình nguyện viên giao',
+  assigned: 'Tình nguyện viên đã nhận chuyến',
+  heading_to_provider: 'Shipper đang đến lấy hàng',
+  qc_completed: 'Đã lấy hàng tại cửa hàng (QC xong)',
+  in_transit: 'Đang trên đường giao',
+  delivered: 'Đã giao thành công',
+  failed: 'Giao thất bại',
+};
+
+const fmtDT = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      })
+    : null;
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 border-b border-neutral-100 last:border-0">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{label}</span>
+      <span className="text-sm font-semibold text-neutral-800 text-right min-w-0">{value}</span>
+    </div>
+  );
+}
+
+/** Chi tiết đơn cho NCC: ai đặt, ai ship, hàng đã được lấy/giao chưa. */
+function OrderDetailModal({ item, onClose }: { item: ProviderOrderItem; onClose: () => void }) {
+  const meta = getStatus(item);
+  const shipper = item.delivery?.shipper?.user ?? null;
+  const pickedUp = ['picked_up', 'completed'].includes(item.status) || !!item.delivery?.pickedUpAt;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full sm:max-w-md max-h-[85dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-neutral-100 bg-white px-5 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-extrabold text-neutral-900">
+              {item.listing.title} · {item.quantity} {UNIT_LABEL[item.listing.quantityUnit as QuantityUnit] ?? item.listing.quantityUnit}
+            </p>
+            <p className="text-[11px] text-neutral-500">Mã #{item.id.slice(0, 8).toUpperCase()}</p>
+          </div>
+          <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>{meta.label}</span>
+          <button onClick={onClose} aria-label="Đóng" className="shrink-0 p-1.5 rounded-full hover:bg-neutral-100">
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Người đặt */}
+          <div>
+            <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700">Người đặt</p>
+            <Row label="Họ tên" value={item.receiver.user.fullName} />
+            <Row
+              label="SĐT"
+              value={item.receiver.user.phone
+                ? <a href={`tel:${item.receiver.user.phone}`} className="text-emerald-700 hover:underline">{item.receiver.user.phone}</a>
+                : '—'}
+            />
+            <Row label="Đặt lúc" value={fmtDT(item.createdAt)} />
+            {item.deliveryScheduledAt && <Row label="Hẹn nhận lúc" value={fmtDT(item.deliveryScheduledAt)} />}
+          </div>
+
+          {/* Giao nhận */}
+          <div>
+            <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700">
+              {item.delivery ? 'Giao tận nơi' : 'Tự tới lấy tại cửa hàng'}
+            </p>
+            {item.delivery ? (
+              <>
+                <Row label="Shipper" value={shipper ? shipper.fullName : 'Chưa có ai nhận chuyến'} />
+                {shipper?.phone && (
+                  <Row label="SĐT shipper" value={<a href={`tel:${shipper.phone}`} className="text-emerald-700 hover:underline">{shipper.phone}</a>} />
+                )}
+                <Row label="Trạng thái chuyến" value={DELIVERY_STATUS_VN[item.delivery.status] ?? item.delivery.status} />
+                <Row
+                  label="Lấy hàng tại cửa hàng"
+                  value={item.delivery.pickedUpAt
+                    ? <span className="text-emerald-700">✓ Đã lấy lúc {fmtDT(item.delivery.pickedUpAt)}</span>
+                    : 'Chưa lấy'}
+                />
+                <Row
+                  label="Giao cho người nhận"
+                  value={item.delivery.deliveredAt
+                    ? <span className="text-emerald-700">✓ Đã giao lúc {fmtDT(item.delivery.deliveredAt)}</span>
+                    : 'Chưa giao'}
+                />
+                {item.deliveryAddress && <Row label="Địa chỉ giao" value={item.deliveryAddress} />}
+              </>
+            ) : (
+              <Row
+                label="Nhận hàng"
+                value={pickedUp
+                  ? <span className="text-emerald-700">✓ Đã lấy hàng thành công</span>
+                  : 'Chưa tới lấy — chờ quét QR tại quầy'}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderCard({
   item,
   onCancelRequest,
@@ -532,6 +642,7 @@ function OrderCard({
 }) {
   const meta = getStatus(item);
   const [chatOpen, setChatOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const phone = item.receiver.user.phone ?? '—';
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
@@ -615,6 +726,7 @@ function OrderCard({
               ("Đăng lại"…) phải rơi xuống hàng dưới thay vì tràn ra ngoài thẻ. */}
           <div className="grid grid-cols-2 min-[420px]:flex min-[420px]:flex-wrap md:justify-end gap-2 min-[420px]:gap-1.5 mt-auto">
             <button
+              onClick={() => setDetailOpen(true)}
               className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
               title="Xem chi tiết"
             >
@@ -676,6 +788,7 @@ function OrderCard({
         open={chatOpen}
         onClose={() => setChatOpen(false)}
       />
+      {detailOpen && <OrderDetailModal item={item} onClose={() => setDetailOpen(false)} />}
     </div>
   );
 }

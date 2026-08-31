@@ -574,7 +574,7 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="w-full bg-surface-container-high/60 text-on-surface-variant py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm text-center">
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                   {notYetOpen
-                    ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
+                    ? 'Chưa đến giờ nhận hàng — vui lòng quay lại sau'
                     : `Đã quá giờ nhận hàng (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>

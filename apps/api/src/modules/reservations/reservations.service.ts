@@ -1108,6 +1108,18 @@ export class ReservationsService {
               status: true,
             },
           },
+          // Chuyến giao (nếu là đơn giao tận nơi) — NCC cần biết ai ship và tới đâu rồi
+          delivery: {
+            select: {
+              id: true,
+              status: true,
+              pickedUpAt: true,
+              deliveredAt: true,
+              shipper: {
+                select: { user: { select: { fullName: true, phone: true, avatarUrl: true } } },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
