@@ -6,17 +6,18 @@ import {
   useReservationMessages,
   useSendReservationMessage,
 } from '@/hooks/useReservation';
+import { errMsg } from '@/lib/utils';
 
 const ROLE_VN: Record<string, string> = {
   receiver: 'Người nhận',
   provider: 'Cửa hàng',
   shipper: 'Shipper',
 };
-import { errMsg } from '@/lib/utils';
 
 /**
- * Panel chat theo ĐƠN giữa người nhận và cửa hàng — dùng chung cho cả hai phía
- * (BE tự nhận diện ai là ai, FE chỉ cần reservationId).
+ * Panel chat theo ĐƠN — mỗi cặp một HỘI THOẠI 1-1 riêng (người nhận↔cửa hàng,
+ * shipper↔người nhận, shipper↔cửa hàng không thấy tin của nhau). Có nhiều bên
+ * để nói chuyện thì hiện tab chuyển người ngay trong header.
  *
  * Mobile: bottom-sheet chiếm ~75% màn; desktop: hộp nổi góc phải. Poll 5s qua
  * hook — đủ gần realtime cho trao đổi quanh một đơn, không cần socket riêng.
@@ -25,15 +26,19 @@ export default function ReservationChatPanel({
   reservationId,
   open,
   onClose,
+  initialPartnerId,
 }: {
   reservationId: string;
   open: boolean;
   onClose: () => void;
+  /** Mở sẵn hội thoại với bên này; bỏ trống = bên mặc định theo vai. */
+  initialPartnerId?: string;
 }) {
-  const { data, isLoading } = useReservationMessages(reservationId, open);
+  const [partnerId, setPartnerId] = useState<string | null>(initialPartnerId ?? null);
+  const { data, isLoading } = useReservationMessages(reservationId, partnerId, open);
   const send = useSendReservationMessage();
-  const others = (data?.participants ?? []).filter((p) => p.userId !== data?.me);
-  const byId = new Map((data?.participants ?? []).map((p) => [p.userId, p]));
+  const partners = (data?.participants ?? []).filter((p) => p.userId !== data?.me);
+  const active = data?.partner ?? null;
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -41,15 +46,15 @@ export default function ReservationChatPanel({
   const count = data?.messages.length ?? 0;
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [count, open]);
+  }, [count, open, active?.userId]);
 
   if (!open) return null;
 
   async function handleSend() {
     const content = draft.trim();
-    if (!content) return;
+    if (!content || !active) return;
     try {
-      await send.mutateAsync({ reservationId, content });
+      await send.mutateAsync({ reservationId, content, toUserId: active.userId });
       setDraft('');
     } catch (err) {
       toast.error(errMsg(err, 'Không gửi được tin nhắn — thử lại'));
@@ -62,45 +67,70 @@ export default function ReservationChatPanel({
       <div className="absolute inset-0 bg-black/30 md:bg-transparent" onClick={onClose} />
 
       <div className="absolute inset-x-0 bottom-0 md:inset-auto md:bottom-6 md:right-6 md:w-[380px] flex h-[75dvh] md:h-[520px] flex-col overflow-hidden rounded-t-2xl md:rounded-2xl border border-neutral-200 bg-white shadow-2xl">
-        {/* Header: các bên còn lại của đơn — tên + SĐT bấm gọi được */}
-        <div className="flex items-center gap-3 border-b border-neutral-100 bg-emerald-700 px-4 py-3 text-white">
-          <span className="material-symbols-outlined">forum</span>
-          <div className="min-w-0 flex-1">
-            {others.length === 0 ? (
-              <p className="truncate text-sm font-bold">Đang tải…</p>
-            ) : (
-              others.map((p) => (
-                <p key={p.userId} className="flex min-w-0 items-center gap-1.5 text-sm leading-snug">
+        {/* Header: người đang đối thoại + SĐT bấm gọi */}
+        <div className="border-b border-neutral-100 bg-emerald-700 px-4 py-3 text-white">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined">forum</span>
+            <div className="min-w-0 flex-1">
+              {!active ? (
+                <p className="truncate text-sm font-bold">Đang tải…</p>
+              ) : (
+                <p className="flex min-w-0 items-center gap-1.5 text-sm leading-snug">
                   <span className="shrink-0 rounded bg-white/15 px-1 text-[9px] font-bold uppercase">
-                    {ROLE_VN[p.role]}
+                    {ROLE_VN[active.role]}
                   </span>
-                  <span className="truncate font-bold">{p.name}</span>
-                  {p.phone && (
-                    <a href={`tel:${p.phone}`} aria-label={`Gọi ${p.name}`} className="shrink-0 text-emerald-100 hover:text-white">
-                      <span className="material-symbols-outlined align-middle text-[15px]">call</span>
-                    </a>
-                  )}
+                  <span className="truncate font-bold">{active.name}</span>
                 </p>
-              ))
+              )}
+            </div>
+            {active?.phone && (
+              <a
+                href={`tel:${active.phone}`}
+                aria-label={`Gọi ${active.name}`}
+                className="shrink-0 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25"
+              >
+                <span className="material-symbols-outlined text-[18px]">call</span>
+              </a>
             )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng chat"
+              className="shrink-0 rounded-full p-2 transition-colors hover:bg-white/15"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng chat"
-            className="rounded-full p-2 transition-colors hover:bg-white/15"
-          >
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
+          {/* Nhiều bên để trao đổi → tab chuyển hội thoại (mỗi cặp một luồng riêng) */}
+          {partners.length > 1 && (
+            <div className="mt-2 flex gap-1.5 overflow-x-auto">
+              {partners.map((p) => {
+                const isActive = p.userId === active?.userId;
+                return (
+                  <button
+                    key={p.userId}
+                    type="button"
+                    onClick={() => setPartnerId(p.userId)}
+                    className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                      isActive ? 'bg-white text-emerald-800' : 'bg-white/15 text-emerald-50 hover:bg-white/25'
+                    }`}
+                  >
+                    {ROLE_VN[p.role]} · {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Danh sách tin nhắn */}
+        {/* Danh sách tin nhắn của hội thoại đang chọn */}
         <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-neutral-50 p-3">
           {isLoading ? (
             <p className="py-8 text-center text-xs text-neutral-400">Đang tải cuộc trò chuyện…</p>
           ) : count === 0 ? (
             <p className="py-8 text-center text-xs text-neutral-400">
-              Chưa có tin nhắn nào — nhắn để trao đổi về đơn này (giờ nhận, chỗ đậu xe, món thay thế…).
+              Chưa có tin nhắn nào với {active ? ROLE_VN[active.role].toLowerCase() : 'bên này'} — nhắn
+              để trao đổi về đơn (giờ nhận, chỗ đậu xe, món thay thế…).
             </p>
           ) : (
             data!.messages.map((m) => {
@@ -114,12 +144,6 @@ export default function ReservationChatPanel({
                         : 'rounded-bl-sm border border-neutral-200 bg-white text-neutral-800'
                     }`}
                   >
-                    {/* Nhóm 3 bên: đề tên người gửi để khỏi lẫn cửa hàng với shipper */}
-                    {!mine && others.length > 1 && (
-                      <p className="mb-0.5 text-[10px] font-bold text-emerald-700">
-                        {byId.get(m.senderUserId)?.name ?? 'Thành viên'}
-                      </p>
-                    )}
                     <p className="whitespace-pre-wrap break-words">{m.content}</p>
                     <p className={`mt-0.5 text-[10px] ${mine ? 'text-emerald-100' : 'text-neutral-400'}`}>
                       {new Date(m.createdAt).toLocaleTimeString('vi-VN', {
@@ -148,13 +172,13 @@ export default function ReservationChatPanel({
             }}
             rows={1}
             maxLength={1000}
-            placeholder="Nhập tin nhắn…"
+            placeholder={active ? `Nhắn cho ${active.name}…` : 'Nhập tin nhắn…'}
             className="max-h-24 min-h-10 flex-1 resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button
             type="button"
             onClick={() => void handleSend()}
-            disabled={send.isPending || !draft.trim()}
+            disabled={send.isPending || !draft.trim() || !active}
             aria-label="Gửi"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition-colors hover:bg-emerald-700 disabled:opacity-40"
           >

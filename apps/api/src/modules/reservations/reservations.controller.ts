@@ -98,9 +98,13 @@ export class ReservationsController {
   // Chat theo đơn — KHÔNG RolesGuard: cả người nhận lẫn cửa hàng đều dùng,
   // service tự kiểm tra đúng hai bên của đơn.
   @Get(':id/messages')
-  @ApiOperation({ summary: 'Chat theo đơn: đọc tin nhắn giữa người nhận và cửa hàng' })
-  getMessages(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.reservationsService.getMessages(id, user.id);
+  @ApiOperation({ summary: 'Chat theo đơn: đọc hội thoại 1-1 với một bên của đơn (?with=userId)' })
+  getMessages(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Query('with') withUserId?: string,
+  ) {
+    return this.reservationsService.getMessages(id, user.id, withUserId || undefined);
   }
 
   @Post(':id/messages')
@@ -110,7 +114,7 @@ export class ReservationsController {
     @CurrentUser() user: User,
     @Body() dto: SendMessageDto,
   ) {
-    return this.reservationsService.sendMessage(id, user.id, dto.content);
+    return this.reservationsService.sendMessage(id, user.id, dto.content, dto.toUserId);
   }
 
   @Post('scan')

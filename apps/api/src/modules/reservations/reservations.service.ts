@@ -1471,30 +1471,62 @@ export class ReservationsService {
     return participants;
   }
 
-  async getMessages(reservationId: string, userId: string) {
+  /** Chọn người đối thoại: chỉ định qua `withUserId`, không thì lấy mặc định theo
+   *  vai (người nhận → cửa hàng; cửa hàng/shipper → người nhận). */
+  private resolveChatPartner(
+    participants: Array<{ userId: string; role: string; name: string; phone: string | null }>,
+    userId: string,
+    withUserId?: string,
+  ) {
+    if (withUserId) {
+      const partner = participants.find((p) => p.userId === withUserId);
+      if (!partner || partner.userId === userId) {
+        throw new BadRequestException('Người đối thoại không thuộc đơn này.');
+      }
+      return partner;
+    }
+    const myRole = participants.find((p) => p.userId === userId)?.role;
+    const defaultRole = myRole === 'receiver' ? 'provider' : 'receiver';
+    const partner = participants.find((p) => p.role === defaultRole && p.userId !== userId);
+    if (!partner) throw new NotFoundException('Không tìm thấy bên đối thoại.');
+    return partner;
+  }
+
+  async getMessages(reservationId: string, userId: string, withUserId?: string) {
     const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, withUserId);
+    // Hội thoại 1-1: chỉ tin giữa TÔI và người đối thoại đang chọn — mỗi cặp một
+    // luồng riêng (shipper↔người nhận không thấy trao đổi người nhận↔cửa hàng).
     const messages = await this.prisma.reservationMessage.findMany({
-      where: { reservationId },
+      where: {
+        reservationId,
+        OR: [
+          { senderUserId: userId, recipientUserId: partner.userId },
+          { senderUserId: partner.userId, recipientUserId: userId },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
       take: 200,
       select: { id: true, senderUserId: true, content: true, createdAt: true },
     });
-    return { messages, me: userId, participants };
+    return { messages, me: userId, partner, participants };
   }
 
-  async sendMessage(reservationId: string, userId: string, content: string) {
+  async sendMessage(reservationId: string, userId: string, content: string, toUserId?: string) {
     const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, toUserId);
     const message = await this.prisma.reservationMessage.create({
-      data: { reservationId, senderUserId: userId, content: content.trim() },
-      select: { id: true, senderUserId: true, content: true, createdAt: true },
+      data: {
+        reservationId,
+        senderUserId: userId,
+        recipientUserId: partner.userId,
+        content: content.trim(),
+      },
+      select: { id: true, senderUserId: true, recipientUserId: true, content: true, createdAt: true },
     });
-    // Đẩy realtime cho các bên còn lại — đang mở trang thì thấy ngay, không thì
-    // lần mở chat sau vẫn đọc từ DB (không tạo notification DB để khỏi spam chuông).
-    for (const p of participants) {
-      if (p.userId !== userId) {
-        this.gateway?.emitToUser(p.userId, 'reservation:message', { reservationId, message });
-      }
-    }
+    // Đẩy realtime cho đúng người nhận tin — đang mở trang thì thấy ngay, không
+    // thì lần mở chat sau vẫn đọc từ DB (không tạo notification DB khỏi spam chuông).
+    this.gateway?.emitToUser(partner.userId, 'reservation:message', { reservationId, message });
     return message;
   }
 }

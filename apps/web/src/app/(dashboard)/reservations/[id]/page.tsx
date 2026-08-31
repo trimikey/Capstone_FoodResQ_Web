@@ -98,8 +98,9 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  // Chat THẬT với cửa hàng (lưu DB, 2 chiều) — khác drawer chat shipper mock ở dưới
-  const [providerChatOpen, setProviderChatOpen] = useState(false);
+  // Chat THẬT theo đơn (lưu DB): mỗi bên một hội thoại 1-1 riêng.
+  // null = đóng; 'default' = bên mặc định; còn lại là userId bên muốn nhắn.
+  const [chatTarget, setChatTarget] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showDropOrder, setShowDropOrder] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -897,7 +898,11 @@ export default function ReservationDetailsPage() {
                           <button
                             /* Đơn thật → mở chat THẬT theo đơn (shipper cùng phòng);
                                đơn demo vẫn dùng drawer chat mock bên dưới. */
-                            onClick={() => (useRealDelivery ? setProviderChatOpen(true) : setIsChatOpen(true))}
+                            onClick={() =>
+                              useRealDelivery
+                                ? setChatTarget(reservation.delivery?.shipper?.userId ?? 'default')
+                                : setIsChatOpen(true)
+                            }
                             className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
                             title="Nhắn tin"
                           >
@@ -1321,7 +1326,7 @@ export default function ReservationDetailsPage() {
 
                   {!isMock && (
                     <button
-                      onClick={() => setProviderChatOpen(true)}
+                      onClick={() => setChatTarget(reservation.listing.provider.userId ?? 'default')}
                       className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
                     >
                       <span className="material-symbols-outlined text-[16px]">forum</span>
@@ -1381,11 +1386,13 @@ export default function ReservationDetailsPage() {
       )}
 
       {/* Chat THẬT với cửa hàng — lưu DB, cửa hàng thấy cùng cuộc trò chuyện */}
-      {!isMock && (
+      {!isMock && chatTarget !== null && (
         <ReservationChatPanel
+          key={chatTarget}
           reservationId={String(reservation.id)}
-          open={providerChatOpen}
-          onClose={() => setProviderChatOpen(false)}
+          open
+          initialPartnerId={chatTarget === 'default' ? undefined : chatTarget}
+          onClose={() => setChatTarget(null)}
         />
       )}
 

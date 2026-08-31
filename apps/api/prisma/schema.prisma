@@ -530,16 +530,19 @@ model Reservation {
   @@map("reservations")
 }
 
-/// Chat theo đơn giữa NGƯỜI NHẬN và CỬA HÀNG — chỉ hai bên của đơn được đọc/gửi.
+/// Chat theo đơn, dạng HỘI THOẠI 1-1 giữa các bên (người nhận / cửa hàng / shipper):
+/// mỗi tin có người nhận cụ thể — cặp (sender, recipient) xác định luồng trò chuyện.
 model ReservationMessage {
-  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  reservationId String      @map("reservation_id") @db.Uuid
-  senderUserId  String      @map("sender_user_id") @db.Uuid
-  content       String
-  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  id              String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  reservationId   String      @map("reservation_id") @db.Uuid
+  senderUserId    String      @map("sender_user_id") @db.Uuid
+  recipientUserId String      @map("recipient_user_id") @db.Uuid
+  content         String
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
   @@index([reservationId, createdAt])
+  @@index([reservationId, senderUserId, recipientUserId])
   @@map("reservation_messages")
 }
 
