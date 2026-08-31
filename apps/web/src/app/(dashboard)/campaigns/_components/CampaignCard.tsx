@@ -145,7 +145,7 @@ export default function CampaignCard({ c, myRoles, isProvider, disabled }: Campa
       </p>
 
       {/* 3 slot grid */}
-      <div className="grid grid-cols-3 gap-2 mt-4">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 mt-4">
         <Slot
           role={AssignmentRole.CHEF}
           filled={c.chefSlotsFilled}

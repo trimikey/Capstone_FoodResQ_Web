@@ -24,6 +24,7 @@ import {
   minuteOfDayVN,
 } from '@/common/utils/order-window';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
 import { TrustService } from '@/modules/trust/trust.service';
 import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -47,6 +48,8 @@ export class ReservationsService {
     // Optional + cuối danh sách: spec khởi tạo service bằng positional args,
     // thêm bắt buộc ở giữa sẽ vỡ toàn bộ mock. Chỉ dùng để đọc trạng thái kết nối.
     @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
+    // Đẩy tin nhắn chat realtime tới bên kia — optional cùng lý do trên.
+    @Optional() private gateway?: NotificationsGateway,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
@@ -1105,6 +1108,18 @@ export class ReservationsService {
               status: true,
             },
           },
+          // Chuyến giao (nếu là đơn giao tận nơi) — NCC cần biết ai ship và tới đâu rồi
+          delivery: {
+            select: {
+              id: true,
+              status: true,
+              pickedUpAt: true,
+              deliveredAt: true,
+              shipper: {
+                select: { user: { select: { fullName: true, phone: true, avatarUrl: true } } },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -1401,5 +1416,117 @@ export class ReservationsService {
     delta: number,
   ) {
     return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
+  }
+
+  // ── Chat theo đơn: người nhận ↔ cửa hàng ↔ shipper (nếu có) ─────────────────
+
+  /** Các bên của đơn — chỉ họ được đọc/gửi tin nhắn. Shipper vào cuộc khi đơn
+   *  có chuyến giao và đã có người nhận chuyến. */
+  private async getChatParties(reservationId: string, userId: string) {
+    const r = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: {
+        id: true,
+        receiver: {
+          select: { userId: true, user: { select: { fullName: true, phone: true } } },
+        },
+        listing: {
+          select: {
+            provider: { select: { userId: true, businessName: true, contactPhone: true } },
+          },
+        },
+        delivery: {
+          select: {
+            shipper: { select: { userId: true, user: { select: { fullName: true, phone: true } } } },
+          },
+        },
+      },
+    });
+    if (!r) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    const participants = [
+      {
+        userId: r.receiver.userId,
+        role: 'receiver' as const,
+        name: r.receiver.user.fullName,
+        phone: r.receiver.user.phone,
+      },
+      {
+        userId: r.listing.provider.userId,
+        role: 'provider' as const,
+        name: r.listing.provider.businessName,
+        phone: r.listing.provider.contactPhone,
+      },
+      ...(r.delivery?.shipper
+        ? [{
+            userId: r.delivery.shipper.userId,
+            role: 'shipper' as const,
+            name: r.delivery.shipper.user.fullName,
+            phone: r.delivery.shipper.user.phone,
+          }]
+        : []),
+    ];
+    if (!participants.some((p) => p.userId === userId)) {
+      throw new ForbiddenException('Chỉ các bên của đơn được xem cuộc trò chuyện này.');
+    }
+    return participants;
+  }
+
+  /** Chọn người đối thoại: chỉ định qua `withUserId`, không thì lấy mặc định theo
+   *  vai (người nhận → cửa hàng; cửa hàng/shipper → người nhận). */
+  private resolveChatPartner(
+    participants: Array<{ userId: string; role: string; name: string; phone: string | null }>,
+    userId: string,
+    withUserId?: string,
+  ) {
+    if (withUserId) {
+      const partner = participants.find((p) => p.userId === withUserId);
+      if (!partner || partner.userId === userId) {
+        throw new BadRequestException('Người đối thoại không thuộc đơn này.');
+      }
+      return partner;
+    }
+    const myRole = participants.find((p) => p.userId === userId)?.role;
+    const defaultRole = myRole === 'receiver' ? 'provider' : 'receiver';
+    const partner = participants.find((p) => p.role === defaultRole && p.userId !== userId);
+    if (!partner) throw new NotFoundException('Không tìm thấy bên đối thoại.');
+    return partner;
+  }
+
+  async getMessages(reservationId: string, userId: string, withUserId?: string) {
+    const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, withUserId);
+    // Hội thoại 1-1: chỉ tin giữa TÔI và người đối thoại đang chọn — mỗi cặp một
+    // luồng riêng (shipper↔người nhận không thấy trao đổi người nhận↔cửa hàng).
+    const messages = await this.prisma.reservationMessage.findMany({
+      where: {
+        reservationId,
+        OR: [
+          { senderUserId: userId, recipientUserId: partner.userId },
+          { senderUserId: partner.userId, recipientUserId: userId },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      select: { id: true, senderUserId: true, content: true, createdAt: true },
+    });
+    return { messages, me: userId, partner, participants };
+  }
+
+  async sendMessage(reservationId: string, userId: string, content: string, toUserId?: string) {
+    const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, toUserId);
+    const message = await this.prisma.reservationMessage.create({
+      data: {
+        reservationId,
+        senderUserId: userId,
+        recipientUserId: partner.userId,
+        content: content.trim(),
+      },
+      select: { id: true, senderUserId: true, recipientUserId: true, content: true, createdAt: true },
+    });
+    // Đẩy realtime cho đúng người nhận tin — đang mở trang thì thấy ngay, không
+    // thì lần mở chat sau vẫn đọc từ DB (không tạo notification DB khỏi spam chuông).
+    this.gateway?.emitToUser(partner.userId, 'reservation:message', { reservationId, message });
+    return message;
   }
 }

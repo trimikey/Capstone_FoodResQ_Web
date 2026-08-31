@@ -485,7 +485,7 @@ export default function ListingDetailPage({ params }: Props) {
               }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
-            <div className="absolute top-4 left-4 flex gap-2">
+            <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-1.5">
               <span className="bg-black/50 backdrop-blur-md text-white font-label-lg text-xs px-3 py-1.5 rounded-full">
                 Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
               </span>
@@ -501,7 +501,7 @@ export default function ListingDetailPage({ params }: Props) {
           </div>
 
           {/* Three Selling points pills */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 sm:gap-4">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-4 bg-surface-container-low rounded-2xl border border-outline-variant/15 text-center sm:text-left transition-colors hover:bg-surface-container-high/40">
               <span className="material-symbols-outlined text-primary text-[28px]">inventory_2</span>
               <div>
@@ -710,7 +710,7 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="w-full bg-surface-container-high/60 text-on-surface-variant py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm text-center">
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                   {notYetOpen
-                    ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
+                    ? 'Chưa đến giờ nhận hàng — vui lòng quay lại sau'
                     : `Đã quá giờ nhận hàng (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>

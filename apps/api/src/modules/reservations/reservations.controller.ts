@@ -29,6 +29,7 @@ import { ScanQrDto } from './dto/scan-qr.dto';
 import { CancelReservationDto } from './dto/cancel-reservation.dto';
 import { SubmitPickupProofDto } from './dto/submit-pickup-proof.dto';
 import { RateReservationDto } from './dto/rate-reservation.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
@@ -92,6 +93,28 @@ export class ReservationsController {
   @ApiOperation({ summary: 'Receiver: Get a single reservation by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
     return this.reservationsService.findOne(id, user.id);
+  }
+
+  // Chat theo đơn — KHÔNG RolesGuard: cả người nhận lẫn cửa hàng đều dùng,
+  // service tự kiểm tra đúng hai bên của đơn.
+  @Get(':id/messages')
+  @ApiOperation({ summary: 'Chat theo đơn: đọc hội thoại 1-1 với một bên của đơn (?with=userId)' })
+  getMessages(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Query('with') withUserId?: string,
+  ) {
+    return this.reservationsService.getMessages(id, user.id, withUserId || undefined);
+  }
+
+  @Post(':id/messages')
+  @ApiOperation({ summary: 'Chat theo đơn: gửi tin nhắn cho bên kia' })
+  sendMessage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: SendMessageDto,
+  ) {
+    return this.reservationsService.sendMessage(id, user.id, dto.content, dto.toUserId);
   }
 
   @Post('scan')

@@ -21,6 +21,7 @@ import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
 import RateProviderModal from '@/components/reservations/RateProviderModal';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -97,6 +98,9 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  // Chat THẬT theo đơn (lưu DB): mỗi bên một hội thoại 1-1 riêng.
+  // null = đóng; 'default' = bên mặc định; còn lại là userId bên muốn nhắn.
+  const [chatTarget, setChatTarget] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showDropOrder, setShowDropOrder] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -495,12 +499,12 @@ export default function ReservationDetailsPage() {
     <div className="min-h-screen bg-neutral-50 pb-20">
       {/* Top Breadcrumb Navigation */}
       <div className="bg-white border-b border-neutral-200 py-3 px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-xs text-xs font-medium text-neutral-500">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-xs text-xs font-medium text-neutral-500">
           <Link href="/listings" className="hover:text-primary transition-colors">Tìm thực phẩm</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
           <Link href="/reservations" className="hover:text-primary transition-colors">Đơn hàng của tôi</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-neutral-800 font-semibold">{reservation.listing.title}</span>
+          <span className="min-w-0 max-w-full truncate text-neutral-800 font-semibold">{reservation.listing.title}</span>
         </div>
       </div>
 
@@ -860,7 +864,17 @@ export default function ReservationDetailsPage() {
                           <div>
                             <h5 className="font-bold text-neutral-800">{shipperName}</h5>
                             {useRealDelivery ? (
-                              <p className="text-xs text-neutral-500 mt-0.5">Tình nguyện viên FoodResQ</p>
+                              <p className="text-xs text-neutral-500 mt-0.5">
+                                Tình nguyện viên FoodResQ
+                                {shipperPhone && (
+                                  <>
+                                    {' · '}
+                                    <a href={`tel:${shipperPhone}`} className="font-semibold text-emerald-700 hover:underline">
+                                      {shipperPhone}
+                                    </a>
+                                  </>
+                                )}
+                              </p>
                             ) : (
                               <div className="flex items-center gap-1.5 mt-0.5 text-xs text-neutral-500 font-medium">
                                 <span className="material-symbols-outlined text-[14px] text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
@@ -882,7 +896,13 @@ export default function ReservationDetailsPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => setIsChatOpen(true)}
+                            /* Đơn thật → mở chat THẬT theo đơn (shipper cùng phòng);
+                               đơn demo vẫn dùng drawer chat mock bên dưới. */
+                            onClick={() =>
+                              useRealDelivery
+                                ? setChatTarget(reservation.delivery?.shipper?.userId ?? 'default')
+                                : setIsChatOpen(true)
+                            }
                             className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
                             title="Nhắn tin"
                           >
@@ -1019,7 +1039,7 @@ export default function ReservationDetailsPage() {
                   </div>
 
                   {/* Camera Screen view */}
-                  <div className="bg-neutral-900 aspect-video relative flex items-center justify-center group overflow-hidden">
+                  <div className="bg-neutral-900 min-h-[420px] sm:min-h-0 sm:aspect-video relative flex items-center justify-center group overflow-hidden">
                     
                     {isOrderClosed ? (
                       /* Đơn đã đóng (không đến / huỷ / hết hạn) — KHÔNG hiện mã nữa,
@@ -1093,7 +1113,7 @@ export default function ReservationDetailsPage() {
                         }} />
 
                         {/* Scanner square overlay */}
-                        <div className="relative w-64 h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
+                        <div className="relative w-48 h-48 sm:w-64 sm:h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
                           {/* Pulsing scanning red line */}
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 animate-bounce" />
                           
@@ -1291,9 +1311,29 @@ export default function ReservationDetailsPage() {
                       <p className="text-neutral-400 text-[10px]">Giờ mở cửa</p>
                       <p className="font-bold text-emerald-700">08:00 - 21:00</p>
                     </div>
+                    {reservation.listing.provider.contactPhone && (
+                      <div>
+                        <p className="text-neutral-400 text-[10px]">Số điện thoại</p>
+                        <a
+                          href={`tel:${reservation.listing.provider.contactPhone}`}
+                          className="font-bold text-emerald-700 hover:underline"
+                        >
+                          {reservation.listing.provider.contactPhone}
+                        </a>
+                      </div>
+                    )}
                   </div>
 
-                  <button 
+                  {!isMock && (
+                    <button
+                      onClick={() => setChatTarget(reservation.listing.provider.userId ?? 'default')}
+                      className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">forum</span>
+                      Nhắn tin với cửa hàng
+                    </button>
+                  )}
+                  <button
                     onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reservation.listing.provider.address)}`, '_blank')}
                     className="w-full py-2.5 border border-emerald-700 hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
                   >
@@ -1311,7 +1351,7 @@ export default function ReservationDetailsPage() {
       </div>
 
       {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+      <div className="fixed bottom-[5.5rem] md:bottom-6 right-4 md:right-6 z-40 flex flex-col gap-2 items-end">
         {/* Báo cáo vấn đề (chỉ đơn thật, có ID thật) */}
         {!isMock && (
           <button
@@ -1342,6 +1382,17 @@ export default function ReservationDetailsPage() {
           targetId={id}
           listingTitle={reservation.listing.title}
           onClose={() => setReportOpen(false)}
+        />
+      )}
+
+      {/* Chat THẬT với cửa hàng — lưu DB, cửa hàng thấy cùng cuộc trò chuyện */}
+      {!isMock && chatTarget !== null && (
+        <ReservationChatPanel
+          key={chatTarget}
+          reservationId={String(reservation.id)}
+          open
+          initialPartnerId={chatTarget === 'default' ? undefined : chatTarget}
+          onClose={() => setChatTarget(null)}
         />
       )}
 

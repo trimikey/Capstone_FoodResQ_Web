@@ -88,8 +88,8 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex flex-wrap items-center gap-2">
           {rm && (
             <span className={`badge ${rm.badge}`}>
               <span className="material-symbols-outlined text-[14px]">{rm.icon}</span>
