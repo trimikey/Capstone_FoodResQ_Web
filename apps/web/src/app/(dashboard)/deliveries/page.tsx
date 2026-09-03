@@ -171,7 +171,9 @@ export default function DeliveriesPage() {
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
-  const [chatOpen, setChatOpen] = useState(false); // chat theo đơn với người nhận + cửa hàng
+  // Mỗi người một CỬA SỔ chat riêng — mở song song, không gộp chung khung
+  const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
+  const [chatProviderOpen, setChatProviderOpen] = useState(false);
   const activeTitle = active ? deliveryTitle(active) : '';
   const activeImage = active ? deliveryImage(active) : null;
   const activeRecipient = active?.reservation?.receiver?.user ?? null;
@@ -495,25 +497,46 @@ export default function DeliveriesPage() {
                     </a>
                   )}
                   {active.reservation?.id && (
-                    <button
-                      type="button"
-                      onClick={() => setChatOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-xl text-sm font-bold hover:bg-emerald-800"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">forum</span>
-                      Nhắn tin
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setChatReceiverOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-xl text-sm font-bold hover:bg-emerald-800"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">forum</span>
+                        Nhắn người nhận
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChatProviderOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-300 text-emerald-800 rounded-xl text-sm font-bold hover:bg-emerald-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">storefront</span>
+                        Nhắn cửa hàng
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Chat theo đơn — cùng phòng với người nhận + cửa hàng */}
+              {/* Hai cửa sổ chat riêng: người nhận (sát phải) + cửa hàng (bên cạnh) */}
               {active.reservation?.id && (
-                <ReservationChatPanel
-                  reservationId={active.reservation.id}
-                  open={chatOpen}
-                  onClose={() => setChatOpen(false)}
-                />
+                <>
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatReceiverOpen}
+                    partner={{ role: 'receiver' }}
+                    offsetIndex={0}
+                    onClose={() => setChatReceiverOpen(false)}
+                  />
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatProviderOpen}
+                    partner={{ role: 'provider' }}
+                    offsetIndex={chatReceiverOpen ? 1 : 0}
+                    onClose={() => setChatProviderOpen(false)}
+                  />
+                </>
               )}
               {/* Bản đồ lộ trình lấy → giao (marker shipper chạy theo GPS trực tiếp) */}
               {(active.coords?.pickupLat != null || active.coords?.deliveryLat != null || liveLoc || me?.currentLocation) && (

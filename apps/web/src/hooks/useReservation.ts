@@ -98,18 +98,29 @@ export interface ReservationChatData {
   participants: ReservationChatParticipant[];
 }
 
-/** Hội thoại 1-1 theo đơn với một bên cụ thể; partnerId null = bên mặc định theo vai. */
+/** Chọn bên đối thoại: theo userId hoặc theo vai; null = bên mặc định theo vai. */
+export type ChatPartnerSelector =
+  | { id: string }
+  | { role: 'receiver' | 'provider' | 'shipper' }
+  | null;
+
+/** Hội thoại 1-1 theo đơn với một bên cụ thể. */
 export function useReservationMessages(
   reservationId: string | null,
-  partnerId: string | null,
+  partner: ChatPartnerSelector,
   enabled: boolean,
 ) {
+  const key = partner ? ('id' in partner ? partner.id : partner.role) : 'default';
   return useQuery({
-    queryKey: ['reservations', 'chat', reservationId, partnerId ?? 'default'],
+    queryKey: ['reservations', 'chat', reservationId, key],
     queryFn: async () =>
       (
         await api.get(`/reservations/${reservationId}/messages`, {
-          params: partnerId ? { with: partnerId } : {},
+          params: partner
+            ? 'id' in partner
+              ? { with: partner.id }
+              : { withRole: partner.role }
+            : {},
         })
       ).data.data as ReservationChatData,
     enabled: enabled && !!reservationId,
