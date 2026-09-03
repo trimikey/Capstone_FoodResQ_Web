@@ -641,7 +641,9 @@ function OrderCard({
   onCancelRequest: () => void;
 }) {
   const meta = getStatus(item);
-  const [chatOpen, setChatOpen] = useState(false);
+  // Mỗi người một cửa sổ chat riêng (người nhận / shipper), mở song song được
+  const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
+  const [chatShipperOpen, setChatShipperOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const phone = item.receiver.user.phone ?? '—';
   const avatarUrl = item.receiver.user.avatarUrl;
@@ -734,13 +736,23 @@ function OrderCard({
               Chi tiết
             </button>
             <button
-              onClick={() => setChatOpen(true)}
+              onClick={() => setChatReceiverOpen(true)}
               title="Nhắn tin với người nhận"
               className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-700 transition-colors"
             >
               <span className="material-symbols-outlined text-[14px]">forum</span>
               Nhắn tin
             </button>
+            {item.delivery?.shipper && (
+              <button
+                onClick={() => setChatShipperOpen(true)}
+                title="Nhắn tin với shipper của đơn"
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-xs font-medium text-sky-700 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">two_wheeler</span>
+                Shipper
+              </button>
+            )}
             {meta.group === 'pending' && (
               <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
@@ -782,11 +794,20 @@ function OrderCard({
         </div>
       </div>
 
-      {/* Chat với người nhận của đơn này — cùng cuộc trò chuyện họ thấy ở trang theo dõi đơn */}
+      {/* Hai cửa sổ chat riêng: người nhận + shipper (nếu đơn có chuyến giao) */}
       <ReservationChatPanel
         reservationId={item.id}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
+        open={chatReceiverOpen}
+        partner={{ role: 'receiver' }}
+        offsetIndex={0}
+        onClose={() => setChatReceiverOpen(false)}
+      />
+      <ReservationChatPanel
+        reservationId={item.id}
+        open={chatShipperOpen}
+        partner={{ role: 'shipper' }}
+        offsetIndex={chatReceiverOpen ? 1 : 0}
+        onClose={() => setChatShipperOpen(false)}
       />
       {detailOpen && <OrderDetailModal item={item} onClose={() => setDetailOpen(false)} />}
     </div>

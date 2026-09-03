@@ -1471,17 +1471,30 @@ export class ReservationsService {
     return participants;
   }
 
-  /** Chọn người đối thoại: chỉ định qua `withUserId`, không thì lấy mặc định theo
-   *  vai (người nhận → cửa hàng; cửa hàng/shipper → người nhận). */
+  /** Chọn người đối thoại: theo userId (`withUserId`), theo vai (`withRole` — FE
+   *  mở cửa sổ "Nhắn cửa hàng"/"Nhắn shipper" không cần biết trước userId),
+   *  không chỉ định thì lấy mặc định theo vai của người gọi. */
   private resolveChatPartner(
     participants: Array<{ userId: string; role: string; name: string; phone: string | null }>,
     userId: string,
     withUserId?: string,
+    withRole?: string,
   ) {
     if (withUserId) {
       const partner = participants.find((p) => p.userId === withUserId);
       if (!partner || partner.userId === userId) {
         throw new BadRequestException('Người đối thoại không thuộc đơn này.');
+      }
+      return partner;
+    }
+    if (withRole) {
+      const partner = participants.find((p) => p.role === withRole && p.userId !== userId);
+      if (!partner) {
+        throw new NotFoundException(
+          withRole === 'shipper'
+            ? 'Đơn này chưa có shipper nhận chuyến.'
+            : 'Không tìm thấy bên đối thoại.',
+        );
       }
       return partner;
     }
@@ -1492,9 +1505,9 @@ export class ReservationsService {
     return partner;
   }
 
-  async getMessages(reservationId: string, userId: string, withUserId?: string) {
+  async getMessages(reservationId: string, userId: string, withUserId?: string, withRole?: string) {
     const participants = await this.getChatParties(reservationId, userId);
-    const partner = this.resolveChatPartner(participants, userId, withUserId);
+    const partner = this.resolveChatPartner(participants, userId, withUserId, withRole);
     // Hội thoại 1-1: chỉ tin giữa TÔI và người đối thoại đang chọn — mỗi cặp một
     // luồng riêng (shipper↔người nhận không thấy trao đổi người nhận↔cửa hàng).
     const messages = await this.prisma.reservationMessage.findMany({
