@@ -74,7 +74,7 @@ export default function KitchenManagePage() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 min-w-[88px] py-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-colors ${
+            className={`flex-1 min-w-0 py-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-colors ${
               tab === t.key ? 'bg-white text-honey-700 shadow-sm' : 'text-neutral-500'
             }`}
           >
@@ -387,7 +387,7 @@ function DistTab({ campaignId, canAdd }: { campaignId: string; canAdd: boolean }
   return (
     <div className="space-y-4">
       {summary && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
             { label: 'Đợt', value: summary.rounds, icon: 'inventory' },
             { label: 'Suất', value: summary.totalServings, icon: 'lunch_dining' },

@@ -54,11 +54,13 @@ export function TrendChart({
   const gridValues = [0, 0.25, 0.5, 0.75, 1].map((f) => top * f);
 
   return (
-    <div className="relative" style={{ height }}>
+    // min-w + cuộn ngang: viewBox 600px với preserveAspectRatio="none" trên màn
+    // ~330px làm chữ trục bị bóp méo không đọc được — chặn co dưới 480px.
+    <div className="relative overflow-x-auto" style={{ height }}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
-        className="w-full h-full overflow-visible"
+        className="h-full w-full min-w-[480px] overflow-visible"
         role="img"
         aria-label={`Biểu đồ xu hướng ${unit}`}
       >

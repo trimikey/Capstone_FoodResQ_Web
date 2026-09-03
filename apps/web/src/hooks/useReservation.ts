@@ -76,6 +76,75 @@ export function useCreateReservation() {
   });
 }
 
+// ── Chat theo đơn: người nhận ↔ cửa hàng ─────────────────────────────────────
+export interface ReservationChatMessage {
+  id: string;
+  senderUserId: string;
+  content: string;
+  createdAt: string;
+}
+export interface ReservationChatParticipant {
+  userId: string;
+  role: 'receiver' | 'provider' | 'shipper';
+  name: string;
+  phone: string | null;
+}
+export interface ReservationChatData {
+  messages: ReservationChatMessage[];
+  me: string;
+  /** Bên đang đối thoại trong luồng 1-1 này. */
+  partner: ReservationChatParticipant;
+  /** Các bên của đơn: người nhận + cửa hàng (+ shipper khi đơn có chuyến giao). */
+  participants: ReservationChatParticipant[];
+}
+
+/** Chọn bên đối thoại: theo userId hoặc theo vai; null = bên mặc định theo vai. */
+export type ChatPartnerSelector =
+  | { id: string }
+  | { role: 'receiver' | 'provider' | 'shipper' }
+  | null;
+
+/** Hội thoại 1-1 theo đơn với một bên cụ thể. */
+export function useReservationMessages(
+  reservationId: string | null,
+  partner: ChatPartnerSelector,
+  enabled: boolean,
+) {
+  const key = partner ? ('id' in partner ? partner.id : partner.role) : 'default';
+  return useQuery({
+    queryKey: ['reservations', 'chat', reservationId, key],
+    queryFn: async () =>
+      (
+        await api.get(`/reservations/${reservationId}/messages`, {
+          params: partner
+            ? 'id' in partner
+              ? { with: partner.id }
+              : { withRole: partner.role }
+            : {},
+        })
+      ).data.data as ReservationChatData,
+    enabled: enabled && !!reservationId,
+    // Poll 5s khi panel đang mở — đơn giản, đủ "gần realtime" cho chat theo đơn
+    refetchInterval: 5_000,
+  });
+}
+
+export function useSendReservationMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { reservationId: string; content: string; toUserId: string }) =>
+      (
+        await api.post(`/reservations/${p.reservationId}/messages`, {
+          content: p.content,
+          toUserId: p.toUserId,
+        })
+      ).data.data as ReservationChatMessage,
+    onSuccess: (_d, p) => {
+      void queryClient.invalidateQueries({ queryKey: ['reservations', 'chat', p.reservationId] });
+    },
+  });
+}
+
 export function useMyReservations(page = 1, group?: 'active' | 'history', limit = 20, enabled = true) {
   return useQuery({
     queryKey: ['reservations', 'my', page, group, limit],

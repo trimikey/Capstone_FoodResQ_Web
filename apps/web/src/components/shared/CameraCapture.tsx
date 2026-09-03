@@ -94,9 +94,12 @@ export default function CameraCapture({ mode, hint, confirmLabel = 'Xác nhận'
       return;
     }
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    // Cap 1280px cạnh dài: camera 4K cho ra file vài MB làm upload + xử lý eKYC
+    // chậm hẳn, trong khi BE nhận diện chỉ nhìn 800px.
+    const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(
       (blob) => {
         if (!blob) {
@@ -173,7 +176,7 @@ export default function CameraCapture({ mode, hint, confirmLabel = 'Xác nhận'
 
       {!cameraError ? (
         <>
-          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4] max-h-[50vh] sm:max-h-none">
             <video
               ref={videoRef}
               autoPlay

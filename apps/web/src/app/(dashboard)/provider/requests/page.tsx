@@ -36,7 +36,7 @@ export default function ProviderRequestsPage() {
       </div>
 
       {/* Tóm tắt theo nguồn — nhìn là biết cần xử lý phía nào */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
         <div className="bg-white rounded-2xl border border-neutral-150 p-4">
           <div className="flex items-center gap-2 text-neutral-500">
             <span className="material-symbols-outlined text-[18px]">local_shipping</span>

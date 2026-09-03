@@ -290,7 +290,7 @@ export default function MyTaskDetailPage() {
               Đội bếp ({team.length} người)
             </h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {team.map((m) => (
               <div key={m.volunteerId} className="cm-card !p-3 flex items-center gap-2">
                 <div className="relative shrink-0">

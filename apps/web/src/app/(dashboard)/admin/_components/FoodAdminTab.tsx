@@ -67,7 +67,7 @@ export default function FoodAdminTab() {
             {g.l}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2">
           <select value={status} onChange={(e) => resetTo1(setStatus)(e.target.value)}
             className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
             <option value="">Mọi trạng thái</option>
@@ -76,7 +76,7 @@ export default function FoodAdminTab() {
           <div className="relative">
             <span className="material-symbols-outlined text-[18px] text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2">search</span>
             <input value={search} onChange={(e) => resetTo1(setSearch)(e.target.value)} placeholder="Tìm tên món..."
-              className="bg-white border border-neutral-200 rounded-xl pl-9 pr-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 w-44" />
+              className="bg-white border border-neutral-200 rounded-xl pl-9 pr-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 w-full sm:w-44" />
           </div>
         </div>
       </div>

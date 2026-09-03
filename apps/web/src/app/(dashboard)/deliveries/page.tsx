@@ -36,6 +36,7 @@ const HandoverConfirmModal = dynamic(
 
 import ClaimCountdown from './ClaimCountdown';
 import DeliveryShiftSummary from './DeliveryShiftSummary';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -170,6 +171,9 @@ export default function DeliveriesPage() {
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
+  // Mỗi người một CỬA SỔ chat riêng — mở song song, không gộp chung khung
+  const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
+  const [chatProviderOpen, setChatProviderOpen] = useState(false);
   const activeTitle = active ? deliveryTitle(active) : '';
   const activeImage = active ? deliveryImage(active) : null;
   const activeRecipient = active?.reservation?.receiver?.user ?? null;
@@ -404,7 +408,7 @@ export default function DeliveriesPage() {
 
             {/* Cảnh báo pickup time — chỉ hiện khi có thông tin giờ lấy hàng (campaign transport) */}
             {active.source === 'campaign_transport' && active.campaignTransport && (
-              <div className="mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <span className="material-symbols-outlined text-amber-600 text-[20px] mt-0.5 shrink-0">schedule</span>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-amber-800">
@@ -482,17 +486,58 @@ export default function DeliveriesPage() {
                     <p className="text-xs text-neutral-500 mt-1">{active.destination.address}</p>
                   )}
                 </div>
-                {activeRecipient?.phone && (
-                  <a
-                    href={`tel:${activeRecipient.phone}`}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">call</span>
-                    Gọi
-                  </a>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeRecipient?.phone && (
+                    <a
+                      href={`tel:${activeRecipient.phone}`}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">call</span>
+                      {activeRecipient.phone}
+                    </a>
+                  )}
+                  {active.reservation?.id && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setChatReceiverOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-xl text-sm font-bold hover:bg-emerald-800"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">forum</span>
+                        Nhắn người nhận
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChatProviderOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-300 text-emerald-800 rounded-xl text-sm font-bold hover:bg-emerald-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">storefront</span>
+                        Nhắn cửa hàng
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
+              {/* Hai cửa sổ chat riêng: người nhận (sát phải) + cửa hàng (bên cạnh) */}
+              {active.reservation?.id && (
+                <>
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatReceiverOpen}
+                    partner={{ role: 'receiver' }}
+                    offsetIndex={0}
+                    onClose={() => setChatReceiverOpen(false)}
+                  />
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatProviderOpen}
+                    partner={{ role: 'provider' }}
+                    offsetIndex={chatReceiverOpen ? 1 : 0}
+                    onClose={() => setChatProviderOpen(false)}
+                  />
+                </>
+              )}
               {/* Bản đồ lộ trình lấy → giao (marker shipper chạy theo GPS trực tiếp) */}
               {(active.coords?.pickupLat != null || active.coords?.deliveryLat != null || liveLoc || me?.currentLocation) && (
                 <div className="h-56 rounded-2xl overflow-hidden border border-neutral-150 mb-5">

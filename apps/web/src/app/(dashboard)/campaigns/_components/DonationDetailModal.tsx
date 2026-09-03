@@ -225,7 +225,7 @@ export default function DonationDetailModal({
                   <span className="material-symbols-outlined text-[15px]">event_available</span>
                   {(donation.pickupAssigneeIds ?? []).length > 0 ? 'Đổi lịch / shipper đi nhận' : 'Phân công shipper đi nhận'}
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <label className="col-span-1 text-xs font-semibold text-neutral-600">
                     Ngày lấy
                     <input

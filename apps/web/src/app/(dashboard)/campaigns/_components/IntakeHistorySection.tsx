@@ -48,7 +48,7 @@ export default function IntakeHistorySection() {
         </h2>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 sm:gap-3">
         <div className="cm-card p-4">
           <p className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Lượt nhận</p>
           <p className="mt-1 text-2xl font-extrabold text-neutral-900">{summary?.totalItems ?? 0}</p>

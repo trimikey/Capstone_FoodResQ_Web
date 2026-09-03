@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
@@ -24,9 +30,15 @@ export interface FaceCompareResult {
 }
 
 @Injectable()
-export class FaceMatchService {
+export class FaceMatchService implements OnModuleInit {
   private readonly logger = new Logger(FaceMatchService.name);
   private initPromise: Promise<void> | null = null;
+
+  /** Warm-up model NGAY khi server khởi động (fire-and-forget) — load ~10s,
+   *  để lazy thì người đăng ký/eKYC đầu tiên sau mỗi lần deploy phải gánh trọn. */
+  onModuleInit() {
+    void this.init().catch(() => undefined);
+  }
   readonly threshold =
     Number(process.env['FACE_MATCH_THRESHOLD']) > 0
       ? Number(process.env['FACE_MATCH_THRESHOLD'])

@@ -114,7 +114,7 @@ function WorkflowColumn({
   items: CampaignMenuItem[];
 }) {
   return (
-    <section className={`min-w-[260px] flex-1 rounded-3xl border ${tone} p-3`}>
+    <section className={`min-w-[260px] flex-1 snap-start rounded-3xl border ${tone} p-3`}>
       <div className="mb-3 flex items-center gap-2 px-1">
         <span className="material-symbols-outlined text-[19px]">{icon}</span>
         <h3 className="text-sm font-extrabold">{title}</h3>
@@ -251,7 +251,7 @@ export default function ChefKitchenDashboard({ task }: { task: MyTask }) {
       <section className="mt-5 grid gap-5 xl:grid-cols-[1fr_320px]">
         <div>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2"><div><h2 className="text-xl font-black text-neutral-900">Bảng hướng dẫn công việc bếp</h2><p className="mt-1 text-sm text-neutral-500">Các cột là hướng dẫn theo công thức, không phải trạng thái riêng của từng món.</p></div><span className="cm-chip cm-chip--mint">{menuItems.length} món trong thực đơn</span></div>
-          <div className="flex gap-4 overflow-x-auto pb-2 xl:grid xl:grid-cols-3 xl:overflow-visible">
+          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 xl:grid xl:grid-cols-3 xl:overflow-visible">
             <WorkflowColumn title="Sơ chế" icon="cut" stage="prep" items={menuItems} tone="border-emerald-800 bg-[#174f39] text-emerald-50" />
             <WorkflowColumn title="Đang nấu" icon="skillet" stage="cook" items={menuItems} tone="border-[#215b44] bg-[#123c2d] text-emerald-50" />
             <WorkflowColumn title="Hoàn thiện" icon="restaurant" stage="finish" items={menuItems} tone="border-amber-300/30 bg-[#6d5522] text-amber-50" />

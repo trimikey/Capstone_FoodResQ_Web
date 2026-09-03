@@ -238,7 +238,7 @@ export default function ManageOverviewPage() {
             {pendingDishApprovals.map((dish) => (
               <div
                 key={dish.menuItemId}
-                className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4"
+                className="flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4"
               >
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-neutral-900 truncate">{dish.name}</p>
@@ -322,7 +322,7 @@ export default function ManageOverviewPage() {
         });
         return uniqueParticipants.length > 0 && (
         <section className="cm-manage-card !p-0">
-          <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+          <div className="px-5 pt-5 pb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="cm-manage-card-title !mb-0">
               <span className="material-symbols-outlined">pending_actions</span>
               Đăng ký gần đây ({uniqueParticipants.length})

@@ -26,6 +26,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import CameraCapture from "@/components/shared/CameraCapture";
 import { signInWithGoogle, isFirebaseConfigured } from "@/lib/firebase";
 import { useUploadVerificationImage } from "@/hooks/useUploadImage";
+import { downscaleImage } from "@/lib/downscale-image";
 
 const GOOGLE_ENABLED = isFirebaseConfigured();
 
@@ -1256,7 +1257,7 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               )}
 
                               {/* Danh sách URL đã upload */}
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {evidenceUrls.map((u: string, idx: number) => (
                                   <div key={`${u}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden border border-neutral-200/40 bg-neutral-50">
                                     {/* Ảnh lưu ở API (/uploads/...) — phải ghép origin :3001, để trần sẽ 404 vì trỏ vào :3000 */}
@@ -1420,7 +1421,13 @@ export default function AuthPage({ initialTab }: AuthPageProps) {
                               disabled={isSubmitting}
                               onChange={(e) => {
                                 const file = e.target.files?.[0] ?? null;
-                                setPendingIdCardPhoto(file);
+                                if (!file) {
+                                  setPendingIdCardPhoto(null);
+                                  return;
+                                }
+                                // Ảnh CCCD chụp điện thoại 3-8MB — nén trước khi
+                                // upload, không thì bước hoàn tất đăng ký chờ 4-5s.
+                                void downscaleImage(file).then(setPendingIdCardPhoto);
                               }}
                             />
                             <label

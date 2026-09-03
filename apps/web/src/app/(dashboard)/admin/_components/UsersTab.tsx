@@ -354,7 +354,7 @@ function UserDetailModal({ u, onClose, onAct }: { u: AdminUser; onClose: () => v
           </div>
         </div>
 
-        <div className="shrink-0 px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex gap-3 justify-end">
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex flex-wrap gap-2 sm:gap-3 justify-end">
           <button onClick={onClose} disabled={review.isPending} className="px-5 py-2.5 bg-white border border-neutral-200 text-neutral-700 rounded-full font-bold text-sm hover:bg-neutral-50">Đóng</button>
           {verif ? (
             <>
@@ -497,13 +497,13 @@ export default function UsersTab() {
   const paged = usePaged(filtered, 8, `${q}-${filter}`);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 relative pb-16">
+    <div className="max-w-6xl mx-auto space-y-6 relative pb-28">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Quản lý Tài khoản</h2>
           <p className="text-sm text-neutral-500 mt-1">Theo dõi và quản lý cộng đồng Food Rescue của bạn.</p>
         </div>
-        <div className="flex gap-1 bg-white border border-neutral-200 rounded-full p-1 w-fit shadow-sm">
+        <div className="flex gap-1 bg-white border border-neutral-200 rounded-full p-1 w-full overflow-x-auto lg:w-fit shadow-sm">
           {USER_FILTERS.map((f) => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={`px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${filter === f.key ? 'bg-[#166534] text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}>
@@ -561,7 +561,7 @@ export default function UsersTab() {
       )}
 
       <button onClick={() => setShowCreate(true)} title="Thêm tài khoản"
-        className="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-[#166534] hover:bg-[#14532d] text-white shadow-lg flex items-center justify-center transition-colors z-20">
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-14 h-14 rounded-full bg-[#166534] hover:bg-[#14532d] text-white shadow-lg flex items-center justify-center transition-colors z-20">
         <span className="material-symbols-outlined">person_add</span>
       </button>
 

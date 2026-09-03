@@ -732,7 +732,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 {/* KHÔNG auto-điền gợi ý trong onFocus: bấm mũi tên tăng/giảm của input
                     vừa focus vừa đổi giá trị cùng lúc, hai cập nhật đè nhau làm số nhảy
                     loạn (0 → gợi ý 3 → +1…). Gợi ý chuyển thành nút bấm chủ động ở trên. */}
-                <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2">Ca</th>{ROLES.map((role) => <th className="p-2" key={role.id}>{role.label}</th>)}</tr></thead><tbody>{selectedPeriods.map((period) => <tr className="border-b" key={period.id}><td className="p-2 font-bold">{period.label}<span className="block text-xs font-normal text-neutral-500">{period.time}</span></td>{ROLES.map((role) => { const key = `${period.id}:${role.id}`; return <td className="p-2" key={role.id}><input type="number" min={0} max={100} className="cm-input w-24" value={staffing[key] ?? 0} onChange={(e) => { const parsed = Number(e.target.value); setStaffing({ ...staffing, [key]: Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0 }); }} /></td>; })}</tr>)}</tbody></table></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Ca</th>{ROLES.map((role) => <th className="p-2" key={role.id}>{role.label}</th>)}</tr></thead><tbody>{selectedPeriods.map((period) => <tr className="border-b" key={period.id}><td className="p-2 font-bold">{period.label}<span className="block text-xs font-normal text-neutral-500">{period.time}</span></td>{ROLES.map((role) => { const key = `${period.id}:${role.id}`; return <td className="p-2" key={role.id}><input type="number" min={0} max={100} className="cm-input w-24" value={staffing[key] ?? 0} onChange={(e) => { const parsed = Number(e.target.value); setStaffing({ ...staffing, [key]: Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0 }); }} /></td>; })}</tr>)}</tbody></table></div>
                 <p className="mt-3 text-xs font-bold text-neutral-600">Tổng nhu cầu: {totalShiftSlots} lượt ca. Một người có thể nhận nhiều ca liền kề.</p>
               </Block>
             </>}
@@ -852,7 +852,7 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
 }
 
 function Summary({ label, value }: { label: string; value: string }) {
-  return <div className="grid grid-cols-[180px_1fr] gap-3 border-b border-neutral-100 py-3 last:border-0"><span className="text-xs font-bold uppercase text-neutral-500">{label}</span><span className="text-sm font-semibold text-neutral-900">{value}</span></div>;
+  return <div className="grid grid-cols-1 gap-1 sm:grid-cols-[180px_1fr] sm:gap-3 border-b border-neutral-100 py-3 last:border-0"><span className="text-xs font-bold uppercase text-neutral-500">{label}</span><span className="text-sm font-semibold text-neutral-900">{value}</span></div>;
 }
 
 function ImageUploader({ value, onChange }: { value: string | null; onChange: (value: string | null) => void }) {

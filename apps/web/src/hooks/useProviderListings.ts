@@ -232,6 +232,17 @@ export interface ProviderOrderItem {
   status: string;
   quantity: number;
   createdAt: string;
+  /** Đơn giao tận nơi: địa chỉ + giờ hẹn người nhận chọn (BE trả mọi scalar của reservation). */
+  deliveryAddress?: string | null;
+  deliveryScheduledAt?: string | null;
+  /** Chuyến giao (null nếu đơn tự tới lấy) — để NCC biết ai ship và tới đâu rồi. */
+  delivery?: {
+    id: string;
+    status: string;
+    pickedUpAt: string | null;
+    deliveredAt: string | null;
+    shipper: { user: { fullName: string; phone: string | null; avatarUrl: string | null } } | null;
+  } | null;
   receiver: {
     user: { fullName: string; phone: string | null; avatarUrl: string | null };
   };

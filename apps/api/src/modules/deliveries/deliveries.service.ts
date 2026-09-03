@@ -537,7 +537,14 @@ export class DeliveriesService {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
       include: {
-        reservation: { select: { id: true, qrToken: true, receiver: { select: { userId: true } } } },
+        reservation: {
+          select: {
+            id: true,
+            qrToken: true,
+            deliveryScheduledAt: true,
+            receiver: { select: { userId: true } },
+          },
+        },
       },
     });
     if (!delivery) throw new NotFoundException('Không tìm thấy đơn giao hàng.');
@@ -627,6 +634,24 @@ export class DeliveriesService {
         });
         void this.notifyCampaignTransport(deliveryId, 'delivered');
         return updated;
+      }
+
+      // Đơn HẸN GIỜ: không cho chốt "đã giao" quá sớm so với giờ người nhận hẹn —
+      // giao lúc họ chưa có mặt rồi bấm hoàn thành là sai bản chất bàn giao tận tay.
+      // Ngưỡng phút do admin cấu hình (0 = tắt); đơn giao ngay không bị ảnh hưởng.
+      const earlyMin = await this.systemConfig.getNumber('DELIVERY_EARLY_COMPLETE_MINUTES');
+      const scheduledAt = delivery.reservation.deliveryScheduledAt;
+      if (earlyMin > 0 && scheduledAt && scheduledAt.getTime() - Date.now() > earlyMin * 60_000) {
+        const label = scheduledAt.toLocaleString('vi-VN', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          hour: '2-digit',
+          minute: '2-digit',
+          day: '2-digit',
+          month: '2-digit',
+        });
+        throw new BadRequestException(
+          `Đơn này hẹn nhận lúc ${label} — chỉ được xác nhận đã giao trong vòng ${earlyMin} phút trước giờ hẹn. Vui lòng chờ gần tới giờ rồi bàn giao.`,
+        );
       }
 
       // Không kiểm tra qr_expires_at — QR của đơn giao là mã xác nhận bàn giao,

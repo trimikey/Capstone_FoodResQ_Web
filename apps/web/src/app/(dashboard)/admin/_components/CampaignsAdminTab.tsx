@@ -89,7 +89,7 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
             </p>
             {c.description && <p className="text-sm text-neutral-500 bg-neutral-50 rounded-xl p-3">{c.description}</p>}
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 sm:gap-3">
               {(['chef', 'waiter', 'shipper'] as const).map((r) => {
                 const rm = ROLE_META_ADMIN[r];
                 const s = c.slots[r];
@@ -116,7 +116,7 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
                     const rm = ROLE_META_ADMIN[a.role] ?? { label: a.role, icon: 'work', cls: 'bg-neutral-100 text-neutral-600' };
                     const st = ASSIGN_STATUS_META[a.status] ?? { label: a.status, cls: 'bg-neutral-100 text-neutral-600' };
                     return (
-                      <div key={a.id} className="flex items-center gap-3 border border-neutral-150 rounded-2xl p-3">
+                      <div key={a.id} className="flex flex-wrap items-center gap-2 sm:gap-3 border border-neutral-150 rounded-2xl p-3">
                         <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
                           {a.fullName.charAt(0).toUpperCase()}
                         </div>

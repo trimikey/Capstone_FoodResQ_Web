@@ -38,7 +38,7 @@ export default function DonationsTab() {
         <p className="text-sm text-neutral-500 mt-1">Theo dõi các đơn người nhận đặt từ tin thực phẩm và khối lượng đã cứu.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <DonStat icon="assignment" label="Đang chờ nhận" value={ov?.donations.confirmed ?? 0} />
         <DonStat icon="hourglass_top" label="Chờ bàn giao" value={ov?.donations.pickedUp ?? 0} />
         <DonStat icon="check_circle" label="Hoàn thành" value={ov?.donations.completed ?? 0} />

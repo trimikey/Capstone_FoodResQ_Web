@@ -104,7 +104,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </header>
           <div className="flex-1 p-6 space-y-4">
             <div className="h-8 w-64 bg-neutral-100 rounded-xl animate-pulse" />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-28 bg-neutral-100 rounded-2xl animate-pulse" />
               ))}

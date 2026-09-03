@@ -40,12 +40,21 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     }
   }, [user]);
 
-  // Sidebar layout cần chiếm đúng 100vh — block outer page scroll và để
-  // vùng nội dung (.overflow-y-auto bên trong) tự scroll riêng.
+  // Sidebar layout (>=md) chiếm đúng 100vh — block outer page scroll và để vùng
+  // nội dung (.overflow-y-auto bên trong) tự scroll riêng. CHỈ khóa từ md trở lên:
+  // dưới md không có container chiều cao chặn nên khóa body là trang mobile
+  // đứng hình, không cuộn được gì.
   useEffect(() => {
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    const mq = window.matchMedia('(min-width: 768px)');
+    const apply = () => {
+      const lock = mq.matches;
+      document.documentElement.style.overflow = lock ? 'hidden' : '';
+      document.body.style.overflow = lock ? 'hidden' : '';
+    };
+    apply();
+    mq.addEventListener('change', apply);
     return () => {
+      mq.removeEventListener('change', apply);
       document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
     };
@@ -66,7 +75,9 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       <FaceEnrollmentGate />
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4 border-b border-neutral-100">
+      {/* md:hidden (không phải lg): từ md trở lên đã có PublicHeader 104px của
+          dashboard — để lg thì khoảng 768-1023px hai header fixed đè lên nhau. */}
+      <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white z-50 flex items-center justify-between px-4 border-b border-neutral-100">
         <div className="flex items-center gap-1">
           <Link
             href="/"
@@ -95,7 +106,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
       {/* Mobile Sidebar Overlay */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100]">
+        <div className="md:hidden fixed inset-0 z-[100]">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-[min(20rem,88vw)] bg-white shadow-2xl flex flex-col">
             <div className="flex items-center gap-3 px-5 py-5">
@@ -129,7 +140,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
       {/* Desktop Sidebar — bắt đầu NGAY DƯỚI header chung (fixed, cao 104px).
           Để top-0 thì phần đầu sidebar chui xuống dưới header và bị che. */}
-      <aside className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-64 flex-col bg-white z-40">
+      <aside className="hidden md:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-64 flex-col bg-white z-40">
         {/* Tiêu đề vai trò thay cho logo — logo đã có sẵn trên thanh header phía trên,
             để ở đây vừa lặp vừa bị cắt khi cuộn. */}
         <div className="px-5 pt-6 pb-4">
@@ -167,9 +178,12 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       </aside>
 
       {/* Main Content - nền xanh nhạt */}
-      <div className="lg:ml-64 pt-16 lg:pt-0 min-h-screen lg:min-h-0 lg:h-[calc(100vh-104px)] lg:overflow-hidden flex flex-col bg-[#f0f7f3]">
+      {/* Dưới md: KHÔNG pt-16 (main của dashboard layout đã pad 64px cho header
+          mobile — pad thêm là dư 64px trống) và để document tự cuộn. Từ md:
+          sidebar + vùng nội dung cao cố định tự cuộn riêng. */}
+      <div className="md:ml-64 min-h-screen md:min-h-0 md:h-[calc(100vh-104px)] md:overflow-hidden flex flex-col bg-[#f0f7f3]">
         {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
-        <header className="hidden lg:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
+        <header className="hidden md:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <Link
             href="/"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-neutral-700 hover:bg-white hover:text-[#236c2a] transition-colors"
@@ -184,7 +198,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </header>
 
         {/* Main Content */}
-        <div className="flex-grow p-3 sm:p-4 lg:p-6 overflow-y-auto lg:flex lg:flex-col lg:min-h-0">
+        <div className="flex-grow p-3 sm:p-4 lg:p-6 md:overflow-y-auto md:flex md:flex-col md:min-h-0">
           {children}
         </div>
       </div>

@@ -51,7 +51,7 @@ export default function CharitySidebar({
     // /deliveries. Để top-0 h-screen thì 104px đầu của sidebar chui xuống dưới header,
     // logo bị cắt còn một mẩu thò ra góc trái.
     <aside
-      className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-56 flex-col bg-white z-40 border-r border-neutral-200"
+      className="hidden md:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-56 flex-col bg-white z-40 border-r border-neutral-200"
       aria-label="Điều hướng chiến dịch"
     >
       {/* Tiêu đề vai trò thay cho logo — logo đã có trên thanh header phía trên,

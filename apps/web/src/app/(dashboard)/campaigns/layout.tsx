@@ -156,7 +156,7 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
       <FaceEnrollmentGate />
 
       {/* Mobile top header — chỉ hiện <lg */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 h-16 bg-white border-b border-neutral-200 px-4 flex items-center gap-3">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-40 h-16 bg-white border-b border-neutral-200 px-4 flex items-center gap-3">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -181,7 +181,7 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
 
       {/* Mobile drawer (overlay) */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100]">
+        <div className="md:hidden fixed inset-0 z-[100]">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
@@ -265,7 +265,7 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
       />
 
       {/* Main wrapper — né sidebar trên desktop */}
-      <div className="lg:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
+      <div className="md:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
         <div className="flex-grow">{children}</div>
       </div>
     </div>
