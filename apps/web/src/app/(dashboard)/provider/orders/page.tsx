@@ -662,8 +662,10 @@ function OrderCard({
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 
   return (
-    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all overflow-hidden">
-      <span className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
+    // KHÔNG overflow-hidden ở thẻ: dropdown "Thao tác" định vị absolute sẽ bị cắt
+    // cụt ngay mép thẻ. Dải màu trạng thái tự bo góc trái thay vì nhờ thẻ cắt.
+    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all">
+      <span className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${meta.bar}`} />
 
       <div className="flex flex-col md:flex-row gap-4 p-4 md:p-5 pl-5 md:pl-6">
         {/* Receiver */}
