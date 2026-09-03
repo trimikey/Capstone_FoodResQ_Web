@@ -125,6 +125,9 @@ function statusGroup(item: ProviderOrderItem): StatusMeta['group'] {
   return getStatus(item).group;
 }
 
+const MENU_ITEM_CLASS =
+  'flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50';
+
 function receiverInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
@@ -645,6 +648,7 @@ function OrderCard({
   const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
   const [chatShipperOpen, setChatShipperOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const phone = item.receiver.user.phone ?? '—';
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
@@ -726,33 +730,9 @@ function OrderCard({
           </span>
           {/* flex-wrap + justify-end: cột md:w-44 chỉ đủ 2 nút ngắn — nút thứ 3
               ("Đăng lại"…) phải rơi xuống hàng dưới thay vì tràn ra ngoài thẻ. */}
-          <div className="grid grid-cols-2 min-[420px]:flex min-[420px]:flex-wrap md:justify-end gap-2 min-[420px]:gap-1.5 mt-auto">
-            <button
-              onClick={() => setDetailOpen(true)}
-              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
-              title="Xem chi tiết"
-            >
-              <span className="material-symbols-outlined text-[14px]">visibility</span>
-              Chi tiết
-            </button>
-            <button
-              onClick={() => setChatReceiverOpen(true)}
-              title="Nhắn tin với người nhận"
-              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium text-emerald-700 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[14px]">forum</span>
-              Nhắn tin
-            </button>
-            {item.delivery?.shipper && (
-              <button
-                onClick={() => setChatShipperOpen(true)}
-                title="Nhắn tin với shipper của đơn"
-                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-xs font-medium text-sky-700 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">two_wheeler</span>
-                Shipper
-              </button>
-            )}
+          {/* 1 nút CHÍNH theo trạng thái + menu "Thao tác" gom phần còn lại —
+              xếp 5 nút chồng nhau làm thẻ cao và rối. */}
+          <div className="relative mt-auto flex items-center gap-2 md:justify-end">
             {meta.group === 'pending' && (
               <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
@@ -768,19 +748,7 @@ function OrderCard({
                 Quét QR
               </Link>
             )}
-            {canProviderCancel && (
-              <button
-                onClick={onCancelRequest}
-                title="Huỷ đơn này (không phạt điểm người nhận)"
-                className="min-h-10 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">block</span>
-                Huỷ đơn
-              </button>
-            )}
             {meta.group === 'cancelled' && (
-              /* Trước đây là <button> không có onClick — bấm không làm gì. Dẫn về
-                 trang tin, nơi có sẵn hành động "Đăng lại (nhân bản)" thật. */
               <Link
                 href={`/listings/${item.listing.id}`}
                 title="Mở trang tin để đăng lại (nhân bản thành bản nháp mới)"
@@ -789,6 +757,60 @@ function OrderCard({
                 <span className="material-symbols-outlined text-[14px]">refresh</span>
                 Đăng lại
               </Link>
+            )}
+            {meta.group === 'completed' && (
+              <button
+                onClick={() => setDetailOpen(true)}
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                Chi tiết
+              </button>
+            )}
+
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className="min-h-10 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+            >
+              Thao tác
+              <span className="material-symbols-outlined text-[16px]">{menuOpen ? 'expand_less' : 'expand_more'}</span>
+            </button>
+
+            {menuOpen && (
+              <>
+                {/* Lớp phủ bắt click ra ngoài để đóng menu */}
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-48 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                  {meta.group !== 'completed' && (
+                    <button onClick={() => { setDetailOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                      <span className="material-symbols-outlined text-[16px]">visibility</span>
+                      Chi tiết đơn
+                    </button>
+                  )}
+                  <button onClick={() => { setChatReceiverOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                    <span className="material-symbols-outlined text-[16px]">forum</span>
+                    Nhắn người nhận
+                  </button>
+                  {item.delivery?.shipper && (
+                    <button onClick={() => { setChatShipperOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                      <span className="material-symbols-outlined text-[16px]">two_wheeler</span>
+                      Nhắn shipper
+                    </button>
+                  )}
+                  {canProviderCancel && (
+                    <button
+                      onClick={() => { setMenuOpen(false); onCancelRequest(); }}
+                      title="Huỷ đơn này (không phạt điểm người nhận)"
+                      className={`${MENU_ITEM_CLASS} !text-rose-600`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">block</span>
+                      Huỷ đơn
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
