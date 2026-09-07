@@ -104,6 +104,8 @@ export interface CreateCampaignInput {
   scheduleItems?: { time: string; label: string }[];
   /** Vật phẩm cần thiết — object đầy đủ {name, quantity?, unit?}. */
   supplyItems?: { name: string; quantity?: number; unit?: string }[];
+  /** Giờ dự kiến 4 khâu bếp (Sơ chế, Nấu, QC, Sẵn sàng xuất phát) — HH:mm. */
+  stepTimes?: string[];
   /** Ca trực cho tình nguyện viên — insert vào bảng campaign_shifts lúc tạo. */
   shifts: {
     label: string;

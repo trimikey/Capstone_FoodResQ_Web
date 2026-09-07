@@ -632,6 +632,25 @@ export class CampaignsService {
       return row.id;
     });
 
+    // Tổ chức chỉnh giờ 4 khâu ngay lúc tạo → sinh sẵn chuỗi khâu cho mọi món và
+    // mọi ngày theo giờ đó (không chờ lazy sinh với bộ giờ mặc định). Best-effort:
+    // chiến dịch đã commit, lỗi ở đây không được phá việc tạo.
+    if (dto.stepTimes && dto.stepTimes.length === 4) {
+      try {
+        const items = await this.prisma.campaignMenuItem.findMany({
+          where: { campaignId: created },
+          select: { id: true },
+        });
+        for (const mi of items) {
+          await this.dishSteps.ensureStepsForMenuItem(created, mi.id, dto.stepTimes);
+        }
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Không sinh được giờ khâu tuỳ chỉnh cho chiến dịch ${created}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     // Báo cho tất cả admin có yêu cầu chiến dịch cần duyệt
     void this.notifications.notifyAdmins({
       type: 'campaign',
