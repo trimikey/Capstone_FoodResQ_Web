@@ -3604,6 +3604,10 @@ export class CampaignsService {
         status: {
           in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'],
         },
+        // Chiến dịch đã kết thúc/huỷ thì ca của nó KHÔNG còn chiếm khung giờ —
+        // chiến dịch kết thúc sớm đóng ca tương lai thành completed, tính cả
+        // chúng vào đây là TNV bị chặn nhận ca mới cùng khung giờ oan.
+        campaign: { status: { in: ['pending_approval', 'approved', 'in_progress'] } },
       },
       select: {
         workDate: true,
