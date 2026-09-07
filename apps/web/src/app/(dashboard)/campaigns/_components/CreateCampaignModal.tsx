@@ -761,7 +761,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                   <p id="cm-operation-date-rule" className={`mt-3 rounded-xl p-3 text-xs font-semibold ${recruitmentBufferIsTooShort ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-900'}`} role={recruitmentBufferIsTooShort ? 'alert' : undefined}>
                     {recruitmentBufferMinutes < 0
                       ? `Ca đầu tiên đang bắt đầu trước thời gian đóng tuyển ${formatDuration(recruitmentBufferMinutes)}.`
-                      : `Khoảng đệm tự động: ${formatDuration(recruitmentBufferMinutes)} — ${recruitmentBufferIsTooShort ? 'chưa đạt quy định tối thiểu 6 giờ.' : 'đã đạt quy định tối thiểu 6 giờ.'}`}
+                      : `${formatDuration(recruitmentBufferMinutes)} — ${recruitmentBufferIsTooShort ? 'chưa đạt quy định tối thiểu 6 giờ.' : 'đã đạt quy định tối thiểu 6 giờ.'}`}
                   </p>
                 )}
                 <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">Vận hành: {formatDateTime(operationStartAt)} → {formatDateTime(operationEndAt)}</p>
