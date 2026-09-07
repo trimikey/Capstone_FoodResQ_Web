@@ -902,6 +902,8 @@ export class CampaignsService {
       data: { status: 'completed' },
     });
 
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
+
     for (const c of expired) {
       void this.notifications.notify(c.charityReceiver.userId, {
         type: 'campaign',
@@ -4232,6 +4234,68 @@ export class CampaignsService {
    * đã xác nhận ca vẫn thấy việc trong "Việc của tôi", vẫn bị tính là bận (không
    * đăng ký được ca chiến dịch khác vì trùng giờ), và NCC vẫn giữ hàng chờ giao.
    */
+  /**
+   * Chiến dịch đã kết thúc/huỷ thì mọi ca của TNV không được treo nữa: treo vừa
+   * rác "Việc của tôi" vừa CHẶN họ nhận ca bếp/đơn giao mới (các guard đếm
+   * assignment đang active). Đã điểm danh/đang làm → completed (đã tham gia);
+   * chưa điểm danh (pending/assigned) → cancelled, không phạt.
+   * Chạy dạng sweep nên tự chữa luôn dữ liệu cũ còn treo.
+   */
+  async releaseVolunteersOfFinishedCampaigns(): Promise<number> {
+    const lingering = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress'] },
+        campaign: { status: { in: ['completed', 'cancelled'] } },
+      },
+      select: {
+        id: true,
+        status: true,
+        campaignId: true,
+        volunteer: { select: { userId: true } },
+        campaign: { select: { title: true, status: true } },
+      },
+    });
+    if (lingering.length === 0) return 0;
+
+    const toComplete = lingering
+      .filter((a) => a.status === 'checked_in' || a.status === 'in_progress')
+      .map((a) => a.id);
+    const toCancel = lingering
+      .filter((a) => a.status === 'pending' || a.status === 'assigned')
+      .map((a) => a.id);
+    await this.prisma.$transaction([
+      ...(toComplete.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toComplete } },
+            data: { status: 'completed' },
+          })]
+        : []),
+      ...(toCancel.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toCancel } },
+            data: { status: 'cancelled', notes: 'Chiến dịch đã kết thúc — ca được đóng tự động.' },
+          })]
+        : []),
+    ]);
+
+    // Báo mỗi TNV đúng một lần cho mỗi chiến dịch
+    const notified = new Set<string>();
+    for (const a of lingering) {
+      const key = `${a.volunteer.userId}|${a.campaignId}`;
+      if (notified.has(key)) continue;
+      notified.add(key);
+      void this.notifications.notify(a.volunteer.userId, {
+        type: 'campaign',
+        title: 'Chiến dịch đã kết thúc',
+        body:
+          `Chiến dịch "${a.campaign.title}" đã ${a.campaign.status === 'cancelled' ? 'bị huỷ' : 'hoàn tất'} — `
+          + 'các ca còn lại của bạn được đóng, bạn có thể nhận ca hoặc đơn mới.',
+        data: { campaignId: a.campaignId, status: a.campaign.status },
+      });
+    }
+    return lingering.length;
+  }
+
   async cancelCampaign(campaignId: string, userId: string, reason?: string) {
     const campaign = await this.assertOwner(campaignId, userId);
     if (!['pending_approval', 'approved'].includes(campaign.status)) {
@@ -4344,6 +4408,8 @@ export class CampaignsService {
         ...(isPremature ? { notes: `Kết thúc sớm: ${opts!.earlyEndReason!.trim()}` } : {}),
       },
     });
+    // Giải phóng ngay các ca TNV còn treo — không chờ cron giờ sau
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
     return this.findOne(campaignId);
   }
 
