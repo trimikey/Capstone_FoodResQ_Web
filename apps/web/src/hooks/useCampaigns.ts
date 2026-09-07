@@ -1699,16 +1699,43 @@ export function useReviewQcStep() {
   });
 }
 
+/**
+ * Quy trình bếp của MỘT NGÀY — chiến dịch nhiều ngày mỗi ngày một chuỗi 4 khâu
+ * riêng; date bỏ trống thì BE lấy hôm nay (giờ VN) kẹp vào khoảng ngày vận hành.
+ */
+export function useCampaignDishSteps(
+  campaignId: string | undefined,
+  date: string | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['campaigns', 'dish-steps', campaignId, date ?? 'auto'],
+    queryFn: async () =>
+      (
+        await api.get(`/campaigns/${campaignId}/dish-steps`, {
+          params: date ? { date } : {},
+        })
+      ).data.data as { dishes: DishProcessItem[]; days: string[]; activeDate: string },
+    enabled: enabled && !!campaignId,
+    staleTime: 15_000,
+  });
+}
+
 // Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món
 export function useApproveDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { campaignId: string; menuItemId: string }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/dishes/${p.menuItemId}/approve`);
+    mutationFn: async (p: { campaignId: string; menuItemId: string; date?: string }) => {
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dishes/${p.menuItemId}/approve`,
+        undefined,
+        { params: p.date ? { date: p.date } : {} },
+      );
       return data.data as { id: string; status: string; menuItemName: string };
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'dish-steps', p.campaignId] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
     },
   });
@@ -1718,8 +1745,12 @@ export function useApproveDishFinalStep() {
 export function useRejectDishFinalStep() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { campaignId: string; menuItemId: string; reason: string }) => {
-      const { data } = await api.post(`/campaigns/${p.campaignId}/dishes/${p.menuItemId}/reject`, { reason: p.reason });
+    mutationFn: async (p: { campaignId: string; menuItemId: string; reason: string; date?: string }) => {
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dishes/${p.menuItemId}/reject`,
+        { reason: p.reason },
+        { params: p.date ? { date: p.date } : {} },
+      );
       return data.data as { id: string; status: string; menuItemName: string };
     },
     onSuccess: (_d, p) => {

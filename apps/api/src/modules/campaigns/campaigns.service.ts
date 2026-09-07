@@ -2318,8 +2318,12 @@ export class CampaignsService {
       };
     }
 
-    // Chef / Waiter → trả dishes + steps
-    const detail = await this.dishSteps.getStepsForCampaign(assignment.campaignId, userId);
+    // Chef / Waiter → trả dishes + steps CỦA NGÀY TRỰC (nhiều ngày mỗi ngày một chuỗi khâu)
+    const detail = await this.dishSteps.getStepsForCampaign(
+      assignment.campaignId,
+      userId,
+      assignment.workDate ? assignment.workDate.toISOString().slice(0, 10) : undefined,
+    );
 
     // Phục vụ cũng được điều đi phát suất ăn như shipper — không trả đợt phát thì màn
     // nhiệm vụ của họ chỉ có bảng 4 khâu nấu ăn, vốn là việc của bếp chứ không phải
@@ -6703,13 +6707,13 @@ export class CampaignsService {
   }
 
   /** Tổ chức duyệt bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
-  async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string) {
-    return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId);
+  async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string, dateKey?: string) {
+    return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId, dateKey);
   }
 
   /** Tổ chức từ chối bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
-  async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string) {
-    return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason);
+  async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string, dateKey?: string) {
+    return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason, dateKey);
   }
 
   async getMyStats(userId: string) {

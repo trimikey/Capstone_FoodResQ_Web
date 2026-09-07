@@ -1483,6 +1483,9 @@ model CampaignDishStep {
   id                     String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   campaignId             String                 @map("campaign_id") @db.Uuid
   menuItemId             String                 @map("menu_item_id") @db.Uuid
+  /// Ngày trực mà chuỗi khâu này thuộc về — chiến dịch nhiều ngày mỗi ngày một bộ
+  /// 4 khâu riêng. NULL chỉ còn ở dữ liệu lệch (migration đã backfill = ngày đầu).
+  workDate               DateTime?              @map("work_date") @db.Date
   /// 1 = Sơ chế, 2 = Nấu, 3 = Trình bày, 4 = Sẵn sàng phát xuất
   stepOrder              Int                    @map("step_order") @db.SmallInt
   stepName               String                 @map("step_name") @db.VarChar(100)

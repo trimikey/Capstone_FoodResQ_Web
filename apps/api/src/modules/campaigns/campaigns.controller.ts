@@ -765,8 +765,9 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,
     @CurrentUser() user: User,
+    @Query('date') date?: string,
   ) {
-    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId);
+    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId, date || undefined);
   }
 
   @Post(':id/dishes/:menuItemId/reject')
@@ -778,7 +779,8 @@ export class CampaignsController {
     @Param('menuItemId') menuItemId: string,
     @CurrentUser() user: User,
     @Body() body: { reason: string },
+    @Query('date') date?: string,
   ) {
-    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason);
+    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason, date || undefined);
   }
 }
