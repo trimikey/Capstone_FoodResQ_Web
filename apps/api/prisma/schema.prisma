@@ -1518,7 +1518,7 @@ model CampaignDishStep {
   completedByVolunteer VolunteerProfile? @relation(fields: [completedByVolunteerId], references: [id], onDelete: SetNull)
   qcFailedByVolunteer  VolunteerProfile? @relation("CampaignDishStep_QCFailure", fields: [qcFailedByVolunteerId], references: [id], onDelete: SetNull)
 
-  @@unique([campaignId, menuItemId, stepOrder])
+  @@unique([menuItemId, workDate, stepOrder])
   @@index([campaignId])
   @@index([menuItemId])
   @@index([status])
