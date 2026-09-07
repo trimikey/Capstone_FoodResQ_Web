@@ -84,11 +84,10 @@ export default function HomeContent() {
   const [foodCount, setFoodCount] = useState<number>(2000);
   const [heroBgIndex, setHeroBgIndex] = useState<number>(0);
 
-  const HERO_IMAGES = [
-    '/new_wide_hero_1.png',
-    '/new_wide_hero_2.png',
-    '/new_wide_hero_3.png'
-  ];
+  // Ba ảnh tài liệu thật của hoạt động thiện nguyện: phát bánh mì dưới tán cây,
+  // phát quà trên phố, và tình nguyện viên chơi với trẻ vùng cao. Ảnh stock chụp
+  // studio trước đây khiến trang nhìn như do máy dựng.
+  const HERO_IMAGES = ['/anhbanner1.jpg', '/anhbanner2.jpg', '/anhbanner3.jpg'];
 
   // Rotate hero background every 4 seconds
   useEffect(() => {
@@ -179,7 +178,7 @@ export default function HomeContent() {
   return (
     <div className="bg-[#FAFBF9] min-h-screen text-neutral-800 relative overflow-hidden">
       {/* 1. HERO SECTION */}
-      <section className="w-full px-6 md:px-16 lg:px-24 pt-32 pb-24 relative overflow-hidden">
+      <section className="w-full px-4 sm:px-6 md:px-16 lg:px-24 pt-24 sm:pt-32 pb-24 relative overflow-hidden">
         {/* Background Slider */}
         <div className="absolute inset-0 z-0">
           {HERO_IMAGES.map((img, idx) => (
@@ -190,27 +189,39 @@ export default function HomeContent() {
               }`}
               style={{
                 backgroundImage: `url("${img}")`,
-                backgroundPosition: 'center 15%'
+                backgroundPosition: 'center 30%',
               }}
             />
           ))}
-          {/* Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#FAFBF9]/60 via-[#FAFBF9]/10 to-[#FAFBF9]/70" />
+          {/* Lớp phủ dọc rất nhẹ, chỉ để dịu nắng gắt ở mép trên/dưới. Bản trước phủ
+              tới 70–80% nên ảnh bạc trắng như bị xoá mờ. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/25 via-transparent to-white/35" />
+          {/* Scrim TRÁI có mốc dừng rõ ràng: đậm đúng vùng đặt chữ rồi tắt hẳn trước
+              nửa khung, để hơn một phần ba ảnh bên phải giữ nguyên màu thật. Dùng
+              linear-gradient tường minh vì gradient 3 nấc của Tailwind trải đều toàn
+              khung, làm cả tấm ảnh mờ theo chứ không chỉ vùng có chữ. */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 26%, rgba(255,255,255,0.55) 44%, rgba(255,255,255,0) 62%)',
+            }}
+          />
         </div>
 
         <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-800 font-bold text-xs uppercase tracking-wider shadow-sm">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-sky-brand)_14%,white)] border border-[color-mix(in_srgb,var(--color-sky-brand)_35%,white)] text-[color-mix(in_srgb,var(--color-sky-brand)_75%,#0b2a3a)] font-bold text-xs uppercase tracking-wider shadow-sm">
             Tác động của FoodResQ
           </div>
-          <h1 className="font-extrabold text-7xl sm:text-8xl lg:text-9xl tracking-tighter tabular-nums leading-none">
-            <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-900 to-emerald-600 drop-shadow-sm">
+          <h1 className="font-extrabold text-5xl min-[420px]:text-6xl sm:text-8xl lg:text-9xl tracking-tighter tabular-nums leading-none">
+            <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-800 via-[var(--color-leaf-brand)] to-emerald-600 drop-shadow-sm">
               {formatNumber(foodCount)}
             </span>
-            <span className="text-4xl sm:text-5xl lg:text-6xl text-emerald-800/60 font-bold tracking-normal align-baseline ml-3">
+            <span className="text-2xl sm:text-5xl lg:text-6xl text-emerald-800/60 font-bold tracking-normal align-baseline ml-2 sm:ml-3">
               Tấn
             </span>
           </h1>
-          <div className="h-1 w-20 bg-emerald-500 rounded-full my-6 opacity-70" />
+          <div className="h-1 w-20 bg-[var(--color-warm-brand)] rounded-full my-6" />
           <h2 className="font-bold text-2xl sm:text-3xl lg:text-4xl text-neutral-800 leading-snug max-w-2xl">
             thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
           </h2>
@@ -221,7 +232,7 @@ export default function HomeContent() {
           <div className="flex flex-wrap gap-4 pt-8">
             <button
               onClick={() => router.push('/listings')}
-              className="px-8 py-4 bg-emerald-800 hover:bg-emerald-950 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-800/20 flex items-center gap-2 group active:scale-95"
+              className="px-8 py-4 bg-emerald-700 hover:bg-emerald-850 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-700/25 flex items-center gap-2 group active:scale-95"
             >
               Tham gia giải cứu
               <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
@@ -242,7 +253,9 @@ export default function HomeContent() {
               key={idx}
               onClick={() => setHeroBgIndex(idx)}
               className={`h-2 rounded-full transition-all duration-300 ${
-                idx === heroBgIndex ? 'w-8 bg-emerald-600' : 'w-2 bg-emerald-600/30 hover:bg-emerald-600/50'
+                idx === heroBgIndex
+                  ? 'w-8 bg-[var(--color-leaf-brand)]'
+                  : 'w-2 bg-[var(--color-leaf-brand)]/35 hover:bg-[var(--color-leaf-brand)]/60'
               }`}
               aria-label={`Go to slide ${idx + 1}`}
             />
@@ -253,19 +266,32 @@ export default function HomeContent() {
       {/* 9. HỆ SINH THÁI FOODRESQ SECTION */}
       <section id="about" className="w-full px-6 md:px-16 lg:px-24 py-20 grid grid-cols-1 lg:grid-cols-12 gap-16 items-center animate-fade-in-up [animation-delay:300ms]">
         
-        {/* Left Side: 2x2 Image Grid */}
-        {/* Left Side: 2x2 Image Grid */}
+        {/* Lưới ảnh hệ sinh thái — bốn ảnh chụp THẬT, xếp theo đúng vòng đời thực phẩm
+            kể ở ba trụ cột bên phải: nhận hàng quyên góp → nấu và đóng hộp → chuyển đi
+            → trao tận tay. Bộ ảnh dựng có logo trước đây khiến khối này nhìn như
+            catalogue quảng cáo chứ không phải việc đang diễn ra ngoài đời. */}
         <div className="lg:col-span-6 grid grid-cols-2 gap-3">
-          <img src="/xehang_TC.png" alt="Volunteers and Logistics" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/shipper_TC.png" alt="Delivery" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/giaohang_TC.png" alt="Beneficiary" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
-          <img src="/nauan_TC.png" alt="Cooking" className="w-full aspect-square object-cover rounded-xl shadow-sm" />
+          {[
+            { src: '/HST2.webp', alt: 'Bốc dỡ thùng hàng cứu trợ từ xe tải' },
+            { src: '/HST3.jpg', alt: 'Tình nguyện viên đóng hộp suất ăn tại bếp' },
+            { src: '/HST1.jpg', alt: 'Trao quà cứu trợ cho bà con vùng cao' },
+            { src: '/HST4.jpg', alt: 'Phát cơm cho người dân tại bếp ăn thiện nguyện' },
+          ].map((img) => (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              key={img.src}
+              src={img.src}
+              alt={img.alt}
+              loading="lazy"
+              className="w-full aspect-square object-cover rounded-xl shadow-sm"
+            />
+          ))}
         </div>
 
         {/* Right Side: Description and 3 Pillars */}
         <div className="lg:col-span-6 space-y-8">
           <div className="space-y-4">
-            <h2 className="font-medium text-4xl text-on-surface">Hệ sinh thái FoodResQ</h2>
+            <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Hệ sinh thái FoodResQ</h2>
             <div className="h-px w-16 bg-neutral-300" />
             <p className="text-on-surface/80 text-lg leading-relaxed max-w-lg">
               Chúng tôi xây dựng một vòng lặp tuần hoàn, nơi thực phẩm không bị lãng phí mà trở thành nguồn lực quý giá nuôi dưỡng cộng đồng. Quy trình khép kín kết nối ba trụ cột chính:
@@ -344,13 +370,27 @@ export default function HomeContent() {
           </svg>
         </div>
 
-        {/* Shaking Arched Images */}
+        {/* Hai khung vòm — đổi sang ảnh chụp THẬT suất ăn thiện nguyện thay cho ảnh
+            bánh mì và salad kiểu catalogue. Cả hai ảnh gốc đều dạng dọc nên khớp sẵn
+            với tỉ lệ vòm, không bị cắt mất phần chính. */}
         <div className="flex gap-8 md:gap-16 items-end justify-center w-full max-w-4xl mt-4">
           <div className="w-48 md:w-72 aspect-[1/1.3] rounded-t-[1000px] rounded-b-2xl overflow-hidden animate-sway-1 shadow-lg border-[6px] border-white relative z-10">
-            <img src="/food_bread.png" alt="Thực phẩm dư thừa" className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/DTA1.jpg"
+              alt="Hộp cơm cá kho kèm rau luộc và đậu phộng"
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="w-56 md:w-80 aspect-[1/1.4] rounded-t-[1000px] rounded-b-2xl overflow-hidden animate-sway-2 shadow-lg border-[6px] border-white -mb-8 relative z-20">
-            <img src="/food_salad.png" alt="Thực phẩm dư thừa 2" className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/DTA2.webp"
+              alt="Hàng loạt hộp cơm đã soạn sẵn chờ đem đi phát"
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
           </div>
         </div>
       </section>
@@ -359,7 +399,7 @@ export default function HomeContent() {
       <section className="w-full px-6 md:px-16 lg:px-24 py-20 space-y-12 animate-fade-in-up [animation-delay:350ms]">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 border-b border-neutral-200 pb-6">
           <div className="space-y-2">
-            <h2 className="font-medium text-4xl text-on-surface">Sàn Thực Phẩm Thặng Dư</h2>
+            <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Sàn Thực Phẩm Thặng Dư</h2>
             <p className="text-lg text-on-surface/80">Sở hữu những thực phẩm chất lượng cao từ các tiệm bánh và siêu thị hàng đầu.</p>
           </div>
           
@@ -453,7 +493,7 @@ export default function HomeContent() {
       <section className="w-full px-6 md:px-16 lg:px-24 py-20 bg-neutral-50 animate-fade-in-up [animation-delay:400ms]">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
           <div className="space-y-2">
-            <h2 className="font-medium text-4xl text-on-surface">Chiến dịch sắp diễn ra</h2>
+            <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Chiến dịch sắp diễn ra</h2>
             <p className="text-lg text-on-surface/80">Chung tay cùng chúng tôi trong những dự án ý nghĩa.</p>
           </div>
           <Link href="/campaigns" className="shrink-0 inline-flex items-center gap-1 text-[15px] font-semibold text-[#236c2a] hover:gap-2 transition-all">
@@ -536,7 +576,7 @@ export default function HomeContent() {
             </div>
             
             {/* Overlay stats dashboard inside monitor */}
-            <div className="absolute bottom-4 left-4 right-4 bg-neutral-900/90 backdrop-blur border border-white/5 p-4 rounded-xl flex items-center justify-between text-white text-[11px]">
+            <div className="absolute bottom-4 left-4 right-4 bg-neutral-900/90 backdrop-blur border border-white/5 p-3 sm:p-4 rounded-xl flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-white text-[11px]">
               <div>
                 <p className="text-neutral-450 font-bold">Lưu lượng điều phối</p>
                 <p className="text-sm font-extrabold text-emerald-400 mt-0.5">85 đơn hàng/giờ</p>
@@ -589,7 +629,7 @@ export default function HomeContent() {
       {/* 6. QUY TRÌNH ĐIỀU PHỐI 4 BƯỚC SECTION */}
       <section className="w-full px-6 md:px-16 lg:px-24 py-20 space-y-12 animate-fade-in-up [animation-delay:550ms]">
         <div className="border-b border-neutral-200 pb-6">
-          <h2 className="font-medium text-4xl text-on-surface">Quy trình điều phối 4 bước</h2>
+          <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Quy trình điều phối 4 bước</h2>
           <p className="text-lg text-on-surface/80 mt-2">Quy trình khép kín đảm bảo an toàn thực phẩm và minh bạch xã hội.</p>
         </div>
 
@@ -649,7 +689,7 @@ export default function HomeContent() {
               <p className="text-sm text-rose-700/80 mt-0.5">Kích hoạt khi phát hiện sự cố chất lượng hoặc thực phẩm quá hạn.</p>
             </div>
           </div>
-          <div className="flex gap-3 w-full lg:w-auto">
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
             <button 
               onClick={() => toast.error('Đã kích hoạt chế độ khẩn cấp! Đội ngũ điều phối đang xử lý.')}
               className="flex-1 lg:flex-none px-6 py-3 bg-rose-800 hover:bg-rose-900 text-white rounded-xl text-sm font-bold transition-colors"
@@ -771,7 +811,7 @@ export default function HomeContent() {
               <span className="px-3 py-1.5 rounded-full bg-[#efe8d8] text-[#236c2a] text-xs font-bold uppercase tracking-widest">
                 Liên hệ với chúng tôi
               </span>
-              <h2 className="font-medium text-4xl text-on-surface">Liên hệ hỗ trợ</h2>
+              <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Liên hệ hỗ trợ</h2>
               <p className="text-on-surface/80 text-[15px] leading-relaxed max-w-md">
                 Có bất kỳ câu hỏi nào về quy trình giải cứu thực phẩm, ứng dụng hoặc chỉ đơn giản là muốn nói lời chào? Chúng tôi luôn sẵn sàng lắng nghe.
               </p>
@@ -884,7 +924,7 @@ export default function HomeContent() {
         {/* Left Side: Text and Testimonial */}
         <div className="lg:col-span-6 space-y-8">
           <div className="space-y-4">
-            <h2 className="font-medium text-4xl text-on-surface">Câu chuyện tác động</h2>
+            <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Câu chuyện tác động</h2>
             <div className="h-px w-16 bg-neutral-300" />
             <p className="text-on-surface/80 text-lg leading-relaxed max-w-lg">
               Đằng sau mỗi con số là một cuộc đời được sưởi ấm. FoodResQ không chỉ chuyển giao thực phẩm, chúng tôi chuyển giao hy vọng và sự sẻ chia từ cộng đồng đến những hoàn cảnh khó khăn nhất.
@@ -916,7 +956,7 @@ export default function HomeContent() {
 
         {/* Right Side: Interactive Switcher (Kitchen Image vs. Impact Calculator) */}
         <div className="lg:col-span-6 space-y-4">
-          <div className="flex gap-2 p-1 bg-neutral-100 rounded-xl w-fit">
+          <div className="flex flex-wrap gap-2 p-1 bg-neutral-100 rounded-xl w-full sm:w-fit">
             <button
               onClick={() => setImpactTab('calc')}
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
@@ -936,9 +976,13 @@ export default function HomeContent() {
           </div>
 
           {impactTab === 'image' ? (
-            <img 
-              src="/impact_kitchen.png" 
-              alt="Impact Kitchen" 
+            /* Ảnh bếp phương Tây stock cũ đã bị xoá khỏi public/ — dùng ảnh bếp ăn
+               thiện nguyện thật (đã có sẵn ở lưới Hệ sinh thái nên trình duyệt cache). */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src="/HST3.jpg"
+              alt="Tình nguyện viên đóng hộp suất ăn trong bếp thiện nguyện"
+              loading="lazy"
               className="w-full aspect-[4/3] object-cover rounded-xl border border-neutral-200"
             />
           ) : (
@@ -980,7 +1024,7 @@ export default function HomeContent() {
               </div>
 
               {/* Calculated grid results */}
-              <div className="grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100">
+              <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2 sm:gap-3 pt-4 border-t border-neutral-100">
                 <div className="bg-emerald-50/40 border border-emerald-50 rounded-2xl p-3 text-center space-y-1.5">
                   <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-850 flex items-center justify-center mx-auto">
                     <span className="material-symbols-outlined text-[16px]">restaurant</span>
@@ -1021,7 +1065,7 @@ export default function HomeContent() {
       {/* 10. TIÊU CHUẨN AN TOÀN & FAQ SECTION */}
       <section className="w-full px-6 md:px-16 lg:px-24 py-20 space-y-12 animate-fade-in-up [animation-delay:900ms]">
         <div className="text-center space-y-4">
-          <h2 className="font-medium text-4xl text-on-surface">Tiêu chuẩn An toàn & Câu hỏi thường gặp</h2>
+          <h2 className="font-medium text-2xl sm:text-3xl lg:text-4xl text-on-surface">Tiêu chuẩn An toàn & Câu hỏi thường gặp</h2>
           <p className="text-lg text-on-surface/80 max-w-3xl mx-auto">
             Chúng tôi tuân thủ các quy chuẩn quốc tế nghiêm ngặt nhất để đảm bảo chất lượng thực phẩm cứu trợ.
           </p>
@@ -1121,7 +1165,7 @@ export default function HomeContent() {
 
       {/* 11. FOOTER */}
       <footer className="bg-[#1a4f1f] border-t border-[#1a4f1f] pt-16 pb-8 text-white/80 animate-fade-in-up [animation-delay:950ms]">
-        <div className="w-full px-6 md:px-16 lg:px-24 grid grid-cols-1 md:grid-cols-4 gap-12">
+        <div className="w-full px-6 md:px-16 lg:px-24 grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-12">
           
           <div className="space-y-4">
             <h4 className="font-medium text-2xl text-white">FoodResQ</h4>

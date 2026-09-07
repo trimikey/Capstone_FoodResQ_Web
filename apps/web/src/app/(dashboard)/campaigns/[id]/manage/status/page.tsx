@@ -529,7 +529,10 @@ export default function CampaignStatusPage() {
                   : startWindow.message}
               </span>
             )}
-            {(c.status === 'approved' || c.status === 'in_progress') && (
+            {/* BE chỉ cho huỷ chiến dịch CHƯA bắt đầu (pending_approval / approved).
+                Trước đây nút còn hiện khi in_progress nên tổ chức điền xong lý do mới
+                nhận lỗi; chiến dịch đang chạy thì dùng "Kết thúc" chứ không huỷ. */}
+            {c.status === 'approved' && (
               <button
                 type="button"
                 onClick={() => openAction('cancel')}

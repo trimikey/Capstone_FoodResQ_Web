@@ -56,7 +56,7 @@ export default function DataTable<T>({
               {empty ?? (
                 <div className="flex flex-col items-center gap-2 text-neutral-450">
                   <span className="material-symbols-outlined text-[40px] text-neutral-250">inbox</span>
-                  <p className="text-sm font-bold">ChÆ°a cÃ³ dá»¯ liá»‡u</p>
+                  <p className="text-sm font-bold">Chưa có dữ liệu</p>
                 </div>
               )}
             </div>

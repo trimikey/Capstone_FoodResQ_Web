@@ -13,8 +13,10 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 export const FIXED_DISH_STEPS = [
   { order: 1, name: 'Sơ chế' },
   { order: 2, name: 'Nấu' },
-  { order: 3, name: 'Trình bày' },
-  { order: 4, name: 'Sẵn sàng phát xuất' },
+  // Tên cũ "Trình bày" gây lệch: màn chef gọi là "QC kiểm tra", màn tổ chức hiện
+  // "Trình bày", trong khi bản chất khâu này là chụp ảnh QC cho tổ chức duyệt.
+  { order: 3, name: 'Kiểm tra QC' },
+  { order: 4, name: 'Sẵn sàng xuất phát' },
 ] as const;
 
 /** VN là UTC+7 cố định, không có giờ mùa hè. */
@@ -54,7 +56,11 @@ export interface CampaignTiming {
  * mà bộ 4 khâu chỉ tồn tại một lần cho mỗi món — đẩy ngày ở trường hợp đó sẽ khoá
  * khâu sai.
  */
-export function stepDueAtUtc(campaign: CampaignTiming, scheduledTime: string): Date {
+export function stepDueAtUtc(
+  campaign: CampaignTiming,
+  scheduledTime: string,
+  anchorDate?: Date | null,
+): Date {
   const startMin = vnHhmmToTotalMinutes(campaign.startTime);
   const endMin = vnHhmmToTotalMinutes(campaign.endTime);
   const stepMin = vnHhmmToTotalMinutes(scheduledTime);
@@ -62,12 +68,14 @@ export function stepDueAtUtc(campaign: CampaignTiming, scheduledTime: string): D
   const wrapsMidnight = endMin <= startMin;
   const dayOffset = wrapsMidnight && stepMin < startMin ? 1 : 0;
 
-  // scheduledDate là cột DATE → nửa đêm UTC của ngày VN đó. Giờ VN quy về UTC
-  // bằng cách trừ đi offset.
+  // Neo vào NGÀY TRỰC của khâu (chiến dịch nhiều ngày mỗi ngày một chuỗi khâu);
+  // khâu cũ chưa có work_date thì rơi về ngày bắt đầu chiến dịch như trước.
+  // Cột DATE → nửa đêm UTC của ngày VN đó. Giờ VN quy về UTC bằng cách trừ offset.
+  const anchor = anchorDate ?? campaign.scheduledDate;
   const vnMidnightUtcMs = Date.UTC(
-    campaign.scheduledDate.getUTCFullYear(),
-    campaign.scheduledDate.getUTCMonth(),
-    campaign.scheduledDate.getUTCDate(),
+    anchor.getUTCFullYear(),
+    anchor.getUTCMonth(),
+    anchor.getUTCDate(),
   );
   return new Date(
     vnMidnightUtcMs +
@@ -151,7 +159,7 @@ export class DishStepsService {
   ): Promise<CampaignDishStep[]> {
     if (scheduledTimes.length !== FIXED_DISH_STEPS.length) {
       throw new BadRequestException(
-        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Trình bày, Sẵn sàng).`,
+        `Cần đúng ${FIXED_DISH_STEPS.length} giờ dự kiến cho 4 khâu (Sơ chế, Nấu, Kiểm tra QC, Sẵn sàng phát).`,
       );
     }
     for (const t of scheduledTimes) {
@@ -160,29 +168,66 @@ export class DishStepsService {
       }
     }
 
+    // MỖI NGÀY vận hành một chuỗi 4 khâu RIÊNG: chiến dịch nhiều ngày thì ngày 2
+    // nấu lại món đó phải có bộ khâu mới để bếp tick và tổ chức QC đúng ngày —
+    // trước đây cả chiến dịch chỉ có một chuỗi, ngày 1 tick xong là ngày 2 hết việc.
+    const campaign = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: { scheduledDate: true, endDate: true },
+    });
+    if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    const days = this.campaignDayList(campaign.scheduledDate, campaign.endDate);
+
     const existing = await this.prisma.campaignDishStep.findMany({
       where: { campaignId, menuItemId },
-      orderBy: { stepOrder: 'asc' },
+      select: { stepOrder: true, workDate: true },
     });
-    if (existing.length === FIXED_DISH_STEPS.length) return existing;
-
-    // Nếu partial (ví dụ seed dở) thì xóa + tạo lại cho clean
-    if (existing.length > 0) {
-      await this.prisma.campaignDishStep.deleteMany({ where: { campaignId, menuItemId } });
+    // Bản ghi cũ thiếu work_date coi như thuộc ngày đầu (migration đã backfill —
+    // đây chỉ là lưới an toàn cho dữ liệu lệch).
+    const have = new Set(
+      existing.map((s) => `${this.dayKey(s.workDate ?? campaign.scheduledDate)}|${s.stepOrder}`),
+    );
+    const data: Array<{
+      campaignId: string;
+      menuItemId: string;
+      stepOrder: number;
+      stepName: string;
+      scheduledTime: string;
+      workDate: Date;
+    }> = [];
+    for (const day of days) {
+      FIXED_DISH_STEPS.forEach((step, idx) => {
+        if (!have.has(`${this.dayKey(day)}|${step.order}`)) {
+          data.push({
+            campaignId,
+            menuItemId,
+            stepOrder: step.order,
+            stepName: step.name,
+            scheduledTime: scheduledTimes[idx],
+            workDate: day,
+          });
+        }
+      });
     }
-
-    const data = FIXED_DISH_STEPS.map((step, idx) => ({
-      campaignId,
-      menuItemId,
-      stepOrder: step.order,
-      stepName: step.name,
-      scheduledTime: scheduledTimes[idx],
-    }));
-    await this.prisma.campaignDishStep.createMany({ data });
+    if (data.length > 0) {
+      await this.prisma.campaignDishStep.createMany({ data });
+    }
     return this.prisma.campaignDishStep.findMany({
       where: { campaignId, menuItemId },
-      orderBy: { stepOrder: 'asc' },
+      orderBy: [{ workDate: 'asc' }, { stepOrder: 'asc' }],
     });
+  }
+
+  /** Các ngày vận hành (cột DATE, đã là nửa đêm UTC của ngày VN) từ đầu tới cuối. */
+  private campaignDayList(scheduledDate: Date, endDate: Date | null): Date[] {
+    const days: Date[] = [];
+    const last = (endDate ?? scheduledDate).getTime();
+    for (let t = scheduledDate.getTime(); t <= last; t += 86_400_000) days.push(new Date(t));
+    return days.length > 0 ? days : [new Date(scheduledDate)];
+  }
+
+  private dayKey(d: Date): string {
+    return d.toISOString().slice(0, 10);
   }
 
   /** Tổ chức thiết lập / cập nhật giờ dự kiến 4 khâu cho 1 món. */
@@ -197,7 +242,20 @@ export class DishStepsService {
     if (!menuItem || menuItem.campaignId !== campaignId) {
       throw new NotFoundException('Không tìm thấy món trong chiến dịch này.');
     }
-    return this.ensureStepsForMenuItem(campaignId, menuItemId, scheduledTimes);
+    await this.ensureStepsForMenuItem(campaignId, menuItemId, scheduledTimes);
+    // Đồng bộ giờ mới cho các khâu CHƯA xong của mọi ngày (khâu done giữ giờ cũ).
+    await Promise.all(
+      FIXED_DISH_STEPS.map((step, idx) =>
+        this.prisma.campaignDishStep.updateMany({
+          where: { campaignId, menuItemId, stepOrder: step.order, status: { not: 'done' } },
+          data: { scheduledTime: scheduledTimes[idx] },
+        }),
+      ),
+    );
+    return this.prisma.campaignDishStep.findMany({
+      where: { campaignId, menuItemId },
+      orderBy: [{ workDate: 'asc' }, { stepOrder: 'asc' }],
+    });
   }
 
   /**
@@ -209,7 +267,7 @@ export class DishStepsService {
    * xem `stepDueAtUtc`.
    */
   computeEffectiveStatus(
-    step: Pick<CampaignDishStep, 'status' | 'scheduledTime'>,
+    step: Pick<CampaignDishStep, 'status' | 'scheduledTime'> & { workDate?: Date | null },
     prevStepDone: boolean,
     isFirstStep: boolean,
     campaign: CampaignTiming,
@@ -217,7 +275,9 @@ export class DishStepsService {
     ignoreSchedule = false,
   ): CampaignMenuStepStatus {
     if (step.status === 'done') return 'done';
-    const onTime = ignoreSchedule || Date.now() >= stepDueAtUtc(campaign, step.scheduledTime).getTime();
+    const onTime =
+      ignoreSchedule ||
+      Date.now() >= stepDueAtUtc(campaign, step.scheduledTime, step.workDate ?? null).getTime();
     const prevOk = isFirstStep || prevStepDone;
     if (onTime && prevOk) return 'available';
     return 'locked';
@@ -244,7 +304,13 @@ export class DishStepsService {
     const campaigns = await this.prisma.kitchenCampaign.findMany({
       where: {
         status: { in: ['in_progress', 'approved'] },
-        scheduledDate: { gte: windowStart, lt: windowEnd },
+        // Chiến dịch nhiều ngày: ngày 2-3 có scheduledDate NGOÀI cửa sổ nhưng vẫn
+        // đang chạy — lọc theo khoảng [scheduledDate, endDate] giao với cửa sổ.
+        scheduledDate: { lt: windowEnd },
+        OR: [
+          { endDate: null, scheduledDate: { gte: windowStart } },
+          { endDate: { gte: windowStart } },
+        ],
       },
       select: {
         id: true,
@@ -259,15 +325,16 @@ export class DishStepsService {
 
     const allSteps = await this.prisma.campaignDishStep.findMany({
       where: { campaignId: { in: campaigns.map((c) => c.id) }, status: { in: ['locked', 'available'] } },
-      orderBy: [{ menuItemId: 'asc' }, { stepOrder: 'asc' }],
+      orderBy: [{ menuItemId: 'asc' }, { workDate: 'asc' }, { stepOrder: 'asc' }],
     });
 
-    // Group theo menu_item → prev done?
+    // Group theo (menu_item, NGÀY TRỰC) → prev done? Mỗi ngày một chuỗi khâu riêng.
     const byMenu = new Map<string, typeof allSteps>();
     for (const s of allSteps) {
-      const arr = byMenu.get(s.menuItemId) ?? [];
+      const key = `${s.menuItemId}|${s.workDate ? this.dayKey(s.workDate) : ''}`;
+      const arr = byMenu.get(key) ?? [];
       arr.push(s);
-      byMenu.set(s.menuItemId, arr);
+      byMenu.set(key, arr);
     }
 
     const toOpen: { id: string }[] = [];
@@ -277,7 +344,8 @@ export class DishStepsService {
         const timing = timingById.get(s.campaignId);
         // Bỏ qua nếu không tra được campaign — không đủ dữ liệu để neo ngày.
         // Toggle test của admin bật → coi như luôn đến giờ.
-        const onTime = earlyOk || (timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime).getTime() : false);
+        const onTime =
+          earlyOk || (timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime, s.workDate).getTime() : false);
         // Chỉ mở nếu đến giờ VÀ khâu trước đã done.
         if (onTime && prevDone && s.status === 'locked') {
           toOpen.push({ id: s.id });
@@ -339,7 +407,8 @@ export class DishStepsService {
     // Tính lại trạng thái hiệu lực (đến giờ + khâu trước done?). Khâu 4 còn đòi
     // thêm: ảnh QC khâu 3 phải được TỔ CHỨC duyệt rồi mới được làm.
     const prevStep = await this.prisma.campaignDishStep.findFirst({
-      where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder - 1 },
+      // Cùng NGÀY trực — chiến dịch nhiều ngày mỗi ngày một chuỗi khâu riêng
+      where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder - 1, workDate: step.workDate },
       select: { status: true, reviewStatus: true },
     });
     const prevOk =
@@ -350,12 +419,27 @@ export class DishStepsService {
     if (effective === 'locked') {
       throw new BadRequestException(
         step.stepOrder === 4 && prevStep?.status === 'done' && prevStep.reviewStatus !== 'approved'
-          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng phát xuất.'
+          ? 'Ảnh QC của món này đang chờ tổ chức duyệt — được duyệt xong mới xác nhận sẵn sàng xuất phát.'
           : 'Khâu này chưa thể thực hiện — chưa đến giờ hoặc khâu trước chưa hoàn thành.',
       );
     }
     if (step.status === 'done') {
       throw new BadRequestException('Khâu này đã được hoàn thành trước đó.');
+    }
+    // Món đã bị tổ chức HUỶ (từ chối ảnh QC) là quyết định cuối — chặn mọi tick trên
+    // món đó, kể cả dữ liệu cũ còn ở trạng thái 'available' theo luật trước đây
+    // (từ chối từng trả khâu 3 về cho chef chụp lại).
+    const qcStep =
+      step.stepOrder === 3
+        ? step
+        : await this.prisma.campaignDishStep.findFirst({
+            where: { menuItemId: step.menuItemId, stepOrder: 3, workDate: step.workDate },
+            select: { reviewStatus: true },
+          });
+    if (qcStep?.reviewStatus === 'rejected') {
+      throw new BadRequestException(
+        'Món này đã bị tổ chức huỷ vì QC không đạt — không thể tiếp tục các khâu.',
+      );
     }
 
     const proofUrl = await this.storage.saveImage(proof, 'dish-step-proofs');
@@ -387,14 +471,14 @@ export class DishStepsService {
         title: `Ảnh QC món "${dishName}" đang chờ duyệt`,
         body:
           `Bếp đã hoàn tất khâu QC và tải ảnh lên. Vào tab "Quy trình bếp" để duyệt — `
-          + `món chỉ được chuyển sang "Sẵn sàng phát xuất" sau khi bạn duyệt ảnh.`,
+          + `món chỉ được chuyển sang "Sẵn sàng xuất phát" sau khi bạn duyệt ảnh.`,
         data: { campaignId, stepId, menuItemId: step.menuItemId },
       });
     } else {
       // Tự động mở khoá step kế tiếp (nếu đã đến giờ). Khâu sau QC không tự mở —
       // phải chờ tổ chức duyệt ảnh (reviewQcStep sẽ mở).
       const nextStep = await this.prisma.campaignDishStep.findFirst({
-        where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder + 1 },
+        where: { menuItemId: step.menuItemId, stepOrder: step.stepOrder + 1, workDate: step.workDate },
         select: { id: true, scheduledTime: true, status: true },
       });
       if (nextStep && nextStep.status !== 'done') {
@@ -409,7 +493,7 @@ export class DishStepsService {
       }
     }
 
-    // Nếu là khâu cuối (sẵn sàng phát xuất) → đánh dấu assignment hoàn thành (nếu chef)
+    // Nếu là khâu cuối (sẵn sàng xuất phát) → đánh dấu assignment hoàn thành (nếu chef)
     if (step.stepOrder === 4) {
       await this.maybeCompleteAssignment(campaignId, volunteer.id);
     }
@@ -429,6 +513,8 @@ export class DishStepsService {
         menuItem: { campaignId },
         stepOrder: 4,
         status: { not: 'done' },
+        // Chef trực ngày nào chỉ cần xong các khâu của NGÀY đó
+        ...(assignment.workDate ? { workDate: assignment.workDate } : {}),
       },
     });
     if (pendingLastSteps === 0) {
@@ -442,10 +528,11 @@ export class DishStepsService {
   /**
    * TỔ CHỨC duyệt / từ chối ẢNH khâu QC (stepOrder=3) mà chef đã tải lên.
    *
-   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng phát xuất" được mở
+   *  - approve: reviewStatus='approved' → khâu 4 "Sẵn sàng xuất phát" được mở
    *    (tự mở luôn nếu đã đến giờ); báo chef.
-   *  - reject:  reviewStatus='rejected' + lưu lý do; khâu 3 quay về `available`
-   *    để chef chụp lại (chụp lại xong tự về 'pending' chờ duyệt lần nữa); báo chef.
+   *  - reject:  reviewStatus='rejected' + lưu lý do và MÓN BỊ HUỶ hẳn — QC không
+   *    đạt nghĩa là đồ ăn không an toàn để phát, không có chuyện chụp lại ảnh là
+   *    dùng được; khâu 4 vĩnh viễn không mở (gate đòi reviewStatus='approved').
    */
   async reviewQcStep(
     campaignId: string,
@@ -484,8 +571,8 @@ export class DishStepsService {
 
       // Mở luôn khâu 4 nếu đã đến giờ — chef không phải chờ cron.
       const finalStep = await this.prisma.campaignDishStep.findFirst({
-        where: { menuItemId: step.menuItemId, stepOrder: 4 },
-        select: { id: true, scheduledTime: true, status: true },
+        where: { menuItemId: step.menuItemId, stepOrder: 4, workDate: step.workDate },
+        select: { id: true, scheduledTime: true, status: true, workDate: true },
       });
       if (finalStep && finalStep.status === 'locked') {
         const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
@@ -495,7 +582,8 @@ export class DishStepsService {
         const earlyOk = await this.allowEarlySteps();
         if (
           earlyOk ||
-          (campaignTiming && Date.now() >= stepDueAtUtc(campaignTiming, finalStep.scheduledTime).getTime())
+          (campaignTiming &&
+            Date.now() >= stepDueAtUtc(campaignTiming, finalStep.scheduledTime, finalStep.workDate).getTime())
         ) {
           await this.prisma.campaignDishStep.update({
             where: { id: finalStep.id },
@@ -508,7 +596,7 @@ export class DishStepsService {
         void this.notifications.notify(chefUserId, {
           type: 'campaign',
           title: `Ảnh QC món "${dishName}" đã được duyệt`,
-          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng phát xuất" khi đến giờ.',
+          body: 'Tổ chức đã duyệt ảnh QC — bạn có thể xác nhận "Sẵn sàng xuất phát" khi đến giờ.',
           data: { campaignId, stepId, menuItemId: step.menuItemId },
         });
       }
@@ -526,39 +614,37 @@ export class DishStepsService {
         reviewStatus: 'rejected',
         reviewedAt: new Date(),
         reviewNote: trimmed,
-        // Trả khâu 3 về available để chef làm lại — ảnh cũ vẫn giữ để đối chiếu.
-        status: 'available',
+        // GIỮ status='done': từ chối là quyết định cuối — món bị huỷ, không mở lại
+        // khâu 3 cho chef chụp lại. Khâu 4 không bao giờ mở vì gate đòi 'approved'.
       },
     });
     if (chefUserId) {
       void this.notifications.notify(chefUserId, {
         type: 'campaign',
-        title: `Ảnh QC món "${dishName}" bị từ chối`,
-        body: `Tổ chức từ chối ảnh QC: ${trimmed}. Vui lòng kiểm tra lại món và chụp ảnh mới.`,
-        data: { campaignId, stepId, menuItemId: step.menuItemId },
+        title: `Món "${dishName}" đã bị huỷ — QC không đạt`,
+        body: `Tổ chức từ chối ảnh QC và huỷ món này. Lý do: ${trimmed}. Món sẽ không được phát; các món khác vẫn chạy bình thường.`,
+        data: { campaignId, stepId, menuItemId: step.menuItemId, cancelled: true },
       });
     }
     return { id: updated.id, reviewStatus: updated.reviewStatus, dishName };
   }
 
   /**
-   * Tổ chức duyệt step cuối (sẵn sàng phát xuất) của một món.
-   * Chef đã tick "Sẵn sàng phát xuất" → tổ chức kiểm tra và duyệt.
+   * Tổ chức duyệt step cuối (sẵn sàng xuất phát) của một món.
+   * Chef đã tick "Sẵn sàng xuất phát" → tổ chức kiểm tra và duyệt.
    * Sau khi duyệt → món có thể chuyển sang phân phát.
    */
   async approveDishFinalStep(
     campaignId: string,
     userId: string,
     menuItemId: string,
+    dateKey?: string,
   ) {
     await this.assertCampaignOwner(campaignId, userId);
 
-    const step = await this.prisma.campaignDishStep.findFirst({
-      where: { campaignId, menuItemId, stepOrder: 4 },
-      include: { menuItem: { select: { customName: true } } },
-    });
+    const step = await this.findFinalStepForDay(campaignId, menuItemId, dateKey);
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
     if (step.status !== 'available') {
       throw new BadRequestException('Bước này chưa được chef tick hoặc đã được duyệt trước đó.');
@@ -583,15 +669,13 @@ export class DishStepsService {
     userId: string,
     menuItemId: string,
     reason: string,
+    dateKey?: string,
   ) {
     await this.assertCampaignOwner(campaignId, userId);
 
-    const step = await this.prisma.campaignDishStep.findFirst({
-      where: { campaignId, menuItemId, stepOrder: 4 },
-      include: { menuItem: { select: { customName: true } } },
-    });
+    const step = await this.findFinalStepForDay(campaignId, menuItemId, dateKey);
     if (!step) {
-      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng phát xuất" của món này.');
+      throw new NotFoundException('Không tìm thấy bước "Sẵn sàng xuất phát" của món này.');
     }
 
     // Reset về available để chef làm lại
@@ -614,6 +698,28 @@ export class DishStepsService {
     }
 
     return { id: updated.id, status: updated.status, menuItemName: step.menuItem.customName };
+  }
+
+  /** Chọn khâu 4 của đúng NGÀY: có dateKey thì theo đó; không thì ưu tiên hôm nay
+   *  (giờ VN), rồi tới khâu đang available, rồi khâu đầu tiên. */
+  private async findFinalStepForDay(campaignId: string, menuItemId: string, dateKey?: string) {
+    const candidates = await this.prisma.campaignDishStep.findMany({
+      where: {
+        campaignId,
+        menuItemId,
+        stepOrder: 4,
+        ...(dateKey ? { workDate: new Date(`${dateKey}T00:00:00Z`) } : {}),
+      },
+      orderBy: { workDate: 'asc' },
+      include: { menuItem: { select: { customName: true } } },
+    });
+    if (candidates.length <= 1) return candidates[0] ?? null;
+    const todayVn = new Date(Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000).toISOString().slice(0, 10);
+    return (
+      candidates.find((c) => c.workDate && this.dayKey(c.workDate) === todayVn) ??
+      candidates.find((c) => c.status === 'available') ??
+      candidates[0]
+    );
   }
 
   /**
@@ -707,101 +813,86 @@ export class DishStepsService {
     };
   }
 
+
   /**
-   * Bếp trưởng / TNV QC đánh dấu 1 khâu fail chất lượng (ngắt khẩn cấp).
-   * Hành vi:
-   *   - Set qcFailedAt + qcFailedByVolunteerId + qcFailureReason.
-   *   - Không xoá step, không ảnh hưởng step khác / món khác.
-   *   - Gửi notification khẩn cho charity owner qua NotificationsGateway.
-   * Điều kiện:
-   *   - User là chef/waiter đang assigned vào campaign.
-   *   - Step đang `available` (chưa done, chưa fail).
+   * Giờ mặc định của 4 khâu, tính từ giờ BẮT ĐẦU vận hành của chiến dịch.
+   *
+   * Nhịp lấy theo bộ giờ chuẩn của ca sáng (bắt đầu 06:00 → 08:00/09:00/10:30/11:30):
+   * sơ chế sau 2 tiếng chuẩn bị, nấu +1h, QC +1h30, sẵn sàng phát +1h. Ca chiều
+   * 12:00 → 14:00/15:00/16:30/17:30; ca tối 18:00 → 20:00/21:00/22:30/23:30 (phút
+   * lấy modulo 24h nên vắt qua nửa đêm vẫn ra HH:mm hợp lệ, luật neo ngày lo phần
+   * ngày). Đây chỉ là GỢI Ý — bếp trưởng vẫn chỉnh lại được từng khâu.
    */
-  async flagStepQualityFail(
-    campaignId: string,
-    userId: string,
-    stepId: string,
-    reason: string,
-  ) {
-    const trimmed = reason?.trim();
-    if (!trimmed) {
-      throw new BadRequestException('Vui lòng nhập lý do ngắt khẩn cấp.');
-    }
-    if (trimmed.length > 500) {
-      throw new BadRequestException('Lý do tối đa 500 ký tự.');
-    }
-
-    const { volunteer } = await this.assertAssignedVolunteer(campaignId, userId);
-
-    const step = await this.prisma.campaignDishStep.findUnique({
-      where: { id: stepId },
-      include: {
-        menuItem: {
-          select: { id: true, customName: true, recipe: { select: { name: true } } },
-        },
-      },
+  private defaultStepTimes(startTime: string): string[] {
+    const [h, m] = startTime.split(':').map(Number);
+    const startMin = (Number.isFinite(h) ? h : 6) * 60 + (Number.isFinite(m) ? m : 0);
+    const OFFSETS_MIN = [120, 180, 270, 330];
+    return OFFSETS_MIN.map((off) => {
+      const t = (startMin + off) % 1440;
+      return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
     });
-    if (!step || step.campaignId !== campaignId) {
-      throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
-    }
-    if (step.status === 'done') {
-      throw new BadRequestException('Khâu này đã hoàn thành — không thể đánh dấu fail.');
-    }
-    if (step.qcFailedAt) {
-      throw new BadRequestException('Khâu này đã được đánh dấu fail trước đó.');
-    }
-
-    const dishName =
-      step.menuItem.customName ?? step.menuItem.recipe?.name ?? 'Món chưa đặt tên';
-
-    const updated = await this.prisma.campaignDishStep.update({
-      where: { id: stepId },
-      data: {
-        qcFailedAt: new Date(),
-        qcFailedByVolunteerId: volunteer.id,
-        qcFailureReason: trimmed,
-      },
-    });
-
-    // Gửi notification khẩn cho charity owner (best-effort, không block).
-    await this.notifications.notifyCampaignOwner(campaignId, {
-      type: 'campaign.qc_failure',
-      title: `⚠️ Ngắt khẩn cấp: ${dishName}`,
-      body: `Bếp trưởng đã báo QC không đạt ở khâu "${step.stepName}". Lý do: ${trimmed}. Vui lòng xem và đưa ra phương án xử lý.`,
-      data: {
-        campaignId,
-        stepId,
-        dishId: step.menuItemId,
-        dishName,
-        stepOrder: step.stepOrder,
-        stepName: step.stepName,
-        reason: trimmed,
-        reportedByVolunteerId: volunteer.id,
-      },
-    });
-
-    return updated;
   }
 
-  /** Trả về danh sách món + 4 step kèm trạng thái hiệu lực cho 1 campaign. */
-  async getStepsForCampaign(campaignId: string, currentUserId?: string) {
+  /**
+   * Trả về danh sách món + 4 khâu (CỦA MỘT NGÀY) kèm trạng thái hiệu lực.
+   * Chiến dịch nhiều ngày: mỗi ngày một chuỗi khâu riêng — `dateKey` chọn ngày
+   * đang xem; bỏ trống thì lấy hôm nay (giờ VN) kẹp vào khoảng ngày vận hành.
+   */
+  async getStepsForCampaign(campaignId: string, currentUserId?: string, dateKey?: string) {
     const campaignTiming = await this.prisma.kitchenCampaign.findUnique({
       where: { id: campaignId },
       select: { scheduledDate: true, endDate: true, startTime: true, endTime: true },
     });
 
-    // Lấy menu items trước để check nếu cần auto-generate steps
+    const days = campaignTiming
+      ? this.campaignDayList(campaignTiming.scheduledDate, campaignTiming.endDate)
+      : [];
+    const dayKeys = days.map((d) => this.dayKey(d));
+    const todayVn = new Date(Date.now() + VN_UTC_OFFSET_HOURS * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
+    const activeDate =
+      dateKey && dayKeys.includes(dateKey)
+        ? dateKey
+        : dayKeys.length === 0
+          ? todayVn
+          : dayKeys.includes(todayVn)
+            ? todayVn
+            : todayVn < dayKeys[0]
+              ? dayKeys[0]
+              : dayKeys[dayKeys.length - 1];
+    const activeWorkDate = new Date(`${activeDate}T00:00:00Z`);
+
+    // Lấy menu items + khâu CỦA NGÀY đang xem để biết món nào cần auto-generate
     const menuItems = await this.prisma.campaignMenuItem.findMany({
       where: { campaignId },
       orderBy: { sortOrder: 'asc' },
-      select: { id: true, dishSteps: { select: { id: true } } },
+      select: {
+        id: true,
+        dishSteps: { where: { workDate: activeWorkDate }, select: { id: true } },
+      },
     });
 
-    // Nếu món nào chưa có step thì tự sinh với giờ mặc định.
-    const defaultTimes = ['08:00', '09:00', '10:30', '11:30'];
+    // Nếu món nào chưa có step thì tự sinh với giờ mặc định BÁM THEO GIỜ BẮT ĐẦU
+    // chiến dịch. Bộ giờ cứng 08:00–11:30 trước đây chỉ đúng cho ca sáng: chiến dịch
+    // tối 18:00–24:00 sẽ nhận 4 khâu buổi sáng — mà giờ nhỏ hơn startTime lại bị đẩy
+    // sang NGÀY HÔM SAU theo luật neo ngày, tức toàn bộ khâu khoá sạch trong suốt ca.
+    const defaultTimes = this.defaultStepTimes(campaignTiming?.startTime ?? '06:00');
     for (const mi of menuItems) {
       if (mi.dishSteps.length === 0) {
-        await this.ensureStepsForMenuItem(campaignId, mi.id, defaultTimes);
+        // Món đã có khâu ở ngày khác (chiến dịch cũ / vừa nới ngày kết thúc) thì
+        // nhân bản theo đúng giờ đang dùng thay vì bộ giờ mặc định.
+        const template = await this.prisma.campaignDishStep.findMany({
+          where: { menuItemId: mi.id },
+          orderBy: [{ workDate: 'asc' }, { stepOrder: 'asc' }],
+          take: FIXED_DISH_STEPS.length,
+          select: { scheduledTime: true },
+        });
+        const times =
+          template.length === FIXED_DISH_STEPS.length
+            ? template.map((t) => t.scheduledTime)
+            : defaultTimes;
+        await this.ensureStepsForMenuItem(campaignId, mi.id, times);
       }
     }
 
@@ -826,6 +917,7 @@ export class DishStepsService {
           },
         },
         dishSteps: {
+          where: { workDate: activeWorkDate },
           orderBy: { stepOrder: 'asc' },
           include: {
             completedByVolunteer: {
@@ -898,6 +990,8 @@ export class DishStepsService {
         dishes: reloaded.map(mapDish),
         cookingTeam,
         safetyLogs,
+        days: dayKeys,
+        activeDate,
       };
     }
     const earlyOk = await this.allowEarlySteps();
@@ -927,6 +1021,8 @@ export class DishStepsService {
       }),
       cookingTeam,
       safetyLogs,
+      days: dayKeys,
+      activeDate,
     };
   }
 
@@ -1005,6 +1101,9 @@ export class DishStepsService {
             role: a.role,
             // Trạng thái duyệt của chính ca này — FE phân biệt "Chờ duyệt" với ca đã nhận.
             assignmentStatus: a.status,
+            // Cần cho FE đánh dấu ca giao hàng bị vô hiệu vì trùng ca bếp: chỉ ca đã
+            // XÁC NHẬN mới khiến khung giờ đó thành bận (khớp isBusyWithCampaignShift).
+            confirmationStatus: a.confirmationStatus,
             shift: a.shift
               ? {
                   id: a.shift.id,

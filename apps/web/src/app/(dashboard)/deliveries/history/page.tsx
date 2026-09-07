@@ -643,7 +643,7 @@ function PickupDetail({ p }: { p: PickupHistoryItem }) {
       {/* Số liệu cân đối */}
       <div className="md:col-span-2">
         <p className="mb-2 text-[11px] font-bold uppercase text-neutral-400">Đối chiếu số lượng</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2">
           <KgTile label="Bếp đặt" value={p.requestedKg != null ? `${p.requestedKg} kg` : '—'} />
           <KgTile label="Thực nhận" value={`${p.receivedKg} kg`} tone="emerald" />
           <KgTile

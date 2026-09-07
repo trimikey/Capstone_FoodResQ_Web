@@ -103,6 +103,8 @@ export class AuthService {
           'Không nhận diện được khuôn mặt trong ảnh — đăng ký thất bại. Vui lòng chụp lại nơi đủ sáng, thấy rõ khuôn mặt.',
         );
       }
+      // 1 khuôn mặt = 1 tài khoản (admin bật/tắt qua FACE_DUPLICATE_CHECK).
+      await this.faceMatch.assertNotDuplicateFace(faceDescriptor);
     }
 
     // Chuẩn hoá chuỗi để giảm khoảng trắng trước khi validate/insert.
@@ -242,8 +244,16 @@ export class AuthService {
             ...(faceDescriptor ? { faceDescriptor, faceImageUrl } : {}),
           },
         });
-        await tx.volunteerSpecializationEntry.create({
-          data: { volunteerId: vp.id, specialization },
+        // Role "Giao hàng & Phục vụ" đã GỘP: đăng ký shipper hay waiter đều nhận CẢ HAI
+        // chuyên môn — một người vừa giao đơn vừa phục vụ tại bếp, không tách nữa.
+        // Đầu bếp vẫn là chuyên môn riêng (cần kỹ năng nấu).
+        const grantedSpecializations =
+          specialization === 'shipper' || specialization === 'waiter'
+            ? (['shipper', 'waiter'] as const)
+            : ([specialization] as const);
+        await tx.volunteerSpecializationEntry.createMany({
+          data: grantedSpecializations.map((sp) => ({ volunteerId: vp.id, specialization: sp })),
+          skipDuplicates: true,
         });
         if (vehiclePlateImageUrl) {
           await tx.verificationRequest.create({

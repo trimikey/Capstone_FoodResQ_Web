@@ -23,11 +23,11 @@ export default function MapTab() {
         <p className="text-sm text-neutral-500 mt-1">{listings?.length ?? 0} điểm thực phẩm đang hoạt động tại TP.HCM (dữ liệu thật).</p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 h-[600px] rounded-3xl overflow-hidden border border-neutral-200 shadow-sm">
+        <div className="lg:col-span-2 h-[320px] sm:h-[420px] lg:h-[600px] rounded-3xl overflow-hidden border border-neutral-200 shadow-sm">
           <AdminMap listings={listings ?? []} center={HCM_CENTER} selectedId={null} onSelect={() => {}} />
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-neutral-150 p-6 h-[600px] flex flex-col">
+        <div className="bg-white rounded-3xl shadow-sm border border-neutral-150 p-4 sm:p-6 max-h-[420px] lg:max-h-none lg:h-[600px] flex flex-col">
           <div className="flex justify-between items-center mb-5">
             <h3 className="font-extrabold text-lg text-neutral-900">Hoạt động gần đây</h3>
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

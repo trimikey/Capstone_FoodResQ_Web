@@ -7,7 +7,7 @@ function TabSkeleton() {
   return (
     <div className="max-w-6xl mx-auto space-y-4 animate-pulse">
       <div className="h-8 w-64 bg-neutral-100 rounded-xl" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[0, 1, 2].map((i) => <div key={i} className="h-28 bg-neutral-100 rounded-2xl" />)}
       </div>
       <div className="h-64 bg-neutral-100 rounded-2xl" />

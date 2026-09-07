@@ -28,6 +28,13 @@ const SLOT_FIELD: Record<string, { needed: keyof Prisma.KitchenCampaignUpdateInp
 };
 const ROLE_VN: Record<string, string> = { chef: 'Đầu bếp', waiter: 'Phục vụ', shipper: 'Giao hàng' };
 
+/**
+ * Các trạng thái đăng ký ĐANG chiếm một slot của chiến dịch (đã được duyệt vào ca).
+ * 'pending' chưa tăng slot; 'rejected' / 'cancelled' / 'absent' đã trả slot ở nơi khác —
+ * trừ slot cho các trạng thái này sẽ làm bộ đếm âm.
+ */
+const OCCUPYING_ASSIGNMENT_STATUSES: string[] = ['assigned', 'checked_in', 'in_progress', 'completed'];
+
 interface FrequentCancellerRow {
   id: string;
   full_name: string;
@@ -483,9 +490,26 @@ export class AdminService {
     if (!a) throw new NotFoundException('Không tìm thấy phân công.');
     const slot = SLOT_FIELD[a.role];
 
+    // CHỈ trả slot khi đăng ký này đang thực sự CHIẾM slot. Trước đây trừ vô điều kiện
+    // nên gỡ một đăng ký 'pending' (chưa từng tăng slot) hoặc một đăng ký đã 'cancelled'
+    // (đã trừ lúc TNV từ chối) làm slotsFilled âm — kéo theo mọi guard "không nhỏ hơn số
+    // đã có người" mất tác dụng và chiến dịch nhận vượt định biên.
+    const occupiesSlot = OCCUPYING_ASSIGNMENT_STATUSES.includes(a.status);
+
     await this.prisma.$transaction([
       this.prisma.campaignVolunteerAssignment.delete({ where: { id: assignmentId } }),
-      this.prisma.kitchenCampaign.update({ where: { id: a.campaignId }, data: { [slot.filled]: { decrement: 1 } } }),
+      ...(occupiesSlot
+        ? [
+            this.prisma.kitchenCampaign.update({
+              where: { id: a.campaignId },
+              data: { [slot.filled]: { decrement: 1 } },
+            }),
+            // Bộ đếm theo ca cũng phải trả về, nếu không ma trận đủ người sẽ kẹt vĩnh viễn.
+            ...(a.shiftId
+              ? [this.prisma.campaignShift.update({ where: { id: a.shiftId }, data: { slotsFilled: { decrement: 1 } } })]
+              : []),
+          ]
+        : []),
     ]);
 
     return this.getCampaignDetail(a.campaignId);
@@ -549,7 +573,10 @@ export class AdminService {
     const roleVN = ROLE_VN[a.role] ?? a.role;
 
     if (decision === 'approve') {
-      if (!['open', 'in_progress'].includes(a.campaign.status)) {
+      // 'open' là giá trị của recruitment_status, KHÔNG phải campaign_status
+      // (pending_approval | approved | in_progress | completed | cancelled) — điều kiện
+      // cũ khiến mọi chiến dịch đang tuyển đều bị chặn, nhánh duyệt của admin chết hẳn.
+      if (!['approved', 'in_progress'].includes(a.campaign.status)) {
         throw new BadRequestException('Chiến dịch không còn nhận tình nguyện viên.');
       }
       const slot = SLOT_FIELD[a.role];
@@ -588,7 +615,7 @@ export class AdminService {
   }
 
   /** Admin đổi trạng thái chiến dịch (giám sát: mở/đang chạy/hoàn tất/huỷ). */
-  async setCampaignStatus(id: string, status: string, _userId: string) {
+  async setCampaignStatus(id: string, status: string, _userId: string, rejectReason?: string) {
     const allowed = ['approved', 'cancelled'];
     if (!allowed.includes(status)) throw new BadRequestException('Trạng thái không hợp lệ.');
     const campaign = await this.prisma.kitchenCampaign.findUnique({
@@ -607,9 +634,19 @@ export class AdminService {
     const recruitmentStatus = status === 'approved'
       ? (new Date() >= campaign.recruitmentStartAt ? 'open' : 'scheduled')
       : campaign.recruitmentStatus;
+    // Lưu lý do từ chối vào `notes` (cùng pattern "Kết thúc sớm: ..." khi kết thúc
+    // sớm) — FE dựa vào prefix "Từ chối duyệt:" để phân biệt "bị từ chối" với
+    // "tự huỷ" và hiển thị lý do cho tổ chức sửa lại khi tạo chiến dịch mới.
+    const rejectionNote = status === 'cancelled'
+      ? `Từ chối duyệt: ${rejectReason?.trim() || 'quản trị viên không ghi rõ lý do'}`
+      : undefined;
     await this.prisma.kitchenCampaign.update({
       where: { id },
-      data: { status: status as never, recruitmentStatus },
+      data: {
+        status: status as never,
+        recruitmentStatus,
+        ...(rejectionNote ? { notes: rejectionNote } : {}),
+      },
     });
 
     const STATUS_VN: Record<string, string> = {
@@ -618,7 +655,9 @@ export class AdminService {
     void this.notifications.notify(campaign.charityReceiver.userId, {
       type: 'campaign',
       title: 'Cập nhật chiến dịch',
-      body: `Chiến dịch "${campaign.title}" được quản trị viên chuyển sang trạng thái: ${STATUS_VN[status] ?? status}.`,
+      body: status === 'cancelled'
+        ? `Chiến dịch "${campaign.title}" bị quản trị viên từ chối duyệt.${rejectReason?.trim() ? ` Lý do: ${rejectReason.trim()}` : ''}`
+        : `Chiến dịch "${campaign.title}" được quản trị viên chuyển sang trạng thái: ${STATUS_VN[status] ?? status}.`,
       data: { campaignId: id, status },
     });
 

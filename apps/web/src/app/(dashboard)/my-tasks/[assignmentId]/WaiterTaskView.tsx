@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import { useAdvanceTask, type MyTaskDetail } from '@/hooks/useCampaigns';
+import { useAdvanceTask, type MyTaskDetail, type PickupOrder } from '@/hooks/useCampaigns';
 import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
@@ -41,11 +42,22 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
   const lateMinutes = assignment.checkInLateMinutes ?? 0;
   const campaignRunning = campaign.status === 'in_progress';
 
-  // Khâu 4 ("Sẵn sàng phát xuất") xong = món đã có thể chia suất.
-  const readyDishes = dishes.filter((d) =>
+  // Món bị tổ chức HUỶ vì QC không đạt — không bao giờ tới lượt chia suất, tách
+  // riêng để không kẹt vĩnh viễn trong mẫu số "X/Y món sẵn sàng".
+  const isCancelled = (d: (typeof dishes)[number]) =>
+    d.steps.some((s) => s.stepOrder === 3 && s.reviewStatus === 'rejected');
+  const activeDishes = dishes.filter((d) => !isCancelled(d));
+  const cancelledDishes = dishes.filter(isCancelled);
+  // Khâu 4 ("Sẵn sàng xuất phát") xong = món đã có thể chia suất.
+  const readyDishes = activeDishes.filter((d) =>
     d.steps.some((s) => s.stepOrder === 4 && s.effectiveStatus === 'done'),
   );
   const doneDistributions = distributions.filter((d) => d.completedAt);
+  // Phục vụ và giao hàng đã gộp làm một vai trò vận hành, nên ca phục vụ cũng có thể
+  // được cử đi lấy nguyên liệu — ví dụ ca sáng đi lấy, ca chiều chia suất rồi đi phát.
+  const pickupOrders = detail.pickupOrders ?? [];
+  const isOrderDone = (o: PickupOrder) => !!o.pickup || o.delivery?.status === 'delivered';
+  const donePickups = pickupOrders.filter(isOrderDone);
 
   async function handleCheckIn() {
     try {
@@ -60,8 +72,8 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
   let step = 0;
   const nextStep = () => (step += 1);
 
-  const totalTasks = 1 + distributions.length;
-  const doneTasks = (checkedIn ? 1 : 0) + doneDistributions.length;
+  const totalTasks = 1 + pickupOrders.length + distributions.length;
+  const doneTasks = (checkedIn ? 1 : 0) + donePickups.length + doneDistributions.length;
 
   return (
     <div className="space-y-4">
@@ -136,32 +148,57 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
         }
       />
 
-      {/* 2. Ca trực */}
+      {/* 2. Ca trực — THÔNG TIN, không phải việc phải làm.
+          Trước đây gắn `done={checkedIn}` nên vừa điểm danh xong là ca trực hiện luôn
+          "Xong", như thể đã trực hết ca. Ca chỉ kết thúc khi hết giờ, không phải khi
+          bấm điểm danh. Bỏ số thứ tự luôn để khớp bộ đếm phía trên — bộ đếm chỉ tính
+          điểm danh + các đợt phát, chưa bao giờ tính dòng này. */}
       {assignment.shift && (
         <TaskItem
-          index={nextStep()}
           icon="schedule"
           title={assignment.shift.label}
           time={`${assignment.shift.startTime}–${assignment.shift.endTime}`}
-          done={checkedIn}
-          locked={!checkedIn}
-          lockedHint="Điểm danh tại bếp trước đã"
-          description="Ca trực tổ chức phân cho bạn. Có mặt đúng giờ để kịp chia suất khi bếp ra món."
-        />
+          description={
+            pickupOrders.length > 0
+              ? `Ca trực tổ chức phân cho bạn — còn ${pickupOrders.length - donePickups.length}/${pickupOrders.length} đơn nguyên liệu cần đi lấy trong ca này.`
+              : 'Ca trực tổ chức phân cho bạn. Có mặt đúng giờ để kịp chia suất khi bếp ra món.'
+          }
+        >
+          {/* Việc lấy nguyên liệu nằm NGAY TRONG thẻ ca — nó là việc của đúng ca này,
+              tách thành thẻ riêng phía dưới khiến người trực tưởng là hai đầu việc ở
+              hai thời điểm khác nhau. Cùng bố cục với màn shipper. */}
+          {pickupOrders.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-emerald-600">inventory</span>
+                <span className="text-xs font-bold text-neutral-800">
+                  Đơn nguyên liệu: {donePickups.length}/{pickupOrders.length} đã lấy
+                </span>
+              </div>
+              <Link
+                href="/deliveries"
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+              >
+                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                Quản lý đơn ở Trung tâm giao hàng
+              </Link>
+            </div>
+          )}
+        </TaskItem>
       )}
 
       {/* 3. Món sẵn sàng phát */}
+      {/* 3. Món sẵn sàng — cũng là THEO DÕI: bếp nấu, phục vụ chỉ chờ tín hiệu. */}
       <TaskItem
-        index={nextStep()}
         icon="room_service"
         title="Món sẵn sàng chia suất"
-        done={dishes.length > 0 && readyDishes.length === dishes.length}
         locked={!checkedIn}
         lockedHint="Điểm danh tại bếp trước đã"
         description={
           dishes.length === 0
             ? 'Chiến dịch chưa có món nào trong thực đơn.'
-            : `${readyDishes.length}/${dishes.length} món đã qua khâu "Sẵn sàng phát xuất" của bếp.`
+            : `${readyDishes.length}/${activeDishes.length} món đã qua khâu "Sẵn sàng xuất phát" của bếp.`
+              + (cancelledDishes.length ? ` ${cancelledDishes.length} món bị huỷ vì QC không đạt.` : '')
         }
       >
         {dishes.length > 0 && (
@@ -186,11 +223,13 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
                     {ready ? 'check_circle' : 'hourglass_top'}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-bold text-neutral-800">{d.name}</span>
+                    <span className={`block font-bold ${isCancelled(d) ? 'text-neutral-400 line-through' : 'text-neutral-800'}`}>{d.name}</span>
                     <span className="block text-neutral-500">
-                      {ready
-                        ? `Sẵn sàng phát${last?.completedAt ? ` lúc ${new Date(last.completedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}`
-                        : `Bếp đang ở khâu "${current?.stepName ?? '—'}"${current?.scheduledTime ? ` · dự kiến ${current.scheduledTime}` : ''}`}
+                      {isCancelled(d)
+                        ? 'Món đã bị huỷ — QC không đạt'
+                        : ready
+                          ? `Sẵn sàng phát${last?.completedAt ? ` lúc ${new Date(last.completedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}`
+                          : `Bếp đang ở khâu "${current?.stepName ?? '—'}"${current?.scheduledTime ? ` · dự kiến ${current.scheduledTime}` : ''}`}
                     </span>
                   </span>
                   {d.plannedServings != null && d.plannedServings > 0 && (
@@ -315,7 +354,8 @@ function TaskItem({
   action,
   children,
 }: {
-  index: number;
+  /** Bỏ trống = thẻ THÔNG TIN, không đánh số và không gắn nhãn "Xong". */
+  index?: number;
   icon: string;
   title: string;
   time?: string | null;
@@ -332,25 +372,27 @@ function TaskItem({
       <div className="flex items-start gap-3">
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            done ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
+            done && index != null ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
           }`}
         >
           <span className="material-symbols-outlined text-[20px]">
-            {done ? 'check' : locked ? 'lock' : icon}
+            {done && index != null ? 'check' : locked ? 'lock' : icon}
           </span>
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
-              Việc {index}
-            </span>
+            {index != null && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
+                Việc {index}
+              </span>
+            )}
             {time && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
                 {time}
               </span>
             )}
-            {done && (
+            {done && index != null && (
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                 Xong
               </span>

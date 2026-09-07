@@ -7,7 +7,6 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { UserRole } from '@foodresq/types';
 import PublicHeader from '@/components/home/PublicHeader';
-import ShipperOfferWatcher from '@/components/deliveries/ShipperOfferWatcher';
 import FaceEnrollmentGate from '@/components/shared/FaceEnrollmentGate';
 
 // Bottom nav (mobile) theo vai trò
@@ -97,7 +96,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex flex-col min-h-screen bg-[#fcf9f2]">
       {/* Popup nhận đơn giao toàn cục cho shipper (hiện ở mọi trang) */}
-      {user.role === UserRole.VOLUNTEER && <ShipperOfferWatcher />}
 
       {/* Cổng eKYC: tài khoản social login chưa có khuôn mặt → bắt enroll ngay,
           chặn mọi trang cho đến khi xong (BE cũng chặn đặt chỗ/nhận đơn) */}
@@ -110,8 +108,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Mobile Top Header - show for all dashboard routes */}
-      {!pathname.startsWith('/admin') && (
+      {/* Mobile Top Header — các khu /provider, /campaigns, /my-tasks có header
+          mobile RIÊNG (menu khu vực + avatar) cùng cao 64px; render thêm cái này
+          là 2 header fixed đè lên nhau, nút mở menu khu vực bấm không được. */}
+      {!pathname.startsWith('/admin')
+        && !pathname.startsWith('/provider')
+        && !pathname.startsWith('/campaigns')
+        && !pathname.startsWith('/my-tasks') && (
         <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-surface border-b border-outline-variant/20 px-4 py-3 flex items-center justify-between h-16">
           <h1 className="font-headline-md text-headline-md text-primary font-bold">FoodResQ</h1>
           <div className="flex items-center gap-md">

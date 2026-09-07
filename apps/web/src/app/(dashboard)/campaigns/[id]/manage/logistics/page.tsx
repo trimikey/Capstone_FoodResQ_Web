@@ -45,6 +45,9 @@ function shiftCovers(
   return pickupStart >= shiftStart && pickupEnd <= shiftEnd;
 }
 
+/** Vai trò VẬN HÀNH — phục vụ và giao hàng dùng chung, chỉ đầu bếp là riêng. */
+const OPS_ROLES: string[] = ['shipper', 'waiter'];
+
 const REQUEST_STATUS_LABEL: Record<string, string> = {
   pending: 'Chờ NCC duyệt',
   accepted: 'NCC đã đồng ý',
@@ -67,7 +70,12 @@ export default function LogisticsPage() {
   const requests = (sentRequests ?? []).filter(
     (r) => r.campaign?.id === c.id && r.status === 'accepted',
   );
-  const donations = c.donations ?? [];
+  // Khoản sinh ra từ đơn nguyên liệu là CÙNG MỘT LÔ với đơn đó — đã hiện đầy đủ ở thẻ
+  // trên (trạng thái chuyến + ô xác nhận số kg thực nhận). Liệt kê lại ở đây thì tổ chức
+  // thấy một lô thành hai thẻ, tưởng phải nhập số kg hai lần.
+  const allDonations = c.donations ?? [];
+  const donations = allDonations.filter((d) => !d.providerRequestId);
+  const mergedCount = allDonations.length - donations.length;
 
   // Tra tên shipper được cử đi nhận quyên góp từ danh sách phân công ca.
   const assigneeName = (assignmentId: string) =>
@@ -113,13 +121,22 @@ export default function LogisticsPage() {
           Nguyên liệu quyên góp ({donations.length})
         </h2>
         <p className="cm-manage-card-sub !mt-0 mb-3">
-          NCC hứa góp — tổ chức cử shipper có ca trùng giờ đi nhận, rồi xác nhận số
-          lượng thực nhận tại đây.
+          NCC <b>tự nguyện góp thẳng</b>, không qua đơn đặt — tổ chức cử shipper có ca
+          trùng giờ đi nhận, rồi xác nhận số lượng thực nhận tại đây.
+          {mergedCount > 0 && (
+            <>
+              {' '}
+              ({mergedCount} khoản khác đi kèm đơn nguyên liệu ở trên, xác nhận ngay trên
+              đơn đó.)
+            </>
+          )}
         </p>
 
         {donations.length === 0 ? (
           <p className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50 p-5 text-center text-xs text-neutral-500">
-            Chưa có khoản quyên góp nào cho chiến dịch này.
+            {mergedCount > 0
+              ? 'Mọi nguyên liệu của chiến dịch này đều đi kèm đơn đặt ở trên — không có khoản góp thẳng nào.'
+              : 'Chưa có khoản quyên góp nào cho chiến dịch này.'}
           </p>
         ) : (
           <div className="space-y-3">
@@ -176,7 +193,10 @@ function TransportRow({
     pickupDateKey && startStr && endStr
       ? participants.filter(
           (p) =>
-            p.role === 'shipper' &&
+            // Phục vụ và giao hàng đã gộp làm một vai trò vận hành: người trực ca sáng
+            // đi lấy nguyên liệu, ca chiều chia suất rồi đi phát. Lọc riêng 'shipper'
+            // sinh ra cảnh có người trực đúng khung mà vẫn báo "không có shipper nào".
+            OPS_ROLES.includes(p.role) &&
             ['assigned', 'checked_in', 'in_progress'].includes(p.status) &&
             p.shift &&
             p.workDate?.slice(0, 10) === pickupDateKey &&

@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -49,12 +50,6 @@ class SetStepTimesDto {
 }
 
 /** Body khi QC step bị đánh dấu fail (ngắt khẩn cấp). */
-class FlagStepFailureDto {
-  @IsString()
-  @MaxLength(500, { message: 'Lý do tối đa 500 ký tự' })
-  @IsOptional()
-  reason?: string;
-}
 
 /** Body khi tổ chức duyệt / từ chối ảnh khâu QC. */
 class ReviewQcStepDto {
@@ -69,7 +64,8 @@ class ReviewQcStepDto {
 
 @ApiTags('Campaign Dish Steps')
 @Controller('campaigns/:campaignId')
-@UseGuards(JwtAuthGuard)
+// Mọi thao tác ghi yêu cầu tài khoản đã được admin duyệt (xem ActiveAccountGuard).
+@UseGuards(JwtAuthGuard, ActiveAccountGuard)
 @ApiBearerAuth()
 export class DishStepsController {
   constructor(private readonly service: DishStepsService) {}
@@ -98,9 +94,12 @@ export class DishStepsController {
 
   /** Public (trong campaign): xem danh sách món + 4 step + trạng thái. */
   @Get('dish-steps')
-  @ApiOperation({ summary: 'Danh sách món + 4 khâu + trạng thái hiệu lực' })
-  listSteps(@Param('campaignId', ParseUUIDPipe) campaignId: string) {
-    return this.service.getStepsForCampaign(campaignId);
+  @ApiOperation({ summary: 'Danh sách món + 4 khâu + trạng thái hiệu lực (?date=YYYY-MM-DD chọn ngày của chiến dịch nhiều ngày)' })
+  listSteps(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.service.getStepsForCampaign(campaignId, undefined, date || undefined);
   }
 
   /** TNV (chef/waiter) tick "xong" 1 khâu — bắt buộc ảnh bằng chứng. */
@@ -126,13 +125,13 @@ export class DishStepsController {
 
   /**
    * Tổ chức: duyệt / từ chối ẢNH khâu QC chef đã tải lên.
-   * Duyệt xong khâu 4 "Sẵn sàng phát xuất" mới mở; từ chối thì khâu QC quay về
+   * Duyệt xong khâu 4 "Sẵn sàng xuất phát" mới mở; từ chối thì khâu QC quay về
    * available để chef chụp lại (kèm lý do bắt buộc).
    */
   @Post('dish-steps/:stepId/review')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức duyệt/từ chối ảnh khâu QC — duyệt xong mới mở "Sẵn sàng phát xuất"' })
+  @ApiOperation({ summary: 'Tổ chức duyệt/từ chối ảnh khâu QC — duyệt xong mới mở "Sẵn sàng xuất phát"' })
   reviewQcStep(
     @Param('campaignId', ParseUUIDPipe) campaignId: string,
     @Param('stepId', ParseUUIDPipe) stepId: string,
@@ -142,32 +141,6 @@ export class DishStepsController {
     return this.service.reviewQcStep(campaignId, user.id, stepId, dto.action, dto.reason);
   }
 
-  /**
-   * Chef/waiter: đánh dấu 1 khâu QC fail (ngắt khẩn cấp).
-   * - Set qcFailedAt + lý do trên step.
-   * - Gửi thông báo khẩn cho charity owner (real-time + lưu DB).
-   * - Không ảnh hưởng các khâu / món khác.
-   */
-  @Post('dish-steps/:stepId/qc-fail')
-  @UseGuards(RolesGuard, ActiveAccountGuard)
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({
-    summary:
-      'QC fail / ngắt khẩn cấp: gắn cờ qcFailed lên step + notify charity owner.',
-  })
-  flagStepFailure(
-    @Param('campaignId', ParseUUIDPipe) campaignId: string,
-    @Param('stepId', ParseUUIDPipe) stepId: string,
-    @CurrentUser() user: User,
-    @Body() dto: FlagStepFailureDto,
-  ) {
-    return this.service.flagStepQualityFail(
-      campaignId,
-      user.id,
-      stepId,
-      dto.reason ?? '',
-    );
-  }
 
   /** Chef/waiter (vai trò bất kỳ trong campaign): xem nguyên liệu đang có. */
   @Get('supplies')

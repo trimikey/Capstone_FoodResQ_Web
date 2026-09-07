@@ -151,7 +151,7 @@ export default function ManageOverviewPage() {
     if (!c) return;
     try {
       await approveDish.mutateAsync({ campaignId: c.id, menuItemId });
-      toast.success(`Đã duyệt "${name}" — món sẵn sàng phát xuất.`);
+      toast.success(`Đã duyệt "${name}" — món sẵn sàng xuất phát.`);
     } catch (e) {
       toast.error(errMsg(e, 'Duyệt thất bại'));
     }
@@ -222,7 +222,7 @@ export default function ManageOverviewPage() {
         <CampaignPlaybook variant="inline" highlightKey={playbookHighlight} />
       </section>
 
-      {/* Món ăn chờ duyệt QC — chef đã tick "Sẵn sàng phát xuất" */}
+      {/* Món ăn chờ duyệt QC — chef đã tick "Sẵn sàng xuất phát" */}
       {c.status === 'in_progress' && pendingDishApprovals.length > 0 && (
         <section className="cm-manage-card">
           <div className="flex items-center gap-2 mb-4">
@@ -232,13 +232,13 @@ export default function ManageOverviewPage() {
             </h2>
           </div>
           <p className="cm-manage-card-sub mb-4">
-            Chef đã tick &ldquo;Sẵn sàng phát xuất&rdquo;. Kiểm tra và duyệt để món được phát.
+            Chef đã tick &ldquo;Sẵn sàng xuất phát&rdquo;. Kiểm tra và duyệt để món được phát.
           </p>
           <div className="space-y-3">
             {pendingDishApprovals.map((dish) => (
               <div
                 key={dish.menuItemId}
-                className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4"
+                className="flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4"
               >
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-neutral-900 truncate">{dish.name}</p>
@@ -322,7 +322,7 @@ export default function ManageOverviewPage() {
         });
         return uniqueParticipants.length > 0 && (
         <section className="cm-manage-card !p-0">
-          <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+          <div className="px-5 pt-5 pb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="cm-manage-card-title !mb-0">
               <span className="material-symbols-outlined">pending_actions</span>
               Đăng ký gần đây ({uniqueParticipants.length})

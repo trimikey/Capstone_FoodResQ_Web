@@ -17,6 +17,36 @@ const NAV = [
   { href: '/deliveries/ratings', icon: 'star', label: 'Đánh giá' },
 ];
 
+/**
+ * Dải chip điều hướng cho màn <lg — sidebar bị ẩn ở đó mà bottom-nav chỉ có
+ * đúng /deliveries, thiếu nó là mobile mất lối vào giao sỉ / lịch sử / đánh giá.
+ */
+export function ShipperMobileNav() {
+  const pathname = usePathname();
+  return (
+    <nav
+      aria-label="Điều hướng giao hàng"
+      className="lg:hidden sticky top-16 md:top-[104px] z-30 flex gap-2 overflow-x-auto border-b border-neutral-200 bg-white px-3 py-2"
+    >
+      {NAV.map((item) => {
+        const isActive = pathname === item.href;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={isActive ? 'page' : undefined}
+            className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold transition-colors ${
+              isActive ? 'bg-emerald-700 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 /** Sidebar khu vực giao hàng của tình nguyện viên shipper. */
 export default function ShipperSidebar() {
   const pathname = usePathname();

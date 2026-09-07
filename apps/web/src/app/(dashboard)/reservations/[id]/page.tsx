@@ -6,13 +6,22 @@ import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
-import { useReservationDetails, useSubmitPickupProof } from '@/hooks/useReservation';
+import { useReservationDetails, useSubmitPickupProof, useCancelReservation } from '@/hooks/useReservation';
+import { useMe } from '@/hooks/useProfile';
+import {
+  LATE_CANCEL_PENALTY,
+  NO_SHOW_PENALTY,
+  isLateCancel,
+  penaltyOutcome,
+  scoreAfterLateCancel,
+} from '@/lib/cancel-penalty';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm, mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { haversineKm, mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
 import RateProviderModal from '@/components/reservations/RateProviderModal';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 import { ReportTargetType } from '@foodresq/types';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
@@ -78,6 +87,9 @@ export default function ReservationDetailsPage() {
   const { data: fetchedData, isLoading, isError } = useReservationDetails(id);
   const submitProofMutation = useSubmitPickupProof();
   const cancelDeliveryMutation = useCancelDeliverySearch();
+  // Huỷ HẲN đơn — khác huỷ tìm shipper (chỉ dừng tìm, đơn vẫn còn để tự đến lấy).
+  const cancelReservationMutation = useCancelReservation();
+  const { data: me } = useMe();
 
   // Mode and state simulations
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
@@ -86,7 +98,11 @@ export default function ReservationDetailsPage() {
   const [showProof, setShowProof] = useState(false);
   const [proofMode, setProofMode] = useState<CaptureMode>('face');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  // Chat THẬT theo đơn (lưu DB): mỗi người một CỬA SỔ riêng, mở song song được.
+  const [chatProviderOpen, setChatProviderOpen] = useState(false);
+  const [chatShipperOpen, setChatShipperOpen] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showDropOrder, setShowDropOrder] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState(
     isMock
@@ -242,6 +258,24 @@ export default function ReservationDetailsPage() {
     setDeliveryMethod('pickup');
   }, [isMock, deliveryId, cancelDeliveryMutation]);
 
+  /**
+   * Huỷ HẲN đơn — trả suất về kho, khác hẳn "huỷ tìm tình nguyện viên" vốn chỉ dừng
+   * tìm shipper và giữ đơn lại để tự đến lấy. Backend đóng luôn delivery và thu hồi
+   * shipper nếu đã có người nhận.
+   */
+  const confirmDropOrder = useCallback(async () => {
+    try {
+      await cancelReservationMutation.mutateAsync({ id });
+      toast.success('Đã huỷ đơn. Suất ăn được trả lại cho người khác đặt.');
+      setShowDropOrder(false);
+      router.push('/reservations');
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message ?? 'Huỷ đơn thất bại';
+      toast.error(msg);
+    }
+  }, [cancelReservationMutation, id, router]);
+
   const fmtCountdown = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -274,6 +308,11 @@ export default function ReservationDetailsPage() {
   // nào để quét, phải ẩn panel QR thay vì để nó quay "đang chờ TNV quét mã".
   // Kèm cả lúc vừa hết giờ tìm TNV: BE huỷ đơn qua cron 30s nên có khoảng trễ, nếu
   // không tính vào đây thì thẻ trái báo "không tìm được TNV" mà thẻ phải vẫn mời quét mã.
+  // Đơn THỰC SỰ đã đóng (server đã chốt trạng thái) — khác với `isOrderClosed` vốn
+  // tính cả lúc vừa hết giờ tìm TNV mà cron chưa kịp huỷ. Ở khoảnh khắc đó người dùng
+  // VẪN chuyển sang tự đến lấy được, nên không được coi là đã đóng hẳn.
+  const isReservationClosed =
+    !isMock && ['cancelled', 'expired', 'no_show'].includes(liveStatus ?? '');
   const isOrderClosed = !isMock && (
     ['cancelled', 'expired', 'no_show'].includes(liveStatus ?? '')
     || (countdownExpired && realDeliveryStatus === 'pending_assignment')
@@ -460,12 +499,12 @@ export default function ReservationDetailsPage() {
     <div className="min-h-screen bg-neutral-50 pb-20">
       {/* Top Breadcrumb Navigation */}
       <div className="bg-white border-b border-neutral-200 py-3 px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-xs text-xs font-medium text-neutral-500">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-xs text-xs font-medium text-neutral-500">
           <Link href="/listings" className="hover:text-primary transition-colors">Tìm thực phẩm</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
           <Link href="/reservations" className="hover:text-primary transition-colors">Đơn hàng của tôi</Link>
           <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-neutral-800 font-semibold">{reservation.listing.title}</span>
+          <span className="min-w-0 max-w-full truncate text-neutral-800 font-semibold">{reservation.listing.title}</span>
         </div>
       </div>
 
@@ -539,7 +578,7 @@ export default function ReservationDetailsPage() {
                   <div className="absolute top-[9px] left-0 right-0 h-1 bg-neutral-100 rounded-full z-0">
                     <div
                       className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                      style={{ width: `${((useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2)) / 3) * 100}%` }}
+                      style={{ width: isReservationClosed ? '0%' : `${((useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2)) / 3) * 100}%` }}
                     />
                   </div>
 
@@ -551,7 +590,11 @@ export default function ReservationDetailsPage() {
                       { label: 'Đang giao', desc: 'Đang vận chuyển' },
                       { label: 'Hoàn tất', desc: 'Giao thành công' }
                     ].map((step, idx) => {
-                      const activeIdx = useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2);
+                      // Đơn đã đóng: chỉ giữ bước "Đã nhận" (đơn từng được tạo), các bước
+                      // sau để xám — tô xanh sẽ trông như chuyến giao vẫn đang chạy.
+                      const activeIdx = isReservationClosed
+                        ? 0
+                        : useRealDelivery ? realDeliveryStep! : (currentStep === 2 ? 3 : 2);
                       const isCompleted = idx <= activeIdx;
                       return (
                         <div key={idx} className="flex flex-col items-center">
@@ -648,7 +691,7 @@ export default function ReservationDetailsPage() {
                     className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-mono font-bold tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 transition-colors max-w-full"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                    <span>{reservation.qrToken.slice(-8).toUpperCase()}</span>
+                    <span>{pickupCodeFromQrToken(reservation.qrToken)}</span>
                   </button>
                 )}
 
@@ -686,7 +729,26 @@ export default function ReservationDetailsPage() {
               )}
 
               {/* Volunteer Shipper Details Card */}
-              {useRealDelivery && !realShipper ? (
+              {/* Đơn đã huỷ/hết hạn mà chưa từng có TNV nhận → KHÔNG quay spinner "đang
+                  tìm" nữa. Trước đây chỉ tắt khi chuyến giao bị cancelled, còn trường hợp
+                  chuyến giao FAILED (hết 4m30 không ai nhận) rồi đơn mới bị huỷ thì panel
+                  vẫn chạy, mâu thuẫn với thẻ "Đơn đã huỷ" ngay bên cạnh. */}
+              {isReservationClosed && !realShipper ? (
+                <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-neutral-400 text-[24px]">person_off</span>
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-neutral-800">Không có tình nguyện viên nhận đơn</h5>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        Chuyến giao đã kết thúc. Bạn có thể đặt lại suất ăn khác.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : useRealDelivery && !realShipper ? (
                 /* Đơn thật chưa có tình nguyện viên nhận → không hiện shipper giả */
                 <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
                   <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Người vận chuyển</h4>
@@ -700,8 +762,14 @@ export default function ReservationDetailsPage() {
                     </div>
                     <div>
                       <h5 className="font-bold text-neutral-800">
-                        {countdownExpired ? 'Không tìm được TNV' : 'Đang tìm tình nguyện viên…'}
+                        {countdownExpired ? 'Không tìm được TNV' : 'Đang chờ tình nguyện viên nhận đơn…'}
                       </h5>
+                      {(tracking as { deliveryScheduledAt?: string | null } | undefined)?.deliveryScheduledAt && (
+                        <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+                          <span className="material-symbols-outlined text-[12px]">schedule</span>
+                          Hẹn giao {new Date((tracking as { deliveryScheduledAt?: string }).deliveryScheduledAt!).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                        </p>
+                      )}
                       <p className="text-xs text-neutral-500 mt-0.5">
                         {countdownExpired
                           ? 'Hết thời gian chờ. Bạn có thể đến lấy trực tiếp.'
@@ -739,6 +807,22 @@ export default function ReservationDetailsPage() {
                       <p className="text-[10px] text-neutral-400 text-center mt-1.5">
                         Sau khi hủy, bạn vẫn có thể đến lấy trực tiếp
                       </p>
+                    </div>
+                  )}
+
+                  {/* Huỷ HẲN đơn. Tách riêng khỏi "huỷ tìm tình nguyện viên" vì hai việc
+                      khác hẳn nhau: huỷ tìm thì đơn còn nguyên và phải tự đi lấy, còn cái
+                      này mới là không lấy nữa. Hiện với mọi đơn còn 'confirmed' — kể cả
+                      đơn tự đến lấy hoặc đã có shipper nhận (backend chặn khi đã lấy hàng). */}
+                  {liveStatus === 'confirmed' && (
+                    <div className="mt-3 pt-3 border-t border-neutral-100">
+                      <button
+                        onClick={() => setShowDropOrder(true)}
+                        className="w-full py-2.5 border border-rose-200 hover:bg-rose-50 rounded-xl text-xs font-bold text-rose-600 transition-all flex items-center justify-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                        Huỷ đơn — không lấy nữa
+                      </button>
                     </div>
                   )}
 
@@ -780,7 +864,17 @@ export default function ReservationDetailsPage() {
                           <div>
                             <h5 className="font-bold text-neutral-800">{shipperName}</h5>
                             {useRealDelivery ? (
-                              <p className="text-xs text-neutral-500 mt-0.5">Tình nguyện viên FoodResQ</p>
+                              <p className="text-xs text-neutral-500 mt-0.5">
+                                Tình nguyện viên FoodResQ
+                                {shipperPhone && (
+                                  <>
+                                    {' · '}
+                                    <a href={`tel:${shipperPhone}`} className="font-semibold text-emerald-700 hover:underline">
+                                      {shipperPhone}
+                                    </a>
+                                  </>
+                                )}
+                              </p>
                             ) : (
                               <div className="flex items-center gap-1.5 mt-0.5 text-xs text-neutral-500 font-medium">
                                 <span className="material-symbols-outlined text-[14px] text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
@@ -802,7 +896,9 @@ export default function ReservationDetailsPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => setIsChatOpen(true)}
+                            /* Đơn thật → mở chat THẬT theo đơn (shipper cùng phòng);
+                               đơn demo vẫn dùng drawer chat mock bên dưới. */
+                            onClick={() => (useRealDelivery ? setChatShipperOpen(true) : setIsChatOpen(true))}
                             className="w-10 h-10 rounded-full border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center text-neutral-600 transition-colors relative"
                             title="Nhắn tin"
                           >
@@ -867,8 +963,11 @@ export default function ReservationDetailsPage() {
                       {reservation.quantity} {UNIT_LABEL[reservation.listing.quantityUnit as QuantityUnit] ?? reservation.listing.quantityUnit ?? 'phần'}
                     </span>
                   </div>
+                  {/* Mã THAM CHIẾU đơn (dùng khi liên hệ hỗ trợ) — KHÁC mã nhận hàng ở
+                      khối QR phía trên. Ghi rõ để người dùng không đọc nhầm mã này cho
+                      cửa hàng nhập, vì backend đối chiếu theo đuôi mã QR. */}
                   <div className="flex items-center justify-between text-neutral-500">
-                    <span>Mã đơn hàng:</span>
+                    <span>Mã đơn (tra cứu):</span>
                     <span className="font-bold text-neutral-800">{reservation.listing.orderId || `#${reservation.id.slice(0, 8).toUpperCase()}`}</span>
                   </div>
                   <div className="flex items-center justify-between text-neutral-500">
@@ -936,7 +1035,7 @@ export default function ReservationDetailsPage() {
                   </div>
 
                   {/* Camera Screen view */}
-                  <div className="bg-neutral-900 aspect-video relative flex items-center justify-center group overflow-hidden">
+                  <div className="bg-neutral-900 min-h-[420px] sm:min-h-0 sm:aspect-video relative flex items-center justify-center group overflow-hidden">
                     
                     {isOrderClosed ? (
                       /* Đơn đã đóng (không đến / huỷ / hết hạn) — KHÔNG hiện mã nữa,
@@ -1010,7 +1109,7 @@ export default function ReservationDetailsPage() {
                         }} />
 
                         {/* Scanner square overlay */}
-                        <div className="relative w-64 h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
+                        <div className="relative w-48 h-48 sm:w-64 sm:h-64 border-2 border-emerald-500 rounded-2xl z-10 flex items-center justify-center shadow-[0_0_80px_rgba(16,185,129,0.3)]">
                           {/* Pulsing scanning red line */}
                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 animate-bounce" />
                           
@@ -1208,9 +1307,29 @@ export default function ReservationDetailsPage() {
                       <p className="text-neutral-400 text-[10px]">Giờ mở cửa</p>
                       <p className="font-bold text-emerald-700">08:00 - 21:00</p>
                     </div>
+                    {reservation.listing.provider.contactPhone && (
+                      <div>
+                        <p className="text-neutral-400 text-[10px]">Số điện thoại</p>
+                        <a
+                          href={`tel:${reservation.listing.provider.contactPhone}`}
+                          className="font-bold text-emerald-700 hover:underline"
+                        >
+                          {reservation.listing.provider.contactPhone}
+                        </a>
+                      </div>
+                    )}
                   </div>
 
-                  <button 
+                  {!isMock && (
+                    <button
+                      onClick={() => setChatProviderOpen(true)}
+                      className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">forum</span>
+                      Nhắn tin với cửa hàng
+                    </button>
+                  )}
+                  <button
                     onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reservation.listing.provider.address)}`, '_blank')}
                     className="w-full py-2.5 border border-emerald-700 hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
                   >
@@ -1228,7 +1347,7 @@ export default function ReservationDetailsPage() {
       </div>
 
       {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+      <div className="fixed bottom-[5.5rem] md:bottom-6 right-4 md:right-6 z-40 flex flex-col gap-2 items-end">
         {/* Báo cáo vấn đề (chỉ đơn thật, có ID thật) */}
         {!isMock && (
           <button
@@ -1260,6 +1379,26 @@ export default function ReservationDetailsPage() {
           listingTitle={reservation.listing.title}
           onClose={() => setReportOpen(false)}
         />
+      )}
+
+      {/* Chat THẬT với cửa hàng — lưu DB, cửa hàng thấy cùng cuộc trò chuyện */}
+      {!isMock && (
+        <>
+          <ReservationChatPanel
+            reservationId={String(reservation.id)}
+            open={chatProviderOpen}
+            partner={{ role: 'provider' }}
+            offsetIndex={0}
+            onClose={() => setChatProviderOpen(false)}
+          />
+          <ReservationChatPanel
+            reservationId={String(reservation.id)}
+            open={chatShipperOpen}
+            partner={{ role: 'shipper' }}
+            offsetIndex={chatProviderOpen ? 1 : 0}
+            onClose={() => setChatShipperOpen(false)}
+          />
+        </>
       )}
 
       {/* ========================================================================= */}
@@ -1402,7 +1541,8 @@ export default function ReservationDetailsPage() {
             <div className="overflow-y-auto flex-1 min-h-0">
               <div className="px-5 py-4 space-y-3">
                 <p className="text-sm text-neutral-600 leading-relaxed">
-                  Bạn muốn tiếp tục đợi tình nguyện viên giao hàng hay tự đến địa chỉ nhận?
+                  Bạn muốn tiếp tục đợi tình nguyện viên giao hàng, tự đến địa chỉ nhận, hay bỏ
+                  luôn đơn này?
                 </p>
                 <button
                   onClick={() => setShowCancelConfirm(false)}
@@ -1428,11 +1568,108 @@ export default function ReservationDetailsPage() {
                     </>
                   )}
                 </button>
+                {/* Lựa chọn thứ ba: KHÔNG lấy nữa. Trước đây popup chỉ có "đợi tiếp" và
+                    "tự đến lấy" nên người không lấy được nữa buộc phải bỏ mặc đơn tới lúc
+                    bị đánh no_show (−20 điểm) — nặng hơn huỷ chủ động rất nhiều. */}
+                <button
+                  onClick={() => { setShowCancelConfirm(false); setShowDropOrder(true); }}
+                  className="w-full py-3 bg-white border border-rose-200 text-rose-600 rounded-xl text-sm font-bold hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">cancel</span>
+                  Huỷ luôn đơn này
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Xác nhận huỷ HẲN đơn — kèm cảnh báo điểm uy tín đúng như ở danh sách đơn,
+          dùng chung một module luật để hai màn hình không báo hai con số khác nhau. */}
+      {showDropOrder && (() => {
+        const endTime = (listing as { pickupEndTime?: string } | null)?.pickupEndTime;
+        // Còn đang tìm tình nguyện viên → huỷ không bị phạt, dù sát giờ đóng nhận.
+        const late = endTime
+          ? isLateCancel(endTime, realDeliveryStatus === 'pending_assignment')
+          : false;
+        const score = me?.trustScore;
+        const after = scoreAfterLateCancel(score);
+        const outcome = after != null && late ? penaltyOutcome(after) : null;
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white overflow-hidden shadow-xl">
+              <div className="flex items-center gap-3 px-5 py-4 border-b border-neutral-100">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-100">
+                  <span className="material-symbols-outlined text-rose-600 text-[22px]">cancel</span>
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-neutral-900">Huỷ đơn hàng?</h3>
+                  <p className="truncate text-xs text-neutral-500">{reservation?.listing?.title}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-5 py-4">
+                {late ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
+                    <div className="text-sm leading-relaxed">
+                      <p className="font-bold text-rose-700">
+                        Huỷ lúc này là HUỶ TRỄ — bạn bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
+                        {score != null ? ` (${score} → ${after})` : ''}.
+                      </p>
+                      {outcome && (
+                        <p className={`mt-1 font-semibold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
+                          ⚠ {outcome.text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                    {/* Đơn đang tìm shipper KHÔNG đi qua cron no_show (cron đó chỉ áp cho
+                        đơn tự đến lấy) — doạ trừ 20 điểm ở đây là sai luật. */}
+                    <p className="text-sm leading-relaxed text-neutral-600">
+                      {realDeliveryStatus === 'pending_assignment' ? (
+                        <>
+                          Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu bạn không huỷ, hệ thống cũng
+                          tự huỷ khi hết hạn tìm người giao và cũng không trừ điểm — huỷ sớm chỉ
+                          giúp trả suất ăn lại cho người khác nhanh hơn.
+                        </>
+                      ) : (
+                        <>
+                          Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu cứ để đó mà không đến
+                          nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-neutral-500">
+                  Suất ăn sẽ được trả lại cho người khác đặt. Nếu đang có tình nguyện viên nhận
+                  đơn, chuyến giao cũng được đóng lại.
+                </p>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setShowDropOrder(false)}
+                    className="flex-1 rounded-xl border border-neutral-200 py-2.5 text-sm font-bold text-neutral-600 hover:bg-neutral-50"
+                  >
+                    Không huỷ
+                  </button>
+                  <button
+                    onClick={confirmDropOrder}
+                    disabled={cancelReservationMutation.isPending}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    {cancelReservationMutation.isPending ? 'Đang huỷ…' : 'Xác nhận huỷ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Đánh giá sau khi nhận hàng thành công — có thể bỏ qua.
           Đơn có TNV giao thì chấm cả hai bên; đơn tự đến lấy chỉ chấm cửa hàng. */}

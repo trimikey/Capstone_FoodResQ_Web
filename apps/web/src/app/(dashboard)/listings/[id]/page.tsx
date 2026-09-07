@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings, type ListingDetail } from '@/hooks/useListings';
@@ -8,7 +9,7 @@ import { useCreateReservation } from '@/hooks/useReservation';
 import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
-import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import { mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { usePickupWindow } from '@/hooks/usePickupWindow';
 import {
@@ -20,9 +21,35 @@ import {
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
+import { reverseGeocode } from '@/lib/geocode';
+
+// Bản đồ chỉ tải khi người dùng thực sự mở phần chọn điểm giao (Leaflet cần window).
+const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), { ssr: false });
 
 interface Props {
   params: Promise<{ id: string }>;
+}
+
+/** 480 → "08:00". Khung giờ đặt hàng lưu bằng số phút từ 00:00 giờ VN. */
+function minuteLabel(min: number): string {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Mốc thời gian → chuỗi cho `<input type="datetime-local">`, tính theo GIỜ VIỆT NAM.
+ *
+ * Dịch +7h rồi đọc phần UTC chính là đồng hồ treo tường VN. Bắt buộc phải khớp cách
+ * submit (`${value}:00+07:00`), nếu không người dùng ở múi giờ khác sẽ thấy min/max
+ * lệch vài tiếng so với giờ họ thật sự chọn được.
+ */
+function toVnInputValue(d: Date | string | number): string {
+  return new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 16);
+}
+
+/** Số phút từ 00:00 của chuỗi datetime-local (vốn đã là giờ VN). */
+function minuteOfInput(value: string): number | null {
+  const m = /T(\d{2}):(\d{2})/.exec(value);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
 const CATEGORIES: Record<string, string> = {
@@ -79,6 +106,37 @@ export default function ListingDetailPage({ params }: Props) {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  // Điểm giao: mặc định là địa chỉ trong hồ sơ, nhưng người khó di chuyển có thể
+  // đang nằm viện / ở nhà người thân nên cho phép ghim một vị trí khác cho đơn này.
+  const [useCustomDestination, setUseCustomDestination] = useState(false);
+  const [destAddress, setDestAddress] = useState('');
+  const [destLng, setDestLng] = useState<number | null>(null);
+  const [destLat, setDestLat] = useState<number | null>(null);
+  const [locatingDest, setLocatingDest] = useState(false);
+  // Hẹn giờ giao: '' = giao ngay khi có shipper nhận. Giá trị theo datetime-local (giờ VN).
+  const [scheduledTime, setScheduledTime] = useState('');
+  // Hồ sơ đăng ký khi reverse-geocode thất bại sẽ lưu TOẠ ĐỘ THÔ vào cột địa chỉ
+  // ("10.847932, 106.832735") — hiển thị vậy thì người dùng lẫn shipper đều không đọc
+  // được. Resolve lại thành tên địa điểm một lần khi mở form.
+  const [profileAddressLabel, setProfileAddressLabel] = useState<string | null>(null);
+  const looksLikeCoords = (v?: string | null) =>
+    !!v && /^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(v.trim());
+  useEffect(() => {
+    const addr = me?.receiver?.address;
+    const lat = me?.receiver?.lat;
+    const lng = me?.receiver?.lng;
+    if (deliveryMethod !== 'delivery' || !looksLikeCoords(addr) || lat == null || lng == null) return;
+    let mounted = true;
+    void reverseGeocode(lat, lng).then((name) => {
+      if (mounted && name) setProfileAddressLabel(name);
+    });
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryMethod, me?.receiver?.address, me?.receiver?.lat, me?.receiver?.lng]);
+  const profileAddressDisplay =
+    (looksLikeCoords(me?.receiver?.address) ? profileAddressLabel : me?.receiver?.address)
+    ?? me?.receiver?.address
+    ?? null;
   const [reservationResult, setReservationResult] = useState<{
     reservationId: string;
     qrToken: string;
@@ -153,6 +211,40 @@ export default function ListingDetailPage({ params }: Props) {
       toast.error('Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) trước khi đặt đơn giao tận nơi.');
       return;
     }
+    // Ghim điểm giao khác thì phải đủ cả toạ độ lẫn mô tả địa chỉ — TNV cần địa chỉ
+    // chữ để hỏi đường, toạ độ để điều hướng.
+    const wantsCustomDest = deliveryMethod === 'delivery' && useCustomDestination;
+    if (wantsCustomDest && (destLng == null || destLat == null)) {
+      toast.error('Vui lòng chọn điểm giao trên bản đồ.');
+      return;
+    }
+    if (wantsCustomDest && destAddress.trim().length < 5) {
+      toast.error('Vui lòng mô tả địa chỉ điểm giao (số nhà, tên bệnh viện, khoa/phòng…).');
+      return;
+    }
+    // Hẹn giờ: shipper cần thời gian di chuyển và tìm đơn → tối thiểu 30 phút nữa.
+    if (deliveryMethod === 'delivery' && scheduledTime) {
+      const at = new Date(`${scheduledTime}:00+07:00`);
+      if (!Number.isFinite(at.getTime()) || at.getTime() < Date.now() + 30 * 60_000) {
+        toast.error('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
+        return;
+      }
+      // Quá hạn nhận của tin thì shipper tới nơi cũng không còn hàng để lấy.
+      if (at.getTime() > new Date(listing.pickupEndTime).getTime()) {
+        toast.error(
+          `Giờ hẹn giao vượt quá hạn nhận hàng của tin (${formatVietnamDateTime(listing.pickupEndTime)}).`,
+        );
+        return;
+      }
+      // Chặn ngay tại đây thay vì để backend trả lỗi: người dùng chọn 2h sáng rồi mới
+      // biết sai thì phải làm lại từ đầu cả form (kể cả ảnh bằng chứng đã tải lên).
+      const minute = minuteOfInput(scheduledTime);
+      if (orderWindow && minute != null
+        && (minute < orderWindow.openMinute || minute >= orderWindow.closeMinute)) {
+        toast.error(`Giờ hẹn giao phải nằm trong khung ${windowLabel}.`);
+        return;
+      }
+    }
     try {
       let deliveryEvidenceUrl: string | undefined;
       if (deliveryMethod === 'delivery' && evidenceFile) {
@@ -173,6 +265,16 @@ export default function ListingDetailPage({ params }: Props) {
         quantity,
         requestDelivery: deliveryMethod === 'delivery',
         deliveryEvidenceUrl,
+        ...(wantsCustomDest
+          ? { deliveryLng: destLng!, deliveryLat: destLat!, deliveryAddress: destAddress.trim() }
+          : deliveryMethod === 'delivery'
+              && looksLikeCoords(me?.receiver?.address)
+              && profileAddressLabel
+            ? { deliveryAddress: profileAddressLabel }
+            : {}),
+        ...(deliveryMethod === 'delivery' && scheduledTime
+          ? { deliveryScheduledAt: `${scheduledTime}:00+07:00` }
+          : {}),
       });
       setReservationResult({
         reservationId: res.reservationId,
@@ -197,6 +299,20 @@ export default function ListingDetailPage({ params }: Props) {
 
   // Luôn hiển thị giờ Việt Nam, kể cả khi người nhận mở app ở múi giờ khác.
   const fmtTime = formatVietnamTime;
+  const fmtVnDate = formatVietnamDate;
+
+  // Khung giờ trong ngày còn đặt được — backend đã tính sẵn phần giao giữa giờ sàn và
+  // giờ cửa hàng, FE chỉ hiển thị và khoá ô chọn giờ theo đúng con số đó.
+  const orderWindow = listing.orderWindow;
+  const windowLabel = orderWindow
+    ? `${minuteLabel(orderWindow.openMinute)}–${minuteLabel(orderWindow.closeMinute)}`
+    : '';
+  // Sớm nhất: 30 phút nữa (shipper cần thời gian di chuyển) và không sớm hơn giờ tin
+  // mở nhận. Muộn nhất: hạn nhận hàng của tin.
+  const scheduleMin = toVnInputValue(
+    Math.max(pickupWindow.now + 30 * 60_000, new Date(listing.pickupStartTime).getTime()),
+  );
+  const scheduleMax = toVnInputValue(listing.pickupEndTime);
 
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
@@ -233,9 +349,15 @@ export default function ListingDetailPage({ params }: Props) {
                   : fallbackImage(listing.category)
               }
               alt={listing.title}
+              loading="lazy"
+              onError={(e) => {
+                // Ảnh /uploads của máy khác 404 → rơi về ảnh theo danh mục thay vì icon vỡ.
+                const fb = fallbackImage(listing.category);
+                if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+              }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
-            <div className="absolute top-4 left-4 flex gap-2">
+            <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-1.5">
               <span className="bg-black/50 backdrop-blur-md text-white font-label-lg text-xs px-3 py-1.5 rounded-full">
                 Còn {listing.quantityRemaining} {UNIT_LABEL[listing.quantityUnit as QuantityUnit] ?? listing.quantityUnit}
               </span>
@@ -251,7 +373,7 @@ export default function ListingDetailPage({ params }: Props) {
           </div>
 
           {/* Three Selling points pills */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 sm:gap-4">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 p-4 bg-surface-container-low rounded-2xl border border-outline-variant/15 text-center sm:text-left transition-colors hover:bg-surface-container-high/40">
               <span className="material-symbols-outlined text-primary text-[28px]">inventory_2</span>
               <div>
@@ -352,14 +474,23 @@ export default function ListingDetailPage({ params }: Props) {
                 <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">schedule</span>
                 <div>
                   <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Giờ nhận hàng</p>
+                  {/* Trước đây chỉ in giờ, không có ngày — hai mốc cùng giờ trông như
+                      "20:49 – 20:49" và không ai biết tin còn hiệu lực tới ngày nào. */}
                   <p className="font-label-sm text-xs text-on-surface font-semibold">
-                    {fmtTime(listing.pickupStartTime)} – {fmtTime(listing.pickupEndTime)}
+                    {fmtVnDate(listing.pickupStartTime)} {fmtTime(listing.pickupStartTime)}
+                    {' → '}
+                    {fmtVnDate(listing.pickupEndTime)} {fmtTime(listing.pickupEndTime)}
                     {(notYetOpen || windowClosed) && (
                       <span className="ml-1 text-error font-semibold">
                         ({notYetOpen ? 'chưa mở' : 'đã đóng'})
                       </span>
                     )}
                   </p>
+                  {orderWindow && (
+                    <p className="text-[11px] text-on-surface-variant">
+                      Mỗi ngày chỉ đặt được {windowLabel}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -375,6 +506,38 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="p-4 bg-white rounded-3xl border border-outline-variant/20 shadow-md">
                   <QRCodeSVG value={reservationResult.qrToken} size={220} level="H" includeMargin />
                 </div>
+
+                {/* Mã chữ dự phòng: camera hỏng / QR mờ thì đọc mã này cho nhà cung cấp
+                    nhập tay. PHẢI là đuôi qrToken — backend đối chiếu theo đuôi token,
+                    đọc nhầm "mã đơn hàng" (#xxxxx lấy từ id đơn) sẽ báo mã không hợp lệ. */}
+                {pickupCodeFromQrToken(reservationResult.qrToken) && (
+                  <div className="w-full rounded-2xl border border-outline-variant/20 bg-surface-container-high/40 p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                      Hoặc đọc mã nhận hàng
+                    </p>
+                    <div className="mt-1.5 flex items-center justify-center gap-2">
+                      <span className="font-mono text-2xl font-extrabold tracking-[0.2em] text-on-surface">
+                        {pickupCodeFromQrToken(reservationResult.qrToken)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(
+                            (pickupCodeFromQrToken(reservationResult.qrToken) ?? '').replace(/\s/g, ''),
+                          );
+                          toast.success('Đã sao chép mã nhận hàng.');
+                        }}
+                        className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container"
+                        aria-label="Sao chép mã"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                      </button>
+                    </div>
+                    <p className="mt-1 text-[11px] text-on-surface-variant/80">
+                      Dùng khi cửa hàng không quét được mã QR.
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <p className="font-label-lg text-sm text-on-surface font-bold">Trình mã QR cho nhà cung cấp</p>
@@ -411,7 +574,7 @@ export default function ListingDetailPage({ params }: Props) {
                 <div className="w-full bg-surface-container-high/60 text-on-surface-variant py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm text-center">
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                   {notYetOpen
-                    ? `Chưa đến giờ nhận hàng — đặt được từ ${fmtTime(listing.pickupStartTime)} đến ${fmtTime(listing.pickupEndTime)}`
+                    ? 'Chưa đến giờ nhận hàng — vui lòng quay lại sau'
                     : `Đã quá giờ nhận hàng (đến ${fmtTime(listing.pickupEndTime)})`}
                 </div>
               </div>
@@ -557,6 +720,174 @@ export default function ListingDetailPage({ params }: Props) {
                         </div>
                       </div>
                     )}
+
+                    {/* Điểm giao: mặc định lấy địa chỉ hồ sơ, nhưng người khó di chuyển
+                        thường đang ở bệnh viện / nhà người thân nên cho ghim chỗ khác. */}
+                    {deliveryMethod === 'delivery' && (
+                      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-high/30 p-4 space-y-3">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                          <span className="material-symbols-outlined text-[16px]">pin_drop</span>
+                          Điểm giao hàng
+                        </p>
+
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="destination-mode"
+                            checked={!useCustomDestination}
+                            onChange={() => setUseCustomDestination(false)}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-on-surface">Địa chỉ trong hồ sơ</span>
+                            <span className="block truncate text-[11px] text-on-surface-variant">
+                              {profileAddressDisplay || 'Hồ sơ chưa có địa chỉ — hãy chọn trên bản đồ'}
+                            </span>
+                          </span>
+                        </label>
+
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="destination-mode"
+                            checked={useCustomDestination}
+                            onChange={() => {
+                              setUseCustomDestination(true);
+                              // Mở bản đồ ở địa chỉ hồ sơ nếu có, không thì mặc định TP.HCM.
+                              if (destLng == null || destLat == null) {
+                                setDestLng(me?.receiver?.lng ?? 106.6297);
+                                setDestLat(me?.receiver?.lat ?? 10.8231);
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-on-surface">Giao tới địa điểm khác</span>
+                            <span className="block text-[11px] text-on-surface-variant">
+                              Đang nằm viện, ở nhà người thân… — ghim đúng chỗ để tình nguyện viên tìm được
+                            </span>
+                          </span>
+                        </label>
+
+                        {useCustomDestination && (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              disabled={locatingDest}
+                              onClick={() => {
+                                if (typeof navigator === 'undefined' || !navigator.geolocation) {
+                                  toast.error('Trình duyệt này không hỗ trợ định vị.');
+                                  return;
+                                }
+                                setLocatingDest(true);
+                                navigator.geolocation.getCurrentPosition(
+                                  async ({ coords }) => {
+                                    setDestLng(coords.longitude);
+                                    setDestLat(coords.latitude);
+                                    const found = await reverseGeocode(coords.latitude, coords.longitude);
+                                    if (found) setDestAddress(found);
+                                    setLocatingDest(false);
+                                    toast.success('Đã ghim vị trí hiện tại của bạn.');
+                                  },
+                                  () => {
+                                    setLocatingDest(false);
+                                    toast.error('Không lấy được vị trí. Hãy ghim thủ công trên bản đồ.');
+                                  },
+                                  { enableHighAccuracy: true, timeout: 12_000 },
+                                );
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+                            >
+                              <span className={`material-symbols-outlined text-[16px] ${locatingDest ? 'animate-spin' : ''}`}>
+                                {locatingDest ? 'progress_activity' : 'my_location'}
+                              </span>
+                              {locatingDest ? 'Đang xác định…' : 'Dùng vị trí hiện tại'}
+                            </button>
+
+                            <input
+                              value={destAddress}
+                              onChange={(e) => setDestAddress(e.target.value)}
+                              placeholder="Ví dụ: BV Đa khoa Khánh Hoà, Khoa Nội, giường 12"
+                              maxLength={500}
+                              className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                            />
+                            <p className="text-[11px] text-on-surface-variant">
+                              Bấm hoặc kéo ghim trên bản đồ để chỉnh chính xác vị trí.
+                            </p>
+                            <div className="h-56 overflow-hidden rounded-xl border border-outline-variant/30">
+                              <LocationPicker
+                                lng={destLng ?? 106.6297}
+                                lat={destLat ?? 10.8231}
+                                address={destAddress}
+                                onPick={(lng, lat, addr) => {
+                                  setDestLng(lng);
+                                  setDestLat(lat);
+                                  if (addr) setDestAddress(addr);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Hẹn giờ nhận: người nhận có thể chọn khung giờ thay vì giao ngay —
+                        shipper thấy giờ hẹn trong danh sách đơn và chỉ nhận nếu ca phủ giờ đó. */}
+                    {deliveryMethod === 'delivery' && (
+                      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-high/30 p-4 space-y-2">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                          <span className="material-symbols-outlined text-[16px]">schedule</span>
+                          Giờ nhận hàng
+                        </p>
+                        <label className="flex cursor-pointer items-center gap-2.5">
+                          <input
+                            type="radio"
+                            name="delivery-time-mode"
+                            checked={!scheduledTime}
+                            onChange={() => setScheduledTime('')}
+                            className="h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="text-xs font-semibold text-on-surface">Giao ngay khi có tình nguyện viên nhận</span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="delivery-time-mode"
+                            checked={!!scheduledTime}
+                            onChange={() => {
+                              if (!scheduledTime) {
+                                // Gợi ý sẵn mốc 1 giờ nữa (giờ VN) để đỡ phải bấm chọn từ đầu.
+                                const t = new Date(Date.now() + 60 * 60_000 + 7 * 3600_000);
+                                setScheduledTime(t.toISOString().slice(0, 16));
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-semibold text-on-surface">Hẹn giờ nhận</span>
+                            <span className="block text-[11px] text-on-surface-variant">
+                              Tối thiểu 30 phút nữa
+                              {orderWindow ? `, trong khung ${windowLabel} mỗi ngày` : ''}, chậm nhất{' '}
+                              {formatVietnamDateTime(listing.pickupEndTime)}
+                            </span>
+                            {!!scheduledTime && (
+                              <input
+                                type="datetime-local"
+                                value={scheduledTime}
+                                // min/max chặn ngay ở bộ chọn: quá khứ và ngày sau hạn nhận
+                                // hàng không bấm được, thay vì chọn xong mới ăn lỗi.
+                                // Khung giờ TRONG NGÀY thì datetime-local không diễn tả
+                                // được, nên kiểm khi bấm đặt (và backend kiểm lại).
+                                min={scheduleMin}
+                                max={scheduleMax}
+                                onChange={(e) => setScheduledTime(e.target.value)}
+                                className="mt-1.5 w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                              />
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -622,6 +953,11 @@ export default function ListingDetailPage({ params }: Props) {
                         : fallbackImage(item.category)
                     }
                     alt={item.title}
+                    loading="lazy"
+                    onError={(e) => {
+                      const fb = fallbackImage(item.category);
+                      if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                    }}
                     className="w-full h-full object-cover"
                   />
                   <span className="absolute top-2 left-2 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded-full">Miễn phí</span>

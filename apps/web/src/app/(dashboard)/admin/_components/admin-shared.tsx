@@ -34,8 +34,8 @@ export function Pagination({ page, totalPages, total, perPage, onChange }: {
   const pages: number[] = [];
   for (let i = start; i <= end; i++) pages.push(i);
   return (
-    <div className="p-4 flex items-center justify-between text-xs text-neutral-500 font-medium border-t border-neutral-100">
-      <span>Hiển thị {from}–{to} trên {total}</span>
+    <div className="p-4 flex flex-wrap items-center justify-center gap-3 sm:justify-between text-xs text-neutral-500 font-medium border-t border-neutral-100">
+      <span className="hidden sm:inline">Hiển thị {from}–{to} trên {total}</span>
       <div className="flex gap-1 items-center">
         <button disabled={page <= 1} onClick={() => onChange(page - 1)} className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center hover:bg-neutral-50 disabled:opacity-30 transition-colors"><span className="material-symbols-outlined text-[16px]">chevron_left</span></button>
         {start > 1 && <span className="w-6 text-center">…</span>}

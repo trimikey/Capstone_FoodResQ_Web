@@ -217,3 +217,11 @@ export class SetUserStatusDto {
   @IsIn(['active', 'suspended', 'banned'])
   status!: 'active' | 'suspended' | 'banned';
 }
+
+export class RejectCampaignDto {
+  @ApiPropertyOptional({ description: 'Lý do từ chối — được lưu vào chiến dịch và gửi thông báo cho tổ chức' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Lý do từ chối tối đa 500 ký tự' })
+  reason?: string;
+}

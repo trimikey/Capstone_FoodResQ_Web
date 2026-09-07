@@ -397,6 +397,8 @@ model VolunteerProfile {
 
   user                   User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   specializations        VolunteerSpecializationEntry[]
+  availability           VolunteerAvailability[]
+  deliveryShifts         DeliveryShiftRegistration[]
   deliveries             Delivery[]
   campaignAssignments    CampaignVolunteerAssignment[]
   dedicationPointHistory DedicationPointsHistory[]
@@ -504,6 +506,12 @@ model Reservation {
   /// Ảnh bằng chứng người nhận khó di chuyển (bệnh, gãy chân…) — BẮT BUỘC khi
   /// yêu cầu TNV giao tận nơi; shipper xem ảnh trong popup lời mời trước khi nhận.
   deliveryEvidenceUrl    String?                 @map("delivery_evidence_url")
+  /// Điểm giao do người đặt chọn riêng cho đơn này (đang nằm viện, ở nhà người thân…).
+  /// NULL = giao về địa chỉ mặc định trong hồ sơ người nhận.
+  deliveryAddress        String?                 @map("delivery_address")
+  /// Giờ hẹn giao do người nhận chọn. NULL = giao ngay khi có shipper nhận đơn.
+  deliveryScheduledAt    DateTime?               @map("delivery_scheduled_at") @db.Timestamptz
+  deliveryLocation       Unsupported("geography(Point, 4326)")? @map("delivery_location")
   trustPenaltyApplied    Boolean                 @default(false) @map("trust_penalty_applied")
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
@@ -512,6 +520,7 @@ model Reservation {
   receiver    ReceiverProfile @relation(fields: [receiverId], references: [id])
   delivery    Delivery?
   bulkRunStop BulkRunStop?    @relation(fields: [bulkRunStopId], references: [id])
+  messages    ReservationMessage[]
 
   @@index([listingId, receiverId])
   @@index([receiverId])
@@ -519,6 +528,22 @@ model Reservation {
   @@index([status])
   @@index([receiverId, createdAt])
   @@map("reservations")
+}
+
+/// Chat theo đơn, dạng HỘI THOẠI 1-1 giữa các bên (người nhận / cửa hàng / shipper):
+/// mỗi tin có người nhận cụ thể — cặp (sender, recipient) xác định luồng trò chuyện.
+model ReservationMessage {
+  id              String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  reservationId   String      @map("reservation_id") @db.Uuid
+  senderUserId    String      @map("sender_user_id") @db.Uuid
+  recipientUserId String      @map("recipient_user_id") @db.Uuid
+  content         String
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, createdAt])
+  @@index([reservationId, senderUserId, recipientUserId])
+  @@map("reservation_messages")
 }
 
 model Delivery {
@@ -622,6 +647,43 @@ model BulkRunStop {
   @@map("bulk_run_stops")
 }
 
+/// Khung giờ TNV tự khai là rảnh, lặp lại hằng tuần (lưới 7 ngày × 4 ca).
+/// Chỉ dùng để LỌC / GỢI Ý — không tự động phân công.
+model VolunteerAvailability {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId String              @map("volunteer_id") @db.Uuid
+  /// 1 = Thứ 2 … 7 = Chủ nhật (ISO-8601, khớp EXTRACT(ISODOW FROM date)).
+  dayOfWeek   Int                 @map("day_of_week") @db.SmallInt
+  period      CampaignShiftPeriod
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([volunteerId, dayOfWeek, period], map: "volunteer_availability_unique_cell")
+  @@index([dayOfWeek, period], map: "idx_volunteer_availability_slot")
+  @@index([volunteerId], map: "idx_volunteer_availability_volunteer")
+  @@map("volunteer_availability")
+}
+
+/// Ca GIAO HÀNG tình nguyện viên đã đăng ký cho một ngày cụ thể.
+/// Khác volunteer_availability (khai báo rảnh, lặp hằng tuần): đây là CAM KẾT trực ca,
+/// là điều kiện để nhận đơn giao trong khung giờ đó.
+model DeliveryShiftRegistration {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  volunteerId String              @map("volunteer_id") @db.Uuid
+  workDate    DateTime            @map("work_date") @db.Date
+  period      CampaignShiftPeriod
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([volunteerId, workDate, period], map: "delivery_shift_reg_unique")
+  @@index([workDate, period], map: "idx_delivery_shift_reg_slot")
+  @@index([volunteerId, workDate], map: "idx_delivery_shift_reg_volunteer")
+  @@map("delivery_shift_registrations")
+}
+
 model KitchenCampaign {
   id                     String                                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   charityReceiverId      String                                 @map("charity_receiver_id") @db.Uuid
@@ -701,10 +763,18 @@ model CampaignDonation {
   /// (cùng pattern `assigneeIds` của meal_distributions).
   pickupAssigneeIds Json @default("[]") @map("pickup_assignee_ids")
 
+  /// Đơn nguyên liệu đã sinh ra khoản này (NCC đồng ý request → BE tự tạo donation để
+  /// số kg vào sổ kho). Có giá trị = CÙNG MỘT LÔ HÀNG với request đó: lịch đi nhận và
+  /// việc xác nhận thực nhận do request quản, không làm riêng ở đây.
+  /// null = NCC tự nguyện góp thẳng, không qua đơn nào.
+  providerRequestId String? @map("provider_request_id") @db.Uuid
+
   campaign KitchenCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   provider ProviderProfile @relation(fields: [providerId], references: [id])
+  providerRequest CampaignProviderRequest? @relation("DonationFromProviderRequest", fields: [providerRequestId], references: [id], onDelete: SetNull)
 
   @@index([campaignId])
+  @@index([providerRequestId])
   @@index([providerId])
   @@map("campaign_donations")
 }
@@ -753,8 +823,12 @@ model CampaignProviderRequest {
   transport        CampaignTransport?
   delivery         Delivery?                 @relation("DeliveryForProviderRequest")
   ingredientPickup CampaignIngredientPickup?
+  /// Khoản ghi sổ kho sinh ra khi NCC đồng ý đơn này — cùng một lô hàng.
+  donations        CampaignDonation[]        @relation("DonationFromProviderRequest")
 
-  @@unique([campaignId, providerId])
+  // Unique (campaignId, providerId) đã gỡ: một chiến dịch được gửi NHIỀU đơn nguyên
+  // liệu tới cùng một NCC (mỗi món một đơn); service chỉ sửa-tại-chỗ đơn còn pending.
+  @@index([campaignId, providerId])
   @@index([campaignId])
   @@index([providerId])
   @@index([status])
@@ -1409,6 +1483,9 @@ model CampaignDishStep {
   id                     String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   campaignId             String                 @map("campaign_id") @db.Uuid
   menuItemId             String                 @map("menu_item_id") @db.Uuid
+  /// Ngày trực mà chuỗi khâu này thuộc về — chiến dịch nhiều ngày mỗi ngày một bộ
+  /// 4 khâu riêng. NULL chỉ còn ở dữ liệu lệch (migration đã backfill = ngày đầu).
+  workDate               DateTime?              @map("work_date") @db.Date
   /// 1 = Sơ chế, 2 = Nấu, 3 = Trình bày, 4 = Sẵn sàng phát xuất
   stepOrder              Int                    @map("step_order") @db.SmallInt
   stepName               String                 @map("step_name") @db.VarChar(100)

@@ -6,6 +6,7 @@ import { Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProviderOrders, useProviderCancelReservation, type ProviderOrderItem } from '@/hooks/useProviderListings';
 import { useProviderRequests, type ProviderRequestItem } from '@/hooks/useCampaigns';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 import { mediaUrl, UNIT_LABEL, errMsg } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CancelReservationModal from '@/components/reservations/CancelReservationModal';
@@ -123,6 +124,9 @@ function getStatus(item: ProviderOrderItem): StatusMeta {
 function statusGroup(item: ProviderOrderItem): StatusMeta['group'] {
   return getStatus(item).group;
 }
+
+const MENU_ITEM_CLASS =
+  'flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50';
 
 function receiverInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?';
@@ -343,11 +347,14 @@ export default function ProviderOrdersPage() {
         )}
 
         {/* Stats */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {/* Có sẵn bộ lọc "Đã hủy" nhưng lại không có thẻ đếm — người bán không biết
+            mình bị huỷ bao nhiêu đơn nếu không tự bấm sang tab đó. */}
+        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
           <StatCard icon="inventory_2" label="Tổng đơn" value={counts.all} tone="sage" />
           <StatCard icon="hourglass_top" label="Chờ xử lý" value={counts.pending} tone="amber" />
           <StatCard icon="local_shipping" label="Đang giao / đã nhận" value={counts.confirmed} tone="sky" />
           <StatCard icon="task_alt" label="Hoàn thành" value={counts.completed} tone="emerald" />
+          <StatCard icon="cancel" label="Huỷ / không đến" value={counts.cancelled} tone="rose" />
         </section>
 
         {/* Tabs + search */}
@@ -495,13 +502,14 @@ function StatCard({
   icon: string;
   label: string;
   value: number;
-  tone: 'sage' | 'amber' | 'sky' | 'emerald';
+  tone: 'sage' | 'amber' | 'sky' | 'emerald' | 'rose';
 }) {
   const tones = {
     sage: { bg: 'bg-[#efe8d8]', text: 'text-[#236c2a]' },
     amber: { bg: 'bg-amber-100', text: 'text-amber-700' },
     sky: { bg: 'bg-sky-100', text: 'text-sky-700' },
     emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+    rose: { bg: 'bg-rose-100', text: 'text-rose-700' },
   } as const;
   const t = tones[tone];
 
@@ -518,6 +526,116 @@ function StatCard({
   );
 }
 
+// Trạng thái chuyến giao — đủ để NCC biết shipper đang ở khâu nào
+const DELIVERY_STATUS_VN: Record<string, string> = {
+  pending_assignment: 'Đang tìm tình nguyện viên giao',
+  assigned: 'Tình nguyện viên đã nhận chuyến',
+  heading_to_provider: 'Shipper đang đến lấy hàng',
+  qc_completed: 'Đã lấy hàng tại cửa hàng (QC xong)',
+  in_transit: 'Đang trên đường giao',
+  delivered: 'Đã giao thành công',
+  failed: 'Giao thất bại',
+};
+
+const fmtDT = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      })
+    : null;
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 border-b border-neutral-100 last:border-0">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{label}</span>
+      <span className="text-sm font-semibold text-neutral-800 text-right min-w-0">{value}</span>
+    </div>
+  );
+}
+
+/** Chi tiết đơn cho NCC: ai đặt, ai ship, hàng đã được lấy/giao chưa. */
+function OrderDetailModal({ item, onClose }: { item: ProviderOrderItem; onClose: () => void }) {
+  const meta = getStatus(item);
+  const shipper = item.delivery?.shipper?.user ?? null;
+  const pickedUp = ['picked_up', 'completed'].includes(item.status) || !!item.delivery?.pickedUpAt;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full sm:max-w-md max-h-[85dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-neutral-100 bg-white px-5 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-extrabold text-neutral-900">
+              {item.listing.title} · {item.quantity} {UNIT_LABEL[item.listing.quantityUnit as QuantityUnit] ?? item.listing.quantityUnit}
+            </p>
+            <p className="text-[11px] text-neutral-500">Mã #{item.id.slice(0, 8).toUpperCase()}</p>
+          </div>
+          <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>{meta.label}</span>
+          <button onClick={onClose} aria-label="Đóng" className="shrink-0 p-1.5 rounded-full hover:bg-neutral-100">
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Người đặt */}
+          <div>
+            <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700">Người đặt</p>
+            <Row label="Họ tên" value={item.receiver.user.fullName} />
+            <Row
+              label="SĐT"
+              value={item.receiver.user.phone
+                ? <a href={`tel:${item.receiver.user.phone}`} className="text-emerald-700 hover:underline">{item.receiver.user.phone}</a>
+                : '—'}
+            />
+            <Row label="Đặt lúc" value={fmtDT(item.createdAt)} />
+            {item.deliveryScheduledAt && <Row label="Hẹn nhận lúc" value={fmtDT(item.deliveryScheduledAt)} />}
+          </div>
+
+          {/* Giao nhận */}
+          <div>
+            <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700">
+              {item.delivery ? 'Giao tận nơi' : 'Tự tới lấy tại cửa hàng'}
+            </p>
+            {item.delivery ? (
+              <>
+                <Row label="Shipper" value={shipper ? shipper.fullName : 'Chưa có ai nhận chuyến'} />
+                {shipper?.phone && (
+                  <Row label="SĐT shipper" value={<a href={`tel:${shipper.phone}`} className="text-emerald-700 hover:underline">{shipper.phone}</a>} />
+                )}
+                <Row label="Trạng thái chuyến" value={DELIVERY_STATUS_VN[item.delivery.status] ?? item.delivery.status} />
+                <Row
+                  label="Lấy hàng tại cửa hàng"
+                  value={item.delivery.pickedUpAt
+                    ? <span className="text-emerald-700">✓ Đã lấy lúc {fmtDT(item.delivery.pickedUpAt)}</span>
+                    : 'Chưa lấy'}
+                />
+                <Row
+                  label="Giao cho người nhận"
+                  value={item.delivery.deliveredAt
+                    ? <span className="text-emerald-700">✓ Đã giao lúc {fmtDT(item.delivery.deliveredAt)}</span>
+                    : 'Chưa giao'}
+                />
+                {item.deliveryAddress && <Row label="Địa chỉ giao" value={item.deliveryAddress} />}
+              </>
+            ) : (
+              <Row
+                label="Nhận hàng"
+                value={pickedUp
+                  ? <span className="text-emerald-700">✓ Đã lấy hàng thành công</span>
+                  : 'Chưa tới lấy — chờ quét QR tại quầy'}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderCard({
   item,
   onCancelRequest,
@@ -526,17 +644,28 @@ function OrderCard({
   onCancelRequest: () => void;
 }) {
   const meta = getStatus(item);
+  // Mỗi người một cửa sổ chat riêng (người nhận / shipper), mở song song được
+  const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
+  const [chatShipperOpen, setChatShipperOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const phone = item.receiver.user.phone ?? '—';
   const avatarUrl = item.receiver.user.avatarUrl;
   const fullName = item.receiver.user.fullName;
   const code = item.id.slice(0, 8).toUpperCase();
-  const image = item.listing.imageUrls[0] || FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+  // mediaUrl: ảnh upload (/uploads/...) phải ghép origin API — thiếu thì trỏ nhầm
+  // sang :3000 và 404 với mọi ảnh thật, chỉ ảnh fallback trong /public là hiện.
+  const image = item.listing.imageUrls[0]
+    ? mediaUrl(item.listing.imageUrls[0])
+    : FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
   const qty = formatWeight(item);
   const canProviderCancel = meta.group === 'confirmed' || meta.group === 'pending';
 
   return (
-    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all overflow-hidden">
-      <span className={`absolute left-0 top-0 bottom-0 w-1 ${meta.bar}`} />
+    // KHÔNG overflow-hidden ở thẻ: dropdown "Thao tác" định vị absolute sẽ bị cắt
+    // cụt ngay mép thẻ. Dải màu trạng thái tự bo góc trái thay vì nhờ thẻ cắt.
+    <div className="relative bg-white rounded-2xl border border-neutral-100 hover:border-[#236c2a]/30 hover:shadow-md transition-all">
+      <span className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${meta.bar}`} />
 
       <div className="flex flex-col md:flex-row gap-4 p-4 md:p-5 pl-5 md:pl-6">
         {/* Receiver */}
@@ -551,7 +680,13 @@ function OrderCard({
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-neutral-800 text-sm truncate">{fullName}</p>
-            <p className="text-xs text-neutral-500 font-normal truncate">{phone}</p>
+            {phone !== '—' ? (
+              <a href={`tel:${phone}`} className="text-xs text-emerald-700 font-semibold truncate hover:underline">
+                {phone}
+              </a>
+            ) : (
+              <p className="text-xs text-neutral-500 font-normal truncate">{phone}</p>
+            )}
           </div>
         </div>
 
@@ -559,7 +694,17 @@ function OrderCard({
         <div className="flex-1 min-w-0 flex items-start gap-3">
           <div className="w-14 h-14 rounded-xl bg-neutral-100 shrink-0 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt={item.listing.title} className="w-full h-full object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image}
+              alt={item.listing.title}
+              loading="lazy"
+              onError={(e) => {
+                const fb = FALLBACK_IMAGE[item.listing.category] || '/food_salad.png';
+                if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+              }}
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-800 text-sm truncate">{item.listing.title}</p>
@@ -585,14 +730,11 @@ function OrderCard({
           <span className={`self-start md:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
             {meta.label}
           </span>
-          <div className="grid grid-cols-2 min-[420px]:flex gap-2 min-[420px]:gap-1.5 mt-auto">
-            <button
-              className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
-              title="Xem chi tiết"
-            >
-              <span className="material-symbols-outlined text-[14px]">visibility</span>
-              Chi tiết
-            </button>
+          {/* flex-wrap + justify-end: cột md:w-44 chỉ đủ 2 nút ngắn — nút thứ 3
+              ("Đăng lại"…) phải rơi xuống hàng dưới thay vì tràn ra ngoài thẻ. */}
+          {/* 1 nút CHÍNH theo trạng thái + menu "Thao tác" gom phần còn lại —
+              xếp 5 nút chồng nhau làm thẻ cao và rối. */}
+          <div className="relative mt-auto flex items-center gap-2 md:justify-end">
             {meta.group === 'pending' && (
               <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#236c2a] hover:bg-[#1a4f1f] text-white text-xs font-medium transition-colors">
                 <span className="material-symbols-outlined text-[14px]">check</span>
@@ -608,25 +750,90 @@ function OrderCard({
                 Quét QR
               </Link>
             )}
-            {canProviderCancel && (
-              <button
-                onClick={onCancelRequest}
-                title="Huỷ đơn này (không phạt điểm người nhận)"
-                className="min-h-10 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-medium transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">block</span>
-                Huỷ đơn
-              </button>
-            )}
             {meta.group === 'cancelled' && (
-              <button className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors">
+              <Link
+                href={`/listings/${item.listing.id}`}
+                title="Mở trang tin để đăng lại (nhân bản thành bản nháp mới)"
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              >
                 <span className="material-symbols-outlined text-[14px]">refresh</span>
                 Đăng lại
+              </Link>
+            )}
+            {meta.group === 'completed' && (
+              <button
+                onClick={() => setDetailOpen(true)}
+                className="min-h-10 flex-1 md:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                Chi tiết
               </button>
+            )}
+
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className="min-h-10 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-xs font-medium text-neutral-700 transition-colors"
+            >
+              Thao tác
+              <span className="material-symbols-outlined text-[16px]">{menuOpen ? 'expand_less' : 'expand_more'}</span>
+            </button>
+
+            {menuOpen && (
+              <>
+                {/* Lớp phủ bắt click ra ngoài để đóng menu */}
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-48 rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                  {meta.group !== 'completed' && (
+                    <button onClick={() => { setDetailOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                      <span className="material-symbols-outlined text-[16px]">visibility</span>
+                      Chi tiết đơn
+                    </button>
+                  )}
+                  <button onClick={() => { setChatReceiverOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                    <span className="material-symbols-outlined text-[16px]">forum</span>
+                    Nhắn người nhận
+                  </button>
+                  {item.delivery?.shipper && (
+                    <button onClick={() => { setChatShipperOpen(true); setMenuOpen(false); }} className={MENU_ITEM_CLASS}>
+                      <span className="material-symbols-outlined text-[16px]">two_wheeler</span>
+                      Nhắn shipper
+                    </button>
+                  )}
+                  {canProviderCancel && (
+                    <button
+                      onClick={() => { setMenuOpen(false); onCancelRequest(); }}
+                      title="Huỷ đơn này (không phạt điểm người nhận)"
+                      className={`${MENU_ITEM_CLASS} !text-rose-600`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">block</span>
+                      Huỷ đơn
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Hai cửa sổ chat riêng: người nhận + shipper (nếu đơn có chuyến giao) */}
+      <ReservationChatPanel
+        reservationId={item.id}
+        open={chatReceiverOpen}
+        partner={{ role: 'receiver' }}
+        offsetIndex={0}
+        onClose={() => setChatReceiverOpen(false)}
+      />
+      <ReservationChatPanel
+        reservationId={item.id}
+        open={chatShipperOpen}
+        partner={{ role: 'shipper' }}
+        offsetIndex={chatReceiverOpen ? 1 : 0}
+        onClose={() => setChatShipperOpen(false)}
+      />
+      {detailOpen && <OrderDetailModal item={item} onClose={() => setDetailOpen(false)} />}
     </div>
   );
 }

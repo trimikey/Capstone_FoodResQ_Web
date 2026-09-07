@@ -1,21 +1,30 @@
 import {
   Injectable,
+  Inject,
   Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import Redlock from 'redlock';
 import { PrismaService } from '@/prisma/prisma.service';
+import { safeRelease, tryAcquireLock } from '@/common/redlock/try-acquire';
 import { StorageService } from '@/common/storage/storage.service';
 import { FaceMatchService } from '@/common/face-match/face-match.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
+import {
+  effectiveOrderWindow,
+  formatMinuteOfDay,
+  isEmptyWindow,
+  minuteOfDayVN,
+} from '@/common/utils/order-window';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { NotificationsGateway } from '@/modules/notifications/notifications.gateway';
 import { TrustService } from '@/modules/trust/trust.service';
 import { PickupVerificationType, TrustScoreReason } from '@foodresq/types';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -36,10 +45,23 @@ export class ReservationsService {
     private systemConfig: SystemConfigService,
     private notifications: NotificationsService,
     private trust: TrustService,
-    @InjectQueue('notification-push') private notifQueue: Queue,
+    // Optional + cuối danh sách: spec khởi tạo service bằng positional args,
+    // thêm bắt buộc ở giữa sẽ vỡ toàn bộ mock. Chỉ dùng để đọc trạng thái kết nối.
+    @Optional() @Inject('REDIS_CLIENT') private redis?: Redis,
+    // Đẩy tin nhắn chat realtime tới bên kia — optional cùng lý do trên.
+    @Optional() private gateway?: NotificationsGateway,
   ) {}
 
   /** Số phút từ 00:00 theo giờ VN của một thời điểm — để so với khung giờ mở cửa. */
+  /** Khung giờ nhận đơn thực tế của một tin = giờ sàn ∩ giờ riêng cửa hàng khai. */
+  private async orderWindowFor(listingOpen: number | null, listingClose: number | null) {
+    const [openMinute, closeMinute] = await Promise.all([
+      this.systemConfig.getNumber('PLATFORM_ORDER_OPEN_MINUTE'),
+      this.systemConfig.getNumber('PLATFORM_ORDER_CLOSE_MINUTE'),
+    ]);
+    return effectiveOrderWindow({ openMinute, closeMinute }, listingOpen, listingClose);
+  }
+
   private minuteOfDayVN(d: Date): number {
     const parts = new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
@@ -105,17 +127,29 @@ export class ReservationsService {
       );
     }
 
-    // 2b. Yêu cầu giao tận nơi → phải có địa chỉ + toạ độ trong hồ sơ,
-    // nếu không delivery sẽ không có điểm giao (shipper không điều hướng được).
+    // 2b. Yêu cầu giao tận nơi → phải xác định được ĐIỂM GIAO: hoặc người đặt chọn
+    // riêng cho đơn này (đang nằm viện, ở nhà người thân…), hoặc lấy địa chỉ hồ sơ.
+    // Không có điểm giao thì shipper không điều hướng được.
+    const customDestination = dto.deliveryLng != null && dto.deliveryLat != null
+      ? { lng: dto.deliveryLng, lat: dto.deliveryLat, address: dto.deliveryAddress?.trim() || null }
+      : null;
     if (dto.requestDelivery) {
-      const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
-        SELECT (location IS NOT NULL) AS has_location
-        FROM receiver_profiles WHERE id = ${receiver.id}::uuid
-      `);
-      if (!receiver.address || !loc?.has_location) {
-        throw new BadRequestException(
-          'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ trước khi yêu cầu tình nguyện viên giao tận nơi.',
-        );
+      if ((dto.deliveryLng == null) !== (dto.deliveryLat == null)) {
+        throw new BadRequestException('Điểm giao cần cả kinh độ và vĩ độ. Vui lòng chọn lại vị trí trên bản đồ.');
+      }
+      if (customDestination && !customDestination.address) {
+        throw new BadRequestException('Vui lòng nhập địa chỉ mô tả cho điểm giao đã chọn để tình nguyện viên tìm được.');
+      }
+      if (!customDestination) {
+        const [loc] = await this.prisma.$queryRaw<{ has_location: boolean }[]>(Prisma.sql`
+          SELECT (location IS NOT NULL) AS has_location
+          FROM receiver_profiles WHERE id = ${receiver.id}::uuid
+        `);
+        if (!receiver.address || !loc?.has_location) {
+          throw new BadRequestException(
+            'Vui lòng cập nhật địa chỉ nhận hàng trong hồ sơ, hoặc chọn điểm giao trên bản đồ cho đơn này.',
+          );
+        }
       }
       // Giao tận nơi dành cho người KHÓ DI CHUYỂN → bắt buộc ảnh bằng chứng
       // (bệnh, chấn thương…). Shipper xem ảnh này trong popup lời mời trước khi
@@ -125,15 +159,55 @@ export class ReservationsService {
           'Vui lòng tải ảnh bằng chứng khó di chuyển (giấy khám bệnh, ảnh chấn thương…) khi yêu cầu tình nguyện viên giao tận nơi.',
         );
       }
+
+      // Chốt chặn thực tế: TNV chạy xe máy đi giao MỘT suất ăn, không thể vượt
+      // hàng chục km. Shipper chỉ được tìm trong bán kính quanh ĐIỂM LẤY, nên nếu
+      // không kiểm ở đây thì người nhận ở xa vẫn đặt được và shipper nhận đơn xong
+      // mới phát hiện quãng đường vô lý — rồi bỏ chuyến.
+      const maxDistanceKm = await this.systemConfig.getNumber('MAX_DELIVERY_DISTANCE_KM');
+      const [distanceRow] = await this.prisma.$queryRaw<{ distance_km: number | null }[]>(Prisma.sql`
+        SELECT ROUND((ST_Distance(fl.pickup_location::geography, dest.geo::geography) / 1000)::numeric, 2)::float8
+                 AS distance_km
+        FROM food_listings fl
+        CROSS JOIN LATERAL (
+          SELECT ${customDestination
+            ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+            : Prisma.sql`(SELECT location FROM receiver_profiles WHERE id = ${receiver.id}::uuid)`} AS geo
+        ) dest
+        WHERE fl.id = ${dto.listingId}::uuid
+      `);
+      const distanceKm = distanceRow?.distance_km ?? null;
+      if (distanceKm != null && distanceKm > maxDistanceKm) {
+        throw new BadRequestException(
+          `Điểm giao cách nơi lấy hàng ${distanceKm} km, vượt giới hạn ${maxDistanceKm} km cho một chuyến giao. `
+          + 'Vui lòng chọn điểm giao gần hơn hoặc chọn "Tôi sẽ tự đến lấy".',
+        );
+      }
+
+      // Hẹn giờ giao: shipper cần thời gian di chuyển nên tối thiểu 30 phút nữa,
+      // và không được vượt quá giờ đóng nhận hàng của tin (quá giờ là quán đóng).
+      if (dto.deliveryScheduledAt) {
+        const scheduledAt = new Date(dto.deliveryScheduledAt);
+        if (scheduledAt.getTime() < Date.now() + 30 * 60_000) {
+          throw new BadRequestException('Giờ hẹn giao phải cách hiện tại ít nhất 30 phút.');
+        }
+        const [windowRow] = await this.prisma.$queryRaw<{ pickup_end_time: Date }[]>(Prisma.sql`
+          SELECT pickup_end_time FROM food_listings WHERE id = ${dto.listingId}::uuid
+        `);
+        if (windowRow && scheduledAt > windowRow.pickup_end_time) {
+          throw new BadRequestException(
+            'Giờ hẹn giao vượt quá khung giờ nhận hàng của tin. Vui lòng chọn giờ sớm hơn.',
+          );
+        }
+      }
     }
 
     // 3. Acquire distributed lock on this listing
     const lockKey = `lock:reservation:${dto.listingId}`;
-    const lock = await this.redlock
-      .acquire([lockKey], LOCK_TTL_MS)
-      .catch(() => {
-        throw new ConflictException('Có người đang đặt món này. Vui lòng thử lại sau vài giây.');
-      });
+    // Khóa Redis chỉ là lớp GIẢM va chạm; chốt chống bán lố thật nằm ở UPDATE có
+    // điều kiện trong transaction bên dưới. Vì vậy Redis rớt/treo thì đi tiếp
+    // KHÔNG khóa (kèm log) — trước đây mọi đơn trên deploy treo ở đây rồi 503.
+    const lock = await tryAcquireLock(this.redlock, this.redis, this.logger, lockKey, LOCK_TTL_MS);
 
     try {
       // 4. Re-read listing inside the lock (prevent race condition)
@@ -168,8 +242,6 @@ export class ReservationsService {
       // lúc 2h sáng (cửa hàng chưa mở) thì QR hết hạn trước khi mở cửa → bị đánh
       // no_show oan. Vì vậy chặn từ đầu, báo rõ khung giờ cho người dùng.
       const nowTs = new Date();
-      const { daily_start_minute: dayStart, daily_end_minute: dayEnd } = listingRow;
-      const hasDailyWindow = dayStart != null && dayEnd != null;
 
       if (nowTs > listingRow.pickup_end_time || nowTs > listingRow.expiry_time) {
         throw new BadRequestException(
@@ -177,35 +249,57 @@ export class ReservationsService {
         );
       }
 
-      if (hasDailyWindow) {
-        // Khi provider có khai báo giờ mở/đóng hằng ngày, daily window là thẩm quyền
-        // cho GIỜ trong ngày. Mốc absolute chỉ giữ vai trò giới hạn khoảng NGÀY và hạn
-        // cứng, để các listing cũ từng lưu lệch UTC không bị chặn oan.
-        const today = this.dateKeyVN(nowTs);
-        const startDate = this.dateKeyVN(listingRow.pickup_start_time);
-        const endDate = this.dateKeyVN(listingRow.pickup_end_time);
-        if (today < startDate) {
-          throw new BadRequestException(
-            `Chưa đến ngày nhận hàng. Cửa hàng nhận từ ${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}.`,
-          );
-        }
-        if (today > endDate) {
-          throw new BadRequestException(
-            'Đã quá ngày nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
-          );
-        }
-
-        const nowMinute = this.minuteOfDayVN(nowTs);
-        if (nowMinute < dayStart || nowMinute >= dayEnd) {
-          throw new BadRequestException(
-            `Ngoài giờ nhận hàng của cửa hàng (${this.formatMinute(dayStart)}–${this.formatMinute(dayEnd)}). Vui lòng quay lại trong khung giờ này.`,
-          );
-        }
-      } else if (nowTs < listingRow.pickup_start_time) {
-        // Tin cũ không có daily window vẫn dùng đúng mốc tuyệt đối đã lưu.
+      // Khung giờ trong ngày = giờ sàn ∩ giờ riêng của cửa hàng. Mốc tuyệt đối
+      // (pickup_start/end) chỉ còn giới hạn khoảng NGÀY, để các tin cũ từng lưu lệch
+      // múi giờ không bị chặn oan.
+      const window = await this.orderWindowFor(
+        listingRow.daily_start_minute,
+        listingRow.daily_end_minute,
+      );
+      if (isEmptyWindow(window)) {
         throw new BadRequestException(
-          `Chưa đến giờ nhận hàng. Bạn có thể đặt từ ${this.formatVN(listingRow.pickup_start_time)} nhé!`,
+          'Tin này khai giờ nhận nằm ngoài giờ hoạt động của hệ thống nên không đặt được. '
+          + 'Vui lòng chọn tin khác hoặc báo cửa hàng cập nhật lại giờ.',
         );
+      }
+      const windowLabel = `${formatMinuteOfDay(window.openMinute)}–${formatMinuteOfDay(window.closeMinute)}`;
+
+      const today = this.dateKeyVN(nowTs);
+      if (today < this.dateKeyVN(listingRow.pickup_start_time)) {
+        throw new BadRequestException(
+          `Chưa đến ngày nhận hàng — tin này nhận từ ngày ${this.formatVN(listingRow.pickup_start_time)}.`,
+        );
+      }
+      if (today > this.dateKeyVN(listingRow.pickup_end_time)) {
+        throw new BadRequestException(
+          'Đã quá ngày nhận hàng của tin này. Vui lòng chọn thực phẩm khác còn trong giờ nhận.',
+        );
+      }
+
+      const nowMinute = minuteOfDayVN(nowTs);
+      if (nowMinute < window.openMinute || nowMinute >= window.closeMinute) {
+        throw new BadRequestException(
+          `Ngoài giờ nhận đơn (${windowLabel}). Vui lòng quay lại trong khung giờ này.`,
+        );
+      }
+
+      // Giờ hẹn giao cũng phải nằm trong khung — nếu không, đơn hẹn 2h sáng vẫn lọt
+      // qua chỉ vì lúc ĐẶT đang trong giờ mở cửa.
+      // Kiểm mọi lúc trường này có mặt, không chỉ khi requestDelivery: giờ hẹn vô lý
+      // là dữ liệu hỏng dù đơn có chọn giao hay không.
+      if (dto.deliveryScheduledAt) {
+        const scheduledAt = new Date(dto.deliveryScheduledAt);
+        const scheduledMinute = minuteOfDayVN(scheduledAt);
+        if (scheduledMinute < window.openMinute || scheduledMinute >= window.closeMinute) {
+          throw new BadRequestException(
+            `Giờ hẹn giao phải nằm trong khung ${windowLabel}. Vui lòng chọn lại giờ.`,
+          );
+        }
+        if (this.dateKeyVN(scheduledAt) > this.dateKeyVN(listingRow.pickup_end_time)) {
+          throw new BadRequestException(
+            'Giờ hẹn giao vượt quá ngày nhận hàng của tin. Vui lòng chọn giờ sớm hơn.',
+          );
+        }
       }
 
       if (listingRow.quantity_remaining < dto.quantity) {
@@ -235,8 +329,10 @@ export class ReservationsService {
       const qrExpiresAt = new Date(Date.now() + qrValidMinutes * 60 * 1000);
 
       const reservation = await this.prisma.$transaction(async (tx) => {
-        // Decrement quantity — use SELECT FOR UPDATE equivalent via raw SQL
-        await tx.$executeRaw(Prisma.sql`
+        // Trừ kho CÓ ĐIỀU KIỆN — Postgres tuần tự hoá trên dòng này nên kể cả hai
+        // đơn cùng lọt qua pre-check (lúc chạy không khóa), đơn sau bắt buộc fail
+        // ở đây thay vì đẩy quantity_remaining xuống âm.
+        const affected = await tx.$executeRaw(Prisma.sql`
           UPDATE food_listings
           SET
             quantity_remaining = quantity_remaining - ${dto.quantity},
@@ -246,14 +342,21 @@ export class ReservationsService {
             END,
             updated_at = NOW()
           WHERE id = ${dto.listingId}::uuid
+            AND quantity_remaining >= ${dto.quantity}
         `);
+        if (affected === 0) {
+          throw new ConflictException(
+            'Món này vừa được người khác đặt trước — số lượng còn lại không đủ. Vui lòng tải lại trang.',
+          );
+        }
 
         // Create reservation with crypto QR token
         const [newReservation] = await tx.$queryRaw<{ id: string; qr_token: string }[]>(
           Prisma.sql`
             INSERT INTO reservations (
               listing_id, receiver_id, quantity, status,
-              qr_token, qr_expires_at, receiver_notes, delivery_evidence_url, created_at, updated_at
+              qr_token, qr_expires_at, receiver_notes, delivery_evidence_url,
+              delivery_address, delivery_location, delivery_scheduled_at, created_at, updated_at
             ) VALUES (
               ${dto.listingId}::uuid,
               ${receiver.id}::uuid,
@@ -263,6 +366,15 @@ export class ReservationsService {
               ${qrExpiresAt.toISOString()}::timestamptz,
               ${dto.receiverNotes ?? null},
               ${dto.requestDelivery ? (dto.deliveryEvidenceUrl ?? null) : null},
+              ${dto.requestDelivery
+                ? (customDestination ? customDestination.address : (dto.deliveryAddress?.trim() || null))
+                : null},
+              ${dto.requestDelivery && customDestination
+                ? Prisma.sql`ST_SetSRID(ST_MakePoint(${customDestination.lng}, ${customDestination.lat}), 4326)::geography`
+                : Prisma.sql`NULL`},
+              ${dto.requestDelivery && dto.deliveryScheduledAt
+                ? Prisma.sql`${new Date(dto.deliveryScheduledAt).toISOString()}::timestamptz`
+                : Prisma.sql`NULL`},
               NOW(), NOW()
             )
             RETURNING id, qr_token
@@ -298,7 +410,7 @@ export class ReservationsService {
         message: 'Đặt chỗ thành công! Trình mã QR cho nhà cung cấp để nhận hàng.',
       };
     } finally {
-      await lock.release();
+      await safeRelease(lock);
     }
   }
 
@@ -311,11 +423,12 @@ export class ReservationsService {
     // Để FE theo dõi đơn vẽ được bản đồ thật thay vì toạ độ giả.
     await this.prisma.$executeRaw(Prisma.sql`
       UPDATE deliveries d
+      -- COALESCE: điểm giao riêng của đơn thắng địa chỉ mặc định trong hồ sơ.
       SET pickup_location   = fl.pickup_location,
-          delivery_location = rp.location,
+          delivery_location = COALESCE(r.delivery_location, rp.location),
           distance_km = CASE
-            WHEN fl.pickup_location IS NOT NULL AND rp.location IS NOT NULL
-            THEN ROUND((ST_Distance(fl.pickup_location::geography, rp.location::geography) / 1000)::numeric, 2)
+            WHEN fl.pickup_location IS NOT NULL AND COALESCE(r.delivery_location, rp.location) IS NOT NULL
+            THEN ROUND((ST_Distance(fl.pickup_location::geography, COALESCE(r.delivery_location, rp.location)::geography) / 1000)::numeric, 2)
             ELSE NULL END
       FROM reservations r
       JOIN food_listings fl ON fl.id = ${listingId}::uuid
@@ -333,11 +446,39 @@ export class ReservationsService {
     `);
 
     if (listing) {
-      await this.notifQueue.add(
-        'shipper-broadcast',
-        { deliveryId: delivery.id, pickupLng: listing.lng, pickupLat: listing.lat },
-        { delay: 0, removeOnComplete: true, attempts: 3 },
-      );
+      // MÔ HÌNH MỚI: không mời tuần tự 15s nữa. Báo cho các TNV đã đăng ký CA phủ
+      // thời điểm giao (giao ngay = bây giờ; hẹn giờ = giờ hẹn) để họ mở Trung tâm
+      // giao hàng và tự chọn đơn. Khoảng cách lọc lúc họ xem danh sách (GPS tươi).
+      const reservationRow = await this.prisma.reservation.findUnique({
+        where: { id: reservationId },
+        select: { deliveryScheduledAt: true, listing: { select: { title: true } } },
+      });
+      const targetAt = reservationRow?.deliveryScheduledAt ?? new Date();
+      const vn = new Date(targetAt.getTime() + 7 * 3600_000);
+      const hour = vn.getUTCHours();
+      const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+      const workDate = vn.toISOString().slice(0, 10);
+      const onDuty = await this.prisma.$queryRaw<{ user_id: string }[]>(Prisma.sql`
+        SELECT DISTINCT vp.user_id
+        FROM delivery_shift_registrations reg
+        JOIN volunteer_profiles vp ON vp.id = reg.volunteer_id
+        JOIN users u ON u.id = vp.user_id
+        WHERE reg.work_date = ${workDate}::date
+          AND reg.period = ${period}::campaign_shift_period
+          AND u.status = 'active'
+        LIMIT 50
+      `);
+      const scheduledNote = reservationRow?.deliveryScheduledAt
+        ? ` (hẹn giao ${new Date(reservationRow.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })})`
+        : '';
+      for (const shipper of onDuty) {
+        void this.notifications.notify(shipper.user_id, {
+          type: 'delivery',
+          title: 'Đơn giao mới trong ca của bạn',
+          body: `"${reservationRow?.listing.title ?? 'Suất ăn'}"${scheduledNote} đang chờ shipper. Mở Trung tâm giao hàng để nhận đơn.`,
+          data: { deliveryId: delivery.id, kind: 'delivery_available' },
+        });
+      }
     } else {
       // Tin đăng thiếu pickup_location → không thể tìm shipper quanh điểm lấy.
       this.logger.error(
@@ -635,9 +776,22 @@ export class ReservationsService {
       );
     }
 
+    // Đơn giao CHƯA tìm được người nhận thì huỷ không bao giờ bị phạt.
+    //
+    // Phạt huỷ trễ sinh ra để bù cho bên bị thiệt: cửa hàng đã để dành suất, hoặc shipper
+    // đã chạy tới lấy. Khi chưa ai nhận đơn thì không có thiệt hại đó — mà nếu người nhận
+    // cứ ngồi im, cron sẽ tự huỷ lúc hết hạn nhận và KHÔNG phạt gì cả. Phạt người bấm huỷ
+    // sớm hơn hoá ra là thưởng cho việc ngồi im, trong khi huỷ sớm mới là cái trả suất về
+    // kho kịp cho người khác đặt.
+    const waitingForShipper =
+      !!reservation.delivery
+      && reservation.delivery.status === 'pending_assignment'
+      && !reservation.delivery.shipperId;
+
     // Huỷ trễ = còn dưới 30 phút trước giờ kết thúc nhận hàng (CLAUDE.md §9)
     const isLateCancellation =
-      reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
+      !waitingForShipper
+      && reservation.listing.pickupEndTime.getTime() - Date.now() < 30 * 60 * 1000;
 
     const ops: Prisma.PrismaPromise<unknown>[] = [
       // Cancel reservation
@@ -832,7 +986,7 @@ export class ReservationsService {
       : group === 'history' ? { notIn: active }
       : undefined;
 
-    const [items, total, activeCount, historyCount, completedAgg, noShowCount] =
+    const [items, total, activeCount, historyCount, completedAgg, noShowCount, cancelledCount] =
       await this.prisma.$transaction([
       this.prisma.reservation.findMany({
         where: {
@@ -880,6 +1034,11 @@ export class ReservationsService {
       this.prisma.reservation.count({
         where: { receiverId: receiver.id, status: 'no_show' },
       }),
+      // Đơn đã huỷ: người dùng tự huỷ HOẶC hệ thống huỷ (không tìm được TNV giao).
+      // Trước đây không đếm nên thẻ thống kê thiếu hẳn một nhóm mà danh sách vẫn hiện.
+      this.prisma.reservation.count({
+        where: { receiverId: receiver.id, status: 'cancelled' },
+      }),
     ]);
 
     // Ratings là quan hệ đa hình (referenceType/referenceId) — query riêng rồi gắn cờ ratedScore
@@ -907,7 +1066,10 @@ export class ReservationsService {
       counts: {
         active: activeCount,
         history: historyCount,
+        /** Tổng số đơn từ trước tới nay, không phụ thuộc bộ lọc đang xem. */
+        allOrders: activeCount + historyCount,
         completed: completedAgg._count,
+        cancelled: cancelledCount,
         noShow: noShowCount,
         portionsSaved: Number(completedAgg._sum.quantity ?? 0),
       },
@@ -944,6 +1106,18 @@ export class ReservationsService {
               weightPerUnitKg: true,
               pickupAddress: true,
               status: true,
+            },
+          },
+          // Chuyến giao (nếu là đơn giao tận nơi) — NCC cần biết ai ship và tới đâu rồi
+          delivery: {
+            select: {
+              id: true,
+              status: true,
+              pickedUpAt: true,
+              deliveredAt: true,
+              shipper: {
+                select: { user: { select: { fullName: true, phone: true, avatarUrl: true } } },
+              },
             },
           },
         },
@@ -1242,5 +1416,130 @@ export class ReservationsService {
     delta: number,
   ) {
     return this.trust.applyDelta(userId, delta, reason, 'reservation', referenceId);
+  }
+
+  // ── Chat theo đơn: người nhận ↔ cửa hàng ↔ shipper (nếu có) ─────────────────
+
+  /** Các bên của đơn — chỉ họ được đọc/gửi tin nhắn. Shipper vào cuộc khi đơn
+   *  có chuyến giao và đã có người nhận chuyến. */
+  private async getChatParties(reservationId: string, userId: string) {
+    const r = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: {
+        id: true,
+        receiver: {
+          select: { userId: true, user: { select: { fullName: true, phone: true } } },
+        },
+        listing: {
+          select: {
+            provider: { select: { userId: true, businessName: true, contactPhone: true } },
+          },
+        },
+        delivery: {
+          select: {
+            shipper: { select: { userId: true, user: { select: { fullName: true, phone: true } } } },
+          },
+        },
+      },
+    });
+    if (!r) throw new NotFoundException('Không tìm thấy đơn đặt chỗ.');
+    const participants = [
+      {
+        userId: r.receiver.userId,
+        role: 'receiver' as const,
+        name: r.receiver.user.fullName,
+        phone: r.receiver.user.phone,
+      },
+      {
+        userId: r.listing.provider.userId,
+        role: 'provider' as const,
+        name: r.listing.provider.businessName,
+        phone: r.listing.provider.contactPhone,
+      },
+      ...(r.delivery?.shipper
+        ? [{
+            userId: r.delivery.shipper.userId,
+            role: 'shipper' as const,
+            name: r.delivery.shipper.user.fullName,
+            phone: r.delivery.shipper.user.phone,
+          }]
+        : []),
+    ];
+    if (!participants.some((p) => p.userId === userId)) {
+      throw new ForbiddenException('Chỉ các bên của đơn được xem cuộc trò chuyện này.');
+    }
+    return participants;
+  }
+
+  /** Chọn người đối thoại: theo userId (`withUserId`), theo vai (`withRole` — FE
+   *  mở cửa sổ "Nhắn cửa hàng"/"Nhắn shipper" không cần biết trước userId),
+   *  không chỉ định thì lấy mặc định theo vai của người gọi. */
+  private resolveChatPartner(
+    participants: Array<{ userId: string; role: string; name: string; phone: string | null }>,
+    userId: string,
+    withUserId?: string,
+    withRole?: string,
+  ) {
+    if (withUserId) {
+      const partner = participants.find((p) => p.userId === withUserId);
+      if (!partner || partner.userId === userId) {
+        throw new BadRequestException('Người đối thoại không thuộc đơn này.');
+      }
+      return partner;
+    }
+    if (withRole) {
+      const partner = participants.find((p) => p.role === withRole && p.userId !== userId);
+      if (!partner) {
+        throw new NotFoundException(
+          withRole === 'shipper'
+            ? 'Đơn này chưa có shipper nhận chuyến.'
+            : 'Không tìm thấy bên đối thoại.',
+        );
+      }
+      return partner;
+    }
+    const myRole = participants.find((p) => p.userId === userId)?.role;
+    const defaultRole = myRole === 'receiver' ? 'provider' : 'receiver';
+    const partner = participants.find((p) => p.role === defaultRole && p.userId !== userId);
+    if (!partner) throw new NotFoundException('Không tìm thấy bên đối thoại.');
+    return partner;
+  }
+
+  async getMessages(reservationId: string, userId: string, withUserId?: string, withRole?: string) {
+    const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, withUserId, withRole);
+    // Hội thoại 1-1: chỉ tin giữa TÔI và người đối thoại đang chọn — mỗi cặp một
+    // luồng riêng (shipper↔người nhận không thấy trao đổi người nhận↔cửa hàng).
+    const messages = await this.prisma.reservationMessage.findMany({
+      where: {
+        reservationId,
+        OR: [
+          { senderUserId: userId, recipientUserId: partner.userId },
+          { senderUserId: partner.userId, recipientUserId: userId },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      select: { id: true, senderUserId: true, content: true, createdAt: true },
+    });
+    return { messages, me: userId, partner, participants };
+  }
+
+  async sendMessage(reservationId: string, userId: string, content: string, toUserId?: string) {
+    const participants = await this.getChatParties(reservationId, userId);
+    const partner = this.resolveChatPartner(participants, userId, toUserId);
+    const message = await this.prisma.reservationMessage.create({
+      data: {
+        reservationId,
+        senderUserId: userId,
+        recipientUserId: partner.userId,
+        content: content.trim(),
+      },
+      select: { id: true, senderUserId: true, recipientUserId: true, content: true, createdAt: true },
+    });
+    // Đẩy realtime cho đúng người nhận tin — đang mở trang thì thấy ngay, không
+    // thì lần mở chat sau vẫn đọc từ DB (không tạo notification DB khỏi spam chuông).
+    this.gateway?.emitToUser(partner.userId, 'reservation:message', { reservationId, message });
+    return message;
   }
 }

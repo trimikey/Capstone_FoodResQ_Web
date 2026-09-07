@@ -5,6 +5,19 @@ import { ReservationsService } from './reservations.service';
  * Đánh giá sau đơn: một đơn có thể có HAI đánh giá — cửa hàng và tình nguyện viên
  * đã giao — phân biệt bằng rateeId. Chấm nhầm bên nào thì avgRating của bên kia sai.
  */
+/**
+ * Giá trị cấu hình mặc định cho test.
+ *
+ * Trước đây mock trả 3 cho MỌI khoá — vô hại khi chỉ có hạn mức số lượt/ngày, nhưng
+ * khung giờ nhận đơn cũng đọc từ đây: mở 00:03 đóng 00:03 là khung rỗng, mọi test đặt
+ * hàng fail. Trả theo khoá để test chạy đúng luật thật.
+ */
+async function configValue(key: string): Promise<number> {
+  if (key === 'PLATFORM_ORDER_OPEN_MINUTE') return 0;
+  if (key === 'PLATFORM_ORDER_CLOSE_MINUTE') return 1440;
+  return 3;
+}
+
 describe('ReservationsService.rateReservation', () => {
   const prisma = {
     receiverProfile: { findUnique: jest.fn() },
@@ -33,7 +46,6 @@ describe('ReservationsService.rateReservation', () => {
       {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   });
 
@@ -109,7 +121,6 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
       {} as never, {} as never, {} as never, {} as never, {} as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   });
 
@@ -143,14 +154,19 @@ describe('ReservationsService — tách đơn giao sỉ khỏi luồng NCC', () 
  * Tin kéo dài nhiều ngày mà thiếu ràng buộc này sẽ cho đặt lúc 3h sáng.
  */
 describe('ReservationsService.create — khung giờ mở cửa trong ngày', () => {
+  // Mốc thời gian GIẢ dùng chung cho CẢ fixture lẫn đồng hồ test. Bản cũ lấy
+  // Date.now() THẬT lúc load file còn test đóng băng đồng hồ ở 17/08/2026 —
+  // từ 19/08/2026 trở đi, (now thật − 24h) rơi sang NGÀY SAU mốc giả nên test
+  // lạc vào nhánh "Chưa đến ngày nhận hàng" và fail theo... lịch.
+  const FAKE_NOW = new Date('2026-08-17T09:33:00.000Z');
   const listingBase = {
     id: 'listing-1',
     quantity_remaining: 10,
     status: 'active',
     max_per_reservation: 3,
-    pickup_start_time: new Date(Date.now() - 86_400_000),
-    pickup_end_time: new Date(Date.now() + 86_400_000),
-    expiry_time: new Date(Date.now() + 172_800_000),
+    pickup_start_time: new Date(FAKE_NOW.getTime() - 86_400_000),
+    pickup_end_time: new Date(FAKE_NOW.getTime() + 86_400_000),
+    expiry_time: new Date(FAKE_NOW.getTime() + 172_800_000),
   };
 
   const transactionClient = {
@@ -167,7 +183,10 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
   const lock = { release: jest.fn() };
   let service: ReservationsService;
 
-  const build = (daily: { start: number | null; end: number | null }) => {
+  const build = (
+    daily: { start: number | null; end: number | null },
+    platform: { open: number; close: number } = { open: 0, close: 1440 },
+  ) => {
     prisma.receiverProfile.findUnique.mockResolvedValue({
       id: 'receiver-1',
       isCharityOrg: false,
@@ -182,15 +201,24 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
       {} as never,
       { acquire: jest.fn().mockResolvedValue(lock) } as never,
       {} as never, {} as never,
-      { getNumber: jest.fn().mockResolvedValue(3) } as never,
+      {
+        getNumber: jest.fn(async (key: string) => {
+          if (key === 'PLATFORM_ORDER_OPEN_MINUTE') return platform.open;
+          if (key === 'PLATFORM_ORDER_CLOSE_MINUTE') return platform.close;
+          return configValue(key);
+        }),
+      } as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Đóng băng đồng hồ cho MỌI test trong describe — fixture ở trên neo theo
+    // FAKE_NOW nên test nào chạy bằng giờ thật sẽ lệch ngày và fail theo lịch.
+    jest.useFakeTimers();
+    jest.setSystemTime(FAKE_NOW);
     prisma.$transaction.mockImplementation(async (callback: (tx: typeof transactionClient) => unknown) =>
       callback(transactionClient),
     );
@@ -198,19 +226,15 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
   });
 
   it('chặn đặt khi đang ngoài giờ mở cửa của tin', async () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
     // Khung 00:00–00:01 nên 16:33 giờ VN phải bị chặn.
     service = build({ start: 0, end: 1 });
 
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
-      .rejects.toThrow(/Ngoài giờ nhận hàng/);
+      .rejects.toThrow(/Ngoài giờ nhận đơn/);
   });
 
   it('cho đặt trong daily window khi pickupStartTime cũ bị lưu muộn hơn', async () => {
-    jest.useFakeTimers();
-    // 16:33 ngày 17/08 giờ VN — trong khung provider đặt 14:45–21:44.
-    jest.setSystemTime(new Date('2026-08-17T09:33:00.000Z'));
+    // 16:33 ngày 17/08 giờ VN (FAKE_NOW) — trong khung provider đặt 14:45–21:44.
     service = build({ start: 885, end: 1304 });
     // Timestamp cũ bị lệch: UI/API trước đây coi 22:00 VN mới là lúc mở.
     prisma.$queryRaw.mockResolvedValue([
@@ -232,6 +256,44 @@ describe('ReservationsService.create — khung giờ mở cửa trong ngày', ()
 
     await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
       .resolves.toMatchObject({ reservationId: 'reservation-1' });
+  });
+
+  it('giờ SÀN chặn cả tin không khai giờ riêng — không còn đặt được lúc 2h sáng', async () => {
+    // FAKE_NOW = 16:33 giờ VN, ngoài khung sàn 08:00–10:00.
+    service = build({ start: null, end: null }, { open: 480, close: 600 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/Ngoài giờ nhận đơn \(08:00–10:00\)/);
+  });
+
+  it('cửa hàng khai rộng hơn giờ sàn thì lấy phần giao nhau, không nới ra được', async () => {
+    // Cửa hàng khai 00:00–23:59 nhưng sàn chỉ mở 08:00–16:00 → 16:33 vẫn bị chặn.
+    service = build({ start: 0, end: 1439 }, { open: 480, close: 960 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/08:00–16:00/);
+  });
+
+  it('giờ cửa hàng nằm ngoài giờ sàn → báo khung rỗng thay vì lỗi khó hiểu', async () => {
+    service = build({ start: 1380, end: 1439 }, { open: 480, close: 1350 });
+
+    await expect(service.create('user-1', { listingId: 'listing-1', quantity: 1 } as never))
+      .rejects.toThrow(/ngoài giờ hoạt động của hệ thống/);
+  });
+
+  it('chặn hẹn giao ngoài khung dù lúc ĐẶT vẫn đang trong giờ mở cửa', async () => {
+    // Đặt lúc 16:33 (hợp lệ) nhưng hẹn giao 02:00 sáng hôm sau — đúng tình huống
+    // "2h sáng vẫn có shipper phải đi giao" mà khung giờ sinh ra để chặn.
+    service = build({ start: null, end: null }, { open: 480, close: 1350 });
+
+    await expect(
+      service.create('user-1', {
+        listingId: 'listing-1',
+        quantity: 1,
+        requestDelivery: false,
+        deliveryScheduledAt: '2026-08-18T02:00:00+07:00',
+      } as never),
+    ).rejects.toThrow(/Giờ hẹn giao phải nằm trong khung 08:00–22:30/);
   });
 
   afterEach(() => jest.useRealTimers());
@@ -260,7 +322,7 @@ describe('ReservationsService — thời hạn QR theo cấu hình admin', () =>
   const createService = (qrValidMinutes: number) => {
     const systemConfig = {
       getNumber: jest.fn(async (key: string) =>
-        key === 'QR_VALIDITY_MINUTES' ? qrValidMinutes : 3,
+        key === 'QR_VALIDITY_MINUTES' ? qrValidMinutes : configValue(key),
       ),
     };
     const service = new ReservationsService(
@@ -272,7 +334,6 @@ describe('ReservationsService — thời hạn QR theo cấu hình admin', () =>
       systemConfig as never,
       { notify: jest.fn() } as never,
       { applyDelta: jest.fn() } as never,
-      { add: jest.fn() } as never,
     );
     return { service, systemConfig };
   };
@@ -405,7 +466,6 @@ describe('ReservationsService.expireNoShows', () => {
       { getNumber: jest.fn(async (k: string) => (k === 'RESERVATION_NO_SHOW_PENALTY' ? 20 : 10)) } as never,
       { notify: jest.fn() } as never,
       trust as never,
-      { add: jest.fn() } as never,
     );
   });
 
@@ -492,5 +552,78 @@ describe('ReservationsService.expireNoShows', () => {
       data: { status: 'expired' },
     });
     expect(prisma.delivery.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Phạt huỷ trễ tồn tại để bù cho bên bị thiệt (cửa hàng đã để dành suất, shipper đã
+ * chạy tới lấy). Đơn giao chưa ai nhận thì không có thiệt hại đó — mà cứ để đó thì cron
+ * tự huỷ và KHÔNG phạt, nên phạt người bấm huỷ sớm hơn là thưởng cho việc ngồi im.
+ */
+describe('ReservationsService.cancel — không phạt khi chưa tìm được shipper', () => {
+  const prisma = {
+    reservation: { findUnique: jest.fn(), update: jest.fn() },
+    receiverProfile: { updateMany: jest.fn() },
+    delivery: { update: jest.fn() },
+    shipperTaskOffer: { updateMany: jest.fn() },
+    volunteerProfile: { update: jest.fn() },
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn().mockResolvedValue([]),
+  };
+  const trust = { applyDelta: jest.fn() };
+  let service: ReservationsService;
+
+  /** Sát giờ đóng nhận (còn 5 phút) → thoả điều kiện "huỷ trễ" theo thời gian. */
+  const buildReservation = (delivery: Record<string, unknown> | null) => ({
+    id: 'res-1',
+    status: 'confirmed',
+    quantity: 1,
+    listingId: 'listing-1',
+    receiverId: 'receiver-1',
+    receiver: { userId: 'user-1' },
+    listing: { pickupEndTime: new Date(Date.now() + 5 * 60_000), title: 'Cơm gà' },
+    delivery,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new ReservationsService(
+      prisma as never,
+      {} as never, {} as never, {} as never, {} as never,
+      { getNumber: jest.fn(configValue) } as never,
+      { notify: jest.fn() } as never,
+      trust as never,
+    );
+  });
+
+  it('đơn giao đang tìm shipper: huỷ sát giờ vẫn KHÔNG bị trừ điểm', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(
+      buildReservation({ id: 'dlv-1', status: 'pending_assignment', shipperId: null, shipper: null }),
+    );
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).not.toHaveBeenCalled();
+  });
+
+  it('đơn giao ĐÃ có shipper nhận: huỷ sát giờ vẫn bị trừ điểm (shipper đã đi)', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(
+      buildReservation({
+        id: 'dlv-1', status: 'assigned', shipperId: 'shipper-1',
+        shipper: { userId: 'shipper-user-1' },
+      }),
+    );
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).toHaveBeenCalled();
+  });
+
+  it('đơn tự đến lấy: giữ nguyên luật phạt huỷ trễ', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(buildReservation(null));
+
+    await service.cancel('res-1', 'user-1');
+
+    expect(trust.applyDelta).toHaveBeenCalled();
   });
 });

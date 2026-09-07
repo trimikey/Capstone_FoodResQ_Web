@@ -22,7 +22,7 @@ import {
   type CampaignExperience,
   type CampaignProofPhoto,
 } from '@/hooks/useCampaigns';
-import { useVolunteerMe } from '@/hooks/useDeliveries';
+import { useVolunteerMe, useMyWeeklyAvailability } from '@/hooks/useDeliveries';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe } from '@/hooks/useProfile';
 import { mediaUrl, errMsg } from '@/lib/utils';
@@ -99,6 +99,22 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'logistics', label: 'Nhân sự & Log' },
 ];
 
+/** 4 ca cố định: suy ra ca từ giờ bắt đầu (khớp SHIFT_PERIODS ở backend). */
+function periodFromStartTime(startTime: string): string | null {
+  const hour = Number(startTime.slice(0, 2));
+  if (!Number.isFinite(hour)) return null;
+  if (hour < 6) return 'midnight';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+/** 'YYYY-MM-DD' → 1 (Thứ 2) … 7 (Chủ nhật), khớp cột day_of_week. */
+function isoDayOfWeek(dateKey: string): number {
+  const dow = new Date(`${dateKey}T00:00:00+07:00`).getUTCDay();
+  return dow === 0 ? 7 : dow;
+}
+
 export default function CampaignPublicDetailPage() {
   const params = useParams();
   const id = String(params?.id ?? '');
@@ -111,6 +127,9 @@ export default function CampaignPublicDetailPage() {
   const isProvider = me?.role === UserRole.PROVIDER;
   const isVolunteer = user?.role === UserRole.VOLUNTEER;
   const { data: vol } = useVolunteerMe(isVolunteer);
+  const { data: myAvailability } = useMyWeeklyAvailability(isVolunteer);
+  // Mặc định BẬT lọc khi TNV đã khai lịch rảnh — đó là lý do họ khai.
+  const [onlyMyFreeSlots, setOnlyMyFreeSlots] = useState(true);
   const apply = useApplyCampaign();
   const [picking, setPicking] = useState(false);
   const [tab, setTab] = useState<Tab>('schedule');
@@ -147,9 +166,26 @@ export default function CampaignPublicDetailPage() {
   // Ca chung (role = null) ai cũng nhận được, nên vẫn liệt kê cho mọi vai trò.
   // Lọc trực tiếp, không useMemo: danh sách ca chỉ vài phần tử, và optional chaining
   // trong mảng deps làm React Compiler bỏ qua memo hoá cả component.
-  const roleShifts = (c?.shifts ?? []).filter(
+  const roleShiftsAll = (c?.shifts ?? []).filter(
     (s) => !effectiveRole || s.role === null || s.role === effectiveRole,
   );
+  // Lọc theo khung giờ TNV đã khai rảnh. Chỉ là bộ lọc hiển thị — tắt đi là thấy
+  // lại toàn bộ ca, và việc đăng ký / tổ chức duyệt không hề thay đổi.
+  const availabilitySet = useMemo(
+    () => new Set((myAvailability?.slots ?? []).map((s) => `${s.dayOfWeek}:${s.period}`)),
+    [myAvailability],
+  );
+  const roleShifts = useMemo(() => {
+    if (!onlyMyFreeSlots || availabilitySet.size === 0) return roleShiftsAll;
+    return roleShiftsAll.filter((s) => {
+      const period = periodFromStartTime(s.startTime);
+      if (!period) return true;
+      // Ca lặp theo nhiều ngày: giữ lại nếu có BẤT KỲ ngày nào rơi vào khung rảnh.
+      const dates = s.days?.map((d) => d.date) ?? [];
+      if (dates.length === 0) return true;
+      return dates.some((date) => availabilitySet.has(`${isoDayOfWeek(date)}:${period}`));
+    });
+  }, [roleShiftsAll, onlyMyFreeSlots, availabilitySet]);
   // Các ngày chiến dịch diễn ra — lấy từ `days` của ca đầu tiên (backend đã tính sẵn).
   const campaignDays = roleShifts[0]?.days?.map((d) => d.date) ?? [];
   // Ngày đang xem: mặc định ngày đầu tiên còn nhận đăng ký, không thì ngày đầu.
@@ -832,6 +868,29 @@ export default function CampaignPublicDetailPage() {
                             : 'Chọn được nhiều ca cùng lúc, miễn là các ca không trùng giờ.'}
                           {formSlots.length > 0 && ` Đang chọn ${formSlots.length} suất trực.`}
                         </p>
+
+                        {/* Lọc theo lịch rảnh đã khai. Chỉ hiện khi TNV thực sự có
+                            lịch — người chưa khai mà thấy ô này sẽ tưởng bị giấu ca. */}
+                        {availabilitySet.size > 0 && (
+                          <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={onlyMyFreeSlots}
+                              onChange={(e) => setOnlyMyFreeSlots(e.target.checked)}
+                              className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-[11px] font-bold text-emerald-900">
+                                Chỉ hiện ca hợp khung giờ tôi rảnh
+                              </span>
+                              <span className="block text-[11px] text-emerald-800">
+                                {onlyMyFreeSlots && roleShiftsAll.length !== roleShifts.length
+                                  ? `Đang ẩn ${roleShiftsAll.length - roleShifts.length} ca ngoài khung rảnh — bỏ tick để xem tất cả.`
+                                  : 'Theo lịch bạn khai ở trang Lịch làm việc.'}
+                              </span>
+                            </span>
+                          </label>
+                        )}
 
                         {/* Tóm tắt các suất đã chọn — với nhiều ngày, chỉ nhìn tab đang
                             mở thì không thấy hết mình đã nhận những buổi nào. */}

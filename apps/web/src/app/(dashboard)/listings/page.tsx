@@ -335,8 +335,11 @@ function ListingsPageContent() {
               Bộ lọc:
             </span>
 
+            {/* Ba bộ lọc trước đây cùng `z-40`: cùng z-index thì phần tử ĐỨNG SAU trong
+                DOM luôn nằm trên, nên nút "Danh mục"/"Thời gian nhận" che mất menu của
+                "Khoảng cách" vừa xổ ra. Nâng riêng wrapper đang mở lên trên các nút còn lại. */}
             {/* Distance Filter Dropdown */}
-            <div className="relative z-40">
+            <div className={`relative ${openMenu === 'distance' ? 'z-50' : 'z-30'}`}>
               <button
                 type="button"
                 onClick={() => setOpenMenu(openMenu === 'distance' ? null : 'distance')}
@@ -361,7 +364,7 @@ function ListingsPageContent() {
             </div>
 
             {/* Category Filter Dropdown */}
-            <div className="relative z-40">
+            <div className={`relative ${openMenu === 'category' ? 'z-50' : 'z-30'}`}>
               <button
                 type="button"
                 onClick={() => setOpenMenu(openMenu === 'category' ? null : 'category')}
@@ -386,7 +389,7 @@ function ListingsPageContent() {
             </div>
 
             {/* Pickup Time Filter */}
-            <div className="relative z-40">
+            <div className={`relative ${openMenu === 'time' ? 'z-50' : 'z-30'}`}>
               <button
                 type="button"
                 onClick={() => setOpenMenu(openMenu === 'time' ? null : 'time')}
@@ -426,14 +429,14 @@ function ListingsPageContent() {
               onClick={() => setMobileView('list')}
               className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'list' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
             >
-              Danh sÃ¡ch
+              Danh sách
             </button>
             <button
               type="button"
               onClick={() => setMobileView('map')}
               className={`min-h-10 rounded-xl text-sm font-bold transition-colors ${mobileView === 'map' ? 'bg-[#236c2a] text-white' : 'text-neutral-600'}`}
             >
-              Báº£n Ä‘á»“
+              Bản đồ
             </button>
           </div>
 
@@ -524,7 +527,7 @@ function ListingsPageContent() {
             onClick={() => setMobileView('list')}
             className="w-full min-h-11 rounded-xl bg-[#236c2a] text-white text-sm font-bold"
           >
-            Xem {listings.length} káº¿t quáº£
+            Xem {listings.length} kết quả
           </button>
         </div>
       </div>

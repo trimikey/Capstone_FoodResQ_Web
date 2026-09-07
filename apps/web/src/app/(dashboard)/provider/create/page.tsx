@@ -536,11 +536,13 @@ export default function ProviderCreateListingPage() {
 
             <Field label="Vị trí lấy hàng trên bản đồ">
               <div className="mt-2 h-56 rounded-xl overflow-hidden border border-neutral-200">
+                {/* interactive: cho bấm/kéo ghim chỉnh đúng cổng lấy hàng — địa chỉ
+                    geocode nhiều khi lệch cả trăm mét trong hẻm/khu lớn. */}
                 <LocationPicker
-                  key="location-static"
+                  key="location-picker"
                   lng={form.lng}
                   lat={form.lat}
-                  interactive={false}
+                  interactive
                   onPick={(lng, lat) => {
                     set('lng', lng);
                     set('lat', lat);

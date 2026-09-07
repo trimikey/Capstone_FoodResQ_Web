@@ -9,6 +9,13 @@ import { useMyReservations, useCancelReservation } from '@/hooks/useReservation'
 import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import { useMe } from '@/hooks/useProfile';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
+import {
+  LATE_CANCEL_PENALTY,
+  NO_SHOW_PENALTY,
+  isLateCancel,
+  penaltyOutcome,
+  scoreAfterLateCancel,
+} from '@/lib/cancel-penalty';
 import { QuantityUnit } from '@foodresq/types';
 import PickupVerificationModal from '@/components/reservations/PickupVerificationModal';
 import Pagination from '@/components/shared/Pagination';
@@ -50,22 +57,6 @@ interface Reservation {
     provider: { businessName: string };
   };
   delivery: { id: string; status: string } | null;
-}
-
-// Luật điểm uy tín (CLAUDE.md §8/§9 — mặc định của system_configs)
-const LATE_CANCEL_PENALTY = 10; // huỷ khi còn < 30 phút trước giờ kết thúc nhận
-const NO_SHOW_PENALTY = 20; // không đến nhận trước khi QR hết hạn
-const LATE_WINDOW_MS = 30 * 60 * 1000;
-const BAN_THRESHOLD = 30; // ≤ 30 điểm → khoá tài khoản
-const RESTRICT_THRESHOLD = 60; // ≤ 60 điểm → hạn chế (1 đơn/ngày)
-
-/** Cảnh báo hậu quả sau khi bị trừ điểm: khoá / hạn chế / an toàn. */
-function penaltyOutcome(scoreAfter: number): { text: string; severe: boolean } | null {
-  if (scoreAfter <= BAN_THRESHOLD)
-    return { text: `Điểm sẽ còn ${scoreAfter} (≤ ${BAN_THRESHOLD}) — tài khoản sẽ bị KHOÁ.`, severe: true };
-  if (scoreAfter <= RESTRICT_THRESHOLD)
-    return { text: `Điểm sẽ còn ${scoreAfter} (≤ ${RESTRICT_THRESHOLD}) — tài khoản sẽ bị hạn chế (tối đa 1 đơn/ngày).`, severe: false };
-  return null;
 }
 
 const CATEGORY_FALLBACK: Record<string, string> = {
@@ -114,7 +105,9 @@ export default function ReservationsPage() {
   // Thống kê lấy từ server trên toàn bộ đơn — nếu tính từ `reservations` thì con số
   // sẽ nhảy mỗi khi chuyển trang vì chỉ phản ánh trang đang xem.
   const stats = {
+    allOrders: data?.counts?.allOrders ?? 0,
     completed: data?.counts?.completed ?? 0,
+    cancelled: data?.counts?.cancelled ?? 0,
     missed: data?.counts?.noShow ?? 0,
     portions: data?.counts?.portionsSaved ?? 0,
   };
@@ -179,18 +172,47 @@ export default function ReservationsPage() {
           )}
         </div>
 
-        {/* Thống kê nhanh — tab lịch sử */}
+        {/* Thống kê nhanh — tab lịch sử.
+            Bỏ thẻ "Số phần đã cứu" riêng: mỗi đơn thường 1 phần nên nó trùng số với
+            "Đã nhận" và trông như lỗi. Số phần giờ là dòng phụ ngay dưới "Đã nhận".
+            Thêm "Đã huỷ" — trước đây danh sách có đơn huỷ mà không thẻ nào đếm. */}
         {tab === 'history' && !isLoading && !isError && filtered.length > 0 && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { icon: 'verified', label: 'Đã nhận', value: stats.completed, cls: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
-              { icon: 'inventory_2', label: 'Số phần đã cứu', value: stats.portions, cls: 'text-sky-700 bg-sky-50 border-sky-100' },
-              { icon: 'person_off', label: 'Không đến', value: stats.missed, cls: 'text-rose-700 bg-rose-50 border-rose-100' },
+              {
+                icon: 'receipt_long',
+                label: 'Tổng đơn',
+                value: stats.allOrders,
+                sub: 'Từ trước tới nay',
+                cls: 'text-neutral-700 bg-neutral-50 border-neutral-200',
+              },
+              {
+                icon: 'verified',
+                label: 'Đã nhận',
+                value: stats.completed,
+                sub: `${stats.portions} phần thực phẩm`,
+                cls: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+              },
+              {
+                icon: 'cancel',
+                label: 'Đã huỷ',
+                value: stats.cancelled,
+                sub: 'Bạn huỷ hoặc hệ thống huỷ',
+                cls: 'text-amber-700 bg-amber-50 border-amber-100',
+              },
+              {
+                icon: 'person_off',
+                label: 'Không đến',
+                value: stats.missed,
+                sub: 'Quá hạn mà không nhận',
+                cls: 'text-rose-700 bg-rose-50 border-rose-100',
+              },
             ].map((s) => (
               <div key={s.label} className={`rounded-2xl border p-4 ${s.cls}`}>
                 <span className="material-symbols-outlined text-[20px]">{s.icon}</span>
                 <p className="text-2xl font-extrabold mt-1 leading-none">{s.value}</p>
                 <p className="text-[11px] font-semibold opacity-80 mt-1">{s.label}</p>
+                <p className="text-[10px] opacity-60 mt-0.5">{s.sub}</p>
               </div>
             ))}
           </div>
@@ -237,8 +259,19 @@ export default function ReservationsPage() {
                 <div className="flex-1 min-w-0">
                 <div className="p-4 sm:p-5 flex flex-col min-[390px]:flex-row gap-4 min-[390px]:items-center">
                   <div className="w-full min-[390px]:w-20 h-36 min-[390px]:h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
+                    {/* Ảnh tin cũ trỏ /uploads của máy khác sẽ 404 — rơi về ảnh theo
+                        danh mục thay vì hiện icon vỡ + alt text. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.listing.imageUrls?.[0] ? mediaUrl(r.listing.imageUrls[0]) : fallbackImg(r.listing.category)} alt={r.listing.title} className="w-full h-full object-cover" />
+                    <img
+                      src={mediaUrl(r.listing.imageUrls?.[0] || fallbackImg(r.listing.category))}
+                      alt={r.listing.title}
+                      loading="lazy"
+                      onError={(e) => {
+                        const fb = fallbackImg(r.listing.category);
+                        if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                      }}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
@@ -389,9 +422,13 @@ export default function ReservationsPage() {
       {confirmCancel && (() => {
         const r = reservations.find(res => res.id === confirmCancel);
         if (!r) return null;
-        const isLate = new Date(r.listing.pickupEndTime).getTime() - Date.now() < LATE_WINDOW_MS;
+        // Đơn giao còn đang tìm shipper thì huỷ không bị phạt — khớp luật backend.
+        const isLate = isLateCancel(
+          r.listing.pickupEndTime,
+          r.delivery?.status === 'pending_assignment',
+        );
         const score = me?.trustScore;
-        const after = score != null ? Math.max(0, score - LATE_CANCEL_PENALTY) : null;
+        const after = scoreAfterLateCancel(score);
         const outcome = after != null ? penaltyOutcome(after) : null;
         return (
           <Modal onClose={() => { setConfirmCancel(null); setCancelReason(''); }} align="center" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md p-0 overflow-hidden">
@@ -424,8 +461,19 @@ export default function ReservationsPage() {
               ) : (
                 <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                   <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
+                  {/* Cron no_show chỉ áp cho đơn TỰ ĐẾN LẤY; đơn đang tìm shipper mà
+                      không ai nhận thì hệ thống tự huỷ và không phạt gì. */}
                   <p className="text-sm text-neutral-600 leading-relaxed">
-                    Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                    {r.delivery?.status === 'pending_assignment' ? (
+                      <>
+                        Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu không huỷ, hệ thống cũng tự huỷ
+                        khi hết hạn tìm người giao và cũng không trừ điểm.
+                      </>
+                    ) : (
+                      <>
+                        Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
+                      </>
+                    )}
                   </p>
                 </div>
               )}

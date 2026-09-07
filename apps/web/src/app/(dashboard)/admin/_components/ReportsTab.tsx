@@ -28,12 +28,12 @@ export default function ReportsTab() {
           <div className="text-xs font-semibold text-emerald-700 mb-2">Hệ thống / Xử lý khiếu nại</div>
           <h2 className="font-extrabold text-[28px] text-neutral-900 tracking-tight">Danh sách Khiếu nại</h2>
         </div>
-        <div className="flex gap-4">
-          <div className="bg-[#f9faf9] border border-neutral-150 px-6 py-4 rounded-3xl shadow-sm text-center min-w-[140px]">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-4">
+          <div className="bg-[#f9faf9] border border-neutral-150 px-4 sm:px-6 py-4 rounded-3xl shadow-sm text-center sm:min-w-[140px]">
             <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Tổng khiếu nại</p>
             <p className="text-2xl font-extrabold text-emerald-800 mt-1">{ov?.reports.total ?? 0}</p>
           </div>
-          <div className="bg-[#fef2f2] border border-[#fecaca] px-6 py-4 rounded-3xl shadow-sm text-center min-w-[140px]">
+          <div className="bg-[#fef2f2] border border-[#fecaca] px-4 sm:px-6 py-4 rounded-3xl shadow-sm text-center sm:min-w-[140px]">
             <p className="text-[10px] font-bold text-[#b91c1c] uppercase tracking-widest">Đang chờ xử lý</p>
             <p className="text-2xl font-extrabold text-[#b91c1c] mt-1">{ov?.reports.pending ?? 0}</p>
           </div>

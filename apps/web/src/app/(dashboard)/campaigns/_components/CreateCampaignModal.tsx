@@ -7,12 +7,16 @@ import { type CreateCampaignInput, useUploadCampaignImage } from '@/hooks/useCam
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
 import { errMsg, mediaUrl } from '@/lib/utils';
+import { clearDraft, loadDraft, saveDraftJson } from '@/lib/form-draft';
 import {
   MenuSuggestions,
   SupplySuggestions,
 } from '@/components/campaigns/CreateCampaignSuggestions';
 import {
   balanceMenuServings,
+  detectIngredients,
+  requiredIngredientsForDishes,
+  supplyTemplateForIngredient,
   type MenuTemplate,
   type SupplyTemplate,
 } from '@/components/campaigns/create-campaign-templates';
@@ -36,10 +40,13 @@ const PERIODS: Array<{ id: Period; label: string; time: string; start: string; e
   { id: 'evening', label: 'Ca tối', time: '18:00–24:00', start: '18:00', end: '00:00', order: 3, endDayOffset: 1 },
 ];
 
+// Phục vụ và giao hàng đã GỘP thành một vai trò vận hành: cùng một TNV sáng đi lấy
+// nguyên liệu, chiều chia suất rồi đi phát. Không tạo ca "Phục vụ" riêng nữa — tách
+// hai hàng chỉ đẻ ra cảnh có người trực đúng giờ mà hệ thống báo thiếu người vai kia.
+// Chiến dịch cũ đã có ca waiter vẫn hiển thị bình thường (dữ liệu lịch sử).
 const ROLES: Array<{ id: StaffRole; label: string }> = [
   { id: 'chef', label: 'Đầu bếp' },
-  { id: 'waiter', label: 'Phục vụ' },
-  { id: 'shipper', label: 'Giao hàng' },
+  { id: 'shipper', label: 'Giao hàng & phục vụ' },
 ];
 
 const STEPS = [
@@ -86,9 +93,38 @@ function formatDuration(minutes: number) {
 
 function suggestedStaff(servings: number, role: StaffRole) {
   if (role === 'chef') return Math.max(1, Math.ceil(servings / 50));
-  if (role === 'waiter') return Math.max(1, Math.ceil(servings / 40));
-  return Math.max(1, Math.ceil(servings / 80));
+  // Vai trò vận hành gánh cả chia suất (trước là phục vụ, ~40 suất/người) lẫn đi
+  // giao (~80 suất/người) — số gợi ý là tổng hai phần việc, không phải một nửa.
+  return Math.max(1, Math.ceil(servings / 40) + Math.ceil(servings / 80));
 }
+
+/**
+ * Nháp của form tạo chiến dịch.
+ *
+ * Chỉ giữ những gì người dùng GÕ VÀO. Cố tình bỏ `confirmedReview` (phải tick lại mỗi
+ * lần gửi, không được khôi phục hộ) và các cờ tạm như đang định vị / lỗi validate.
+ */
+interface CampaignDraft {
+  step: Step;
+  title: string;
+  description: string;
+  kitchenAddress: string;
+  addressSource: 'manual' | 'profile' | 'current';
+  lng: number;
+  lat: number;
+  imageUrl: string | null;
+  expectedServings: number | '';
+  menu: MenuRow[];
+  supplies: Array<{ name: string; quantity?: number; unit?: string }>;
+  scheduledDate: string;
+  endDate: string;
+  activePeriods: Period[];
+  recruitmentStartAt: string;
+  recruitmentEndAt: string;
+  staffing: Record<string, number>;
+}
+
+const DRAFT_KEY = 'foodresq:draft:create-campaign';
 
 interface Props {
   onClose: () => void;
@@ -97,31 +133,73 @@ interface Props {
 }
 
 export default function CreateCampaignModal({ onClose, onSubmit, pending }: Props) {
-  const [step, setStep] = useState<Step>(1);
+  // Đọc nháp MỘT lần lúc mở form. Dùng initializer của useState thay vì useEffect để
+  // không phải setState sau render (gây nháy) và để giá trị có ngay ở lần vẽ đầu tiên.
+  const [restored] = useState(() => loadDraft<CampaignDraft>(DRAFT_KEY));
+  const [draftRestored, setDraftRestored] = useState(!!restored);
+
+  const [step, setStep] = useState<Step>(restored?.step ?? 1);
   // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
   const [confirmedReview, setConfirmedReview] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [kitchenAddress, setKitchenAddress] = useState('');
-  const [addressSource, setAddressSource] = useState<'manual' | 'profile' | 'current'>('manual');
+  const [title, setTitle] = useState(restored?.title ?? '');
+  const [description, setDescription] = useState(restored?.description ?? '');
+  const [kitchenAddress, setKitchenAddress] = useState(restored?.kitchenAddress ?? '');
+  const [addressSource, setAddressSource] = useState<'manual' | 'profile' | 'current'>(restored?.addressSource ?? 'manual');
   const [locating, setLocating] = useState(false);
-  const [lng, setLng] = useState(106.6297);
-  const [lat, setLat] = useState(10.8231);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [expectedServings, setExpectedServings] = useState<number | ''>('');
+  const [lng, setLng] = useState(restored?.lng ?? 106.6297);
+  const [lat, setLat] = useState(restored?.lat ?? 10.8231);
+  const [imageUrl, setImageUrl] = useState<string | null>(restored?.imageUrl ?? null);
+  const [expectedServings, setExpectedServings] = useState<number | ''>(restored?.expectedServings ?? '');
   const [expectedServingsError, setExpectedServingsError] = useState<string | null>(null);
-  const [menu, setMenu] = useState<MenuRow[]>([
-    { name: '', type: 'lunch' },
-  ]);
-  const [supplies, setSupplies] = useState<Array<{ name: string; quantity?: number; unit?: string }>>([]);
-  const [scheduledDate, setScheduledDate] = useState(dateAfter(7));
-  const [endDate, setEndDate] = useState('');
-  const [activePeriods, setActivePeriods] = useState<Period[]>(['morning']);
-  const [recruitmentStartAt, setRecruitmentStartAt] = useState(() => toVnLocalInput(new Date(Date.now() + 3600_000)));
-  const [recruitmentEndAt, setRecruitmentEndAt] = useState('');
-  const [staffing, setStaffing] = useState<Record<string, number>>({
-    'morning:chef': 2, 'morning:waiter': 3, 'morning:shipper': 2,
-  });
+  const [menu, setMenu] = useState<MenuRow[]>(
+    restored?.menu ?? [{ name: '', type: 'lunch' }],
+  );
+  const [supplies, setSupplies] = useState<Array<{ name: string; quantity?: number; unit?: string }>>(restored?.supplies ?? []);
+  const [scheduledDate, setScheduledDate] = useState(restored?.scheduledDate ?? dateAfter(7));
+  const [endDate, setEndDate] = useState(restored?.endDate ?? '');
+  const [activePeriods, setActivePeriods] = useState<Period[]>(restored?.activePeriods ?? ['morning']);
+  const [recruitmentStartAt, setRecruitmentStartAt] = useState(
+    () => restored?.recruitmentStartAt ?? toVnLocalInput(new Date(Date.now() + 3600_000)),
+  );
+  const [recruitmentEndAt, setRecruitmentEndAt] = useState(restored?.recruitmentEndAt ?? '');
+  const [staffing, setStaffing] = useState<Record<string, number>>(
+    restored?.staffing ?? { 'morning:chef': 2, 'morning:shipper': 4 },
+  );
+  // Tự lưu nháp sau mỗi thay đổi — không chờ người dùng bấm gì cả, vì cái mất nháp
+  // thường là thao tác vô ý: bấm ra ngoài, gõ Escape, lỡ tải lại trang.
+  // So chuỗi JSON để chỉ ghi khi nội dung thật sự đổi, tránh ghi lại mỗi lần render.
+  const draftJson = JSON.stringify({
+    step, title, description, kitchenAddress, addressSource, lng, lat, imageUrl,
+    expectedServings, menu, supplies, scheduledDate, endDate, activePeriods,
+    recruitmentStartAt, recruitmentEndAt, staffing,
+  } satisfies CampaignDraft);
+  useEffect(() => {
+    saveDraftJson(DRAFT_KEY, draftJson);
+  }, [draftJson]);
+
+  /** Bỏ nháp và đưa form về mặc định — dùng khi người dùng muốn nhập lại từ đầu. */
+  function discardDraft() {
+    clearDraft(DRAFT_KEY);
+    setDraftRestored(false);
+    setStep(1);
+    setTitle('');
+    setDescription('');
+    setKitchenAddress('');
+    setAddressSource('manual');
+    setLng(106.6297);
+    setLat(10.8231);
+    setImageUrl(null);
+    setExpectedServings('');
+    setMenu([{ name: '', type: 'lunch' }]);
+    setSupplies([]);
+    setScheduledDate(dateAfter(7));
+    setEndDate('');
+    setActivePeriods(['morning']);
+    setRecruitmentStartAt(toVnLocalInput(new Date(Date.now() + 3600_000)));
+    setRecruitmentEndAt('');
+    setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
+  }
+
   const { data: me } = useMe();
   const profileAddress = me?.receiver?.address ?? me?.provider?.address ?? '';
   const profileLat = me?.receiver?.lat ?? me?.provider?.lat ?? null;
@@ -232,6 +310,59 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     };
   }, []);
 
+  // Chọn món → tự thêm ĐÚNG nguyên liệu món đó cần vào "Nguyên liệu và vật phẩm"
+  // (và gỡ ra khi bỏ món). Map tên-dòng → nguyên-liệu-nó-đại-diện: chỉ gỡ dòng do
+  // hệ thống thêm mà tên còn nguyên; dòng người dùng tự gõ / đã đổi tên không đụng.
+  // Không dùng detectIngredients cho dòng auto vì tên "Thịt gà" chứa cả chữ "thịt"
+  // sẽ bị hiểu nhầm là đã có thịt heo/bò cho món khác.
+  const autoSupplyRef = useRef<Map<string, string>>(new Map());
+  const menuNamesKey = menu
+    .map((item) => item.name.trim())
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const dishNames = menuNamesKey ? menuNamesKey.split('|') : [];
+    const required = requiredIngredientsForDishes(dishNames);
+    setSupplies((rows) => {
+      let changed = false;
+      let next = [...rows];
+
+      // 1. Gỡ nguyên liệu auto mà không còn món nào cần tới.
+      next = next.filter((row) => {
+        const key = row.name.trim().toLowerCase();
+        const ingredient = autoSupplyRef.current.get(key);
+        if (ingredient && !required.has(ingredient)) {
+          autoSupplyRef.current.delete(key);
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+
+      // 2. Thêm nguyên liệu còn thiếu. Dòng auto chỉ bao phủ đúng nguyên liệu nó
+      //    đại diện; dòng người dùng tự nhập (vd "Gạo ST25") bao phủ theo tên.
+      const covered = new Set<string>();
+      for (const row of next) {
+        const key = row.name.trim().toLowerCase();
+        const ingredient = autoSupplyRef.current.get(key);
+        if (ingredient) {
+          covered.add(ingredient);
+        } else {
+          for (const ing of detectIngredients(row.name ?? '')) covered.add(ing);
+        }
+      }
+      for (const ing of required) {
+        if (covered.has(ing)) continue;
+        const template = supplyTemplateForIngredient(ing, servingsRef.current);
+        if (!template) continue;
+        next.push({ name: template.name, quantity: template.quantity, unit: template.unit });
+        autoSupplyRef.current.set(template.name.trim().toLowerCase(), ing);
+        changed = true;
+      }
+      return changed ? next : rows;
+    });
+  }, [menuNamesKey]);
+
   function togglePeriod(id: Period) {
     const next = activePeriods.includes(id) ? activePeriods.filter((period) => period !== id) : [...activePeriods, id];
     setActivePeriods(PERIODS.filter((period) => next.includes(period.id)).map((period) => period.id));
@@ -318,6 +449,10 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         return 'Ngày vận hành phải từ ngày mai trở đi.';
       }
       if (endDate && endDate < scheduledDate) return 'Ngày kết thúc không được trước ngày bắt đầu.';
+      if (endDate) {
+        const days = Math.round((new Date(endDate).getTime() - new Date(scheduledDate).getTime()) / 86_400_000) + 1;
+        if (days > 30) return 'Chiến dịch tối đa 30 ngày — kiểm tra lại ngày kết thúc.';
+      }
       if (recruitmentBufferMinutes === null || recruitmentBufferIsTooShort) {
         return 'Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất 6 giờ.';
       }
@@ -335,6 +470,27 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       return toast.error(error);
     }
     setStep((step + 1) as Step);
+  }
+
+  /** Điền số người gợi ý (theo số suất) cho các ô đang bằng 0 — không đè ô đã nhập. */
+  function fillSuggestedStaffing() {
+    const next = { ...staffing };
+    let filled = 0;
+    for (const period of selectedPeriods) {
+      for (const role of ROLES) {
+        const key = `${period.id}:${role.id}`;
+        if ((next[key] ?? 0) === 0) {
+          next[key] = suggestedStaff(expectedServingsValue, role.id);
+          filled += 1;
+        }
+      }
+    }
+    if (filled === 0) {
+      toast.info('Các ô đều đã có số — chỉnh trực tiếp trong bảng nếu muốn đổi.');
+      return;
+    }
+    setStaffing(next);
+    toast.success(`Đã điền gợi ý cho ${filled} ô trống theo quy mô ${expectedServingsValue} suất.`);
   }
 
   const totalShiftSlots = selectedPeriods.reduce(
@@ -380,6 +536,9 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         supplyItems: supplies.filter((item) => item.name.trim()).map((item) => ({ ...item, name: item.name.trim(), unit: item.unit?.trim() || undefined })),
         shifts,
       });
+      // Gửi thành công thì nháp hết ý nghĩa — giữ lại sẽ khiến lần tạo sau bị điền
+      // sẵn nội dung của chiến dịch vừa gửi.
+      clearDraft(DRAFT_KEY);
       toast.success('Đã gửi kế hoạch chiến dịch để admin duyệt.');
       onClose();
     } catch (error) {
@@ -412,6 +571,23 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
           </nav>
 
           <div className="cm-modal-body"><div className="mx-auto w-full max-w-5xl space-y-4">
+            {/* Nói rõ form đang có nội dung cũ — nếu im lặng điền sẵn, người dùng dễ gửi
+                nhầm kế hoạch của lần trước mà không để ý. */}
+            {draftRestored && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-900">
+                  <span className="material-symbols-outlined text-[16px]">history</span>
+                  Đã khôi phục nội dung bạn nhập dở lần trước.
+                </p>
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="shrink-0 text-xs font-bold text-sky-700 underline hover:text-sky-900"
+                >
+                  Xoá, nhập lại từ đầu
+                </button>
+              </div>
+            )}
             {step === 1 && <>
               <Block title="Thông tin cơ bản" icon="info"><input className="cm-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên chiến dịch *" maxLength={255} /><textarea className="cm-input mt-2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Mô tả đối tượng phục vụ và mục tiêu chiến dịch" rows={3} maxLength={5000} /></Block>
               <Block
@@ -503,11 +679,14 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
               <Block
                 title="Nguyên liệu và vật phẩm"
                 icon="inventory_2"
-                description="Không bắt buộc. Thêm nguyên liệu để hệ thống lọc gợi ý món ăn phù hợp hơn."
+                description="Nguyên liệu cần cho các món đã chọn được tự động thêm vào đây — chỉnh số lượng nếu cần, hoặc thêm vật phẩm khác."
               >
                 <div className="cm-suggestion-bar cm-suggestion-bar--compact">
-                  <span>Điền nhanh danh sách nguyên liệu theo quy mô chiến dịch.</span>
-                  <SupplySuggestions expectedServings={expectedServingsValue} />
+                  <span>Gợi ý hiện đúng nguyên liệu theo món đã chọn, kèm vật dụng theo quy mô chiến dịch.</span>
+                  <SupplySuggestions
+                    expectedServings={expectedServingsValue}
+                    menuNames={menu.filter((item) => item.name.trim()).map((item) => item.name)}
+                  />
                 </div>
                 <div className="cm-repeat">
                   {supplies.map((item, index) => <div key={index} className="cm-repeat-row cm-repeat-row--supplies">
@@ -529,7 +708,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 </div>
                 {!periodsAreContiguous() && <p className="mt-2 text-xs font-bold text-rose-600">Các ca phải liên tiếp, không được bỏ trống ca ở giữa.</p>}
               </Block>
-              <Block title="Định biên nhân sự theo từng ca" icon="groups"><p className="mb-3 text-xs text-neutral-500">Nhập số tình nguyện viên cần tuyển cho từng vai trò. Chiến dịch chỉ bắt đầu khi các vị trí yêu cầu đã đủ người xác nhận.</p><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2">Ca</th>{ROLES.map((role) => <th className="p-2" key={role.id}>{role.label}</th>)}</tr></thead><tbody>{selectedPeriods.map((period) => <tr className="border-b" key={period.id}><td className="p-2 font-bold">{period.label}<span className="block text-xs font-normal text-neutral-500">{period.time}</span></td>{ROLES.map((role) => { const key = `${period.id}:${role.id}`; return <td className="p-2" key={role.id}><input type="number" min={0} max={100} className="cm-input w-24" value={staffing[key] ?? 0} onChange={(e) => setStaffing({ ...staffing, [key]: Number(e.target.value) })} onFocus={(e) => { if (Number(e.currentTarget.value) === 0) setStaffing({ ...staffing, [key]: suggestedStaff(expectedServingsValue, role.id) }); }} /></td>; })}</tr>)}</tbody></table></div><p className="mt-3 text-xs font-bold text-neutral-600">Tổng nhu cầu: {totalShiftSlots} lượt ca. Một người có thể nhận nhiều ca liền kề.</p></Block>
+              <Block title="Định biên nhân sự theo từng ca" icon="groups">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-neutral-500">Nhập số tình nguyện viên cần tuyển cho từng vai trò. Chiến dịch chỉ bắt đầu khi các vị trí yêu cầu đã đủ người xác nhận.</p>
+                  <button type="button" className="cm-repeat-add" onClick={fillSuggestedStaffing}>
+                    <span className="material-symbols-outlined text-[15px]">lightbulb</span>
+                    Điền gợi ý cho ô trống
+                  </button>
+                </div>
+                {/* KHÔNG auto-điền gợi ý trong onFocus: bấm mũi tên tăng/giảm của input
+                    vừa focus vừa đổi giá trị cùng lúc, hai cập nhật đè nhau làm số nhảy
+                    loạn (0 → gợi ý 3 → +1…). Gợi ý chuyển thành nút bấm chủ động ở trên. */}
+                <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Ca</th>{ROLES.map((role) => <th className="p-2" key={role.id}>{role.label}</th>)}</tr></thead><tbody>{selectedPeriods.map((period) => <tr className="border-b" key={period.id}><td className="p-2 font-bold">{period.label}<span className="block text-xs font-normal text-neutral-500">{period.time}</span></td>{ROLES.map((role) => { const key = `${period.id}:${role.id}`; return <td className="p-2" key={role.id}><input type="number" min={0} max={100} className="cm-input w-24" value={staffing[key] ?? 0} onChange={(e) => { const parsed = Number(e.target.value); setStaffing({ ...staffing, [key]: Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0 }); }} /></td>; })}</tr>)}</tbody></table></div>
+                <p className="mt-3 text-xs font-bold text-neutral-600">Tổng nhu cầu: {totalShiftSlots} lượt ca. Một người có thể nhận nhiều ca liền kề.</p>
+              </Block>
             </>}
 
             {step === 4 && <>
@@ -578,7 +770,6 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
 
             {step === 5 && <>
               <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /></Block>
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Sau khi admin duyệt, hệ thống tự mở/đóng tuyển. Chiến dịch tự bắt đầu đúng giờ nếu tất cả ca đã đủ người xác nhận; không có nút bắt đầu thủ công.</div>
               {/* Cảnh báo + cam kết bắt buộc: đăng lên là KHÔNG chỉnh sửa được nữa
                   (tính năng chỉnh sửa chiến dịch đã bị gỡ) — bắt tổ chức xem kỹ. */}
               <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
@@ -627,7 +818,7 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
 }
 
 function Summary({ label, value }: { label: string; value: string }) {
-  return <div className="grid grid-cols-[180px_1fr] gap-3 border-b border-neutral-100 py-3 last:border-0"><span className="text-xs font-bold uppercase text-neutral-500">{label}</span><span className="text-sm font-semibold text-neutral-900">{value}</span></div>;
+  return <div className="grid grid-cols-1 gap-1 sm:grid-cols-[180px_1fr] sm:gap-3 border-b border-neutral-100 py-3 last:border-0"><span className="text-xs font-bold uppercase text-neutral-500">{label}</span><span className="text-sm font-semibold text-neutral-900">{value}</span></div>;
 }
 
 function ImageUploader({ value, onChange }: { value: string | null; onChange: (value: string | null) => void }) {

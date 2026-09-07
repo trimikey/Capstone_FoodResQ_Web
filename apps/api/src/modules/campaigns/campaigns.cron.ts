@@ -26,6 +26,16 @@ export class CampaignsCron {
   }
 
   // Nửa đêm: giữ chiến dịch thiếu người ở trạng thái chờ dời lịch/huỷ, không tự huỷ.
+  /** Dọn chiến dịch chờ duyệt quá hạn — mỗi ngày một lần là đủ, rác tích theo ngày. */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handlePurgeStalePending() {
+    try {
+      await this.campaigns.purgeStalePendingCampaigns();
+    } catch (e) {
+      logCronError(this.logger, 'purgeStalePendingCampaigns', e);
+    }
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleExpireOverdue() {
     try {

@@ -18,7 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
-import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, AssignDonationPickupDto, AssignRequestPickupDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto } from './dto/campaign.dto';
+import { CreateCampaignDto, ApplyCampaignDto, CompleteCampaignDto, PledgeDonationDto, ConfirmDonationDto, AssignDonationPickupDto, AssignRequestPickupDto, SubmitCampaignChangeDto, AddExperienceDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto, ConfirmCampaignTransportReceiptDto, AdvanceCampaignTaskDto, CompleteDistributionDto, ConfirmIngredientPickupDto, SetMenuItemMealDto, ExtendRecruitmentDto, ConfirmCampaignAssignmentDto, CancelCampaignDto, InviteVolunteersDto, AcceptShiftInviteDto } from './dto/campaign.dto';
 import { ApplyShiftDto } from './dto/kitchen.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -31,7 +31,10 @@ import { User } from '@prisma/client';
 
 @ApiTags('Campaigns')
 @Controller('campaigns')
-@UseGuards(JwtAuthGuard)
+// ActiveAccountGuard cấp controller: MỌI thao tác ghi (POST/PATCH/DELETE) đều yêu cầu
+// tài khoản đã được admin duyệt (status=active) — tổ chức từ thiện / TNV / NCC đang
+// pending_verification chỉ xem được (GET), không tạo chiến dịch hay thao tác gì khác.
+@UseGuards(JwtAuthGuard, ActiveAccountGuard)
 @ApiBearerAuth()
 export class CampaignsController {
   constructor(
@@ -72,6 +75,48 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Charity: chiến dịch của tôi' })
   myCampaigns(@CurrentUser() user: User) {
     return this.campaignsService.myCampaigns(user.id);
+  }
+
+  @Get('my-intake-history')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: lịch sử nguyên liệu đã nhận, nhóm theo từng chiến dịch' })
+  myIntakeHistory(@CurrentUser() user: User) {
+    return this.campaignsService.getMyIntakeHistory(user.id);
+  }
+
+  @Post(':id/accept-invite')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({
+    summary:
+      'Volunteer: nhận lời mời của tổ chức → vào thẳng ca (tổ chức đã chọn đích danh nên không duyệt lại)',
+  })
+  acceptShiftInvite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: AcceptShiftInviteDto,
+  ) {
+    return this.campaignsService.acceptShiftInvite(id, user.id, dto.notificationId);
+  }
+
+  @Post('shift-invites/:notificationId/dismiss')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: bỏ qua một lời mời nhận ca (đánh dấu đã phản hồi)' })
+  dismissShiftInvite(
+    @Param('notificationId', ParseUUIDPipe) notificationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.campaignsService.dismissShiftInvite(user.id, notificationId);
+  }
+
+  @Get('my-shift-invites')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: lời mời nhận ca đang chờ phản hồi' })
+  myShiftInvites(@CurrentUser() user: User) {
+    return this.campaignsService.getMyShiftInvites(user.id);
   }
 
   @Get('my-tasks')
@@ -176,6 +221,47 @@ export class CampaignsController {
     return this.campaignsService.startCampaign(id, user.id);
   }
 
+  @Get(':id/available-volunteers')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({
+    summary:
+      'Charity: TNV đã khai rảnh đúng ca/ngày này (gợi ý để mời khi ca thiếu người — không phải người đã nhận việc)',
+  })
+  availableVolunteers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Query('workDate') workDate: string,
+    @Query('period') period: string,
+    @Query('role') role?: string,
+  ) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate ?? '')) {
+      throw new BadRequestException('workDate phải theo định dạng YYYY-MM-DD.');
+    }
+    if (!['midnight', 'morning', 'afternoon', 'evening'].includes(period ?? '')) {
+      throw new BadRequestException('period chỉ nhận: midnight / morning / afternoon / evening.');
+    }
+    if (role && !['chef', 'waiter', 'shipper'].includes(role)) {
+      throw new BadRequestException('role chỉ nhận: chef / waiter / shipper.');
+    }
+    return this.campaignsService.getAvailableVolunteersForShift(id, user.id, workDate, period, role);
+  }
+
+  @Post(':id/invite-volunteers')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({
+    summary:
+      'Charity: gửi lời mời tới TNV đã khai rảnh ca này (chỉ là thông báo — TNV vẫn tự đăng ký, tổ chức vẫn duyệt)',
+  })
+  inviteVolunteers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: InviteVolunteersDto,
+  ) {
+    return this.campaignsService.inviteVolunteersToShift(id, user.id, dto);
+  }
+
   @Get(':id/staffing-readiness')
   @ApiOperation({ summary: 'Ma trận đủ người theo từng ngày, ca và vai trò' })
   staffingReadiness(@Param('id', ParseUUIDPipe) id: string) {
@@ -209,9 +295,13 @@ export class CampaignsController {
   @Patch(':id/cancel')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Charity: huỷ kế hoạch trước hoặc trong giai đoạn tuyển' })
-  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.campaignsService.cancelCampaign(id, user.id);
+  @ApiOperation({ summary: 'Charity: huỷ kế hoạch trước hoặc trong giai đoạn tuyển (kèm lý do gửi TNV/NCC)' })
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Body() dto: CancelCampaignDto,
+  ) {
+    return this.campaignsService.cancelCampaign(id, user.id, dto.reason);
   }
 
   @Patch(':id/complete')
@@ -361,6 +451,30 @@ export class CampaignsController {
   })
   createConstraints() {
     return this.campaignsService.getCreateConstraints();
+  }
+
+  @Get('provider/supply-stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER)
+  @ApiOperation({ summary: 'Provider: thống kê kg đã cung cấp theo từng chiến dịch + chuỗi ngày' })
+  providerSupplyStats(@CurrentUser() user: User) {
+    return this.campaignsService.getProviderSupplyStats(user.id);
+  }
+
+  @Get('charity/overview-report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo gộp toàn tổ chức cho dashboard Tổng quan' })
+  charityOverviewReport(@CurrentUser() user: User) {
+    return this.campaignsService.getCharityOverviewReport(user.id);
+  }
+
+  @Get(':id/report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: báo cáo tổng hợp chiến dịch (suất ăn, kg nguyên liệu, TNV)' })
+  campaignReport(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.campaignsService.getCampaignReport(id, user.id);
   }
 
   @Get('my-pickup-orders')
@@ -646,25 +760,27 @@ export class CampaignsController {
   @Post(':id/dishes/:menuItemId/approve')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng phát xuất" của một món — món đã được chef tick xong' })
+  @ApiOperation({ summary: 'Tổ chức: duyệt bước "Sẵn sàng xuất phát" của một món — món đã được chef tick xong' })
   approveDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,
     @CurrentUser() user: User,
+    @Query('date') date?: string,
   ) {
-    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId);
+    return this.campaignsService.approveDishFinalStep(id, user.id, menuItemId, date || undefined);
   }
 
   @Post(':id/dishes/:menuItemId/reject')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng phát xuất" của một món — chef phải làm lại' })
+  @ApiOperation({ summary: 'Tổ chức: từ chối bước "Sẵn sàng xuất phát" của một món — chef phải làm lại' })
   rejectDishFinalStep(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('menuItemId') menuItemId: string,
     @CurrentUser() user: User,
     @Body() body: { reason: string },
+    @Query('date') date?: string,
   ) {
-    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason);
+    return this.campaignsService.rejectDishFinalStep(id, user.id, menuItemId, body.reason, date || undefined);
   }
 }

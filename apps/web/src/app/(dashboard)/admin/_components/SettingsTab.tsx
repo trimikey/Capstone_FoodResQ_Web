@@ -5,11 +5,22 @@ import { toast } from 'sonner';
 import { useAdminConfigs, useSetConfig, type SystemConfigItem } from '@/hooks/useAdmin';
 import { Skeleton } from './admin-shared';
 
+/** 480 → "08:00". Dùng cho các cấu hình lưu bằng số phút tính từ 00:00. */
+function minuteLabel(min: number): string {
+  if (!Number.isFinite(min)) return '--:--';
+  const clamped = Math.max(0, Math.min(1440, Math.round(min)));
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+}
+
 function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
   const setConfig = useSetConfig();
   const [val, setVal] = useState(String(cfg.value));
   const dirty = Number(val) !== cfg.value;
   const isToggle = cfg.min === 0 && cfg.max === 1 && cfg.unit === '0/1';
+  // Cấu hình lưu bằng phút-từ-nửa-đêm: hiện luôn giờ tương ứng để admin khỏi nhẩm
+  // 1350 là mấy giờ. Vẫn giữ ô nhập số vì mốc 1440 (24:00) không gõ được bằng input
+  // giờ, mà đó lại là cách mở 24/7 khi cần test.
+  const isMinuteOfDay = cfg.display === 'minute-of-day';
 
   async function save() {
     const n = Number(val);
@@ -27,11 +38,18 @@ function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
   }
 
   return (
-    <div className="px-6 py-4 flex items-center justify-between gap-4">
-      <div className="min-w-0">
+    // flex-wrap: đơn vị hoặc nhãn dài làm khối điều khiển rộng ra thì nó xuống dòng,
+    // thay vì tràn ra ngoài thẻ.
+    <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-[220px] flex-1">
         <p className="font-bold text-neutral-900 text-sm">{cfg.label}</p>
         <p className="text-xs text-neutral-500 mt-0.5">{cfg.description}</p>
-        <p className="text-[11px] text-neutral-400 mt-1">Khoảng cho phép: {cfg.min}–{cfg.max} {cfg.unit} · mặc định {cfg.default}</p>
+        <p className="text-[11px] text-neutral-400 mt-1">
+          Khoảng cho phép:{' '}
+          {isMinuteOfDay
+            ? `${minuteLabel(cfg.min)}–${minuteLabel(cfg.max)} · mặc định ${minuteLabel(cfg.default)}`
+            : `${cfg.min}–${cfg.max} ${cfg.unit} · mặc định ${cfg.default}`}
+        </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {isToggle ? (
@@ -54,16 +72,28 @@ function ConfigRow({ cfg }: { cfg: SystemConfigItem }) {
             />
           </button>
         ) : (
-          <div className="relative">
-            <input
-              type="number"
-              value={val}
-              min={cfg.min}
-              max={cfg.max}
-              onChange={(e) => setVal(e.target.value)}
-              className="w-24 bg-white border border-neutral-200 rounded-xl py-2.5 pl-3 pr-10 text-sm font-bold text-neutral-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-neutral-400 font-medium pointer-events-none">{cfg.unit}</span>
+          // Đơn vị nằm CẠNH ô nhập, không chồng lên: trước đây nó được đặt tuyệt đối
+          // bên trong ô với chừa sẵn 40px, nên đơn vị dài hơn ("phút từ 00:00") đè
+          // thẳng lên con số. Để bên ngoài thì dài bao nhiêu cũng không hỏng.
+          <div className="text-right">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={val}
+                min={cfg.min}
+                max={cfg.max}
+                onChange={(e) => setVal(e.target.value)}
+                className="w-24 bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-sm font-bold text-neutral-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+              <span className="text-[11px] text-neutral-400 font-medium whitespace-nowrap">
+                {cfg.unit}
+              </span>
+            </div>
+            {isMinuteOfDay && (
+              <p className="mt-1 text-[11px] font-bold text-emerald-700">
+                = {minuteLabel(Number(val))}
+              </p>
+            )}
           </div>
         )}
         <button

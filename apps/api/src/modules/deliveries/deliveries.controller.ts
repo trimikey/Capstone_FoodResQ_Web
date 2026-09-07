@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Patch,
@@ -48,13 +49,6 @@ export class DeliveriesController {
   @ApiOperation({ summary: 'Shipper: Get active delivery task' })
   getMyActive(@CurrentUser() user: User) {
     return this.deliveriesService.getMyActiveDelivery(user.id);
-  }
-
-  @Get('my/offers')
-  @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Get pending task offers' })
-  getMyOffers(@CurrentUser() user: User) {
-    return this.deliveriesService.getMyPendingOffers(user.id);
   }
 
   @Get('track/:reservationId')
@@ -114,22 +108,34 @@ export class DeliveriesController {
     });
   }
 
-  @Post(':id/accept')
+  @Get('nearby')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Accept a delivery offer' })
-  accept(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
-    return this.deliveriesService.acceptOffer(id, user.id);
+  @ApiOperation({
+    summary:
+      'Shipper: đơn đang chờ trong bán kính 5km quanh vị trí hiện tại — tự chọn đơn thay vì chờ lời mời',
+  })
+  nearbyPending(
+    @CurrentUser() user: User,
+    @Query('lng') lng: string,
+    @Query('lat') lat: string,
+  ) {
+    const lngNum = Number(lng);
+    const latNum = Number(lat);
+    if (!Number.isFinite(lngNum) || !Number.isFinite(latNum)
+      || lngNum < -180 || lngNum > 180 || latNum < -90 || latNum > 90) {
+      throw new BadRequestException('Cần toạ độ hợp lệ (lng, lat) để tìm đơn gần bạn.');
+    }
+    return this.deliveriesService.getNearbyPendingDeliveries(user.id, lngNum, latNum);
   }
 
-  @Post(':id/reject')
+  @Post(':id/claim')
   @Roles(UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Shipper: Reject a delivery offer' })
-  reject(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Body() dto: RejectOfferDto,
-  ) {
-    return this.deliveriesService.rejectOffer(id, user.id, dto.reason);
+  @ApiOperation({
+    summary:
+      'Shipper: tự nhận một đơn đang chờ (yêu cầu có ca giao hàng đã đăng ký phủ thời điểm giao)',
+  })
+  claim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.deliveriesService.claimDelivery(id, user.id);
   }
 
   @Post(':id/cancel')

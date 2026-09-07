@@ -940,27 +940,6 @@ export function useCompleteDishStep() {
   });
 }
 
-/** Chef báo QC không đạt và ngắt quy trình món. */
-export function useFlagDishStepQcFail() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ campaignId, stepId, reason }: {
-      campaignId: string;
-      stepId: string;
-      reason: string;
-    }) => {
-      const res = await apiClient.post<ApiResponse<DishStep>>(
-        endpoints.campaigns.flagDishStepQcFail(campaignId, stepId),
-        { reason }
-      );
-      return res.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
-      queryClient.invalidateQueries({ queryKey: ['campaigns', 'supplies'] });
-    },
-  });
-}
 
 export function useCampaignSupplies(campaignId?: string) {
   return useQuery({

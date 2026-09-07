@@ -70,9 +70,11 @@ export default function DistributionPointsMap({ points }: { points: Point[] }) {
       scrollWheelZoom={false}
       className="h-full w-full"
     >
+      {/* Tile OSM chuẩn như các map khác — CARTO chỉ miễn phí trên localhost,
+          lên domain deploy sẽ in chìm "API KEY REQUIRED" lên bản đồ. */}
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <Markers points={points} />
     </MapContainer>

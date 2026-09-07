@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { useAdvanceTask, useFlagStepQualityFail, type MyTaskDetail, type PickupOrder, type CampaignMenuItem } from '@/hooks/useCampaigns';
+import { useAdvanceTask, type MyTaskDetail, type PickupOrder, type CampaignMenuItem } from '@/hooks/useCampaigns';
 import { useUpdateDeliveryStatus } from '@/hooks/useDeliveries';
 import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
@@ -159,16 +159,15 @@ export default function ShipperTaskView({ detail, onCheckedIn }: Props) {
         }
       />
 
-      {/* 2. Ca trực được phân */}
+      {/* 2. Ca trực được phân — THÔNG TIN, không phải việc để "làm xong".
+          Ca kết thúc khi hết giờ, không phải khi bấm điểm danh; còn tiến độ lấy nguyên
+          liệu đã được đếm riêng ở từng đơn bên dưới nên không cần gắn "Xong" ở đây.
+          Bỏ số thứ tự cho khớp bộ đếm phía trên — bộ đếm chưa bao giờ tính dòng này. */}
       {assignment.shift && (
         <TaskItem
-          index={nextStep()}
           icon="schedule"
           title={assignment.shift.label}
           time={`${assignment.shift.startTime}–${assignment.shift.endTime}`}
-          // Ca chỉ "Xong" khi đã lấy hết nguyên liệu của chiến dịch. Trước đây điểm danh
-          // xong là ca hiện "Xong" ngay, trong khi chưa lấy được cân hàng nào.
-          done={pickupOrders.length > 0 ? donePickups.length === pickupOrders.length : checkedIn}
           locked={!checkedIn}
           lockedHint="Điểm danh tại bếp trước đã"
           description={
@@ -393,7 +392,8 @@ function TaskItem({
   action,
   children,
 }: {
-  index: number;
+  /** Bỏ trống = thẻ THÔNG TIN, không đánh số và không gắn nhãn "Xong". */
+  index?: number;
   icon: string;
   title: string;
   time?: string | null;
@@ -413,25 +413,27 @@ function TaskItem({
       <div className="flex items-start gap-3">
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            done ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
+            done && index != null ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
           }`}
         >
           <span className="material-symbols-outlined text-[20px]">
-            {done ? 'check' : locked ? 'lock' : icon}
+            {done && index != null ? 'check' : locked ? 'lock' : icon}
           </span>
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
-              Việc {index}
-            </span>
+            {index != null && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
+                Việc {index}
+              </span>
+            )}
             {time && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
                 {time}
               </span>
             )}
-            {done && (
+            {done && index != null && (
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                 Xong
               </span>
@@ -491,10 +493,7 @@ interface QCChecklistSectionProps {
 
 function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklistSectionProps) {
   const updateDelivery = useUpdateDeliveryStatus();
-  const flagFail = useFlagStepQualityFail();
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
-  const [failReason, setFailReason] = useState('');
-  const [failingItem, setFailingItem] = useState<CampaignMenuItem | null>(null);
 
   // Group món theo mẻ (breakfast/lunch/dinner)
   const groups = menuItems.reduce<Record<string, CampaignMenuItem[]>>((acc, item) => {
@@ -534,24 +533,6 @@ function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklist
     }
   }
 
-  async function handleReportFail() {
-    if (!failingItem || !failReason.trim()) {
-      toast.error('Vui lòng nhập lý do không đạt.');
-      return;
-    }
-    try {
-      await flagFail.mutateAsync({
-        campaignId: '', // not used for shipper
-        stepId: failingItem.id,
-        reason: failReason.trim(),
-      });
-      toast.warning(`Đã báo cáo "${failingItem.name}" không đạt. Tổ chức đã được thông báo.`);
-      setFailingItem(null);
-      setFailReason('');
-    } catch (e) {
-      toast.error(errMsg(e, 'Báo cáo thất bại'));
-    }
-  }
 
   return (
     <section className="cm-card p-5">
@@ -640,15 +621,6 @@ function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklist
                       </p>
                     )}
                   </div>
-                  {!checked && (
-                    <button
-                      type="button"
-                      onClick={() => setFailingItem(item)}
-                      className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 transition-colors"
-                    >
-                      Báo lỗi
-                    </button>
-                  )}
                 </div>
               );
             })}
@@ -684,62 +656,13 @@ function QCChecklistSection({ menuItems, deliveryId, onQCComplete }: QCChecklist
             </p>
           </div>
         )}
+        {/* Báo lỗi món đã gỡ: QC do TỔ CHỨC duyệt/từ chối trên ảnh khâu 3 — món không
+            đạt sẽ bị tổ chức huỷ, TNV không tự đánh fail nữa. */}
         <p className="text-[10px] text-center text-neutral-400">
-          Nếu phát hiện món không đạt, bấm "Báo lỗi" để thông báo cho tổ chức xử lý.
+          Món không đạt? Liên hệ tổ chức — họ sẽ từ chối ảnh QC và huỷ món đó.
         </p>
       </div>
 
-      {/* Modal báo lỗi món */}
-      {failingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setFailingItem(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-br from-rose-500 to-rose-600 p-4 text-white">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px]">warning</span>
-                <p className="font-bold">Báo món không đạt</p>
-              </div>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
-                <p className="text-sm font-bold text-rose-800">{failingItem.name}</p>
-                {failingItem.plannedServings != null && (
-                  <p className="text-xs text-rose-600 mt-0.5">Dự kiến: {failingItem.plannedServings} suất</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-600 mb-1">
-                  Lý do không đạt <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  value={failReason}
-                  onChange={(e) => setFailReason(e.target.value)}
-                  rows={3}
-                  placeholder="VD: Món bị ôi, thiếu thành phần, không đúng công thức..."
-                  className="w-full rounded-xl border border-neutral-200 p-3 text-xs focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-200"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFailingItem(null)}
-                  className="flex-1 rounded-xl border border-neutral-200 px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50 transition-colors"
-                >
-                  Huỷ
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReportFail}
-                  disabled={!failReason.trim() || flagFail.isPending}
-                  className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition-colors"
-                >
-                  {flagFail.isPending ? 'Đang gửi...' : 'Báo cáo'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

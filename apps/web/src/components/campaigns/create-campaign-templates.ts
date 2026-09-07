@@ -325,6 +325,66 @@ export function detectIngredients(name: string): Set<string> {
   return found;
 }
 
+// ─── Món ăn → nguyên liệu cần thiết ───────────────────────────────────────
+
+/** Supply template tương ứng với từng nguyên liệu chuẩn mà món ăn cần. */
+export const INGREDIENT_SUPPLY_ID: Record<string, string> = {
+  'gạo': 'sup-rice',
+  'rau': 'sup-vegetables',
+  'thịt': 'sup-meat',
+  'gà': 'sup-chicken',
+  'cá': 'sup-fish',
+  'trứng': 'sup-eggs',
+};
+
+/** id các supply template là NGUYÊN LIỆU nấu ăn (khác vật dụng đóng gói / dụng cụ bếp). */
+export const INGREDIENT_SUPPLY_IDS = new Set(Object.values(INGREDIENT_SUPPLY_ID));
+
+/** Tên món có các từ này thì cần gạo dù chữ "gạo" không xuất hiện trong tên món. */
+const RICE_DISH_WORDS = ['cơm', 'cháo', 'xôi'];
+
+/**
+ * Nguyên liệu một MÓN ĂN cần.
+ * Món trùng tên template thì dùng đúng công thức (`requires`) — vd "Cơm gà xối mỡ"
+ * ra đủ gạo + gà. Món người dùng tự gõ thì đoán từ tên món ("Cơm cá chiên" → gạo + cá).
+ */
+export function ingredientsForDish(dishName: string): Set<string> {
+  const normalized = (dishName ?? '').trim().toLowerCase();
+  if (!normalized) return new Set();
+  const template = MENU_TEMPLATES.find((m) => m.name.trim().toLowerCase() === normalized);
+  if (template) return new Set(template.requires);
+
+  const found = detectIngredients(dishName);
+  const padded = ` ${normalized.split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ')} `;
+  if (RICE_DISH_WORDS.some((w) => padded.includes(` ${w} `))) found.add('gạo');
+  return found;
+}
+
+/** Hợp nguyên liệu của toàn bộ thực đơn. */
+export function requiredIngredientsForDishes(dishNames: string[]): Set<string> {
+  const required = new Set<string>();
+  for (const name of dishNames) {
+    for (const ing of ingredientsForDish(name)) required.add(ing);
+  }
+  return required;
+}
+
+/** Supply template (đã scale theo số suất) cho một nguyên liệu chuẩn. */
+export function supplyTemplateForIngredient(
+  ingredient: string,
+  servings: number,
+): SupplyTemplate | null {
+  const id = INGREDIENT_SUPPLY_ID[ingredient];
+  const template = SUPPLY_TEMPLATES.find((s) => s.id === id);
+  if (!template) return null;
+  const safeServings = Math.max(1, Math.floor(servings || 1));
+  return {
+    ...template,
+    quantity:
+      template.quantity == null ? template.quantity : scaleByServings(template.quantity, safeServings),
+  };
+}
+
 /**
  * Lọc menu templates dựa trên vật phẩm đã nhập.
  *

@@ -89,7 +89,7 @@ export default function MyTasksLayout({ children }: { children: ReactNode }) {
       <FaceEnrollmentGate />
 
       {/* Mobile top header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 h-16 bg-white border-b border-neutral-200 px-4 flex items-center gap-3">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-40 h-16 bg-white border-b border-neutral-200 px-4 flex items-center gap-3">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -114,7 +114,7 @@ export default function MyTasksLayout({ children }: { children: ReactNode }) {
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100]">
+        <div className="md:hidden fixed inset-0 z-[100]">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} aria-hidden />
           <aside className="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-white shadow-2xl flex flex-col">
             <div className="flex items-center gap-3 px-5 py-5 border-b border-neutral-200">
@@ -176,7 +176,7 @@ export default function MyTasksLayout({ children }: { children: ReactNode }) {
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden lg:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-56 flex-col bg-white z-40 border-r border-neutral-200"
+        className="hidden md:flex fixed left-0 top-[104px] h-[calc(100vh-104px)] w-56 flex-col bg-white z-40 border-r border-neutral-200"
         aria-label="Điều hướng chiến dịch"
       >
         <div className="px-5 pt-6 pb-4">
@@ -247,7 +247,7 @@ export default function MyTasksLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main wrapper */}
-      <div className="lg:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
+      <div className="md:ml-56 min-h-screen flex flex-col bg-[#fcf9f2]">
         <div className="flex-grow">{children}</div>
       </div>
     </div>

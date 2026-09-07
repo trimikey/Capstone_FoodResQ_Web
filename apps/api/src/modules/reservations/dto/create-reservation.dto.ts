@@ -5,6 +5,8 @@ import {
   IsOptional,
   IsString,
   IsBoolean,
+  IsDateString,
+  Min,
   Max,
   MaxLength,
 } from 'class-validator';
@@ -42,4 +44,38 @@ export class CreateReservationDto {
   @IsString()
   @MaxLength(2048)
   deliveryEvidenceUrl?: string;
+
+  // ─── Điểm giao riêng cho đơn này (tuỳ chọn) ────────────────────────────────
+  // Người khó di chuyển có thể đang nằm viện hoặc ở nhà người thân, không phải
+  // địa chỉ trong hồ sơ. Bỏ trống cả ba trường = giao về địa chỉ hồ sơ như cũ.
+  @ApiPropertyOptional({ example: 106.6297, description: 'Kinh độ điểm giao (gửi kèm deliveryLat)' })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Kinh độ điểm giao phải là số' })
+  @Min(-180, { message: 'Kinh độ tối thiểu -180' })
+  @Max(180, { message: 'Kinh độ tối đa 180' })
+  @Type(() => Number)
+  deliveryLng?: number;
+
+  @ApiPropertyOptional({ example: 10.8231, description: 'Vĩ độ điểm giao (gửi kèm deliveryLng)' })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Vĩ độ điểm giao phải là số' })
+  @Min(-90, { message: 'Vĩ độ tối thiểu -90' })
+  @Max(90, { message: 'Vĩ độ tối đa 90' })
+  @Type(() => Number)
+  deliveryLat?: number;
+
+  @ApiPropertyOptional({ example: '12 Trần Phú, Nha Trang (Khoa Nội, giường 12)' })
+  @IsOptional()
+  @IsString({ message: 'Địa chỉ giao phải là chuỗi' })
+  @MaxLength(500, { message: 'Địa chỉ giao tối đa 500 ký tự' })
+  deliveryAddress?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-22T17:30:00+07:00',
+    description:
+      'Giờ hẹn giao (ISO 8601). Bỏ trống = giao ngay. Phải nằm trong khung giờ nhận của tin và cách hiện tại ít nhất 30 phút.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Giờ hẹn giao không hợp lệ' })
+  deliveryScheduledAt?: string;
 }

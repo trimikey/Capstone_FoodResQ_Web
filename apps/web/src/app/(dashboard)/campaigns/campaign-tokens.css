@@ -575,6 +575,7 @@
   /* === Section header === */
   .cm-section-head {
     display: flex;
+    flex-wrap: wrap; /* tieu de + nut hanh dong khong duoc tran ngang o 375px */
     align-items: center;
     justify-content: space-between;
     gap: 12px;
@@ -589,6 +590,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0; /* de truncate ben trong hoat dong thay vi day khung */
   }
   .cm-section-title .material-symbols-outlined {
     color: #2a662e;
@@ -728,6 +730,7 @@
   /* === Pending approval alert strip === */
   .cm-alert {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
@@ -1717,12 +1720,16 @@ padding: 14px 24px;
   .cm-detail-page {
     max-width: 1180px;
     margin: 0 auto;
-    padding: 28px 24px 80px;
+    /* PublicHeader là thanh FIXED (cao ~84px, cách mép 24px khi chưa cuộn) nên phải
+       chừa chỗ ở trên, nếu không nó đè lên phần đầu ảnh bìa và nút quay lại. */
+    padding: 124px 24px 80px;
   }
 
   .cm-detail-hero {
     position: relative;
-    height: 320px;
+    /* Hạ từ 320px: ảnh bìa chiếm ít chỗ hơn, phần thông tin chiến dịch lên cao,
+       người xem thấy ngay tên + ngày giờ mà không phải cuộn. */
+    height: 260px;
     border-radius: 24px;
     overflow: hidden;
     background: linear-gradient(135deg, #2a662e 0%, #1e4d21 100%);
@@ -1818,7 +1825,9 @@ padding: 14px 24px;
   }
   @media (max-width: 768px) {
     .cm-info-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .cm-detail-hero { height: 240px; }
+    /* Màn hẹp: thanh điều hướng bám sát mép trên nên cần ít khoảng đệm hơn. */
+    .cm-detail-page { padding-top: 96px; }
+    .cm-detail-hero { height: 200px; }
     .cm-detail-hero-title { font-size: 24px; }
   }
   .cm-info-cell {
@@ -3096,7 +3105,15 @@ padding: 14px 24px;
     gap: 6px;
   }
   @media (max-width: 640px) {
-    .cm-date-strip { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+    /* 7 cột ép trong 375px là ~44px/ô — chuyển thành dải cuộn ngang, ô đủ rộng */
+    .cm-date-strip {
+      grid-auto-flow: column;
+      grid-auto-columns: 56px;
+      grid-template-columns: none;
+      overflow-x: auto;
+      gap: 4px;
+      padding-bottom: 4px;
+    }
   }
   .cm-date-cell {
     position: relative;
@@ -3799,7 +3816,9 @@ padding: 14px 24px;
   .cm-modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 400;
+    /* PublicHeader là fixed z-[9999] — overlay phải cao hơn, nếu không navbar
+       đè lên và cắt cụt phần đầu popup (header "Tạo chiến dịch mới"). */
+    z-index: 10000;
     display: grid;
     place-items: center;
     padding: clamp(16px, 4vh, 48px) clamp(12px, 2vw, 28px);
@@ -4342,5 +4361,35 @@ padding: 14px 24px;
     .cm-provider-detail-hero { padding: 24px 20px; }
     .cm-provider-card { padding: 18px 18px; }
     .cm-provider-card-grid { grid-template-columns: 1fr; }
+  }
+}
+
+/* ── Responsive vá thêm (rà soát 2026-08): hero trang quản lý & padding ─────── */
+@media (max-width: 640px) {
+  /* Cụm chip trạng thái ở hero: absolute + nowrap bị cắt mất bên phải màn hẹp */
+  .cm-scope .cm-manage-hero-actions {
+    position: static;
+    flex-wrap: wrap;
+    padding: 12px 16px 0;
+  }
+  .cm-scope .cm-manage-hero {
+    height: auto;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+  }
+  .cm-scope .cm-manage-hero-content {
+    position: static;
+    padding: 12px 16px 16px;
+    margin-top: auto;
+  }
+  .cm-scope .cm-manage-hero-title {
+    font-size: 20px;
+  }
+}
+@media (max-width: 1024px) {
+  /* Đồng bộ với .cm-console: màn hẹp không phí 24px padding mỗi bên */
+  .cm-scope .cm-manage-page {
+    padding: 24px 16px 80px;
   }
 }

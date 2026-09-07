@@ -8,20 +8,18 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   useVolunteerMe,
-  useMyOffers,
+  useMyDeliveryShifts,
+  useNearbyDeliveries,
+  useClaimDelivery,
   useActiveDelivery,
   useShipperStats,
   useDeliveryHistory,
-  useSetAvailability,
-  useAcceptOffer,
-  useRejectOffer,
   useUpdateDeliveryStatus,
   useCancelDelivery,
   useFailDelivery,
   useUpdateMyLocation,
   type ActiveDelivery,
   type DeliveryHistoryItem,
-  type TaskOffer,
 } from '@/hooks/useDeliveries';
 import { useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
 import PickupOrderCard from '@/components/deliveries/PickupOrderCard';
@@ -29,13 +27,16 @@ import ConfirmPickupModal from '@/components/deliveries/ConfirmPickupModal';
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
 import { StatTile } from '@/components/shared/StatTile';
 import { Spinner } from '@/components/shared/Spinner';
-import { OfferCountdown } from '@/components/deliveries/OfferPopup';
 
 const QrScanModal = dynamic(() => import('@/components/deliveries/QrScanModal'), { ssr: false });
 const HandoverConfirmModal = dynamic(
   () => import('@/components/deliveries/HandoverConfirmModal'),
   { ssr: false },
 );
+
+import ClaimCountdown from './ClaimCountdown';
+import DeliveryShiftSummary from './DeliveryShiftSummary';
+import ReservationChatPanel from '@/components/reservations/ReservationChatPanel';
 
 const DeliveryRouteMap = dynamic(() => import('@/components/map/DeliveryRouteMap'), {
   ssr: false,
@@ -69,11 +70,11 @@ const STEPS = [
   { key: 'delivered', label: 'Hoàn tất' },
 ];
 
-function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryTitle(delivery: Pick<ActiveDelivery, 'reservation' | 'campaignTransport'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao chiến dịch';
 }
 
-function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | TaskOffer['delivery'] | DeliveryHistoryItem) {
+function deliveryImage(delivery: Pick<ActiveDelivery, 'reservation'> | DeliveryHistoryItem) {
   return delivery.reservation?.listing.imageUrls?.[0] ?? null;
 }
 
@@ -93,13 +94,18 @@ export default function DeliveriesPage() {
   const router = useRouter();
   const { data: me, isLoading: meLoading } = useVolunteerMe();
   const { data: active } = useActiveDelivery();
-  const { data: offers } = useMyOffers(!active); // chỉ poll offers khi chưa có đơn đang giao
+  // MÔ HÌNH MỚI: shipper trong ca tự xem danh sách đơn quanh mình và chọn đơn —
+  // không còn chờ lời mời tuần tự 15s, không còn nút bật/tắt sẵn sàng.
+  const { data: myShifts } = useMyDeliveryShifts();
+  const [gps, setGps] = useState<{ lng: number; lat: number } | null>(null);
+  const { data: nearby, isLoading: nearbyLoading } = useNearbyDeliveries(!active ? gps : null);
+  const claimDelivery = useClaimDelivery();
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
-  const { data: pickupData } = useMyPickupOrders(!!me?.isShipper);
-  const setAvailability = useSetAvailability();
-  const acceptOffer = useAcceptOffer();
-  const rejectOffer = useRejectOffer();
+  // KHÔNG khoá theo isShipper: vai trò phục vụ và giao hàng đã gộp, nên một TNV chỉ
+  // có chuyên môn phục vụ vẫn có thể được tổ chức cử đi lấy nguyên liệu. Backend đã
+  // lọc theo ca đang trực nên gọi thẳng là đủ.
+  const { data: pickupData } = useMyPickupOrders();
   const updateStatus = useUpdateDeliveryStatus();
   const cancelDelivery = useCancelDelivery();
   const failDelivery = useFailDelivery();
@@ -111,6 +117,15 @@ export default function DeliveriesPage() {
   // Khi đang giao đơn → theo dõi GPS liên tục và đẩy vị trí để người nhận xem trực tiếp.
   // watchPosition tự bắn khi tài xế di chuyển; throttle gửi mạng tối đa 1 lần / 10s.
   // liveLoc: vị trí GPS tức thì (không throttle) để marker shipper trên bản đồ tự di chuyển.
+  // GPS cho danh sách đơn gần: lấy khi vào trang, làm mới mỗi 2 phút.
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => void getLocation().then((loc) => { if (mounted) setGps(loc); });
+    refresh();
+    const t = setInterval(refresh, 120_000);
+    return () => { mounted = false; clearInterval(t); };
+  }, []);
+
   const [liveLoc, setLiveLoc] = useState<{ lng: number; lat: number } | null>(null);
   /** Đơn nguyên liệu đang mở hộp thoại xác nhận đã lấy. */
   const [pickingUp, setPickingUp] = useState<MyPickupOrder | null>(null);
@@ -156,6 +171,9 @@ export default function DeliveriesPage() {
   const [issueMode, setIssueMode] = useState(false);
   const [issueReason, setIssueReason] = useState('');
   const [openMapId, setOpenMapId] = useState<string | null>(null); // offer đang mở xem lộ trình
+  // Mỗi người một CỬA SỔ chat riêng — mở song song, không gộp chung khung
+  const [chatReceiverOpen, setChatReceiverOpen] = useState(false);
+  const [chatProviderOpen, setChatProviderOpen] = useState(false);
   const activeTitle = active ? deliveryTitle(active) : '';
   const activeImage = active ? deliveryImage(active) : null;
   const activeRecipient = active?.reservation?.receiver?.user ?? null;
@@ -178,43 +196,6 @@ export default function DeliveriesPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Thao tác thất bại';
       toast.error(msg);
-    }
-  }
-
-  async function handleToggle() {
-    if (!me) return;
-    try {
-      if (me.isAvailable) {
-        await setAvailability.mutateAsync({ isAvailable: false });
-        toast.success('Đã tắt nhận đơn');
-      } else {
-        const loc = await getLocation();
-        await setAvailability.mutateAsync({ isAvailable: true, ...loc });
-        toast.success('Đã bật sẵn sàng — bạn sẽ nhận được đơn giao gần bạn');
-      }
-    } catch {
-      toast.error('Không cập nhật được trạng thái');
-    }
-  }
-
-  async function handleAccept(deliveryId: string) {
-    try {
-      await acceptOffer.mutateAsync(deliveryId);
-      toast.success('Đã nhận đơn! Bắt đầu hành trình giao hàng.');
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Nhận đơn thất bại (có thể đã có người khác nhận).';
-      toast.error(msg);
-    }
-  }
-
-  async function handleReject(deliveryId: string) {
-    try {
-      await rejectOffer.mutateAsync({ deliveryId });
-      toast.info('Đã bỏ qua đơn này');
-    } catch {
-      toast.error('Thao tác thất bại');
     }
   }
 
@@ -321,18 +302,25 @@ export default function DeliveriesPage() {
             </p>
           </div>
 
-          <button
-            onClick={handleToggle}
-            disabled={setAvailability.isPending || !!active}
-            className={`min-h-12 w-full sm:w-auto justify-center flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm disabled:opacity-60 ${
-              me?.isAvailable
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-50'
-            }`}
-          >
-            <span className={`w-2.5 h-2.5 rounded-full ${me?.isAvailable ? 'bg-white animate-pulse' : 'bg-neutral-400'}`} />
-            {me?.isAvailable ? 'Đang sẵn sàng' : 'Đang tắt'}
-          </button>
+          {/* Nút bật/tắt sẵn sàng đã bỏ: trạng thái nhận đơn giờ đi theo CA đã đăng ký.
+              Chip này chỉ phản ánh, không bấm được — muốn đổi thì sửa lịch ca bên dưới. */}
+          {(() => {
+            const nowVn = new Date(Date.now() + 7 * 3600_000);
+            const hour = nowVn.getUTCHours();
+            const period = hour < 6 ? 'midnight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+            const todayKey = nowVn.toISOString().slice(0, 10);
+            const onDuty = (myShifts?.slots ?? []).some((sl) => sl.workDate === todayKey && sl.period === period);
+            return (
+              <div
+                className={`min-h-12 w-full sm:w-auto justify-center flex items-center gap-3 px-5 py-3 rounded-2xl font-bold text-sm shadow-sm ${
+                  onDuty ? 'bg-emerald-600 text-white' : 'bg-white text-neutral-700 border border-neutral-200'
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${onDuty ? 'bg-white animate-pulse' : 'bg-neutral-400'}`} />
+                {onDuty ? 'Đang trong ca giao hàng' : 'Ngoài ca — đăng ký ca để nhận đơn'}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Bảng thành tích shipper (kiểu dashboard tài xế) */}
@@ -420,7 +408,7 @@ export default function DeliveriesPage() {
 
             {/* Cảnh báo pickup time — chỉ hiện khi có thông tin giờ lấy hàng (campaign transport) */}
             {active.source === 'campaign_transport' && active.campaignTransport && (
-              <div className="mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <span className="material-symbols-outlined text-amber-600 text-[20px] mt-0.5 shrink-0">schedule</span>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-amber-800">
@@ -498,17 +486,58 @@ export default function DeliveriesPage() {
                     <p className="text-xs text-neutral-500 mt-1">{active.destination.address}</p>
                   )}
                 </div>
-                {activeRecipient?.phone && (
-                  <a
-                    href={`tel:${activeRecipient.phone}`}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">call</span>
-                    Gọi
-                  </a>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeRecipient?.phone && (
+                    <a
+                      href={`tel:${activeRecipient.phone}`}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">call</span>
+                      {activeRecipient.phone}
+                    </a>
+                  )}
+                  {active.reservation?.id && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setChatReceiverOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-xl text-sm font-bold hover:bg-emerald-800"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">forum</span>
+                        Nhắn người nhận
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChatProviderOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-300 text-emerald-800 rounded-xl text-sm font-bold hover:bg-emerald-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">storefront</span>
+                        Nhắn cửa hàng
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
+              {/* Hai cửa sổ chat riêng: người nhận (sát phải) + cửa hàng (bên cạnh) */}
+              {active.reservation?.id && (
+                <>
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatReceiverOpen}
+                    partner={{ role: 'receiver' }}
+                    offsetIndex={0}
+                    onClose={() => setChatReceiverOpen(false)}
+                  />
+                  <ReservationChatPanel
+                    reservationId={active.reservation.id}
+                    open={chatProviderOpen}
+                    partner={{ role: 'provider' }}
+                    offsetIndex={chatReceiverOpen ? 1 : 0}
+                    onClose={() => setChatProviderOpen(false)}
+                  />
+                </>
+              )}
               {/* Bản đồ lộ trình lấy → giao (marker shipper chạy theo GPS trực tiếp) */}
               {(active.coords?.pickupLat != null || active.coords?.deliveryLat != null || liveLoc || me?.currentLocation) && (
                 <div className="h-56 rounded-2xl overflow-hidden border border-neutral-150 mb-5">
@@ -645,164 +674,144 @@ export default function DeliveriesPage() {
             </div>
           </div>
         ) : (
-          /* DANH SÁCH OFFER */
+          /* DANH SÁCH ĐƠN CHỜ — shipper tự chọn (thay lời mời tuần tự 15s) */
           <div className="space-y-4">
+            <DeliveryShiftSummary />
+
             <h2 className="font-extrabold text-xl text-neutral-900">
-              Đơn giao gần bạn {offers && offers.length > 0 ? `(${offers.length})` : ''}
+              Đơn giao gần bạn {nearby && nearby.length > 0 ? `(${nearby.length})` : ''}
             </h2>
 
-            {!me?.isAvailable && (
-              <div className="text-center py-12 bg-white rounded-3xl border border-neutral-200">
-                <span className="material-symbols-outlined text-neutral-300 text-[56px]">bedtime</span>
-                <p className="font-bold text-neutral-700 mt-3">Bạn đang tắt nhận đơn</p>
-                <p className="text-xs text-neutral-500 mt-1">Bật &quot;Sẵn sàng&quot; ở góc trên để nhận đơn giao gần bạn.</p>
+            {!gps && (
+              <div className="text-center py-10 bg-white rounded-3xl border border-neutral-200">
+                <span className="material-symbols-outlined text-neutral-300 text-[48px]">my_location</span>
+                <p className="font-bold text-neutral-700 mt-3">Đang xác định vị trí của bạn…</p>
+                <p className="text-xs text-neutral-500 mt-1">Cho phép trình duyệt truy cập GPS để xem đơn trong bán kính 5km.</p>
               </div>
             )}
 
-            {me?.isAvailable && (!offers || offers.length === 0) && (
+            {gps && !nearbyLoading && (!nearby || nearby.length === 0) && (
               <div className="text-center py-12 bg-white rounded-3xl border border-neutral-200">
                 <span className="material-symbols-outlined text-neutral-300 text-[56px]">inbox</span>
-                <p className="font-bold text-neutral-700 mt-3">Chưa có đơn nào</p>
+                <p className="font-bold text-neutral-700 mt-3">Chưa có đơn nào quanh bạn</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Khi có người đặt thực phẩm cần giao gần bạn, đơn sẽ hiện ở đây (tự làm mới).
+                  Đơn trong bán kính 5km sẽ hiện ở đây (tự làm mới mỗi 20 giây). Bạn chỉ nhận được đơn thuộc ca đã đăng ký.
                 </p>
               </div>
             )}
 
-            {me?.isAvailable &&
-              offers?.map((o) => (
-                <div key={o.id} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5">
+            {gps &&
+              nearby?.map((o) => (
+                <div key={o.deliveryId} className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5">
                   <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center gap-4">
                     <div className="w-full min-[420px]:w-16 h-36 min-[420px]:h-16 rounded-2xl overflow-hidden bg-neutral-100 shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={deliveryImage(o.delivery) ? mediaUrl(deliveryImage(o.delivery)!) : '/food_bread.png'}
-                        alt={deliveryTitle(o.delivery)}
+                        src={o.imageUrls[0] ? mediaUrl(o.imageUrls[0]) : '/food_bread.png'}
+                        onError={(e) => {
+                          if (!e.currentTarget.src.endsWith('/food_bread.png')) e.currentTarget.src = '/food_bread.png';
+                        }}
+                        alt={o.listingTitle}
                         className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-extrabold text-neutral-900 truncate">
-                        {deliveryTitle(o.delivery)}
-                      </h3>
+                      <h3 className="font-extrabold text-neutral-900 truncate">{o.listingTitle}</h3>
                       <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
-                        <span className="material-symbols-outlined text-[14px]">place</span>
-                        {o.delivery.pickup.address ?? 'Chưa có địa chỉ lấy hàng'}
+                        <span className="material-symbols-outlined text-[14px]">storefront</span>
+                        Lấy tại: {o.pickupAddress}
                       </p>
-                      {o.delivery.source === 'campaign_transport' && (
-                        <p className="text-xs text-emerald-700 mt-0.5 truncate">
-                          Giao đến bếp: {o.delivery.destination.address ?? '—'}
+                      {o.deliveryAddress && (
+                        <p className="text-xs text-neutral-500 truncate flex items-center gap-1 mt-0.5">
+                          <span className="material-symbols-outlined text-[14px]">place</span>
+                          Giao đến: {o.deliveryAddress}
                         </p>
                       )}
                       <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2 flex-wrap">
-                        {(() => {
-                          const c = o.delivery.coords;
-                          const fromMe =
-                            me?.currentLocation && c?.pickupLat != null && c?.pickupLng != null
-                              ? haversineKm(me.currentLocation, { lat: c.pickupLat, lng: c.pickupLng })
-                              : null;
-                          return (
-                            <>
-                              {fromMe != null && <span className="font-semibold text-emerald-700">Cách bạn ~{fromMe.toFixed(1)} km</span>}
-                              {o.delivery.distanceKm != null && <span>· Lấy→giao ~{o.delivery.distanceKm} km</span>}
-                            </>
-                          );
-                        })()}
+                        <span className="font-semibold text-emerald-700">Cách bạn ~{o.distanceKm} km</span>
+                        {o.tripKm != null && <span>· Lấy→giao ~{o.tripKm} km</span>}
                       </p>
-                      <p className="text-xs text-neutral-500 mt-1">
-                        Hết hạn sau <OfferCountdown expiresAt={o.expiresAt} />
-                      </p>
+                      {/* Giờ hẹn giao — khác đơn giao ngay. Kèm hạn nhận vì đơn là hàng
+                          chung: ai bấm trước được trước, và hết hạn thì đơn bị huỷ. */}
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {o.deliveryScheduledAt ? (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                            <span className="material-symbols-outlined text-[13px]">schedule</span>
+                            Hẹn giao {new Date(o.deliveryScheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                          </span>
+                        ) : (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                            <span className="material-symbols-outlined text-[13px]">bolt</span>
+                            Giao ngay
+                          </span>
+                        )}
+                        {o.claimExpiresAt && (
+                          <ClaimCountdown
+                            expiresAt={o.claimExpiresAt}
+                            scheduled={!!o.deliveryScheduledAt}
+                          />
+                        )}
+                      </span>
                     </div>
-                    {o.delivery.coords?.pickupLat != null && o.delivery.coords?.pickupLng != null && (
-                      <a
-                        href={mapsDirUrl(o.delivery.coords.pickupLat, o.delivery.coords.pickupLng)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Điều hướng tới điểm lấy hàng"
-                        className="shrink-0 min-w-11 w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center self-end min-[420px]:self-center"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">directions</span>
-                      </a>
-                    )}
                   </div>
 
                   {/* Bằng chứng người nhận khó di chuyển — xem trước khi nhận đơn */}
-                  {o.delivery.reservation?.deliveryEvidenceUrl && (
+                  {o.deliveryEvidenceUrl && (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
                       <p className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
                         <span className="material-symbols-outlined text-[16px]">accessible</span>
                         Bằng chứng người nhận khó di chuyển
                       </p>
-                      <a
-                        href={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Bấm để xem ảnh gốc"
-                        className="mt-2 block"
-                      >
+                      <a href={mediaUrl(o.deliveryEvidenceUrl)} target="_blank" rel="noreferrer" className="mt-2 block">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={mediaUrl(o.delivery.reservation.deliveryEvidenceUrl)}
+                          src={mediaUrl(o.deliveryEvidenceUrl)}
                           alt="Bằng chứng khó di chuyển của người nhận"
                           className="h-32 w-full rounded-xl border border-amber-200 object-cover"
                         />
                       </a>
-                      <p className="mt-1.5 text-[11px] text-amber-800">
-                        Xem ảnh (bệnh/chấn thương) — thấy hợp lệ hãy bấm nhận đơn.
-                      </p>
                     </div>
                   )}
 
-                  {/* Xem trước lộ trình lấy → giao */}
-                  {o.delivery.coords?.pickupLat != null &&
-                    o.delivery.coords?.pickupLng != null &&
-                    o.delivery.coords?.deliveryLat != null &&
-                    o.delivery.coords?.deliveryLng != null && (
-                      <div className="mt-3">
-                        <button
-                          onClick={() => setOpenMapId(openMapId === o.deliveryId ? null : o.deliveryId)}
-                          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">map</span>
-                          {openMapId === o.deliveryId ? 'Ẩn lộ trình' : 'Xem lộ trình'}
-                        </button>
-                        {openMapId === o.deliveryId && (
-                          <div className="h-48 rounded-2xl overflow-hidden border border-neutral-150 mt-2">
-                            <DeliveryRouteMap
-                              pickup={{ lat: o.delivery.coords.pickupLat, lng: o.delivery.coords.pickupLng }}
-                              delivery={{ lat: o.delivery.coords.deliveryLat, lng: o.delivery.coords.deliveryLng }}
-                              shipper={me?.currentLocation ?? null}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                  <div className="grid grid-cols-2 gap-3 mt-4">
-                    <button
-                      onClick={() => handleReject(o.deliveryId)}
-                      disabled={rejectOffer.isPending}
-                      className="min-h-12 py-3 border border-neutral-200 text-neutral-600 rounded-xl font-bold text-sm hover:bg-neutral-50 disabled:opacity-50"
-                    >
-                      Bỏ qua
-                    </button>
-                    <button
-                      onClick={() => handleAccept(o.deliveryId)}
-                      disabled={acceptOffer.isPending}
-                      className="min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50"
-                    >
-                      Nhận đơn
-                    </button>
-                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await claimDelivery.mutateAsync(o.deliveryId);
+                        toast.success('Bạn đã nhận đơn — tới điểm lấy hàng nhé!');
+                      } catch (err: unknown) {
+                        const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+                          ?.response?.data?.error?.message ?? 'Không nhận được đơn này';
+                        toast.error(msg);
+                      }
+                    }}
+                    disabled={!o.canClaim || claimDelivery.isPending}
+                    title={
+                      o.busyWithCampaign
+                        ? 'Bạn đã xác nhận ca chiến dịch trong khung giờ này'
+                        : !o.canClaim
+                          ? 'Đơn này nằm ngoài ca bạn đã đăng ký'
+                          : undefined
+                    }
+                    className="mt-4 w-full min-h-12 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {claimDelivery.isPending
+                      ? 'Đang nhận…'
+                      : o.canClaim
+                        ? 'Nhận đơn này'
+                        : o.busyWithCampaign
+                          ? 'Bận ca chiến dịch khung giờ này'
+                          : 'Ngoài ca đã đăng ký'}
+                  </button>
                 </div>
               ))}
           </div>
         )}
 
+
         {/* ĐƠN LẤY NGUYÊN LIỆU CHIẾN DỊCH
             Không phải bản ghi `deliveries` nên không nằm trong luồng nhận/giao ở trên,
             nhưng vẫn là "đơn phải đi lấy" của shipper — gom về đây để quản lý một chỗ. */}
-        {me?.isShipper && pendingPickups.length > 0 && (
+        {pendingPickups.length > 0 && (
           <div className="space-y-4 mt-8">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">
@@ -817,6 +826,56 @@ export default function DeliveriesPage() {
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </Link>
             </div>
+            {/* Lộ trình tổng khi phải ghé NHIỀU nhà cung cấp: chiến dịch giờ đặt được
+                nhiều đơn / nhiều NCC, shipper cần thấy toàn bộ các điểm trên một bảng
+                để tự xếp thứ tự đường đi, thay vì lần từng thẻ. Sắp theo giờ hẹn lấy. */}
+            {pendingPickups.length > 1 && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <p className="flex items-center gap-1.5 text-sm font-extrabold text-emerald-900">
+                  <span className="material-symbols-outlined text-[18px]">route</span>
+                  Lộ trình lấy hàng — {pendingPickups.length} điểm
+                </p>
+                <ol className="mt-2 space-y-2">
+                  {[...pendingPickups]
+                    .sort((a, b) => (a.pickupStartTime ?? '99').localeCompare(b.pickupStartTime ?? '99'))
+                    .map((o, idx) => (
+                      <li key={o.id} className="flex items-start gap-2.5 text-xs">
+                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                          {idx + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="font-bold text-neutral-900">
+                            {o.providerName}
+                            {o.ingredientName ? ` — ${o.ingredientName}` : ''}
+                            {o.quantityKg != null ? ` (${o.quantityKg} kg)` : ''}
+                          </span>
+                          <span className="block text-neutral-600">
+                            {o.providerAddress || 'Chưa có địa chỉ'}
+                            {o.distanceKm != null ? ` · cách bếp ~${o.distanceKm} km` : ''}
+                          </span>
+                          <span className="block text-neutral-500">
+                            {o.pickupStartTime && o.pickupEndTime
+                              ? `Khung lấy ${o.pickupStartTime.slice(0, 5)}–${o.pickupEndTime.slice(0, 5)}`
+                              : 'Chưa hẹn khung giờ'}
+                            {' · '}chiến dịch “{o.campaignTitle}”
+                          </span>
+                        </span>
+                        {o.lng != null && o.lat != null && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 inline-flex items-center gap-0.5 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">directions</span>
+                            Chỉ đường
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                </ol>
+              </div>
+            )}
             <div className="space-y-3">
               {pendingPickups.map((o) => (
                 <PickupOrderCard key={o.id} order={o} onConfirm={setPickingUp} />

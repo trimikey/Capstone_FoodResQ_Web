@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { SystemConfigService } from '@/common/system-config/system-config.service';
+import { effectiveOrderWindow } from '@/common/utils/order-window';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { QueryListingDto } from './dto/query-listing.dto';
@@ -83,7 +85,10 @@ export interface NearbyRow {
 
 @Injectable()
 export class ListingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private systemConfig: SystemConfigService,
+  ) {}
 
   /**
    * Đổi userId (từ JWT) sang provider_profiles.id — đồng thời chặn nếu hồ sơ NCC
@@ -281,6 +286,16 @@ export class ListingsService {
       pickupEndTime: r.pickup_end_time,
       dailyStartMinute: r.daily_start_minute ?? null,
       dailyEndMinute: r.daily_end_minute ?? null,
+      // Khung giờ THỰC TẾ còn đặt được (giờ sàn ∩ giờ cửa hàng). Trả sẵn để FE khoá ô
+      // chọn giờ và hiển thị theo đúng luật backend, thay vì mỗi bên tự suy một kiểu.
+      orderWindow: effectiveOrderWindow(
+        {
+          openMinute: await this.systemConfig.getNumber('PLATFORM_ORDER_OPEN_MINUTE'),
+          closeMinute: await this.systemConfig.getNumber('PLATFORM_ORDER_CLOSE_MINUTE'),
+        },
+        r.daily_start_minute,
+        r.daily_end_minute,
+      ),
       pickupAddress: r.pickup_address,
       storageConditions: r.storage_conditions,
       allergenNotes: r.allergen_notes,

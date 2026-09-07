@@ -201,7 +201,7 @@ export default function BulkRunsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50/50 pb-24">
-      <div className="max-w-3xl mx-auto px-6 py-10 space-y-6">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="font-extrabold text-3xl text-neutral-900">Giao sỉ nhiều điểm</h1>

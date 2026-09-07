@@ -11,6 +11,9 @@ import Redis from 'ioredis';
       useFactory: (config: ConfigService) => {
         const url = config.getOrThrow<string>('REDIS_URL');
         const redis = new Redis(url, {
+          // TCP keepalive 10s: giữ connection sống qua NAT/router — giảm hẳn
+          // ECONNRESET khi connection idle bị thiết bị mạng lặng lẽ cắt.
+          keepAlive: 10_000,
           maxRetriesPerRequest: null,
           retryStrategy: (times) => {
             if (times > 100) return null; // stop after 100 retries
