@@ -1514,6 +1514,8 @@ export interface CampaignCreateConstraints {
   multiDayEarliestStartDate: string;
   minFillPercent: number;
   changeLockDays: number;
+  /** Hạn đóng tuyển phải trước ca đầu tiên ít nhất bấy nhiêu phút. */
+  recruitmentCloseLeadMinutes: number;
   /** Admin bật "Cho phép bắt đầu/điểm danh sớm" → cho bấm Bắt đầu trước giờ vận hành. */
   allowEarlyStart: boolean;
 }
@@ -1526,7 +1528,8 @@ export function useCampaignCreateConstraints(enabled = true) {
       return data.data as CampaignCreateConstraints;
     },
     enabled,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 

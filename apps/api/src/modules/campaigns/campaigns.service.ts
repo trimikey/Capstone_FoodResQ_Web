@@ -546,9 +546,11 @@ export class CampaignsService {
       throw new BadRequestException('Thời gian mở tuyển phải trước thời gian đóng tuyển.');
     }
     const recruitmentBufferMs = operationStartAt.getTime() - recruitmentEndAt.getTime();
-    if (recruitmentBufferMs < 6 * 3600_000) {
+    const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
+    const minRecruitmentBufferMs = recruitmentCloseLeadMinutes * 60_000;
+    if (recruitmentBufferMs < minRecruitmentBufferMs) {
       throw new BadRequestException(
-        'Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất 6 giờ.',
+        `Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất ${recruitmentCloseLeadMinutes} phút.`,
       );
     }
     // Cột hiện lưu theo giờ nguyên và schema lịch sử giới hạn tối đa 48 giờ.
@@ -2267,6 +2269,8 @@ export class CampaignsService {
           AND cpr.needs_transport = true
         LIMIT 1
       `;
+      const detail = await this.dishSteps.getStepsForCampaign(assignment.campaignId, userId);
+
       // Các đợt phát tổ chức giao cho chính shipper này — đây mới là "việc cần làm"
       // cụ thể, thay vì chỉ một nút đổi trạng thái chung chung.
       const distributions = await this.myAssignedDistributions(assignment.campaignId, volunteer.id);
@@ -2294,6 +2298,7 @@ export class CampaignsService {
           // Chuẩn hoá menuItems từ jsonb
           menuItems: CampaignsService.normalizeMenuItems(assignment.campaign.menuItems as unknown as Prisma.JsonValue),
         },
+        dishes: detail.dishes,
         pickupOrders,
         delivery: delivery
           ? {
@@ -2486,6 +2491,7 @@ export class CampaignsService {
       const num = (v: unknown) => (v == null ? null : Number(v));
       return {
         id: r.id,
+        providerRequestId: r.id,
         campaignId: r.campaign_id,
         campaignTitle: r.campaign_title,
         kitchenAddress: r.kitchen_address,
@@ -3615,11 +3621,12 @@ export class CampaignsService {
    * `/admin/configs` chỉ admin gọi được nên tổ chức cần lối riêng, chỉ lộ đúng phần cần.
    */
   async getCreateConstraints() {
-    const [multiDayLeadDays, minFillPercent, changeLockDays, allowEarlyStart] = await Promise.all([
+    const [multiDayLeadDays, minFillPercent, changeLockDays, allowEarlyStart, recruitmentCloseLeadMinutes] = await Promise.all([
       this.systemConfig.getNumber('MULTIDAY_CAMPAIGN_LEAD_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
       this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+      this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES'),
     ]);
     // Ngày sớm nhất cho chiến dịch dài ngày — tính sẵn ở server để FE không phải
     // cộng ngày theo múi giờ máy người dùng.
@@ -3630,6 +3637,7 @@ export class CampaignsService {
       multiDayEarliestStartDate: earliest.toISOString().slice(0, 10),
       minFillPercent,
       changeLockDays,
+      recruitmentCloseLeadMinutes,
       // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì FE phải hiện nút Bắt đầu
       // TRƯỚC giờ vận hành — nếu không, cấu hình bật mà giao diện vẫn giấu nút.
       allowEarlyStart: allowEarlyStart === 1,
@@ -4043,10 +4051,11 @@ export class CampaignsService {
     if (nextEnd <= campaign.recruitmentEndAt) {
       throw new BadRequestException('Hạn tuyển mới phải muộn hơn hạn hiện tại.');
     }
-    const latest = new Date(campaign.operationStartAt.getTime() - campaign.recruitmentBufferHours * 3600_000);
+    const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
+    const latest = new Date(campaign.operationStartAt.getTime() - recruitmentCloseLeadMinutes * 60_000);
     if (nextEnd > latest) {
       throw new BadRequestException(
-        `Hạn tuyển mới phải cách ca đầu tiên ít nhất ${campaign.recruitmentBufferHours} giờ.`,
+        `Hạn tuyển mới phải cách ca đầu tiên ít nhất ${recruitmentCloseLeadMinutes} phút.`,
       );
     }
     await this.prisma.kitchenCampaign.update({

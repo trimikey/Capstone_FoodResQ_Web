@@ -227,11 +227,11 @@ export class DeliveriesService {
   }
 
   /**
-   * TNV có ca CHIẾN DỊCH đã xác nhận trùng đúng khung giờ này không.
+   * TNV có ca CHIẾN DỊCH trùng đúng khung giờ này không.
    *
-   * Role đã gộp nên một người vừa đăng ký ca giao vừa nhận lời mời chiến dịch được —
-   * nhưng không thể ở hai nơi cùng lúc: đã xác nhận ca bếp thì khung đó coi như BẬN,
-   * không nhận đơn giao lẻ nữa.
+   * Với đơn giao lẻ, chỉ cần TNV đã gửi đăng ký hoặc đã được xếp vào ca chiến dịch
+   * thì khung đó coi như đang được giữ chỗ. Nếu chờ tới lúc `confirmed` mới chặn,
+   * shipper vẫn nhận thêm đơn thường trong lúc tổ chức đang duyệt ca campaign.
    */
   private async isBusyWithCampaignShift(
     volunteerId: string,
@@ -244,8 +244,8 @@ export class DeliveriesService {
       WHERE a.volunteer_id = ${volunteerId}::uuid
         AND a.work_date = ${slot.workDate}::date
         AND cs.period = ${slot.period}::campaign_shift_period
-        AND a.status IN ('assigned', 'checked_in', 'in_progress')
-        AND a.confirmation_status = 'confirmed'
+        AND a.status IN ('pending', 'assigned', 'checked_in', 'in_progress')
+        AND a.confirmation_status <> 'declined'
       LIMIT 1
     `);
     return rows.length > 0;
@@ -455,7 +455,7 @@ export class DeliveriesService {
     }
     if (await this.isBusyWithCampaignShift(volunteer.id, slot)) {
       throw new BadRequestException(
-        `Bạn đã xác nhận một ca chiến dịch trong ${PERIOD_VN[slot.period]} ngày ${slot.workDate} — khung giờ này đang bận, không nhận thêm đơn giao lẻ được.`,
+        `Bạn đã đăng ký hoặc được xếp ca chiến dịch trong ${PERIOD_VN[slot.period]} ngày ${slot.workDate} — khung giờ này đang bận, không nhận thêm đơn giao lẻ được.`,
       );
     }
 

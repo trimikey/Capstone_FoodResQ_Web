@@ -364,7 +364,12 @@ export interface SubmitProviderProposalInput {
 export function useCampaigns() {
   return useQuery({
     queryKey: ['campaigns', 'open'],
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign[]>>(endpoints.campaigns.list);
       return res.data.data;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Dialog, Portal, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,7 +23,7 @@ import { Popup } from '@/components/ui/AppPopup';
 import { BackButton } from '@/components/ui/BackButton';
 import { NotificationBell } from '@/components/NotificationBell';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
-import { captureImage } from '@/services/faceCapture';
+import { captureImage, type CapturedImage } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { formatDate, formatTime } from '@/utils/campaign';
@@ -389,6 +389,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const [actualServings, setActualServings] = useState('');
   const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
+  const [pickupPhoto, setPickupPhoto] = useState<CapturedImage | null>(null);
 
   const dishes = detail.dishes ?? [];
   const distributions = detail.distributions ?? [];
@@ -407,6 +408,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     setConfirmingPickup(order);
     setReceivedKg(order.quantityKg != null ? String(order.quantityKg) : '');
     setNote('');
+    setPickupPhoto(null);
+  };
+
+  const closePickupConfirm = () => {
+    if (confirmPickup.isPending) return;
+    Keyboard.dismiss();
+    setConfirmingPickup(null);
+    setPickupPhoto(null);
   };
 
   const submitClose = async () => {
@@ -443,6 +452,17 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
   };
 
+  const capturePickupPhoto = async () => {
+    try {
+      Keyboard.dismiss();
+      const photo = await captureImage('id_card', 'proof');
+      if (photo) setPickupPhoto(photo);
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
+    }
+  };
+
   const submitPickupConfirm = async () => {
     if (!confirmingPickup) return;
     const kg = Number.parseFloat(receivedKg.replace(',', '.').trim());
@@ -454,18 +474,27 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       });
       return;
     }
+    if (!pickupPhoto) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Thiếu ảnh nguyên liệu',
+        text2: 'Chụp ảnh nguyên liệu để kiểm tra lại trước khi gửi xác nhận.',
+      });
+      return;
+    }
     try {
-      const photo = await captureImage('id_card', 'proof');
-      if (!photo) return;
+      Keyboard.dismiss();
+      const providerRequestId = confirmingPickup.providerRequestId || confirmingPickup.id;
       await confirmPickup.mutateAsync({
-        requestId: confirmingPickup.providerRequestId,
+        requestId: providerRequestId,
         receivedKg: kg,
-        photo,
+        photo: pickupPhoto,
         note: note.trim() || undefined,
       });
       void notifySuccess();
       Popup.show({ type: 'success', text1: `Đã xác nhận lấy ${kg} kg nguyên liệu` });
       setConfirmingPickup(null);
+      setPickupPhoto(null);
       await onRefresh();
     } catch (error) {
       void notifyError();
@@ -648,43 +677,127 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
             <Button mode="contained" loading={complete.isPending} disabled={complete.isPending} onPress={submitClose}>Xác nhận</Button>
           </Dialog.Actions>
         </Dialog>
-        <Dialog visible={!!confirmingPickup} onDismiss={() => !confirmPickup.isPending && setConfirmingPickup(null)}>
-          <Dialog.Title>Xác nhận lấy nguyên liệu</Dialog.Title>
-          <Dialog.Content style={styles.dialogBody}>
-            <Text style={styles.muted}>
-              {confirmingPickup?.providerName ?? 'Nhà cung cấp'}
-              {confirmingPickup?.ingredientName ? ` · ${confirmingPickup.ingredientName}` : ''}
-            </Text>
-            <TextInput
-              mode="outlined"
-              label="Kg thực nhận *"
-              value={receivedKg}
-              onChangeText={setReceivedKg}
-              keyboardType="decimal-pad"
-            />
-            <TextInput
-              mode="outlined"
-              label="Ghi chú"
-              value={note}
-              onChangeText={setNote}
-              multiline
-              numberOfLines={3}
-            />
-            <Text style={styles.muted}>Khi bấm xác nhận, ứng dụng sẽ mở camera để chụp ảnh nguyên liệu tại NCC.</Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setConfirmingPickup(null)} disabled={confirmPickup.isPending}>Huỷ</Button>
-            <Button
-              mode="contained"
-              loading={confirmPickup.isPending}
-              disabled={confirmPickup.isPending}
-              onPress={submitPickupConfirm}
-            >
-              Chụp & xác nhận
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
       </Portal>
+      <Modal
+        visible={!!confirmingPickup}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={closePickupConfirm}
+      >
+        {confirmingPickup ? (
+          <View style={styles.pickupModalRoot} pointerEvents="box-none">
+            <Pressable style={styles.pickupBackdrop} onPress={closePickupConfirm} />
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+              style={styles.pickupSheetAvoider}
+              pointerEvents="box-none"
+            >
+              <View style={styles.pickupSheet}>
+                <View style={styles.pickupHandle} />
+                <View style={styles.pickupSheetHeader}>
+                  <View style={styles.pickupHeaderIcon}>
+                    <MaterialCommunityIcons name="basket-check-outline" size={22} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={styles.pickupSheetTitle}>Xác nhận lấy nguyên liệu</Text>
+                    <Text style={styles.pickupSheetSubtitle}>Nhập số kg, chụp ảnh rồi kiểm tra lại trước khi gửi.</Text>
+                  </View>
+                  <Button compact onPress={closePickupConfirm} disabled={confirmPickup.isPending}>
+                    Huỷ
+                  </Button>
+                </View>
+
+              <ScrollView
+                contentContainerStyle={styles.pickupSheetContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.pickupSummary}>
+                  <View style={styles.pickupSummaryRow}>
+                    <MaterialCommunityIcons name="store-marker-outline" size={18} color={COLORS.primary} />
+                    <Text style={styles.pickupSummaryTitle}>{confirmingPickup.providerName}</Text>
+                  </View>
+                  <Text style={styles.pickupSummaryText}>
+                    {confirmingPickup.ingredientName ?? 'Nguyên liệu chiến dịch'}
+                    {confirmingPickup.quantityKg != null ? ` · đặt ${confirmingPickup.quantityKg} kg` : ''}
+                  </Text>
+                  {confirmingPickup.pickupStartTime && confirmingPickup.pickupEndTime ? (
+                    <Text style={styles.pickupSummaryTime}>
+                      Khung lấy {formatTime(confirmingPickup.pickupStartTime)}-{formatTime(confirmingPickup.pickupEndTime)}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.pickupFieldGroup}>
+                  <TextInput
+                    mode="outlined"
+                    label="Kg thực nhận *"
+                    value={receivedKg}
+                    onChangeText={setReceivedKg}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                    style={styles.pickupInput}
+                  />
+                  <TextInput
+                    mode="outlined"
+                    label="Ghi chú"
+                    value={note}
+                    onChangeText={setNote}
+                    multiline
+                    numberOfLines={3}
+                    blurOnSubmit
+                    returnKeyType="done"
+                    style={styles.pickupInput}
+                  />
+                </View>
+
+                {pickupPhoto ? (
+                  <View style={styles.pickupPhotoReview}>
+                    <View style={styles.pickupPhotoHead}>
+                      <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.success} />
+                      <Text style={styles.pickupPhotoTitle}>Ảnh nguyên liệu đã chụp</Text>
+                    </View>
+                    <AppImage source={{ uri: pickupPhoto.uri }} style={styles.pickupPhotoPreview} />
+                    <Button compact icon="camera-retake-outline" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                      Chụp lại
+                    </Button>
+                  </View>
+                ) : (
+                  <View style={styles.pickupPhotoEmpty}>
+                    <View style={styles.pickupPhotoEmptyIcon}>
+                      <MaterialCommunityIcons name="camera-outline" size={28} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.pickupPhotoEmptyTitle}>Chưa có ảnh bằng chứng</Text>
+                    <Text style={styles.pickupPhotoEmptyText}>Chụp bao/hộp nguyên liệu rõ nhãn và số lượng để bếp đối chiếu.</Text>
+                    <Button mode="contained-tonal" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                      Chụp ảnh
+                    </Button>
+                  </View>
+                )}
+              </ScrollView>
+                <View style={styles.pickupSheetFooter}>
+                  <Button mode="outlined" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                    {pickupPhoto ? 'Chụp lại' : 'Chụp ảnh'}
+                  </Button>
+                  <Button
+                    mode="contained"
+                    icon="check"
+                    loading={confirmPickup.isPending}
+                    disabled={confirmPickup.isPending || !pickupPhoto}
+                    onPress={submitPickupConfirm}
+                    style={styles.pickupSubmitBtn}
+                  >
+                    Xác nhận gửi
+                  </Button>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        ) : null}
+      </Modal>
     </>
   );
 }
@@ -783,4 +896,104 @@ const styles = StyleSheet.create({
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   dialogBody: { gap: 12 },
   dialogInput: { marginTop: 12 },
+  pickupModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  pickupBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(18, 28, 42, 0.42)',
+  },
+  pickupSheetAvoider: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  pickupSheet: {
+    maxHeight: '92%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+    ...elevation.card,
+  },
+  pickupHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    marginTop: 10,
+    marginBottom: 8,
+    backgroundColor: COLORS.outlineVariant,
+  },
+  pickupSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  pickupHeaderIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  pickupSheetTitle: { color: COLORS.onSurface, fontSize: 18, lineHeight: 23, fontWeight: '900' },
+  pickupSheetSubtitle: { marginTop: 2, color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17 },
+  pickupSheetContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 14 },
+  pickupSummary: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.primaryContainer,
+    gap: 5,
+  },
+  pickupSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  pickupSummaryTitle: { flex: 1, color: COLORS.onSurface, fontSize: 14, lineHeight: 19, fontWeight: '900' },
+  pickupSummaryText: { color: COLORS.onSurface, fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  pickupSummaryTime: { color: COLORS.primary, fontSize: 12, lineHeight: 17, fontWeight: '800' },
+  pickupFieldGroup: { gap: 10 },
+  pickupInput: { backgroundColor: COLORS.surface },
+  pickupSheetFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+  },
+  pickupSubmitBtn: { flex: 1 },
+  pickupPhotoEmpty: {
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  pickupPhotoEmptyIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  pickupPhotoEmptyTitle: { color: COLORS.onSurface, fontSize: 15, fontWeight: '900' },
+  pickupPhotoEmptyText: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  pickupPhotoReview: {
+    gap: 10,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  pickupPhotoHead: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 4, paddingTop: 2 },
+  pickupPhotoTitle: { flex: 1, color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
+  pickupPhotoPreview: { width: '100%', height: 190, borderRadius: radius.md },
 });

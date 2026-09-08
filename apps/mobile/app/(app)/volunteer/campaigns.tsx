@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -53,6 +53,8 @@ export default function VolunteerCampaignsScreen() {
 
   const openQuery = useCampaigns();
   const tasksQuery = useMyTasks(user?.role === 'volunteer');
+  const { refetch: refetchOpenCampaigns } = openQuery;
+  const { refetch: refetchMyTasks } = tasksQuery;
   const advanceMut = useAdvanceTask();
   const confirmMut = useConfirmCampaignAssignment();
 
@@ -60,8 +62,20 @@ export default function VolunteerCampaignsScreen() {
     useCallback(() => {
       const nextSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
       setSegment((current) => (current === nextSegment ? current : nextSegment));
-    }, [params.segment])
+      void refetchOpenCampaigns();
+      void refetchMyTasks();
+    }, [params.segment, refetchOpenCampaigns, refetchMyTasks])
   );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refetchOpenCampaigns();
+        void refetchMyTasks();
+      }
+    });
+    return () => sub.remove();
+  }, [refetchOpenCampaigns, refetchMyTasks]);
 
   // Chỉ volunteer dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'volunteer') {
