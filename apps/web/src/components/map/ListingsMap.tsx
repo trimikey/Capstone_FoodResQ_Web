@@ -109,7 +109,7 @@ export default function ListingsMap({ listings, center, selectedId, onSelect }: 
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
       {/* Vị trí người dùng */}

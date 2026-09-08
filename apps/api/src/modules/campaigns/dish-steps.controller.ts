@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -69,9 +70,12 @@ export class DishStepsController {
 
   /** Public (trong campaign): xem danh sách món + 4 step + trạng thái. */
   @Get('dish-steps')
-  @ApiOperation({ summary: 'Danh sách món + 4 khâu + trạng thái hiệu lực' })
-  listSteps(@Param('campaignId', ParseUUIDPipe) campaignId: string) {
-    return this.service.getStepsForCampaign(campaignId);
+  @ApiOperation({ summary: 'Danh sách món + 4 khâu + trạng thái hiệu lực (?date=YYYY-MM-DD chọn ngày của chiến dịch nhiều ngày)' })
+  listSteps(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.service.getStepsForCampaign(campaignId, undefined, date || undefined);
   }
 
   /** TNV (chef/waiter) tick "xong" 1 khâu — bắt buộc ảnh bằng chứng. */

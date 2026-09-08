@@ -127,7 +127,7 @@ export default function DeliveryRouteMap({
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       {line && <Polyline positions={line} pathOptions={{ color: '#059669', weight: 5, opacity: 0.85 }} />}
       {pickup && <Marker position={[pickup.lat, pickup.lng]} icon={pin('#236c2a', 'storefront')} />}

@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useManageContext } from '../../../_components/ManageShell';
-import { useReviewQcStep, type DishProcessItem, type DishStep } from '@/hooks/useCampaigns';
+import {
+  useCampaignDishSteps,
+  useReviewQcStep,
+  type DishProcessItem,
+  type DishStep,
+} from '@/hooks/useCampaigns';
 import { errMsg, mediaUrl } from '@/lib/utils';
 
 /**
@@ -20,7 +25,14 @@ const STEP_STATUS_LABEL: Record<string, string> = {
 
 export default function KitchenProcessPage() {
   const { campaign: c } = useManageContext();
-  const dishes = c.dishSteps ?? [];
+  // Chiến dịch nhiều ngày: mỗi ngày một chuỗi 4 khâu riêng — chọn ngày để xem/duyệt
+  // đúng ngày đó. null = BE tự lấy hôm nay (kẹp vào khoảng ngày vận hành).
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { data: daySteps } = useCampaignDishSteps(c.id, selectedDate, c.status === 'in_progress');
+  const dishes = daySteps?.dishes ?? c.dishSteps ?? [];
+  const days = daySteps?.days ?? [];
+  const activeDate = daySteps?.activeDate ?? null;
+  const dmLabel = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
   const pendingReviews = dishes.reduce(
     (sum, d) =>
@@ -63,6 +75,29 @@ export default function KitchenProcessPage() {
             </span>
           )}
         </div>
+
+        {/* Dải chọn ngày — mỗi ngày vận hành có chuỗi khâu riêng để tick/duyệt */}
+        {days.length > 1 && (
+          <div className="mt-3 flex gap-1.5 overflow-x-auto">
+            {days.map((d) => {
+              const isActive = d === activeDate;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setSelectedDate(d)}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                    isActive
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                >
+                  Ngày {dmLabel(d)}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {dishes.length === 0 ? (

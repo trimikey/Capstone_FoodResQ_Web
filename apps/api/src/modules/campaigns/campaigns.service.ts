@@ -634,6 +634,25 @@ export class CampaignsService {
       return row.id;
     });
 
+    // Tổ chức chỉnh giờ 4 khâu ngay lúc tạo → sinh sẵn chuỗi khâu cho mọi món và
+    // mọi ngày theo giờ đó (không chờ lazy sinh với bộ giờ mặc định). Best-effort:
+    // chiến dịch đã commit, lỗi ở đây không được phá việc tạo.
+    if (dto.stepTimes && dto.stepTimes.length === 4) {
+      try {
+        const items = await this.prisma.campaignMenuItem.findMany({
+          where: { campaignId: created },
+          select: { id: true },
+        });
+        for (const mi of items) {
+          await this.dishSteps.ensureStepsForMenuItem(created, mi.id, dto.stepTimes);
+        }
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Không sinh được giờ khâu tuỳ chỉnh cho chiến dịch ${created}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     // Báo cho tất cả admin có yêu cầu chiến dịch cần duyệt
     void this.notifications.notifyAdmins({
       type: 'campaign',
@@ -884,6 +903,8 @@ export class CampaignsService {
       where: { id: { in: expiredIds } },
       data: { status: 'completed' },
     });
+
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
 
     for (const c of expired) {
       void this.notifications.notify(c.charityReceiver.userId, {
@@ -2323,8 +2344,12 @@ export class CampaignsService {
       };
     }
 
-    // Chef / Waiter → trả dishes + steps
-    const detail = await this.dishSteps.getStepsForCampaign(assignment.campaignId, userId);
+    // Chef / Waiter → trả dishes + steps CỦA NGÀY TRỰC (nhiều ngày mỗi ngày một chuỗi khâu)
+    const detail = await this.dishSteps.getStepsForCampaign(
+      assignment.campaignId,
+      userId,
+      assignment.workDate ? assignment.workDate.toISOString().slice(0, 10) : undefined,
+    );
 
     // Phục vụ cũng được điều đi phát suất ăn như shipper — không trả đợt phát thì màn
     // nhiệm vụ của họ chỉ có bảng 4 khâu nấu ăn, vốn là việc của bếp chứ không phải
@@ -3580,6 +3605,10 @@ export class CampaignsService {
         status: {
           in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'],
         },
+        // Chiến dịch đã kết thúc/huỷ thì ca của nó KHÔNG còn chiếm khung giờ —
+        // chiến dịch kết thúc sớm đóng ca tương lai thành completed, tính cả
+        // chúng vào đây là TNV bị chặn nhận ca mới cùng khung giờ oan.
+        campaign: { status: { in: ['pending_approval', 'approved', 'in_progress'] } },
       },
       select: {
         workDate: true,
@@ -4224,6 +4253,68 @@ export class CampaignsService {
    * đã xác nhận ca vẫn thấy việc trong "Việc của tôi", vẫn bị tính là bận (không
    * đăng ký được ca chiến dịch khác vì trùng giờ), và NCC vẫn giữ hàng chờ giao.
    */
+  /**
+   * Chiến dịch đã kết thúc/huỷ thì mọi ca của TNV không được treo nữa: treo vừa
+   * rác "Việc của tôi" vừa CHẶN họ nhận ca bếp/đơn giao mới (các guard đếm
+   * assignment đang active). Đã điểm danh/đang làm → completed (đã tham gia);
+   * chưa điểm danh (pending/assigned) → cancelled, không phạt.
+   * Chạy dạng sweep nên tự chữa luôn dữ liệu cũ còn treo.
+   */
+  async releaseVolunteersOfFinishedCampaigns(): Promise<number> {
+    const lingering = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress'] },
+        campaign: { status: { in: ['completed', 'cancelled'] } },
+      },
+      select: {
+        id: true,
+        status: true,
+        campaignId: true,
+        volunteer: { select: { userId: true } },
+        campaign: { select: { title: true, status: true } },
+      },
+    });
+    if (lingering.length === 0) return 0;
+
+    const toComplete = lingering
+      .filter((a) => a.status === 'checked_in' || a.status === 'in_progress')
+      .map((a) => a.id);
+    const toCancel = lingering
+      .filter((a) => a.status === 'pending' || a.status === 'assigned')
+      .map((a) => a.id);
+    await this.prisma.$transaction([
+      ...(toComplete.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toComplete } },
+            data: { status: 'completed' },
+          })]
+        : []),
+      ...(toCancel.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toCancel } },
+            data: { status: 'cancelled', notes: 'Chiến dịch đã kết thúc — ca được đóng tự động.' },
+          })]
+        : []),
+    ]);
+
+    // Báo mỗi TNV đúng một lần cho mỗi chiến dịch
+    const notified = new Set<string>();
+    for (const a of lingering) {
+      const key = `${a.volunteer.userId}|${a.campaignId}`;
+      if (notified.has(key)) continue;
+      notified.add(key);
+      void this.notifications.notify(a.volunteer.userId, {
+        type: 'campaign',
+        title: 'Chiến dịch đã kết thúc',
+        body:
+          `Chiến dịch "${a.campaign.title}" đã ${a.campaign.status === 'cancelled' ? 'bị huỷ' : 'hoàn tất'} — `
+          + 'các ca còn lại của bạn được đóng, bạn có thể nhận ca hoặc đơn mới.',
+        data: { campaignId: a.campaignId, status: a.campaign.status },
+      });
+    }
+    return lingering.length;
+  }
+
   async cancelCampaign(campaignId: string, userId: string, reason?: string) {
     const campaign = await this.assertOwner(campaignId, userId);
     if (!['pending_approval', 'approved'].includes(campaign.status)) {
@@ -4336,6 +4427,8 @@ export class CampaignsService {
         ...(isPremature ? { notes: `Kết thúc sớm: ${opts!.earlyEndReason!.trim()}` } : {}),
       },
     });
+    // Giải phóng ngay các ca TNV còn treo — không chờ cron giờ sau
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
     return this.findOne(campaignId);
   }
 
@@ -6716,13 +6809,13 @@ export class CampaignsService {
   }
 
   /** Tổ chức duyệt bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
-  async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string) {
-    return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId);
+  async approveDishFinalStep(campaignId: string, userId: string, menuItemId: string, dateKey?: string) {
+    return this.dishSteps.approveDishFinalStep(campaignId, userId, menuItemId, dateKey);
   }
 
   /** Tổ chức từ chối bước "Sẵn sàng xuất phát" của một món (delegate sang DishStepsService). */
-  async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string) {
-    return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason);
+  async rejectDishFinalStep(campaignId: string, userId: string, menuItemId: string, reason: string, dateKey?: string) {
+    return this.dishSteps.rejectDishFinalStep(campaignId, userId, menuItemId, reason, dateKey);
   }
 
   async getMyStats(userId: string) {

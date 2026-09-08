@@ -57,19 +57,6 @@ const STEPS = [
   ['Kiểm tra & gửi', 'fact_check'],
 ] as const;
 
-/**
- * Ô <input type="date"> hiển thị theo NGÔN NGỮ TRÌNH DUYỆT — Chrome tiếng Anh in
- * MM/DD/YYYY và không có cách nào ép về dd/mm. In kèm dạng Việt Nam ngay dưới ô
- * để người dùng không đọc nhầm tháng thành ngày.
- */
-function vnDatePreview(value: string): string | null {
-  if (!value) return null;
-  const [datePart, timePart] = value.split('T');
-  const [y, m, d] = (datePart ?? '').split('-');
-  if (!y || !m || !d) return null;
-  return `${d}/${m}/${y}${timePart ? ` · ${timePart}` : ''}`;
-}
-
 function dateAfter(days: number) {
   const d = new Date(Date.now() + 7 * 3600_000);
   d.setUTCDate(d.getUTCDate() + days);
@@ -105,6 +92,21 @@ function formatDuration(minutes: number) {
   return `${hours} giờ${remainingMinutes ? ` ${remainingMinutes} phút` : ''}`;
 }
 
+// 4 khâu bếp CỐ ĐỊNH (khớp FIXED_DISH_STEPS của BE) — tổ chức chỉ chỉnh GIỜ.
+const STEP_TIME_LABELS = ['Sơ chế', 'Nấu', 'Kiểm tra QC', 'Sẵn sàng xuất phát'];
+// Cùng nhịp offset với BE defaultStepTimes: +2h, +3h, +4h30, +5h30 từ giờ ca sớm nhất
+const STEP_TIME_OFFSETS_MIN = [120, 180, 270, 330];
+
+function suggestedStepTimes(periods: Period[]): string[] {
+  const earliest = PERIODS.filter((p) => periods.includes(p.id)).sort((a, b) => a.order - b.order)[0];
+  const [h, m] = (earliest?.start ?? '06:00').split(':').map(Number);
+  const startMin = (Number.isFinite(h) ? h : 6) * 60 + (Number.isFinite(m) ? m : 0);
+  return STEP_TIME_OFFSETS_MIN.map((off) => {
+    const t = (startMin + off) % 1440;
+    return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  });
+}
+
 function suggestedStaff(servings: number, role: StaffRole) {
   if (role === 'chef') return Math.max(1, Math.ceil(servings / 50));
   // Vai trò vận hành gánh cả chia suất (trước là phục vụ, ~40 suất/người) lẫn đi
@@ -136,6 +138,8 @@ interface CampaignDraft {
   recruitmentStartAt: string;
   recruitmentEndAt: string;
   staffing: Record<string, number>;
+  stepTimes?: string[];
+  stepTimesTouched?: boolean;
 }
 
 const DRAFT_KEY = 'foodresq:draft:create-campaign';
@@ -180,13 +184,20 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   const [staffing, setStaffing] = useState<Record<string, number>>(
     restored?.staffing ?? { 'morning:chef': 2, 'morning:shipper': 4 },
   );
+  // Giờ 4 khâu bếp: mặc định DERIVE theo ca sớm nhất ngay trong render (đổi ca là
+  // gợi ý đổi theo); tổ chức chỉnh tay thì lưu bản custom và thôi không gợi ý nữa.
+  const [customStepTimes, setCustomStepTimes] = useState<string[] | null>(
+    restored?.stepTimesTouched && restored.stepTimes ? restored.stepTimes : null,
+  );
+  const stepTimes = customStepTimes ?? suggestedStepTimes(activePeriods);
+  const stepTimesTouched = customStepTimes !== null;
   // Tự lưu nháp sau mỗi thay đổi — không chờ người dùng bấm gì cả, vì cái mất nháp
   // thường là thao tác vô ý: bấm ra ngoài, gõ Escape, lỡ tải lại trang.
   // So chuỗi JSON để chỉ ghi khi nội dung thật sự đổi, tránh ghi lại mỗi lần render.
   const draftJson = JSON.stringify({
     step, title, description, kitchenAddress, addressSource, lng, lat, imageUrl,
     expectedServings, menu, supplies, scheduledDate, endDate, activePeriods,
-    recruitmentStartAt, recruitmentEndAt, staffing,
+    recruitmentStartAt, recruitmentEndAt, staffing, stepTimes, stepTimesTouched,
   } satisfies CampaignDraft);
   useEffect(() => {
     saveDraftJson(DRAFT_KEY, draftJson);
@@ -552,6 +563,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         menuItems: menu.filter((item) => item.name.trim()).map((item) => ({ name: item.name.trim(), type: item.type, plannedServings: item.plannedServings })),
         supplyItems: supplies.filter((item) => item.name.trim()).map((item) => ({ ...item, name: item.name.trim(), unit: item.unit?.trim() || undefined })),
         shifts,
+        stepTimes,
       });
       // Gửi thành công thì nháp hết ý nghĩa — giữ lại sẽ khiến lần tạo sau bị điền
       // sẵn nội dung của chiến dịch vừa gửi.
@@ -739,6 +751,45 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Ca</th>{ROLES.map((role) => <th className="p-2" key={role.id}>{role.label}</th>)}</tr></thead><tbody>{selectedPeriods.map((period) => <tr className="border-b" key={period.id}><td className="p-2 font-bold">{period.label}<span className="block text-xs font-normal text-neutral-500">{period.time}</span></td>{ROLES.map((role) => { const key = `${period.id}:${role.id}`; return <td className="p-2" key={role.id}><input type="number" min={0} max={100} className="cm-input w-24" value={staffing[key] ?? 0} onChange={(e) => { const parsed = Number(e.target.value); setStaffing({ ...staffing, [key]: Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0 }); }} /></td>; })}</tr>)}</tbody></table></div>
                 <p className="mt-3 text-xs font-bold text-neutral-600">Tổng nhu cầu: {totalShiftSlots} lượt ca. Một người có thể nhận nhiều ca liền kề.</p>
               </Block>
+              <Block title="Giờ quy trình bếp (4 khâu)" icon="skillet">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-neutral-500">
+                    Quy trình 4 khâu là cố định — bạn chỉnh <b>giờ dự kiến</b> từng khâu cho hợp
+                    với ca bếp chạy. Đang gợi ý theo ca sớm nhất bạn chọn ở trên.
+                  </p>
+                  {stepTimesTouched && (
+                    <button
+                      type="button"
+                      className="cm-repeat-add"
+                      onClick={() => setCustomStepTimes(null)}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                      Gợi ý lại theo ca
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {STEP_TIME_LABELS.map((label, idx) => (
+                    <label key={label} className="text-xs font-bold text-neutral-600">
+                      {idx + 1}. {label}
+                      <input
+                        type="time"
+                        className="cm-input mt-1"
+                        value={stepTimes[idx] ?? ''}
+                        onChange={(e) => {
+                          const next = [...stepTimes];
+                          next[idx] = e.target.value;
+                          setCustomStepTimes(next);
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-neutral-500">
+                  Chiến dịch nhiều ngày: mỗi ngày lặp lại đúng khung giờ này. Sau khi tạo vẫn
+                  chỉnh lại được cho từng món trong tab Quy trình bếp.
+                </p>
+              </Block>
             </>}
 
             {step === 4 && <>
@@ -747,20 +798,10 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                   <label className="text-xs font-bold text-neutral-600">
                     Mở tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentStartAt} min={minRecruitmentStartAt} onChange={(e) => setRecruitmentStartAt(e.target.value)} />
-                    {vnDatePreview(recruitmentStartAt) && (
-                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
-                        = {vnDatePreview(recruitmentStartAt)} (ngày/tháng/năm)
-                      </span>
-                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Đóng tuyển
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} min={recruitmentStartAt || minRecruitmentStartAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
-                    {vnDatePreview(recruitmentEndAt) && (
-                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
-                        = {vnDatePreview(recruitmentEndAt)} (ngày/tháng/năm)
-                      </span>
-                    )}
                   </label>
                 </div>
                 <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu {recruitmentCloseLeadLabel}.</p>
@@ -778,20 +819,10 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                       aria-invalid={recruitmentBufferIsTooShort}
                       aria-describedby={recruitmentBufferMinutes !== null ? 'cm-operation-date-rule' : undefined}
                     />
-                    {vnDatePreview(scheduledDate) && (
-                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
-                        = {vnDatePreview(scheduledDate)} (ngày/tháng/năm)
-                      </span>
-                    )}
                   </label>
                   <label className="text-xs font-bold text-neutral-600">
                     Ngày kết thúc
                     <input type="date" className="cm-input mt-1" value={endDate} min={scheduledDate} onChange={(e) => setEndDate(e.target.value)} />
-                    {vnDatePreview(endDate) && (
-                      <span className="mt-1 block text-[11px] font-semibold text-emerald-700">
-                        = {vnDatePreview(endDate)} (ngày/tháng/năm)
-                      </span>
-                    )}
                   </label>
                 </div>
                 {recruitmentBufferMinutes !== null && (
@@ -806,8 +837,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
             </>}
 
             {step === 5 && <>
-              <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /></Block>
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Sau khi admin duyệt, hệ thống tự mở/đóng tuyển. Chiến dịch tự bắt đầu đúng giờ nếu tất cả ca đã đủ người xác nhận; không có nút bắt đầu thủ công.</div>
+              <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /><Summary label="Giờ 4 khâu bếp" value={stepTimes.join(' · ')} /></Block>
               {/* Cảnh báo + cam kết bắt buộc: đăng lên là KHÔNG chỉnh sửa được nữa
                   (tính năng chỉnh sửa chiến dịch đã bị gỡ) — bắt tổ chức xem kỹ. */}
               <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">

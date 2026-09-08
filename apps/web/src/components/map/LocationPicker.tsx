@@ -228,7 +228,7 @@ export default function LocationPicker({ lng, lat, onPick, address, interactive 
             lên domain deploy sẽ in chìm "API KEY REQUIRED" lên bản đồ. */}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MapClickHandler 
           onMapClick={handleMapClick} 
