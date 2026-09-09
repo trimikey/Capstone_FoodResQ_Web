@@ -60,7 +60,7 @@ export async function captureListingImage(): Promise<string> {
 }
 
 /**
- * Upload 1 ảnh local lên backend (lưu ./uploads/listings) và trả về URL tuyệt đối.
+ * Upload 1 ảnh local lên backend và trả về URL tuyệt đối.
  */
 export async function uploadListingImage(localUri: string): Promise<string> {
   return uploadImageToBackend(localUri, 'listing');

@@ -410,6 +410,10 @@ describe('CampaignsService', () => {
         where: { id: 'campaign-1' },
         data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
       }));
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        maxWait: 10_000,
+        timeout: 30_000,
+      });
     });
 
     it('đạt ngưỡng tối thiểu nhưng chưa đủ 100% thì chờ tổ chức xác nhận bắt đầu', async () => {

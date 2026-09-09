@@ -45,8 +45,9 @@ export default function ListingDetailScreen({ id }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState('');
   const [requestDelivery, setRequestDelivery] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState('');
   // Ảnh bằng chứng khó di chuyển — BẮT BUỘC khi bật "Giao tận nơi" (BE chặn nếu thiếu).
-  // Shipper xem ảnh này trong popup lời mời trước khi nhận đơn.
+  // Shipper xem ảnh này trước khi tự nhận đơn.
   const [evidence, setEvidence] = useState<CapturedImage | null>(null);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -117,8 +118,14 @@ export default function ListingDetailScreen({ id }: Props) {
     setQuantity(1);
     setNotes('');
     setRequestDelivery(false);
+    setScheduledTime('');
     setEvidence(null);
     setDialogVisible(true);
+  };
+
+  const setDefaultScheduledTime = () => {
+    const t = new Date(Date.now() + 60 * 60_000 + 7 * 3600_000);
+    setScheduledTime(t.toISOString().slice(0, 16));
   };
 
   const pickEvidence = async (fromCamera: boolean) => {
@@ -142,6 +149,17 @@ export default function ListingDetailScreen({ id }: Props) {
       });
       return;
     }
+    if (requestDelivery && scheduledTime) {
+      const at = new Date(`${scheduledTime}:00+07:00`);
+      if (!Number.isFinite(at.getTime()) || at.getTime() < Date.now() + 30 * 60_000) {
+        Popup.show({
+          type: 'warning',
+          text1: 'Giờ hẹn chưa hợp lệ',
+          text2: 'Giờ nhận phải cách hiện tại ít nhất 30 phút.',
+        });
+        return;
+      }
+    }
     let deliveryEvidenceUrl: string | undefined;
     if (requestDelivery && evidence) {
       try {
@@ -161,6 +179,7 @@ export default function ListingDetailScreen({ id }: Props) {
         receiverNotes: notes.trim() || undefined,
         requestDelivery,
         deliveryEvidenceUrl,
+        ...(requestDelivery && scheduledTime ? { deliveryScheduledAt: `${scheduledTime}:00+07:00` } : {}),
       },
       {
         onSuccess: (res) => {
@@ -309,7 +328,10 @@ export default function ListingDetailScreen({ id }: Props) {
               </View>
               <Switch
                 value={requestDelivery}
-                onValueChange={setRequestDelivery}
+                onValueChange={(value) => {
+                  setRequestDelivery(value);
+                  if (!value) setScheduledTime('');
+                }}
                 color={COLORS.primary}
               />
             </View>
@@ -332,6 +354,41 @@ export default function ListingDetailScreen({ id }: Props) {
                 {evidence ? (
                   <Text style={styles.evidenceOk}>✓ Đã chọn ảnh bằng chứng</Text>
                 ) : null}
+                <View style={styles.deliveryTimeBox}>
+                  <Text style={styles.evidenceTitle}>Giờ nhận hàng</Text>
+                  <Text style={styles.evidenceHint}>
+                    Để trống nếu muốn giao ngay khi có tình nguyện viên nhận đơn.
+                  </Text>
+                  <View style={styles.deliveryTimeActions}>
+                    <Button
+                      compact
+                      mode={scheduledTime ? 'outlined' : 'contained-tonal'}
+                      onPress={() => setScheduledTime('')}
+                    >
+                      Giao ngay
+                    </Button>
+                    <Button
+                      compact
+                      mode={scheduledTime ? 'contained-tonal' : 'outlined'}
+                      icon="clock-outline"
+                      onPress={setDefaultScheduledTime}
+                    >
+                      Hẹn giờ
+                    </Button>
+                  </View>
+                  {scheduledTime ? (
+                    <TextInput
+                      mode="outlined"
+                      label="Giờ hẹn (YYYY-MM-DDTHH:mm)"
+                      value={scheduledTime}
+                      onChangeText={setScheduledTime}
+                      placeholder="2026-08-26T14:30"
+                      autoCapitalize="none"
+                      outlineColor={COLORS.outlineVariant}
+                      activeOutlineColor={COLORS.primary}
+                    />
+                  ) : null}
+                </View>
               </View>
             ) : null}
           </Dialog.Content>
@@ -436,4 +493,12 @@ const styles = StyleSheet.create({
   evidenceHint: { fontSize: 11, lineHeight: 16, color: '#92400e' },
   evidenceActions: { flexDirection: 'row', gap: spacing.sm, marginTop: 2 },
   evidenceOk: { fontSize: 12, fontWeight: '700', color: '#15803d' },
+  deliveryTimeBox: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#fcd34d',
+    gap: 8,
+  },
+  deliveryTimeActions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
 });

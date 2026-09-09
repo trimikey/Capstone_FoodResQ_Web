@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import { enableScreens } from 'react-native-screens';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
@@ -13,6 +14,12 @@ import { useAuthStore } from '@/stores/auth';
 import { setSessionExpiredHandler } from '@/api/client';
 import { queryClient } from '@/lib/queryClient';
 import { appTheme } from '@/theme/design';
+
+// RN 0.85 forces the New Architecture/Fabric renderer. In Android dev builds,
+// react-native-screens can detach a native screen while Fabric still has pending
+// layout work for that surface, which crashes as "Unable to find viewState".
+// Disabling native screen optimization is slower but much more stable for demo.
+enableScreens(false);
 
 export default function RootLayout() {
   const { initialize } = useAuth();

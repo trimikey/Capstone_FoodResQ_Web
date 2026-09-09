@@ -1,9 +1,10 @@
 import { View, ActivityIndicator } from 'react-native';
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyProfile } from '@/hooks/useProfile';
 import { useNotificationSocket } from '@/hooks/useNotifications';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS } from '@/theme/design';
 
 /**
@@ -49,7 +50,7 @@ export default function AppTabsLayout() {
   }
 
   if (!isAuthenticated) {
-    return <Redirect href="/sign-in" />;
+    return <DeferredRedirect href="/sign-in" />;
   }
 
   return (
@@ -221,6 +222,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
+      <Tabs.Screen name="volunteer/delivery-shifts" options={{ href: null }} />
       <Tabs.Screen name="volunteer/scan-handoff" options={{ href: null }} />
       {/* Công thức nấu ăn — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="recipes/index" options={{ href: null }} />

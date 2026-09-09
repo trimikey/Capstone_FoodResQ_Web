@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { InteractionManager, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Button, Chip, Dialog, Portal, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyProfile } from '@/hooks/useProfile';
 import {
@@ -19,6 +18,7 @@ import { Popup } from '@/components/ui/AppPopup';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /** Làm mới trước khi hết hạn để waiter không quét phải mã vừa chết. */
@@ -70,7 +70,11 @@ export default function BeneficiaryQrScreen() {
   }, [issueQr]);
 
   useEffect(() => {
-    if (user?.role === 'receiver' && !isCharityOrg) void refreshQr();
+    if (user?.role !== 'receiver' || isCharityOrg) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      void refreshQr();
+    });
+    return () => task.cancel?.();
     // Chỉ cấp mã lần đầu khi vào màn; các lần sau do countdown kích hoạt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role, isCharityOrg]);
@@ -89,7 +93,7 @@ export default function BeneficiaryQrScreen() {
   }, [qr, refreshQr]);
 
   if (user && user.role !== 'receiver') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   if (isCharityOrg) {

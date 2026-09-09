@@ -1,4 +1,4 @@
-import type { CampaignStatus, Campaign } from '@/hooks/useCampaigns';
+import type { CampaignStatus, Campaign, RecruitmentStatus } from '@/hooks/useCampaigns';
 
 /** Nhãn + màu cho trạng thái chiến dịch. */
 export const CAMPAIGN_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -7,14 +7,35 @@ export const CAMPAIGN_STATUS_META: Record<string, { label: string; color: string
   in_progress: { label: 'Đang diễn ra', color: '#2563eb', bg: '#eff6ff' },
   completed: { label: 'Hoàn thành', color: '#059669', bg: '#ecfdf5' },
   cancelled: { label: 'Đã huỷ', color: '#ef4444', bg: '#fef2f2' },
+  expired_understaffed: { label: 'Quá hạn', color: '#dc2626', bg: '#fef2f2' },
 };
 
 export function statusMeta(status: CampaignStatus) {
   return CAMPAIGN_STATUS_META[status] ?? { label: String(status), color: '#6b7280', bg: '#f3f4f6' };
 }
 
+export function campaignIsOverdue(campaign: Pick<Campaign, 'status' | 'scheduledDate' | 'endDate' | 'recruitmentStatus'>): boolean {
+  if (campaign.status !== 'approved') return false;
+  if (campaign.recruitmentStatus === 'expired_understaffed') return true;
+  const dayOffset = daysUntilUtcDate(campaign.endDate ?? campaign.scheduledDate);
+  return dayOffset != null && dayOffset < 0;
+}
+
+export function campaignDisplayStatusMeta(campaign: Pick<Campaign, 'status' | 'scheduledDate' | 'endDate' | 'recruitmentStatus'>) {
+  return campaignIsOverdue(campaign) ? CAMPAIGN_STATUS_META.expired_understaffed : statusMeta(campaign.status);
+}
+
+export function campaignDisplayStatusTone(
+  campaign: Pick<Campaign, 'status' | 'scheduledDate' | 'endDate' | 'recruitmentStatus'>,
+): 'neutral' | 'success' | 'danger' | 'info' {
+  if (campaignIsOverdue(campaign) || campaign.status === 'cancelled') return 'danger';
+  if (campaign.status === 'completed') return 'success';
+  return campaign.status === 'pending_approval' ? 'neutral' : 'info';
+}
+
 /** Provider chỉ quyên góp được khi chiến dịch đang mở hoặc đang diễn ra. */
-export function canDonate(status: CampaignStatus): boolean {
+export function canDonate(status: CampaignStatus, recruitmentStatus?: RecruitmentStatus | null): boolean {
+  if (recruitmentStatus === 'expired_understaffed') return false;
   return status === 'approved' || status === 'in_progress';
 }
 
@@ -84,7 +105,7 @@ export function canCompleteCampaign(status: CampaignStatus): boolean {
 export const ASSIGNMENT_ROLE_LABEL: Record<string, string> = {
   chef: 'Đầu bếp',
   waiter: 'Phục vụ',
-  shipper: 'Giao hàng',
+  shipper: 'Giao nhận / phục vụ',
 };
 
 /** "2026-07-15" → "15/07/2026"; chuỗi rỗng nếu không hợp lệ. */
@@ -154,6 +175,6 @@ export function slotProgress(c: Campaign): SlotProgress[] {
   return [
     { role: 'chef' as const, label: 'Đầu bếp', filled: c.chefSlotsFilled, needed: c.chefSlotsNeeded },
     { role: 'waiter' as const, label: 'Phục vụ', filled: c.waiterSlotsFilled, needed: c.waiterSlotsNeeded },
-    { role: 'shipper' as const, label: 'Giao hàng', filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
+    { role: 'shipper' as const, label: 'Giao nhận / phục vụ', filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
   ].filter((s) => s.needed > 0);
 }

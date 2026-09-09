@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, ScrollView, View } from 'react-native';
 import { Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderReservations, type ProviderReservation } from '@/hooks/useProviderReservations';
 import { ProviderReservationCard } from '@/components/ProviderReservationCard';
@@ -13,6 +13,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { FilterPill } from '@/components/ui/FilterPill';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, spacing } from '@/theme/design';
 
 /** Bộ lọc trạng thái — gom status reservation thành nhóm dễ hiểu cho provider. */
@@ -42,7 +43,7 @@ export default function ProviderOrdersScreen() {
 
   // Receiver lỡ vào route provider → đưa về trang chủ.
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   const renderEmpty = () => {

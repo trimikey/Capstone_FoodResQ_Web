@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import apiClient, { API_ORIGIN, ApiResponse, endpoints } from '../api/client';
 import type { Coords } from '../services/geolocation';
+import { listingImageValues } from '../utils/listingImages';
 
 /**
  * Category lấy theo data thật trên backend (enum food_category có thể rộng hơn
@@ -68,34 +69,18 @@ export interface ListingQuery {
 
 export const LISTING_PAGE_SIZE = 6;
 
+interface ListingPage {
+  items: Listing[];
+  page: number;
+  pageSize: number;
+  hasNextPage: boolean;
+  isLocationFallback: boolean;
+}
+
 function uploadPathFromPathname(pathname: string): string | null {
   if (pathname.startsWith('/api/v1/uploads/')) return pathname.replace(/^\/api\/v1/, '');
   if (pathname.startsWith('/uploads/')) return pathname;
   return null;
-}
-
-function listingImageValues(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap(listingImageValues);
-  }
-
-  if (typeof value !== 'string') return [];
-
-  const raw = value.trim();
-  if (!raw) return [];
-
-  if (raw.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string')
-        : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [raw];
 }
 
 export function normalizeImageUrl(value: string): string {
@@ -148,11 +133,11 @@ export function useListings({
     placeholderData: (previous) => previous,
     queryFn: async () => {
       const hasCoords = coords != null;
-      const res = await apiClient.get<ApiResponse<Listing[]>>(
+      const fetchListings = async (withCoords: boolean) => apiClient.get<ApiResponse<Listing[]>>(
         endpoints.listings.search,
         {
           params: {
-            ...(hasCoords ? { lat: coords.lat, lng: coords.lng, radiusKm } : {}),
+            ...(withCoords && hasCoords ? { lat: coords.lat, lng: coords.lng, radiusKm } : {}),
             search: search || undefined,
             category: category || undefined,
             page,
@@ -160,13 +145,27 @@ export function useListings({
           },
         }
       );
-      const items = res.data.data.map(normalizeListingImages);
+
+      const res = await fetchListings(hasCoords);
+      let items = res.data.data.map(normalizeListingImages);
+      let isLocationFallback = false;
+
+      // Khi GPS của emulator/thiết bị nằm ngoài cụm tin seed hoặc bán kính quá hẹp,
+      // endpoint geospatial trả [] dù hệ thống vẫn còn tin active. Trang đầu fallback
+      // sang danh sách mới nhất để home không bị "trống giả"; filter/search vẫn giữ nguyên.
+      if (hasCoords && page === 1 && items.length === 0) {
+        const fallbackRes = await fetchListings(false);
+        items = fallbackRes.data.data.map(normalizeListingImages);
+        isLocationFallback = items.length > 0;
+      }
+
       return {
         items,
         page,
         pageSize: limit,
         hasNextPage: items.length === limit,
-      };
+        isLocationFallback,
+      } satisfies ListingPage;
     },
   });
 }

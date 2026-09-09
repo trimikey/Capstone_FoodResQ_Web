@@ -35,6 +35,40 @@ const DELIVERY_STATUS_VI: Record<string, string> = {
   failed: 'Giao thất bại',
 };
 
+function initials(name?: string | null): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  return (
+    parts.length
+      ? parts
+          .slice(-2)
+          .map((part) => part[0])
+          .join('')
+      : 'TX'
+  ).toUpperCase();
+}
+
+function ShipperProfilePhoto({ src, name }: { src?: string | null; name?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const label = name || 'Tài xế';
+
+  if (!src || failed) {
+    return (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-extrabold text-emerald-800">
+        {initials(label)}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={mediaUrl(src)}
+      alt={label}
+      className="h-10 w-10 shrink-0 rounded-full object-cover border border-neutral-100"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 interface Reservation {
   id: string;
   status: 'confirmed' | 'picked_up' | 'completed' | 'cancelled' | 'no_show' | 'expired';
@@ -71,12 +105,48 @@ const STATUS_META: Record<
   Reservation['status'],
   { label: string; badge: string; accent: string; icon: string; group: 'active' | 'history' }
 > = {
-  confirmed: { label: 'Đã xác nhận', badge: 'badge-sky', accent: 'bg-sky-400', icon: 'task_alt', group: 'active' },
-  picked_up: { label: 'Chờ xác minh', badge: 'badge-honey', accent: 'bg-honey-400', icon: 'hourglass_top', group: 'active' },
-  completed: { label: 'Hoàn tất', badge: 'badge-emerald', accent: 'bg-emerald-500', icon: 'verified', group: 'history' },
-  cancelled: { label: 'Đã huỷ', badge: 'badge-neutral', accent: 'bg-neutral-300', icon: 'cancel', group: 'history' },
-  no_show: { label: 'Không đến', badge: 'badge-rose', accent: 'bg-rose-400', icon: 'person_off', group: 'history' },
-  expired: { label: 'Hết hạn', badge: 'badge-neutral', accent: 'bg-neutral-300', icon: 'schedule', group: 'history' },
+  confirmed: {
+    label: 'Đã xác nhận',
+    badge: 'badge-sky',
+    accent: 'bg-sky-400',
+    icon: 'task_alt',
+    group: 'active',
+  },
+  picked_up: {
+    label: 'Chờ xác minh',
+    badge: 'badge-honey',
+    accent: 'bg-honey-400',
+    icon: 'hourglass_top',
+    group: 'active',
+  },
+  completed: {
+    label: 'Hoàn tất',
+    badge: 'badge-emerald',
+    accent: 'bg-emerald-500',
+    icon: 'verified',
+    group: 'history',
+  },
+  cancelled: {
+    label: 'Đã huỷ',
+    badge: 'badge-neutral',
+    accent: 'bg-neutral-300',
+    icon: 'cancel',
+    group: 'history',
+  },
+  no_show: {
+    label: 'Không đến',
+    badge: 'badge-rose',
+    accent: 'bg-rose-400',
+    icon: 'person_off',
+    group: 'history',
+  },
+  expired: {
+    label: 'Hết hạn',
+    badge: 'badge-neutral',
+    accent: 'bg-neutral-300',
+    icon: 'schedule',
+    group: 'history',
+  },
 };
 
 const PAGE_SIZE = 6;
@@ -139,8 +209,12 @@ export default function ReservationsPage() {
             <span className="material-symbols-outlined text-white text-[28px]">receipt_long</span>
           </div>
           <div>
-            <h1 className="font-headline-lg font-extrabold text-3xl text-neutral-900">Đơn nhận của tôi</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">Theo dõi đặt chỗ, mã QR nhận hàng và lịch sử.</p>
+            <h1 className="font-headline-lg font-extrabold text-3xl text-neutral-900">
+              Đơn nhận của tôi
+            </h1>
+            <p className="text-sm text-neutral-500 mt-0.5">
+              Theo dõi đặt chỗ, mã QR nhận hàng và lịch sử.
+            </p>
           </div>
         </div>
 
@@ -150,7 +224,9 @@ export default function ReservationsPage() {
             <button
               onClick={() => switchTab('active')}
               className={`px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                tab === 'active' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+                tab === 'active'
+                  ? 'bg-emerald-700 text-white elevation-2'
+                  : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
               Đang xử lý ({activeCount})
@@ -158,7 +234,9 @@ export default function ReservationsPage() {
             <button
               onClick={() => switchTab('history')}
               className={`px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                tab === 'history' ? 'bg-emerald-700 text-white elevation-2' : 'text-neutral-600 hover:bg-neutral-100'
+                tab === 'history'
+                  ? 'bg-emerald-700 text-white elevation-2'
+                  : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
               Lịch sử ({historyCount})
@@ -221,7 +299,9 @@ export default function ReservationsPage() {
         {/* States */}
         {isLoading && (
           <div className="space-y-3">
-            {[0, 1].map((i) => <div key={i} className="h-40 skeleton" />)}
+            {[0, 1].map((i) => (
+              <div key={i} className="h-40 skeleton" />
+            ))}
           </div>
         )}
         {isError && (
@@ -235,13 +315,18 @@ export default function ReservationsPage() {
         {!isLoading && !isError && filtered.length === 0 && (
           <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-neutral-200 elevation-1">
             <div className="w-20 h-20 mx-auto rounded-full bg-brand-gradient-soft flex items-center justify-center">
-              <span className="material-symbols-outlined text-emerald-600 text-[44px]">{tab === 'active' ? 'bookmark_border' : 'history'}</span>
+              <span className="material-symbols-outlined text-emerald-600 text-[44px]">
+                {tab === 'active' ? 'bookmark_border' : 'history'}
+              </span>
             </div>
             <h3 className="font-extrabold text-lg text-neutral-800 mt-4">
               {tab === 'active' ? 'Chưa có đơn đang xử lý' : 'Chưa có lịch sử'}
             </h3>
             <p className="text-sm text-neutral-500 mt-1">Tìm thực phẩm và đặt chỗ để bắt đầu.</p>
-            <a href="/listings" className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm transition-colors">
+            <a
+              href="/listings"
+              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm transition-colors"
+            >
               <span className="material-symbols-outlined text-[18px]">search</span> Tìm thực phẩm
             </a>
           </div>
@@ -249,157 +334,199 @@ export default function ReservationsPage() {
 
         {/* List */}
         <div className="space-y-4">
-          {!isLoading && !isError && filtered.map((r) => {
-            const meta = STATUS_META[r.status];
-            const qrValid = r.qrToken && r.qrExpiresAt && new Date(r.qrExpiresAt) > new Date();
-            return (
-              <div key={r.id} className="card-interactive bg-white rounded-2xl border border-neutral-150 elevation-1 overflow-hidden flex">
-                {/* dải màu trạng thái */}
-                <div className={`w-1.5 shrink-0 ${meta.accent}`} />
-                <div className="flex-1 min-w-0">
-                <div className="p-4 sm:p-5 flex flex-col min-[390px]:flex-row gap-4 min-[390px]:items-center">
-                  <div className="w-full min-[390px]:w-20 h-36 min-[390px]:h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
-                    {/* Ảnh tin cũ trỏ /uploads của máy khác sẽ 404 — rơi về ảnh theo
-                        danh mục thay vì hiện icon vỡ + alt text. */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={mediaUrl(r.listing.imageUrls?.[0] || fallbackImg(r.listing.category))}
-                      alt={r.listing.title}
-                      loading="lazy"
-                      onError={(e) => {
-                        const fb = fallbackImg(r.listing.category);
-                        if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
-                      }}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+          {!isLoading &&
+            !isError &&
+            filtered.map((r) => {
+              const meta = STATUS_META[r.status];
+              const qrValid = r.qrToken && r.qrExpiresAt && new Date(r.qrExpiresAt) > new Date();
+              return (
+                <div
+                  key={r.id}
+                  className="card-interactive bg-white rounded-2xl border border-neutral-150 elevation-1 overflow-hidden flex"
+                >
+                  {/* dải màu trạng thái */}
+                  <div className={`w-1.5 shrink-0 ${meta.accent}`} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                      <div className="min-w-0">
-                        <a href={`/reservations/${r.id}`} className="font-bold text-neutral-900 truncate hover:text-emerald-700 transition-colors">
-                          {r.listing.title}
-                        </a>
-                        <p className="text-xs text-neutral-500 mt-0.5">{r.listing.provider.businessName}</p>
+                    <div className="p-4 sm:p-5 flex flex-col min-[390px]:flex-row gap-4 min-[390px]:items-center">
+                      <div className="w-full min-[390px]:w-20 h-36 min-[390px]:h-20 rounded-xl overflow-hidden bg-neutral-100 shrink-0 ring-1 ring-neutral-150">
+                        {/* Ảnh tin cũ trỏ /uploads của máy khác sẽ 404 — rơi về ảnh theo
+                        danh mục thay vì hiện icon vỡ + alt text. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={mediaUrl(
+                            r.listing.imageUrls?.[0] || fallbackImg(r.listing.category),
+                          )}
+                          alt={r.listing.title}
+                          loading="lazy"
+                          onError={(e) => {
+                            const fb = fallbackImg(r.listing.category);
+                            if (!e.currentTarget.src.endsWith(fb)) e.currentTarget.src = fb;
+                          }}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
-                      <span className={`badge ${meta.badge} self-start shrink-0`}>
-                        <span className="material-symbols-outlined text-[14px]">{meta.icon}</span>{meta.label}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div className="min-w-0">
+                            <a
+                              href={`/reservations/${r.id}`}
+                              className="font-bold text-neutral-900 truncate hover:text-emerald-700 transition-colors"
+                            >
+                              {r.listing.title}
+                            </a>
+                            <p className="text-xs text-neutral-500 mt-0.5">
+                              {r.listing.provider.businessName}
+                            </p>
+                          </div>
+                          <span className={`badge ${meta.badge} self-start shrink-0`}>
+                            <span className="material-symbols-outlined text-[14px]">
+                              {meta.icon}
+                            </span>
+                            {meta.label}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-neutral-500">
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">
+                              inventory_2
+                            </span>
+                            {r.quantity}{' '}
+                            {UNIT_LABEL[r.listing.quantityUnit as QuantityUnit] ??
+                              r.listing.quantityUnit}
+                          </span>
+                          <span className="flex items-center gap-1 min-w-0">
+                            <span className="material-symbols-outlined text-[14px]">place</span>
+                            <span className="truncate max-w-[180px]">
+                              {r.listing.pickupAddress}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">
+                              calendar_today
+                            </span>
+                            {new Date(r.createdAt).toLocaleDateString('vi-VN')}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-neutral-500">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">inventory_2</span>
-                        {r.quantity} {UNIT_LABEL[r.listing.quantityUnit as QuantityUnit] ?? r.listing.quantityUnit}
-                      </span>
-                      <span className="flex items-center gap-1 min-w-0">
-                        <span className="material-symbols-outlined text-[14px]">place</span>
-                        <span className="truncate max-w-[180px]">{r.listing.pickupAddress}</span>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-                        {new Date(r.createdAt).toLocaleDateString('vi-VN')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Actions */}
-                <div className="border-t border-neutral-100 px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <a
-                    href={`/reservations/${r.id}`}
-                    className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">info</span>
-                    Xem chi tiết đơn
-                  </a>
-
-                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3">
-                    {/* confirmed: QR toggle */}
-                    {r.status === 'confirmed' && qrValid && (
-                      <button
-                        onClick={() => setExpandedQR(expandedQR === r.id ? null : r.id)}
-                        className="min-h-10 flex items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-sky-600 font-bold text-sm hover:text-sky-800 transition-colors"
+                    {/* Actions */}
+                    <div className="border-t border-neutral-100 px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <a
+                        href={`/reservations/${r.id}`}
+                        className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900 transition-colors"
                       >
-                        <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
-                        {expandedQR === r.id ? 'Ẩn QR' : 'Xem QR'}
-                      </button>
+                        <span className="material-symbols-outlined text-[20px]">info</span>
+                        Xem chi tiết đơn
+                      </a>
+
+                      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3">
+                        {/* confirmed: QR toggle */}
+                        {r.status === 'confirmed' && qrValid && (
+                          <button
+                            onClick={() => setExpandedQR(expandedQR === r.id ? null : r.id)}
+                            className="min-h-10 flex items-center justify-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 text-sky-600 font-bold text-sm hover:text-sky-800 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
+                            {expandedQR === r.id ? 'Ẩn QR' : 'Xem QR'}
+                          </button>
+                        )}
+
+                        {/* confirmed: nút hủy đơn */}
+                        {r.status === 'confirmed' && (
+                          <button
+                            onClick={() => setConfirmCancel(r.id)}
+                            className="min-h-10 flex items-center justify-center gap-1.5 rounded-xl border border-rose-100 bg-rose-50 px-3 text-rose-500 font-bold text-sm hover:text-rose-700 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                            Hủy đơn
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* QR hiện inline */}
+                    {r.status === 'confirmed' && qrValid && expandedQR === r.id && (
+                      <div className="border-t border-neutral-100 px-5 py-4 flex flex-col items-center gap-2">
+                        <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-sm">
+                          <QRCodeSVG value={r.qrToken!} size={160} level="H" includeMargin />
+                        </div>
+                        <p className="text-xs text-neutral-500">
+                          Hết hạn: {new Date(r.qrExpiresAt!).toLocaleString('vi-VN')}
+                        </p>
+                      </div>
                     )}
 
-                    {/* confirmed: nút hủy đơn */}
-                    {r.status === 'confirmed' && (
-                      <button
-                        onClick={() => setConfirmCancel(r.id)}
-                        className="min-h-10 flex items-center justify-center gap-1.5 rounded-xl border border-rose-100 bg-rose-50 px-3 text-rose-500 font-bold text-sm hover:text-rose-700 transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">cancel</span>
-                        Hủy đơn
-                      </button>
+                    {/* Theo dõi giao hàng trực tiếp (đơn có giao + đang trong tiến trình) */}
+                    {r.delivery &&
+                      ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'].includes(
+                        r.delivery.status,
+                      ) && (
+                        <div className="border-t border-neutral-100 px-5 py-3">
+                          <button
+                            onClick={() => setTrackingId(r.id)}
+                            className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900"
+                          >
+                            <span className="material-symbols-outlined text-[20px]">
+                              my_location
+                            </span>
+                            Theo dõi giao hàng trực tiếp
+                          </button>
+                        </div>
+                      )}
+
+                    {/* picked_up: chờ nhà cung cấp đối chiếu & xác nhận bàn giao */}
+                    {r.status === 'picked_up' && (
+                      <div className="border-t border-neutral-100 p-5 flex flex-col gap-2">
+                        <div className="flex items-center gap-2.5 bg-honey-50 border border-honey-200 rounded-xl p-3">
+                          <span className="material-symbols-outlined text-honey-600 animate-pulse">
+                            hourglass_top
+                          </span>
+                          <p className="text-xs text-honey-700 font-medium">
+                            Nhà cung cấp đã quét mã. Đưa giấy tờ/khuôn mặt để họ đối chiếu &amp; xác
+                            nhận bàn giao.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setVerifying(r)}
+                          className="self-start text-xs font-semibold text-neutral-400 hover:text-emerald-700 transition-colors"
+                        >
+                          Hoặc tự xác minh bằng ảnh →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* cancelled/no_show: lý do huỷ */}
+                    {(r.status === 'cancelled' || r.status === 'no_show') &&
+                      r.cancellationReason && (
+                        <div className="border-t border-neutral-100 p-5 flex items-start gap-2 text-xs">
+                          <span className="material-symbols-outlined text-[16px] text-neutral-400 mt-0.5">
+                            sticky_note_2
+                          </span>
+                          <p className="text-neutral-500">
+                            <span className="font-bold text-neutral-600">Lý do huỷ:</span>{' '}
+                            {r.cancellationReason}
+                          </p>
+                        </div>
+                      )}
+
+                    {/* completed: verified badge */}
+                    {r.status === 'completed' && r.pickupProofUrl && (
+                      <div className="border-t border-neutral-100 p-5 flex items-center gap-1.5 text-emerald-700 text-xs font-semibold">
+                        <span
+                          className="material-symbols-outlined text-[16px]"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          verified_user
+                        </span>
+                        Đã xác minh bằng{' '}
+                        {r.pickupVerificationType === 'id_card' ? 'CCCD' : 'khuôn mặt'}
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {/* QR hiện inline */}
-                {r.status === 'confirmed' && qrValid && expandedQR === r.id && (
-                  <div className="border-t border-neutral-100 px-5 py-4 flex flex-col items-center gap-2">
-                    <div className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-sm">
-                      <QRCodeSVG value={r.qrToken!} size={160} level="H" includeMargin />
-                    </div>
-                    <p className="text-xs text-neutral-500">Hết hạn: {new Date(r.qrExpiresAt!).toLocaleString('vi-VN')}</p>
-                  </div>
-                )}
-
-                {/* Theo dõi giao hàng trực tiếp (đơn có giao + đang trong tiến trình) */}
-                {r.delivery && ['assigned', 'heading_to_provider', 'qc_completed', 'in_transit'].includes(r.delivery.status) && (
-                  <div className="border-t border-neutral-100 px-5 py-3">
-                    <button
-                      onClick={() => setTrackingId(r.id)}
-                      className="flex items-center gap-2 text-emerald-700 font-bold text-sm hover:text-emerald-900"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">my_location</span>
-                      Theo dõi giao hàng trực tiếp
-                    </button>
-                  </div>
-                )}
-
-
-                {/* picked_up: chờ nhà cung cấp đối chiếu & xác nhận bàn giao */}
-                {r.status === 'picked_up' && (
-                  <div className="border-t border-neutral-100 p-5 flex flex-col gap-2">
-                    <div className="flex items-center gap-2.5 bg-honey-50 border border-honey-200 rounded-xl p-3">
-                      <span className="material-symbols-outlined text-honey-600 animate-pulse">hourglass_top</span>
-                      <p className="text-xs text-honey-700 font-medium">
-                        Nhà cung cấp đã quét mã. Đưa giấy tờ/khuôn mặt để họ đối chiếu &amp; xác nhận bàn giao.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setVerifying(r)}
-                      className="self-start text-xs font-semibold text-neutral-400 hover:text-emerald-700 transition-colors"
-                    >
-                      Hoặc tự xác minh bằng ảnh →
-                    </button>
-                  </div>
-                )}
-
-                {/* cancelled/no_show: lý do huỷ */}
-                {(r.status === 'cancelled' || r.status === 'no_show') && r.cancellationReason && (
-                  <div className="border-t border-neutral-100 p-5 flex items-start gap-2 text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-neutral-400 mt-0.5">sticky_note_2</span>
-                    <p className="text-neutral-500">
-                      <span className="font-bold text-neutral-600">Lý do huỷ:</span> {r.cancellationReason}
-                    </p>
-                  </div>
-                )}
-
-                {/* completed: verified badge */}
-                {r.status === 'completed' && r.pickupProofUrl && (
-                  <div className="border-t border-neutral-100 p-5 flex items-center gap-1.5 text-emerald-700 text-xs font-semibold">
-                    <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>verified_user</span>
-                    Đã xác minh bằng {r.pickupVerificationType === 'id_card' ? 'CCCD' : 'khuôn mặt'}
-                  </div>
-                )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
 
         {/* Phân trang */}
@@ -419,177 +546,231 @@ export default function ReservationsPage() {
       )}
 
       {/* Modal xác nhận hủy đơn */}
-      {confirmCancel && (() => {
-        const r = reservations.find(res => res.id === confirmCancel);
-        if (!r) return null;
-        // Đơn giao còn đang tìm shipper thì huỷ không bị phạt — khớp luật backend.
-        const isLate = isLateCancel(
-          r.listing.pickupEndTime,
-          r.delivery?.status === 'pending_assignment',
-        );
-        const score = me?.trustScore;
-        const after = scoreAfterLateCancel(score);
-        const outcome = after != null ? penaltyOutcome(after) : null;
-        return (
-          <Modal onClose={() => { setConfirmCancel(null); setCancelReason(''); }} align="center" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md p-0 overflow-hidden">
-            <div className="p-6 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-rose-600 text-[24px]">cancel</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg text-neutral-900">Hủy đơn hàng</h3>
-                  <p className="text-sm text-neutral-500">{r.listing.title}</p>
-                </div>
-              </div>
-
-              {isLate ? (
-                <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3">
-                  <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
-                  <div className="text-sm leading-relaxed">
-                    <p className="font-bold text-rose-700">
-                      Huỷ lúc này là HUỶ TRỄ — bạn sẽ bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
-                      {score != null ? ` (${score} → ${after})` : ''}.
-                    </p>
-                    {outcome && (
-                      <p className={`mt-1 font-semibold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}>
-                        ⚠ {outcome.text}
-                      </p>
-                    )}
+      {confirmCancel &&
+        (() => {
+          const r = reservations.find((res) => res.id === confirmCancel);
+          if (!r) return null;
+          // Đơn giao còn đang tìm shipper thì huỷ không bị phạt — khớp luật backend.
+          const isLate = isLateCancel(
+            r.listing.pickupEndTime,
+            r.delivery?.status === 'pending_assignment',
+          );
+          const score = me?.trustScore;
+          const after = scoreAfterLateCancel(score);
+          const outcome = after != null ? penaltyOutcome(after) : null;
+          return (
+            <Modal
+              onClose={() => {
+                setConfirmCancel(null);
+                setCancelReason('');
+              }}
+              align="center"
+              className="bg-white rounded-3xl border border-neutral-150 w-full max-w-md p-0 overflow-hidden"
+            >
+              <div className="p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-rose-600 text-[24px]">
+                      cancel
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-neutral-900">Hủy đơn hàng</h3>
+                    <p className="text-sm text-neutral-500">{r.listing.title}</p>
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                  <span className="material-symbols-outlined text-emerald-600 text-[20px]">info</span>
-                  {/* Cron no_show chỉ áp cho đơn TỰ ĐẾN LẤY; đơn đang tìm shipper mà
+
+                {isLate ? (
+                  <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3">
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">
+                      warning
+                    </span>
+                    <div className="text-sm leading-relaxed">
+                      <p className="font-bold text-rose-700">
+                        Huỷ lúc này là HUỶ TRỄ — bạn sẽ bị trừ {LATE_CANCEL_PENALTY} điểm uy tín
+                        {score != null ? ` (${score} → ${after})` : ''}.
+                      </p>
+                      {outcome && (
+                        <p
+                          className={`mt-1 font-semibold ${outcome.severe ? 'text-rose-700' : 'text-amber-700'}`}
+                        >
+                          ⚠ {outcome.text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">
+                      info
+                    </span>
+                    {/* Cron no_show chỉ áp cho đơn TỰ ĐẾN LẤY; đơn đang tìm shipper mà
                       không ai nhận thì hệ thống tự huỷ và không phạt gì. */}
-                  <p className="text-sm text-neutral-600 leading-relaxed">
-                    {r.delivery?.status === 'pending_assignment' ? (
-                      <>
-                        Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu không huỷ, hệ thống cũng tự huỷ
-                        khi hết hạn tìm người giao và cũng không trừ điểm.
-                      </>
-                    ) : (
-                      <>
-                        Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị trừ {NO_SHOW_PENALTY} điểm.
-                      </>
-                    )}
-                  </p>
+                    <p className="text-sm text-neutral-600 leading-relaxed">
+                      {r.delivery?.status === 'pending_assignment' ? (
+                        <>
+                          Huỷ bây giờ <b>không bị trừ điểm</b>. Nếu không huỷ, hệ thống cũng tự huỷ
+                          khi hết hạn tìm người giao và cũng không trừ điểm.
+                        </>
+                      ) : (
+                        <>
+                          Huỷ bây giờ <b>chưa bị trừ điểm</b>. Nhưng nếu không đến nhận, bạn sẽ bị
+                          trừ {NO_SHOW_PENALTY} điểm.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-sm font-bold text-neutral-800 mb-2">Lý do hủy (tùy chọn):</p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {['Bận việc đột xuất', 'Đổi ý', 'Đặt nhầm', 'Quá xa'].map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        onClick={() => setCancelReason(reason)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                          cancelReason === reason
+                            ? 'bg-rose-600 text-white border-rose-600'
+                            : 'bg-white text-neutral-600 border-neutral-200 hover:border-rose-300'
+                        }`}
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Lý do khác (không bắt buộc)..."
+                    rows={2}
+                    className="w-full border border-neutral-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-300"
+                  />
                 </div>
-              )}
 
-              <div>
-                <p className="text-sm font-bold text-neutral-800 mb-2">Lý do hủy (tùy chọn):</p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {['Bận việc đột xuất', 'Đổi ý', 'Đặt nhầm', 'Quá xa'].map((reason) => (
-                    <button
-                      key={reason}
-                      type="button"
-                      onClick={() => setCancelReason(reason)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                        cancelReason === reason
-                          ? 'bg-rose-600 text-white border-rose-600'
-                          : 'bg-white text-neutral-600 border-neutral-200 hover:border-rose-300'
-                      }`}
-                    >
-                      {reason}
-                    </button>
-                  ))}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setConfirmCancel(null);
+                      setCancelReason('');
+                    }}
+                    className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50"
+                  >
+                    Không hủy
+                  </button>
+                  <button
+                    onClick={() => handleCancel(confirmCancel)}
+                    disabled={cancelMutation.isPending}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+                  >
+                    {cancelMutation.isPending ? 'Đang hủy...' : 'Xác nhận hủy'}
+                  </button>
                 </div>
-                <textarea
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  placeholder="Lý do khác (không bắt buộc)..."
-                  rows={2}
-                  className="w-full border border-neutral-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-300"
-                />
               </div>
+            </Modal>
+          );
+        })()}
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => { setConfirmCancel(null); setCancelReason(''); }}
-                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm font-bold text-neutral-600 hover:bg-neutral-50"
-                >
-                  Không hủy
-                </button>
-                <button
-                  onClick={() => handleCancel(confirmCancel)}
-                  disabled={cancelMutation.isPending}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold disabled:opacity-50"
-                >
-                  {cancelMutation.isPending ? 'Đang hủy...' : 'Xác nhận hủy'}
-                </button>
-              </div>
-            </div>
-          </Modal>
-        );
-      })()}
-
-      {trackingId && <DeliveryTrackingModal reservationId={trackingId} onClose={() => setTrackingId(null)} />}
+      {trackingId && (
+        <DeliveryTrackingModal reservationId={trackingId} onClose={() => setTrackingId(null)} />
+      )}
     </div>
   );
 }
 
-function DeliveryTrackingModal({ reservationId, onClose }: { reservationId: string; onClose: () => void }) {
+function DeliveryTrackingModal({
+  reservationId,
+  onClose,
+}: {
+  reservationId: string;
+  onClose: () => void;
+}) {
   const { data: t, isLoading } = useDeliveryTracking(reservationId, true);
   if (typeof document === 'undefined') return null;
 
   const c = t?.coords;
-  const hasRoute = c?.pickupLat != null && c?.pickupLng != null && c?.deliveryLat != null && c?.deliveryLng != null;
+  const hasRoute =
+    c?.pickupLat != null &&
+    c?.pickupLng != null &&
+    c?.deliveryLat != null &&
+    c?.deliveryLng != null;
 
   return (
-    <Modal onClose={onClose} align="top" className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg overflow-hidden">
-        <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="material-symbols-outlined">my_location</span>
-            <div className="min-w-0">
-              <h3 className="font-extrabold text-lg truncate">{t?.listingTitle ?? 'Theo dõi giao hàng'}</h3>
-              <p className="text-xs text-white/85">{t ? DELIVERY_STATUS_VI[t.status] ?? t.status : 'Đang tải…'}</p>
-            </div>
+    <Modal
+      onClose={onClose}
+      align="top"
+      className="bg-white rounded-3xl border border-neutral-150 w-full max-w-lg overflow-hidden"
+    >
+      <div className="bg-brand-gradient px-6 py-5 text-white flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="material-symbols-outlined">my_location</span>
+          <div className="min-w-0">
+            <h3 className="font-extrabold text-lg truncate">
+              {t?.listingTitle ?? 'Theo dõi giao hàng'}
+            </h3>
+            <p className="text-xs text-white/85">
+              {t ? (DELIVERY_STATUS_VI[t.status] ?? t.status) : 'Đang tải…'}
+            </p>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white"><span className="material-symbols-outlined">close</span></button>
         </div>
+        <button onClick={onClose} className="text-white/80 hover:text-white">
+          <span className="material-symbols-outlined">close</span>
+        </button>
+      </div>
 
-        <div className="p-6 space-y-4">
-          {isLoading && <div className="h-56 rounded-2xl bg-neutral-100 animate-pulse" />}
+      <div className="p-6 space-y-4">
+        {isLoading && <div className="h-56 rounded-2xl bg-neutral-100 animate-pulse" />}
 
-          {t && hasRoute && (
-            <div className="h-60 rounded-2xl overflow-hidden border border-neutral-150">
-              <DeliveryRouteMap
-                pickup={{ lat: c!.pickupLat!, lng: c!.pickupLng! }}
-                delivery={{ lat: c!.deliveryLat!, lng: c!.deliveryLng! }}
-                shipper={t.shipper?.location ?? null}
-              />
+        {t && hasRoute && (
+          <div className="h-60 rounded-2xl overflow-hidden border border-neutral-150">
+            <DeliveryRouteMap
+              pickup={{ lat: c!.pickupLat!, lng: c!.pickupLng! }}
+              delivery={{ lat: c!.deliveryLat!, lng: c!.deliveryLng! }}
+              shipper={t.shipper?.location ?? null}
+            />
+          </div>
+        )}
+
+        {t && (
+          <>
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 flex items-center gap-2 text-sm text-emerald-800">
+              <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+              <span className="font-semibold">{DELIVERY_STATUS_VI[t.status] ?? t.status}</span>
+              {t.distanceKm != null && (
+                <span className="text-neutral-500 ml-auto text-xs">~{t.distanceKm} km</span>
+              )}
             </div>
-          )}
 
-          {t && (
-            <>
-              <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 flex items-center gap-2 text-sm text-emerald-800">
-                <span className="material-symbols-outlined text-[18px]">local_shipping</span>
-                <span className="font-semibold">{DELIVERY_STATUS_VI[t.status] ?? t.status}</span>
-                {t.distanceKm != null && <span className="text-neutral-500 ml-auto text-xs">~{t.distanceKm} km</span>}
-              </div>
-
-              {t.shipper ? (
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-150 p-3">
+            {t.shipper ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-150 p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <ShipperProfilePhoto src={t.shipper.profilePhotoUrl} name={t.shipper.name} />
                   <div className="min-w-0">
                     <p className="text-[11px] text-neutral-400 font-bold uppercase">Tài xế</p>
                     <p className="font-bold text-neutral-800 text-sm truncate">{t.shipper.name}</p>
                   </div>
-                  {t.shipper.phone && (
-                    <a href={`tel:${t.shipper.phone}`} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50">
-                      <span className="material-symbols-outlined text-[18px]">call</span> Gọi
-                    </a>
-                  )}
                 </div>
-              ) : (
-                <p className="text-sm text-neutral-400 text-center py-2">Đang tìm tài xế cho đơn của bạn…</p>
-              )}
-              <p className="text-[11px] text-neutral-400 text-center">Vị trí tài xế tự cập nhật mỗi ~12 giây.</p>
-            </>
-          )}
-        </div>
+                {t.shipper.phone && (
+                  <a
+                    href={`tel:${t.shipper.phone}`}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">call</span> Gọi
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-neutral-400 text-center py-2">
+                Đang tìm tài xế cho đơn của bạn…
+              </p>
+            )}
+            <p className="text-[11px] text-neutral-400 text-center">
+              Vị trí tài xế tự cập nhật mỗi ~12 giây.
+            </p>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

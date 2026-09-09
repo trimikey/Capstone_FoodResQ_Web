@@ -2,7 +2,7 @@ import { View, StyleSheet, Pressable } from 'react-native';
 import { Text, ProgressBar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Campaign } from '@/hooks/useCampaigns';
-import { statusMeta, formatDate, formatTime, charityName, slotProgress } from '@/utils/campaign';
+import { campaignDisplayStatusMeta, campaignDisplayStatusTone, formatDate, formatTime, charityName, slotProgress } from '@/utils/campaign';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
@@ -13,7 +13,8 @@ interface Props {
 
 /** Thẻ chiến dịch trong danh sách: tên, tổ chức, thời gian, địa chỉ, tiến độ TNV, trạng thái. */
 export function CampaignCard({ campaign, onPress }: Props) {
-  const sm = statusMeta(campaign.status);
+  const sm = campaignDisplayStatusMeta(campaign);
+  const statusTone = campaignDisplayStatusTone(campaign);
   const slots = slotProgress(campaign);
   const totalNeeded = slots.reduce((sum, slot) => sum + slot.needed, 0);
   const totalFilled = slots.reduce((sum, slot) => sum + slot.filled, 0);
@@ -32,7 +33,7 @@ export function CampaignCard({ campaign, onPress }: Props) {
             {campaign.title}
           </Text>
         </View>
-        <StatusBadge label={sm.label} tone={campaign.status === 'cancelled' ? 'danger' : campaign.status === 'completed' ? 'success' : 'info'} />
+        <StatusBadge label={sm.label} tone={statusTone} />
       </View>
 
       <View style={styles.infoPanel}>

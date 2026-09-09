@@ -72,6 +72,8 @@ export interface CreateReservationInput {
   requestDelivery?: boolean;
   /** Ảnh bằng chứng khó di chuyển — bắt buộc khi requestDelivery (BE chặn nếu thiếu). */
   deliveryEvidenceUrl?: string;
+  /** Giờ hẹn giao ISO. Bỏ trống = giao ngay khi có tình nguyện viên nhận. */
+  deliveryScheduledAt?: string;
 }
 
 /** Kết quả POST /reservations — KHÔNG phải full reservation. */
@@ -224,6 +226,75 @@ export function useCancelReservation() {
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       queryClient.invalidateQueries({ queryKey: ['reservation', id] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+}
+
+export interface ReservationChatMessage {
+  id: string;
+  senderUserId: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ReservationChatParticipant {
+  userId: string;
+  role: 'receiver' | 'provider' | 'shipper';
+  name: string;
+  phone: string | null;
+}
+
+export interface ReservationChatData {
+  messages: ReservationChatMessage[];
+  me: string;
+  partner: ReservationChatParticipant;
+  participants: ReservationChatParticipant[];
+}
+
+export type ChatPartnerSelector =
+  | { id: string }
+  | { role: ReservationChatParticipant['role'] }
+  | null;
+
+/** Hội thoại 1-1 theo đơn với người nhận/cửa hàng/shipper. */
+export function useReservationMessages(
+  reservationId: string | null | undefined,
+  partner: ChatPartnerSelector,
+  enabled: boolean,
+) {
+  const partnerKey = partner ? ('id' in partner ? partner.id : partner.role) : 'default';
+  return useQuery({
+    queryKey: ['reservations', 'chat', reservationId, partnerKey],
+    enabled: enabled && !!reservationId,
+    refetchInterval: enabled ? 5_000 : false,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ReservationChatData>>(
+        endpoints.reservations.messages(reservationId!),
+        {
+          params: partner
+            ? 'id' in partner
+              ? { with: partner.id }
+              : { withRole: partner.role }
+            : undefined,
+        }
+      );
+      return res.data.data;
+    },
+  });
+}
+
+export function useSendReservationMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { reservationId: string; content: string; toUserId: string }) => {
+      const res = await apiClient.post<ApiResponse<ReservationChatMessage>>(
+        endpoints.reservations.messages(input.reservationId),
+        { content: input.content, toUserId: input.toUserId }
+      );
+      return res.data.data;
+    },
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({ queryKey: ['reservations', 'chat', input.reservationId] });
     },
   });
 }

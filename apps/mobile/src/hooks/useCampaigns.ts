@@ -364,7 +364,12 @@ export interface SubmitProviderProposalInput {
 export function useCampaigns() {
   return useQuery({
     queryKey: ['campaigns', 'open'],
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign[]>>(endpoints.campaigns.list);
       return res.data.data;
@@ -742,6 +747,9 @@ export interface DishStep {
   qcFailedAt?: string | null;
   qcFailureReason?: string | null;
   qcFailedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
   completedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
 }
 
@@ -787,10 +795,54 @@ export interface AssignedDistribution {
   peopleServed: number;
   actualServings: number | null;
   actualPeopleServed: number | null;
+  photoUrl: string | null;
   note: string | null;
   distributedAt: string;
   completedAt: string | null;
   points: DistributionPoint[];
+}
+
+export interface PickupOrder {
+  id: string;
+  providerRequestId: string;
+  campaignId: string;
+  campaignTitle: string;
+  campaignDate: string | null;
+  campaignTimeRange: string;
+  kitchenAddress: string;
+  providerName: string;
+  providerAddress: string | null;
+  providerPhone: string | null;
+  lng: number | null;
+  lat: number | null;
+  distanceKm: number | null;
+  needsTransport: boolean;
+  message: string | null;
+  ingredientName: string | null;
+  foodCategory: string | null;
+  expectedServings: number | null;
+  requireColdChain: boolean;
+  requireQcPhoto: boolean;
+  requireAtvstpCert: boolean;
+  scheduledDate: string | null;
+  pickupStartTime: string | null;
+  pickupEndTime: string | null;
+  quantityKg: number | null;
+  pickup: {
+    id: string;
+    receivedKg: number;
+    requestedKg: number | null;
+    shortfallKg: number;
+    photoUrl: string;
+    note: string | null;
+    confirmedAt: string;
+  } | null;
+  delivery: {
+    id: string;
+    status: string;
+  } | null;
+  assignmentId?: string | null;
+  checkedIn?: boolean;
 }
 
 export interface MyTaskDetail {
@@ -826,6 +878,7 @@ export interface MyTaskDetail {
     charityReceiver: { organizationName: string | null; user: { fullName: string; phone: string | null } };
   };
   distributions?: AssignedDistribution[];
+  pickupOrders?: PickupOrder[];
   dishes?: DishProcessItem[];
   cookingTeam?: CookingTeamMember[];
 }
@@ -959,16 +1012,21 @@ export function useCampaignSupplies(campaignId?: string) {
 export function useCompleteAssignedDistribution() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note }: {
+    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note, photo }: {
       distributionId: string;
       campaignId: string;
       actualServings: number;
       note?: string;
+      photo: CapturedImage;
     }) => {
-      // 1 suất = 1 người — BE tự ghi actualPeopleServed = actualServings.
+      const form = new FormData();
+      form.append('actualServings', String(actualServings));
+      form.append('photo', photo as unknown as Blob);
+      if (note) form.append('note', note);
       const res = await apiClient.post<ApiResponse<AssignedDistribution>>(
         endpoints.campaigns.completeDistribution(distributionId),
-        { actualServings, ...(note ? { note } : {}) }
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       return res.data.data;
     },
@@ -976,6 +1034,51 @@ export function useCompleteAssignedDistribution() {
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['campaign', campaignId] });
+    },
+  });
+}
+
+export function useMyPickupOrders(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'my-pickup-orders'],
+    enabled,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<PickupOrder[]>>(endpoints.campaigns.myPickupOrders);
+      return res.data.data;
+    },
+  });
+}
+
+export function useConfirmIngredientPickup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      receivedKg,
+      photo,
+      note,
+    }: {
+      requestId: string;
+      receivedKg: number;
+      photo: CapturedImage;
+      note?: string;
+    }) => {
+      const form = new FormData();
+      form.append('receivedKg', String(receivedKg));
+      form.append('photo', photo as unknown as Blob);
+      if (note) form.append('note', note);
+      const res = await apiClient.post<ApiResponse<PickupOrder['pickup']>>(
+        endpoints.campaigns.confirmPickupOrder(requestId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-pickup-orders'] });
     },
   });
 }

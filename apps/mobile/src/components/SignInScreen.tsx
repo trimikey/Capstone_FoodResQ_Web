@@ -86,12 +86,6 @@ export function SignInScreen({
 
       await login(data);
 
-      Popup.show({
-        type: 'success',
-        text1: 'Đăng nhập thành công',
-        text2: 'Chào mừng bạn quay lại FoodResQ',
-      });
-
       onSignInSuccess?.(null);
     } catch (error) {
       showError(getErrorMessage(error), 4000);

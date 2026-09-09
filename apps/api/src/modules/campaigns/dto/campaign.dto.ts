@@ -168,7 +168,7 @@ export class CreateCampaignDto {
   })
   @IsOptional()
   @IsInt({ message: 'Khoảng đệm tuyển phải là số nguyên' })
-  @Min(6, { message: 'Khoảng đệm tuyển tối thiểu 6 giờ' })
+  @Min(0, { message: 'Khoảng đệm tuyển không được âm' })
   @Max(48, { message: 'Khoảng đệm tuyển tối đa 48 giờ' })
   @Type(() => Number)
   recruitmentBufferHours?: number;

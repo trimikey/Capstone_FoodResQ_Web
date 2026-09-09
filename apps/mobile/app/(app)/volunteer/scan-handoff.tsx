@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Button, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Redirect, type Href, useLocalSearchParams } from 'expo-router';
+import { type Href, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useScanHandoff, type HandoffScanResult } from '@/hooks/useKitchenOps';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
@@ -12,6 +12,7 @@ import { Popup } from '@/components/ui/AppPopup';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { notifyError, notifySuccess, selectionFeedback } from '@/services/haptics';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
@@ -30,11 +31,11 @@ export default function ScanHandoffScreen() {
   const [torch, setTorch] = useState(false);
 
   if (user && user.role !== 'volunteer') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   if (!campaignId || !distributionId) {
-    return <Redirect href={'/(app)/volunteer/campaigns' as Href} />;
+    return <DeferredRedirect href={'/(app)/volunteer/campaigns' as Href} />;
   }
 
   const handleScan = async (token: string) => {

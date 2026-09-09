@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { InteractionManager, View, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
@@ -226,7 +226,7 @@ function DeliveryDetailSheet({
               {delivered ? (
                 <View style={[detailStyles.chip, { backgroundColor: COLORS.warningContainer }]}>
                   <MaterialCommunityIcons name="medal-outline" size={13} color={COLORS.warning} />
-                  <Text style={[detailStyles.chipText, { color: COLORS.warning }]}>+5 đ.c.h</Text>
+                  <Text style={[detailStyles.chipText, { color: COLORS.warning }]}>+5 điểm cống hiến</Text>
                 </View>
               ) : null}
             </View>
@@ -326,7 +326,12 @@ export default function VolunteerHistoryScreen() {
     toDate
   );
 
-  useEffect(() => { setLimit(20); }, [fromDate, toDate]);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setLimit(20);
+    });
+    return () => task.cancel?.();
+  }, [fromDate, toDate]);
 
   const openDetail = useCallback((item: DeliveryHistoryItem) => {
     setSelectedItem(item);
@@ -387,7 +392,7 @@ export default function VolunteerHistoryScreen() {
             {delivered ? (
               <View style={styles.pointsBadge}>
                 <MaterialCommunityIcons name="medal-outline" size={12} color={COLORS.warning} />
-                <Text style={styles.pointsBadgeText}>+5 đ.c.h</Text>
+                <Text style={styles.pointsBadgeText}>+5 điểm cống hiến</Text>
               </View>
             ) : null}
             <View style={{ flex: 1 }} />

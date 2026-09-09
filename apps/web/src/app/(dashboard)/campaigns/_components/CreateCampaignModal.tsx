@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { type CreateCampaignInput, useUploadCampaignImage } from '@/hooks/useCampaigns';
+import { type CreateCampaignInput, useCampaignCreateConstraints, useUploadCampaignImage } from '@/hooks/useCampaigns';
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
 import { errMsg, mediaUrl } from '@/lib/utils';
@@ -86,6 +86,7 @@ function formatDateTime(value: Date | string) {
 
 function formatDuration(minutes: number) {
   const absoluteMinutes = Math.abs(minutes);
+  if (absoluteMinutes < 60) return `${absoluteMinutes} phút`;
   const hours = Math.floor(absoluteMinutes / 60);
   const remainingMinutes = absoluteMinutes % 60;
   return `${hours} giờ${remainingMinutes ? ` ${remainingMinutes} phút` : ''}`;
@@ -154,6 +155,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   // không phải setState sau render (gây nháy) và để giá trị có ngay ở lần vẽ đầu tiên.
   const [restored] = useState(() => loadDraft<CampaignDraft>(DRAFT_KEY));
   const [draftRestored, setDraftRestored] = useState(!!restored);
+  const { data: createConstraints } = useCampaignCreateConstraints();
 
   const [step, setStep] = useState<Step>(restored?.step ?? 1);
   // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
@@ -245,7 +247,9 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     if (!Number.isFinite(recruitmentEnd.getTime())) return null;
     return Math.floor((operationStartAt.getTime() - recruitmentEnd.getTime()) / 60_000);
   }, [operationStartAt, recruitmentEndAt]);
-  const recruitmentBufferIsTooShort = recruitmentBufferMinutes !== null && recruitmentBufferMinutes < 360;
+  const recruitmentCloseLeadMinutes = createConstraints?.recruitmentCloseLeadMinutes ?? 360;
+  const recruitmentCloseLeadLabel = formatDuration(recruitmentCloseLeadMinutes);
+  const recruitmentBufferIsTooShort = recruitmentBufferMinutes !== null && recruitmentBufferMinutes < recruitmentCloseLeadMinutes;
   const minRecruitmentStartAt = nowVnLocalInput();
   const expectedServingsValue = expectedServings === '' ? 0 : expectedServings;
   const servingsRef = useRef(expectedServingsValue);
@@ -478,7 +482,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         if (days > 30) return 'Chiến dịch tối đa 30 ngày — kiểm tra lại ngày kết thúc.';
       }
       if (recruitmentBufferMinutes === null || recruitmentBufferIsTooShort) {
-        return 'Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất 6 giờ.';
+        return `Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất ${recruitmentCloseLeadLabel}.`;
       }
     }
     return null;
@@ -800,7 +804,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                     <input type="datetime-local" className="cm-input mt-1" value={recruitmentEndAt} min={recruitmentStartAt || minRecruitmentStartAt} onChange={(e) => setRecruitmentEndAt(e.target.value)} />
                   </label>
                 </div>
-                <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu 6 giờ.</p>
+                <p className="mt-3 text-xs text-neutral-500">Khoảng đệm được tự động tính từ lúc đóng tuyển đến giờ bắt đầu ca đầu tiên và phải đạt tối thiểu {recruitmentCloseLeadLabel}.</p>
               </Block>
               <Block title="Ngày vận hành chiến dịch" icon="calendar_month">
                 <div className="grid grid-cols-2 gap-3">
@@ -825,7 +829,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                   <p id="cm-operation-date-rule" className={`mt-3 rounded-xl p-3 text-xs font-semibold ${recruitmentBufferIsTooShort ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-900'}`} role={recruitmentBufferIsTooShort ? 'alert' : undefined}>
                     {recruitmentBufferMinutes < 0
                       ? `Ca đầu tiên đang bắt đầu trước thời gian đóng tuyển ${formatDuration(recruitmentBufferMinutes)}.`
-                      : `${formatDuration(recruitmentBufferMinutes)} — ${recruitmentBufferIsTooShort ? 'chưa đạt quy định tối thiểu 6 giờ.' : 'đã đạt quy định tối thiểu 6 giờ.'}`}
+                      : `Khoảng đệm tự động: ${formatDuration(recruitmentBufferMinutes)} — ${recruitmentBufferIsTooShort ? `chưa đạt quy định tối thiểu ${recruitmentCloseLeadLabel}.` : `đã đạt quy định tối thiểu ${recruitmentCloseLeadLabel}.`}`}
                   </p>
                 )}
                 <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">Vận hành: {formatDateTime(operationStartAt)} → {formatDateTime(operationEndAt)}</p>

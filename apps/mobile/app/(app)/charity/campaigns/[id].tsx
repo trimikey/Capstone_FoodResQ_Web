@@ -28,6 +28,7 @@ import { ShiftDialog } from '@/components/kitchen/ShiftDialog';
 import { MenuItemDialog } from '@/components/kitchen/MenuItemDialog';
 import {
   statusMeta,
+  campaignDisplayStatusMeta,
   formatDate,
   formatTime,
   charityName,
@@ -222,7 +223,7 @@ export default function CharityCampaignDetailScreen() {
     );
   }
 
-  const sm = statusMeta(c.status);
+  const sm = campaignDisplayStatusMeta(c);
   const slots = slotProgress(c);
   const donations = c.donations ?? [];
   const assignments = c.assignments ?? [];

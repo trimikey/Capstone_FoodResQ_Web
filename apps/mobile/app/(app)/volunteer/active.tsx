@@ -1,5 +1,15 @@
-﻿import { useCallback, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView, Linking, Platform, RefreshControl, Pressable, Modal, Image } from 'react-native';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Linking,
+  Platform,
+  RefreshControl,
+  Pressable,
+  Modal,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, ActivityIndicator } from 'react-native-paper';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -22,7 +32,12 @@ import {
   type DeliveryStatus,
 } from '@/hooks/useDeliveries';
 import { useVolunteerMe } from '@/hooks/useVolunteer';
-import { Redirect } from 'expo-router';
+import {
+  useReservationMessages,
+  useSendReservationMessage,
+  type ReservationChatParticipant,
+} from '@/hooks/useReservations';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { DeliveryRouteMap, type LatLng } from '@/components/DeliveryRouteMap';
 import { ReportDialog } from '@/components/ReportDialog';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -44,6 +59,67 @@ interface PhotoReviewState {
   photo: CapturedImage;
   action: 'qc' | 'campaign_delivery';
   delivery: ActiveDelivery;
+}
+
+type ChatRole = Extract<ReservationChatParticipant['role'], 'receiver' | 'provider'>;
+
+const CHAT_ROLE_LABEL: Record<ChatRole, string> = {
+  receiver: 'người nhận',
+  provider: 'cửa hàng',
+};
+
+const DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES = 20;
+
+function formatScheduledDelivery(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function minutesUntilLabel(ms: number): string {
+  const total = Math.max(1, Math.ceil(ms / 60_000));
+  if (total < 60) return `${total} phút`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m > 0 ? `${h} giờ ${m} phút` : `${h} giờ`;
+}
+
+function earlyCompleteMinutesOf(delivery: ActiveDelivery): number {
+  const configured = Number(
+    delivery.deliveryEarlyCompleteMinutes ?? DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES,
+  );
+  return Number.isFinite(configured)
+    ? Math.max(0, configured)
+    : DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES;
+}
+
+function earliestCompleteAtMs(
+  scheduledAt?: string | null,
+  earlyCompleteMinutes = DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES,
+): number | null {
+  if (!scheduledAt) return null;
+  if (earlyCompleteMinutes <= 0) return null;
+  const ms = new Date(scheduledAt).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return ms - earlyCompleteMinutes * 60_000;
+}
+
+function isTooEarlyToCompleteDelivery(
+  delivery: ActiveDelivery,
+  earlyCompleteMinutes: number,
+): boolean {
+  if (delivery.source !== 'reservation') return false;
+  const earliest = earliestCompleteAtMs(
+    delivery.reservation?.deliveryScheduledAt,
+    earlyCompleteMinutes,
+  );
+  return earliest != null && Date.now() < earliest;
 }
 
 function PhotoReviewModal({
@@ -68,7 +144,11 @@ function PhotoReviewModal({
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>Xem lại ảnh</Text>
           {state != null ? (
-            <Image source={{ uri: state.photo.uri }} style={styles.reviewImage} resizeMode="contain" />
+            <Image
+              source={{ uri: state.photo.uri }}
+              style={styles.reviewImage}
+              resizeMode="contain"
+            />
           ) : null}
           <Text style={styles.reviewHint}>
             {state?.action === 'qc'
@@ -111,7 +191,13 @@ interface DeliveredSummary {
   distanceLabel: string | null;
 }
 
-function DeliveredSuccessModal({ summary, onDismiss }: { summary: DeliveredSummary | null; onDismiss: () => void }) {
+function DeliveredSuccessModal({
+  summary,
+  onDismiss,
+}: {
+  summary: DeliveredSummary | null;
+  onDismiss: () => void;
+}) {
   return (
     <Modal visible={summary != null} transparent animationType="fade" onRequestClose={onDismiss}>
       <View style={styles.successOverlay}>
@@ -127,7 +213,9 @@ function DeliveredSuccessModal({ summary, onDismiss }: { summary: DeliveredSumma
           <View style={styles.successDetails}>
             <View style={styles.successRow}>
               <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
-              <Text style={styles.successRowText} numberOfLines={2}>{summary?.title}</Text>
+              <Text style={styles.successRowText} numberOfLines={2}>
+                {summary?.title}
+              </Text>
             </View>
             <View style={styles.successRow}>
               <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
@@ -135,7 +223,11 @@ function DeliveredSuccessModal({ summary, onDismiss }: { summary: DeliveredSumma
             </View>
             {summary?.quantity != null && (
               <View style={styles.successRow}>
-                <MaterialCommunityIcons name="package-variant-closed" size={18} color={COLORS.indigo} />
+                <MaterialCommunityIcons
+                  name="package-variant-closed"
+                  size={18}
+                  color={COLORS.indigo}
+                />
                 <Text style={styles.successRowText}>{summary.quantity} phần</Text>
               </View>
             )}
@@ -198,8 +290,14 @@ function HandoverConfirmModal({
               <AppImage source={{ uri: registeredPhoto }} style={styles.handoverPhoto} />
             ) : (
               <View style={styles.handoverNoPhoto}>
-                <MaterialCommunityIcons name="camera-off-outline" size={34} color={COLORS.warning} />
-                <Text style={styles.handoverNoPhotoText}>Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân</Text>
+                <MaterialCommunityIcons
+                  name="camera-off-outline"
+                  size={34}
+                  color={COLORS.warning}
+                />
+                <Text style={styles.handoverNoPhotoText}>
+                  Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân
+                </Text>
               </View>
             )}
             {registeredPhoto ? <Text style={styles.handoverPhotoLabel}>Ảnh đã đăng ký</Text> : null}
@@ -220,7 +318,11 @@ function HandoverConfirmModal({
             ) : null}
             {receiver?.idCardNumber ? (
               <View style={styles.successRow}>
-                <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.indigo} />
+                <MaterialCommunityIcons
+                  name="card-account-details-outline"
+                  size={18}
+                  color={COLORS.indigo}
+                />
                 <Text style={styles.successRowText}>CCCD: {receiver.idCardNumber}</Text>
               </View>
             ) : null}
@@ -236,7 +338,10 @@ function HandoverConfirmModal({
           {reservation?.deliveryEvidenceUrl ? (
             <View style={styles.handoverEvidence}>
               <Text style={styles.handoverEvidenceLabel}>Bằng chứng người nhận khó di chuyển</Text>
-              <AppImage source={{ uri: reservation.deliveryEvidenceUrl }} style={styles.handoverEvidenceImage} />
+              <AppImage
+                source={{ uri: reservation.deliveryEvidenceUrl }}
+                style={styles.handoverEvidenceImage}
+              />
             </View>
           ) : null}
 
@@ -307,11 +412,17 @@ function mapsUrls(target: RouteTarget): { primary: string; fallback: string } | 
   if (!raw) return null;
   const encoded = encodeURIComponent(raw);
   const fallback = `https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=driving`;
-  if (Platform.OS === 'android') return { primary: `google.navigation:q=${encoded}&mode=d`, fallback };
-  if (Platform.OS === 'ios') return { primary: `comgooglemaps://?daddr=${encoded}&directionsmode=driving`, fallback };
+  if (Platform.OS === 'android')
+    return { primary: `google.navigation:q=${encoded}&mode=d`, fallback };
+  if (Platform.OS === 'ios')
+    return { primary: `comgooglemaps://?daddr=${encoded}&directionsmode=driving`, fallback };
   return { primary: fallback, fallback };
 }
-function advanceLabel(status: string, hasPickupPhoto: boolean, isCampaignTransport: boolean): string {
+function advanceLabel(
+  status: string,
+  hasPickupPhoto: boolean,
+  isCampaignTransport: boolean,
+): string {
   switch (status) {
     case 'assigned':
       return 'Đi tới điểm lấy';
@@ -348,7 +459,9 @@ function statusHint(status: string, hasPickupPhoto: boolean, isCampaignTransport
     case 'qc_completed':
       return 'Đã lấy hàng, chờ đi giao';
     case 'in_transit':
-      return isCampaignTransport ? 'Đang giao đến bếp, cần ảnh bàn giao' : 'Đang giao, chờ mã người nhận';
+      return isCampaignTransport
+        ? 'Đang giao đến bếp, cần ảnh bàn giao'
+        : 'Đang giao, chờ mã người nhận';
     case 'delivered':
       return isCampaignTransport ? 'Đã giao, chờ bếp xác nhận nhận hàng' : 'Đơn đã hoàn tất';
     default:
@@ -359,21 +472,37 @@ function statusHint(status: string, hasPickupPhoto: boolean, isCampaignTransport
 export default function VolunteerActiveScreen() {
   const reasonSheetRef = useRef<BottomSheetModal>(null);
   const qrSheetRef = useRef<BottomSheetModal>(null);
+  const chatSheetRef = useRef<BottomSheetModal>(null);
+  const chatScrollRef = useRef<ScrollView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { data, isLoading, isError, refetch, isRefetching } = useActiveDelivery();
   const { data: volunteer, isLoading: isVolunteerLoading } = useVolunteerMe();
   const updateStatus = useUpdateDeliveryStatus();
   const failDelivery = useFailDelivery();
   const cancelAssignment = useCancelAssignment();
+  const sendChat = useSendReservationMessage();
 
   const [reasonMode, setReasonMode] = useState<'cancel' | 'fail' | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [qrToken, setQrToken] = useState('');
+  const [chatRole, setChatRole] = useState<ChatRole | null>(null);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [reportVisible, setReportVisible] = useState(false);
-  const [pendingPickupPhoto, setPendingPickupPhoto] = useState<{ deliveryId: string; photo: CapturedImage } | null>(null);
+  const [pendingPickupPhoto, setPendingPickupPhoto] = useState<{
+    deliveryId: string;
+    photo: CapturedImage;
+  } | null>(null);
   const [photoReview, setPhotoReview] = useState<PhotoReviewState | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrScanning, setQrScanning] = useState(false);
+  // Lỗi hiển thị NGAY TRONG sheet: Popup (Paper Portal) bị container của
+  // BottomSheetModal đè lên nên popup lỗi khi sheet đang mở là vô hình.
+  const [qrError, setQrError] = useState<string | null>(null);
+  // Chặn camera bắn nhiều lần trước khi state `busy` kịp render (state là async,
+  // ref là đồng bộ) — tránh gọi API xác nhận trùng lặp.
+  const qrSubmittingRef = useRef(false);
   const [torch, setTorch] = useState(false);
   const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
   // Mã QR đã quét đúng, đang chờ shipper ĐỐI CHIẾU người nhận rồi mới bàn giao —
@@ -381,17 +510,32 @@ export default function VolunteerActiveScreen() {
   const [handoverToken, setHandoverToken] = useState<string | null>(null);
 
   const delivery = data ?? null;
-  const busy = updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
-  const hasVerifiedShipper = volunteer?.specializations.some(
-    (s) => s.specialization === 'shipper' && s.isVerified
-  ) === true;
+  const activeDeliveryScheduledAt = delivery?.reservation?.deliveryScheduledAt ?? null;
+  const reservationIdForChat =
+    delivery?.source === 'reservation' ? (delivery.reservation?.id ?? null) : null;
+  const chat = useReservationMessages(
+    reservationIdForChat,
+    chatRole ? { role: chatRole } : null,
+    !!chatRole && !!reservationIdForChat,
+  );
+  const chatPartner = chat.data?.partner ?? null;
+  const chatMessagesCount = chat.data?.messages.length ?? 0;
+  const busy =
+    updateStatus.isPending || failDelivery.isPending || cancelAssignment.isPending || qrScanning;
+  const hasVerifiedShipper =
+    volunteer?.specializations.some((s) => s.specialization === 'shipper' && s.isVerified) === true;
   useShipperLocationBroadcast(isActiveDeliveryStatus(delivery?.status));
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+      />
     ),
-    []
+    [],
   );
 
   const closeReasonSheet = () => {
@@ -406,10 +550,57 @@ export default function VolunteerActiveScreen() {
   };
   const openQrSheet = () => {
     setQrToken('');
+    setQrError(null);
     setQrScannerOpen(false);
     setTorch(false);
     qrSheetRef.current?.present();
   };
+  const openChatSheet = (role: ChatRole) => {
+    if (!reservationIdForChat) return;
+    setChatRole(role);
+    setChatDraft('');
+    setChatError(null);
+    chatSheetRef.current?.present();
+  };
+  const closeChatSheet = () => {
+    if (sendChat.isPending) return;
+    chatSheetRef.current?.dismiss();
+  };
+  const handleChatDismiss = () => {
+    setChatRole(null);
+    setChatDraft('');
+    setChatError(null);
+  };
+  const submitChatMessage = async () => {
+    const content = chatDraft.trim();
+    if (!reservationIdForChat || !chatPartner || !content) return;
+    try {
+      setChatError(null);
+      await sendChat.mutateAsync({
+        reservationId: reservationIdForChat,
+        content,
+        toUserId: chatPartner.userId,
+      });
+      setChatDraft('');
+      requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
+    } catch (e: any) {
+      setChatError(
+        e?.response?.data?.error?.message ?? 'Không gửi được tin nhắn. Vui lòng thử lại.',
+      );
+      void notifyError();
+    }
+  };
+
+  useEffect(() => {
+    if (!chatRole) return;
+    requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
+  }, [chatMessagesCount, chatRole]);
+
+  useEffect(() => {
+    if (!activeDeliveryScheduledAt) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [activeDeliveryScheduledAt]);
   const openMaps = async (target: RouteTarget) => {
     const urls = mapsUrls(target);
     if (!urls) {
@@ -427,7 +618,11 @@ export default function VolunteerActiveScreen() {
       try {
         await Linking.openURL(urls.fallback);
       } catch {
-        Popup.show({ type: 'error', text1: 'Không mở được Google Maps', text2: 'Vui lòng thử lại.' });
+        Popup.show({
+          type: 'error',
+          text1: 'Không mở được Google Maps',
+          text2: 'Vui lòng thử lại.',
+        });
         void notifyError();
       }
     }
@@ -436,7 +631,7 @@ export default function VolunteerActiveScreen() {
   const updateDeliveryStatus = async (
     d: ActiveDelivery,
     status: DeliveryStatus,
-    options?: { photo?: CapturedImage; qrToken?: string; successText?: string }
+    options?: { photo?: CapturedImage; qrToken?: string; successText?: string },
   ) => {
     await updateStatus.mutateAsync({
       deliveryId: d.id,
@@ -452,11 +647,33 @@ export default function VolunteerActiveScreen() {
     });
   };
 
-  const handleAdvance = async (d: ActiveDelivery, pickupTarget: RouteTarget, dropoffTarget: RouteTarget) => {
+  const handleAdvance = async (
+    d: ActiveDelivery,
+    pickupTarget: RouteTarget,
+    dropoffTarget: RouteTarget,
+  ) => {
     const next = nextDeliveryStatus(d.status);
     if (!next) return;
     if (next === 'delivered') {
       if (d.source === 'reservation') {
+        const earlyCompleteMinutes = earlyCompleteMinutesOf(d);
+        if (isTooEarlyToCompleteDelivery(d, earlyCompleteMinutes)) {
+          const scheduledLabel = formatScheduledDelivery(d.reservation?.deliveryScheduledAt);
+          const earliest = earliestCompleteAtMs(
+            d.reservation?.deliveryScheduledAt,
+            earlyCompleteMinutes,
+          );
+          Popup.show({
+            type: 'warning',
+            text1: 'Chưa tới giờ bàn giao',
+            text2:
+              scheduledLabel && earliest
+                ? `Người nhận hẹn ${scheduledLabel}. Bạn chỉ có thể xác nhận trong ${earlyCompleteMinutes} phút trước giờ hẹn.`
+                : 'Vui lòng chờ gần tới giờ hẹn rồi bàn giao.',
+          });
+          void notifyWarning();
+          return;
+        }
         openQrSheet();
         return;
       }
@@ -464,7 +681,11 @@ export default function VolunteerActiveScreen() {
       try {
         const photo = await captureImage('id_card');
         if (!photo) {
-          Popup.show({ type: 'info', text1: 'Cần ảnh bàn giao', text2: 'Hãy chụp ảnh thực phẩm tại bếp trước khi hoàn tất.' });
+          Popup.show({
+            type: 'info',
+            text1: 'Cần ảnh bàn giao',
+            text2: 'Hãy chụp ảnh thực phẩm tại bếp trước khi hoàn tất.',
+          });
           return;
         }
         setPhotoReview({ photo, action: 'campaign_delivery', delivery: d });
@@ -500,12 +721,20 @@ export default function VolunteerActiveScreen() {
       try {
         const photo = await captureImage('id_card');
         if (!photo) {
-          Popup.show({ type: 'info', text1: 'Cần ảnh lấy hàng', text2: 'Hãy chụp ảnh hàng trước khi xác nhận.' });
+          Popup.show({
+            type: 'info',
+            text1: 'Cần ảnh lấy hàng',
+            text2: 'Hãy chụp ảnh hàng trước khi xác nhận.',
+          });
           return;
         }
         setPhotoReview({ photo, action: 'qc', delivery: d });
       } catch (e: any) {
-        Popup.show({ type: 'error', text1: 'Không mở được camera', text2: e?.message ?? 'Cần quyền camera.' });
+        Popup.show({
+          type: 'error',
+          text1: 'Không mở được camera',
+          text2: e?.message ?? 'Cần quyền camera.',
+        });
       }
       return;
     }
@@ -535,9 +764,10 @@ export default function VolunteerActiveScreen() {
 
   const submitQrToken = async (tokenOverride?: string) => {
     if (!delivery) return;
+    if (qrSubmittingRef.current) return;
     const token = (tokenOverride ?? qrToken).trim();
     if (!token) {
-      Popup.show({ type: 'warning', text1: 'Nhập mã người nhận', text2: 'Mã QR nằm trên màn nhận hàng của receiver.' });
+      setQrError('Nhập hoặc quét mã QR trên màn nhận hàng của người nhận.');
       void notifyWarning();
       return;
     }
@@ -556,14 +786,26 @@ export default function VolunteerActiveScreen() {
   const finalizeHandover = async (token: string) => {
     if (!delivery) return;
     const snapshot = {
-      title: delivery.reservation?.listing.title ?? delivery.campaignTransport?.campaignTitle ?? 'Chuyến giao',
-      recipient: delivery.reservation?.receiver?.user.fullName ?? delivery.campaignTransport?.campaignTitle ?? 'Bếp chiến dịch',
+      title:
+        delivery.reservation?.listing.title ??
+        delivery.campaignTransport?.campaignTitle ??
+        'Chuyến giao',
+      recipient:
+        delivery.reservation?.receiver?.user.fullName ??
+        delivery.campaignTransport?.campaignTitle ??
+        'Bếp chiến dịch',
       quantity: delivery.reservation?.quantity ?? null,
       distanceLabel: formatKm(delivery.distanceKm),
     };
     try {
+      qrSubmittingRef.current = true;
       setQrScanning(true);
-      await updateStatus.mutateAsync({ deliveryId: delivery.id, status: 'delivered' as DeliveryStatus, qrToken: token });
+      setQrError(null);
+      await updateStatus.mutateAsync({
+        deliveryId: delivery.id,
+        status: 'delivered' as DeliveryStatus,
+        qrToken: token,
+      });
       qrSheetRef.current?.dismiss();
       setQrToken('');
       setQrScannerOpen(false);
@@ -572,12 +814,11 @@ export default function VolunteerActiveScreen() {
       setDeliveredSummary(snapshot);
     } catch (e: any) {
       void notifyError();
-      Popup.show({
-        type: 'error',
-        text1: 'Không xác nhận được mã',
-        text2: e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.',
-      });
+      // Không dùng Popup ở đây: sheet đang mở sẽ che popup (Paper Portal nằm
+      // dưới container BottomSheetModal) — hiện lỗi inline trong sheet.
+      setQrError(e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.');
     } finally {
+      qrSubmittingRef.current = false;
       setQrScanning(false);
     }
   };
@@ -596,7 +837,10 @@ export default function VolunteerActiveScreen() {
         void notifyWarning();
         Popup.show({ type: 'info', text1: 'Đã báo giao thất bại' });
       } else {
-        await cancelAssignment.mutateAsync({ deliveryId: delivery.id, reason: reason || undefined });
+        await cancelAssignment.mutateAsync({
+          deliveryId: delivery.id,
+          reason: reason || undefined,
+        });
         void notifySuccess();
         Popup.show({ type: 'info', text1: 'Đã huỷ nhận đơn' });
       }
@@ -619,10 +863,17 @@ export default function VolunteerActiveScreen() {
       setPhotoReview(null);
       setPendingPickupPhoto({ deliveryId: delivery.id, photo });
       void notifySuccess();
-      Popup.show({ type: 'success', text1: 'Ảnh đã sẵn sàng', text2: 'Bấm xác nhận để chuyển sang bước giao hàng.' });
+      Popup.show({
+        type: 'success',
+        text1: 'Ảnh đã sẵn sàng',
+        text2: 'Bấm xác nhận để chuyển sang bước giao hàng.',
+      });
     } else {
       try {
-        await updateDeliveryStatus(delivery, 'delivered', { photo, successText: 'Đã bàn giao cho bếp' });
+        await updateDeliveryStatus(delivery, 'delivered', {
+          photo,
+          successText: 'Đã bàn giao cho bếp',
+        });
       } catch (e: any) {
         void notifyError();
         Popup.show({
@@ -637,7 +888,7 @@ export default function VolunteerActiveScreen() {
   };
 
   if (!isVolunteerLoading && volunteer && !hasVerifiedShipper) {
-    return <Redirect href="/(app)/volunteer/campaigns" />;
+    return <DeferredRedirect href="/(app)/volunteer/campaigns" />;
   }
 
   if (isLoading && !delivery) {
@@ -662,10 +913,13 @@ export default function VolunteerActiveScreen() {
           <Text style={styles.emptySub}>
             {isError
               ? 'Không tải được dữ liệu. Kéo để thử lại.'
-              : 'Hãy bật "Sẵn sàng nhận đơn" và nhận lời mời ở tab Đơn cần giao.'}
+              : 'Hãy đăng ký ca giao hàng rồi tự nhận đơn phù hợp ở tab Giao hàng.'}
           </Text>
         </ScrollView>
-        <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
+        <DeliveredSuccessModal
+          summary={deliveredSummary}
+          onDismiss={() => setDeliveredSummary(null)}
+        />
       </SafeAreaView>
     );
   }
@@ -674,21 +928,44 @@ export default function VolunteerActiveScreen() {
   const transport = delivery.campaignTransport;
   const isCampaignTransport = delivery.source === 'campaign_transport';
   const pickup = pickupOf(delivery.coords) ?? toLatLng(delivery.pickup.lat, delivery.pickup.lng);
-  const dropoff = dropoffOf(delivery.coords) ?? toLatLng(delivery.destination.lat, delivery.destination.lng);
+  const dropoff =
+    dropoffOf(delivery.coords) ?? toLatLng(delivery.destination.lat, delivery.destination.lng);
   const meta = deliveryStatusMeta(delivery.status);
   const canAdvance = nextDeliveryStatus(delivery.status) != null;
   const canCancel = ['assigned', 'heading_to_provider'].includes(delivery.status);
   const canFail = ['qc_completed', 'in_transit'].includes(delivery.status);
   const phone = reservation?.receiver?.user.phone ?? null;
   const distanceLabel = formatKm(delivery.distanceKm);
-  const deliveryTitle = reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+  const deliveryTitle =
+    reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
   const quantity = reservation?.quantity ?? null;
-  const recipientName = reservation?.receiver?.user.fullName ?? transport?.campaignTitle ?? 'Bếp chiến dịch';
+  const recipientName =
+    reservation?.receiver?.user.fullName ?? transport?.campaignTitle ?? 'Bếp chiến dịch';
+  const scheduledDeliveryLabel = formatScheduledDelivery(reservation?.deliveryScheduledAt);
+  const earlyCompleteMinutes = earlyCompleteMinutesOf(delivery);
+  const earliestCompleteMs = earliestCompleteAtMs(
+    reservation?.deliveryScheduledAt,
+    earlyCompleteMinutes,
+  );
+  const earliestCompleteLabel =
+    earliestCompleteMs != null
+      ? formatScheduledDelivery(new Date(earliestCompleteMs).toISOString())
+      : null;
+  const isCompletingTooEarly =
+    delivery.source === 'reservation' &&
+    delivery.status === 'in_transit' &&
+    earliestCompleteMs != null &&
+    clockNow < earliestCompleteMs;
+  const earlyCompletionWaitLabel =
+    isCompletingTooEarly && earliestCompleteMs != null
+      ? minutesUntilLabel(earliestCompleteMs - clockNow)
+      : null;
   const routeTargets: RouteTarget[] = [
     {
       key: 'pickup',
       title: 'Điểm lấy hàng',
-      subtitle: delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
+      subtitle:
+        delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
       address: delivery.pickup.address ?? reservation?.listing.pickupAddress,
       coords: pickup,
       icon: 'storefront-outline',
@@ -711,9 +988,10 @@ export default function VolunteerActiveScreen() {
   const progressSteps = DELIVERY_STEPS;
   const displayIndex = Math.max(
     progressSteps.findIndex((step) => step.key === delivery.status),
-    0
+    0,
   );
-  const hasPickupPhoto = delivery.status === 'heading_to_provider' && pendingPickupPhoto?.deliveryId === delivery.id;
+  const hasPickupPhoto =
+    delivery.status === 'heading_to_provider' && pendingPickupPhoto?.deliveryId === delivery.id;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -727,10 +1005,14 @@ export default function VolunteerActiveScreen() {
             <View style={[styles.pulseDot, { backgroundColor: meta.color }]} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-              <Text style={styles.statusSub}>{statusHint(delivery.status, hasPickupPhoto, isCampaignTransport)}</Text>
+              <Text style={styles.statusSub}>
+                {statusHint(delivery.status, hasPickupPhoto, isCampaignTransport)}
+              </Text>
             </View>
           </View>
-          {distanceLabel ? <Text style={[styles.statusDist, { color: meta.color }]}>{distanceLabel}</Text> : null}
+          {distanceLabel ? (
+            <Text style={[styles.statusDist, { color: meta.color }]}>{distanceLabel}</Text>
+          ) : null}
         </FadeInUp>
 
         <FadeInUp delay={80}>
@@ -754,7 +1036,12 @@ export default function VolunteerActiveScreen() {
             const active = target.key === targetKey;
             return (
               <View key={target.key} style={[styles.routeRow, active && styles.routeRowActive]}>
-                <View style={[styles.routeIcon, { backgroundColor: active ? target.color : COLORS.surfaceVariant }]}>
+                <View
+                  style={[
+                    styles.routeIcon,
+                    { backgroundColor: active ? target.color : COLORS.surfaceVariant },
+                  ]}
+                >
                   <MaterialCommunityIcons
                     name={target.icon}
                     size={20}
@@ -795,9 +1082,13 @@ export default function VolunteerActiveScreen() {
           </View>
           <View style={styles.receiverRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.locLabel}>{isCampaignTransport ? 'Bếp nhận hàng' : 'Người nhận'}</Text>
+              <Text style={styles.locLabel}>
+                {isCampaignTransport ? 'Bếp nhận hàng' : 'Người nhận'}
+              </Text>
               <Text style={styles.locValue}>{recipientName}</Text>
-              {routeTargets[1].address ? <Text style={styles.locSub}>{routeTargets[1].address}</Text> : null}
+              {routeTargets[1].address ? (
+                <Text style={styles.locSub}>{routeTargets[1].address}</Text>
+              ) : null}
             </View>
             {phone ? (
               <Button
@@ -812,7 +1103,62 @@ export default function VolunteerActiveScreen() {
               </Button>
             ) : null}
           </View>
+          {reservation?.id ? (
+            <View style={styles.chatActions}>
+              <Button
+                mode="contained-tonal"
+                icon="message-text-outline"
+                compact
+                textColor={COLORS.primary}
+                style={styles.chatActionBtn}
+                onPress={() => openChatSheet('receiver')}
+              >
+                Nhắn người nhận
+              </Button>
+              <Button
+                mode="outlined"
+                icon="storefront-outline"
+                compact
+                textColor={COLORS.primary}
+                style={styles.chatActionBtn}
+                onPress={() => openChatSheet('provider')}
+              >
+                Nhắn cửa hàng
+              </Button>
+            </View>
+          ) : null}
         </FadeInUp>
+
+        {scheduledDeliveryLabel ? (
+          <FadeInUp
+            delay={230}
+            style={{
+              ...styles.scheduleGuardPanel,
+              ...(isCompletingTooEarly ? styles.scheduleGuardPanelLocked : {}),
+            }}
+          >
+            <View style={styles.scheduleGuardTop}>
+              <View style={styles.scheduleGuardIcon}>
+                <MaterialCommunityIcons
+                  name={isCompletingTooEarly ? 'lock-clock' : 'clock-check-outline'}
+                  size={22}
+                  color={isCompletingTooEarly ? COLORS.warning : COLORS.primary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.scheduleGuardTitle}>Giờ nhận đã hẹn</Text>
+                <Text style={styles.scheduleGuardTime}>{scheduledDeliveryLabel}</Text>
+              </View>
+            </View>
+            <Text style={styles.scheduleGuardHint}>
+              {isCompletingTooEarly
+                ? `Còn ${earlyCompletionWaitLabel} nữa mới được xác nhận bàn giao. Có thể chuẩn bị lộ trình, chat hoặc gọi trước.`
+                : earliestCompleteLabel
+                  ? `Có thể xác nhận bàn giao từ ${earliestCompleteLabel}.`
+                  : 'Có thể xác nhận bàn giao khi đã gặp đúng người nhận.'}
+            </Text>
+          </FadeInUp>
+        ) : null}
 
         <FadeInUp delay={260} style={styles.progressPanel}>
           <View style={styles.sectionHeader}>
@@ -827,15 +1173,34 @@ export default function VolunteerActiveScreen() {
               const done = displayIndex >= stepIndex;
               const active = delivery.status === step.key;
               return (
-                <View key={step.key} style={[styles.stepChip, done && styles.stepChipDone, active && styles.stepChipActive]}>
-                  <View style={[styles.stepMiniDot, done && styles.stepMiniDotDone, active && styles.stepMiniDotActive]}>
+                <View
+                  key={step.key}
+                  style={[
+                    styles.stepChip,
+                    done && styles.stepChipDone,
+                    active && styles.stepChipActive,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.stepMiniDot,
+                      done && styles.stepMiniDotDone,
+                      active && styles.stepMiniDotActive,
+                    ]}
+                  >
                     <MaterialCommunityIcons
                       name={done ? 'check' : 'circle'}
                       size={done ? 11 : 6}
                       color={done ? COLORS.surface : COLORS.muted}
                     />
                   </View>
-                  <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
+                  <Text
+                    style={[
+                      styles.stepLabel,
+                      active && styles.stepLabelActive,
+                      !done && styles.stepLabelTodo,
+                    ]}
+                  >
                     {step.label}
                   </Text>
                 </View>
@@ -856,12 +1221,14 @@ export default function VolunteerActiveScreen() {
             icon={advanceIcon(delivery.status, hasPickupPhoto, isCampaignTransport)}
             onPress={() => handleAdvance(delivery, pickupTarget, dropoffTarget)}
             loading={updateStatus.isPending}
-            disabled={busy}
+            disabled={busy || isCompletingTooEarly}
             buttonColor={COLORS.primary}
             style={styles.primaryBtn}
             contentStyle={styles.primaryContent}
           >
-            {advanceLabel(delivery.status, hasPickupPhoto, isCampaignTransport)}
+            {isCompletingTooEarly
+              ? 'Chờ tới gần giờ hẹn'
+              : advanceLabel(delivery.status, hasPickupPhoto, isCampaignTransport)}
           </Button>
         ) : null}
 
@@ -914,16 +1281,22 @@ export default function VolunteerActiveScreen() {
         accessibilityLabel={reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
       >
         <BottomSheetView style={styles.sheet}>
-          <Text style={styles.dialogTitle}>{reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}</Text>
+          <Text style={styles.dialogTitle}>
+            {reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
+          </Text>
           <BottomSheetTextInput
-            placeholder={reasonMode === 'fail' ? 'Lý do giao thất bại (bắt buộc)' : 'Lý do huỷ (tuỳ chọn)'}
+            placeholder={
+              reasonMode === 'fail' ? 'Lý do giao thất bại (bắt buộc)' : 'Lý do huỷ (tuỳ chọn)'
+            }
             value={reasonText}
             onChangeText={setReasonText}
             multiline
             numberOfLines={3}
             editable={!busy}
             style={styles.reasonInput}
-            accessibilityLabel={reasonMode === 'fail' ? 'Lý do giao thất bại' : 'Lý do huỷ nhận đơn'}
+            accessibilityLabel={
+              reasonMode === 'fail' ? 'Lý do giao thất bại' : 'Lý do huỷ nhận đơn'
+            }
           />
           <View style={styles.sheetActions}>
             <Button onPress={closeReasonSheet} textColor={COLORS.onSurfaceVariant} disabled={busy}>
@@ -959,7 +1332,9 @@ export default function VolunteerActiveScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.dialogTitle}>Mã người nhận</Text>
-              <Text style={styles.sheetSub}>Quét hoặc nhập mã QR trên màn nhận hàng để hoàn tất.</Text>
+              <Text style={styles.sheetSub}>
+                Quét hoặc nhập mã QR trên màn nhận hàng để hoàn tất.
+              </Text>
             </View>
           </View>
           <Button
@@ -977,9 +1352,17 @@ export default function VolunteerActiveScreen() {
                 <ActivityIndicator color={COLORS.primary} />
               ) : !cameraPermission.granted ? (
                 <View style={styles.scannerPerm}>
-                  <MaterialCommunityIcons name="camera-off" size={38} color={COLORS.onSurfaceVariant} />
+                  <MaterialCommunityIcons
+                    name="camera-off"
+                    size={38}
+                    color={COLORS.onSurfaceVariant}
+                  />
                   <Text style={styles.scannerHint}>Cần quyền camera để quét mã QR.</Text>
-                  <Button mode="contained" buttonColor={COLORS.primary} onPress={requestCameraPermission}>
+                  <Button
+                    mode="contained"
+                    buttonColor={COLORS.primary}
+                    onPress={requestCameraPermission}
+                  >
                     Cấp quyền camera
                   </Button>
                 </View>
@@ -1002,7 +1385,11 @@ export default function VolunteerActiveScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
                   >
-                    <MaterialCommunityIcons name={torch ? 'flash' : 'flash-off'} size={22} color="#fff" />
+                    <MaterialCommunityIcons
+                      name={torch ? 'flash' : 'flash-off'}
+                      size={22}
+                      color="#fff"
+                    />
                   </Pressable>
                   <View style={styles.scanFrame} />
                 </>
@@ -1018,14 +1405,27 @@ export default function VolunteerActiveScreen() {
           <BottomSheetTextInput
             placeholder="Dán hoặc nhập mã QR"
             value={qrToken}
-            onChangeText={setQrToken}
+            onChangeText={(value) => {
+              setQrToken(value);
+              if (qrError) setQrError(null);
+            }}
             autoCapitalize="none"
             editable={!busy}
             style={styles.qrInput}
             accessibilityLabel="Mã QR người nhận"
           />
+          {qrError ? (
+            <View style={styles.qrErrorRow}>
+              <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.error} />
+              <Text style={styles.qrErrorText}>{qrError}</Text>
+            </View>
+          ) : null}
           <View style={styles.sheetActions}>
-            <Button onPress={() => qrSheetRef.current?.dismiss()} textColor={COLORS.onSurfaceVariant} disabled={busy}>
+            <Button
+              onPress={() => qrSheetRef.current?.dismiss()}
+              textColor={COLORS.onSurfaceVariant}
+              disabled={busy}
+            >
               Đóng
             </Button>
             <Button
@@ -1039,6 +1439,159 @@ export default function VolunteerActiveScreen() {
               Hoàn tất
             </Button>
           </View>
+        </BottomSheetView>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={chatSheetRef}
+        snapPoints={['72%']}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        onDismiss={handleChatDismiss}
+        handleIndicatorStyle={styles.sheetHandle}
+        accessibilityLabel={chatRole ? `Nhắn ${CHAT_ROLE_LABEL[chatRole]}` : 'Nhắn tin theo đơn'}
+      >
+        <BottomSheetView style={styles.chatSheet}>
+          <View style={styles.chatHeader}>
+            <View style={styles.chatIcon}>
+              <MaterialCommunityIcons
+                name="message-text-outline"
+                size={22}
+                color={COLORS.primary}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.dialogTitle}>
+                {chatPartner
+                  ? chatPartner.name
+                  : chatRole
+                    ? `Nhắn ${CHAT_ROLE_LABEL[chatRole]}`
+                    : 'Nhắn tin'}
+              </Text>
+              <Text style={styles.sheetSub}>
+                {chatRole
+                  ? `Trao đổi riêng với ${CHAT_ROLE_LABEL[chatRole]} về đơn này.`
+                  : 'Cuộc trò chuyện theo đơn.'}
+              </Text>
+            </View>
+            {chatPartner?.phone ? (
+              <Pressable
+                style={styles.chatCallBtn}
+                onPress={() => Linking.openURL(`tel:${chatPartner.phone}`)}
+                accessibilityRole="button"
+                accessibilityLabel={`Gọi ${chatPartner.name}`}
+                hitSlop={8}
+              >
+                <MaterialCommunityIcons name="phone-outline" size={20} color={COLORS.primary} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <ScrollView
+            ref={chatScrollRef}
+            style={styles.chatMessages}
+            contentContainerStyle={styles.chatMessagesContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {chat.isLoading ? (
+              <View style={styles.chatState}>
+                <ActivityIndicator color={COLORS.primary} />
+                <Text style={styles.chatStateText}>Đang tải cuộc trò chuyện</Text>
+              </View>
+            ) : chat.isError ? (
+              <View style={styles.chatState}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={28}
+                  color={COLORS.error}
+                />
+                <Text style={styles.chatStateText}>Không mở được cuộc trò chuyện.</Text>
+              </View>
+            ) : chatMessagesCount === 0 ? (
+              <View style={styles.chatState}>
+                <MaterialCommunityIcons
+                  name="chat-outline"
+                  size={30}
+                  color={COLORS.onSurfaceVariant}
+                />
+                <Text style={styles.chatStateText}>Chưa có tin nhắn nào.</Text>
+              </View>
+            ) : (
+              chat.data!.messages.map((message) => {
+                const mine = message.senderUserId === chat.data!.me;
+                return (
+                  <View key={message.id} style={[styles.messageRow, mine && styles.messageRowMine]}>
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        mine ? styles.messageBubbleMine : styles.messageBubbleOther,
+                      ]}
+                    >
+                      <Text style={[styles.messageText, mine && styles.messageTextMine]}>
+                        {message.content}
+                      </Text>
+                      <Text style={[styles.messageTime, mine && styles.messageTimeMine]}>
+                        {new Date(message.createdAt).toLocaleTimeString('vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+
+          {chatError ? (
+            <View style={styles.qrErrorRow}>
+              <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.error} />
+              <Text style={styles.qrErrorText}>{chatError}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.chatComposer}>
+            <BottomSheetTextInput
+              placeholder={chatPartner ? `Nhắn cho ${chatPartner.name}` : 'Nhập tin nhắn'}
+              value={chatDraft}
+              onChangeText={(value) => {
+                setChatDraft(value);
+                if (chatError) setChatError(null);
+              }}
+              multiline
+              maxLength={1000}
+              editable={!sendChat.isPending && !!chatPartner}
+              style={styles.chatInput}
+              accessibilityLabel="Nội dung tin nhắn"
+            />
+            <Pressable
+              style={[
+                styles.chatSendBtn,
+                (!chatDraft.trim() || !chatPartner || sendChat.isPending) &&
+                  styles.chatSendBtnDisabled,
+              ]}
+              onPress={() => void submitChatMessage()}
+              disabled={!chatDraft.trim() || !chatPartner || sendChat.isPending}
+              accessibilityRole="button"
+              accessibilityLabel="Gửi tin nhắn"
+            >
+              {sendChat.isPending ? (
+                <ActivityIndicator size={18} color={COLORS.surface} />
+              ) : (
+                <MaterialCommunityIcons name="send" size={20} color={COLORS.surface} />
+              )}
+            </Pressable>
+          </View>
+
+          <Button
+            onPress={closeChatSheet}
+            textColor={COLORS.onSurfaceVariant}
+            disabled={sendChat.isPending}
+          >
+            Đóng
+          </Button>
         </BottomSheetView>
       </BottomSheetModal>
 
@@ -1060,7 +1613,10 @@ export default function VolunteerActiveScreen() {
         />
       ) : null}
 
-      <DeliveredSuccessModal summary={deliveredSummary} onDismiss={() => setDeliveredSummary(null)} />
+      <DeliveredSuccessModal
+        summary={deliveredSummary}
+        onDismiss={() => setDeliveredSummary(null)}
+      />
       <PhotoReviewModal
         state={photoReview}
         onConfirm={() => void confirmPhotoReview()}
@@ -1073,8 +1629,19 @@ export default function VolunteerActiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 96, gap: spacing.md },
-  emptyWrap: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.section, gap: spacing.sm },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: 96,
+    gap: spacing.md,
+  },
+  emptyWrap: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.section,
+    gap: spacing.sm,
+  },
   emptyTitle: { fontSize: 20, fontWeight: '900', color: COLORS.onSurface, marginTop: 8 },
   emptySub: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center', lineHeight: 20 },
   statusBanner: {
@@ -1102,7 +1669,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...elevation.card,
   },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   sectionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
   routeRow: {
     flexDirection: 'row',
@@ -1115,7 +1687,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   routeRowActive: { borderColor: COLORS.blue, backgroundColor: COLORS.blueContainer },
-  routeIcon: { width: 40, height: 40, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
+  routeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   routeText: { flex: 1, minWidth: 0 },
   routeTitle: { fontSize: 13, fontWeight: '800', color: COLORS.onSurface },
   routeSubtitle: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2, lineHeight: 16 },
@@ -1141,10 +1719,46 @@ const styles = StyleSheet.create({
   title: { fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24 },
   qty: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
   receiverRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  locLabel: { fontSize: 11, fontWeight: '800', color: COLORS.onSurfaceVariant, textTransform: 'uppercase' },
+  locLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+  },
   locValue: { fontSize: 14, fontWeight: '700', color: COLORS.onSurface, marginTop: 2 },
   locSub: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2, lineHeight: 18 },
   callButton: { borderRadius: 10 },
+  chatActions: { flexDirection: 'row', gap: 10 },
+  chatActionBtn: { flex: 1, borderRadius: 12 },
+  scheduleGuardPanel: {
+    backgroundColor: COLORS.primaryContainer,
+    borderRadius: 18,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: COLORS.primaryContainer,
+    gap: 10,
+  },
+  scheduleGuardPanelLocked: {
+    backgroundColor: COLORS.warningContainer,
+    borderColor: '#fde68a',
+  },
+  scheduleGuardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  scheduleGuardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  scheduleGuardTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+  },
+  scheduleGuardTime: { marginTop: 2, fontSize: 17, fontWeight: '900', color: COLORS.onSurface },
+  scheduleGuardHint: { fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
   progressPanel: {
     backgroundColor: COLORS.surface,
     borderRadius: 28,
@@ -1229,6 +1843,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: COLORS.onSurface,
   },
+  qrErrorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 },
+  qrErrorText: { flex: 1, fontSize: 13, lineHeight: 18, color: COLORS.error },
   scanToggle: { alignSelf: 'flex-start', borderRadius: 999 },
   scannerBox: {
     width: '100%',
@@ -1272,6 +1888,80 @@ const styles = StyleSheet.create({
   },
   scanningText: { color: '#fff', marginTop: 8, fontWeight: '700' },
   sheetActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
+  chatSheet: { flex: 1, paddingHorizontal: 20, paddingBottom: 18, gap: 12 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chatIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  chatCallBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  chatMessages: {
+    flex: 1,
+    minHeight: 240,
+    borderRadius: 16,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  chatMessagesContent: { flexGrow: 1, padding: 12, gap: 8 },
+  chatState: { flex: 1, minHeight: 220, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  chatStateText: { fontSize: 13, color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  messageRow: { flexDirection: 'row', justifyContent: 'flex-start' },
+  messageRowMine: { justifyContent: 'flex-end' },
+  messageBubble: {
+    maxWidth: '82%',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  messageBubbleOther: {
+    borderTopLeftRadius: 6,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+  },
+  messageBubbleMine: { borderTopRightRadius: 6, backgroundColor: COLORS.primary },
+  messageText: { fontSize: 14, lineHeight: 19, color: COLORS.onSurface },
+  messageTextMine: { color: COLORS.surface },
+  messageTime: {
+    marginTop: 4,
+    fontSize: 10,
+    color: COLORS.onSurfaceVariant,
+    alignSelf: 'flex-end',
+  },
+  messageTimeMine: { color: COLORS.primaryContainer },
+  chatComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  chatInput: {
+    flex: 1,
+    minHeight: 46,
+    maxHeight: 108,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: COLORS.onSurface,
+    textAlignVertical: 'top',
+  },
+  chatSendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  chatSendBtnDisabled: { opacity: 0.45 },
   successOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1291,7 +1981,12 @@ const styles = StyleSheet.create({
   successIconWrap: { marginBottom: 4 },
   successTitle: { fontSize: 24, fontWeight: '900', color: COLORS.onSurface, textAlign: 'center' },
   successSub: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center' },
-  successDivider: { width: '100%', height: 1, backgroundColor: COLORS.outlineVariant, marginVertical: 4 },
+  successDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: COLORS.outlineVariant,
+    marginVertical: 4,
+  },
   successDetails: { width: '100%', gap: 10 },
   successRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   successRowText: { flex: 1, fontSize: 15, color: COLORS.onSurface, fontWeight: '600' },

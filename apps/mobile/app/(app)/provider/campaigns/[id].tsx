@@ -7,7 +7,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useProviderRequests } from '@/hooks/useCampaigns';
 import { DonationDialog } from '@/components/DonationDialog';
 import {
-  statusMeta,
+  campaignDisplayStatusMeta,
   formatDate,
   formatTime,
   charityName,
@@ -76,11 +76,11 @@ export default function ProviderCampaignDetailScreen() {
     );
   }
 
-  const sm = statusMeta(c.status);
+  const sm = campaignDisplayStatusMeta(c);
   const slots = slotProgress(c);
   const donations = c.donations ?? [];
   const supplyProgress = c.supplyProgress ?? [];
-  const donatable = canDonate(c.status);
+  const donatable = canDonate(c.status, c.recruitmentStatus);
   const hasRemainingSupply = supplyProgress.some((item) => item.remainingQuantity > 0);
   const campaignTransports = providerRequests.filter(
     (request) => request.campaign?.id === c.id && request.transport,

@@ -10,7 +10,7 @@ interface UploadResponse {
   data: { url: string };
 }
 
-/** Upload 1 ảnh qua POST /uploads/image?kind=... → trả URL public (/uploads/...). */
+/** Upload 1 ảnh qua POST /uploads/image?kind=... → trả URL public. */
 export function useUploadImage() {
   return useMutation({
     mutationFn: async (input: { file: File; kind: UploadKind }) => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { InteractionManager, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Checkbox, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -66,12 +66,15 @@ export function ExtendListingModal({ visible, listing, defaultMode, onClose }: P
 
   useEffect(() => {
     if (!visible || !listing) return;
-    setMode(defaultMode);
-    setNewStartTime(new Date(listing.pickupStartTime));
-    setNewEndTime(new Date(listing.pickupEndTime));
-    setNewExpiryTime(new Date(listing.expiryTime ?? listing.pickupEndTime));
-    setAddQty(5);
-    setExtendWhenAdding(false);
+    const task = InteractionManager.runAfterInteractions(() => {
+      setMode(defaultMode);
+      setNewStartTime(new Date(listing.pickupStartTime));
+      setNewEndTime(new Date(listing.pickupEndTime));
+      setNewExpiryTime(new Date(listing.expiryTime ?? listing.pickupEndTime));
+      setAddQty(5);
+      setExtendWhenAdding(false);
+    });
+    return () => task.cancel?.();
   }, [defaultMode, listing, visible]);
 
   const stats = useMemo(() => {

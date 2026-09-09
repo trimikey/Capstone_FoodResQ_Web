@@ -251,7 +251,6 @@ export default function OrderDetailScreen() {
         {order.delivery ? (
           <DeliveryTrackingCard
             reservationId={order.id}
-            shipperAvatarUrl={order.delivery.shipper?.user.avatarUrl}
           />
         ) : null}
 
