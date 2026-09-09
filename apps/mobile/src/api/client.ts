@@ -302,6 +302,7 @@ export const endpoints = {
     // Provider quét QR nhận hàng
     scan: '/reservations/scan',
     confirmPickup: (id: string) => `/reservations/${id}/confirm-pickup`,
+    messages: (id: string) => `/reservations/${id}/messages`,
     // Provider xem đơn đặt vào tin của mình
     providerMy: '/reservations/provider/my',
   },

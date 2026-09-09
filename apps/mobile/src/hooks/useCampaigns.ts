@@ -747,6 +747,9 @@ export interface DishStep {
   qcFailedAt?: string | null;
   qcFailureReason?: string | null;
   qcFailedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
   completedByVolunteer?: { user: { fullName: string; avatarUrl: string | null } } | null;
 }
 
@@ -792,6 +795,7 @@ export interface AssignedDistribution {
   peopleServed: number;
   actualServings: number | null;
   actualPeopleServed: number | null;
+  photoUrl: string | null;
   note: string | null;
   distributedAt: string;
   completedAt: string | null;
@@ -1008,16 +1012,21 @@ export function useCampaignSupplies(campaignId?: string) {
 export function useCompleteAssignedDistribution() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note }: {
+    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note, photo }: {
       distributionId: string;
       campaignId: string;
       actualServings: number;
       note?: string;
+      photo: CapturedImage;
     }) => {
-      // 1 suất = 1 người — BE tự ghi actualPeopleServed = actualServings.
+      const form = new FormData();
+      form.append('actualServings', String(actualServings));
+      form.append('photo', photo as unknown as Blob);
+      if (note) form.append('note', note);
       const res = await apiClient.post<ApiResponse<AssignedDistribution>>(
         endpoints.campaigns.completeDistribution(distributionId),
-        { actualServings, ...(note ? { note } : {}) }
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       return res.data.data;
     },

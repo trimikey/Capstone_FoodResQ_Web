@@ -30,10 +30,10 @@ import { formatDate, formatTime } from '@/utils/campaign';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const STEP_LABELS: Record<number, string> = {
-  1: 'Kiểm tra nguyên liệu',
-  2: 'Sơ chế & nấu',
-  3: 'Kiểm tra chất lượng',
-  4: 'Sẵn sàng phát',
+  1: 'Sơ chế',
+  2: 'Nấu',
+  3: 'Kiểm tra QC',
+  4: 'Sẵn sàng xuất phát',
 };
 
 const STEP_ICONS: Record<number, string> = {
@@ -286,12 +286,18 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
       ) : dishes.map((dish) => {
         const done = dish.steps.filter((step) => step.effectiveStatus === 'done').length;
         const recipeOpen = expandedRecipe === dish.id;
+        const dishCancelled = dish.steps.some((step) => step.stepOrder === 3 && step.reviewStatus === 'rejected');
         return (
           <View key={dish.id} style={styles.dishCard}>
             <View style={styles.dishHead}>
               <View style={styles.flex}>
                 <Text style={styles.dishTitle}>{dish.name}</Text>
                 <Text style={styles.muted}>{dish.plannedServings ? `${dish.plannedServings} suất · ` : ''}{done}/{dish.steps.length} khâu</Text>
+                {dishCancelled ? (
+                  <Text style={styles.stepRejectedText}>
+                    Món đã bị huỷ vì QC không đạt.
+                  </Text>
+                ) : null}
               </View>
               <Text style={styles.dishPercent}>{dish.steps.length ? Math.round((done / dish.steps.length) * 100) : 0}%</Text>
             </View>
@@ -324,8 +330,13 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
                 key={step.id}
                 step={step}
                 previousDone={index === 0 || dish.steps[index - 1]?.effectiveStatus === 'done'}
-                canAct={checkedIn && detail.assignment.status !== 'completed'}
+                canAct={checkedIn && detail.assignment.status !== 'completed' && !dishCancelled}
                 pending={completeStep.isPending}
+                awaitingQcReview={
+                  step.stepOrder === 4 &&
+                  dish.steps[index - 1]?.effectiveStatus === 'done' &&
+                  dish.steps[index - 1]?.reviewStatus !== 'approved'
+                }
                 onComplete={() => handleComplete(step)}
               />
             ))}
@@ -339,16 +350,18 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
   );
 }
 
-function DishStepRow({ step, previousDone, canAct, pending, onComplete }: {
+function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, onComplete }: {
   step: DishStep;
   previousDone: boolean;
   canAct: boolean;
   pending: boolean;
+  awaitingQcReview?: boolean;
   onComplete: () => void;
 }) {
   const done = step.effectiveStatus === 'done';
   const available = step.effectiveStatus === 'available';
   const qcFailed = !!step.qcFailedAt;
+  const isQcStep = step.stepOrder === 3;
   return (
     <View style={[styles.stepCard, done && styles.stepDone, qcFailed && styles.stepFailed]}>
       <View style={[styles.stepIcon, done && styles.stepIconDone, qcFailed && styles.stepIconFailed]}>
@@ -361,10 +374,29 @@ function DishStepRow({ step, previousDone, canAct, pending, onComplete }: {
       <View style={styles.flex}>
         <Text style={styles.stepTitle}>{STEP_LABELS[step.stepOrder] ?? step.stepName}</Text>
         <Text style={styles.smallMuted}>
-          {done ? `Hoàn thành ${formatDateTime(step.completedAt)}` : qcFailed ? step.qcFailureReason : !previousDone ? 'Chờ khâu trước hoàn thành' : `Dự kiến ${step.scheduledTime}`}
+          {done
+            ? `Hoàn thành ${formatDateTime(step.completedAt)}`
+            : qcFailed
+              ? step.qcFailureReason
+              : awaitingQcReview
+                ? 'Chờ tổ chức duyệt ảnh QC'
+                : !previousDone
+                  ? 'Chờ khâu trước hoàn thành'
+                  : `Dự kiến ${step.scheduledTime}`}
         </Text>
         {step.completedByVolunteer?.user.fullName ? <Text style={styles.smallMuted}>bởi {step.completedByVolunteer.user.fullName}</Text> : null}
         {step.proofUrl ? <AppImage source={{ uri: step.proofUrl }} style={styles.stepProof} /> : null}
+        {isQcStep && step.reviewStatus === 'pending' ? (
+          <Text style={styles.stepPendingText}>Chờ tổ chức duyệt ảnh QC.</Text>
+        ) : null}
+        {isQcStep && step.reviewStatus === 'approved' ? (
+          <Text style={styles.stepApprovedText}>Tổ chức đã duyệt ảnh QC.</Text>
+        ) : null}
+        {isQcStep && step.reviewStatus === 'rejected' ? (
+          <Text style={styles.stepRejectedText}>
+            Món đã bị huỷ vì QC không đạt{step.reviewNote ? `: ${step.reviewNote}` : ''}.
+          </Text>
+        ) : null}
         {available && canAct && !qcFailed ? (
           <View style={styles.stepActions}>
             <Button mode="contained" compact icon="camera" loading={pending} disabled={pending} onPress={onComplete}>
@@ -389,6 +421,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const [actualServings, setActualServings] = useState('');
   const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
+  const [distributionPhoto, setDistributionPhoto] = useState<CapturedImage | null>(null);
   const [pickupPhoto, setPickupPhoto] = useState<CapturedImage | null>(null);
 
   const dishes = detail.dishes ?? [];
@@ -402,6 +435,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     setClosing(distribution);
     setActualServings(String(distribution.servingsServed));
     setNote('');
+    setDistributionPhoto(null);
   };
 
   const openPickupConfirm = (order: PickupOrder) => {
@@ -429,6 +463,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       });
       return;
     }
+    if (!distributionPhoto) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Thiếu ảnh phát suất',
+        text2: 'Chụp ảnh khu vực/phần ăn đã phát để tổ chức lưu tư liệu sau chiến dịch.',
+      });
+      return;
+    }
     try {
       // QUY TẮC: 1 suất = 1 người — BE tự ghi số người = số suất, không gửi riêng.
       await complete.mutateAsync({
@@ -436,10 +478,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         campaignId: detail.campaign.id,
         actualServings: servings,
         note: note.trim() || undefined,
+        photo: distributionPhoto,
       });
       void notifySuccess();
       Popup.show({ type: 'success', text1: `Đã chốt ${servings}/${closing.servingsServed} suất` });
       setClosing(null);
+      setDistributionPhoto(null);
       await onRefresh();
     } catch (error) {
       void notifyError();
@@ -457,6 +501,17 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       Keyboard.dismiss();
       const photo = await captureImage('id_card', 'proof');
       if (photo) setPickupPhoto(photo);
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
+    }
+  };
+
+  const captureDistributionPhoto = async () => {
+    try {
+      Keyboard.dismiss();
+      const photo = await captureImage('id_card', 'proof');
+      if (photo) setDistributionPhoto(photo);
     } catch (error) {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
@@ -641,6 +696,9 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
               <Text style={styles.completedText}>
                 Đã phát {distribution.actualServings ?? distribution.servingsServed}/{distribution.servingsServed} suất cho {distribution.actualPeopleServed ?? distribution.peopleServed} người · {formatDateTime(distribution.completedAt)}
               </Text>
+              {distribution.photoUrl ? (
+                <AppImage source={{ uri: distribution.photoUrl }} style={styles.distributionProof} />
+              ) : null}
             </View>
           ) : (
             <View style={styles.distributionActions}>
@@ -663,7 +721,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       ))}
 
       <Portal>
-        <Dialog visible={!!closing} onDismiss={() => !complete.isPending && setClosing(null)}>
+        <Dialog
+          visible={!!closing}
+          onDismiss={() => {
+            if (complete.isPending) return;
+            setClosing(null);
+            setDistributionPhoto(null);
+          }}
+        >
           <Dialog.Title>Chốt đợt phát</Dialog.Title>
           <Dialog.Content style={styles.dialogBody}>
             <Text style={styles.muted}>Kế hoạch: {closing?.servingsServed ?? 0} suất</Text>
@@ -671,10 +736,41 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
             {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
             <Text style={styles.muted}>Mỗi suất phát cho đúng 1 người — hệ thống tự ghi số người nhận bằng số suất.</Text>
             <TextInput mode="outlined" label="Ghi chú" value={note} onChangeText={setNote} multiline numberOfLines={3} />
+            {distributionPhoto ? (
+              <View style={styles.distributionPhotoReview}>
+                <View style={styles.pickupPhotoHead}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.success} />
+                  <Text style={styles.pickupPhotoTitle}>Ảnh phát suất đã chụp</Text>
+                </View>
+                <AppImage source={{ uri: distributionPhoto.uri }} style={styles.distributionPhotoPreview} />
+                <Button compact icon="camera-retake-outline" onPress={captureDistributionPhoto} disabled={complete.isPending}>
+                  Chụp lại
+                </Button>
+              </View>
+            ) : (
+              <View style={styles.distributionPhotoEmpty}>
+                <View style={styles.pickupPhotoEmptyIcon}>
+                  <MaterialCommunityIcons name="camera-outline" size={28} color={COLORS.primary} />
+                </View>
+                <Text style={styles.pickupPhotoEmptyTitle}>Cần ảnh phát suất</Text>
+                <Text style={styles.pickupPhotoEmptyText}>Chụp rõ phần ăn hoặc điểm phát để tổ chức dùng làm tư liệu tổng kết.</Text>
+                <Button mode="contained-tonal" icon="camera" onPress={captureDistributionPhoto} disabled={complete.isPending}>
+                  Chụp ảnh
+                </Button>
+              </View>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setClosing(null)} disabled={complete.isPending}>Huỷ</Button>
-            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending} onPress={submitClose}>Xác nhận</Button>
+            <Button
+              onPress={() => {
+                setClosing(null);
+                setDistributionPhoto(null);
+              }}
+              disabled={complete.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending || !distributionPhoto} onPress={submitClose}>Xác nhận</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -883,10 +979,14 @@ const styles = StyleSheet.create({
   stepTitle: { color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
   stepProof: { width: '100%', height: 110, borderRadius: radius.md, marginTop: 8 },
   stepActions: { alignItems: 'flex-start', gap: 2, marginTop: 8 },
+  stepPendingText: { color: COLORS.warning, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
+  stepApprovedText: { color: COLORS.success, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
+  stepRejectedText: { color: COLORS.error, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
   distributionCard: { padding: spacing.lg, borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, ...elevation.card },
   pickupCard: { borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, overflow: 'hidden', ...elevation.card },
   pickupBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6 },
   pickupProof: { width: '100%', height: 130, borderRadius: radius.md, marginTop: 8 },
+  distributionProof: { width: '100%', height: 130, borderRadius: radius.md, marginTop: 8 },
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.outlineVariant },
   pointIndex: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primaryContainer },
   pointIndexText: { color: COLORS.primary, fontSize: 11, fontWeight: '900' },
@@ -896,12 +996,30 @@ const styles = StyleSheet.create({
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   dialogBody: { gap: 12 },
   dialogInput: { marginTop: 12 },
+  distributionPhotoEmpty: {
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  distributionPhotoReview: {
+    gap: 10,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  distributionPhotoPreview: { width: '100%', height: 170, borderRadius: radius.md },
   pickupModalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   pickupBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(18, 28, 42, 0.42)',
   },
   pickupSheetAvoider: {

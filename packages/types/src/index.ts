@@ -96,6 +96,12 @@ export interface BulkRunStop {
   orderIndex: number;
   servedAt: string | null;
   coords: GeoPoint | null;
+  reservation?: {
+    id: string;
+    qrToken: string;
+    status: string;
+    qrExpiresAt: string;
+  } | null;
 }
 
 export interface BulkRun {
