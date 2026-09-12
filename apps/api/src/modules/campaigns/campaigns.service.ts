@@ -6772,6 +6772,137 @@ export class CampaignsService {
   }
 
   /** Thống kê toàn hệ thống — cho trang /campaigns overview. */
+  /**
+   * BÁO CÁO TÁC ĐỘNG CÔNG KHAI (trang "Xem báo cáo minh bạch") — không cần đăng nhập.
+   *
+   * Mốc thời gian dùng cho chuỗi theo tháng:
+   *  - Suất ăn: `operationEndAt` của chiến dịch đã hoàn tất, giá trị `actualServings`
+   *    (số tổ chức chốt khi kết thúc). Cùng nguồn với `getSystemStats` nên tổng của
+   *    chuỗi LUÔN khớp con số hiển thị ở trang chủ — không để hai chỗ lệch nhau.
+   *  - Lương thực cứu được (kg) gộp 3 nguồn: nguyên liệu tình nguyện viên đã ký nhận
+   *    về bếp, quyên góp nhà cung cấp đã nhận, và thực phẩm người nhận đã lấy từ tin
+   *    đăng (chỉ tin khai `weightPerUnitKg` mới quy ra kg được — phần thiếu khai bị
+   *    bỏ qua, nên đây là con số THẬN TRỌNG, không phóng đại).
+   */
+  async getPublicImpactReport() {
+    const [campaigns, pickups, donations, reservations, peopleRows] = await Promise.all([
+      this.prisma.kitchenCampaign.findMany({
+        where: { status: 'completed' },
+        select: {
+          id: true,
+          title: true,
+          actualServings: true,
+          operationEndAt: true,
+          kitchenAddress: true,
+          charityReceiver: {
+            select: { organizationName: true, user: { select: { fullName: true } } },
+          },
+        },
+        orderBy: { operationEndAt: 'desc' },
+      }),
+      this.prisma.campaignIngredientPickup.findMany({
+        select: { receivedKg: true, confirmedAt: true },
+      }),
+      this.prisma.campaignDonation.findMany({
+        where: { status: 'received' },
+        select: { quantity: true, receivedAt: true },
+      }),
+      this.prisma.reservation.findMany({
+        where: { status: 'completed' },
+        select: {
+          quantity: true,
+          updatedAt: true,
+          listing: { select: { weightPerUnitKg: true } },
+        },
+      }),
+      this.prisma.mealDistribution.findMany({
+        where: { completedAt: { not: null } },
+        select: { peopleServed: true, actualPeopleServed: true },
+      }),
+    ]);
+
+    const monthKey = (d: Date) =>
+      new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 7);
+
+    // ── Suất ăn theo tháng ────────────────────────────────────────────────
+    const servingsByMonth = new Map<string, number>();
+    let mealsServed = 0;
+    for (const c of campaigns) {
+      const servings = c.actualServings ?? 0;
+      mealsServed += servings;
+      if (servings <= 0) continue;
+      const key = monthKey(c.operationEndAt);
+      servingsByMonth.set(key, (servingsByMonth.get(key) ?? 0) + servings);
+    }
+
+    // ── Kg lương thực cứu được theo tháng ─────────────────────────────────
+    const kgByMonth = new Map<string, number>();
+    const addKg = (at: Date | null, kg: number) => {
+      if (!at || !Number.isFinite(kg) || kg <= 0) return;
+      const key = monthKey(at);
+      kgByMonth.set(key, (kgByMonth.get(key) ?? 0) + kg);
+    };
+    let kgFromKitchen = 0;
+    for (const pk of pickups) {
+      const kg = Number(pk.receivedKg);
+      kgFromKitchen += kg > 0 ? kg : 0;
+      addKg(pk.confirmedAt, kg);
+    }
+    let kgFromDonation = 0;
+    for (const don of donations) {
+      const kg = this.parseDonationQuantity(don.quantity, 'kg');
+      if (kg != null) {
+        kgFromDonation += kg;
+        addKg(don.receivedAt, kg);
+      }
+    }
+    let kgFromListing = 0;
+    for (const r of reservations) {
+      const perUnit = r.listing?.weightPerUnitKg ? Number(r.listing.weightPerUnitKg) : 0;
+      const kg = perUnit * Number(r.quantity);
+      if (kg > 0) {
+        kgFromListing += kg;
+        addKg(r.updatedAt, kg);
+      }
+    }
+
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+    const months = [...new Set([...servingsByMonth.keys(), ...kgByMonth.keys()])].sort();
+    const monthlySeries = months.map((month) => ({
+      month,
+      servings: servingsByMonth.get(month) ?? 0,
+      kg: round1(kgByMonth.get(month) ?? 0),
+    }));
+
+    return {
+      totals: {
+        completedCampaigns: campaigns.length,
+        mealsServed,
+        peopleServed: peopleRows.reduce(
+          (sum, d) => sum + (d.actualPeopleServed ?? d.peopleServed),
+          0,
+        ),
+        kgRescued: round1(kgFromKitchen + kgFromDonation + kgFromListing),
+      },
+      // Nguồn kg tách riêng để trang báo cáo nói rõ "cứu từ đâu", không chỉ một số tổng
+      kgBySource: [
+        { key: 'kitchen', kg: round1(kgFromKitchen) },
+        { key: 'donation', kg: round1(kgFromDonation) },
+        { key: 'listing', kg: round1(kgFromListing) },
+      ],
+      monthlySeries,
+      campaigns: campaigns.map((c) => ({
+        id: c.id,
+        title: c.title,
+        servings: c.actualServings ?? 0,
+        finishedAt: c.operationEndAt,
+        address: c.kitchenAddress,
+        organizationName:
+          c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
+      })),
+    };
+  }
+
   async getSystemStats() {
     const [total, completed, active] = await Promise.all([
       this.prisma.kitchenCampaign.count({ where: {} }),

@@ -193,27 +193,20 @@ export default function HomeContent() {
               }}
             />
           ))}
-          {/* Lớp phủ dọc rất nhẹ, chỉ để dịu nắng gắt ở mép trên/dưới. Bản trước phủ
-              tới 70–80% nên ảnh bạc trắng như bị xoá mờ. */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/25 via-transparent to-white/35" />
-          {/* Scrim TRÁI có mốc dừng rõ ràng: đậm đúng vùng đặt chữ rồi tắt hẳn trước
-              nửa khung, để hơn một phần ba ảnh bên phải giữ nguyên màu thật. Dùng
-              linear-gradient tường minh vì gradient 3 nấc của Tailwind trải đều toàn
-              khung, làm cả tấm ảnh mờ theo chứ không chỉ vùng có chữ. */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 26%, rgba(255,255,255,0.55) 44%, rgba(255,255,255,0) 62%)',
-            }}
-          />
+          {/* Chữ giờ nằm trong PANEL kính mờ riêng (xem khối dưới), nên ảnh không cần
+              bị scrim trắng phủ dày nữa — chỉ một lớp tối rất nhẹ để ảnh có độ sâu và
+              panel nổi khỏi nền. Scrim trắng kiểu cũ tắt ở 62% khung: ảnh banner nào
+              sáng (sân trường, áo trắng) là chữ đen lẫn hẳn vào ảnh, đúng lỗi đang gặp. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/5 to-black/15" />
         </div>
 
-        <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
+        {/* PANEL kính mờ: nền sáng riêng cho chữ nên mọi ảnh banner (sáng/tối, nhiều
+            chi tiết) đều đọc được, không phụ thuộc việc ảnh đó có vùng trống hay không. */}
+        <div className="max-w-2xl space-y-6 relative z-10 animate-fade-in-up rounded-3xl border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(15,40,20,0.18)] backdrop-blur-xl sm:space-y-7 sm:p-9">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-sky-brand)_14%,white)] border border-[color-mix(in_srgb,var(--color-sky-brand)_35%,white)] text-[color-mix(in_srgb,var(--color-sky-brand)_75%,#0b2a3a)] font-bold text-xs uppercase tracking-wider shadow-sm">
             Tác động của FoodResQ
           </div>
-          <h1 className="font-extrabold text-5xl min-[420px]:text-6xl sm:text-8xl lg:text-9xl tracking-tighter tabular-nums leading-none">
+          <h1 className="font-extrabold text-5xl min-[420px]:text-6xl sm:text-7xl lg:text-8xl tracking-tighter tabular-nums leading-none">
             <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-800 via-[var(--color-leaf-brand)] to-emerald-600 drop-shadow-sm">
               {formatNumber(foodCount)}
             </span>
@@ -221,27 +214,29 @@ export default function HomeContent() {
               Tấn
             </span>
           </h1>
-          <div className="h-1 w-20 bg-[var(--color-warm-brand)] rounded-full my-6" />
-          <h2 className="font-bold text-2xl sm:text-3xl lg:text-4xl text-neutral-800 leading-snug max-w-2xl">
+          <div className="h-1 w-20 bg-[var(--color-warm-brand)] rounded-full" />
+          <h2 className="font-bold text-xl sm:text-2xl lg:text-3xl text-neutral-900 leading-snug">
             thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
           </h2>
-          <p className="font-medium text-lg text-neutral-600 leading-relaxed max-w-xl">
+          <p className="font-medium text-sm sm:text-base text-neutral-600 leading-relaxed">
             FoodResQ sử dụng hệ thống xác minh đa lớp để luân chuyển thức ăn an toàn từ đối tác đến đúng người cần. Minh bạch, hiệu quả và được vận hành hoàn toàn bởi cộng đồng tình nguyện.
           </p>
 
-          <div className="flex flex-wrap gap-4 pt-8">
+          <div className="flex flex-wrap gap-3 pt-1">
             <button
               onClick={() => router.push('/listings')}
-              className="px-8 py-4 bg-emerald-700 hover:bg-emerald-850 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-700/25 flex items-center gap-2 group active:scale-95"
+              className="px-6 py-3.5 bg-emerald-700 hover:bg-emerald-850 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-700/25 flex items-center gap-2 group active:scale-95"
             >
               Tham gia giải cứu
               <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
             </button>
+            {/* Trước đây chỉ toast "đang tải dữ liệu thực tế" — giờ có trang báo cáo thật */}
             <button
-              onClick={() => toast.info('Tính năng đang được tải dữ liệu thực tế...')}
-              className="px-8 py-4 bg-white/80 backdrop-blur-sm border border-neutral-200 hover:bg-white text-neutral-800 rounded-full font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
+              onClick={() => router.push('/impact')}
+              className="px-6 py-3.5 bg-white border border-neutral-200 hover:border-emerald-300 hover:bg-emerald-50 text-neutral-800 rounded-full font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
             >
               Xem báo cáo minh bạch
+              <span className="material-symbols-outlined text-[18px]">bar_chart</span>
             </button>
           </div>
         </div>
@@ -254,8 +249,8 @@ export default function HomeContent() {
               onClick={() => setHeroBgIndex(idx)}
               className={`h-2 rounded-full transition-all duration-300 ${
                 idx === heroBgIndex
-                  ? 'w-8 bg-[var(--color-leaf-brand)]'
-                  : 'w-2 bg-[var(--color-leaf-brand)]/35 hover:bg-[var(--color-leaf-brand)]/60'
+                  ? 'w-8 bg-white shadow'
+                  : 'w-2 bg-white/55 hover:bg-white/80'
               }`}
               aria-label={`Go to slide ${idx + 1}`}
             />

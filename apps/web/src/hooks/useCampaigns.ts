@@ -1704,6 +1704,29 @@ export function useReviewQcStep() {
   });
 }
 
+export interface PublicImpactReport {
+  totals: { completedCampaigns: number; mealsServed: number; peopleServed: number; kgRescued: number };
+  kgBySource: Array<{ key: string; kg: number }>;
+  monthlySeries: Array<{ month: string; servings: number; kg: number }>;
+  campaigns: Array<{
+    id: string;
+    title: string;
+    servings: number;
+    finishedAt: string;
+    address: string | null;
+    organizationName: string | null;
+  }>;
+}
+
+/** Báo cáo tác động công khai (trang /impact) — không cần đăng nhập. */
+export function usePublicImpactReport() {
+  return useQuery({
+    queryKey: ['campaigns', 'impact-report'],
+    queryFn: async () => (await api.get('/campaigns/impact-report')).data.data as PublicImpactReport,
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Quy trình bếp của MỘT NGÀY — chiến dịch nhiều ngày mỗi ngày một chuỗi 4 khâu
  * riêng; date bỏ trống thì BE lấy hôm nay (giờ VN) kẹp vào khoảng ngày vận hành.

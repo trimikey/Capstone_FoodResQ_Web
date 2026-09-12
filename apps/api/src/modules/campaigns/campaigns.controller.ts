@@ -61,6 +61,16 @@ export class CampaignsController {
     return this.campaignsService.getSystemStats();
   }
 
+  @Get('impact-report')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Báo cáo tác động công khai: tất cả chiến dịch đã hoàn tất, suất ăn đã phát và kg lương thực cứu được theo tháng',
+  })
+  getImpactReport() {
+    return this.campaignsService.getPublicImpactReport();
+  }
+
   @Get('my-stats')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
