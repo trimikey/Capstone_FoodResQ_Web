@@ -52,6 +52,9 @@ describe('CampaignsService', () => {
         { provide: SystemConfigService, useValue: { getNumber: jest.fn(async (k: string) => {
           if (k === 'CHECKIN_GPS_RADIUS_M') return 500;
           if (k === 'CAMPAIGN_MIN_FILL_PERCENT') return 50;
+          // Trả đúng default production (6 giờ) — để 0 là guard đóng tuyển trước
+          // giờ vận hành bị vô hiệu trong test mà vẫn tưởng còn hiệu lực.
+          if (k === 'CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES') return 360;
           return 0;
         }) } },
         { provide: DeliveriesService, useValue: { broadcastToNearbyShippers: jest.fn() } },
@@ -464,8 +467,10 @@ describe('CampaignsService', () => {
         recruitmentEndAt: new Date('2098-12-30T00:00:00.000Z'),
       });
 
+      // Ca đầu tiên 2099-01-01T00:00Z, lead đóng tuyển 360 phút → hạn muộn nhất
+      // là 2098-12-31T18:00Z; xin gia hạn tới 20:00 cùng ngày là vượt.
       await expect(service.extendRecruitment(
-        'campaign-1', 'charity-user', '2098-12-31T12:00:00.000Z',
+        'campaign-1', 'charity-user', '2098-12-31T20:00:00.000Z',
       )).rejects.toBeInstanceOf(BadRequestException);
     });
   });
