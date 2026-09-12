@@ -121,6 +121,15 @@ export default function PublicHeader() {
   const { data: me } = useMe(isAuthed);
   const isCharityOrg = !!me?.receiver?.isCharityOrg;
   const currentUserName = me?.fullName ?? user?.fullName ?? '';
+  const currentUserEmail = me?.email ?? user?.email ?? '';
+  /**
+   * Tài khoản social/đăng ký nhanh có `fullName` chính là email — navbar hiện
+   * "user3@gmail...." bị cắt ngang, vừa xấu vừa lộ email ra ngoài. Lấy phần
+   * trước @ làm tên hiển thị; email đầy đủ chỉ nằm trong dropdown.
+   */
+  const displayName = currentUserName.includes('@')
+    ? currentUserName.split('@')[0]
+    : currentUserName;
   const avatarSrc = mediaUrl(me?.avatarUrl ?? user?.avatarUrl ?? '');
   const [avatarFailed, setAvatarFailed] = useState(false);
   // Dưới md nav chính bị ẩn — không có menu thay thế thì khách mobile mất toàn bộ
@@ -169,7 +178,7 @@ export default function PublicHeader() {
         {/* Logo */}
         <Link href="/" className="flex items-center shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/Logo_FoodResQ.png" alt="FoodResQ Logo" className="h-7 w-auto object-contain" />
+          <img src="/Logo_FoodResQ.png" alt="FoodResQ Logo" className="h-9 w-auto object-contain" />
         </Link>
 
         {/* Nav (Luôn hiển thị public links) */}
@@ -254,15 +263,19 @@ export default function PublicHeader() {
                   )}
                 </div>
                 <div className="hidden lg:block leading-tight text-left pr-2">
-                  <p className="text-[13px] font-medium text-on-surface max-w-[100px] truncate">{user!.fullName}</p>
+                  <p className="max-w-[140px] truncate text-[13px] font-semibold text-on-surface">{displayName}</p>
                 </div>
                 <span className="material-symbols-outlined text-[16px] text-neutral-400">arrow_drop_down</span>
               </div>
 
               {isProfileMenuOpen && (
                 <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-155 text-left">
-                  <div className="px-4 py-2 border-b border-neutral-100">
-                    <p className="font-bold text-xs text-neutral-500 uppercase tracking-wider">Tài khoản</p>
+                  <div className="border-b border-neutral-100 px-4 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Tài khoản</p>
+                    <p className="mt-1 truncate text-[13px] font-semibold text-neutral-800">{displayName}</p>
+                    {currentUserEmail && (
+                      <p className="truncate text-[11px] text-neutral-500">{currentUserEmail}</p>
+                    )}
                   </div>
                   <div className="flex flex-col">
                     <Link
