@@ -3,8 +3,28 @@ import './globals.css';
 import { Providers } from '@/app/providers';
 
 export const metadata: Metadata = {
-  title: "FoodResQ - Kết nối cộng đồng",
-  description: "Kết nối cộng đồng chia sẻ thực phẩm dư thừa, giảm thiểu lãng phí và xây dựng lòng tin.",
+  // metadataBase để các URL tương đối (og:image…) tự thành URL tuyệt đối khi render
+  metadataBase: new URL('https://capstone-food-res-q-web-web.vercel.app'),
+  title: {
+    default: 'FoodResQ — Giải cứu thực phẩm, kết nối cộng đồng',
+    // Trang con đặt title riêng sẽ tự thành "Tên trang | FoodResQ"
+    template: '%s | FoodResQ',
+  },
+  description:
+    'Nền tảng kết nối cửa hàng có thực phẩm dư với người cần và bếp ăn cộng đồng — '
+    + 'đặt phần 0đ, tình nguyện viên giao tận nơi, minh bạch từng suất ăn.',
+  // Open Graph: share link qua Zalo/Messenger/Facebook ra card có ảnh + mô tả
+  // thay vì một dòng link trơ trọi — quan trọng khi gửi demo cho hội đồng.
+  openGraph: {
+    type: 'website',
+    locale: 'vi_VN',
+    siteName: 'FoodResQ',
+    title: 'FoodResQ — Giải cứu thực phẩm, kết nối cộng đồng',
+    description:
+      'Đặt phần ăn 0đ từ thực phẩm dư còn tốt, tình nguyện viên giao tận nơi, '
+      + 'bếp ăn cộng đồng minh bạch từng suất.',
+    images: [{ url: '/anhbanner1.jpg', width: 1200, height: 630, alt: 'FoodResQ — bếp ăn cộng đồng' }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
