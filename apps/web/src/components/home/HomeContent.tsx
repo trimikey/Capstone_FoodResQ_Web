@@ -196,7 +196,7 @@ export default function HomeContent() {
             Dưới lg ảnh hạ về vai trò nền rất mờ để card full-width đọc thoải mái. */}
         <div className="absolute inset-0 z-0">
           <div
-            className="absolute inset-0 opacity-40 lg:opacity-100"
+            className="absolute inset-0"
             style={{ filter: 'saturate(0.85) hue-rotate(-6deg)' }}
           >
             {HERO_IMAGES.map((img, idx) => (
@@ -215,16 +215,19 @@ export default function HomeContent() {
           </div>
           {/* Scrim: dưới lg đổ từ trên xuống và đậm hơn (card full-width nằm trên ảnh);
               từ lg đổ trái→phải để nửa phải ảnh giữ nguyên màu thật. */}
-          <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/60 via-black/45 to-black/60 lg:bg-gradient-to-r lg:from-black/55 lg:via-black/25 lg:to-transparent" />
+          {/* Scrim đậm bên trái làm "nền" trực tiếp cho chữ trắng — không còn hộp
+              card nên scrim chính là thứ giữ độ tương phản. Dưới lg đổ trên→dưới. */}
+          <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/75 via-black/55 to-black/70 lg:bg-gradient-to-r lg:from-black/80 lg:via-black/45 lg:to-transparent" />
         </div>
 
         {/* Cùng container với navbar (max-w-5xl + px-4/md:px-6) để card thẳng mép
             với logo và menu, thay vì lệch theo padding riêng của section. */}
         <div className="relative z-10 mx-auto max-w-5xl px-4 md:px-6">
-          {/* CARD kính mờ, nền off-white ẤM (#FDFCF9) — trắng thuần cạnh ảnh đã
-              cool-down sẽ lộ ra xanh xám. Nhịp dọc theo thang 8px. */}
-          <div className="w-full animate-fade-in-up rounded-[32px] border border-white/40 bg-[#FDFCF9]/88 p-6 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8 lg:w-[48%] lg:p-9">
-            <div className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-green-700">
+          {/* KHÔNG còn hộp card — nội dung in thẳng lên ảnh, scrim bên trái là nền.
+              Chữ trắng + drop-shadow nhẹ để ảnh và chữ là MỘT lớp, hết cảm giác
+              miếng sticker trắng dán giữa banner. Nhịp dọc giữ thang 8px. */}
+          <div className="w-full animate-fade-in-up py-4 lg:w-[52%] lg:py-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/15 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-100 backdrop-blur-sm">
               Tác động của FoodResQ
             </div>
 
@@ -232,23 +235,23 @@ export default function HomeContent() {
               className="mt-6 font-extrabold leading-none tracking-tighter tabular-nums"
               style={{ fontSize: 'clamp(3.5rem, 9vw, 7.5rem)' }}
             >
-              <span className="bg-gradient-to-br from-emerald-800 via-[var(--color-leaf-brand)] to-emerald-600 bg-clip-text text-transparent">
+              <span className="text-white [text-shadow:0_2px_24px_rgba(0,0,0,0.45)]">
                 {formatHeroNumber(foodCount)}
               </span>
               {/* 0.35em + cùng font-weight để "Tấn" đứng cùng baseline với số */}
-              <span className="ml-2 align-baseline font-extrabold tracking-normal text-emerald-800/70" style={{ fontSize: '0.35em' }}>
+              <span className="ml-2 align-baseline font-extrabold tracking-normal text-emerald-300" style={{ fontSize: '0.35em' }}>
                 Tấn
               </span>
             </h1>
-            <p className="mt-2 text-sm font-semibold text-neutral-500">tấn thực phẩm đã giải cứu</p>
+            <p className="mt-2 text-sm font-semibold text-white/70">tấn thực phẩm đã giải cứu</p>
 
             <div className="mt-6 h-1 w-20 rounded-full bg-[var(--color-warm-brand)]" />
 
-            <h2 className="mt-8 text-2xl font-bold leading-snug text-neutral-900 [text-wrap:balance] sm:text-3xl">
+            <h2 className="mt-8 text-2xl font-bold leading-snug text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)] [text-wrap:balance] sm:text-3xl">
               thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
             </h2>
 
-            <p className="mt-5 text-sm font-medium leading-relaxed text-neutral-600 sm:text-base">
+            <p className="mt-5 max-w-xl text-sm font-medium leading-relaxed text-white/85 sm:text-base">
               FoodResQ sử dụng hệ thống xác minh đa lớp để luân chuyển thức ăn an toàn từ đối tác đến đúng người cần. Minh bạch, hiệu quả và được vận hành hoàn toàn bởi cộng đồng tình nguyện.
             </p>
 
@@ -264,7 +267,7 @@ export default function HomeContent() {
                   bị nhầm là mũi tên "đi tiếp" như nút chính bên cạnh. */}
               <button
                 onClick={() => router.push('/impact')}
-                className="flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-6 py-3.5 text-sm font-bold text-neutral-800 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50 active:scale-95 sm:w-auto"
+                className="flex w-full items-center justify-center gap-2 rounded-full border border-white/40 bg-white/10 px-6 py-3.5 text-sm font-bold text-white backdrop-blur-sm transition-all hover:border-white/70 hover:bg-white/20 active:scale-95 sm:w-auto"
               >
                 <span className="material-symbols-outlined text-[18px]">bar_chart</span>
                 Xem báo cáo minh bạch
@@ -285,8 +288,8 @@ export default function HomeContent() {
                   <span
                     className={`h-2 rounded-full transition-all duration-300 ${
                       idx === heroBgIndex
-                        ? 'w-8 bg-emerald-700'
-                        : 'w-2 bg-neutral-300 hover:bg-neutral-400'
+                        ? 'w-8 bg-emerald-400'
+                        : 'w-2 bg-white/40 hover:bg-white/70'
                     }`}
                   />
                 </button>
