@@ -596,6 +596,36 @@ export default function DeliveriesPage() {
                 );
               })()}
 
+              {/* Ảnh QC đã chụp lúc lấy hàng — hiện lại cho shipper đối chiếu và
+                  làm bằng chứng nếu có tranh chấp về tình trạng hàng khi bàn giao. */}
+              {active.qcPhotoUrl && (
+                <div className="mb-5 flex items-center gap-3 rounded-2xl border border-neutral-150 bg-white p-3">
+                  <a
+                    href={mediaUrl(active.qcPhotoUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Mở ảnh QC kích thước đầy đủ"
+                    className="block h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-neutral-200"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mediaUrl(active.qcPhotoUrl)}
+                      alt="Ảnh QC lúc lấy hàng"
+                      className="h-full w-full object-cover"
+                    />
+                  </a>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1 text-xs font-bold text-neutral-800">
+                      <span className="material-symbols-outlined text-[16px] text-emerald-600">fact_check</span>
+                      Ảnh QC lúc lấy hàng
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-neutral-500">
+                      Đã lưu làm bằng chứng tình trạng hàng — bấm vào ảnh để xem lớn.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Advance button */}
               {NEXT_STATUS[active.status] ? (
                 <button
