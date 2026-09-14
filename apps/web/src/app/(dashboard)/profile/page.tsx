@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { useMe, useUpdateMe, useTrustHistory } from '@/hooks/useProfile';
 import { useFaceEnrollment } from '@/hooks/useFaceEnrollment';
+import FaceEnrollmentPanel from '@/components/shared/FaceEnrollmentPanel';
 import { reverseGeocode } from '@/lib/geocode';
 import { UserRole } from '@foodresq/types';
 import type { UserRole as UserRoleType } from '@foodresq/types';
@@ -111,6 +112,9 @@ export default function ProfilePage() {
   const { data: faceEnrollment } = useFaceEnrollment(isFaceRole);
   const faceImage = imgUrl(faceEnrollment?.faceImageUrl);
   const [faceImageFailed, setFaceImageFailed] = useState(false);
+  // Chụp lại ảnh xác minh — cứu các tài khoản cũ có ảnh lưu ./uploads local đã
+  // mất trên Render (URL còn trong DB nhưng 404); ảnh mới lên Cloudinary.
+  const [reEnrollOpen, setReEnrollOpen] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', avatarUrl: '', address: '' });
@@ -608,13 +612,59 @@ export default function ProfilePage() {
                         <span className="material-symbols-outlined text-[18px]">verified_user</span>
                         <span>Đã xác minh</span>
                       </div>
-                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">Dùng để đối chiếu khi nhận hàng.</p>
+                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                        {faceImageFailed
+                          ? 'Ảnh đăng ký không còn tải được — hãy chụp lại để đối chiếu khi nhận hàng.'
+                          : 'Dùng để đối chiếu khi nhận hàng.'}
+                      </p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 rounded-2xl p-3">
                     <span className="material-symbols-outlined text-amber-600 text-[24px]">no_accounts</span>
                     <p className="text-xs text-amber-800 font-semibold leading-relaxed">Chưa đăng ký khuôn mặt. Bạn sẽ được yêu cầu khi nhận hàng.</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => setReEnrollOpen(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3.5 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                  {faceImage ? 'Chụp lại ảnh xác minh' : 'Đăng ký ảnh xác minh'}
+                </button>
+
+                {/* Modal chụp lại — dùng lại đúng panel enroll của cổng eKYC; mở tự
+                    nguyện nên cho phép đóng, khác Gate bắt buộc. */}
+                {reEnrollOpen && (
+                  <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center">
+                    <div
+                      className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                      onClick={() => setReEnrollOpen(false)}
+                    />
+                    <div className="relative bg-[#FAFBF9] rounded-t-2xl sm:rounded-3xl w-full sm:max-w-3xl shadow-2xl flex flex-col gap-6 p-6 sm:p-10 max-h-[90vh] overflow-y-auto">
+                      <button
+                        onClick={() => setReEnrollOpen(false)}
+                        className="absolute top-4 right-4 w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center"
+                        aria-label="Đóng"
+                      >
+                        <span className="material-symbols-outlined text-[18px] text-neutral-600">close</span>
+                      </button>
+                      <div className="text-center">
+                        <h2 className="font-bold text-xl text-neutral-800">
+                          {faceImage ? 'Chụp lại ảnh xác minh' : 'Đăng ký ảnh xác minh'}
+                        </h2>
+                        <p className="text-[13px] text-neutral-500 mt-1 max-w-md mx-auto">
+                          Ảnh mới sẽ thay ảnh cũ và được dùng để đối chiếu khi nhận hàng.
+                        </p>
+                      </div>
+                      <FaceEnrollmentPanel
+                        onDone={() => {
+                          toast.success('Đã cập nhật ảnh xác minh');
+                          setFaceImageFailed(false);
+                          setReEnrollOpen(false);
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
