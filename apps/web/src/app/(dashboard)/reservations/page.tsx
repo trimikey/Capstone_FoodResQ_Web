@@ -177,7 +177,9 @@ export default function ReservationsPage() {
   const stats = {
     allOrders: data?.counts?.allOrders ?? 0,
     completed: data?.counts?.completed ?? 0,
-    cancelled: data?.counts?.cancelled ?? 0,
+    // Gộp cả đơn hết hạn (hệ thống đóng) — phụ đề ô là "Bạn huỷ hoặc hệ thống huỷ".
+    // Tách riêng thì tổng 4 ô ≠ Tổng đơn, người dùng tưởng đếm nhầm.
+    cancelled: (data?.counts?.cancelled ?? 0) + (data?.counts?.expired ?? 0),
     missed: data?.counts?.noShow ?? 0,
     portions: data?.counts?.portionsSaved ?? 0,
   };

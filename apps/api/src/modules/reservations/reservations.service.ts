@@ -986,7 +986,7 @@ export class ReservationsService {
       : group === 'history' ? { notIn: active }
       : undefined;
 
-    const [items, total, activeCount, historyCount, completedAgg, noShowCount, cancelledCount] =
+    const [items, total, activeCount, historyCount, completedAgg, noShowCount, cancelledCount, expiredCount] =
       await this.prisma.$transaction([
       this.prisma.reservation.findMany({
         where: {
@@ -1039,6 +1039,11 @@ export class ReservationsService {
       this.prisma.reservation.count({
         where: { receiverId: receiver.id, status: 'cancelled' },
       }),
+      // Đơn hết hạn (QR quá hạn chưa quét / không tìm được shipper — hệ thống đóng,
+      // không phạt). Thiếu nhóm này thì tổng đơn ≠ tổng các ô thống kê.
+      this.prisma.reservation.count({
+        where: { receiverId: receiver.id, status: 'expired' },
+      }),
     ]);
 
     // Ratings là quan hệ đa hình (referenceType/referenceId) — query riêng rồi gắn cờ ratedScore
@@ -1070,6 +1075,7 @@ export class ReservationsService {
         allOrders: activeCount + historyCount,
         completed: completedAgg._count,
         cancelled: cancelledCount,
+        expired: expiredCount,
         noShow: noShowCount,
         portionsSaved: Number(completedAgg._sum.quantity ?? 0),
       },
