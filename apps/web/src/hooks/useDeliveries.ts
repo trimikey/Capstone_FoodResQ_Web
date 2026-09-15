@@ -248,7 +248,12 @@ export interface DeliveryTracking {
   listingTitle: string;
   pickupAddress: string;
   coords: DeliveryCoords | null;
-  shipper: { name: string; phone: string | null; location: { lng: number; lat: number } | null } | null;
+  shipper: {
+    name: string;
+    phone: string | null;
+    profilePhotoUrl: string | null;
+    location: { lng: number; lat: number } | null;
+  } | null;
 }
 export function useDeliveryTracking(reservationId: string, enabled: boolean) {
   const accessToken = useAuthStore((s) => s.accessToken);

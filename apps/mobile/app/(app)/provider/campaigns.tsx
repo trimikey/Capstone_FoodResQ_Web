@@ -2,13 +2,14 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useCampaigns, type Campaign } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
 import { AppBackground } from '@/components/ui/AppBackground';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { ScreenState } from '@/components/ui/ScreenState';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /**
@@ -21,7 +22,7 @@ export default function ProviderCampaignsScreen() {
 
   // Chỉ provider dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   const items = data ?? [];

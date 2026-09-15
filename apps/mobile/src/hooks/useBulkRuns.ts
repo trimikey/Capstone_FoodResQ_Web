@@ -4,7 +4,7 @@ import type { BulkRun } from '@foodresq/types';
 import type { CapturedImage } from '../services/faceCapture';
 import { useNetworkStatus } from './useNetworkStatus';
 
-export const BULK_MIN_QTY = 10;
+export const BULK_MIN_QTY = 2;
 
 const ACTIVE_STATUSES: BulkRun['status'][] = ['requested', 'approved', 'picked_up'] as BulkRun['status'][];
 

@@ -546,9 +546,11 @@ export class CampaignsService {
       throw new BadRequestException('Thời gian mở tuyển phải trước thời gian đóng tuyển.');
     }
     const recruitmentBufferMs = operationStartAt.getTime() - recruitmentEndAt.getTime();
-    if (recruitmentBufferMs < 6 * 3600_000) {
+    const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
+    const minRecruitmentBufferMs = recruitmentCloseLeadMinutes * 60_000;
+    if (recruitmentBufferMs < minRecruitmentBufferMs) {
       throw new BadRequestException(
-        'Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất 6 giờ.',
+        `Ca đầu tiên phải bắt đầu sau thời gian đóng tuyển ít nhất ${recruitmentCloseLeadMinutes} phút.`,
       );
     }
     // Cột hiện lưu theo giờ nguyên và schema lịch sử giới hạn tối đa 48 giờ.
@@ -631,6 +633,25 @@ export class CampaignsService {
 
       return row.id;
     });
+
+    // Tổ chức chỉnh giờ 4 khâu ngay lúc tạo → sinh sẵn chuỗi khâu cho mọi món và
+    // mọi ngày theo giờ đó (không chờ lazy sinh với bộ giờ mặc định). Best-effort:
+    // chiến dịch đã commit, lỗi ở đây không được phá việc tạo.
+    if (dto.stepTimes && dto.stepTimes.length === 4) {
+      try {
+        const items = await this.prisma.campaignMenuItem.findMany({
+          where: { campaignId: created },
+          select: { id: true },
+        });
+        for (const mi of items) {
+          await this.dishSteps.ensureStepsForMenuItem(created, mi.id, dto.stepTimes);
+        }
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Không sinh được giờ khâu tuỳ chỉnh cho chiến dịch ${created}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     // Báo cho tất cả admin có yêu cầu chiến dịch cần duyệt
     void this.notifications.notifyAdmins({
@@ -882,6 +903,8 @@ export class CampaignsService {
       where: { id: { in: expiredIds } },
       data: { status: 'completed' },
     });
+
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
 
     for (const c of expired) {
       void this.notifications.notify(c.charityReceiver.userId, {
@@ -1627,7 +1650,7 @@ export class CampaignsService {
     }
 
     // 3) Không nhận hai ca chồng giờ, kể cả ở chiến dịch khác.
-    await this.assertShiftNotOverlapping(campaignId, volunteer.id, shift.id, workDate);
+    await this.assertShiftNotOverlapping(this.prisma, campaignId, volunteer.id, shift.id, workDate);
     await this.assertNoActiveDeliveryInShift(volunteer.id, shift.period, workDateKey);
 
     const alreadyIn = await this.prisma.campaignVolunteerAssignment.findFirst({
@@ -2267,6 +2290,8 @@ export class CampaignsService {
           AND cpr.needs_transport = true
         LIMIT 1
       `;
+      const detail = await this.dishSteps.getStepsForCampaign(assignment.campaignId, userId);
+
       // Các đợt phát tổ chức giao cho chính shipper này — đây mới là "việc cần làm"
       // cụ thể, thay vì chỉ một nút đổi trạng thái chung chung.
       const distributions = await this.myAssignedDistributions(assignment.campaignId, volunteer.id);
@@ -2294,6 +2319,7 @@ export class CampaignsService {
           // Chuẩn hoá menuItems từ jsonb
           menuItems: CampaignsService.normalizeMenuItems(assignment.campaign.menuItems as unknown as Prisma.JsonValue),
         },
+        dishes: detail.dishes,
         pickupOrders,
         delivery: delivery
           ? {
@@ -2490,6 +2516,7 @@ export class CampaignsService {
       const num = (v: unknown) => (v == null ? null : Number(v));
       return {
         id: r.id,
+        providerRequestId: r.id,
         campaignId: r.campaign_id,
         campaignTitle: r.campaign_title,
         kitchenAddress: r.kitchen_address,
@@ -3407,7 +3434,7 @@ export class CampaignsService {
     }
 
     if (shiftId) {
-      await this.assertShiftNotOverlapping(campaignId, volunteer.id, shiftId, workDate);
+      await this.assertShiftNotOverlapping(this.prisma, campaignId, volunteer.id, shiftId, workDate);
       const shiftRow = await this.prisma.campaignShift.findUnique({
         where: { id: shiftId },
         select: { period: true },
@@ -3538,6 +3565,9 @@ export class CampaignsService {
    * ở đây vì phần tạo ca đã validate riêng.
    */
   private async assertShiftNotOverlapping(
+    // Gọi bên trong $transaction phải truyền tx vào đây — pool pgbouncer chỉ có
+    // 1 connection, query bằng client gốc trong lúc tx giữ connection là deadlock (P2024).
+    client: Prisma.TransactionClient,
     _campaignId: string,
     volunteerId: string,
     shiftId: string,
@@ -3549,17 +3579,9 @@ export class CampaignsService {
       statuses?: AssignmentStatus[];
       /** true = thông điệp cho tổ chức đang duyệt (thay vì cho TNV đăng ký). */
       orgView?: boolean;
-      /**
-       * Client dùng để truy vấn. Gọi TRONG `$transaction` thì PHẢI truyền `tx`:
-       * query bằng client ngoài sẽ xin thêm một connection từ pool trong khi
-       * transaction vẫn đang giữ connection của nó — đủ vài lượt duyệt đồng thời
-       * là cạn pool, transaction quá hạn 5s và ném P2028.
-       */
-      client?: Prisma.TransactionClient;
     },
   ): Promise<void> {
-    const db = opts?.client ?? this.prisma;
-    const target = await db.campaignShift.findUnique({
+    const target = await client.campaignShift.findUnique({
       where: { id: shiftId },
       select: { startTime: true, endTime: true, endDayOffset: true },
     });
@@ -3573,7 +3595,7 @@ export class CampaignsService {
     ));
     const rangeStart = new Date(targetDay.getTime() - 86_400_000);
     const rangeEnd = new Date(targetDay.getTime() + 86_400_000);
-    const held = await db.campaignVolunteerAssignment.findMany({
+    const held = await client.campaignVolunteerAssignment.findMany({
       where: {
         volunteerId,
         shiftId: { not: null },
@@ -3583,6 +3605,10 @@ export class CampaignsService {
         status: {
           in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'],
         },
+        // Chiến dịch đã kết thúc/huỷ thì ca của nó KHÔNG còn chiếm khung giờ —
+        // chiến dịch kết thúc sớm đóng ca tương lai thành completed, tính cả
+        // chúng vào đây là TNV bị chặn nhận ca mới cùng khung giờ oan.
+        campaign: { status: { in: ['pending_approval', 'approved', 'in_progress'] } },
       },
       select: {
         workDate: true,
@@ -3624,11 +3650,12 @@ export class CampaignsService {
    * `/admin/configs` chỉ admin gọi được nên tổ chức cần lối riêng, chỉ lộ đúng phần cần.
    */
   async getCreateConstraints() {
-    const [multiDayLeadDays, minFillPercent, changeLockDays, allowEarlyStart] = await Promise.all([
+    const [multiDayLeadDays, minFillPercent, changeLockDays, allowEarlyStart, recruitmentCloseLeadMinutes] = await Promise.all([
       this.systemConfig.getNumber('MULTIDAY_CAMPAIGN_LEAD_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
       this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+      this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES'),
     ]);
     // Ngày sớm nhất cho chiến dịch dài ngày — tính sẵn ở server để FE không phải
     // cộng ngày theo múi giờ máy người dùng.
@@ -3639,6 +3666,7 @@ export class CampaignsService {
       multiDayEarliestStartDate: earliest.toISOString().slice(0, 10),
       minFillPercent,
       changeLockDays,
+      recruitmentCloseLeadMinutes,
       // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì FE phải hiện nút Bắt đầu
       // TRƯỚC giờ vận hành — nếu không, cấu hình bật mà giao diện vẫn giấu nút.
       allowEarlyStart: allowEarlyStart === 1,
@@ -3903,7 +3931,6 @@ export class CampaignsService {
   private async getStaffingReadinessWith(
     client: Prisma.TransactionClient,
     campaignId: string,
-    config?: { minimumFillPercent: number; allowEarlyStartAndCheckIn: number },
   ) {
     const campaign = await client.kitchenCampaign.findUnique({
       where: { id: campaignId },
@@ -3937,8 +3964,10 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
 
-    const { minimumFillPercent, allowEarlyStartAndCheckIn } =
-      config ?? (await this.readStaffingConfig());
+    const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+      this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+      this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+    ]);
     const days = this.campaignDays(campaign.scheduledDate, campaign.endDate ?? campaign.scheduledDate);
     const matrix = days.flatMap((day) => campaign.shifts.map((shift) => {
       const dayKey = this.toDateKey(day);
@@ -4051,10 +4080,11 @@ export class CampaignsService {
     if (nextEnd <= campaign.recruitmentEndAt) {
       throw new BadRequestException('Hạn tuyển mới phải muộn hơn hạn hiện tại.');
     }
-    const latest = new Date(campaign.operationStartAt.getTime() - campaign.recruitmentBufferHours * 3600_000);
+    const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
+    const latest = new Date(campaign.operationStartAt.getTime() - recruitmentCloseLeadMinutes * 60_000);
     if (nextEnd > latest) {
       throw new BadRequestException(
-        `Hạn tuyển mới phải cách ca đầu tiên ít nhất ${campaign.recruitmentBufferHours} giờ.`,
+        `Hạn tuyển mới phải cách ca đầu tiên ít nhất ${recruitmentCloseLeadMinutes} phút.`,
       );
     }
     await this.prisma.kitchenCampaign.update({
@@ -4093,6 +4123,11 @@ export class CampaignsService {
       await this.refreshRecruitmentStatus(campaign.id, now);
       refreshed += 1;
       if (now < campaign.operationStartAt) continue;
+      // Đọc config TRƯỚC khi mở transaction — xem ghi chú ở getStaffingReadinessWith.
+      const [minimumFillPercent, allowEarlyStartAndCheckIn] = await Promise.all([
+        this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
+        this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
+      ]);
       const didStart = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw(Prisma.sql`
           SELECT id FROM kitchen_campaigns WHERE id = ${campaign.id}::uuid FOR UPDATE
@@ -4102,7 +4137,7 @@ export class CampaignsService {
           select: { status: true, operationStartAt: true },
         });
         if (!current || current.status !== 'approved' || now < current.operationStartAt) return false;
-        const readiness = await this.getStaffingReadinessWith(tx, campaign.id, staffingConfig);
+        const readiness = await this.getStaffingReadinessWith(tx, campaign.id);
         if (!readiness.eligibleToStart) {
           await tx.kitchenCampaign.update({
             where: { id: campaign.id },
@@ -4124,6 +4159,11 @@ export class CampaignsService {
           data: { status: 'in_progress', recruitmentStatus: 'closed_ready' },
         });
         return true;
+      }, {
+        // Cron can briefly wait on the row lock while an admin/user action is updating
+        // the same campaign. Prisma's 5s default is too low for that lock-bearing path.
+        maxWait: 10_000,
+        timeout: 30_000,
       });
       if (didStart) {
         started += 1;
@@ -4213,6 +4253,68 @@ export class CampaignsService {
    * đã xác nhận ca vẫn thấy việc trong "Việc của tôi", vẫn bị tính là bận (không
    * đăng ký được ca chiến dịch khác vì trùng giờ), và NCC vẫn giữ hàng chờ giao.
    */
+  /**
+   * Chiến dịch đã kết thúc/huỷ thì mọi ca của TNV không được treo nữa: treo vừa
+   * rác "Việc của tôi" vừa CHẶN họ nhận ca bếp/đơn giao mới (các guard đếm
+   * assignment đang active). Đã điểm danh/đang làm → completed (đã tham gia);
+   * chưa điểm danh (pending/assigned) → cancelled, không phạt.
+   * Chạy dạng sweep nên tự chữa luôn dữ liệu cũ còn treo.
+   */
+  async releaseVolunteersOfFinishedCampaigns(): Promise<number> {
+    const lingering = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        status: { in: ['pending', 'assigned', 'checked_in', 'in_progress'] },
+        campaign: { status: { in: ['completed', 'cancelled'] } },
+      },
+      select: {
+        id: true,
+        status: true,
+        campaignId: true,
+        volunteer: { select: { userId: true } },
+        campaign: { select: { title: true, status: true } },
+      },
+    });
+    if (lingering.length === 0) return 0;
+
+    const toComplete = lingering
+      .filter((a) => a.status === 'checked_in' || a.status === 'in_progress')
+      .map((a) => a.id);
+    const toCancel = lingering
+      .filter((a) => a.status === 'pending' || a.status === 'assigned')
+      .map((a) => a.id);
+    await this.prisma.$transaction([
+      ...(toComplete.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toComplete } },
+            data: { status: 'completed' },
+          })]
+        : []),
+      ...(toCancel.length
+        ? [this.prisma.campaignVolunteerAssignment.updateMany({
+            where: { id: { in: toCancel } },
+            data: { status: 'cancelled', notes: 'Chiến dịch đã kết thúc — ca được đóng tự động.' },
+          })]
+        : []),
+    ]);
+
+    // Báo mỗi TNV đúng một lần cho mỗi chiến dịch
+    const notified = new Set<string>();
+    for (const a of lingering) {
+      const key = `${a.volunteer.userId}|${a.campaignId}`;
+      if (notified.has(key)) continue;
+      notified.add(key);
+      void this.notifications.notify(a.volunteer.userId, {
+        type: 'campaign',
+        title: 'Chiến dịch đã kết thúc',
+        body:
+          `Chiến dịch "${a.campaign.title}" đã ${a.campaign.status === 'cancelled' ? 'bị huỷ' : 'hoàn tất'} — `
+          + 'các ca còn lại của bạn được đóng, bạn có thể nhận ca hoặc đơn mới.',
+        data: { campaignId: a.campaignId, status: a.campaign.status },
+      });
+    }
+    return lingering.length;
+  }
+
   async cancelCampaign(campaignId: string, userId: string, reason?: string) {
     const campaign = await this.assertOwner(campaignId, userId);
     if (!['pending_approval', 'approved'].includes(campaign.status)) {
@@ -4325,6 +4427,8 @@ export class CampaignsService {
         ...(isPremature ? { notes: `Kết thúc sớm: ${opts!.earlyEndReason!.trim()}` } : {}),
       },
     });
+    // Giải phóng ngay các ca TNV còn treo — không chờ cron giờ sau
+    void this.releaseVolunteersOfFinishedCampaigns().catch(() => undefined);
     return this.findOne(campaignId);
   }
 
@@ -5964,12 +6068,10 @@ export class CampaignsService {
       // khác lúc duyệt (dto.shiftId). Chỉ so với ca ĐÃ NHẬN — các đăng ký
       // pending khác chưa giữ chỗ thật; loại trừ chính bản ghi đang duyệt.
       if (selectedShiftId && a.workDate) {
-        await this.assertShiftNotOverlapping(campaignId, a.volunteerId, selectedShiftId, a.workDate, {
+        await this.assertShiftNotOverlapping(tx, campaignId, a.volunteerId, selectedShiftId, a.workDate, {
           excludeAssignmentId: assignmentId,
           statuses: ['assigned', 'checked_in', 'in_progress', 'completed'],
           orgView: true,
-          // Đang trong $transaction → dùng chính tx, không mượn connection khác.
-          client: tx,
         });
       }
 
@@ -6670,6 +6772,137 @@ export class CampaignsService {
   }
 
   /** Thống kê toàn hệ thống — cho trang /campaigns overview. */
+  /**
+   * BÁO CÁO TÁC ĐỘNG CÔNG KHAI (trang "Xem báo cáo minh bạch") — không cần đăng nhập.
+   *
+   * Mốc thời gian dùng cho chuỗi theo tháng:
+   *  - Suất ăn: `operationEndAt` của chiến dịch đã hoàn tất, giá trị `actualServings`
+   *    (số tổ chức chốt khi kết thúc). Cùng nguồn với `getSystemStats` nên tổng của
+   *    chuỗi LUÔN khớp con số hiển thị ở trang chủ — không để hai chỗ lệch nhau.
+   *  - Lương thực cứu được (kg) gộp 3 nguồn: nguyên liệu tình nguyện viên đã ký nhận
+   *    về bếp, quyên góp nhà cung cấp đã nhận, và thực phẩm người nhận đã lấy từ tin
+   *    đăng (chỉ tin khai `weightPerUnitKg` mới quy ra kg được — phần thiếu khai bị
+   *    bỏ qua, nên đây là con số THẬN TRỌNG, không phóng đại).
+   */
+  async getPublicImpactReport() {
+    const [campaigns, pickups, donations, reservations, peopleRows] = await Promise.all([
+      this.prisma.kitchenCampaign.findMany({
+        where: { status: 'completed' },
+        select: {
+          id: true,
+          title: true,
+          actualServings: true,
+          operationEndAt: true,
+          kitchenAddress: true,
+          charityReceiver: {
+            select: { organizationName: true, user: { select: { fullName: true } } },
+          },
+        },
+        orderBy: { operationEndAt: 'desc' },
+      }),
+      this.prisma.campaignIngredientPickup.findMany({
+        select: { receivedKg: true, confirmedAt: true },
+      }),
+      this.prisma.campaignDonation.findMany({
+        where: { status: 'received' },
+        select: { quantity: true, receivedAt: true },
+      }),
+      this.prisma.reservation.findMany({
+        where: { status: 'completed' },
+        select: {
+          quantity: true,
+          updatedAt: true,
+          listing: { select: { weightPerUnitKg: true } },
+        },
+      }),
+      this.prisma.mealDistribution.findMany({
+        where: { completedAt: { not: null } },
+        select: { peopleServed: true, actualPeopleServed: true },
+      }),
+    ]);
+
+    const monthKey = (d: Date) =>
+      new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 7);
+
+    // ── Suất ăn theo tháng ────────────────────────────────────────────────
+    const servingsByMonth = new Map<string, number>();
+    let mealsServed = 0;
+    for (const c of campaigns) {
+      const servings = c.actualServings ?? 0;
+      mealsServed += servings;
+      if (servings <= 0) continue;
+      const key = monthKey(c.operationEndAt);
+      servingsByMonth.set(key, (servingsByMonth.get(key) ?? 0) + servings);
+    }
+
+    // ── Kg lương thực cứu được theo tháng ─────────────────────────────────
+    const kgByMonth = new Map<string, number>();
+    const addKg = (at: Date | null, kg: number) => {
+      if (!at || !Number.isFinite(kg) || kg <= 0) return;
+      const key = monthKey(at);
+      kgByMonth.set(key, (kgByMonth.get(key) ?? 0) + kg);
+    };
+    let kgFromKitchen = 0;
+    for (const pk of pickups) {
+      const kg = Number(pk.receivedKg);
+      kgFromKitchen += kg > 0 ? kg : 0;
+      addKg(pk.confirmedAt, kg);
+    }
+    let kgFromDonation = 0;
+    for (const don of donations) {
+      const kg = this.parseDonationQuantity(don.quantity, 'kg');
+      if (kg != null) {
+        kgFromDonation += kg;
+        addKg(don.receivedAt, kg);
+      }
+    }
+    let kgFromListing = 0;
+    for (const r of reservations) {
+      const perUnit = r.listing?.weightPerUnitKg ? Number(r.listing.weightPerUnitKg) : 0;
+      const kg = perUnit * Number(r.quantity);
+      if (kg > 0) {
+        kgFromListing += kg;
+        addKg(r.updatedAt, kg);
+      }
+    }
+
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+    const months = [...new Set([...servingsByMonth.keys(), ...kgByMonth.keys()])].sort();
+    const monthlySeries = months.map((month) => ({
+      month,
+      servings: servingsByMonth.get(month) ?? 0,
+      kg: round1(kgByMonth.get(month) ?? 0),
+    }));
+
+    return {
+      totals: {
+        completedCampaigns: campaigns.length,
+        mealsServed,
+        peopleServed: peopleRows.reduce(
+          (sum, d) => sum + (d.actualPeopleServed ?? d.peopleServed),
+          0,
+        ),
+        kgRescued: round1(kgFromKitchen + kgFromDonation + kgFromListing),
+      },
+      // Nguồn kg tách riêng để trang báo cáo nói rõ "cứu từ đâu", không chỉ một số tổng
+      kgBySource: [
+        { key: 'kitchen', kg: round1(kgFromKitchen) },
+        { key: 'donation', kg: round1(kgFromDonation) },
+        { key: 'listing', kg: round1(kgFromListing) },
+      ],
+      monthlySeries,
+      campaigns: campaigns.map((c) => ({
+        id: c.id,
+        title: c.title,
+        servings: c.actualServings ?? 0,
+        finishedAt: c.operationEndAt,
+        address: c.kitchenAddress,
+        organizationName:
+          c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
+      })),
+    };
+  }
+
   async getSystemStats() {
     const [total, completed, active] = await Promise.all([
       this.prisma.kitchenCampaign.count({ where: {} }),

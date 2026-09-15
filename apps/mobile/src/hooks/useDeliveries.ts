@@ -30,6 +30,7 @@ export interface DeliveryTracking {
   shipper: {
     name: string;
     phone: string | null;
+    profilePhotoUrl: string | null;
     location: { lng: number; lat: number } | null;
   } | null;
 }
@@ -49,7 +50,7 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
     refetchInterval: isOnline ? 15000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<DeliveryTracking>>(
-        endpoints.deliveries.track(reservationId!)
+        endpoints.deliveries.track(reservationId!),
       );
       return res.data.data;
     },
@@ -69,7 +70,7 @@ export function useDeliveryTracking(reservationId?: string, enabled = true) {
         qc.setQueryData<DeliveryTracking>(['delivery-tracking', reservationId], (prev) =>
           prev && prev.shipper
             ? { ...prev, shipper: { ...prev.shipper, location: { lng: p.lng, lat: p.lat } } }
-            : prev
+            : prev,
         );
       });
       const refetchTracking = (p: { reservationId: string }) => {
@@ -128,13 +129,18 @@ interface DeliverySourceFields {
   destination: { address: string | null; lng: number | null; lat: number | null };
 }
 
-/** Một lời mời giao hàng đang chờ (GET /deliveries/my/offers). */
+/** Một đơn giao hàng đang chờ quanh shipper. */
 export interface TaskOffer {
   id: string;
   deliveryId: string;
   status: string;
   offeredAt: string;
   expiresAt: string;
+  canClaim?: boolean;
+  busyWithCampaign?: boolean;
+  claimSlot?: DeliveryShiftSlot;
+  deliveryScheduledAt?: string | null;
+  distanceFromMeKm?: number;
   delivery: DeliverySourceFields & {
     id: string;
     status: DeliveryStatus;
@@ -157,9 +163,12 @@ export interface ActiveDelivery extends DeliverySourceFields {
   distanceKm: number | null;
   qcPhotoUrl: string | null;
   deliveryProofUrl: string | null;
+  /** Số phút cho phép hoàn tất sớm trước giờ hẹn; 0 = admin tắt khoá giao sớm. */
+  deliveryEarlyCompleteMinutes?: number | null;
   reservation: {
     id: string;
     quantity: number;
+    deliveryScheduledAt: string | null;
     listing: ListingBrief;
     receiver: {
       address: string | null;
@@ -209,7 +218,42 @@ interface Paginated<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
-/** Lời mời giao hàng đang chờ. Poll 15s để bắt offer mới. */
+export type ShiftPeriod = 'midnight' | 'morning' | 'afternoon' | 'evening';
+
+export interface DeliveryShiftSlot {
+  workDate: string;
+  period: ShiftPeriod;
+}
+
+export interface DeliveryShiftsData {
+  isShipper: boolean;
+  slots: DeliveryShiftSlot[];
+  window: {
+    alwaysOpen: boolean;
+    open: boolean;
+    opensAt: string | null;
+    closesAt: string | null;
+    nextOpensAt: string | null;
+    editableFrom: string | null;
+    editableTo: string | null;
+  };
+}
+
+export interface SetDeliveryShiftsInput {
+  slots: DeliveryShiftSlot[];
+  from?: string;
+  to?: string;
+}
+
+export interface WeeklyAvailabilitySlot {
+  dayOfWeek: number;
+  period: ShiftPeriod;
+}
+
+export interface WeeklyAvailabilityData {
+  slots: WeeklyAvailabilitySlot[];
+}
+
 /** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
 interface NearbyDeliveryRow {
   deliveryId: string;
@@ -224,6 +268,7 @@ interface NearbyDeliveryRow {
   deliveryEvidenceUrl: string | null;
   canClaim: boolean;
   busyWithCampaign?: boolean;
+  claimSlot: DeliveryShiftSlot;
   claimExpiresAt: string;
 }
 
@@ -249,7 +294,10 @@ export function useMyOffers(enabled = true) {
     };
     void read();
     const timer = setInterval(read, 120_000);
-    return () => { mounted = false; clearInterval(timer); };
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
   }, [enabled, isOnline]);
 
   return useQuery({
@@ -261,36 +309,87 @@ export function useMyOffers(enabled = true) {
         endpoints.deliveries.nearby,
         { params: coords! },
       );
-      // Map sang shape lời mời cũ để không phải viết lại toàn bộ màn hình.
-      return res.data.data
-        .filter((row) => row.canClaim)
-        .map<TaskOffer>((row) => ({
+      // Map sang shape cũ để giữ UI, nhưng KHÔNG lọc canClaim=false: màn hình cần
+      // giải thích "ngoài ca" hoặc "bận ca chiến dịch" thay vì trống khó hiểu.
+      return res.data.data.map<TaskOffer>((row) => ({
+        id: row.deliveryId,
+        deliveryId: row.deliveryId,
+        status: 'pending',
+        offeredAt: row.createdAt,
+        expiresAt: row.claimExpiresAt,
+        canClaim: row.canClaim,
+        busyWithCampaign: row.busyWithCampaign,
+        claimSlot: row.claimSlot,
+        deliveryScheduledAt: row.deliveryScheduledAt,
+        distanceFromMeKm: row.distanceKm,
+        delivery: {
           id: row.deliveryId,
-          deliveryId: row.deliveryId,
-          status: 'pending',
-          offeredAt: row.createdAt,
-          expiresAt: row.claimExpiresAt,
-          delivery: {
-            id: row.deliveryId,
-            status: 'pending_assignment' as DeliveryStatus,
-            distanceKm: row.tripKm,
-            source: 'reservation',
-            campaignTransport: null,
-            pickup: { address: row.pickupAddress, lng: null, lat: null },
-            destination: { address: row.deliveryAddress, lng: null, lat: null },
-            reservation: {
-              quantity: 1,
-              listing: {
-                title: row.listingTitle,
-                pickupAddress: row.pickupAddress,
-                imageUrls: row.imageUrls,
-              } as TaskOffer['delivery']['reservation'] extends null ? never : ListingBrief,
-              receiver: { address: row.deliveryAddress },
-              deliveryEvidenceUrl: row.deliveryEvidenceUrl,
-            },
-            coords: null,
+          status: 'pending_assignment' as DeliveryStatus,
+          distanceKm: row.tripKm,
+          source: 'reservation',
+          campaignTransport: null,
+          pickup: { address: row.pickupAddress, lng: null, lat: null },
+          destination: { address: row.deliveryAddress, lng: null, lat: null },
+          reservation: {
+            quantity: 1,
+            listing: {
+              title: row.listingTitle,
+              pickupAddress: row.pickupAddress,
+              imageUrls: row.imageUrls,
+            } as TaskOffer['delivery']['reservation'] extends null ? never : ListingBrief,
+            receiver: { address: row.deliveryAddress },
+            deliveryEvidenceUrl: row.deliveryEvidenceUrl,
           },
-        }));
+          coords: null,
+        },
+      }));
+    },
+  });
+}
+
+export function useMyDeliveryShifts(enabled = true) {
+  const { isOnline } = useNetworkStatus();
+  return useQuery({
+    queryKey: ['volunteer', 'delivery-shifts'],
+    enabled: enabled && isOnline,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<DeliveryShiftsData>>(
+        endpoints.volunteers.deliveryShifts,
+      );
+      return res.data.data;
+    },
+  });
+}
+
+export function useSetMyDeliveryShifts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SetDeliveryShiftsInput) => {
+      const res = await apiClient.put<ApiResponse<DeliveryShiftsData>>(
+        endpoints.volunteers.deliveryShifts,
+        input,
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['volunteer', 'delivery-shifts'] });
+      void qc.invalidateQueries({ queryKey: ['deliveries', 'offers'] });
+    },
+  });
+}
+
+export function useMyWeeklyAvailability(enabled = true) {
+  const { isOnline } = useNetworkStatus();
+  return useQuery({
+    queryKey: ['volunteer', 'weekly-availability'],
+    enabled: enabled && isOnline,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<WeeklyAvailabilityData>>(
+        endpoints.volunteers.weeklyAvailability,
+      );
+      return res.data.data;
     },
   });
 }
@@ -304,7 +403,7 @@ export function useActiveDelivery(enabled = true) {
     refetchInterval: isOnline ? 15_000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<ActiveDelivery | null>>(
-        endpoints.deliveries.myActive
+        endpoints.deliveries.myActive,
       );
       return res.data.data;
     },
@@ -312,16 +411,28 @@ export function useActiveDelivery(enabled = true) {
 }
 
 /** Lịch sử giao hàng (đã giao / thất bại), phân trang server-side. */
-export function useDeliveryHistory(page = 1, limit = 20, fromDate?: Date | null, toDate?: Date | null) {
+export function useDeliveryHistory(
+  page = 1,
+  limit = 20,
+  fromDate?: Date | null,
+  toDate?: Date | null,
+) {
   return useQuery({
-    queryKey: ['deliveries', 'history', page, limit, fromDate?.toISOString() ?? null, toDate?.toISOString() ?? null],
+    queryKey: [
+      'deliveries',
+      'history',
+      page,
+      limit,
+      fromDate?.toISOString() ?? null,
+      toDate?.toISOString() ?? null,
+    ],
     queryFn: async () => {
       const params: Record<string, unknown> = { page, limit };
       if (fromDate) params.fromDate = fromDate.toISOString().split('T')[0];
       if (toDate) params.toDate = toDate.toISOString().split('T')[0];
       const res = await apiClient.get<ApiResponse<Paginated<DeliveryHistoryItem>>>(
         endpoints.deliveries.myHistory,
-        { params }
+        { params },
       );
       return res.data.data;
     },
@@ -339,13 +450,15 @@ export function useDeliveryStats() {
   });
 }
 
-/** Chấp nhận lời mời. POST /deliveries/:id/accept */
+/** Tự nhận đơn. POST /deliveries/:id/claim */
 export function useAcceptOffer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (deliveryId: string) => {
       // Mô hình mới: shipper TỰ NHẬN đơn (cần ca giao hàng phủ thời điểm giao).
-      const res = await apiClient.post<ApiResponse<unknown>>(endpoints.deliveries.claim(deliveryId));
+      const res = await apiClient.post<ApiResponse<unknown>>(
+        endpoints.deliveries.claim(deliveryId),
+      );
       return res.data.data;
     },
     onSuccess: () => {
@@ -378,7 +491,7 @@ export function useCancelAssignment() {
     mutationFn: async (params: { deliveryId: string; reason?: string }) => {
       const res = await apiClient.post<ApiResponse<unknown>>(
         endpoints.deliveries.cancel(params.deliveryId),
-        params.reason ? { reason: params.reason } : {}
+        params.reason ? { reason: params.reason } : {},
       );
       return res.data.data;
     },
@@ -394,9 +507,12 @@ export function useFailDelivery() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { deliveryId: string; reason: string }) => {
-      const res = await apiClient.post<ApiResponse<unknown>>(endpoints.deliveries.fail(params.deliveryId), {
-        reason: params.reason,
-      });
+      const res = await apiClient.post<ApiResponse<unknown>>(
+        endpoints.deliveries.fail(params.deliveryId),
+        {
+          reason: params.reason,
+        },
+      );
       return res.data.data;
     },
     onSuccess: () => {
@@ -427,7 +543,7 @@ export function useUpdateDeliveryStatus() {
       const res = await apiClient.patch<ApiResponse<unknown>>(
         endpoints.deliveries.updateStatus(params.deliveryId),
         form,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       return res.data.data;
     },
@@ -437,7 +553,6 @@ export function useUpdateDeliveryStatus() {
     },
   });
 }
-
 
 /**
  * Shipper đang giao: đẩy vị trí hiện tại lên backend định kỳ (PATCH

@@ -168,7 +168,7 @@ export class CreateCampaignDto {
   })
   @IsOptional()
   @IsInt({ message: 'Khoảng đệm tuyển phải là số nguyên' })
-  @Min(6, { message: 'Khoảng đệm tuyển tối thiểu 6 giờ' })
+  @Min(0, { message: 'Khoảng đệm tuyển không được âm' })
   @Max(48, { message: 'Khoảng đệm tuyển tối đa 48 giờ' })
   @Type(() => Number)
   recruitmentBufferHours?: number;
@@ -263,6 +263,19 @@ export class CreateCampaignDto {
   @ValidateNested({ each: true })
   @Type(() => ShiftInputDto)
   shifts!: ShiftInputDto[];
+
+  @ApiPropertyOptional({
+    example: ['08:00', '09:00', '10:30', '11:30'],
+    description:
+      'Giờ dự kiến 4 khâu bếp (Sơ chế, Nấu, Kiểm tra QC, Sẵn sàng xuất phát). '
+      + 'Bỏ trống thì hệ thống gợi ý theo giờ bắt đầu ca sớm nhất.',
+  })
+  @IsOptional()
+  @IsArray({ message: 'Giờ 4 khâu phải là mảng' })
+  @ArrayMinSize(4, { message: 'Cần đúng 4 giờ cho 4 khâu' })
+  @ArrayMaxSize(4, { message: 'Cần đúng 4 giờ cho 4 khâu' })
+  @Matches(/^\d{2}:\d{2}$/, { each: true, message: 'Giờ khâu phải theo định dạng HH:mm' })
+  stepTimes?: string[];
 }
 
 export class CancelCampaignDto {

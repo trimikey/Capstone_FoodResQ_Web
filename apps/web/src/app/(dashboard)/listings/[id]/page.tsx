@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useListing, useListings, type ListingDetail } from '@/hooks/useListings';
 import { useCreateReservation } from '@/hooks/useReservation';
+import { useDeliveryTracking } from '@/hooks/useDeliveries';
 import { useMe } from '@/hooks/useProfile';
 import { usePublishListing, useCancelListing, useDuplicateListing } from '@/hooks/useProviderListings';
 import { UserRole } from '@foodresq/types';
@@ -79,6 +80,131 @@ function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
+function formatWaitTime(seconds: number): string {
+  const mm = Math.floor(seconds / 60);
+  const ss = seconds % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+function DeliverySearchSuccess({
+  reservationId,
+  onBrowse,
+  onOpenOrder,
+}: {
+  reservationId: string;
+  onBrowse: () => void;
+  onOpenOrder: () => void;
+}) {
+  const tracking = useDeliveryTracking(reservationId, true);
+  const t = tracking.data;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const secondsLeft =
+    t?.status === 'pending_assignment' && t.searchExpiresAt
+      ? Math.max(0, Math.ceil((new Date(t.searchExpiresAt).getTime() - now) / 1000))
+      : null;
+  const timedOut = t?.status === 'failed' || (t?.status === 'pending_assignment' && secondsLeft === 0);
+  const assigned = !!t?.shipper && t.status !== 'pending_assignment';
+
+  useEffect(() => {
+    if (!timedOut || t?.status === 'failed') return;
+    void tracking.refetch();
+  }, [timedOut, t?.status, tracking]);
+
+  return (
+    <div className="flex flex-col gap-5 border-t border-outline-variant/10 pt-5 text-center animate-in fade-in slide-in-from-bottom duration-300">
+      <div
+        className={`w-full py-2.5 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm ${
+          timedOut
+            ? 'bg-amber-500/10 text-amber-700'
+            : assigned
+              ? 'bg-emerald-500/10 text-emerald-700'
+              : 'bg-sky-500/10 text-sky-700'
+        }`}
+      >
+        <span className="material-symbols-outlined text-[20px]">
+          {timedOut ? 'person_off' : assigned ? 'check_circle' : 'local_shipping'}
+        </span>
+        {timedOut ? 'Không tìm được tình nguyện viên' : assigned ? 'Đã có tình nguyện viên nhận đơn' : 'Đang tìm tình nguyện viên giao hàng'}
+      </div>
+
+      <div className="rounded-3xl border border-outline-variant/20 bg-white p-5 shadow-sm">
+        {tracking.isLoading ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <span className="animate-spin border-2 border-primary border-t-transparent rounded-full w-7 h-7" />
+            <p className="text-sm font-semibold text-on-surface-variant">Đang tải trạng thái giao hàng...</p>
+          </div>
+        ) : timedOut ? (
+          <div className="space-y-3">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-50">
+              <span className="material-symbols-outlined text-amber-600">schedule</span>
+            </div>
+            <div>
+              <p className="font-label-lg text-base font-extrabold text-on-surface">
+                Hết thời gian chờ shipper
+              </p>
+              <p className="mt-1 text-sm text-on-surface-variant">
+                {t?.failedReason
+                  ? `${t.failedReason} Bạn có thể đặt lại đơn hoặc chọn tự đến lấy nếu món vẫn còn.`
+                  : 'Chưa có tình nguyện viên nào nhận đơn trong thời gian tìm kiếm. Bạn có thể đặt lại đơn hoặc chọn tự đến lấy nếu món vẫn còn.'}
+              </p>
+            </div>
+          </div>
+        ) : assigned ? (
+          <div className="space-y-2">
+            <p className="font-label-lg text-base font-extrabold text-on-surface">
+              {t?.shipper?.name ?? 'Tình nguyện viên'} sẽ giao đơn cho bạn
+            </p>
+            <p className="text-sm text-on-surface-variant">
+              Mở chi tiết đơn để theo dõi hành trình và liên hệ shipper khi cần.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-50">
+              <span className="animate-spin border-2 border-sky-600 border-t-transparent rounded-full w-7 h-7" />
+            </div>
+            <div>
+              <p className="font-label-lg text-base font-extrabold text-on-surface">
+                Đang chờ tình nguyện viên nhận đơn
+              </p>
+              <p className="mt-1 text-sm text-on-surface-variant">
+                Hệ thống đang mở đơn cho các shipper gần điểm lấy và có ca giao hàng phù hợp.
+              </p>
+            </div>
+            {secondsLeft != null && (
+              <div className="inline-flex items-center justify-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-sm font-bold text-amber-700">
+                <span className="material-symbols-outlined text-[16px]">timer</span>
+                Còn {formatWaitTime(secondsLeft)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full flex gap-3">
+        <button
+          onClick={onBrowse}
+          className="flex-1 py-2.5 bg-surface-container text-on-surface rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+        >
+          {timedOut ? 'Đặt lại / tự đến lấy' : 'Tiếp tục tìm'}
+        </button>
+        <button
+          onClick={onOpenOrder}
+          className="flex-1 py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+        >
+          Xem đơn đặt
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ListingDetailPage({ params }: Props) {
   const router = useRouter();
   const { id } = React.use(params);
@@ -141,6 +267,7 @@ export default function ListingDetailPage({ params }: Props) {
     reservationId: string;
     qrToken: string;
     qrExpiresAt: string;
+    requestDelivery: boolean;
   } | null>(null);
   const [showTimeInfo, setShowTimeInfo] = useState(false);
 
@@ -280,6 +407,7 @@ export default function ListingDetailPage({ params }: Props) {
         reservationId: res.reservationId,
         qrToken: res.qrToken,
         qrExpiresAt: res.qrExpiresAt,
+        requestDelivery: deliveryMethod === 'delivery',
       });
       // Không auto-chuyển trang — để người dùng xem QR và tự bấm "Xem đơn đặt"
       toast.success(
@@ -495,72 +623,80 @@ export default function ListingDetailPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Success QR Code block */}
+            {/* Success block: giao tận nơi theo dõi shipper; tự lấy mới hiển thị QR. */}
             {reservationResult ? (
-              <div className="flex flex-col items-center gap-5 border-t border-outline-variant/10 pt-5 text-center animate-in fade-in slide-in-from-bottom duration-300">
-                <div className="w-full bg-emerald-500/10 text-emerald-700 py-2.5 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm">
-                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                  Đặt chỗ thành công!
-                </div>
+              reservationResult.requestDelivery ? (
+                <DeliverySearchSuccess
+                  reservationId={reservationResult.reservationId}
+                  onBrowse={() => router.push('/listings')}
+                  onOpenOrder={() => router.push(`/reservations/${reservationResult.reservationId}`)}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-5 border-t border-outline-variant/10 pt-5 text-center animate-in fade-in slide-in-from-bottom duration-300">
+                  <div className="w-full bg-emerald-500/10 text-emerald-700 py-2.5 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm">
+                    <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                    Đặt chỗ thành công!
+                  </div>
 
-                <div className="p-4 bg-white rounded-3xl border border-outline-variant/20 shadow-md">
-                  <QRCodeSVG value={reservationResult.qrToken} size={220} level="H" includeMargin />
-                </div>
+                  <div className="p-4 bg-white rounded-3xl border border-outline-variant/20 shadow-md">
+                    <QRCodeSVG value={reservationResult.qrToken} size={220} level="H" includeMargin />
+                  </div>
 
-                {/* Mã chữ dự phòng: camera hỏng / QR mờ thì đọc mã này cho nhà cung cấp
-                    nhập tay. PHẢI là đuôi qrToken — backend đối chiếu theo đuôi token,
-                    đọc nhầm "mã đơn hàng" (#xxxxx lấy từ id đơn) sẽ báo mã không hợp lệ. */}
-                {pickupCodeFromQrToken(reservationResult.qrToken) && (
-                  <div className="w-full rounded-2xl border border-outline-variant/20 bg-surface-container-high/40 p-4">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Hoặc đọc mã nhận hàng
-                    </p>
-                    <div className="mt-1.5 flex items-center justify-center gap-2">
-                      <span className="font-mono text-2xl font-extrabold tracking-[0.2em] text-on-surface">
-                        {pickupCodeFromQrToken(reservationResult.qrToken)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(
-                            (pickupCodeFromQrToken(reservationResult.qrToken) ?? '').replace(/\s/g, ''),
-                          );
-                          toast.success('Đã sao chép mã nhận hàng.');
-                        }}
-                        className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container"
-                        aria-label="Sao chép mã"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">content_copy</span>
-                      </button>
+                  {/* Mã chữ dự phòng: camera hỏng / QR mờ thì đọc mã này cho nhà cung cấp
+                      nhập tay. PHẢI là đuôi qrToken — backend đối chiếu theo đuôi token,
+                      đọc nhầm "mã đơn hàng" (#xxxxx lấy từ id đơn) sẽ báo mã không hợp lệ. */}
+                  {pickupCodeFromQrToken(reservationResult.qrToken) && (
+                    <div className="w-full rounded-2xl border border-outline-variant/20 bg-surface-container-high/40 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        Hoặc đọc mã nhận hàng
+                      </p>
+                      <div className="mt-1.5 flex items-center justify-center gap-2">
+                        <span className="font-mono text-2xl font-extrabold tracking-[0.2em] text-on-surface">
+                          {pickupCodeFromQrToken(reservationResult.qrToken)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(
+                              (pickupCodeFromQrToken(reservationResult.qrToken) ?? '').replace(/\s/g, ''),
+                            );
+                            toast.success('Đã sao chép mã nhận hàng.');
+                          }}
+                          className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container"
+                          aria-label="Sao chép mã"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-on-surface-variant/80">
+                        Dùng khi cửa hàng không quét được mã QR.
+                      </p>
                     </div>
-                    <p className="mt-1 text-[11px] text-on-surface-variant/80">
-                      Dùng khi cửa hàng không quét được mã QR.
+                  )}
+
+                  <div className="space-y-1">
+                    <p className="font-label-lg text-sm text-on-surface font-bold">Trình mã QR cho nhà cung cấp</p>
+                    <p className="font-label-sm text-xs text-on-surface-variant/80">
+                      Hiệu lực đến: {formatVietnamDateTime(reservationResult.qrExpiresAt)}
                     </p>
                   </div>
-                )}
 
-                <div className="space-y-1">
-                  <p className="font-label-lg text-sm text-on-surface font-bold">Trình mã QR cho nhà cung cấp</p>
-                  <p className="font-label-sm text-xs text-on-surface-variant/80">
-                    Hiệu lực đến: {formatVietnamDateTime(reservationResult.qrExpiresAt)}
-                  </p>
+                  <div className="w-full flex gap-3">
+                    <button
+                      onClick={() => router.push('/listings')}
+                      className="flex-1 py-2.5 bg-surface-container text-on-surface rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+                    >
+                      Tiếp tục tìm
+                    </button>
+                    <button
+                      onClick={() => router.push(`/reservations/${reservationResult.reservationId}`)}
+                      className="flex-1 py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
+                    >
+                      Xem đơn đặt
+                    </button>
+                  </div>
                 </div>
-
-                <div className="w-full flex gap-3">
-                  <button
-                    onClick={() => router.push('/listings')}
-                    className="flex-1 py-2.5 bg-surface-container text-on-surface rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
-                  >
-                    Tiếp tục tìm
-                  </button>
-                  <button
-                    onClick={() => router.push(`/reservations/${reservationResult.reservationId}`)}
-                    className="flex-1 py-2.5 bg-primary text-white rounded-xl font-label-lg text-sm font-semibold transition-transform active:scale-[0.98]"
-                  >
-                    Xem đơn đặt
-                  </button>
-                </div>
-              </div>
+              )
             ) : isSoldOut ? (
               <div className="border-t border-outline-variant/10 pt-5">
                 <div className="w-full bg-error/10 text-error py-3 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm">

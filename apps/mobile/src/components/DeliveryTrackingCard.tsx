@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, StyleSheet, Pressable, Linking } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,8 +9,6 @@ import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/desi
 
 interface Props {
   reservationId: string;
-  /** avatarUrl từ ReservationDetail (tracking endpoint không trả avatar). */
-  shipperAvatarUrl?: string | null;
 }
 
 /** Các bước hiển thị theo thứ tự (pending_assignment gộp vào "chờ tài xế" trước bước 1). */
@@ -20,7 +19,14 @@ const STEPS: { key: DeliveryStatus; label: string }[] = [
   { key: 'in_transit', label: 'Đang giao đến bạn' },
   { key: 'delivered', label: 'Đã giao thành công' },
 ];
-const ORDER = ['pending_assignment', 'assigned', 'heading_to_provider', 'qc_completed', 'in_transit', 'delivered'];
+const ORDER = [
+  'pending_assignment',
+  'assigned',
+  'heading_to_provider',
+  'qc_completed',
+  'in_transit',
+  'delivered',
+];
 function formatKm(km: unknown): string | null {
   if (km == null) return null;
   const n = Number(km);
@@ -28,8 +34,14 @@ function formatKm(km: unknown): string | null {
 }
 
 /** Thẻ theo dõi giao hàng tận nơi: timeline trạng thái + thông tin shipper + khoảng cách. */
-export function DeliveryTrackingCard({ reservationId, shipperAvatarUrl }: Props) {
+export function DeliveryTrackingCard({ reservationId }: Props) {
   const { data, isLoading, isError } = useDeliveryTracking(reservationId);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const profilePhotoUrl = data?.shipper?.profilePhotoUrl ?? null;
+
+  useEffect(() => {
+    setPhotoFailed(false);
+  }, [profilePhotoUrl]);
 
   if (isLoading) {
     return (
@@ -87,9 +99,17 @@ export function DeliveryTrackingCard({ reservationId, shipperAvatarUrl }: Props)
                     size={20}
                     color={done ? COLORS.teal : COLORS.muted}
                   />
-                  {i < STEPS.length - 1 ? <View style={[styles.connector, done && styles.connectorDone]} /> : null}
+                  {i < STEPS.length - 1 ? (
+                    <View style={[styles.connector, done && styles.connectorDone]} />
+                  ) : null}
                 </View>
-                <Text style={[styles.stepLabel, active && styles.stepLabelActive, !done && styles.stepLabelTodo]}>
+                <Text
+                  style={[
+                    styles.stepLabel,
+                    active && styles.stepLabelActive,
+                    !done && styles.stepLabelTodo,
+                  ]}
+                >
                   {step.label}
                 </Text>
               </View>
@@ -101,8 +121,12 @@ export function DeliveryTrackingCard({ reservationId, shipperAvatarUrl }: Props)
       {data.shipper ? (
         <View style={styles.shipperSection}>
           <View style={styles.shipperRow}>
-            {shipperAvatarUrl ? (
-              <AppImage source={{ uri: shipperAvatarUrl }} style={styles.avatarImg} />
+            {profilePhotoUrl && !photoFailed ? (
+              <AppImage
+                source={{ uri: profilePhotoUrl }}
+                style={styles.avatarImg}
+                onError={() => setPhotoFailed(true)}
+              />
             ) : (
               <View style={styles.avatar}>
                 <MaterialCommunityIcons name="account" size={26} color={COLORS.onSurfaceVariant} />
@@ -153,7 +177,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.blueContainer,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
   title: { fontSize: 16, fontWeight: '900', color: COLORS.onSurface },
   muted: { fontSize: 13, color: COLORS.onSurfaceVariant },
   noticeDanger: {
@@ -176,19 +205,45 @@ const styles = StyleSheet.create({
   timeline: { marginTop: 4 },
   stepRow: { flexDirection: 'row', gap: spacing.md },
   stepIconCol: { alignItems: 'center', width: 24 },
-  connector: { width: 2, flex: 1, minHeight: 18, marginVertical: 2, backgroundColor: COLORS.outlineVariant },
+  connector: {
+    width: 2,
+    flex: 1,
+    minHeight: 18,
+    marginVertical: 2,
+    backgroundColor: COLORS.outlineVariant,
+  },
   connectorDone: { backgroundColor: COLORS.teal },
   stepLabel: { fontSize: 14, color: COLORS.onSurface, paddingBottom: 14, fontWeight: '600' },
   stepLabelActive: { fontWeight: '900', color: COLORS.teal },
   stepLabelTodo: { color: COLORS.onSurfaceVariant },
-  shipperSection: { marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: COLORS.outlineVariant },
+  shipperSection: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.outlineVariant,
+  },
   shipperRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarImg: { width: 52, height: 52, borderRadius: 26 },
   shipperName: { fontSize: 15, fontWeight: '800', color: COLORS.onSurface },
   shipperMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   shipperRole: { fontSize: 12, color: COLORS.teal, fontWeight: '700' },
   shipperPhone: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 4, fontWeight: '600' },
-  callBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: COLORS.blueContainer },
+  callBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.blueContainer,
+  },
   callBtnText: { fontSize: 13, fontWeight: '800', color: COLORS.blue },
 });

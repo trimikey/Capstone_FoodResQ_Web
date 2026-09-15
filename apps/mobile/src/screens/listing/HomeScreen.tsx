@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,11 +30,10 @@ import {
   vnDayStartMs,
 } from '@/utils/listingFormat';
 import { elevation, mobileColors as COLORS, radius, spacing } from '@/theme/design';
-import { AppImage } from '@/components/ui/AppImage';
+import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 
 const PAGE_SIZE = 10;
 const DEFAULT_RADIUS_KM = 5;
-const FALLBACK_IMAGE = require('../../../assets/food-fallbacks/food_lunchbox.png');
 
 type QuickFilter = 'Tất cả' | 'Gần nhất' | 'Sắp hết hạn' | 'Nấu chín' | 'Đồ tươi';
 type Urgency = 'soon' | 'today' | 'normal';
@@ -226,14 +226,16 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const nextItems = data?.items ?? [];
-    if (page === 1) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFeedItems(nextItems);
-      return;
-    }
-    if (nextItems.length > 0) {
-      setFeedItems((items) => mergeListings(items, nextItems));
-    }
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (page === 1) {
+        setFeedItems(nextItems);
+        return;
+      }
+      if (nextItems.length > 0) {
+        setFeedItems((items) => mergeListings(items, nextItems));
+      }
+    });
+    return () => task.cancel?.();
   }, [data?.items, page]);
 
   const visibleItems = useMemo(() => {
@@ -244,7 +246,8 @@ export default function HomeScreen() {
   }, [feedItems, pickupTime, sort]);
 
   const hasNextPage = data?.hasNextPage ?? false;
-  const showInitialLoading = locationLoading || (isLoading && feedItems.length === 0);
+  const usingLocationFallback = data?.isLocationFallback ?? false;
+  const showInitialLoading = isLoading && feedItems.length === 0;
   const canLoadMore = hasNextPage && !isFetching && !showInitialLoading;
 
   const resetResults = () => {
@@ -457,7 +460,9 @@ export default function HomeScreen() {
               </Menu>
             </View>
             <Text style={styles.feedCount}>
-              Bán kính {radiusKm}km
+              {usingLocationFallback
+                ? `Chưa có bài trong ${radiusKm}km - đang hiển thị bài mới nhất`
+                : `Bán kính ${radiusKm}km`}
             </Text>
           </View>
         }
@@ -473,11 +478,17 @@ export default function HomeScreen() {
                   color={COLORS.onSurfaceVariant}
                 />
                 <Text style={styles.emptyTitle}>
-                  {coords ? 'Không có bài đăng phù hợp' : 'Không lấy được vị trí thật'}
+                  {isError
+                    ? 'Không tải được bài đăng'
+                    : coords
+                      ? 'Không có bài đăng phù hợp'
+                      : 'Không lấy được vị trí thật'}
                 </Text>
                 <Text style={styles.emptyText}>
-                  {coords
-                    ? 'Thử đổi từ khóa, bộ lọc hoặc kéo để tải lại.'
+                  {isError
+                    ? 'Kiểm tra kết nối hoặc kéo để tải lại.'
+                    : coords
+                      ? 'Thử tăng bán kính, đổi từ khóa, bộ lọc hoặc kéo để tải lại.'
                     : 'Hãy bật GPS/quyền vị trí để FoodResQ tìm bài đăng quanh bạn.'}
                 </Text>
               </>
@@ -558,7 +569,7 @@ function FoodItemCard({ item, onPress }: { item: Listing; onPress: () => void })
       <View style={styles.cardImage}>
         <AppImage
           source={item.imageUrls?.[0]}
-          fallbackSource={FALLBACK_IMAGE}
+          fallbackSource={foodFallbackSourceForCategory(item.category)}
           style={styles.cardImageFill}
         />
         <View style={styles.overlayRow}>

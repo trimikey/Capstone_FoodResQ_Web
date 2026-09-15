@@ -384,11 +384,13 @@ export class AdminService {
     if (operationEndAt <= operationStartAt) {
       operationEndAt = new Date(operationEndAt.getTime() + 86_400_000);
     }
-    const recruitmentEndAt = new Date(operationStartAt.getTime() - 24 * 3600_000);
+    const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
+    const recruitmentEndAt = new Date(operationStartAt.getTime() - recruitmentCloseLeadMinutes * 60_000);
     const recruitmentStartAt = new Date(Math.min(Date.now(), recruitmentEndAt.getTime() - 3600_000));
     if (recruitmentEndAt <= new Date()) {
-      throw new BadRequestException('Chiến dịch phải cách hiện tại hơn 24 giờ để có thời gian tuyển.');
+      throw new BadRequestException(`Chiến dịch phải cách hiện tại hơn ${recruitmentCloseLeadMinutes} phút để có thời gian tuyển.`);
     }
+    const recruitmentBufferHours = Math.min(48, Math.floor(recruitmentCloseLeadMinutes / 60));
     const [row] = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
       INSERT INTO kitchen_campaigns (
         charity_receiver_id, title, description, kitchen_address, kitchen_location,
@@ -402,7 +404,7 @@ export class AdminService {
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
         ${dto.scheduledDate}::date, ${dto.scheduledDate}::date, ${dto.startTime}, ${dto.endTime},
         ${operationStartAt}, ${operationEndAt},
-        ${recruitmentStartAt}, ${recruitmentEndAt}, 24, 'open'::recruitment_status,
+        ${recruitmentStartAt}, ${recruitmentEndAt}, ${recruitmentBufferHours}, 'open'::recruitment_status,
         ${dto.chefSlotsNeeded ?? 0}, ${dto.waiterSlotsNeeded ?? 0}, ${dto.shipperSlotsNeeded ?? 0},
         ${dto.expectedServings ?? null}, 'approved'::campaign_status, NOW(), NOW()
       )
@@ -774,12 +776,13 @@ export class AdminService {
       if (operationEndAt <= operationStartAt || endTime === '00:00') {
         operationEndAt = new Date(operationEndAt.getTime() + 86_400_000);
       }
+      const recruitmentCloseLeadMinutes = await this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES');
       const recruitmentEndAt = new Date(
-        operationStartAt.getTime() - campaign.recruitmentBufferHours * 3600_000,
+        operationStartAt.getTime() - recruitmentCloseLeadMinutes * 60_000,
       );
       if (recruitmentEndAt <= new Date()) {
         throw new BadRequestException(
-          `Lịch mới phải còn đủ ít nhất ${campaign.recruitmentBufferHours} giờ đệm sau khi đóng tuyển.`,
+          `Lịch mới phải còn đủ ít nhất ${recruitmentCloseLeadMinutes} phút đệm sau khi đóng tuyển.`,
         );
       }
       data.operationStartAt = operationStartAt;

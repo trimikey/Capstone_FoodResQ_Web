@@ -1,14 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
+import { useCallback } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import {
   Text,
   Button,
   Avatar,
-  ActivityIndicator,
-  Dialog,
   Divider,
-  Portal,
-  Switch,
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,15 +12,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
-import { useVolunteerMe, useSetAvailability } from '@/hooks/useVolunteer';
+import { useVolunteerMe, useUpdateLocation } from '@/hooks/useVolunteer';
+import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { volunteerRankLabel } from '@/utils/userFormat';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
 import { Popup, Toast } from '@/components/ui/AppPopup';
-import { AppBackground } from '@/components/ui/AppBackground';
-import { AppImage } from '@/components/ui/AppImage';
 import { ScreenState } from '@/components/ui/ScreenState';
-import { notifyError, notifySuccess, notifyWarning, selectionFeedback } from '@/services/haptics';
+import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 function vehicleLabel(t?: string | null): string {
@@ -66,6 +61,26 @@ function formatDecimal(value: unknown): string | null {
   return Number.isFinite(n) ? n.toFixed(1) : null;
 }
 
+function vnTodayKey(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+function currentShiftPeriod(): 'midnight' | 'morning' | 'afternoon' | 'evening' {
+  const nowVn = new Date(Date.now() + 7 * 3600_000);
+  const hour = nowVn.getUTCHours();
+  if (hour < 6) return 'midnight';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+const PERIOD_LABEL: Record<string, string> = {
+  midnight: 'Ca khuya',
+  morning: 'Ca sáng',
+  afternoon: 'Ca chiều',
+  evening: 'Ca tối',
+};
+
 /**
  * Hồ sơ Tình nguyện viên (tab "Hồ sơ") — hạng, điểm cống hiến, đánh giá,
  * chuyên môn và các lối tắt đúng theo chuyên môn đã xác minh.
@@ -75,26 +90,13 @@ export default function VolunteerProfileScreen() {
   const { data: vol, isLoading, isError, refetch, isRefetching } = useVolunteerMe();
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
-  const refetchVolunteerRef = useRef(refetch);
-  const refetchFaceEnrollmentRef = useRef(refetchFaceEnrollment);
   const enrollFace = useEnrollFace();
-  const setAvailability = useSetAvailability();
-  const [toggling, setToggling] = useState(false);
-  const [facePromptVisible, setFacePromptVisible] = useState(false);
-  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    refetchVolunteerRef.current = refetch;
-    refetchFaceEnrollmentRef.current = refetchFaceEnrollment;
-  }, [refetch, refetchFaceEnrollment]);
+  const updateLocation = useUpdateLocation();
 
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([
-        refetchVolunteerRef.current(),
-        refetchFaceEnrollmentRef.current(),
-      ]);
-    }, [])
+      void Promise.all([refetch(), refetchFaceEnrollment()]);
+    }, [refetch, refetchFaceEnrollment])
   );
 
   const handleEnrollFace = async (mode: 'camera' | 'library') => {
@@ -103,12 +105,11 @@ export default function VolunteerProfileScreen() {
       if (!img) return;
       await enrollFace.mutateAsync({ selfie: img });
       await Promise.all([refetchFaceEnrollment(), refetch()]);
-      setFacePromptVisible(false);
       void notifySuccess();
       Toast.show({
         type: 'success',
         text1: 'Đã cập nhật khuôn mặt',
-        text2: 'Bạn có thể bật sẵn sàng nhận đơn ngay bây giờ.',
+        text2: 'Bạn có thể xác minh khi giao nhận đơn.',
       });
     } catch (e: any) {
       void notifyError();
@@ -120,61 +121,38 @@ export default function VolunteerProfileScreen() {
     }
   };
 
-  const isFaceNotEnrolledError = (e: any) => {
-    const code = e?.response?.data?.error?.code;
-    const message = e?.response?.data?.error?.message ?? e?.message ?? '';
-    return code === 'FACE_NOT_ENROLLED' || String(message).includes('FACE_NOT_ENROLLED');
-  };
-
-  const handleToggle = async (next: boolean) => {
-    void selectionFeedback();
-    setToggling(true);
+  const handleUpdateLocation = async () => {
     try {
-      if (next) {
-        const { coords, isFallback } = await getCurrentCoords();
-        if (!coords) {
-          void notifyWarning();
-          Toast.show({
-            type: 'warning',
-            text1: 'Chưa lấy được vị trí hiện tại',
-            text2: 'Hãy bật quyền định vị và thử lại để nhận đơn gần vị trí thật của bạn.',
-          });
-          return;
-        }
-        await setAvailability.mutateAsync({ isAvailable: true, lng: coords.lng, lat: coords.lat });
-        void (isFallback ? notifyWarning() : notifySuccess());
+      const { coords, isFallback } = await getCurrentCoords();
+      if (!coords) {
+        void notifyWarning();
         Toast.show({
-          type: isFallback ? 'warning' : 'success',
-          text1: 'Đã bật sẵn sàng nhận đơn',
-          text2: isFallback
-            ? 'Vị trí hiện tại chưa ổn định. Hãy kiểm tra GPS nếu lời mời chưa chính xác.'
-            : 'Bạn sẽ nhận được lời mời giao hàng gần vị trí hiện tại.',
+          type: 'warning',
+          text1: 'Chưa lấy được vị trí hiện tại',
+          text2: 'Hãy bật quyền định vị để tìm đơn gần vị trí thật của bạn.',
         });
-      } else {
-        await setAvailability.mutateAsync({ isAvailable: false });
-        void notifySuccess();
-        Toast.show({ type: 'info', text1: 'Đã tắt nhận đơn' });
-      }
-    } catch (e: any) {
-      void notifyError();
-      if (isFaceNotEnrolledError(e)) {
-        setFacePromptVisible(true);
         return;
       }
+      await updateLocation.mutateAsync({ lng: coords.lng, lat: coords.lat });
+      void (isFallback ? notifyWarning() : notifySuccess());
+      Toast.show({
+        type: isFallback ? 'warning' : 'success',
+        text1: 'Đã cập nhật GPS',
+        text2: isFallback
+          ? 'Vị trí hiện tại chưa ổn định. Hãy kiểm tra GPS nếu danh sách đơn chưa chính xác.'
+          : 'Danh sách đơn gần bạn sẽ dùng vị trí mới nhất.',
+      });
+    } catch (e: any) {
+      void notifyError();
       Popup.show({
         type: 'error',
-        text1: 'Cập nhật trạng thái thất bại',
+        text1: 'Cập nhật GPS thất bại',
         text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
       });
-    } finally {
-      setToggling(false);
     }
   };
 
   const name = user?.name || user?.email || 'Tình nguyện viên';
-  const avatarUrl = user?.avatarUrl?.trim() ?? '';
-  const showAvatarImage = avatarUrl.length > 0 && failedAvatarUrl !== avatarUrl;
-  const busy = toggling || setAvailability.isPending;
   const faceBusy = enrollFace.isPending;
   const faceEnrolled = faceEnrollment.data?.enrolled === true;
   const avgRatingLabel = formatDecimal(vol?.avgRating);
@@ -183,11 +161,19 @@ export default function VolunteerProfileScreen() {
   const hasWaiter = verifiedSpecs.includes('waiter');
   const hasShipper = verifiedSpecs.includes('shipper');
   const hasKitchenRole = hasChef || hasWaiter || hasShipper;
+  const deliveryShifts = useMyDeliveryShifts(hasShipper);
+  const todayKey = vnTodayKey();
+  const currentPeriod = currentShiftPeriod();
+  const todaySlots = deliveryShifts.data?.slots.filter((slot) => slot.workDate === todayKey) ?? [];
+  const onDeliveryShift = todaySlots.some((slot) => slot.period === currentPeriod);
+  const upcomingShift = deliveryShifts.data?.slots
+    .filter((slot) => slot.workDate > todayKey)
+    .sort((a, b) => `${a.workDate}:${a.period}`.localeCompare(`${b.workDate}:${b.period}`))[0];
   const primaryRoleLabel = vol ? primarySpecializationLabel(vol.specializations) : 'Chuyên môn';
   const headerStatus = hasShipper
-    ? vol?.isAvailable
-      ? 'Đang online nhận đơn giao hàng'
-      : 'Đang tắt nhận đơn giao hàng'
+    ? onDeliveryShift
+      ? 'Đang trong ca giao hàng'
+      : 'Nhận đơn theo ca giao hàng đã đăng ký'
     : hasChef
       ? 'Sẵn sàng tham gia ca bếp'
       : hasWaiter
@@ -196,38 +182,21 @@ export default function VolunteerProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <AppBackground>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-        >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      >
         {/* Header: avatar + tên + hạng */}
         <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Chỉnh sửa ảnh đại diện"
-            onPress={() => router.push('/(app)/profile/edit')}
-            style={styles.avatarShell}
-          >
-            {showAvatarImage ? (
-              <AppImage
-                source={{ uri: avatarUrl }}
-                style={styles.avatarImage}
-                onError={() => setFailedAvatarUrl(avatarUrl)}
-              />
-            ) : (
-              <Avatar.Text
-                size={84}
-                label={(name.trim().charAt(0) || '?').toUpperCase()}
-                color={COLORS.onPrimary}
-                labelStyle={styles.avatarLabel}
-                style={styles.avatarFallback}
-              />
-            )}
-            <View style={styles.avatarEdit}>
-              <MaterialCommunityIcons name="pencil" size={14} color={COLORS.primary} />
-            </View>
-          </Pressable>
+          {user?.avatarUrl ? (
+            <Avatar.Image size={84} source={{ uri: user.avatarUrl }} />
+          ) : (
+            <Avatar.Text
+              size={84}
+              label={name.charAt(0).toUpperCase()}
+              style={{ backgroundColor: COLORS.teal }}
+            />
+          )}
           <View style={styles.headerInfo}>
             <Text variant="titleLarge" style={styles.name}>
               {name}
@@ -279,32 +248,64 @@ export default function VolunteerProfileScreen() {
               </View>
             </View>
 
-            {/* Công tắc sẵn sàng nhận đơn */}
+            {/* Ca giao hàng thay cho công tắc sẵn sàng cũ */}
             {hasShipper ? (
               <View style={styles.card}>
                 <View style={styles.availRow}>
                   <MaterialCommunityIcons
-                    name={vol.isAvailable ? 'motorbike' : 'sleep'}
+                    name={onDeliveryShift ? 'truck-check-outline' : 'calendar-clock'}
                     size={24}
-                    color={vol.isAvailable ? COLORS.teal : COLORS.onSurfaceVariant}
+                    color={onDeliveryShift ? COLORS.teal : COLORS.onSurfaceVariant}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.availTitle}>Sẵn sàng nhận đơn</Text>
+                    <Text style={styles.availTitle}>Ca giao hàng & GPS</Text>
                     <Text style={styles.availSub}>
-                      {vol.isAvailable
-                        ? 'Đang bật - nhận lời mời giao hàng gần bạn'
-                        : 'Đang tắt - không nhận lời mời mới'}
+                      {deliveryShifts.isLoading
+                        ? 'Đang kiểm tra ca giao hàng...'
+                        : onDeliveryShift
+                          ? `Đang trong ${PERIOD_LABEL[currentPeriod]}. Bạn có thể tự nhận đơn phù hợp.`
+                          : todaySlots.length
+                            ? `Hôm nay có ${todaySlots.length} ca, hiện ngoài khung giờ nhận đơn.`
+                            : upcomingShift
+                              ? `Ca kế tiếp: ${upcomingShift.workDate} - ${PERIOD_LABEL[upcomingShift.period] ?? upcomingShift.period}.`
+                              : 'Chưa đăng ký ca. Đơn gần bạn sẽ hiện nhưng không thể nhận ngoài ca.'}
                     </Text>
                   </View>
-                  {busy ? (
-                    <ActivityIndicator color={COLORS.primary} />
-                  ) : (
-                    <Switch
-                      value={vol.isAvailable}
-                      onValueChange={handleToggle}
-                      color={COLORS.blue}
-                    />
-                  )}
+                </View>
+                <View style={styles.shiftActions}>
+                  <Button
+                    mode="contained-tonal"
+                    icon="calendar-edit"
+                    buttonColor={COLORS.tealContainer}
+                    textColor={COLORS.teal}
+                    onPress={() => router.push('/(app)/volunteer/delivery-shifts')}
+                    style={styles.shiftAction}
+                  >
+                    Sửa ca
+                  </Button>
+                  <Button
+                    mode="outlined"
+                    icon="crosshairs-gps"
+                    loading={updateLocation.isPending}
+                    disabled={updateLocation.isPending}
+                    onPress={handleUpdateLocation}
+                    textColor={COLORS.primary}
+                    style={styles.shiftAction}
+                  >
+                    Cập nhật GPS
+                  </Button>
+                </View>
+                <View style={styles.gpsHint}>
+                  <MaterialCommunityIcons
+                    name={vol.currentLocation ? 'map-marker-check-outline' : 'map-marker-alert-outline'}
+                    size={16}
+                    color={vol.currentLocation ? COLORS.teal : COLORS.warning}
+                  />
+                  <Text style={styles.gpsHintText}>
+                    {vol.currentLocation
+                      ? 'Đã có vị trí hiện tại. Tab Giao hàng vẫn tự lấy GPS tươi khi tìm đơn.'
+                      : 'Chưa có vị trí lưu gần đây. Cập nhật GPS hoặc mở tab Giao hàng để lấy vị trí.'}
+                  </Text>
                 </View>
               </View>
             ) : null}
@@ -336,7 +337,7 @@ export default function VolunteerProfileScreen() {
                 <Text style={styles.faceHint}>
                   {faceEnrolled
                     ? 'Bạn đã đủ điều kiện xác minh khi giao nhận.'
-                    : 'Bắt buộc để bật sẵn sàng nhận đơn và xác minh khi giao nhận.'}
+                    : 'Bắt buộc để xác minh khi giao nhận đơn.'}
                 </Text>
                 {!faceEnrolled ? (
                   <View style={styles.faceActions}>
@@ -453,14 +454,7 @@ export default function VolunteerProfileScreen() {
         >
           Đăng xuất
         </Button>
-        </ScrollView>
-      </AppBackground>
-      <FaceEnrollmentPrompt
-        visible={facePromptVisible}
-        busy={faceBusy}
-        onDismiss={() => setFacePromptVisible(false)}
-        onEnroll={handleEnrollFace}
-      />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -471,57 +465,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value}</Text>
     </View>
-  );
-}
-
-function FaceEnrollmentPrompt({
-  visible,
-  busy,
-  onDismiss,
-  onEnroll,
-}: {
-  visible: boolean;
-  busy: boolean;
-  onDismiss: () => void;
-  onEnroll: (mode: 'camera' | 'library') => void;
-}) {
-  return (
-    <Portal>
-      <Dialog visible={visible} onDismiss={busy ? undefined : onDismiss} style={styles.faceDialog}>
-        <Dialog.Content style={styles.faceDialogContent}>
-          <View style={styles.faceDialogIcon}>
-            <MaterialCommunityIcons name="shield-account-outline" size={34} color={COLORS.purple} />
-          </View>
-          <Text style={styles.faceDialogTitle}>Cần cập nhật khuôn mặt</Text>
-          <Text style={styles.faceDialogText}>
-            Bạn cần đăng ký khuôn mặt trước khi bật sẵn sàng nhận đơn. Thông tin này dùng để xác minh khi giao nhận.
-          </Text>
-        </Dialog.Content>
-        <Dialog.Actions>
-          <Button onPress={onDismiss} textColor={COLORS.onSurfaceVariant} disabled={busy}>
-            Để sau
-          </Button>
-          <Button
-            mode="contained"
-            icon={busy ? undefined : 'camera'}
-            buttonColor={COLORS.primary}
-            onPress={() => onEnroll('camera')}
-            disabled={busy}
-            style={styles.faceDialogPrimary}
-          >
-            {busy ? <ActivityIndicator color="#ffffff" size={16} /> : 'Cập nhật ngay'}
-          </Button>
-          <Button
-            icon="image-outline"
-            onPress={() => onEnroll('library')}
-            textColor={COLORS.purple}
-            disabled={busy}
-          >
-            Chọn ảnh
-          </Button>
-        </Dialog.Actions>
-      </Dialog>
-    </Portal>
   );
 }
 
@@ -538,32 +481,6 @@ const styles = StyleSheet.create({
     ...elevation.card,
   },
   headerInfo: { flex: 1 },
-  avatarShell: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-  },
-  avatarImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: COLORS.teal,
-  },
-  avatarFallback: { backgroundColor: COLORS.teal },
-  avatarLabel: { color: COLORS.onPrimary, fontSize: 30, fontWeight: '900' },
-  avatarEdit: {
-    position: 'absolute',
-    right: -2,
-    bottom: -2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.heroBlue,
-  },
   name: { fontWeight: '900', color: COLORS.onPrimary },
   headerSub: { marginTop: 3, color: COLORS.blueContainer, fontSize: 13, fontWeight: '700' },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
@@ -599,6 +516,18 @@ const styles = StyleSheet.create({
   availRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   availTitle: { fontSize: 15, fontWeight: '700', color: COLORS.onSurface },
   availSub: { fontSize: 12, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  shiftActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  shiftAction: { flex: 1, borderRadius: radius.lg },
+  gpsHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceVariant,
+    padding: spacing.sm,
+  },
+  gpsHintText: { flex: 1, color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   faceHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   faceIcon: {
     width: 42,
@@ -612,26 +541,6 @@ const styles = StyleSheet.create({
   faceHint: { marginTop: 10, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
   faceActions: { marginTop: 12, gap: 8 },
   faceButton: { borderRadius: 12 },
-  faceDialog: { borderRadius: 24, backgroundColor: COLORS.surface },
-  faceDialogContent: { alignItems: 'center', paddingTop: 8 },
-  faceDialogIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.purpleContainer,
-    marginBottom: 12,
-  },
-  faceDialogTitle: { fontSize: 18, fontWeight: '800', color: COLORS.onSurface, textAlign: 'center' },
-  faceDialogText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-    color: COLORS.onSurfaceVariant,
-    textAlign: 'center',
-  },
-  faceDialogPrimary: { borderRadius: 12 },
   warnBox: {
     flexDirection: 'row',
     gap: 8,

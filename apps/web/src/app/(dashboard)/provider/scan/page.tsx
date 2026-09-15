@@ -31,6 +31,12 @@ export default function ProviderScanPage() {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [manualToken, setManualToken] = useState('');
+  // Hồ sơ cũ lưu ảnh vào ./uploads local trước khi có Cloudinary — file đã mất
+  // trên Render nên URL còn trong DB nhưng trả 404. URL chết phải rơi về cảnh
+  // báo hỏi giấy tờ thay vì hiện ảnh vỡ. So theo URL nên không cần reset khi quét đơn mới.
+  const [deadPhotoUrl, setDeadPhotoUrl] = useState<string | null>(null);
+  const scanPhoto = scan ? (imgUrl(scan.receiver.faceImageUrl) ?? imgUrl(scan.receiver.idCardImageUrl)) : null;
+  const registeredPhoto = scanPhoto && scanPhoto !== deadPhotoUrl ? scanPhoto : null;
 
   function stopCamera() {
     controlsRef.current?.stop();
@@ -158,13 +164,14 @@ export default function ProviderScanPage() {
             <div className="p-6 space-y-5">
               {/* Ảnh đã đăng ký */}
               <div className="flex flex-col items-center">
-                {imgUrl(scan.receiver.faceImageUrl) || imgUrl(scan.receiver.idCardImageUrl) ? (
+                {registeredPhoto ? (
                   <div className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={(imgUrl(scan.receiver.faceImageUrl) ?? imgUrl(scan.receiver.idCardImageUrl))!}
+                      src={registeredPhoto}
                       alt={scan.receiver.fullName}
                       className="w-40 h-40 rounded-2xl object-cover ring-4 ring-emerald-100 elevation-2"
+                      onError={() => setDeadPhotoUrl(registeredPhoto)}
                     />
                     <span className="badge badge-emerald absolute -bottom-2 left-1/2 -translate-x-1/2">
                       <span className="material-symbols-outlined text-[14px]">verified</span> Ảnh đã đăng ký
@@ -173,7 +180,9 @@ export default function ProviderScanPage() {
                 ) : (
                   <div className="w-40 h-40 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-center px-3">
                     <span className="material-symbols-outlined text-amber-500 text-[40px]">no_photography</span>
-                    <p className="text-[11px] font-bold text-amber-700 mt-1">Người nhận chưa đăng ký ảnh</p>
+                    <p className="text-[11px] font-bold text-amber-700 mt-1">
+                      {scanPhoto ? 'Không tải được ảnh đã đăng ký' : 'Người nhận chưa đăng ký ảnh'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -186,11 +195,13 @@ export default function ProviderScanPage() {
                 <InfoRow icon="lunch_dining" label="Đơn hàng" value={`${scan.listing.title} · ${scan.quantity} ${UNIT_LABEL[scan.listing.quantityUnit as QuantityUnit] ?? scan.listing.quantityUnit}`} />
               </div>
 
-              {!scan.receiver.enrolled && (
+              {(!scan.receiver.enrolled || !registeredPhoto) && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
                   <span className="material-symbols-outlined text-amber-600 text-[18px]">warning</span>
                   <p className="text-xs text-amber-800 font-medium">
-                    Người nhận chưa đăng ký khuôn mặt/CCCD. Hãy yêu cầu giấy tờ tuỳ thân trước khi bàn giao.
+                    {scanPhoto && !registeredPhoto
+                      ? 'Ảnh đăng ký của người nhận không còn tải được. Hãy yêu cầu giấy tờ tuỳ thân trước khi bàn giao.'
+                      : 'Người nhận chưa đăng ký khuôn mặt/CCCD. Hãy yêu cầu giấy tờ tuỳ thân trước khi bàn giao.'}
                   </p>
                 </div>
               )}

@@ -9,7 +9,7 @@ import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/ho
 import { useVolunteerMe } from '@/hooks/useVolunteer';
 import { VolunteerKitchenOpsPanel } from '@/components/kitchen/VolunteerKitchenOpsPanel';
 import {
-  statusMeta,
+  campaignDisplayStatusMeta,
   formatDate,
   formatTime,
   charityName,
@@ -148,7 +148,7 @@ export default function VolunteerCampaignDetailScreen() {
     );
   }
 
-  const sm = statusMeta(c.status);
+  const sm = campaignDisplayStatusMeta(c);
   const slots = slotProgress(c);
   const open = canApplyCampaign(c.status, c.recruitmentStatus);
   const hasShiftSchedule = shifts.length > 0;

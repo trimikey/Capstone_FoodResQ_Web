@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconButton, Text } from 'react-native-paper';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useCompletedCampaigns,
@@ -15,6 +15,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { AppImage } from '@/components/ui/AppImage';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 /**
@@ -28,7 +29,7 @@ export default function CharityCampaignsScreen() {
 
   // Chỉ receiver (charity-org) dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'receiver') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   const items = data ?? [];

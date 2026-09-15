@@ -14,6 +14,17 @@ function formatNumber(num: number): string {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
+/**
+ * Ngăn nghìn cho SỐ HERO bằng thin space (U+202F) thay vì dấu chấm.
+ *
+ * "3.452" dễ bị đọc thành ba phẩy bốn năm hai (dấu thập phân kiểu Anh/Mỹ) —
+ * với con số tấn thực phẩm thì sai lệch nghìn lần. Thin space là no-break nên
+ * số không bao giờ bị ngắt dòng giữa các nhóm.
+ */
+function formatHeroNumber(num: number): string {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+}
+
 const CAT_LABEL: Record<string, string> = {
   cooked_meal: 'Suất ăn sẵn',
   bakery: 'Bánh ngọt & Tráng miệng',
@@ -178,88 +189,113 @@ export default function HomeContent() {
   return (
     <div className="bg-[#FAFBF9] min-h-screen text-neutral-800 relative overflow-hidden">
       {/* 1. HERO SECTION */}
-      <section className="w-full px-4 sm:px-6 md:px-16 lg:px-24 pt-24 sm:pt-32 pb-24 relative overflow-hidden">
-        {/* Background Slider */}
+      <section className="relative w-full overflow-hidden pt-24 pb-20 sm:pt-32 sm:pb-24">
+        {/* ── LAYER ẢNH ───────────────────────────────────────────────────────
+            Wrapper lo độ mờ theo breakpoint và chỉnh màu; từng slide chỉ lo
+            chuyển ảnh, nếu đặt opacity chung trên slide thì hai thứ đè nhau.
+            Dưới lg ảnh hạ về vai trò nền rất mờ để card full-width đọc thoải mái. */}
         <div className="absolute inset-0 z-0">
-          {HERO_IMAGES.map((img, idx) => (
-            <div
-              key={img}
-              className={`absolute inset-0 bg-center bg-no-repeat bg-cover transition-all duration-[1500ms] ease-in-out ${
-                idx === heroBgIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'
-              }`}
-              style={{
-                backgroundImage: `url("${img}")`,
-                backgroundPosition: 'center 30%',
-              }}
-            />
-          ))}
-          {/* Lớp phủ dọc rất nhẹ, chỉ để dịu nắng gắt ở mép trên/dưới. Bản trước phủ
-              tới 70–80% nên ảnh bạc trắng như bị xoá mờ. */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#e8f4ff]/25 via-transparent to-white/35" />
-          {/* Scrim TRÁI có mốc dừng rõ ràng: đậm đúng vùng đặt chữ rồi tắt hẳn trước
-              nửa khung, để hơn một phần ba ảnh bên phải giữ nguyên màu thật. Dùng
-              linear-gradient tường minh vì gradient 3 nấc của Tailwind trải đều toàn
-              khung, làm cả tấm ảnh mờ theo chứ không chỉ vùng có chữ. */}
           <div
             className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 26%, rgba(255,255,255,0.55) 44%, rgba(255,255,255,0) 62%)',
-            }}
-          />
+            style={{ filter: 'saturate(0.85) hue-rotate(-6deg)' }}
+          >
+            {HERO_IMAGES.map((img, idx) => (
+              <div
+                key={img}
+                className={`absolute inset-0 bg-cover bg-no-repeat transition-all duration-[1500ms] ease-in-out ${
+                  idx === heroBgIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'
+                }`}
+                style={{
+                  backgroundImage: `url("${img}")`,
+                  // Dồn cụm người về nửa PHẢI, chừa vùng loãng bên trái cho card
+                  backgroundPosition: '76% 32%',
+                }}
+              />
+            ))}
+          </div>
+          {/* Scrim: dưới lg đổ từ trên xuống và đậm hơn (card full-width nằm trên ảnh);
+              từ lg đổ trái→phải để nửa phải ảnh giữ nguyên màu thật. */}
+          {/* Scrim đậm bên trái làm "nền" trực tiếp cho chữ trắng — không còn hộp
+              card nên scrim chính là thứ giữ độ tương phản. Dưới lg đổ trên→dưới. */}
+          <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/75 via-black/55 to-black/70 lg:bg-gradient-to-r lg:from-black/80 lg:via-black/45 lg:to-transparent" />
         </div>
 
-        <div className="max-w-4xl space-y-8 relative z-10 animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-sky-brand)_14%,white)] border border-[color-mix(in_srgb,var(--color-sky-brand)_35%,white)] text-[color-mix(in_srgb,var(--color-sky-brand)_75%,#0b2a3a)] font-bold text-xs uppercase tracking-wider shadow-sm">
-            Tác động của FoodResQ
-          </div>
-          <h1 className="font-extrabold text-5xl min-[420px]:text-6xl sm:text-8xl lg:text-9xl tracking-tighter tabular-nums leading-none">
-            <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-800 via-[var(--color-leaf-brand)] to-emerald-600 drop-shadow-sm">
-              {formatNumber(foodCount)}
-            </span>
-            <span className="text-2xl sm:text-5xl lg:text-6xl text-emerald-800/60 font-bold tracking-normal align-baseline ml-2 sm:ml-3">
-              Tấn
-            </span>
-          </h1>
-          <div className="h-1 w-20 bg-[var(--color-warm-brand)] rounded-full my-6" />
-          <h2 className="font-bold text-2xl sm:text-3xl lg:text-4xl text-neutral-800 leading-snug max-w-2xl">
-            thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
-          </h2>
-          <p className="font-medium text-lg text-neutral-600 leading-relaxed max-w-xl">
-            FoodResQ sử dụng hệ thống xác minh đa lớp để luân chuyển thức ăn an toàn từ đối tác đến đúng người cần. Minh bạch, hiệu quả và được vận hành hoàn toàn bởi cộng đồng tình nguyện.
-          </p>
+        {/* Cùng container với navbar (max-w-5xl + px-4/md:px-6) để card thẳng mép
+            với logo và menu, thay vì lệch theo padding riêng của section. */}
+        <div className="relative z-10 mx-auto max-w-5xl px-4 md:px-6">
+          {/* KHÔNG còn hộp card — nội dung in thẳng lên ảnh, scrim bên trái là nền.
+              Chữ trắng + drop-shadow nhẹ để ảnh và chữ là MỘT lớp, hết cảm giác
+              miếng sticker trắng dán giữa banner. Nhịp dọc giữ thang 8px. */}
+          <div className="w-full animate-fade-in-up py-4 lg:w-[52%] lg:py-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/15 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-100 backdrop-blur-sm">
+              Tác động của FoodResQ
+            </div>
 
-          <div className="flex flex-wrap gap-4 pt-8">
-            <button
-              onClick={() => router.push('/listings')}
-              className="px-8 py-4 bg-emerald-700 hover:bg-emerald-850 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-emerald-700/25 flex items-center gap-2 group active:scale-95"
+            <h1
+              className="mt-6 font-extrabold leading-none tracking-tighter tabular-nums"
+              style={{ fontSize: 'clamp(3.5rem, 9vw, 7.5rem)' }}
             >
-              Tham gia giải cứu
-              <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
-            </button>
-            <button
-              onClick={() => toast.info('Tính năng đang được tải dữ liệu thực tế...')}
-              className="px-8 py-4 bg-white/80 backdrop-blur-sm border border-neutral-200 hover:bg-white text-neutral-800 rounded-full font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
-            >
-              Xem báo cáo minh bạch
-            </button>
-          </div>
-        </div>
+              <span className="text-white [text-shadow:0_2px_24px_rgba(0,0,0,0.45)]">
+                {formatHeroNumber(foodCount)}
+              </span>
+              {/* 0.35em + cùng font-weight để "Tấn" đứng cùng baseline với số */}
+              <span className="ml-2 align-baseline font-extrabold tracking-normal text-emerald-300" style={{ fontSize: '0.35em' }}>
+                Tấn
+              </span>
+            </h1>
+            <p className="mt-2 text-sm font-semibold text-white/70">tấn thực phẩm đã giải cứu</p>
 
-        {/* Pagination Dots */}
-        <div className="absolute bottom-8 left-6 md:left-16 lg:left-24 flex gap-2 z-10">
-          {HERO_IMAGES.map((_, idx) => (
-            <button
-              key={idx}
-              onClick={() => setHeroBgIndex(idx)}
-              className={`h-2 rounded-full transition-all duration-300 ${
-                idx === heroBgIndex
-                  ? 'w-8 bg-[var(--color-leaf-brand)]'
-                  : 'w-2 bg-[var(--color-leaf-brand)]/35 hover:bg-[var(--color-leaf-brand)]/60'
-              }`}
-              aria-label={`Go to slide ${idx + 1}`}
-            />
-          ))}
+            <div className="mt-6 h-1 w-20 rounded-full bg-[var(--color-warm-brand)]" />
+
+            <h2 className="mt-8 text-2xl font-bold leading-snug text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)] [text-wrap:balance] sm:text-3xl">
+              thực phẩm dư thừa đã được giải cứu và phân phối lại cho các cộng đồng yếu thế.
+            </h2>
+
+            <p className="mt-5 max-w-xl text-sm font-medium leading-relaxed text-white/85 sm:text-base">
+              FoodResQ sử dụng hệ thống xác minh đa lớp để luân chuyển thức ăn an toàn từ đối tác đến đúng người cần. Minh bạch, hiệu quả và được vận hành hoàn toàn bởi cộng đồng tình nguyện.
+            </p>
+
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <button
+                onClick={() => router.push('/listings')}
+                className="group flex w-full items-center justify-center gap-2 rounded-full bg-emerald-700 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-700/25 transition-all hover:bg-emerald-850 active:scale-95 sm:w-auto"
+              >
+                Tham gia giải cứu
+                <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-1">arrow_forward</span>
+              </button>
+              {/* Icon sang TRÁI để cụm nút này đọc như một nhãn có biểu tượng, không
+                  bị nhầm là mũi tên "đi tiếp" như nút chính bên cạnh. */}
+              <button
+                onClick={() => router.push('/impact')}
+                className="flex w-full items-center justify-center gap-2 rounded-full border border-white/40 bg-white/10 px-6 py-3.5 text-sm font-bold text-white backdrop-blur-sm transition-all hover:border-white/70 hover:bg-white/20 active:scale-95 sm:w-auto"
+              >
+                <span className="material-symbols-outlined text-[18px]">bar_chart</span>
+                Xem báo cáo minh bạch
+              </button>
+            </div>
+
+            {/* Dots nằm TRONG card: trước đây là nút trắng absolute trên ảnh, nền ảnh
+                sáng là mất dấu. Hit area 44×44 bằng padding trong suốt của button. */}
+            <div className="mt-4 flex items-center gap-1">
+              {HERO_IMAGES.map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setHeroBgIndex(idx)}
+                  className="flex h-11 w-11 items-center justify-center"
+                  aria-label={`Chuyển tới ảnh ${idx + 1}`}
+                  aria-current={idx === heroBgIndex}
+                >
+                  <span
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      idx === heroBgIndex
+                        ? 'w-8 bg-emerald-400'
+                        : 'w-2 bg-white/40 hover:bg-white/70'
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

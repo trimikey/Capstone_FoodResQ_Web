@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Dialog, Portal, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, type Href, useLocalSearchParams } from 'expo-router';
 import {
   type AssignedDistribution,
-  type DishProcessItem,
   type DishStep,
+  type PickupOrder,
   useAdvanceTask,
   useCampaignSupplies,
+  useConfirmIngredientPickup,
   useCompleteAssignedDistribution,
   useCompleteDishStep,
   useMyTaskDetail,
@@ -22,17 +23,17 @@ import { Popup } from '@/components/ui/AppPopup';
 import { BackButton } from '@/components/ui/BackButton';
 import { NotificationBell } from '@/components/NotificationBell';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
-import { captureImage } from '@/services/faceCapture';
+import { captureImage, type CapturedImage } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { formatDate, formatTime } from '@/utils/campaign';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const STEP_LABELS: Record<number, string> = {
-  1: 'Kiểm tra nguyên liệu',
-  2: 'Sơ chế & nấu',
-  3: 'Kiểm tra chất lượng',
-  4: 'Sẵn sàng phát',
+  1: 'Sơ chế',
+  2: 'Nấu',
+  3: 'Kiểm tra QC',
+  4: 'Sẵn sàng xuất phát',
 };
 
 const STEP_ICONS: Record<number, string> = {
@@ -115,7 +116,7 @@ export default function VolunteerTaskDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca phục vụ của tôi'} />
+      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca vận hành của tôi'} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -124,7 +125,7 @@ export default function VolunteerTaskDetailScreen() {
       >
         <View style={styles.hero}>
           <Text style={styles.heroKicker}>
-            {detail.assignment.role === 'chef' ? 'Đầu bếp' : 'Phục vụ'}
+            {detail.assignment.role === 'chef' ? 'Đầu bếp' : 'Giao nhận / phục vụ'}
             {detail.assignment.shift ? ` · ${detail.assignment.shift.label}` : ''}
           </Text>
           <Text style={styles.heroTitle}>{detail.campaign.title}</Text>
@@ -170,7 +171,7 @@ export default function VolunteerTaskDetailScreen() {
 
         {detail.assignment.role === 'chef' ? (
           <ChefTask detail={detail} checkedIn={checkedIn} onRefresh={() => taskQuery.refetch()} />
-        ) : detail.assignment.role === 'waiter' ? (
+        ) : detail.assignment.role === 'waiter' || detail.assignment.role === 'shipper' ? (
           <WaiterTask detail={detail} checkedIn={checkedIn} onRefresh={() => taskQuery.refetch()} />
         ) : (
           <ScreenState kind="empty" title="Nhiệm vụ này thuộc luồng giao hàng" />
@@ -285,12 +286,18 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
       ) : dishes.map((dish) => {
         const done = dish.steps.filter((step) => step.effectiveStatus === 'done').length;
         const recipeOpen = expandedRecipe === dish.id;
+        const dishCancelled = dish.steps.some((step) => step.stepOrder === 3 && step.reviewStatus === 'rejected');
         return (
           <View key={dish.id} style={styles.dishCard}>
             <View style={styles.dishHead}>
               <View style={styles.flex}>
                 <Text style={styles.dishTitle}>{dish.name}</Text>
                 <Text style={styles.muted}>{dish.plannedServings ? `${dish.plannedServings} suất · ` : ''}{done}/{dish.steps.length} khâu</Text>
+                {dishCancelled ? (
+                  <Text style={styles.stepRejectedText}>
+                    Món đã bị huỷ vì QC không đạt.
+                  </Text>
+                ) : null}
               </View>
               <Text style={styles.dishPercent}>{dish.steps.length ? Math.round((done / dish.steps.length) * 100) : 0}%</Text>
             </View>
@@ -323,8 +330,13 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
                 key={step.id}
                 step={step}
                 previousDone={index === 0 || dish.steps[index - 1]?.effectiveStatus === 'done'}
-                canAct={checkedIn && detail.assignment.status !== 'completed'}
+                canAct={checkedIn && detail.assignment.status !== 'completed' && !dishCancelled}
                 pending={completeStep.isPending}
+                awaitingQcReview={
+                  step.stepOrder === 4 &&
+                  dish.steps[index - 1]?.effectiveStatus === 'done' &&
+                  dish.steps[index - 1]?.reviewStatus !== 'approved'
+                }
                 onComplete={() => handleComplete(step)}
               />
             ))}
@@ -338,16 +350,18 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
   );
 }
 
-function DishStepRow({ step, previousDone, canAct, pending, onComplete }: {
+function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, onComplete }: {
   step: DishStep;
   previousDone: boolean;
   canAct: boolean;
   pending: boolean;
+  awaitingQcReview?: boolean;
   onComplete: () => void;
 }) {
   const done = step.effectiveStatus === 'done';
   const available = step.effectiveStatus === 'available';
   const qcFailed = !!step.qcFailedAt;
+  const isQcStep = step.stepOrder === 3;
   return (
     <View style={[styles.stepCard, done && styles.stepDone, qcFailed && styles.stepFailed]}>
       <View style={[styles.stepIcon, done && styles.stepIconDone, qcFailed && styles.stepIconFailed]}>
@@ -360,10 +374,29 @@ function DishStepRow({ step, previousDone, canAct, pending, onComplete }: {
       <View style={styles.flex}>
         <Text style={styles.stepTitle}>{STEP_LABELS[step.stepOrder] ?? step.stepName}</Text>
         <Text style={styles.smallMuted}>
-          {done ? `Hoàn thành ${formatDateTime(step.completedAt)}` : qcFailed ? step.qcFailureReason : !previousDone ? 'Chờ khâu trước hoàn thành' : `Dự kiến ${step.scheduledTime}`}
+          {done
+            ? `Hoàn thành ${formatDateTime(step.completedAt)}`
+            : qcFailed
+              ? step.qcFailureReason
+              : awaitingQcReview
+                ? 'Chờ tổ chức duyệt ảnh QC'
+                : !previousDone
+                  ? 'Chờ khâu trước hoàn thành'
+                  : `Dự kiến ${step.scheduledTime}`}
         </Text>
         {step.completedByVolunteer?.user.fullName ? <Text style={styles.smallMuted}>bởi {step.completedByVolunteer.user.fullName}</Text> : null}
         {step.proofUrl ? <AppImage source={{ uri: step.proofUrl }} style={styles.stepProof} /> : null}
+        {isQcStep && step.reviewStatus === 'pending' ? (
+          <Text style={styles.stepPendingText}>Chờ tổ chức duyệt ảnh QC.</Text>
+        ) : null}
+        {isQcStep && step.reviewStatus === 'approved' ? (
+          <Text style={styles.stepApprovedText}>Tổ chức đã duyệt ảnh QC.</Text>
+        ) : null}
+        {isQcStep && step.reviewStatus === 'rejected' ? (
+          <Text style={styles.stepRejectedText}>
+            Món đã bị huỷ vì QC không đạt{step.reviewNote ? `: ${step.reviewNote}` : ''}.
+          </Text>
+        ) : null}
         {available && canAct && !qcFailed ? (
           <View style={styles.stepActions}>
             <Button mode="contained" compact icon="camera" loading={pending} disabled={pending} onPress={onComplete}>
@@ -382,12 +415,18 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   onRefresh: () => Promise<unknown> | void;
 }) {
   const complete = useCompleteAssignedDistribution();
+  const confirmPickup = useConfirmIngredientPickup();
   const [closing, setClosing] = useState<AssignedDistribution | null>(null);
+  const [confirmingPickup, setConfirmingPickup] = useState<PickupOrder | null>(null);
   const [actualServings, setActualServings] = useState('');
+  const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
+  const [distributionPhoto, setDistributionPhoto] = useState<CapturedImage | null>(null);
+  const [pickupPhoto, setPickupPhoto] = useState<CapturedImage | null>(null);
 
   const dishes = detail.dishes ?? [];
   const distributions = detail.distributions ?? [];
+  const pickupOrders = detail.pickupOrders ?? [];
   const readyDishes = dishes.filter((dish) =>
     dish.steps.some((step) => step.stepOrder === 4 && step.effectiveStatus === 'done')
   );
@@ -396,6 +435,21 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     setClosing(distribution);
     setActualServings(String(distribution.servingsServed));
     setNote('');
+    setDistributionPhoto(null);
+  };
+
+  const openPickupConfirm = (order: PickupOrder) => {
+    setConfirmingPickup(order);
+    setReceivedKg(order.quantityKg != null ? String(order.quantityKg) : '');
+    setNote('');
+    setPickupPhoto(null);
+  };
+
+  const closePickupConfirm = () => {
+    if (confirmPickup.isPending) return;
+    Keyboard.dismiss();
+    setConfirmingPickup(null);
+    setPickupPhoto(null);
   };
 
   const submitClose = async () => {
@@ -409,6 +463,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       });
       return;
     }
+    if (!distributionPhoto) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Thiếu ảnh phát suất',
+        text2: 'Chụp ảnh khu vực/phần ăn đã phát để tổ chức lưu tư liệu sau chiến dịch.',
+      });
+      return;
+    }
     try {
       // QUY TẮC: 1 suất = 1 người — BE tự ghi số người = số suất, không gửi riêng.
       await complete.mutateAsync({
@@ -416,10 +478,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         campaignId: detail.campaign.id,
         actualServings: servings,
         note: note.trim() || undefined,
+        photo: distributionPhoto,
       });
       void notifySuccess();
       Popup.show({ type: 'success', text1: `Đã chốt ${servings}/${closing.servingsServed} suất` });
       setClosing(null);
+      setDistributionPhoto(null);
       await onRefresh();
     } catch (error) {
       void notifyError();
@@ -430,6 +494,67 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const openDirections = async (lat?: number | null, lng?: number | null) => {
     if (lat == null || lng == null) return;
     await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
+  };
+
+  const capturePickupPhoto = async () => {
+    try {
+      Keyboard.dismiss();
+      const photo = await captureImage('id_card', 'proof');
+      if (photo) setPickupPhoto(photo);
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
+    }
+  };
+
+  const captureDistributionPhoto = async () => {
+    try {
+      Keyboard.dismiss();
+      const photo = await captureImage('id_card', 'proof');
+      if (photo) setDistributionPhoto(photo);
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
+    }
+  };
+
+  const submitPickupConfirm = async () => {
+    if (!confirmingPickup) return;
+    const kg = Number.parseFloat(receivedKg.replace(',', '.').trim());
+    if (!Number.isFinite(kg) || kg < 0) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Số kg không hợp lệ',
+        text2: 'Nhập số kg thực nhận trước khi xác nhận.',
+      });
+      return;
+    }
+    if (!pickupPhoto) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Thiếu ảnh nguyên liệu',
+        text2: 'Chụp ảnh nguyên liệu để kiểm tra lại trước khi gửi xác nhận.',
+      });
+      return;
+    }
+    try {
+      Keyboard.dismiss();
+      const providerRequestId = confirmingPickup.providerRequestId || confirmingPickup.id;
+      await confirmPickup.mutateAsync({
+        requestId: providerRequestId,
+        receivedKg: kg,
+        photo: pickupPhoto,
+        note: note.trim() || undefined,
+      });
+      void notifySuccess();
+      Popup.show({ type: 'success', text1: `Đã xác nhận lấy ${kg} kg nguyên liệu` });
+      setConfirmingPickup(null);
+      setPickupPhoto(null);
+      await onRefresh();
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không xác nhận được đơn nguyên liệu', text2: getErrorMessage(error) });
+    }
   };
 
   return (
@@ -464,6 +589,81 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         })}
       </Section>
 
+      {pickupOrders.length > 0 ? (
+        <>
+          <View style={styles.sectionHeaderOutside}>
+            <MaterialCommunityIcons name="truck-delivery-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.sectionOutsideTitle}>Đơn nguyên liệu cần lấy ({pickupOrders.length})</Text>
+          </View>
+          {pickupOrders.map((order) => {
+            const done = !!order.pickup || order.delivery?.status === 'delivered';
+            return (
+              <View key={order.id} style={styles.pickupCard}>
+                <View style={styles.dishHead}>
+                  <View style={styles.flex}>
+                    <Text style={styles.dishTitle}>{order.providerName}</Text>
+                    <Text style={styles.muted}>
+                      {order.ingredientName ?? 'Nguyên liệu chiến dịch'}
+                      {order.quantityKg != null ? ` · cần lấy ${order.quantityKg} kg` : ''}
+                    </Text>
+                    <Text style={styles.smallMuted}>
+                      {order.pickupStartTime && order.pickupEndTime
+                        ? `Khung lấy ${formatTime(order.pickupStartTime)}–${formatTime(order.pickupEndTime)}`
+                        : 'Chưa hẹn khung lấy'}
+                      {order.distanceKm != null ? ` · cách bếp ~${order.distanceKm} km` : ''}
+                    </Text>
+                  </View>
+                  <StatusBadge label={done ? 'Đã lấy' : 'Cần lấy'} tone={done ? 'success' : 'warning'} />
+                </View>
+
+                <View style={styles.pickupBody}>
+                  <InfoLine
+                    icon="store-marker-outline"
+                    title="Điểm lấy"
+                    subtitle={order.providerAddress ?? 'Chưa có địa chỉ NCC'}
+                  />
+                  <InfoLine
+                    icon="home-map-marker"
+                    title="Giao về bếp"
+                    subtitle={order.kitchenAddress}
+                  />
+                  {order.message ? (
+                    <InfoLine icon="message-text-outline" title="Ghi chú" subtitle={order.message} />
+                  ) : null}
+                  {order.pickup ? (
+                    <View style={styles.completedBox}>
+                      <Text style={styles.completedText}>
+                        Đã nhận {order.pickup.receivedKg} kg
+                        {order.pickup.requestedKg != null ? ` / đặt ${order.pickup.requestedKg} kg` : ''}
+                        {order.pickup.confirmedAt ? ` · ${formatDateTime(order.pickup.confirmedAt)}` : ''}
+                      </Text>
+                      {order.pickup.photoUrl ? (
+                        <AppImage source={{ uri: order.pickup.photoUrl }} style={styles.pickupProof} />
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.distributionActions}>
+                  {order.lat != null && order.lng != null ? (
+                    <Button compact icon="directions" onPress={() => openDirections(order.lat, order.lng)}>Đi NCC</Button>
+                  ) : null}
+                  <Button
+                    mode="contained"
+                    icon="camera"
+                    disabled={!checkedIn || done || confirmPickup.isPending}
+                    loading={confirmPickup.isPending && confirmingPickup?.id === order.id}
+                    onPress={() => openPickupConfirm(order)}
+                  >
+                    Xác nhận lấy
+                  </Button>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      ) : null}
+
       <View style={styles.sectionHeaderOutside}>
         <MaterialCommunityIcons name="food-takeout-box-outline" size={22} color={COLORS.primary} />
         <Text style={styles.sectionOutsideTitle}>Đợt phát được giao ({distributions.length})</Text>
@@ -496,6 +696,9 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
               <Text style={styles.completedText}>
                 Đã phát {distribution.actualServings ?? distribution.servingsServed}/{distribution.servingsServed} suất cho {distribution.actualPeopleServed ?? distribution.peopleServed} người · {formatDateTime(distribution.completedAt)}
               </Text>
+              {distribution.photoUrl ? (
+                <AppImage source={{ uri: distribution.photoUrl }} style={styles.distributionProof} />
+              ) : null}
             </View>
           ) : (
             <View style={styles.distributionActions}>
@@ -518,7 +721,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       ))}
 
       <Portal>
-        <Dialog visible={!!closing} onDismiss={() => !complete.isPending && setClosing(null)}>
+        <Dialog
+          visible={!!closing}
+          onDismiss={() => {
+            if (complete.isPending) return;
+            setClosing(null);
+            setDistributionPhoto(null);
+          }}
+        >
           <Dialog.Title>Chốt đợt phát</Dialog.Title>
           <Dialog.Content style={styles.dialogBody}>
             <Text style={styles.muted}>Kế hoạch: {closing?.servingsServed ?? 0} suất</Text>
@@ -526,13 +736,164 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
             {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
             <Text style={styles.muted}>Mỗi suất phát cho đúng 1 người — hệ thống tự ghi số người nhận bằng số suất.</Text>
             <TextInput mode="outlined" label="Ghi chú" value={note} onChangeText={setNote} multiline numberOfLines={3} />
+            {distributionPhoto ? (
+              <View style={styles.distributionPhotoReview}>
+                <View style={styles.pickupPhotoHead}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.success} />
+                  <Text style={styles.pickupPhotoTitle}>Ảnh phát suất đã chụp</Text>
+                </View>
+                <AppImage source={{ uri: distributionPhoto.uri }} style={styles.distributionPhotoPreview} />
+                <Button compact icon="camera-retake-outline" onPress={captureDistributionPhoto} disabled={complete.isPending}>
+                  Chụp lại
+                </Button>
+              </View>
+            ) : (
+              <View style={styles.distributionPhotoEmpty}>
+                <View style={styles.pickupPhotoEmptyIcon}>
+                  <MaterialCommunityIcons name="camera-outline" size={28} color={COLORS.primary} />
+                </View>
+                <Text style={styles.pickupPhotoEmptyTitle}>Cần ảnh phát suất</Text>
+                <Text style={styles.pickupPhotoEmptyText}>Chụp rõ phần ăn hoặc điểm phát để tổ chức dùng làm tư liệu tổng kết.</Text>
+                <Button mode="contained-tonal" icon="camera" onPress={captureDistributionPhoto} disabled={complete.isPending}>
+                  Chụp ảnh
+                </Button>
+              </View>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setClosing(null)} disabled={complete.isPending}>Huỷ</Button>
-            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending} onPress={submitClose}>Xác nhận</Button>
+            <Button
+              onPress={() => {
+                setClosing(null);
+                setDistributionPhoto(null);
+              }}
+              disabled={complete.isPending}
+            >
+              Huỷ
+            </Button>
+            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending || !distributionPhoto} onPress={submitClose}>Xác nhận</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
+      <Modal
+        visible={!!confirmingPickup}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={closePickupConfirm}
+      >
+        {confirmingPickup ? (
+          <View style={styles.pickupModalRoot} pointerEvents="box-none">
+            <Pressable style={styles.pickupBackdrop} onPress={closePickupConfirm} />
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+              style={styles.pickupSheetAvoider}
+              pointerEvents="box-none"
+            >
+              <View style={styles.pickupSheet}>
+                <View style={styles.pickupHandle} />
+                <View style={styles.pickupSheetHeader}>
+                  <View style={styles.pickupHeaderIcon}>
+                    <MaterialCommunityIcons name="basket-check-outline" size={22} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={styles.pickupSheetTitle}>Xác nhận lấy nguyên liệu</Text>
+                    <Text style={styles.pickupSheetSubtitle}>Nhập số kg, chụp ảnh rồi kiểm tra lại trước khi gửi.</Text>
+                  </View>
+                  <Button compact onPress={closePickupConfirm} disabled={confirmPickup.isPending}>
+                    Huỷ
+                  </Button>
+                </View>
+
+              <ScrollView
+                contentContainerStyle={styles.pickupSheetContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.pickupSummary}>
+                  <View style={styles.pickupSummaryRow}>
+                    <MaterialCommunityIcons name="store-marker-outline" size={18} color={COLORS.primary} />
+                    <Text style={styles.pickupSummaryTitle}>{confirmingPickup.providerName}</Text>
+                  </View>
+                  <Text style={styles.pickupSummaryText}>
+                    {confirmingPickup.ingredientName ?? 'Nguyên liệu chiến dịch'}
+                    {confirmingPickup.quantityKg != null ? ` · đặt ${confirmingPickup.quantityKg} kg` : ''}
+                  </Text>
+                  {confirmingPickup.pickupStartTime && confirmingPickup.pickupEndTime ? (
+                    <Text style={styles.pickupSummaryTime}>
+                      Khung lấy {formatTime(confirmingPickup.pickupStartTime)}-{formatTime(confirmingPickup.pickupEndTime)}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.pickupFieldGroup}>
+                  <TextInput
+                    mode="outlined"
+                    label="Kg thực nhận *"
+                    value={receivedKg}
+                    onChangeText={setReceivedKg}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                    style={styles.pickupInput}
+                  />
+                  <TextInput
+                    mode="outlined"
+                    label="Ghi chú"
+                    value={note}
+                    onChangeText={setNote}
+                    multiline
+                    numberOfLines={3}
+                    blurOnSubmit
+                    returnKeyType="done"
+                    style={styles.pickupInput}
+                  />
+                </View>
+
+                {pickupPhoto ? (
+                  <View style={styles.pickupPhotoReview}>
+                    <View style={styles.pickupPhotoHead}>
+                      <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.success} />
+                      <Text style={styles.pickupPhotoTitle}>Ảnh nguyên liệu đã chụp</Text>
+                    </View>
+                    <AppImage source={{ uri: pickupPhoto.uri }} style={styles.pickupPhotoPreview} />
+                    <Button compact icon="camera-retake-outline" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                      Chụp lại
+                    </Button>
+                  </View>
+                ) : (
+                  <View style={styles.pickupPhotoEmpty}>
+                    <View style={styles.pickupPhotoEmptyIcon}>
+                      <MaterialCommunityIcons name="camera-outline" size={28} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.pickupPhotoEmptyTitle}>Chưa có ảnh bằng chứng</Text>
+                    <Text style={styles.pickupPhotoEmptyText}>Chụp bao/hộp nguyên liệu rõ nhãn và số lượng để bếp đối chiếu.</Text>
+                    <Button mode="contained-tonal" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                      Chụp ảnh
+                    </Button>
+                  </View>
+                )}
+              </ScrollView>
+                <View style={styles.pickupSheetFooter}>
+                  <Button mode="outlined" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
+                    {pickupPhoto ? 'Chụp lại' : 'Chụp ảnh'}
+                  </Button>
+                  <Button
+                    mode="contained"
+                    icon="check"
+                    loading={confirmPickup.isPending}
+                    disabled={confirmPickup.isPending || !pickupPhoto}
+                    onPress={submitPickupConfirm}
+                    style={styles.pickupSubmitBtn}
+                  >
+                    Xác nhận gửi
+                  </Button>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        ) : null}
+      </Modal>
     </>
   );
 }
@@ -618,7 +979,14 @@ const styles = StyleSheet.create({
   stepTitle: { color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
   stepProof: { width: '100%', height: 110, borderRadius: radius.md, marginTop: 8 },
   stepActions: { alignItems: 'flex-start', gap: 2, marginTop: 8 },
+  stepPendingText: { color: COLORS.warning, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
+  stepApprovedText: { color: COLORS.success, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
+  stepRejectedText: { color: COLORS.error, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
   distributionCard: { padding: spacing.lg, borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, ...elevation.card },
+  pickupCard: { borderRadius: 24, borderWidth: 1, borderColor: COLORS.outlineVariant, backgroundColor: COLORS.surface, overflow: 'hidden', ...elevation.card },
+  pickupBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6 },
+  pickupProof: { width: '100%', height: 130, borderRadius: radius.md, marginTop: 8 },
+  distributionProof: { width: '100%', height: 130, borderRadius: radius.md, marginTop: 8 },
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.outlineVariant },
   pointIndex: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primaryContainer },
   pointIndexText: { color: COLORS.primary, fontSize: 11, fontWeight: '900' },
@@ -628,4 +996,122 @@ const styles = StyleSheet.create({
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   dialogBody: { gap: 12 },
   dialogInput: { marginTop: 12 },
+  distributionPhotoEmpty: {
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  distributionPhotoReview: {
+    gap: 10,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  distributionPhotoPreview: { width: '100%', height: 170, borderRadius: radius.md },
+  pickupModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  pickupBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(18, 28, 42, 0.42)',
+  },
+  pickupSheetAvoider: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  pickupSheet: {
+    maxHeight: '92%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+    ...elevation.card,
+  },
+  pickupHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    marginTop: 10,
+    marginBottom: 8,
+    backgroundColor: COLORS.outlineVariant,
+  },
+  pickupSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  pickupHeaderIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  pickupSheetTitle: { color: COLORS.onSurface, fontSize: 18, lineHeight: 23, fontWeight: '900' },
+  pickupSheetSubtitle: { marginTop: 2, color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17 },
+  pickupSheetContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 14 },
+  pickupSummary: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.primaryContainer,
+    gap: 5,
+  },
+  pickupSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  pickupSummaryTitle: { flex: 1, color: COLORS.onSurface, fontSize: 14, lineHeight: 19, fontWeight: '900' },
+  pickupSummaryText: { color: COLORS.onSurface, fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  pickupSummaryTime: { color: COLORS.primary, fontSize: 12, lineHeight: 17, fontWeight: '800' },
+  pickupFieldGroup: { gap: 10 },
+  pickupInput: { backgroundColor: COLORS.surface },
+  pickupSheetFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+  },
+  pickupSubmitBtn: { flex: 1 },
+  pickupPhotoEmpty: {
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  pickupPhotoEmptyIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  pickupPhotoEmptyTitle: { color: COLORS.onSurface, fontSize: 15, fontWeight: '900' },
+  pickupPhotoEmptyText: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  pickupPhotoReview: {
+    gap: 10,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  pickupPhotoHead: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 4, paddingTop: 2 },
+  pickupPhotoTitle: { flex: 1, color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
+  pickupPhotoPreview: { width: '100%', height: 190, borderRadius: radius.md },
 });

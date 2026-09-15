@@ -56,6 +56,9 @@ export class CampaignsCron {
     try {
       const n = await this.campaigns.autoCompleteExpiredCampaigns();
       if (n > 0) this.logger.log(`Auto-completed ${n} expired campaign(s)`);
+      // Sweep: đóng các ca TNV còn treo của chiến dịch đã kết thúc/huỷ
+      const released = await this.campaigns.releaseVolunteersOfFinishedCampaigns();
+      if (released > 0) this.logger.log(`Released ${released} lingering assignment(s)`);
     } catch (e) {
       logCronError(this.logger, 'autoCompleteExpiredCampaigns', e);
     }

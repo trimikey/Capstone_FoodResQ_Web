@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { mediaUrl, UNIT_LABEL } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import type { ActiveDelivery } from '@/hooks/useDeliveries';
@@ -23,7 +24,13 @@ export default function HandoverConfirmModal({
 }) {
   const reservation = delivery.reservation;
   const receiver = reservation?.receiver;
-  const registeredPhoto = receiver?.faceImageUrl ?? receiver?.idCardImageUrl ?? null;
+  const rawPhoto = receiver?.faceImageUrl ?? receiver?.idCardImageUrl ?? null;
+  // Hồ sơ cũ lưu ảnh vào ./uploads của máy chạy API trước khi có Cloudinary —
+  // file đã mất trên Render nên URL còn trong DB nhưng trả 404. Ảnh vỡ nguy hiểm
+  // hơn "không có ảnh": shipper tưởng lỗi mạng rồi bỏ qua bước đối chiếu, nên
+  // URL chết phải rơi về trạng thái cảnh báo hỏi giấy tờ.
+  const [deadPhotoUrl, setDeadPhotoUrl] = useState<string | null>(null);
+  const registeredPhoto = rawPhoto && rawPhoto !== deadPhotoUrl ? rawPhoto : null;
   const unit =
     UNIT_LABEL[reservation?.listing.quantityUnit as QuantityUnit] ??
     reservation?.listing.quantityUnit ??
@@ -69,6 +76,7 @@ export default function HandoverConfirmModal({
                     src={mediaUrl(registeredPhoto)}
                     alt={receiver?.user.fullName ?? 'Người nhận'}
                     className="w-36 h-36 rounded-2xl object-cover ring-4 ring-emerald-100"
+                    onError={() => setDeadPhotoUrl(registeredPhoto)}
                   />
                   <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
                     Ảnh đã đăng ký
@@ -77,7 +85,9 @@ export default function HandoverConfirmModal({
               ) : (
                 <div className="w-36 h-36 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-center px-3">
                   <span className="material-symbols-outlined text-amber-500 text-[36px]">no_photography</span>
-                  <p className="text-[11px] font-bold text-amber-700 mt-1">Người nhận chưa đăng ký ảnh</p>
+                  <p className="text-[11px] font-bold text-amber-700 mt-1">
+                    {rawPhoto ? 'Không tải được ảnh đã đăng ký' : 'Người nhận chưa đăng ký ảnh'}
+                  </p>
                 </div>
               )}
             </div>
@@ -133,7 +143,9 @@ export default function HandoverConfirmModal({
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
                 <span className="material-symbols-outlined text-amber-600 text-[18px]">warning</span>
                 <p className="text-xs font-medium text-amber-800">
-                  Người nhận chưa đăng ký ảnh. Hãy hỏi giấy tờ tuỳ thân trước khi bàn giao.
+                  {rawPhoto
+                    ? 'Ảnh đăng ký của người nhận không còn tải được. Hãy hỏi giấy tờ tuỳ thân trước khi bàn giao.'
+                    : 'Người nhận chưa đăng ký ảnh. Hãy hỏi giấy tờ tuỳ thân trước khi bàn giao.'}
                 </p>
               </div>
             )}

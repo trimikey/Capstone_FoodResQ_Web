@@ -129,7 +129,7 @@ export function AppImage({ source, fallbackSource, onError, ...props }: AppImage
         // Ảnh thật của provider đôi khi lỗi tải THOÁNG QUA (mạng chậm, ảnh vừa
         // upload xong CDN/proxy chưa kịp phục vụ) — không được khoá cứng về ảnh
         // placeholder ngay lần lỗi đầu, phải thử lại vài lần trước khi bỏ cuộc.
-        if (typeof resolvedSource !== 'number' && attempt < MAX_LOAD_RETRIES) {
+        if (resolvedSource && typeof resolvedSource !== 'number' && attempt < MAX_LOAD_RETRIES) {
           setLoadState({ sourceKey, attempt: attempt + 1, failed: false });
           return;
         }

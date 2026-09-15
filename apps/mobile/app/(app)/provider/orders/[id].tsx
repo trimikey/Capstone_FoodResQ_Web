@@ -2,7 +2,7 @@ import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { AppImage } from '@/components/ui/AppImage';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderReservationDetail, useProviderReservations } from '@/hooks/useProviderReservations';
@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StickyActionBar } from '@/components/ui/StickyActionBar';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { BackButton } from '@/components/ui/BackButton';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 function fmtDateTime(iso?: string): string {
@@ -39,7 +40,7 @@ export default function ProviderOrderDetailScreen() {
   );
 
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   return (

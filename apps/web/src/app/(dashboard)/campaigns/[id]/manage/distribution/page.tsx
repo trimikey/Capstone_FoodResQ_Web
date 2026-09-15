@@ -7,6 +7,7 @@ import CreateDistributionModal from '../../../_components/CreateDistributionModa
 import CampaignPlaybook, {
   type CampaignPhaseKey,
 } from '@/components/campaigns/CampaignPlaybook';
+import { mediaUrl } from '@/lib/utils';
 
 type FilterKey = 'all' | 'today' | 'pending' | 'done';
 
@@ -376,6 +377,18 @@ export default function DistributionPage() {
                           <span className={`cm-dist-status whitespace-nowrap ${distStatus === 'done' ? 'cm-dist-status--done' : 'cm-dist-status--pending'}`}>
                             {distStatus === 'done' ? 'Đã xong' : 'Đang chờ'}
                           </span>
+                          {d.photoUrl ? (
+                            <a
+                              href={mediaUrl(d.photoUrl)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-extrabold text-emerald-700 hover:bg-emerald-100"
+                              title="Xem ảnh minh chứng phát suất"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">photo_camera</span>
+                              Ảnh
+                            </a>
+                          ) : null}
                         </td>
                         <td>
                           <button

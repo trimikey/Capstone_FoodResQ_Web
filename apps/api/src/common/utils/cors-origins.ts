@@ -15,6 +15,11 @@ const DEV_MOBILE_ORIGINS = [
   'http://10.0.2.2:3001',
 ];
 
+const PROJECT_ORIGIN_PATTERNS = [
+  'https://capstonefoodresqweb*.vercel.app',
+  'https://capstone-food-res-q-web-web*.vercel.app',
+];
+
 function isPrivateNetworkHost(hostname: string): boolean {
   return (
     hostname === 'localhost' ||
@@ -36,17 +41,30 @@ function isAllowedDevOrigin(origin: string): boolean {
   }
 }
 
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '');
+}
+
 /** Danh sách origin được phép, đọc từ env `ALLOWED_ORIGINS` (ngăn cách bởi dấu phẩy). */
 export function allowedOrigins(): string[] {
   const raw = process.env['ALLOWED_ORIGINS'];
-  if (!raw) return DEFAULT_ORIGINS;
-  const list = raw
+  const fromEnv = (raw ?? '')
     .split(',')
-    .map((o) => o.trim())
+    .map(normalizeOrigin)
     .filter(Boolean);
-  const configured = list.length > 0 ? list : DEFAULT_ORIGINS;
-  if (process.env['NODE_ENV'] === 'production') return configured;
+  const base = fromEnv.length > 0 ? fromEnv : DEFAULT_ORIGINS;
+  const configured = [...base, ...PROJECT_ORIGIN_PATTERNS];
+  if (process.env['NODE_ENV'] === 'production') return Array.from(new Set(configured));
   return Array.from(new Set([...configured, ...DEV_MOBILE_ORIGINS]));
+}
+
+export function originMatches(entry: string, origin: string): boolean {
+  if (!entry.includes('*')) return entry === origin;
+  const pattern = entry
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[a-z0-9-]*');
+  return new RegExp(`^${pattern}$`, 'i').test(origin);
 }
 
 /**
@@ -61,7 +79,12 @@ export function corsOriginDelegate(
   origin: string | undefined,
   callback: (err: Error | null, allow?: boolean) => void,
 ): void {
-  if (!origin || allowedOrigins().includes(origin) || isAllowedDevOrigin(origin)) {
+  if (!origin) {
+    callback(null, true);
+    return;
+  }
+  const incoming = normalizeOrigin(origin);
+  if (allowedOrigins().some((entry) => originMatches(entry, incoming)) || isAllowedDevOrigin(incoming)) {
     callback(null, true);
     return;
   }

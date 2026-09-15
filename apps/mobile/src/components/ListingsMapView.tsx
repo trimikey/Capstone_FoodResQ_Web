@@ -146,6 +146,8 @@ function ListingsMapViewBase({ listings, center, route, onSelect }: Props) {
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled
+        scrollEnabled={false}
+        nestedScrollEnabled={false}
         style={styles.webview}
       />
       <IconButton

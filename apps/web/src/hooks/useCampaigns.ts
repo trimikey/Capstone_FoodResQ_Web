@@ -104,6 +104,8 @@ export interface CreateCampaignInput {
   scheduleItems?: { time: string; label: string }[];
   /** Vật phẩm cần thiết — object đầy đủ {name, quantity?, unit?}. */
   supplyItems?: { name: string; quantity?: number; unit?: string }[];
+  /** Giờ dự kiến 4 khâu bếp (Sơ chế, Nấu, QC, Sẵn sàng xuất phát) — HH:mm. */
+  stepTimes?: string[];
   /** Ca trực cho tình nguyện viên — insert vào bảng campaign_shifts lúc tạo. */
   shifts: {
     label: string;
@@ -1514,6 +1516,8 @@ export interface CampaignCreateConstraints {
   multiDayEarliestStartDate: string;
   minFillPercent: number;
   changeLockDays: number;
+  /** Hạn đóng tuyển phải trước ca đầu tiên ít nhất bấy nhiêu phút. */
+  recruitmentCloseLeadMinutes: number;
   /** Admin bật "Cho phép bắt đầu/điểm danh sớm" → cho bấm Bắt đầu trước giờ vận hành. */
   allowEarlyStart: boolean;
 }
@@ -1526,7 +1530,8 @@ export function useCampaignCreateConstraints(enabled = true) {
       return data.data as CampaignCreateConstraints;
     },
     enabled,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -1696,6 +1701,29 @@ export function useReviewQcStep() {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
       void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
     },
+  });
+}
+
+export interface PublicImpactReport {
+  totals: { completedCampaigns: number; mealsServed: number; peopleServed: number; kgRescued: number };
+  kgBySource: Array<{ key: string; kg: number }>;
+  monthlySeries: Array<{ month: string; servings: number; kg: number }>;
+  campaigns: Array<{
+    id: string;
+    title: string;
+    servings: number;
+    finishedAt: string;
+    address: string | null;
+    organizationName: string | null;
+  }>;
+}
+
+/** Báo cáo tác động công khai (trang /impact) — không cần đăng nhập. */
+export function usePublicImpactReport() {
+  return useQuery({
+    queryKey: ['campaigns', 'impact-report'],
+    queryFn: async () => (await api.get('/campaigns/impact-report')).data.data as PublicImpactReport,
+    staleTime: 60_000,
   });
 }
 

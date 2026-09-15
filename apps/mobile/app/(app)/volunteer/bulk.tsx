@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Button, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { BulkRun, BulkRunStop } from '@foodresq/types';
 import {
   BULK_MIN_QTY,
@@ -16,15 +17,19 @@ import {
   useServeBulkStop,
 } from '@/hooks/useBulkRuns';
 import { useListings, type Listing } from '@/hooks/useListings';
+import { ListingsMapView } from '@/components/ListingsMapView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { QRDisplay } from '@/components/QRDisplay';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
 import { captureImage } from '@/services/faceCapture';
-import { getCurrentCoords, type Coords } from '@/services/geolocation';
+import { DEFAULT_MAP_COORDS, getCurrentCoords, type Coords } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
+import { formatDistance, formatPickupWindow, quantityLabel } from '@/utils/listingFormat';
 
 function errorMessage(e: unknown, fallback: string): string {
   return (
@@ -36,6 +41,23 @@ function errorMessage(e: unknown, fallback: string): string {
 
 function formatQty(value: number, unit = 'phần'): string {
   return `${value} ${unit}`;
+}
+
+function shortCode(token?: string | null): string | null {
+  const clean = token?.trim();
+  return clean ? clean.slice(-8).toUpperCase() : null;
+}
+
+function formatExpiry(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function statusMeta(status: string): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' } {
@@ -62,26 +84,52 @@ function ListingPickCard({
   selected: boolean;
   onPress: () => void;
 }) {
+  const imageUri = listing.imageUrls?.[0];
+  const distance = formatDistance(listing.distanceM);
+
   return (
     <Pressable
       onPress={onPress}
       style={[styles.listingCard, selected && styles.listingCardSelected]}
+      accessibilityRole="button"
     >
-      <View style={styles.listingRow}>
-        <View style={styles.listingInfo}>
-          <Text style={[styles.listingTitle, selected && styles.listingTitleSelected]} numberOfLines={1}>
+      <AppImage
+        source={imageUri}
+        fallbackSource={foodFallbackSourceForCategory(listing.category)}
+        style={styles.listingImage}
+      />
+      <View style={styles.listingInfo}>
+        <View style={styles.listingTitleRow}>
+          <Text style={[styles.listingTitle, selected && styles.listingTitleSelected]} numberOfLines={2}>
             {listing.title}
           </Text>
-          <Text style={styles.listingSub} numberOfLines={1}>
-            {listing.pickupAddress}
-          </Text>
+          {selected ? (
+            <MaterialCommunityIcons name="check-circle" size={20} color={COLORS.primary} />
+          ) : null}
         </View>
-        <View style={[styles.listingQtyBadge, selected && styles.listingQtyBadgeSelected]}>
-          <Text style={[styles.listingQtyText, selected && styles.listingQtyTextSelected]}>
-            Còn {listing.quantityRemaining}
-          </Text>
-          <Text style={[styles.listingUnit, selected && styles.listingQtyTextSelected]}>
-            {listing.quantityUnit}
+        <Text style={styles.listingProvider} numberOfLines={1}>
+          {listing.provider?.businessName ?? 'Cửa hàng'}
+        </Text>
+        <Text style={styles.listingSub} numberOfLines={2}>
+          {listing.pickupAddress}
+        </Text>
+        <View style={styles.listingMetaRow}>
+          <View style={[styles.listingQtyBadge, selected && styles.listingQtyBadgeSelected]}>
+            <Text style={[styles.listingQtyText, selected && styles.listingQtyTextSelected]}>
+              {quantityLabel(listing.quantityRemaining, listing.quantityUnit)}
+            </Text>
+          </View>
+          {distance ? (
+            <View style={styles.distanceBadge}>
+              <MaterialCommunityIcons name="map-marker-distance" size={13} color={COLORS.blue} />
+              <Text style={styles.distanceText}>{distance}</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.pickupWindowRow}>
+          <MaterialCommunityIcons name="clock-outline" size={14} color={COLORS.onSurfaceVariant} />
+          <Text style={styles.pickupWindowText} numberOfLines={1}>
+            {formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)}
           </Text>
         </View>
       </View>
@@ -97,6 +145,8 @@ function StopItem({
   remaining,
   canServe,
   busy,
+  qrVerified,
+  onOpenQr,
   onServe,
 }: {
   stop: BulkRunStop;
@@ -104,6 +154,8 @@ function StopItem({
   remaining: number;
   canServe: boolean;
   busy: boolean;
+  qrVerified: boolean;
+  onOpenQr: () => void;
   onServe: (servedQty: number, note?: string, withPhoto?: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -152,14 +204,42 @@ function StopItem({
             <Text style={styles.stopDoneText}>+{formatQty(stop.servedQty)}</Text>
           </View>
         ) : canServe ? (
-          <Button compact mode="contained-tonal" onPress={() => setOpen((v) => !v)}
-            buttonColor={open ? COLORS.surfaceVariant : COLORS.primaryContainer}
-            textColor={open ? COLORS.onSurfaceVariant : COLORS.primary}
-          >
-            {open ? 'Đóng' : 'Phát'}
-          </Button>
+          <View style={styles.stopActions}>
+            <Pressable
+              onPress={onOpenQr}
+              style={[styles.iconBtn, qrVerified && styles.iconBtnSuccess]}
+              accessibilityRole="button"
+              accessibilityLabel="Mở mã QR điểm phát"
+              hitSlop={8}
+            >
+              <MaterialCommunityIcons
+                name={qrVerified ? 'check-decagram-outline' : 'qrcode-scan'}
+                size={18}
+                color={qrVerified ? COLORS.teal : COLORS.primary}
+              />
+            </Pressable>
+            <Button compact mode="contained-tonal" onPress={() => setOpen((v) => !v)}
+              buttonColor={open ? COLORS.surfaceVariant : COLORS.primaryContainer}
+              textColor={open ? COLORS.onSurfaceVariant : COLORS.primary}
+            >
+              {open ? 'Đóng' : 'Phát'}
+            </Button>
+          </View>
         ) : null}
       </View>
+
+      {canServe && stop.reservation?.qrToken ? (
+        <View style={styles.qrInline}>
+          <MaterialCommunityIcons
+            name={qrVerified ? 'shield-check-outline' : 'qrcode'}
+            size={15}
+            color={qrVerified ? COLORS.teal : COLORS.onSurfaceVariant}
+          />
+          <Text style={[styles.qrInlineText, qrVerified && styles.qrInlineTextDone]}>
+            {qrVerified ? 'Đã quét đúng điểm' : `Mã điểm ${shortCode(stop.reservation.qrToken)}`}
+          </Text>
+        </View>
+      ) : null}
 
       {open && canServe ? (
         <View style={styles.stopForm}>
@@ -191,6 +271,135 @@ function StopItem({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function StopQrModal({
+  stop,
+  visible,
+  verified,
+  scanning,
+  permissionGranted,
+  torch,
+  onClose,
+  onScan,
+  onToggleScanner,
+  onRequestPermission,
+  onToggleTorch,
+}: {
+  stop: BulkRunStop | null;
+  visible: boolean;
+  verified: boolean;
+  scanning: boolean;
+  permissionGranted: boolean;
+  torch: boolean;
+  onClose: () => void;
+  onScan: (token: string) => void;
+  onToggleScanner: () => void;
+  onRequestPermission: () => void;
+  onToggleTorch: () => void;
+}) {
+  const token = stop?.reservation?.qrToken ?? null;
+  const code = shortCode(token);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.qrModalCard}>
+          <View style={styles.qrModalHeader}>
+            <View style={styles.qrModalTitleBlock}>
+              <Text style={styles.qrModalKicker}>Điểm phát</Text>
+              <Text style={styles.qrModalTitle} numberOfLines={2}>{stop?.label ?? 'Mã QR'}</Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Đóng">
+              <MaterialCommunityIcons name="close" size={20} color={COLORS.onSurfaceVariant} />
+            </Pressable>
+          </View>
+
+          {!token ? (
+            <View style={styles.qrMissing}>
+              <MaterialCommunityIcons name="qrcode-remove" size={42} color={COLORS.onSurfaceVariant} />
+              <Text style={styles.qrMissingTitle}>Chưa có mã cho điểm này</Text>
+              <Text style={styles.qrMissingText}>
+                Mã QR được tạo sau khi chuyến chuyển sang trạng thái đã lấy hàng. Kéo để làm mới nếu bạn vừa xác nhận lấy.
+              </Text>
+            </View>
+          ) : scanning ? (
+            <View style={styles.scannerBox}>
+              {!permissionGranted ? (
+                <View style={styles.scannerPermission}>
+                  <MaterialCommunityIcons name="camera-off-outline" size={42} color={COLORS.onSurfaceVariant} />
+                  <Text style={styles.qrMissingText}>Cần quyền camera để quét mã điểm phát.</Text>
+                  <Button mode="contained" onPress={onRequestPermission} buttonColor={COLORS.primary}>
+                    Cấp quyền camera
+                  </Button>
+                </View>
+              ) : (
+                <>
+                  <CameraView
+                    style={StyleSheet.absoluteFill}
+                    facing="back"
+                    enableTorch={torch}
+                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                    onBarcodeScanned={({ data }) => onScan(data)}
+                  />
+                  <Pressable
+                    style={styles.torchBtn}
+                    onPress={onToggleTorch}
+                    accessibilityRole="button"
+                    accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
+                  >
+                    <MaterialCommunityIcons name={torch ? 'flash' : 'flash-off'} size={22} color={COLORS.onPrimary} />
+                  </Pressable>
+                </>
+              )}
+            </View>
+          ) : (
+            <View style={styles.qrDisplayBlock}>
+              <View style={styles.qrFrame}>
+                <QRDisplay value={token} size={210} />
+              </View>
+              <View style={styles.shortCodeBlock}>
+                <Text style={styles.shortCodeLabel}>Mã nhập tay</Text>
+                <Text selectable style={styles.shortCodeText}>{code}</Text>
+              </View>
+              {stop?.reservation?.qrExpiresAt ? (
+                <Text style={styles.qrExpiry}>Hết hạn: {formatExpiry(stop.reservation.qrExpiresAt)}</Text>
+              ) : null}
+              {verified ? (
+                <View style={styles.verifiedBanner}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.teal} />
+                  <Text style={styles.verifiedText}>Mã này đã được quét đúng với điểm phát.</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          <View style={styles.qrModalActions}>
+            {token ? (
+              <>
+                <Button mode="outlined" icon={scanning ? 'qrcode' : 'qrcode-scan'} onPress={onToggleScanner} style={styles.flexBtn}>
+                  {scanning ? 'Hiện mã' : 'Quét kiểm tra'}
+                </Button>
+                <Button
+                  mode="contained"
+                  icon="share-variant-outline"
+                  buttonColor={COLORS.primary}
+                  onPress={() => void Share.share({ message: token })}
+                  style={styles.flexBtn}
+                >
+                  Chia sẻ
+                </Button>
+              </>
+            ) : (
+              <Button mode="contained" onPress={onClose} buttonColor={COLORS.primary} style={styles.flexBtn}>
+                Đã hiểu
+              </Button>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -268,9 +477,12 @@ function AddStopForm({
 // ─── Main screen ────────────────────────────────────────────────────────────
 
 export default function VolunteerBulkRunScreen() {
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { data: runs, isLoading, isError, refetch, isRefetching } = useMyBulkRuns();
   const [currentCoords, setCurrentCoords] = useState<Coords | null>(null);
-  const listings = useListings({ coords: currentCoords, radiusKm: 15, limit: 20 });
+  const [locationFallback, setLocationFallback] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const listings = useListings({ coords: currentCoords, search: searchText.trim() || undefined, radiusKm: 15, limit: 20 });
   const requestRun = useRequestBulkRun();
   const pickupRun = usePickupBulkRun();
   const addStop = useAddBulkStop();
@@ -281,11 +493,17 @@ export default function VolunteerBulkRunScreen() {
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
+  const [qrStop, setQrStop] = useState<BulkRunStop | null>(null);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [verifiedStopIds, setVerifiedStopIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let active = true;
     getCurrentCoords().then(({ coords }) => {
-      if (active && coords) setCurrentCoords(coords);
+      if (!active) return;
+      setCurrentCoords(coords);
+      setLocationFallback(!coords);
     });
     return () => { active = false; };
   }, []);
@@ -296,6 +514,7 @@ export default function VolunteerBulkRunScreen() {
     () => (listings.data?.items ?? []).filter((item) => item.quantityRemaining >= BULK_MIN_QTY),
     [listings.data?.items],
   );
+  const mapCenter = currentCoords ?? (eligible[0] ? { lat: eligible[0].lat, lng: eligible[0].lng } : DEFAULT_MAP_COORDS);
 
   const busy =
     requestRun.isPending || pickupRun.isPending || addStop.isPending ||
@@ -371,6 +590,42 @@ export default function VolunteerBulkRunScreen() {
     await Linking.openURL(url);
   };
 
+  const openStopQr = (stop: BulkRunStop) => {
+    setQrStop(stop);
+    setQrScannerOpen(false);
+    setTorch(false);
+  };
+
+  const toggleStopScanner = async () => {
+    if (!qrStop?.reservation?.qrToken) return;
+    const next = !qrScannerOpen;
+    setQrScannerOpen(next);
+    if (next && !cameraPermission?.granted) {
+      await requestCameraPermission();
+    }
+  };
+
+  const handleStopQrScan = (token: string) => {
+    if (!qrStop?.reservation?.qrToken) return;
+    setQrScannerOpen(false);
+    if (token.trim() !== qrStop.reservation.qrToken.trim()) {
+      void notifyWarning();
+      Popup.show({
+        type: 'warning',
+        text1: 'Không đúng mã điểm phát',
+        text2: 'Hãy kiểm tra lại điểm đang đứng hoặc chọn đúng điểm trong danh sách.',
+      });
+      return;
+    }
+    setVerifiedStopIds((prev) => {
+      const next = new Set(prev);
+      next.add(qrStop.id);
+      return next;
+    });
+    void notifySuccess();
+    Toast.show({ type: 'success', text1: 'Đã xác minh đúng điểm phát.' });
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -410,30 +665,98 @@ export default function VolunteerBulkRunScreen() {
         {!activeRun ? (
           <>
             <View style={styles.heroBulk}>
-              <View style={styles.heroIcon}>
-                <MaterialCommunityIcons name="package-variant-closed" size={26} color={COLORS.amber} />
+              <View style={styles.heroTopLine}>
+                <View style={styles.heroIcon}>
+                  <MaterialCommunityIcons name="map-marker-multiple-outline" size={24} color={COLORS.amber} />
+                </View>
+                <View style={styles.heroText}>
+                  <Text style={styles.heroTitle}>Đi tuyến lớn hôm nay</Text>
+                  <Text style={styles.heroSub}>
+                    Chọn điểm cung cấp gần, xin nhận từ {BULK_MIN_QTY} phần rồi phát theo từng điểm.
+                  </Text>
+                </View>
               </View>
-              <View style={styles.heroText}>
-                <Text style={styles.heroTitle}>Nhận sỉ, phát nhiều điểm</Text>
-                <Text style={styles.heroSub}>
-                  Tối thiểu {BULK_MIN_QTY} phần. Phần chưa phát sẽ hoàn về tin khi kết thúc.
-                </Text>
+              <View style={styles.heroStatsRow}>
+                <View style={styles.heroStat}>
+                  <Text style={styles.heroStatValue}>{eligible.length}</Text>
+                  <Text style={styles.heroStatLabel}>điểm gần</Text>
+                </View>
+                <View style={styles.heroStat}>
+                  <Text style={styles.heroStatValue}>15 km</Text>
+                  <Text style={styles.heroStatLabel}>bán kính</Text>
+                </View>
+                <View style={styles.heroStat}>
+                  <Text style={styles.heroStatValue}>{BULK_MIN_QTY}+</Text>
+                  <Text style={styles.heroStatLabel}>phần</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>1. Chọn tin thực phẩm</Text>
+            <View style={styles.discoveryPanel}>
+              <View style={styles.discoveryHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Điểm cung cấp gần bạn</Text>
+                  <Text style={styles.discoverySub}>
+                    {locationFallback
+                      ? 'Chưa có GPS, đang hiển thị tin mới nhất có thể nhận.'
+                      : listings.data?.isLocationFallback
+                        ? 'Không có tin trong bán kính, đang gợi ý tin mới nhất.'
+                        : 'Sắp xếp theo khoảng cách từ vị trí hiện tại.'}
+                  </Text>
+                </View>
+                <Pressable
+	                  onPress={() => {
+                    void getCurrentCoords().then(({ coords }) => {
+                      setCurrentCoords(coords);
+                      setLocationFallback(!coords);
+                    });
+                  }}
+                  style={styles.locateChip}
+                  accessibilityRole="button"
+                  accessibilityLabel="Lấy lại vị trí"
+                >
+                  <MaterialCommunityIcons name="crosshairs-gps" size={16} color={COLORS.primary} />
+                  <Text style={styles.locateChipText}>GPS</Text>
+                </Pressable>
+              </View>
+
+              <TextInput
+                mode="outlined"
+                value={searchText}
+                onChangeText={setSearchText}
+                label="Tìm món hoặc cửa hàng"
+                dense
+                style={styles.searchInput}
+                left={<TextInput.Icon icon="magnify" />}
+                right={searchText ? <TextInput.Icon icon="close" onPress={() => setSearchText('')} /> : undefined}
+              />
+
+              <View style={styles.mapCard}>
+                <ListingsMapView
+                  listings={eligible}
+                  center={mapCenter}
+                  onSelect={(id) => setSelectedListingId(id)}
+                />
+              </View>
+
               {listings.isLoading ? (
-                <ActivityIndicator color={COLORS.primary} />
+                <View style={styles.loadingNearby}>
+                  <ActivityIndicator color={COLORS.primary} />
+                  <Text style={styles.emptyHint}>Đang tìm điểm cung cấp phù hợp...</Text>
+                </View>
               ) : eligible.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <MaterialCommunityIcons name="package-variant-closed-remove" size={32} color={COLORS.onSurfaceVariant} />
                   <Text style={styles.emptyHint}>
-                    Chưa có tin nào còn đủ {BULK_MIN_QTY} phần trong bán kính 15 km.
+                    Chưa có tin nào còn đủ {BULK_MIN_QTY} phần. Thử xoá tìm kiếm hoặc bấm GPS để lấy lại vị trí.
                   </Text>
                 </View>
               ) : (
-                <View style={styles.listingList}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.listingRail}
+                >
                   {eligible.map((listing) => (
                     <ListingPickCard
                       key={listing.id}
@@ -442,12 +765,15 @@ export default function VolunteerBulkRunScreen() {
                       onPress={() => setSelectedListingId(listing.id)}
                     />
                   ))}
-                </View>
+                </ScrollView>
               )}
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>2. Số phần & ghi chú</Text>
+            <View style={styles.requestPanel}>
+              <View style={styles.requestHeader}>
+                <Text style={styles.sectionTitle}>Yêu cầu nhận sỉ</Text>
+                {selectedListingId ? <StatusBadge label="Đã chọn điểm" tone="success" size="small" /> : null}
+              </View>
               <TextInput
                 mode="outlined"
                 label={`Số phần muốn nhận (tối thiểu ${BULK_MIN_QTY})`}
@@ -514,6 +840,20 @@ export default function VolunteerBulkRunScreen() {
                 ) : (
                   <Text style={[styles.progressRemaining, { color: COLORS.teal }]}>Đã phát hết</Text>
                 )}
+              </View>
+              <View style={styles.runQuickFacts}>
+                <View style={styles.factCell}>
+                  <Text style={styles.factValue}>{activeRun.stops.length}</Text>
+                  <Text style={styles.factLabel}>điểm phát</Text>
+                </View>
+                <View style={styles.factCell}>
+                  <Text style={styles.factValue}>{activeRun.stops.filter((s) => s.servedQty > 0).length}</Text>
+                  <Text style={styles.factLabel}>đã xong</Text>
+                </View>
+                <View style={styles.factCell}>
+                  <Text style={styles.factValue}>{remaining}</Text>
+                  <Text style={styles.factLabel}>còn lại</Text>
+                </View>
               </View>
             </View>
 
@@ -618,6 +958,8 @@ export default function VolunteerBulkRunScreen() {
                         remaining={remaining}
                         canServe={activeRun.status === 'picked_up'}
                         busy={busy}
+                        qrVerified={verifiedStopIds.has(stop.id)}
+                        onOpenQr={() => openStopQr(stop)}
                         onServe={(servedQty, noteText, withPhoto) =>
                           handleServe(activeRun, stop, servedQty, noteText, withPhoto)
                         }
@@ -688,6 +1030,23 @@ export default function VolunteerBulkRunScreen() {
         ) : null}
 
       </ScrollView>
+      <StopQrModal
+        stop={qrStop}
+        visible={!!qrStop}
+        verified={!!qrStop && verifiedStopIds.has(qrStop.id)}
+        scanning={qrScannerOpen}
+        permissionGranted={cameraPermission?.granted === true}
+        torch={torch}
+        onClose={() => {
+          setQrStop(null);
+          setQrScannerOpen(false);
+          setTorch(false);
+        }}
+        onScan={handleStopQrScan}
+        onToggleScanner={() => void toggleStopScanner()}
+        onRequestPermission={() => void requestCameraPermission()}
+        onToggleTorch={() => setTorch((v) => !v)}
+      />
     </SafeAreaView>
   );
 }
@@ -700,25 +1059,35 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: 120, gap: spacing.md },
 
   heroBulk: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.md,
     padding: spacing.lg,
-    borderRadius: 28,
-    backgroundColor: COLORS.heroBulk,
+    borderRadius: 24,
+    backgroundColor: COLORS.heroDriver,
     ...elevation.card,
   },
+  heroTopLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   heroIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.lg,
+    width: 46,
+    height: 46,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   heroText: { flex: 1 },
-  heroTitle: { fontWeight: '900', color: COLORS.onPrimary, fontSize: 20, lineHeight: 26 },
+  heroTitle: { fontWeight: '900', color: COLORS.onPrimary, fontSize: 21, lineHeight: 27 },
   heroSub: { color: COLORS.amberContainer, marginTop: 4, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  heroStatsRow: { flexDirection: 'row', gap: 8 },
+  heroStat: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  heroStatValue: { color: COLORS.onPrimary, fontSize: 18, fontWeight: '900' },
+  heroStatLabel: { color: COLORS.amberContainer, fontSize: 10, fontWeight: '800', marginTop: 2 },
 
   card: {
     gap: 12,
@@ -730,6 +1099,54 @@ const styles = StyleSheet.create({
     ...elevation.card,
   },
   sectionTitle: { fontWeight: '800', color: COLORS.onSurface, fontSize: 15 },
+  discoveryPanel: {
+    gap: 12,
+    paddingVertical: spacing.md,
+    borderRadius: 24,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
+  },
+  discoveryHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: spacing.lg,
+  },
+  discoverySub: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  locateChip: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.primaryContainer,
+  },
+  locateChipText: { color: COLORS.primary, fontSize: 12, fontWeight: '900' },
+  searchInput: { marginHorizontal: spacing.lg },
+  mapCard: {
+    height: 190,
+    marginHorizontal: spacing.lg,
+    overflow: 'hidden',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  loadingNearby: { alignItems: 'center', gap: 8, paddingVertical: 18 },
+  requestPanel: {
+    gap: 12,
+    padding: spacing.lg,
+    borderRadius: 24,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
+  },
+  requestHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
 
   // Run header
   runHeader: {
@@ -759,6 +1176,19 @@ const styles = StyleSheet.create({
   progressValue: { color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
   progressBar: { borderRadius: 6, height: 8 },
   progressRemaining: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  runQuickFacts: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  factCell: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: COLORS.surfaceContainerLow,
+    alignItems: 'center',
+  },
+  factValue: { color: COLORS.onSurface, fontSize: 18, fontWeight: '900' },
+  factLabel: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '700', marginTop: 1 },
 
   // Phase cards
   phaseCard: {
@@ -824,6 +1254,28 @@ const styles = StyleSheet.create({
   stopInfo: { flex: 1 },
   stopTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   stopSub: { color: COLORS.onSurfaceVariant, fontSize: 11, marginTop: 2 },
+  stopActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  iconBtnSuccess: { backgroundColor: COLORS.tealContainer },
+  qrInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  qrInlineText: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '800' },
+  qrInlineTextDone: { color: COLORS.teal },
   stopDoneBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -847,30 +1299,55 @@ const styles = StyleSheet.create({
 
   // Listing picker
   listingList: { gap: 8 },
+  listingRail: { gap: 10, paddingHorizontal: spacing.lg, paddingRight: spacing.lg + 2 },
   listingCard: {
-    borderRadius: 14,
+    width: 248,
+    minHeight: 256,
+    overflow: 'hidden',
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
-    padding: 12,
     backgroundColor: COLORS.surface,
   },
   listingCardSelected: { backgroundColor: COLORS.primaryContainer, borderColor: COLORS.primary },
   listingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  listingInfo: { flex: 1 },
-  listingTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
+  listingImage: { width: '100%', height: 104, backgroundColor: COLORS.surfaceVariant },
+  listingInfo: { flex: 1, gap: 6, padding: 12 },
+  listingTitleRow: { minHeight: 38, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  listingTitle: { flex: 1, color: COLORS.onSurface, fontWeight: '900', fontSize: 15, lineHeight: 19 },
   listingTitleSelected: { color: COLORS.primary },
-  listingSub: { color: COLORS.onSurfaceVariant, fontSize: 11, marginTop: 2 },
+  listingProvider: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  listingSub: { color: COLORS.onSurfaceVariant, fontSize: 11, lineHeight: 16 },
+  listingMetaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   listingQtyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: COLORS.surfaceVariant,
+    backgroundColor: COLORS.warningContainer,
     alignItems: 'center',
   },
   listingQtyBadgeSelected: { backgroundColor: COLORS.primary },
-  listingQtyText: { color: COLORS.blue, fontWeight: '800', fontSize: 12 },
+  listingQtyText: { color: COLORS.onWarningContainer, fontWeight: '900', fontSize: 12 },
   listingUnit: { color: COLORS.onSurfaceVariant, fontSize: 10, fontWeight: '600' },
   listingQtyTextSelected: { color: COLORS.onPrimary },
+  distanceBadge: {
+    minHeight: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.blueContainer,
+  },
+  distanceText: { color: COLORS.blue, fontSize: 11, fontWeight: '900' },
+  pickupWindowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 'auto',
+    paddingTop: 4,
+  },
+  pickupWindowText: { flex: 1, color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '700' },
 
   // Empty state
   emptyBox: { alignItems: 'center', gap: 8, paddingVertical: 16 },
@@ -897,4 +1374,88 @@ const styles = StyleSheet.create({
   historyText: { flex: 1 },
   historyTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   historySub: { color: COLORS.onSurfaceVariant, fontSize: 11, marginTop: 2 },
+
+  // QR modal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(18,28,42,0.45)',
+  },
+  qrModalCard: {
+    maxHeight: '92%',
+    gap: 14,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: COLORS.surface,
+  },
+  qrModalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  qrModalTitleBlock: { flex: 1 },
+  qrModalKicker: { color: COLORS.amber, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  qrModalTitle: { color: COLORS.onSurface, fontSize: 20, lineHeight: 25, fontWeight: '900', marginTop: 2 },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  qrDisplayBlock: { alignItems: 'center', gap: 12 },
+  qrFrame: {
+    padding: 14,
+    borderRadius: 22,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+  },
+  shortCodeBlock: {
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: COLORS.amberContainer,
+  },
+  shortCodeLabel: { color: COLORS.onAmberContainer, fontSize: 11, fontWeight: '800' },
+  shortCodeText: { color: COLORS.onSurface, fontSize: 24, fontWeight: '900', letterSpacing: 1 },
+  qrExpiry: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
+  verifiedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: COLORS.tealContainer,
+  },
+  verifiedText: { flex: 1, color: COLORS.teal, fontSize: 12, fontWeight: '800' },
+  qrMissing: { alignItems: 'center', gap: 8, paddingVertical: 28 },
+  qrMissingTitle: { color: COLORS.onSurface, fontSize: 16, fontWeight: '900' },
+  qrMissingText: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  scannerBox: {
+    height: 310,
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: COLORS.heroDriver,
+  },
+  scannerPermission: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    padding: spacing.lg,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  torchBtn: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(18,28,42,0.65)',
+  },
+  qrModalActions: { flexDirection: 'row', gap: 10 },
 });

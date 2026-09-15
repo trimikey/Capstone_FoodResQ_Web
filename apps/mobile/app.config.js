@@ -21,6 +21,7 @@ module.exports = ({ config }) => {
     ...expo,
     android: {
       ...expo.android,
+      usesCleartextTraffic: true,
       googleServicesFile:
         process.env.GOOGLE_SERVICES_JSON ?? existingLocalFile(expo.android?.googleServicesFile),
     },

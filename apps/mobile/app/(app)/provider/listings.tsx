@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, FAB, Button, Menu } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import { router, Redirect } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
 import { ProviderListingCard } from '@/components/ProviderListingCard';
@@ -13,6 +13,7 @@ import { ListingsStateView } from '@/components/ListingsStateView';
 import { AppScreen } from '@/components/ui/AppScreen';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { FilterPill } from '@/components/ui/FilterPill';
+import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
 type FilterKey = 'all' | 'active' | 'draft' | 'completed';
@@ -68,7 +69,9 @@ export default function ProviderListingsScreen() {
   const isPending = !!user && user.status !== 'active';
 
   const initializeRef = useRef(initialize);
-  initializeRef.current = initialize;
+  useEffect(() => {
+    initializeRef.current = initialize;
+  }, [initialize]);
   useEffect(() => {
     if (!isPending) return;
     const id = setInterval(() => { void initializeRef.current(); }, 10_000);
@@ -76,7 +79,7 @@ export default function ProviderListingsScreen() {
   }, [isPending]);
 
   if (user && user.role !== 'provider') {
-    return <Redirect href="/(app)/home" />;
+    return <DeferredRedirect href="/(app)/home" />;
   }
 
   if (isPending) {
