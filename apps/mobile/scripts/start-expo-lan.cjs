@@ -59,7 +59,8 @@ function hasAuthorizedAndroidDevice() {
     .some((line) => /\tdevice$/.test(line.trim()));
 }
 
-const useUsbReverse = hasAuthorizedAndroidDevice();
+const preferUsbReverse = process.argv.includes('--usb');
+const useUsbReverse = preferUsbReverse && hasAuthorizedAndroidDevice();
 let hostMode = 'lan';
 let packagerHost = null;
 

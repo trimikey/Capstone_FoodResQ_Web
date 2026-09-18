@@ -5,6 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "node scripts/start-expo-lan.cjs",
+    "start:usb": "node scripts/start-expo-lan.cjs --usb",
     "dev": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo run:android --port 8081",
     "android": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo run:android --port 8081",
     "android:metro": "node scripts/start-expo-lan.cjs",
