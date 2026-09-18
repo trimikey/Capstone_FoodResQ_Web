@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev",
+    "mobile": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3001 tcp:3001 && pnpm --filter mobile start --clear --dev-client --localhost --scheme foodresq",
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
