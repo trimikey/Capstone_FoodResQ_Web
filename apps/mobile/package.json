@@ -4,10 +4,10 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo start --dev-client --host lan --port 8081",
+    "start": "node scripts/start-expo-lan.cjs",
     "dev": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo run:android --port 8081",
     "android": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo run:android --port 8081",
-    "android:metro": "adb reverse --remove-all && adb reverse tcp:8081 tcp:8081 && expo start --dev-client --host lan --port 8081",
+    "android:metro": "node scripts/start-expo-lan.cjs",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
