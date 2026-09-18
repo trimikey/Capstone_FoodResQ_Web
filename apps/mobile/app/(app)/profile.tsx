@@ -62,6 +62,7 @@ export default function ProfileTab() {
   const [enrolling, setEnrolling] = useState(false);
   const [faceFeedback, setFaceFeedback] = useState<FaceFeedback | null>(null);
   const [confirmedFaceEnrollment, setConfirmedFaceEnrollment] = useState(false);
+  const [deadFacePhotoUrl, setDeadFacePhotoUrl] = useState<string | null>(null);
 
   // Ưu tiên dữ liệu /users/me; fallback về user trong store khi đang tải lần đầu.
   const name = profile?.fullName ?? user?.name ?? 'Người dùng';
@@ -76,6 +77,9 @@ export default function ProfileTab() {
   const isCharityOrg = !!receiver?.isCharityOrg;
   const faceBusy = enrolling || enrollFace.isPending;
   const faceEnrolled = confirmedFaceEnrollment || faceEnrollment.data?.enrolled === true;
+  const rawFacePhotoUrl = faceEnrollment.data?.faceImageUrl ?? faceEnrollment.data?.idCardImageUrl ?? null;
+  const facePhotoUrl = rawFacePhotoUrl && rawFacePhotoUrl !== deadFacePhotoUrl ? rawFacePhotoUrl : null;
+  const facePhotoBroken = !!rawFacePhotoUrl && rawFacePhotoUrl === deadFacePhotoUrl;
 
   const handleEnrollFace = async (source: 'camera' | 'library') => {
     try {
@@ -98,6 +102,7 @@ export default function ProfileTab() {
         throw new Error(result?.message ?? 'Hệ thống chưa xác nhận đăng ký khuôn mặt.');
       }
       setConfirmedFaceEnrollment(true);
+      setDeadFacePhotoUrl(null);
       setFaceFeedback({
         type: 'success',
         message: 'Cập nhật khuôn mặt thành công. Hệ thống đã tải lại trạng thái xác minh mới nhất.',
@@ -273,10 +278,53 @@ export default function ProfileTab() {
                       textColor={COLORS.onSurfaceVariant}
                       onPress={() => handleEnrollFace('camera')}
                     >
-                      Cập nhật
+                      Chụp lại
                     </Button>
                   ) : null}
                 </View>
+                {faceEnrolled ? (
+                  <>
+                    <View style={styles.facePreviewRow}>
+                      {facePhotoUrl ? (
+                        <AppImage
+                          source={{ uri: facePhotoUrl }}
+                          style={styles.facePreviewImage}
+                          onError={() => setDeadFacePhotoUrl(facePhotoUrl)}
+                        />
+                      ) : (
+                        <View style={[styles.facePreviewImage, styles.facePreviewEmpty]}>
+                          <MaterialCommunityIcons
+                            name="camera-off-outline"
+                            size={30}
+                            color={COLORS.warning}
+                          />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.facePreviewTitle}>
+                          {facePhotoBroken ? 'Ảnh xác minh không tải được' : 'Ảnh xác minh hiện tại'}
+                        </Text>
+                        <Text style={styles.facePreviewHint}>
+                          {facePhotoBroken
+                            ? 'Ảnh cũ có thể đã mất file. Hãy chụp lại để shipper/provider đối chiếu khi bàn giao.'
+                            : 'Dùng để đối chiếu khi bạn nhận hàng bằng QR hoặc cần tự xác minh đơn.'}
+                        </Text>
+                      </View>
+                    </View>
+                    {facePhotoBroken ? (
+                      <View style={[styles.faceFeedback, styles.faceFeedbackError]}>
+                        <MaterialCommunityIcons
+                          name="alert-circle-outline"
+                          size={18}
+                          color={COLORS.error}
+                        />
+                        <Text style={[styles.faceFeedbackText, styles.faceFeedbackTextError]}>
+                          Ảnh đăng ký không còn tải được. Hãy chụp lại ảnh xác minh mới.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
                 {!faceEnrolled ? (
                   <>
                     <Text style={styles.faceHint}>
@@ -497,6 +545,37 @@ const styles = StyleSheet.create({
   },
   faceStatus: { marginTop: 2, fontSize: 13, color: COLORS.onSurfaceVariant, fontWeight: '600' },
   faceHint: { marginTop: 10, fontSize: 13, lineHeight: 18, color: COLORS.onSurfaceVariant },
+  facePreviewRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  facePreviewImage: {
+    width: 76,
+    height: 76,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  facePreviewEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    backgroundColor: '#fffbeb',
+  },
+  facePreviewTitle: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface },
+  facePreviewHint: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
   faceFeedback: {
     marginTop: 12,
     borderRadius: 12,
