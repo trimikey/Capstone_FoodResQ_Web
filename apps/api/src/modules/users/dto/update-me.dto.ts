@@ -10,6 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMeDto {
@@ -24,14 +25,16 @@ export class UpdateMeDto {
   @IsOptional()
   @IsString()
   @Matches(/^0[35789][0-9]{8}$/, {
-    message: 'Phone must be a valid Vietnamese mobile number',
+    message: 'Số điện thoại không hợp lệ. Vui lòng nhập số di động Việt Nam.',
   })
   phone?: string;
 
-  @ApiPropertyOptional({ example: 'https://...' })
+  @ApiPropertyOptional({ example: '/uploads/avatars/avatar.webp' })
   @IsOptional()
   @IsString()
-  @IsUrl({ require_tld: false })
+  @Matches(/^(https?:\/\/\S+|\/uploads\/[A-Za-z0-9_-]+\/[A-Za-z0-9._-]+)$/, {
+    message: 'Ảnh đại diện phải là URL hợp lệ hoặc ảnh đã tải lên hệ thống.',
+  })
   avatarUrl?: string;
 
   // ── Địa chỉ + vị trí (provider: vị trí cửa hàng · receiver: điểm giao) ────

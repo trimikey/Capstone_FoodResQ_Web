@@ -16,15 +16,14 @@ import { FilterPill } from '@/components/ui/FilterPill';
 import { DeferredRedirect } from '@/components/navigation/DeferredRedirect';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
-/** Bộ lọc trạng thái — gom các status backend thành nhóm dễ hiểu cho provider. */
-type FilterKey = 'all' | 'active' | 'draft' | 'completed' | 'cancelled';
+type FilterKey = 'all' | 'active' | 'draft' | 'completed';
 type SortKey = 'created_desc' | 'pickup_asc';
+
 const FILTERS: { key: FilterKey; label: string; match: (s: string) => boolean }[] = [
   { key: 'all', label: 'Tất cả', match: () => true },
   { key: 'active', label: 'Đang phát', match: (s) => s === 'active' || s === 'fully_reserved' },
   { key: 'draft', label: 'Nháp', match: (s) => s === 'draft' },
   { key: 'completed', label: 'Hoàn thành', match: (s) => s === 'completed' },
-  { key: 'cancelled', label: 'Đã huỷ', match: (s) => s === 'cancelled' || s === 'expired' },
 ];
 
 const SORT_LABEL: Record<SortKey, string> = {
@@ -52,10 +51,6 @@ function sortListings(items: ProviderListing[], sort: SortKey): ProviderListing[
   return items;
 }
 
-/**
- * Tin của tôi (Provider) — danh sách tin thực phẩm của nhà cung cấp, có bộ lọc
- * theo trạng thái. FAB "Đăng tin" mở màn tạo.
- */
 export default function ProviderListingsScreen() {
   const { user, initialize } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProviderListings();
@@ -73,8 +68,6 @@ export default function ProviderListingsScreen() {
 
   const isPending = !!user && user.status !== 'active';
 
-  // Khi đang chờ xác minh: poll mỗi 10 giây — đảm bảo màn hình tự chuyển
-  // ngay khi admin duyệt, dù socket chậm hay bị miss.
   const initializeRef = useRef(initialize);
   useEffect(() => {
     initializeRef.current = initialize;
@@ -85,12 +78,10 @@ export default function ProviderListingsScreen() {
     return () => clearInterval(id);
   }, [isPending]);
 
-  // Receiver lỡ vào route provider → đưa về trang chủ.
   if (user && user.role !== 'provider') {
     return <DeferredRedirect href="/(app)/home" />;
   }
 
-  // Provider chưa được admin xác minh → màn "Chờ xác minh", chưa cho đăng tin.
   if (isPending) {
     const onRecheck = async () => {
       try {
@@ -141,7 +132,6 @@ export default function ProviderListingsScreen() {
     <AppScreen>
       <ScreenHeader title="Tin của tôi" />
 
-      {/* Bộ lọc trạng thái */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -218,7 +208,7 @@ export default function ProviderListingsScreen() {
 
       <FAB
         icon="plus"
-        label="T\u1ea1o nh\u00e1p"
+        label="Tạo nháp"
         color={COLORS.onPrimary}
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}
@@ -233,7 +223,6 @@ export default function ProviderListingsScreen() {
     </AppScreen>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
@@ -253,11 +242,22 @@ const styles = StyleSheet.create({
   sortLabel: { fontSize: 13, fontWeight: '800', color: COLORS.onSurfaceVariant },
   sortButton: { borderRadius: radius.md },
   list: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 96 },
-  fab: { position: 'absolute', right: 20, bottom: 24, backgroundColor: COLORS.primary },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    minWidth: 150,
+    backgroundColor: COLORS.primary,
+  },
   pendingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   pendingIcon: {
-    width: 96, height: 96, borderRadius: radius.pill, backgroundColor: COLORS.primaryContainer,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    width: 96,
+    height: 96,
+    borderRadius: radius.pill,
+    backgroundColor: COLORS.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   pendingTitle: { fontSize: 20, fontWeight: '700', color: COLORS.onSurface, marginBottom: 12, textAlign: 'center' },
   pendingBody: { fontSize: 15, color: COLORS.onSurfaceVariant, textAlign: 'center', lineHeight: 22, marginBottom: 10 },

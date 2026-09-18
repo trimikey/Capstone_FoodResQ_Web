@@ -16,9 +16,12 @@ interface Props {
 export function ScreenHeader({ title, showBell = true, right }: Props) {
   return (
     <View style={styles.header}>
-      <Text variant="titleLarge" style={styles.title}>
-        {title}
-      </Text>
+      <View style={styles.titleWrap}>
+        <View style={styles.accent} />
+        <Text variant="titleLarge" style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
       {right ?? (showBell ? <NotificationBell /> : null)}
     </View>
   );
@@ -26,11 +29,25 @@ export function ScreenHeader({ title, showBell = true, right }: Props) {
 
 const styles = StyleSheet.create({
   header: {
-    height: 56,
+    minHeight: 64,
     paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  title: { fontWeight: '700', color: COLORS.onSurface },
+  titleWrap: { flex: 1, paddingRight: spacing.md },
+  accent: {
+    width: 34,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.secondary,
+    marginBottom: spacing.xs,
+  },
+  title: {
+    fontWeight: '900',
+    color: COLORS.ink,
+    letterSpacing: 0,
+  },
 });

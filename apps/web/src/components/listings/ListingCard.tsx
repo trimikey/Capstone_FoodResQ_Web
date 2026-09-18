@@ -92,10 +92,12 @@ export default function ListingCard({ listing }: Props) {
           src={imageUrl}
           alt={listing.title}
           loading="lazy"
-          onError={(e) => {
-            if (!e.currentTarget.src.endsWith(fallbackImage)) e.currentTarget.src = fallbackImage;
-          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          onError={(event) => {
+            const img = event.currentTarget;
+            if (img.src.endsWith(fallbackImage)) return;
+            img.src = fallbackImage;
+          }}
         />
 
         {/* Ngoài khung giờ nhận → làm mờ ảnh + nói rõ lý do, tránh bấm vào vô ích */}

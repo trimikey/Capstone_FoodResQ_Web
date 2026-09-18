@@ -8,22 +8,39 @@
  */
 
 const DEFAULT_ORIGINS = ['http://localhost:3000'];
+const DEV_MOBILE_ORIGINS = [
+  'http://localhost:8081',
+  'http://127.0.0.1:8081',
+  'http://10.0.2.2:8081',
+  'http://10.0.2.2:3001',
+];
 
-/**
- * Domain của CHÍNH project FE này — luôn được phép, không phụ thuộc env trên Render.
- *
- * Vercel đổi domain theo tên project/preview (`capstone-food-res-q-web-web`,
- * `capstonefoodresqweb`, `...-git-master-abc`); mỗi lần đổi mà phải vào Render sửa
- * `ALLOWED_ORIGINS` rồi chờ redeploy thì đăng nhập gãy trong lúc đó — đúng lỗi CORS
- * gặp ngày 12/09/2026. Đây vẫn là whitelist tường minh theo TÊN PROJECT, không phải
- * mở `*` cho mọi site.
- */
 const PROJECT_ORIGIN_PATTERNS = [
   'https://capstonefoodresqweb*.vercel.app',
   'https://capstone-food-res-q-web-web*.vercel.app',
 ];
 
-/** Bỏ nháy, khoảng trắng và dấu `/` cuối — env dán từ dashboard hay lẫn mấy thứ này. */
+function isPrivateNetworkHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '10.0.2.2' ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
+
+function isAllowedDevOrigin(origin: string): boolean {
+  if (process.env['NODE_ENV'] === 'production') return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' && isPrivateNetworkHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '');
 }
@@ -36,15 +53,11 @@ export function allowedOrigins(): string[] {
     .map(normalizeOrigin)
     .filter(Boolean);
   const base = fromEnv.length > 0 ? fromEnv : DEFAULT_ORIGINS;
-  return [...new Set([...base, ...PROJECT_ORIGIN_PATTERNS])];
+  const configured = [...base, ...PROJECT_ORIGIN_PATTERNS];
+  if (process.env['NODE_ENV'] === 'production') return Array.from(new Set(configured));
+  return Array.from(new Set([...configured, ...DEV_MOBILE_ORIGINS]));
 }
 
-/**
- * Một entry được phép chứa `*` ở phần host để bao các domain/preview của cùng một
- * project Vercel — VD `https://capstonefoodresqweb*.vercel.app` khớp
- * `https://capstonefoodresqweb-git-master-abc.vercel.app`. `*` chỉ khớp ký tự hợp lệ
- * của hostname (`[a-z0-9-]`) nên không thể nhảy sang domain khác.
- */
 export function originMatches(entry: string, origin: string): boolean {
   if (!entry.includes('*')) return entry === origin;
   const pattern = entry
@@ -71,7 +84,7 @@ export function corsOriginDelegate(
     return;
   }
   const incoming = normalizeOrigin(origin);
-  if (allowedOrigins().some((entry) => originMatches(entry, incoming))) {
+  if (allowedOrigins().some((entry) => originMatches(entry, incoming)) || isAllowedDevOrigin(incoming)) {
     callback(null, true);
     return;
   }

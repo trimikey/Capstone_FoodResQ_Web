@@ -26,7 +26,7 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
   const { data: me } = useMe();
   const provider = me?.provider;
   const verified = provider?.isVerified === true;
-  const [donateItem, setDonateItem] = useState<{ name: string; unit?: string } | null>(null);
+  const [donateItem, setDonateItem] = useState<{ name: string; unit?: string; remainingQuantity?: number } | null>(null);
 
   // Map donation theo itemName để hiển thị đã có NCC đăng ký
   type DonationRow = PublicCampaignDetail['donations'][number];
@@ -45,6 +45,12 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
   const supplyList: NormalizedSupply[] = (c.supplyItems ?? []).map((s) =>
     typeof s === 'string' ? { name: s } : { name: s.name, quantity: s.quantity, unit: s.unit },
   );
+  const supplyProgressByItem = (c.supplyProgress ?? []).reduce<
+    Record<string, NonNullable<PublicCampaignDetail['supplyProgress']>[number]>
+  >((acc, item) => {
+    acc[item.name.trim().toLowerCase()] = item;
+    return acc;
+  }, {});
 
   // Trích danh sách "đã hứa góp / đã nhận" cho bảng lịch sử
   const allDonations = c.donations ?? [];
@@ -106,7 +112,14 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
               type="button"
               onClick={() => {
                 const first = supplyList[0];
-                if (first) setDonateItem({ name: first.name, unit: first.unit ?? undefined });
+                if (first) {
+                  const progress = supplyProgressByItem[first.name.trim().toLowerCase()];
+                  setDonateItem({
+                    name: first.name,
+                    unit: progress?.unit ?? first.unit ?? undefined,
+                    remainingQuantity: progress?.remainingQuantity,
+                  });
+                }
                 else toast.info('Chiến dịch chưa liệt kê nguyên liệu cần hỗ trợ.');
               }}
               className="cm-provider-detail-cta"
@@ -270,7 +283,9 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
                 </thead>
                 <tbody>
                   {supplyList.map((s, i) => {
-                    const donations = donationsByItem[s.name.trim().toLowerCase()] ?? [];
+                    const itemKey = s.name.trim().toLowerCase();
+                    const progress = supplyProgressByItem[itemKey];
+                    const donations = donationsByItem[itemKey] ?? [];
                     const received = donations.filter((d) => d.status === 'received').length;
                     const promised = donations.filter((d) => d.status !== 'received').length;
                     const providers = Array.from(new Set(donations.map((d) => d.provider.businessName)));
@@ -339,7 +354,11 @@ export default function ProviderCampaignDetail({ c }: { c: PublicCampaignDetail 
                             type="button"
                             disabled={!verified}
                             onClick={() =>
-                              setDonateItem({ name: s.name, unit: s.unit ?? undefined })
+                              setDonateItem({
+                                name: s.name,
+                                unit: progress?.unit ?? s.unit ?? undefined,
+                                remainingQuantity: progress?.remainingQuantity,
+                              })
                             }
                             className="cm-provider-donate-btn"
                             title={
@@ -479,7 +498,7 @@ function DonateModal({
   onClose,
 }: {
   campaignId: string;
-  item: { name: string; unit?: string };
+  item: { name: string; unit?: string; remainingQuantity?: number };
   onClose: () => void;
 }) {
   const donate = usePledgeDonation();
@@ -487,9 +506,14 @@ function DonateModal({
   const [note, setNote] = useState('');
 
   async function submit() {
-    const numericQuantity = Number(quantity.replace(',', '.'));
+    const numericToken = quantity.trim().match(/^\d+(?:[,.]\d+)?/)?.[0];
+    const numericQuantity = numericToken ? Number(numericToken.replace(',', '.')) : Number.NaN;
     if (!Number.isFinite(numericQuantity) || numericQuantity <= 0) {
       toast.error('Nhập số lượng nguyên liệu lớn hơn 0.');
+      return;
+    }
+    if (item.remainingQuantity != null && numericQuantity > item.remainingQuantity) {
+      toast.error(`Chỉ còn cần ${item.remainingQuantity} ${item.unit ?? ''} ${item.name}.`);
       return;
     }
     try {
@@ -547,7 +571,7 @@ function DonateModal({
               type="text"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              placeholder="VD: 10 kg, 5 thùng, 20 phần…"
+              placeholder={item.unit ? `VD: 10 (${item.unit})` : 'VD: 10'}
               className="input-base flex-1"
             />
             {item.unit && (

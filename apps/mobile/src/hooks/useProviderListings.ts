@@ -5,6 +5,8 @@ import { normalizeListingImages, type Listing, type FoodCategory, type QuantityU
 /** Tin của provider — như Listing nhưng luôn kèm status (mọi trạng thái). */
 export type ProviderListing = Listing;
 
+const HIDDEN_PROVIDER_LISTING_STATUSES = new Set(['cancelled', 'expired']);
+
 /** Body POST /listings (khớp CreateListingDto backend). */
 export interface CreateListingInput {
   title: string;
@@ -47,7 +49,9 @@ export function useProviderListings() {
         endpoints.listings.providerMy,
         { params: { page: 1, limit: 50 } }
       );
-      return res.data.data.items.map(normalizeListingImages);
+      return res.data.data.items
+        .filter((item) => !HIDDEN_PROVIDER_LISTING_STATUSES.has(item.status))
+        .map(normalizeListingImages);
     },
   });
 }

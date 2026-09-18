@@ -10,7 +10,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiConsumes, ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -58,7 +63,9 @@ export class AuthController {
     for (const file of [selfie, idCard]) {
       if (!file) continue;
       if (!/^image\/(jpeg|png)$/.test(file.mimetype)) {
-        throw new BadRequestException('Ảnh khuôn mặt và CCCD phải là JPEG hoặc PNG.');
+        throw new BadRequestException(
+          'Ảnh khuôn mặt và CCCD phải là JPEG hoặc PNG.',
+        );
       }
       if (file.size > 5 * 1024 * 1024) {
         throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
@@ -66,7 +73,9 @@ export class AuthController {
     }
     if (vehiclePlateImage) {
       if (!/^image\/(jpeg|png|webp)$/.test(vehiclePlateImage.mimetype)) {
-        throw new BadRequestException('Ảnh biển số phải là JPEG, PNG hoặc WEBP.');
+        throw new BadRequestException(
+          'Ảnh biển số phải là JPEG, PNG hoặc WEBP.',
+        );
       }
       if (vehiclePlateImage.size > 5 * 1024 * 1024) {
         throw new BadRequestException('Mỗi ảnh tối đa 5MB.');
@@ -122,7 +131,9 @@ export class AuthController {
   }
 
   @Post('firebase')
-  @ApiOperation({ summary: 'Login/Register bằng Firebase ID token (Google sign-in)' })
+  @ApiOperation({
+    summary: 'Login/Register bằng Firebase ID token (Google sign-in)',
+  })
   firebase(
     @Body() dto: FirebaseLoginDto,
     @Headers('user-agent') ua: string,

@@ -34,8 +34,12 @@ export class TrustService {
     const newScore = Math.min(100, Math.max(0, user.trustScore + delta));
 
     // Ngưỡng khoá/hạn chế đọc live từ system_configs (admin chỉnh được)
-    const banThreshold = await this.systemConfig.getNumber('TRUST_BAN_THRESHOLD');
-    const restrictThreshold = await this.systemConfig.getNumber('TRUST_RESTRICT_THRESHOLD');
+    const banThreshold = await this.systemConfig.getNumber(
+      'TRUST_BAN_THRESHOLD',
+    );
+    const restrictThreshold = await this.systemConfig.getNumber(
+      'TRUST_RESTRICT_THRESHOLD',
+    );
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -43,7 +47,12 @@ export class TrustService {
         data: {
           trustScore: newScore,
           // Auto-ban/suspend theo ngưỡng cấu hình
-          status: newScore <= banThreshold ? 'banned' : newScore <= restrictThreshold ? 'suspended' : user.status,
+          status:
+            newScore <= banThreshold
+              ? 'banned'
+              : newScore <= restrictThreshold
+                ? 'suspended'
+                : user.status,
         },
       }),
       this.prisma.trustScoreHistory.create({

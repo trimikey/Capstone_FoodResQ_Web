@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { mediaUrl } from '@/lib/utils';
 
 export type Section =

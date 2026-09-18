@@ -1,39 +1,46 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, type PressableProps, type ViewStyle } from 'react-native';
+import { StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { InteractiveScale } from '@/components/ui/Motion';
 import { mobileColors as COLORS, elevation, radius } from '@/theme/design';
 
 interface Props extends Omit<PressableProps, 'style'> {
   children: ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  tone?: 'default' | 'mint' | 'coral';
 }
 
-export function SurfaceCard({ children, style, ...props }: Props) {
+export function SurfaceCard({ children, style, tone = 'default', ...props }: Props) {
   return (
-    <Pressable
+    <InteractiveScale
       {...props}
-      style={({ pressed }) => [
+      pressedScale={0.988}
+      style={[
         styles.card,
-        pressed && styles.pressed,
+        tone === 'mint' && styles.mint,
+        tone === 'coral' && styles.coral,
         style,
       ]}
     >
       {children}
-    </Pressable>
+    </InteractiveScale>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: COLORS.outline,
+    borderColor: COLORS.outlineVariant,
     overflow: 'hidden',
     ...elevation.card,
   },
-  pressed: {
-    opacity: 0.86,
-    transform: [{ scale: 0.995 }],
-    ...elevation.pressed,
+  mint: {
+    backgroundColor: COLORS.mint,
+    borderColor: '#cfe5d4',
+  },
+  coral: {
+    backgroundColor: COLORS.coral,
+    borderColor: '#f4d6c9',
   },
 });

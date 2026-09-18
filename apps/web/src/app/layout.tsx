@@ -25,11 +25,14 @@ export const metadata: Metadata = {
       + 'bếp ăn cộng đồng minh bạch từng suất.',
     images: [{ url: '/anhbanner1.jpg', width: 1200, height: 630, alt: 'FoodResQ — bếp ăn cộng đồng' }],
   },
+  other: {
+    google: 'notranslate',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="vi" translate="no" className="h-full antialiased notranslate" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

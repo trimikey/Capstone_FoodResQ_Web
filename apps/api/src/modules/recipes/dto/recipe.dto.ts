@@ -55,7 +55,10 @@ export class CreateRecipeDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({ example: 50, description: 'Số khẩu phần chuẩn của công thức' })
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Số khẩu phần chuẩn của công thức',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -79,7 +82,10 @@ export class CreateRecipeDto {
   @Type(() => Number)
   cookMinutes?: number;
 
-  @ApiPropertyOptional({ enum: RecipeDifficulty, example: RecipeDifficulty.MEDIUM })
+  @ApiPropertyOptional({
+    enum: RecipeDifficulty,
+    example: RecipeDifficulty.MEDIUM,
+  })
   @IsOptional()
   @IsEnum(RecipeDifficulty)
   difficulty?: RecipeDifficulty;
@@ -97,13 +103,19 @@ export class CreateRecipeDto {
   @ArrayMaxSize(10)
   imageUrls?: string[];
 
-  @ApiPropertyOptional({ example: true, description: 'Công khai cho các bếp khác dùng lại' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Công khai cho các bếp khác dùng lại',
+  })
   @IsOptional()
   @IsBoolean()
   @Type(() => Boolean)
   isPublic?: boolean;
 
-  @ApiPropertyOptional({ type: [RecipeIngredientDto], description: 'Danh sách nguyên liệu' })
+  @ApiPropertyOptional({
+    type: [RecipeIngredientDto],
+    description: 'Danh sách nguyên liệu',
+  })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(60)

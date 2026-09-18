@@ -70,7 +70,12 @@ export class ReservationsController {
     @Query('limit') limit?: number,
     @Query('group') group?: 'active' | 'history',
   ) {
-    return this.reservationsService.findMyReservations(user.id, page, limit, group);
+    return this.reservationsService.findMyReservations(
+      user.id,
+      page,
+      limit,
+      group,
+    );
   }
 
   @Get('provider/my')
@@ -84,7 +89,11 @@ export class ReservationsController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.reservationsService.findProviderReservations(user.id, page, limit);
+    return this.reservationsService.findProviderReservations(
+      user.id,
+      page,
+      limit,
+    );
   }
 
   @Get(':id')
@@ -121,7 +130,10 @@ export class ReservationsController {
   @Post('scan')
   @UseGuards(RolesGuard)
   @Roles(UserRole.PROVIDER, UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Provider/Volunteer: Quét QR → picked_up + trả thông tin người nhận để đối chiếu' })
+  @ApiOperation({
+    summary:
+      'Provider/Volunteer: Quét QR → picked_up + trả thông tin người nhận để đối chiếu',
+  })
   scanQr(@Body() dto: ScanQrDto, @CurrentUser() user: User) {
     return this.reservationsService.scanQr(dto.qrToken, user.id);
   }
@@ -129,8 +141,14 @@ export class ReservationsController {
   @Post(':id/confirm-pickup')
   @UseGuards(RolesGuard)
   @Roles(UserRole.PROVIDER, UserRole.VOLUNTEER)
-  @ApiOperation({ summary: 'Provider: Xác nhận đã giao đúng người (đối chiếu ảnh) → completed' })
-  confirmPickup(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+  @ApiOperation({
+    summary:
+      'Provider: Xác nhận đã giao đúng người (đối chiếu ảnh) → completed',
+  })
+  confirmPickup(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
     return this.reservationsService.confirmPickupByProvider(id, user.id);
   }
 
@@ -167,7 +185,12 @@ export class ReservationsController {
     )
     photo: Express.Multer.File,
   ) {
-    return this.reservationsService.submitPickupProof(id, user.id, dto.verificationType, photo);
+    return this.reservationsService.submitPickupProof(
+      id,
+      user.id,
+      dto.verificationType,
+      photo,
+    );
   }
 
   @Patch(':id/cancel')
@@ -185,7 +208,10 @@ export class ReservationsController {
   @Patch(':id/provider-cancel')
   @UseGuards(RolesGuard)
   @Roles(UserRole.PROVIDER)
-  @ApiOperation({ summary: 'Provider: Huỷ đơn của người nhận (vd: gian lận, thông tin sai) — không phạt trust' })
+  @ApiOperation({
+    summary:
+      'Provider: Huỷ đơn của người nhận (vd: gian lận, thông tin sai) — không phạt trust',
+  })
   providerCancel(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -197,12 +223,20 @@ export class ReservationsController {
   @Post(':id/rating')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
-  @ApiOperation({ summary: 'Receiver: Đánh giá nhà cung cấp sau khi nhận hàng' })
+  @ApiOperation({
+    summary: 'Receiver: Đánh giá nhà cung cấp sau khi nhận hàng',
+  })
   rate(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
     @Body() dto: RateReservationDto,
   ) {
-    return this.reservationsService.rateReservation(id, user.id, dto.score, dto.comment, dto.target);
+    return this.reservationsService.rateReservation(
+      id,
+      user.id,
+      dto.score,
+      dto.comment,
+      dto.target,
+    );
   }
 }

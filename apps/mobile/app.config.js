@@ -1,32 +1,34 @@
-// Dynamic config: cho phép nạp google-services.json qua EAS file environment variable
-// (secret, không commit vào git). Khi build local, env không set → fallback file on-disk
-// (./google-services.json, đã gitignore). Tránh GitHub secret scanning + EAS vẫn build được.
-const appJson = require('./app.json');
 const fs = require('fs');
 const path = require('path');
 
+// Dynamic config: allow loading Firebase config through EAS file env vars.
+// For local builds, fall back to files on disk when they exist.
+const appJson = require('./app.json');
+
+function existingLocalFile(fileName) {
+  const localPath = path.join(__dirname, fileName);
+  return fs.existsSync(localPath) ? `./${fileName}` : undefined;
+}
+
 module.exports = ({ config }) => {
   const expo = { ...appJson.expo, ...config };
-  const { googleServicesFile: _androidGoogleServicesFile, ...android } = expo.android ?? {};
-  const { googleServicesFile: _iosGoogleServicesFile, ...ios } = expo.ios ?? {};
-  const localAndroidGoogleServices = path.join(__dirname, 'google-services.json');
-  const localIosGoogleServices = path.join(__dirname, 'GoogleService-Info.plist');
+  const { googleServicesFile: _androidGoogleServicesFile, ...androidConfig } = expo.android ?? {};
+  const { googleServicesFile: _iosGoogleServicesFile, ...iosConfig } = expo.ios ?? {};
+
   const androidGoogleServicesFile =
-    process.env.GOOGLE_SERVICES_JSON ??
-    (fs.existsSync(localAndroidGoogleServices) ? './google-services.json' : null);
+    process.env.GOOGLE_SERVICES_JSON ?? existingLocalFile('google-services.json');
   const iosGoogleServicesFile =
-    process.env.GOOGLE_SERVICE_INFO_PLIST ??
-    (fs.existsSync(localIosGoogleServices) ? './GoogleService-Info.plist' : null);
+    process.env.GOOGLE_SERVICE_INFO_PLIST ?? existingLocalFile('GoogleService-Info.plist');
 
   return {
     ...expo,
     android: {
-      ...android,
+      ...androidConfig,
       usesCleartextTraffic: true,
       ...(androidGoogleServicesFile ? { googleServicesFile: androidGoogleServicesFile } : {}),
     },
     ios: {
-      ...ios,
+      ...iosConfig,
       ...(iosGoogleServicesFile ? { googleServicesFile: iosGoogleServicesFile } : {}),
     },
   };

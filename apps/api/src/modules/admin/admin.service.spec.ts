@@ -21,7 +21,10 @@ describe('AdminService', () => {
         AdminService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
-        { provide: SystemConfigService, useValue: { getAll: jest.fn(), set: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { getAll: jest.fn(), set: jest.fn() },
+        },
       ],
     }).compile();
     service = moduleRef.get(AdminService);
@@ -40,7 +43,10 @@ describe('AdminService', () => {
         avatarUrl: null,
         createdAt: new Date('2026-08-05T00:00:00.000Z'),
         volunteerProfile: null,
-        receiverProfile: { isCharityOrg: false, faceImageUrl: '/uploads/receiver-face.jpg' },
+        receiverProfile: {
+          isCharityOrg: false,
+          faceImageUrl: '/uploads/receiver-face.jpg',
+        },
         providerProfile: null,
       },
       {
@@ -79,11 +85,25 @@ describe('AdminService', () => {
 
     const users = await service.listUsers();
 
-    expect(users).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'receiver-id', phone: '0901000001', faceImageUrl: '/uploads/receiver-face.jpg' }),
-      expect.objectContaining({ id: 'volunteer-id', phone: '0901000002', faceImageUrl: '/uploads/volunteer-face.jpg' }),
-      expect.objectContaining({ id: 'provider-id', phone: null, faceImageUrl: null }),
-    ]));
+    expect(users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'receiver-id',
+          phone: '0901000001',
+          faceImageUrl: '/uploads/receiver-face.jpg',
+        }),
+        expect.objectContaining({
+          id: 'volunteer-id',
+          phone: '0901000002',
+          faceImageUrl: '/uploads/volunteer-face.jpg',
+        }),
+        expect.objectContaining({
+          id: 'provider-id',
+          phone: null,
+          faceImageUrl: null,
+        }),
+      ]),
+    );
   });
 
   it('không cho đổi trạng thái tài khoản admin', async () => {
@@ -95,7 +115,9 @@ describe('AdminService', () => {
 
   it('ban user thường → revoke refresh token + ghi audit', async () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'u2', role: 'receiver' });
-    const res = await service.setUserStatus('u2', 'admin1', { status: 'banned' });
+    const res = await service.setUserStatus('u2', 'admin1', {
+      status: 'banned',
+    });
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalled();
     expect(res.message).toContain('cập nhật');

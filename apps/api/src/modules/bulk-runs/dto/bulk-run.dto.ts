@@ -16,13 +16,18 @@ export class RequestBulkRunDto {
   @IsUUID()
   listingId!: string;
 
-  @ApiProperty({ example: 15, description: 'Số phần muốn nhận giao sỉ (tối thiểu theo BULK_MIN_QTY)' })
+  @ApiProperty({
+    example: 15,
+    description: 'Số phần muốn nhận giao sỉ (tối thiểu theo BULK_MIN_QTY)',
+  })
   @IsInt()
   @Min(1)
   @Type(() => Number)
   quantity!: number;
 
-  @ApiPropertyOptional({ example: 'Dự kiến phát dọc tuyến Võ Văn Ngân → KTX khu A' })
+  @ApiPropertyOptional({
+    example: 'Dự kiến phát dọc tuyến Võ Văn Ngân → KTX khu A',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -63,7 +68,10 @@ export class AddStopDto {
   @Type(() => Number)
   lat!: number;
 
-  @ApiPropertyOptional({ example: 5, description: 'Số phần dự kiến phát tại điểm này' })
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'Số phần dự kiến phát tại điểm này',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -85,7 +93,10 @@ export class UpdateStopDto {
   @MaxLength(500)
   address?: string;
 
-  @ApiPropertyOptional({ example: 106.72, description: 'Gửi kèm lat để đổi vị trí' })
+  @ApiPropertyOptional({
+    example: 106.72,
+    description: 'Gửi kèm lat để đổi vị trí',
+  })
   @IsOptional()
   @IsNumber()
   @Min(-180)
@@ -93,7 +104,10 @@ export class UpdateStopDto {
   @Type(() => Number)
   lng?: number;
 
-  @ApiPropertyOptional({ example: 10.8, description: 'Gửi kèm lng để đổi vị trí' })
+  @ApiPropertyOptional({
+    example: 10.8,
+    description: 'Gửi kèm lng để đổi vị trí',
+  })
   @IsOptional()
   @IsNumber()
   @Min(-90)

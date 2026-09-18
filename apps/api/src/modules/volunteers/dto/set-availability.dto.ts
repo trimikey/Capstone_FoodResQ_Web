@@ -19,11 +19,17 @@ export class UpdateLocationDto {
 }
 
 export class SetAvailabilityDto {
-  @ApiProperty({ example: true, description: 'Bật/tắt trạng thái sẵn sàng nhận đơn' })
+  @ApiProperty({
+    example: true,
+    description: 'Bật/tắt trạng thái sẵn sàng nhận đơn',
+  })
   @IsBoolean()
   isAvailable!: boolean;
 
-  @ApiPropertyOptional({ example: 106.6297, description: 'Kinh độ vị trí hiện tại' })
+  @ApiPropertyOptional({
+    example: 106.6297,
+    description: 'Kinh độ vị trí hiện tại',
+  })
   @IsOptional()
   @IsNumber()
   @Min(-180)
@@ -31,7 +37,10 @@ export class SetAvailabilityDto {
   @Type(() => Number)
   lng?: number;
 
-  @ApiPropertyOptional({ example: 10.8231, description: 'Vĩ độ vị trí hiện tại' })
+  @ApiPropertyOptional({
+    example: 10.8231,
+    description: 'Vĩ độ vị trí hiện tại',
+  })
   @IsOptional()
   @IsNumber()
   @Min(-90)

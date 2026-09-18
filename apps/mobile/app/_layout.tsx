@@ -11,7 +11,7 @@ import { AppPopupHost, AppToastHost } from '@/components/ui/AppPopup';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/auth';
-import { setSessionExpiredHandler } from '@/api/client';
+import { setSessionExpiredHandler, setTokensRefreshedHandler } from '@/api/client';
 import { queryClient } from '@/lib/queryClient';
 import { appTheme } from '@/theme/design';
 
@@ -29,11 +29,17 @@ export default function RootLayout() {
   // Khi interceptor refresh token thất bại → reset session để auth guard
   // điều hướng về login. Dùng getState() để không phụ thuộc render.
   useEffect(() => {
+    setTokensRefreshedHandler(({ accessToken, refreshToken }) => {
+      useAuthStore.setState({ accessToken, refreshToken });
+    });
     setSessionExpiredHandler(() => {
       useAuthStore.getState().clearSession();
       queryClient.clear();
     });
-    return () => setSessionExpiredHandler(null);
+    return () => {
+      setTokensRefreshedHandler(null);
+      setSessionExpiredHandler(null);
+    };
   }, []);
 
   return (

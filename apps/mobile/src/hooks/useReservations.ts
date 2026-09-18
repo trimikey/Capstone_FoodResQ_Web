@@ -126,6 +126,11 @@ export function useReservationDetail(id?: string) {
   return useQuery({
     queryKey: ['reservation', id],
     enabled: !!id,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'confirmed' || status === 'picked_up' ? 2500 : false;
+    },
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<ReservationDetail>>(
         endpoints.reservations.detail(id!)

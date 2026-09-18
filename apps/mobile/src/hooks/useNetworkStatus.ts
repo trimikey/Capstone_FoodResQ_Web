@@ -2,14 +2,18 @@ import { useEffect } from 'react';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 
 type NetInfoModule = typeof import('@react-native-community/netinfo');
+type NetInfoApi = NetInfoModule['default'] & Pick<NetInfoModule, 'useNetInfo'>;
 
-let netInfoModule: NetInfoModule | null = null;
+let netInfoApi: NetInfoApi | null = null;
 try {
   // Native module may be unavailable until the Expo dev client is rebuilt.
   // Keep the app usable after a JS-only reload.
-  netInfoModule = require('@react-native-community/netinfo') as NetInfoModule;
+  const loadedNetInfo = require('@react-native-community/netinfo') as NetInfoModule & {
+    default?: NetInfoModule['default'];
+  };
+  netInfoApi = (loadedNetInfo.default ?? loadedNetInfo) as NetInfoApi;
 } catch {
-  netInfoModule = null;
+  netInfoApi = null;
 }
 
 function isReachable(isConnected?: boolean | null, isInternetReachable?: boolean | null) {
@@ -18,20 +22,20 @@ function isReachable(isConnected?: boolean | null, isInternetReachable?: boolean
 }
 
 onlineManager.setEventListener((setOnline) => {
-  if (!netInfoModule) {
+  if (!netInfoApi) {
     setOnline(true);
     return () => undefined;
   }
 
-  return netInfoModule.default.addEventListener((state) => {
+  return netInfoApi.addEventListener((state) => {
     setOnline(isReachable(state.isConnected, state.isInternetReachable));
   });
 });
 
 export function useNetworkStatus() {
-  const nativeNetInfo = netInfoModule?.useNetInfo();
+  const nativeNetInfo = netInfoApi?.useNetInfo();
   const queryClient = useQueryClient();
-  const isOnline = netInfoModule
+  const isOnline = netInfoApi
     ? isReachable(nativeNetInfo?.isConnected, nativeNetInfo?.isInternetReachable)
     : true;
 

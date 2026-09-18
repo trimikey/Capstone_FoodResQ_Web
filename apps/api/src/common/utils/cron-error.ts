@@ -8,11 +8,15 @@ import { Prisma } from '@prisma/client';
  */
 export function logCronError(logger: Logger, method: string, e: unknown): void {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P1001') {
-    logger.warn(`${method} skipped — DB unreachable (${e.code}); sẽ thử lại lần quét sau`);
+    logger.warn(
+      `${method} skipped — DB unreachable (${e.code}); sẽ thử lại lần quét sau`,
+    );
     return;
   }
   if (e instanceof Prisma.PrismaClientInitializationError) {
-    logger.warn(`${method} skipped — Prisma init error; sẽ thử lại lần quét sau`);
+    logger.warn(
+      `${method} skipped — Prisma init error; sẽ thử lại lần quét sau`,
+    );
     return;
   }
   logger.error(`${method} failed`, e as Error);

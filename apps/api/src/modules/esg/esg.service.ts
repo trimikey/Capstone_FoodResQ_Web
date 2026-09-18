@@ -29,7 +29,8 @@ export class EsgService {
       where: { userId },
       select: { id: true, businessName: true },
     });
-    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
+    if (!provider)
+      throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
 
     const [row] = await this.prisma.$queryRaw<
       { kg: number | null; completed: bigint; receivers: bigint }[]
@@ -44,7 +45,9 @@ export class EsgService {
       WHERE fl.provider_id = ${provider.id}::uuid
     `);
 
-    const [listingRow] = await this.prisma.$queryRaw<{ total: bigint; active: bigint }[]>(Prisma.sql`
+    const [listingRow] = await this.prisma.$queryRaw<
+      { total: bigint; active: bigint }[]
+    >(Prisma.sql`
       SELECT COUNT(*) AS total,
              COUNT(*) FILTER (WHERE status = 'active') AS active
       FROM food_listings WHERE provider_id = ${provider.id}::uuid AND deleted_at IS NULL
@@ -79,7 +82,8 @@ export class EsgService {
       where: { userId },
       select: { id: true, businessName: true },
     });
-    if (!provider) throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
+    if (!provider)
+      throw new NotFoundException('Không tìm thấy hồ sơ cửa hàng.');
 
     const providerId = provider.id;
 
@@ -136,7 +140,9 @@ export class EsgService {
     `);
 
     // Mọi trạng thái, kể cả huỷ/no-show — đây chính là phần "chất lượng vận hành" của báo cáo.
-    const fulfillmentRows = await this.prisma.$queryRaw<{ status: string; count: bigint }[]>(
+    const fulfillmentRows = await this.prisma.$queryRaw<
+      { status: string; count: bigint }[]
+    >(
       Prisma.sql`
         SELECT r.status::text AS status, COUNT(*) AS count
         FROM reservations r
@@ -196,14 +202,18 @@ export class EsgService {
 
   /** Tổng quan ESG toàn nền tảng (công khai cho trang chủ). */
   async getPlatformEsg() {
-    const [row] = await this.prisma.$queryRaw<{ kg: number | null; completed: bigint }[]>(Prisma.sql`
+    const [row] = await this.prisma.$queryRaw<
+      { kg: number | null; completed: bigint }[]
+    >(Prisma.sql`
       SELECT
         COALESCE(SUM(r.quantity * COALESCE(fl.weight_per_unit_kg, 0))
           FILTER (WHERE r.status = 'completed'), 0) AS kg,
         COUNT(*) FILTER (WHERE r.status = 'completed') AS completed
       FROM reservations r JOIN food_listings fl ON fl.id = r.listing_id
     `);
-    const [counts] = await this.prisma.$queryRaw<{ providers: bigint; volunteers: bigint }[]>(Prisma.sql`
+    const [counts] = await this.prisma.$queryRaw<
+      { providers: bigint; volunteers: bigint }[]
+    >(Prisma.sql`
       SELECT
         (SELECT COUNT(*) FROM provider_profiles) AS providers,
         (SELECT COUNT(*) FROM volunteer_profiles) AS volunteers

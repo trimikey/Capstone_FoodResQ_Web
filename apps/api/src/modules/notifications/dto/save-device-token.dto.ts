@@ -2,7 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class SaveDeviceTokenDto {
-  @ApiProperty({ description: 'FCM registration token của thiết bị/trình duyệt' })
+  @ApiProperty({
+    description: 'FCM registration token của thiết bị/trình duyệt',
+  })
   @IsString()
   @MinLength(16)
   token!: string;

@@ -14,7 +14,17 @@ import { TrustModule } from '@/modules/trust/trust.module';
 
 @Module({
   imports: [NotificationsModule, StorageModule, DeliveriesModule, TrustModule],
-  controllers: [CampaignsController, KitchenOpsController, DishStepsController, WeeklyScheduleController],
-  providers: [CampaignsService, CampaignsCron, KitchenOpsService, DishStepsService],
+  controllers: [
+    CampaignsController,
+    KitchenOpsController,
+    DishStepsController,
+    WeeklyScheduleController,
+  ],
+  providers: [
+    CampaignsService,
+    CampaignsCron,
+    KitchenOpsService,
+    DishStepsService,
+  ],
 })
 export class CampaignsModule {}

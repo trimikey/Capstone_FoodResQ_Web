@@ -14,7 +14,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { RecipesService } from './recipes.service';
 import { CreateRecipeDto, UpdateRecipeDto } from './dto/recipe.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -31,7 +36,9 @@ export class RecipesController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Thư viện công thức công khai (tìm kiếm + phân trang)' })
+  @ApiOperation({
+    summary: 'Thư viện công thức công khai (tìm kiếm + phân trang)',
+  })
   list(
     @Query('search') search?: string,
     @Query('page') page?: string,
@@ -46,7 +53,11 @@ export class RecipesController {
 
   @Get('mine')
   @ApiOperation({ summary: 'Đầu bếp: công thức của tôi' })
-  mine(@CurrentUser() user: User, @Query('page') page?: string, @Query('limit') limit?: string) {
+  mine(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     return this.recipesService.list({
       mine: true,
       userId: user.id,
@@ -79,7 +90,10 @@ export class RecipesController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Tác giả: cập nhật công thức (gửi kèm ingredients sẽ thay toàn bộ)' })
+  @ApiOperation({
+    summary:
+      'Tác giả: cập nhật công thức (gửi kèm ingredients sẽ thay toàn bộ)',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,

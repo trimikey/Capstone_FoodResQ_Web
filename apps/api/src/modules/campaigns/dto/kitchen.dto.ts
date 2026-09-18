@@ -13,7 +13,11 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { AssignmentRole, SafetyCheckResult, SafetyCheckType } from '@foodresq/types';
+import {
+  AssignmentRole,
+  SafetyCheckResult,
+  SafetyCheckType,
+} from '@foodresq/types';
 
 // ── Ca làm việc ────────────────────────────────────────────────────────────────
 
@@ -24,7 +28,10 @@ export class CreateShiftDto {
   @MaxLength(100)
   label!: string;
 
-  @ApiPropertyOptional({ enum: AssignmentRole, description: 'Ca dành cho vai trò nào (bỏ trống = chung)' })
+  @ApiPropertyOptional({
+    enum: AssignmentRole,
+    description: 'Ca dành cho vai trò nào (bỏ trống = chung)',
+  })
   @IsOptional()
   @IsEnum(AssignmentRole)
   role?: AssignmentRole;
@@ -46,7 +53,10 @@ export class CreateShiftDto {
 }
 
 export class ApplyShiftDto {
-  @ApiPropertyOptional({ enum: AssignmentRole, description: 'Bắt buộc nếu ca không gắn sẵn vai trò' })
+  @ApiPropertyOptional({
+    enum: AssignmentRole,
+    description: 'Bắt buộc nếu ca không gắn sẵn vai trò',
+  })
   @IsOptional()
   @IsEnum(AssignmentRole)
   role?: AssignmentRole;
@@ -55,12 +65,17 @@ export class ApplyShiftDto {
 // ── Thực đơn (liên kết công thức) ──────────────────────────────────────────────
 
 export class AddMenuItemDto {
-  @ApiPropertyOptional({ description: 'ID công thức trong thư viện (bỏ trống nếu món tự do)' })
+  @ApiPropertyOptional({
+    description: 'ID công thức trong thư viện (bỏ trống nếu món tự do)',
+  })
   @IsOptional()
   @IsUUID()
   recipeId?: string;
 
-  @ApiPropertyOptional({ example: 'Canh rau củ', description: 'Tên món tự do nếu không dùng công thức' })
+  @ApiPropertyOptional({
+    example: 'Canh rau củ',
+    description: 'Tên món tự do nếu không dùng công thức',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)
@@ -94,7 +109,10 @@ export class CreateSafetyLogDto {
   @MaxLength(50)
   measuredValue?: string;
 
-  @ApiPropertyOptional({ enum: SafetyCheckResult, example: SafetyCheckResult.PASS })
+  @ApiPropertyOptional({
+    enum: SafetyCheckResult,
+    example: SafetyCheckResult.PASS,
+  })
   @IsOptional()
   @IsEnum(SafetyCheckResult)
   result?: SafetyCheckResult;
@@ -175,7 +193,9 @@ export class CreateMealFeedbackDto {
 // ── QR nhận suất ăn của người thụ hưởng ────────────────────────────────────────
 
 export class ScanHandoffDto {
-  @ApiProperty({ description: 'Mã QR người nhận hiển thị trên ứng dụng của họ' })
+  @ApiProperty({
+    description: 'Mã QR người nhận hiển thị trên ứng dụng của họ',
+  })
   @IsString()
   @Matches(/^[0-9a-f]{64}$/, { message: 'Mã QR không đúng định dạng.' })
   qrToken!: string;

@@ -37,7 +37,8 @@ function isAndroidEmulator(): boolean {
 
 // Dev URL strategy:
 // - Android emulator: 10.0.2.2 points to the host machine.
-// - Physical devices: use EXPO_PUBLIC_API_URL, which should be the host LAN IP.
+// - Physical devices: reuse the Metro LAN host, so changing Wi-Fi does not require editing .env.
+// - EXPO_PUBLIC_API_URL remains an explicit override for non-dev builds or manual testing.
 // - iOS simulator fallback: localhost.
 function getApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -46,11 +47,16 @@ function getApiUrl(): string {
     return replaceUrlHost(envUrl ?? DEFAULT_API_URL, ANDROID_EMULATOR_HOST);
   }
 
+  const metroApiUrl = __DEV__ ? getMetroApiUrl() : null;
+  if (metroApiUrl) {
+    return metroApiUrl;
+  }
+
   if (envUrl) {
     return envUrl;
   }
 
-  return (__DEV__ && getMetroApiUrl()) || DEFAULT_API_URL;
+  return DEFAULT_API_URL;
 }
 
 export const API_URL = getApiUrl();
@@ -113,10 +119,18 @@ apiClient.interceptors.response.use(
           refreshToken,
         });
 
-        const { accessToken: newAccessToken } = refreshResponse.data.data;
+        const {
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        } = refreshResponse.data.data as RefreshedTokens;
 
-        // Store new access token
+        // Backend rotates refresh tokens on every refresh, so both tokens must be replaced.
         await AsyncStorage.setItem('accessToken', newAccessToken);
+        await AsyncStorage.setItem('refreshToken', newRefreshToken);
+        onTokensRefreshed?.({
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        });
 
         // Update header for original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
@@ -139,10 +153,22 @@ apiClient.interceptors.response.use(
  * refresh token thất bại — giúp auth guard điều hướng về login ngay lập tức
  * mà không tạo circular import (store import client, không ngược lại).
  */
+type RefreshedTokens = {
+  accessToken: string;
+  refreshToken: string;
+};
+
 let onSessionExpired: (() => void) | null = null;
+let onTokensRefreshed: ((tokens: RefreshedTokens) => void) | null = null;
 
 export function setSessionExpiredHandler(handler: (() => void) | null): void {
   onSessionExpired = handler;
+}
+
+export function setTokensRefreshedHandler(
+  handler: ((tokens: RefreshedTokens) => void) | null,
+): void {
+  onTokensRefreshed = handler;
 }
 
 /**
