@@ -53,14 +53,6 @@ export default function ScanQrScreen() {
 
   const handleConfirm = async () => {
     if (!result) return;
-    if (!result.receiver.verificationImageAvailable || !verificationImageLoaded) {
-      Popup.show({
-        type: 'error',
-        text1: 'Ảnh xác minh không khả dụng',
-        text2: 'Yêu cầu người nhận cập nhật lại selfie trước khi giao.',
-      });
-      return;
-    }
     try {
       setScanning(true);
       await confirm.mutateAsync(result.id);
@@ -86,7 +78,8 @@ export default function ScanQrScreen() {
   if (result) {
     const r = result.receiver;
     const photo = r.faceImageUrl ?? r.idCardImageUrl;
-    const photoAvailable = r.verificationImageAvailable && !verificationImageFailed;
+    const photoAvailable = !!photo && r.verificationImageAvailable && !verificationImageFailed;
+    const canConfirm = photoAvailable ? verificationImageLoaded : true;
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header />
@@ -127,7 +120,9 @@ export default function ScanQrScreen() {
             <View style={styles.photoWarning}>
               <MaterialCommunityIcons name="alert-circle-outline" size={20} color={COLORS.error} />
               <Text style={styles.photoWarningText}>
-                Không thể đối chiếu danh tính. Yêu cầu người nhận vào Tài khoản → Xác minh khuôn mặt để cập nhật selfie.
+                {photo
+                  ? 'Ảnh đăng ký không còn tải được. Hãy yêu cầu giấy tờ tuỳ thân trước khi bàn giao và nhắc người nhận cập nhật lại selfie.'
+                  : 'Người nhận chưa có ảnh xác minh. Hãy yêu cầu giấy tờ tuỳ thân trước khi bàn giao.'}
               </Text>
             </View>
           ) : null}
@@ -141,10 +136,10 @@ export default function ScanQrScreen() {
             {r.idCardNumber ? <Row label="CCCD" value={r.idCardNumber} /> : null}
           </SurfaceCard>
 
-          <Button mode="contained" icon="check-bold" onPress={handleConfirm} loading={scanning}
-            disabled={scanning || !photoAvailable || !verificationImageLoaded}
+          <Button mode="contained" icon={photoAvailable ? 'check-bold' : 'card-account-details-outline'} onPress={handleConfirm} loading={scanning}
+            disabled={scanning || !canConfirm}
             buttonColor={COLORS.primary} style={styles.confirmBtn} labelStyle={{ fontSize: 16, fontWeight: 'bold' }}>
-            Xác nhận đã giao
+            {photoAvailable ? 'Xác nhận đã giao' : 'Xác nhận sau khi kiểm tra giấy tờ'}
           </Button>
           <Button mode="text" onPress={reset} textColor={COLORS.onSurfaceVariant}>Quét đơn khác</Button>
         </ScrollView>

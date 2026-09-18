@@ -861,6 +861,17 @@ export default function VolunteerActiveScreen() {
               <Text style={styles.photoReadyText}>Ảnh hàng đã sẵn sàng, chờ xác nhận.</Text>
             </View>
           ) : null}
+          {delivery.qcPhotoUrl ? (
+            <View style={styles.qcPhotoReview}>
+              <AppImage source={{ uri: delivery.qcPhotoUrl }} style={styles.qcPhotoThumb} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.qcPhotoTitle}>Ảnh QC lúc lấy hàng</Text>
+                <Text style={styles.qcPhotoHint}>
+                  Đã lưu làm bằng chứng tình trạng hàng trước khi bàn giao.
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </FadeInUp>
 
         {canAdvance ? (
@@ -1205,6 +1216,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#dcfce7',
   },
   photoReadyText: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.success },
+  qcPhotoReview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  qcPhotoThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  qcPhotoTitle: { fontSize: 13, fontWeight: '900', color: COLORS.onSurface },
+  qcPhotoHint: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.onSurfaceVariant,
+  },
   primaryBtn: { borderRadius: 14 },
   primaryContent: { paddingVertical: 8 },
   secondaryRow: { flexDirection: 'row', gap: 12 },
