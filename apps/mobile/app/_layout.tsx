@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import { enableScreens } from 'react-native-screens';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { Stack } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AppPopupHost, AppToastHost } from '@/components/ui/AppPopup';
@@ -15,14 +15,12 @@ import { setSessionExpiredHandler, setTokensRefreshedHandler } from '@/api/clien
 import { queryClient } from '@/lib/queryClient';
 import { appTheme } from '@/theme/design';
 
-// RN 0.85 forces the New Architecture/Fabric renderer. In Android dev builds,
-// react-native-screens can detach a native screen while Fabric still has pending
-// layout work for that surface, which crashes as "Unable to find viewState".
-// Disabling native screen optimization is slower but much more stable for demo.
-enableScreens(false);
-
 export default function RootLayout() {
   const { initialize } = useAuth();
+
+  useEffect(() => {
+    SplashScreen.hide();
+  }, []);
 
   useEffect(() => {
     initialize();

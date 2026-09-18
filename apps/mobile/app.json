@@ -16,7 +16,6 @@
     },
     "android": {
       "package": "com.foodresq.mobile",
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/Logo_FoodResQ.png",
         "backgroundColor": "#ffffff"
@@ -28,6 +27,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff",
+          "image": "./assets/Logo_FoodResQ.png",
+          "imageWidth": 200
+        }
+      ],
       "expo-status-bar",
       "expo-image",
       "@react-native-firebase/app",

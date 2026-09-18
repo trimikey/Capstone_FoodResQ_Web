@@ -20,3 +20,12 @@ allowBuilds:
   core-js: false
   '@firebase/util': true
   protobufjs: true
+
+minimumReleaseAgeExclude:
+  - expo-constants@56.0.26
+  - expo-dev-client@56.0.27
+  - expo-dev-launcher@56.0.28
+  - expo-image@56.0.13
+  - expo-linking@56.0.18
+  - expo-location@56.0.26
+  - expo-router@56.2.21

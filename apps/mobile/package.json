@@ -17,7 +17,11 @@
     "test:unit": "node --require ./test/register-ts-node.cjs --test src/utils/__tests__/*.test.ts"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@expo/metro-runtime": "~56.0.20",
+=======
+    "@expo/metro-runtime": "~56.0.21",
+>>>>>>> origin/master
     "@expo/vector-icons": "^15.1.1",
     "@foodresq/types": "workspace:*",
     "@gorhom/bottom-sheet": "^5.2.14",
@@ -32,6 +36,7 @@
     "@shopify/flash-list": "2.0.2",
     "@tanstack/react-query": "^5.101.0",
     "axios": "^1.17.0",
+<<<<<<< HEAD
     "expo": "~56.0.20",
     "expo-build-properties": "~56.0.26",
     "expo-camera": "~56.0.8",
@@ -45,6 +50,21 @@
     "expo-location": "~56.0.24",
     "expo-router": "~56.2.19",
     "expo-splash-screen": "~56.0.14",
+=======
+    "expo": "~56.0.21",
+    "expo-build-properties": "~56.0.27",
+    "expo-camera": "~56.0.8",
+    "expo-constants": "~56.0.26",
+    "expo-dev-client": "~56.0.27",
+    "expo-haptics": "~56.0.3",
+    "expo-image": "~56.0.13",
+    "expo-image-manipulator": "~56.0.26",
+    "expo-image-picker": "~56.0.25",
+    "expo-linking": "~56.0.18",
+    "expo-location": "~56.0.26",
+    "expo-router": "~56.2.21",
+    "expo-splash-screen": "~56.0.15",
+>>>>>>> origin/master
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "react": "19.2.3",
@@ -57,7 +77,11 @@
     "react-native-qrcode-svg": "^6.3.21",
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
+<<<<<<< HEAD
     "react-native-screens": "~4.26.0",
+=======
+    "react-native-screens": "4.26.2",
+>>>>>>> origin/master
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-webview": "13.16.1",
