@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ActivityIndicator, InteractionManager, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { mobileColors as COLORS } from '@/theme/design';
 
@@ -9,15 +9,9 @@ interface DeferredRedirectProps {
 
 export function DeferredRedirect({ href }: DeferredRedirectProps) {
   useEffect(() => {
-    let cancelled = false;
-    const task = InteractionManager.runAfterInteractions(() => {
-      if (!cancelled) router.replace(href);
-    });
+    const frame = requestAnimationFrame(() => router.replace(href));
 
-    return () => {
-      cancelled = true;
-      task.cancel?.();
-    };
+    return () => cancelAnimationFrame(frame);
   }, [href]);
 
   return (
