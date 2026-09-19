@@ -99,7 +99,7 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<web-client-id>.apps.googleusercontent.com
 Nếu chạy thiết bị thật cùng Wi-Fi:
 
 ```env
-EXPO_PUBLIC_API_URL=http://<LAN-IP-cua-may-tinh>:3001/api/v1
+# Không khai báo EXPO_PUBLIC_API_URL; app tự lấy IP LAN từ Metro.
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<web-client-id>.apps.googleusercontent.com
 ```
 
@@ -112,7 +112,8 @@ EXPO_PUBLIC_API_URL=http://192.168.1.4:3001/api/v1
 Lưu ý:
 
 - Android emulator không gọi được `localhost` của máy host bằng `localhost`; phải dùng `10.0.2.2`.
-- Thiết bị thật phải dùng IP LAN của máy đang chạy backend.
+- Thiết bị thật chạy `pnpm --filter mobile mobile`; Metro và API dùng IP LAN của máy đang chạy backend.
+- Chỉ dùng `pnpm --filter mobile mobile:usb` khi muốn phụ thuộc vào cáp USB và `adb reverse`.
 - Nếu dùng Google Sign-In/Firebase native, cần file `apps/mobile/google-services.json`.
 - Firebase Android app phải dùng package name `com.foodresq.mobile`.
 
@@ -360,4 +361,3 @@ pnpm --filter mobile android
 - `apps/mobile/google-services.json` tồn tại nếu build native có Firebase/Google Sign-In.
 - `android/app/build.gradle` dùng `com.foodresq.mobile`.
 - Đã clean/xóa autolinking cache nếu log còn trỏ `com.foodresq.BuildConfig`.
-

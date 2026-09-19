@@ -5,7 +5,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "mobile": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3001 tcp:3001 && expo start --clear --dev-client --localhost --scheme foodresq",
+    "mobile": "expo start --clear --dev-client --lan --scheme foodresq",
+    "mobile:usb": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3001 tcp:3001 && expo start --clear --dev-client --localhost --scheme foodresq",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",

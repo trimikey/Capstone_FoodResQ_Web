@@ -174,7 +174,7 @@ export function useNotificationSocket() {
 
       socket = io(SOCKET_URL, {
         auth: { token },
-        transports: ['websocket'],
+        transports: ['polling', 'websocket'],
         reconnection: true,
       });
       socketRef.current = socket;

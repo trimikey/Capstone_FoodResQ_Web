@@ -40,9 +40,9 @@ Một app trong monorepo `Capstone_FoodResQ_Web` (pnpm workspaces); backend Nest
 Không commit (đã gitignore). Biến `EXPO_PUBLIC_*` được inline vào bundle — xem [Expo: Environment variables](https://docs.expo.dev/guides/environment-variables/).
 
 ```bash
-# API backend — Android emulator dùng 10.0.2.2 để trỏ về localhost máy host
-EXPO_PUBLIC_API_URL=http://10.0.2.2:3001/api/v1
-# iOS simulator: http://localhost:3001/api/v1 — thiết bị thật: http://<LAN-IP>:3001/api/v1
+# Dev client trên thiết bị thật: để trống để app tự lấy IP LAN từ Metro.
+# Chỉ override khi cần, ví dụ Android emulator:
+# EXPO_PUBLIC_API_URL=http://10.0.2.2:3001/api/v1
 
 # Google Sign-In: Web client ID (oauth_client client_type=3 trong google-services.json)
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com
@@ -67,7 +67,7 @@ App gọi API ở `apps/api` (port **3001**, prefix `/api/v1`) → backend phả
 | Chế độ | Dùng cho | Lệnh |
 |---|---|---|
 | **Expo Go** | hầu hết màn hình, email/password, forgot-password | `cd apps/mobile && corepack pnpm android` |
-| **Dev Client** | **bắt buộc** cho Google Sign-In & Phone OTP (native module) | build 1 lần (dưới) rồi `npx expo start --dev-client` |
+| **Dev Client** | **bắt buộc** cho Google Sign-In & Phone OTP (native module) | build 1 lần (dưới) rồi `corepack pnpm mobile` |
 
 Build dev client (khuyến nghị **EAS** — [Create a development build](https://docs.expo.dev/develop/development-builds/create-a-build/)):
 
@@ -76,7 +76,7 @@ cd apps/mobile
 npx eas-cli login
 npx eas-cli build --profile development --platform android   # ~15-20 phút
 adb install -r <file>.apk            # tải APK từ link kết quả rồi cài
-npx expo start --dev-client          # các lần sau chỉ cần chạy Metro
+corepack pnpm mobile                 # Metro qua LAN, dùng được sau khi rút cáp USB
 ```
 
 > **EAS** → cả nhóm dùng **chung 1 keystore** (SHA-1 `06:1C:...` đã đăng ký Firebase) ⇒ không ai phải thêm SHA-1.
@@ -160,7 +160,8 @@ apps/mobile/
 
 ```bash
 corepack pnpm android          # Expo Go (Android)
-npx expo start --dev-client    # Metro cho dev client (Firebase)
+corepack pnpm mobile           # Metro qua LAN cho dev client (Firebase)
+corepack pnpm mobile:usb       # phương án USB với adb reverse
 npx tsc --noEmit               # type-check
 corepack pnpm lint             # eslint
 ```
