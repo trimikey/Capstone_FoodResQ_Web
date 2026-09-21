@@ -459,6 +459,40 @@ describe('CampaignsService', () => {
         .rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('allows confirming an assigned shift after the campaign has started', async () => {
+      prisma.campaignVolunteerAssignment.findUnique.mockResolvedValue({
+        id: 'a-1', campaignId: 'campaign-1', volunteerId: 'v-1', shiftId: 'morning-chef',
+        role: 'chef', status: 'assigned', confirmationStatus: 'pending',
+        volunteer: { userId: 'user-1', user: { fullName: 'Chef One' } },
+        campaign: {
+          id: 'campaign-1',
+          title: 'Bep dang chay',
+          status: 'in_progress',
+          recruitmentEndAt: new Date('2000-12-31T00:00:00.000Z'),
+          charityReceiver: { userId: 'charity-1' },
+        },
+        shift: { id: 'morning-chef', label: 'Ca sang', period: 'morning' },
+        workDate: null,
+      });
+      prisma.kitchenCampaign.findUnique
+        .mockResolvedValueOnce({
+          status: 'in_progress',
+          recruitmentEndAt: new Date('2000-12-31T00:00:00.000Z'),
+        })
+        .mockResolvedValueOnce({
+          status: 'in_progress',
+          recruitmentStatus: 'closed_ready',
+        });
+      prisma.campaignVolunteerAssignment.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.confirmAssignment('a-1', 'user-1', 'confirmed'))
+        .resolves.toEqual({ id: 'a-1', confirmationStatus: 'confirmed' });
+      expect(prisma.campaignVolunteerAssignment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'a-1', status: 'assigned', confirmationStatus: 'pending' },
+        data: { confirmationStatus: 'confirmed', confirmedAt: expect.any(Date) },
+      });
+    });
+
     it('chặn gia hạn vượt qua khoảng đệm trước ca đầu tiên', async () => {
       prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-1' });
       prisma.kitchenCampaign.findUnique.mockResolvedValue({

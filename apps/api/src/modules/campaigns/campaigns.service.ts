@@ -3502,10 +3502,17 @@ export class CampaignsService {
         where: { id: assignment.campaignId },
         select: { status: true, recruitmentEndAt: true },
       });
-      if (!lockedCampaign || lockedCampaign.status !== 'approved') {
+      if (!lockedCampaign) {
         throw new BadRequestException('Chiến dịch đã bắt đầu hoặc đã kết thúc.');
       }
-      if (new Date() >= lockedCampaign.recruitmentEndAt) {
+      const campaignIsRunning = lockedCampaign.status === 'in_progress';
+      if (decision === 'confirmed' && !['approved', 'in_progress'].includes(lockedCampaign.status)) {
+        throw new BadRequestException('Chien dich da ket thuc, khong the xac nhan ca.');
+      }
+      if (decision === 'declined' && lockedCampaign.status !== 'approved') {
+        throw new BadRequestException('Chien dich da bat dau hoac da ket thuc.');
+      }
+      if (!campaignIsRunning && new Date() >= lockedCampaign.recruitmentEndAt) {
         throw new BadRequestException('Đã hết hạn xác nhận ca. Tổ chức cần gia hạn tuyển hoặc dời lịch.');
       }
 
