@@ -720,6 +720,7 @@ export interface CampaignTask {
   confirmationStatus?: 'pending' | 'confirmed' | 'declined' | (string & {});
   confirmedAt?: string | null;
   shiftId?: string | null;
+  workDate?: string | null;
   checkInTime?: string | null;
   campaign: {
     id: string;

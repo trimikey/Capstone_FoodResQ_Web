@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from 'react';
-import { AppState, View, StyleSheet, ScrollView } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState, View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCampaignDetail, useMyTasks, useApplyCampaign, type AssignmentRole } from '@/hooks/useCampaigns';
 import { useShifts, useMenuItems, useApplyShift, type CampaignShift } from '@/hooks/useKitchenOps';
@@ -26,6 +27,24 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 
 const ASSIGNMENT_ROLES: AssignmentRole[] = ['chef', 'waiter', 'shipper'];
+const ACTIVE_SLOT_STATUSES = new Set(['assigned', 'checked_in', 'in_progress', 'completed']);
+
+function dateKey(value?: string | null): string {
+  return value?.slice(0, 10) ?? '';
+}
+
+function localDateFromKey(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function localDateKey(value: Date): string {
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-');
+}
 
 function shiftApplyLabel(role?: AssignmentRole): string {
   switch (role) {
@@ -76,6 +95,8 @@ export default function VolunteerCampaignDetailScreen() {
   const { data: kitchenMenu = [] } = useMenuItems(id);
   const applyMut = useApplyCampaign();
   const applyShiftMut = useApplyShift();
+  const [workDateSelection, setWorkDateSelection] = useState<{ campaignId: string; date: string } | null>(null);
+  const [showWorkDatePicker, setShowWorkDatePicker] = useState(false);
 
   const refetchCampaignState = useCallback(() => {
     void Promise.all([refetch(), refetchShifts(), refetchTasks()]);
@@ -152,13 +173,22 @@ export default function VolunteerCampaignDetailScreen() {
   const slots = slotProgress(c);
   const open = canApplyCampaign(c.status, c.recruitmentStatus);
   const hasShiftSchedule = shifts.length > 0;
+  const startDateKey = dateKey(c.scheduledDate);
+  const endDateKey = dateKey(c.endDate ?? c.scheduledDate);
+  const isMultiDay = startDateKey !== endDateKey;
+  const effectiveWorkDate = workDateSelection?.campaignId === c.id
+    ? workDateSelection.date
+    : startDateKey;
   // Chỉ chuyên môn đã xác minh mới được dùng để đăng ký ca.
   const verifiedSpecs = new Set(
     (volunteerProfile?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
   );
   // Role-level apply chỉ là assignment tổng không gắn ca. Shift-level apply phải xét theo shiftId.
   const appliedRoles = new Set(myCampaignTasks.filter((t) => !t.shiftId).map((t) => t.role));
-  const shiftApplications = new Map(myCampaignTasks.filter((t) => t.shiftId).map((t) => [t.shiftId, t]));
+  const findShiftApplication = (shiftId: string) => myCampaignTasks.find((task) => (
+    task.shiftId === shiftId
+      && (!isMultiDay || dateKey(task.workDate) === effectiveWorkDate)
+  ));
 
   const pickShiftRole = (shift: CampaignShift): AssignmentRole | undefined => {
     if (shift.role) return shift.role;
@@ -181,7 +211,12 @@ export default function VolunteerCampaignDetailScreen() {
       return;
     }
     try {
-      await applyShiftMut.mutateAsync({ campaignId: c.id, shiftId: shift.id, role: roleToSend });
+      await applyShiftMut.mutateAsync({
+        campaignId: c.id,
+        shiftId: shift.id,
+        role: roleToSend,
+        workDate: effectiveWorkDate,
+      });
       await Promise.all([refetch(), refetchShifts(), refetchTasks()]);
       Popup.show({ type: 'success', text1: shiftApplyLabel(roleToSend), text2: shift.label });
     } catch (err) {
@@ -280,10 +315,46 @@ export default function VolunteerCampaignDetailScreen() {
         {/* Ca làm việc (kitchen-ops) — đăng ký theo ca */}
         {shifts.length > 0 ? (
           <Section title="Ca làm việc">
+            {isMultiDay ? (
+              <>
+                <Text style={styles.datePickerLabel}>Ngày muốn đăng ký</Text>
+                <Pressable
+                  style={styles.datePickerButton}
+                  onPress={() => setShowWorkDatePicker(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Chọn ngày đăng ký ca chiến dịch"
+                >
+                  <MaterialCommunityIcons name="calendar-outline" size={18} color={COLORS.purple} />
+                  <Text style={styles.datePickerText}>{formatDate(effectiveWorkDate)}</Text>
+                  <MaterialCommunityIcons name="chevron-down" size={18} color={COLORS.onSurfaceVariant} />
+                </Pressable>
+                {showWorkDatePicker ? (
+                  <DateTimePicker
+                    value={localDateFromKey(effectiveWorkDate)}
+                    mode="date"
+                    display="default"
+                    minimumDate={localDateFromKey(startDateKey)}
+                    maximumDate={localDateFromKey(endDateKey)}
+                    onChange={(_, pickedDate) => {
+                      setShowWorkDatePicker(false);
+                      if (pickedDate) {
+                        setWorkDateSelection({ campaignId: c.id, date: localDateKey(pickedDate) });
+                      }
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null}
             {shifts.map((s) => {
-              const full = s.slotsFilled >= s.slotsNeeded;
+              const filledForDay = isMultiDay
+                ? s.assignments.filter((assignment) => (
+                    dateKey(assignment.workDate) === effectiveWorkDate
+                    && ACTIVE_SLOT_STATUSES.has(assignment.status)
+                  )).length
+                : s.slotsFilled;
+              const full = filledForDay >= s.slotsNeeded;
               const roleToSend = pickShiftRole(s);
-              const shiftApplication = shiftApplications.get(s.id);
+              const shiftApplication = findShiftApplication(s.id);
               const alreadyApplied = !!shiftApplication;
               const eligible = !!roleToSend && (!s.role || verifiedSpecs.has(s.role));
               const disabled = !open || full || !eligible || applyShiftMut.isPending;
@@ -301,7 +372,7 @@ export default function VolunteerCampaignDetailScreen() {
                     <Text style={styles.shiftLabel}>{s.label}</Text>
                     <Text style={styles.shiftMeta}>
                       {s.startTime}-{s.endTime}
-                      {s.role ? ` - ${ASSIGNMENT_ROLE_LABEL[s.role] ?? s.role}` : ' - Chung'} - {s.slotsFilled}/{s.slotsNeeded}
+                      {s.role ? ` - ${ASSIGNMENT_ROLE_LABEL[s.role] ?? s.role}` : ' - Chung'} - {filledForDay}/{s.slotsNeeded}
                     </Text>
                   </View>
                   <View style={styles.shiftAction}>
@@ -457,6 +528,14 @@ const styles = StyleSheet.create({
   shiftButtonContent: { minHeight: 38, paddingHorizontal: spacing.md },
   shiftLabel: { fontSize: 14, fontWeight: '600', color: COLORS.onSurface },
   shiftMeta: { fontSize: 13, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  datePickerLabel: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface, marginBottom: spacing.xs },
+  datePickerButton: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    borderWidth: 1, borderColor: COLORS.outlineVariant, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.sm,
+    backgroundColor: COLORS.surfaceContainerLow,
+  },
+  datePickerText: { flex: 1, fontSize: 14, fontWeight: '700', color: COLORS.onSurface },
   bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bulletText: { flex: 1, fontSize: 14, color: COLORS.onSurface },
   scheduleTime: { fontSize: 13, fontWeight: '700', color: COLORS.indigo, width: 52 },

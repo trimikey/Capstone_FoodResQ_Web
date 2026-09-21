@@ -41,7 +41,10 @@ export function canDonate(status: CampaignStatus, recruitmentStatus?: Recruitmen
 
 /** TNV chỉ đăng ký khi chiến dịch đã duyệt và cửa sổ tuyển đang mở. */
 export function canApplyCampaign(status: CampaignStatus, recruitmentStatus?: string | null): boolean {
-  return status === 'approved' && recruitmentStatus === 'open';
+  // `staffed` means the minimum staffing threshold has been reached, not that
+  // recruitment is closed. The API deliberately continues accepting applications
+  // in both states until recruitmentEndAt.
+  return status === 'approved' && (recruitmentStatus === 'open' || recruitmentStatus === 'staffed');
 }
 
 /** Trạng thái công việc TNV trong chiến dịch. */

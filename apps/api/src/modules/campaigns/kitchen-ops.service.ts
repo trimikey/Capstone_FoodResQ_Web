@@ -130,6 +130,8 @@ export class KitchenOpsService {
             id: true,
             role: true,
             status: true,
+            confirmationStatus: true,
+            workDate: true,
             volunteer: { select: { user: { select: { fullName: true, avatarUrl: true } } } },
           },
         },

@@ -18,6 +18,8 @@ export interface CampaignShift {
     id: string;
     role: AssignmentRole;
     status: string;
+    confirmationStatus?: string;
+    workDate?: string | null;
     volunteer: { user: { fullName: string; avatarUrl: string | null } };
   }[];
 }
@@ -168,10 +170,10 @@ export function useCreateShift() {
 export function useApplyShift() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId, shiftId, role }: { campaignId: string; shiftId: string; role?: AssignmentRole }) => {
+    mutationFn: async ({ campaignId, shiftId, role, workDate }: { campaignId: string; shiftId: string; role?: AssignmentRole; workDate?: string }) => {
       const res = await apiClient.post<ApiResponse<unknown>>(
         endpoints.kitchen.applyShift(campaignId, shiftId),
-        role ? { role } : {}
+        { ...(role ? { role } : {}), ...(workDate ? { workDate } : {}) }
       );
       return res.data.data;
     },
