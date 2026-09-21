@@ -185,6 +185,17 @@ export default function AppTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="volunteer/delivery-shifts"
+        options={{
+          href: showShipperTabs ? undefined : null,
+          title: 'Lịch làm việc',
+          tabBarLabel: 'Lịch',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="calendar-clock-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="volunteer/profile"
         options={{
           href: isVolunteer ? undefined : null,
@@ -222,7 +233,6 @@ export default function AppTabsLayout() {
       <Tabs.Screen name="charity/campaigns/[id]" options={{ href: null }} />
       {/* Volunteer: lịch sử giao hàng — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="volunteer/history" options={{ href: null }} />
-      <Tabs.Screen name="volunteer/delivery-shifts" options={{ href: null }} />
       <Tabs.Screen name="volunteer/scan-handoff" options={{ href: null }} />
       {/* Công thức nấu ăn — route push từ màn Hồ sơ, ẩn khỏi tab bar */}
       <Tabs.Screen name="recipes/index" options={{ href: null }} />

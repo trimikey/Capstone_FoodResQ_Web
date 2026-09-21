@@ -256,6 +256,7 @@ export interface WeeklyAvailabilitySlot {
 
 export interface WeeklyAvailabilityData {
   slots: WeeklyAvailabilitySlot[];
+  updatedAt?: string | null;
 }
 
 /** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
@@ -394,6 +395,23 @@ export function useMyWeeklyAvailability(enabled = true) {
         endpoints.volunteers.weeklyAvailability,
       );
       return res.data.data;
+    },
+  });
+}
+
+export function useSetMyWeeklyAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (slots: WeeklyAvailabilitySlot[]) => {
+      const res = await apiClient.put<ApiResponse<{ ok: boolean; count: number }>>(
+        endpoints.volunteers.weeklyAvailability,
+        { slots },
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['volunteer', 'weekly-availability'] });
+      void qc.invalidateQueries({ queryKey: ['volunteer', 'delivery-shifts'] });
     },
   });
 }
