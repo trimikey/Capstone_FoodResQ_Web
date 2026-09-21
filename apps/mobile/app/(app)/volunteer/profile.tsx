@@ -13,6 +13,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useVolunteerMe, useUpdateLocation } from '@/hooks/useVolunteer';
+import { useMyProfile } from '@/hooks/useProfile';
 import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { volunteerRankLabel } from '@/utils/userFormat';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
@@ -50,12 +51,6 @@ function specializationLabel(s: string): string {
   }
 }
 
-function primarySpecializationLabel(specs: { specialization: string; isVerified: boolean }[]): string {
-  const verified = specs.filter((s) => s.isVerified).map((s) => s.specialization);
-  const preferred = ['chef', 'waiter', 'shipper'].find((role) => verified.includes(role));
-  return preferred ? specializationLabel(preferred) : 'Chờ duyệt';
-}
-
 function formatDecimal(value: unknown): string | null {
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(1) : null;
@@ -88,6 +83,11 @@ const PERIOD_LABEL: Record<string, string> = {
 export default function VolunteerProfileScreen() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const { data: vol, isLoading, isError, refetch, isRefetching } = useVolunteerMe();
+  const {
+    data: accountProfile,
+    refetch: refetchAccountProfile,
+    isRefetching: isAccountProfileRefetching,
+  } = useMyProfile();
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
@@ -95,8 +95,8 @@ export default function VolunteerProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([refetch(), refetchFaceEnrollment()]);
-    }, [refetch, refetchFaceEnrollment])
+      void Promise.all([refetch(), refetchAccountProfile(), refetchFaceEnrollment()]);
+    }, [refetch, refetchAccountProfile, refetchFaceEnrollment])
   );
 
   const handleEnrollFace = async (mode: 'camera' | 'library') => {
@@ -156,6 +156,8 @@ export default function VolunteerProfileScreen() {
   const faceBusy = enrollFace.isPending;
   const faceEnrolled = faceEnrollment.data?.enrolled === true;
   const avgRatingLabel = formatDecimal(vol?.avgRating);
+  const trustScore = accountProfile?.trustScore ?? user?.trustScore;
+  const trustScoreLabel = Number.isFinite(Number(trustScore)) ? String(Math.round(Number(trustScore))) : '-';
   const verifiedSpecs = vol?.specializations.filter((s) => s.isVerified).map((s) => s.specialization) ?? [];
   const hasChef = verifiedSpecs.includes('chef');
   const hasWaiter = verifiedSpecs.includes('waiter');
@@ -169,7 +171,6 @@ export default function VolunteerProfileScreen() {
   const upcomingShift = deliveryShifts.data?.slots
     .filter((slot) => slot.workDate > todayKey)
     .sort((a, b) => `${a.workDate}:${a.period}`.localeCompare(`${b.workDate}:${b.period}`))[0];
-  const primaryRoleLabel = vol ? primarySpecializationLabel(vol.specializations) : 'Chuyên môn';
   const headerStatus = hasShipper
     ? onDeliveryShift
       ? 'Đang trong ca giao hàng'
@@ -184,7 +185,12 @@ export default function VolunteerProfileScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching || isAccountProfileRefetching}
+            onRefresh={() => Promise.all([refetch(), refetchAccountProfile()])}
+          />
+        }
       >
         {/* Header: avatar + tên + hạng */}
         <View style={styles.header}>
@@ -230,21 +236,17 @@ export default function VolunteerProfileScreen() {
             <View style={styles.quickStats}>
               <View style={styles.quickStat}>
                 <Text style={styles.quickStatValue}>{vol.dedicationPoints}</Text>
-                <Text style={styles.quickStatLabel}>điểm</Text>
+                <Text style={styles.quickStatLabel}>cống hiến</Text>
               </View>
               <View style={styles.quickDivider} />
               <View style={styles.quickStat}>
                 <Text style={styles.quickStatValue}>{avgRatingLabel ?? '-'}</Text>
-                <Text style={styles.quickStatLabel}>rating</Text>
+                <Text style={styles.quickStatLabel}>đánh giá</Text>
               </View>
               <View style={styles.quickDivider} />
               <View style={styles.quickStat}>
-                <Text style={styles.quickStatValue} numberOfLines={1} adjustsFontSizeToFit>
-                  {verifiedSpecs.length > 1 ? verifiedSpecs.length : primaryRoleLabel}
-                </Text>
-                <Text style={styles.quickStatLabel}>
-                  {verifiedSpecs.length > 1 ? 'chuyên môn' : 'vai trò'}
-                </Text>
+                <Text style={styles.quickStatValue}>{trustScoreLabel}</Text>
+                <Text style={styles.quickStatLabel}>uy tín</Text>
               </View>
             </View>
 

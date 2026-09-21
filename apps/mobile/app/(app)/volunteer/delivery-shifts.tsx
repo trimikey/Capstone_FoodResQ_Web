@@ -206,30 +206,11 @@ export default function DeliveryShiftsScreen() {
       <ScreenHeader title="Lịch làm việc" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {shifts.isLoading ? (
-          <View style={styles.stateCard}>
-            <ActivityIndicator color={COLORS.primary} />
-            <Text style={styles.stateTitle}>Đang tải ca giao hàng...</Text>
-          </View>
-        ) : shifts.isError || !data ? (
-          <View style={styles.stateCard}>
-            <MaterialCommunityIcons name="calendar-alert-outline" size={34} color={COLORS.error} />
-            <Text style={styles.stateTitle}>Không tải được lịch làm việc</Text>
-            <Text style={styles.stateText}>Vui lòng kiểm tra kết nối rồi thử lại.</Text>
-            <Button mode="outlined" icon="refresh" onPress={() => void shifts.refetch()}>
-              Thử lại
-            </Button>
-          </View>
-        ) : !data.isShipper ? (
-          <View style={styles.stateCard}>
-            <MaterialCommunityIcons name="truck-alert-outline" size={34} color={COLORS.warning} />
-            <Text style={styles.stateTitle}>Chưa có quyền shipper</Text>
-            <Text style={styles.stateText}>Tài khoản cần được xác minh chuyên môn shipper để đăng ký ca giao hàng.</Text>
-          </View>
-        ) : (
-          <>
+        <>
             <View style={styles.introCard}>
-              <Text style={styles.introTitle}>Hai lịch, hai mục đích khác nhau</Text>
+              <Text style={styles.introTitle}>
+                {data?.isShipper ? 'Hai lịch, hai mục đích khác nhau' : 'Lịch rảnh cho chiến dịch bếp ăn'}
+              </Text>
               <View style={styles.legendRow}>
                 <View style={[styles.legendIcon, styles.availabilityIcon]}>
                   <MaterialCommunityIcons name="calendar-account-outline" size={20} color={COLORS.primary} />
@@ -239,16 +220,27 @@ export default function DeliveryShiftsScreen() {
                   <Text style={styles.legendText}>Lặp hàng tuần để tổ chức biết lúc nào có thể mời bạn. Lịch này không tự xếp ca.</Text>
                 </View>
               </View>
-              <View style={styles.legendDivider} />
-              <View style={styles.legendRow}>
-                <View style={[styles.legendIcon, styles.deliveryIcon]}>
-                  <MaterialCommunityIcons name="truck-check-outline" size={20} color={COLORS.teal} />
+              {data?.isShipper ? (
+                <>
+                  <View style={styles.legendDivider} />
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendIcon, styles.deliveryIcon]}>
+                      <MaterialCommunityIcons name="truck-check-outline" size={20} color={COLORS.teal} />
+                    </View>
+                    <View style={styles.legendCopy}>
+                      <Text style={styles.legendTitle}>Ca giao hàng thường</Text>
+                      <Text style={styles.legendText}>Cam kết theo ngày cụ thể. Chỉ ca đã lưu mới được tự nhận đơn giao của người nhận.</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.campaignScheduleHint}>
+                  <MaterialCommunityIcons name="chef-hat" size={18} color={COLORS.purple} />
+                  <Text style={styles.campaignScheduleHintText}>
+                    Chọn các khung giờ bạn có thể tham gia ca bếp. Khi có chiến dịch phù hợp, tổ chức có thể tìm và mời bạn.
+                  </Text>
                 </View>
-                <View style={styles.legendCopy}>
-                  <Text style={styles.legendTitle}>Ca giao hàng thường</Text>
-                  <Text style={styles.legendText}>Cam kết theo ngày cụ thể. Chỉ ca đã lưu mới được tự nhận đơn giao của người nhận.</Text>
-                </View>
-              </View>
+              )}
             </View>
 
             <View style={[styles.gridCard, styles.availabilityCard]}>
@@ -328,6 +320,22 @@ export default function DeliveryShiftsScreen() {
               </Button>
             </View>
 
+            {shifts.isLoading ? (
+              <View style={styles.stateCard}>
+                <ActivityIndicator color={COLORS.primary} />
+                <Text style={styles.stateTitle}>Đang kiểm tra ca giao hàng...</Text>
+              </View>
+            ) : shifts.isError || !data ? (
+              <View style={styles.stateCard}>
+                <MaterialCommunityIcons name="calendar-alert-outline" size={34} color={COLORS.error} />
+                <Text style={styles.stateTitle}>Không tải được ca giao hàng</Text>
+                <Text style={styles.stateText}>Lịch rảnh chiến dịch ở trên vẫn có thể sử dụng.</Text>
+                <Button mode="outlined" icon="refresh" onPress={() => void shifts.refetch()}>
+                  Thử lại
+                </Button>
+              </View>
+            ) : data.isShipper ? (
+              <>
             <View style={[styles.deliverySectionHeader, styles.deliveryCard]}>
               <View style={[styles.scheduleIcon, styles.deliveryIcon]}>
                 <MaterialCommunityIcons name="truck-check-outline" size={22} color={COLORS.teal} />
@@ -415,8 +423,9 @@ export default function DeliveryShiftsScreen() {
                 ))}
               </ScrollView>
             </View>
+              </>
+            ) : null}
           </>
-        )}
       </ScrollView>
 
       {data?.isShipper ? (
@@ -472,6 +481,21 @@ const styles = StyleSheet.create({
   legendTitle: { color: COLORS.onSurface, fontSize: 13, fontWeight: '900' },
   legendText: { marginTop: 1, color: COLORS.onSurfaceVariant, fontSize: 11, lineHeight: 16 },
   legendDivider: { height: 1, marginLeft: 46, backgroundColor: COLORS.outlineVariant },
+  campaignScheduleHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: COLORS.purpleContainer,
+  },
+  campaignScheduleHintText: {
+    flex: 1,
+    color: COLORS.purple,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
   availabilityIcon: { backgroundColor: COLORS.primaryContainer },
   deliveryIcon: { backgroundColor: COLORS.tealContainer },
   availabilityCard: { borderColor: COLORS.primary },

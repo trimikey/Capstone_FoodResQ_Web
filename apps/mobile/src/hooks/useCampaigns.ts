@@ -722,6 +722,15 @@ export interface CampaignTask {
   shiftId?: string | null;
   workDate?: string | null;
   checkInTime?: string | null;
+  shift?: {
+    id: string;
+    label: string;
+    role: AssignmentRole | null;
+    startTime: string;
+    endTime: string;
+    period?: CampaignShiftPeriod | null;
+    endDayOffset?: number;
+  } | null;
   campaign: {
     id: string;
     title: string;

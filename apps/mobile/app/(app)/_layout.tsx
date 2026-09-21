@@ -187,7 +187,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/delivery-shifts"
         options={{
-          href: showShipperTabs ? undefined : null,
+          href: isVolunteer && hasKitchenRole ? undefined : null,
           title: 'Lịch làm việc',
           tabBarLabel: 'Lịch',
           tabBarIcon: ({ color, size }) => (

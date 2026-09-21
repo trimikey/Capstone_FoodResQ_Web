@@ -293,8 +293,9 @@ function TaskCard({
       <View style={styles.metaRow}>
         <MaterialCommunityIcons name="calendar-clock" size={15} color={COLORS.onSurfaceVariant} />
         <Text style={styles.metaText}>
-          {formatDate(task.campaign.scheduledDate)} - {formatTime(task.campaign.startTime)}-
-          {formatTime(task.campaign.endTime)}
+          Ngày làm: {formatDate(task.workDate ?? task.campaign.scheduledDate)} ·{' '}
+          {formatTime(task.shift?.startTime ?? task.campaign.startTime)}–
+          {formatTime(task.shift?.endTime ?? task.campaign.endTime)}
         </Text>
       </View>
       <View style={styles.metaRow}>

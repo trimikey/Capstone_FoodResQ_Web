@@ -113,6 +113,12 @@ export default function VolunteerTaskDetailScreen() {
 
   const detail = taskQuery.data;
   const checkedIn = ['checked_in', 'in_progress', 'completed'].includes(detail.assignment.status);
+  const workDate = detail.assignment.workDate ?? detail.campaign.scheduledDate;
+  const shiftStartTime = detail.assignment.shift?.startTime ?? detail.campaign.startTime;
+  const shiftEndTime = detail.assignment.shift?.endTime ?? detail.campaign.endTime;
+  const campaignSpansMultipleDays = Boolean(
+    detail.campaign.endDate && detail.campaign.endDate !== detail.campaign.scheduledDate,
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -136,9 +142,17 @@ export default function VolunteerTaskDetailScreen() {
           <View style={styles.heroMeta}>
             <MaterialCommunityIcons name="calendar-clock" size={16} color={COLORS.secondaryContainer} />
             <Text style={styles.heroMetaText}>
-              {formatDate(detail.campaign.scheduledDate)} · {formatTime(detail.campaign.startTime)}–{formatTime(detail.campaign.endTime)}
+              Ngày làm: {formatDate(workDate)} · {formatTime(shiftStartTime)}–{formatTime(shiftEndTime)}
             </Text>
           </View>
+          {campaignSpansMultipleDays ? (
+            <View style={styles.heroMeta}>
+              <MaterialCommunityIcons name="calendar-range" size={16} color={COLORS.secondaryContainer} />
+              <Text style={styles.heroMetaText}>
+                Chiến dịch: {formatDate(detail.campaign.scheduledDate)}–{formatDate(detail.campaign.endDate!)}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.heroStatusRow}>
             <StatusBadge
               label={checkedIn ? 'Đã điểm danh' : 'Chưa điểm danh'}
