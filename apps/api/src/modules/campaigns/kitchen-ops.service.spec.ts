@@ -1,8 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
-import { UserRole } from '@foodresq/types';
+import { AssignmentRole, UserRole } from '@foodresq/types';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { KitchenOpsService } from './kitchen-ops.service';
+import { ApplyShiftDto } from './dto/kitchen.dto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { StorageService } from '@/common/storage/storage.service';
@@ -14,6 +17,7 @@ describe('KitchenOpsService', () => {
     volunteerProfile: { findUnique: jest.fn() },
     receiverProfile: { findUnique: jest.fn() },
     kitchenCampaign: { findUnique: jest.fn() },
+    campaignShift: { findUnique: jest.fn() },
     campaignVolunteerAssignment: { findFirst: jest.fn() },
     mealDistribution: { create: jest.fn(), findUnique: jest.fn() },
     mealFeedback: { create: jest.fn() },
@@ -48,6 +52,35 @@ describe('KitchenOpsService', () => {
     });
     prisma.campaignVolunteerAssignment.findFirst.mockResolvedValue({ id: 'assignment-1' });
   }
+
+  it('accepts workDate in the shift application DTO', async () => {
+    const dto = plainToInstance(ApplyShiftDto, {
+      role: AssignmentRole.SHIPPER,
+      workDate: '2026-09-22',
+    });
+
+    await expect(validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    })).resolves.toHaveLength(0);
+  });
+
+  it('preserves workDate when resolving a shift application', async () => {
+    prisma.campaignShift.findUnique.mockResolvedValue({
+      id: 'shift-1',
+      campaignId: 'campaign-1',
+      role: AssignmentRole.SHIPPER,
+    });
+
+    await expect(service.resolveShiftApplication('campaign-1', 'shift-1', {
+      role: AssignmentRole.SHIPPER,
+      workDate: '2026-09-22',
+    })).resolves.toEqual({
+      role: AssignmentRole.SHIPPER,
+      shiftId: 'shift-1',
+      workDate: '2026-09-22',
+    });
+  });
 
   it('records a distribution under the authorized waiter', async () => {
     allowWaiter();
