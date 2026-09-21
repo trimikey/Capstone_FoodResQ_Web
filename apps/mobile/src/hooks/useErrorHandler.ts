@@ -1,10 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import axios from 'axios';
+import { isAxiosError } from 'axios';
 
 export interface ErrorMessage {
   message: string;
   code?: string;
   timestamp: number;
+}
+
+function formatApiMessage(rawMessage: string | string[]): string {
+  const messages = Array.isArray(rawMessage) ? rawMessage : [rawMessage];
+  if (messages.some((message) => /^property .+ should not exist$/i.test(message.trim()))) {
+    return 'Dữ liệu gửi lên chưa tương thích với máy chủ. Vui lòng cập nhật ứng dụng hoặc thử lại sau.';
+  }
+  return messages.join('\n');
 }
 
 /**
@@ -13,13 +21,12 @@ export interface ErrorMessage {
 export function getErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
 
-  if (axios.isAxiosError(error)) {
+  if (isAxiosError(error)) {
     const data = error.response?.data as
       | { error?: { message?: string | string[] }; message?: string | string[] }
       | undefined;
     const rawMessage = data?.error?.message || data?.message;
-    if (Array.isArray(rawMessage)) return rawMessage.join('\n');
-    if (typeof rawMessage === 'string') return rawMessage;
+    if (Array.isArray(rawMessage) || typeof rawMessage === 'string') return formatApiMessage(rawMessage);
     if (!error.response) {
       return 'Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại.';
     }
@@ -42,7 +49,7 @@ export function getErrorMessage(error: unknown): string {
  * Chuẩn hóa lỗi API thành ErrorMessage có code + timestamp.
  */
 export function handleApiError(error: unknown): ErrorMessage {
-  const code = axios.isAxiosError(error)
+  const code = isAxiosError(error)
     ? error.code ?? error.response?.status?.toString()
     : undefined;
   return {
