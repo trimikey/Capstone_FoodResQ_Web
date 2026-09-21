@@ -35,14 +35,40 @@ function isAndroidEmulator(): boolean {
   );
 }
 
+/**
+ * URL có trỏ về MÁY TÍNH đang chạy dev không (localhost / IP LAN nội bộ)?
+ *
+ * Chỉ những URL như vậy mới cần đổi host sang 10.0.2.2 khi chạy trên máy ảo
+ * Android. Backend đã deploy (tên miền công khai) thì phải giữ nguyên — trước
+ * đây đổi vô điều kiện nên `https://<app>.onrender.com/api/v1` bị biến thành
+ * `https://10.0.2.2/api/v1` và app báo "Không kết nối được máy chủ".
+ */
+function isLocalApiUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === ANDROID_EMULATOR_HOST ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    );
+  } catch {
+    // Không parse được thì coi như cấu hình dev cũ (host:port trần)
+    return true;
+  }
+}
+
 // Dev URL strategy:
-// - Android emulator: 10.0.2.2 points to the host machine.
+// - Android emulator + API chạy local: 10.0.2.2 points to the host machine.
+// - Android emulator + API đã deploy: dùng nguyên URL trong env.
 // - Physical devices: use EXPO_PUBLIC_API_URL, which should be the host LAN IP.
 // - iOS simulator fallback: localhost.
 function getApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
 
-  if (__DEV__ && isAndroidEmulator()) {
+  if (__DEV__ && isAndroidEmulator() && isLocalApiUrl(envUrl ?? DEFAULT_API_URL)) {
     return replaceUrlHost(envUrl ?? DEFAULT_API_URL, ANDROID_EMULATOR_HOST);
   }
 
