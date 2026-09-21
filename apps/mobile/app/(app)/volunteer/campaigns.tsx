@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AppState, View, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState, ScrollView, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, SegmentedButtons } from 'react-native-paper';
+import { Text, Button, Chip, Searchbar, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -38,6 +38,30 @@ import {
 } from '@/utils/campaign';
 
 type Segment = 'open' | 'tasks';
+type OpenFilter = 'all' | 'upcoming' | 'in_progress';
+type TaskFilter = 'all' | 'pending' | 'active' | 'completed';
+
+const PAGE_SIZE = 5;
+
+interface CampaignTaskGroup {
+  campaignId: string;
+  campaign: CampaignTask['campaign'];
+  tasks: CampaignTask[];
+}
+
+function normalizedSearch(value: string) {
+  return value.trim().toLocaleLowerCase('vi-VN');
+}
+
+function taskMatchesFilter(task: CampaignTask, filter: TaskFilter) {
+  if (filter === 'all') return true;
+  if (filter === 'pending') {
+    return task.status === 'pending' || task.confirmationStatus === 'pending';
+  }
+  if (filter === 'completed') return task.status === 'completed';
+  return ['assigned', 'checked_in', 'in_progress'].includes(task.status)
+    && task.confirmationStatus !== 'pending';
+}
 
 /**
  * Chiến dịch (tab volunteer) — 2 chế độ:
@@ -50,6 +74,11 @@ export default function VolunteerCampaignsScreen() {
   const { user } = useAuth();
   const initialSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
   const [segment, setSegment] = useState<Segment>(initialSegment);
+  const [search, setSearch] = useState('');
+  const [openFilter, setOpenFilter] = useState<OpenFilter>('all');
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
+  const [openPage, setOpenPage] = useState(1);
+  const [taskPage, setTaskPage] = useState(1);
 
   const openQuery = useCampaigns();
   const tasksQuery = useMyTasks(user?.role === 'volunteer');
@@ -57,6 +86,55 @@ export default function VolunteerCampaignsScreen() {
   const { refetch: refetchMyTasks } = tasksQuery;
   const advanceMut = useAdvanceTask();
   const confirmMut = useConfirmCampaignAssignment();
+
+  const filteredOpenCampaigns = useMemo(() => {
+    const query = normalizedSearch(search);
+    return (openQuery.data ?? []).filter((campaign) => {
+      const matchesSearch = !query || [campaign.title, campaign.kitchenAddress]
+        .some((value) => value?.toLocaleLowerCase('vi-VN').includes(query));
+      const matchesStatus = openFilter === 'all'
+        || (openFilter === 'upcoming' && campaign.status === 'approved')
+        || (openFilter === 'in_progress' && campaign.status === 'in_progress');
+      return matchesSearch && matchesStatus;
+    });
+  }, [openFilter, openQuery.data, search]);
+
+  const taskGroups = useMemo<CampaignTaskGroup[]>(() => {
+    const query = normalizedSearch(search);
+    const grouped = new Map<string, CampaignTaskGroup>();
+    for (const task of tasksQuery.data ?? []) {
+      const matchesSearch = !query || [task.campaign.title, task.campaign.kitchenAddress]
+        .some((value) => value?.toLocaleLowerCase('vi-VN').includes(query));
+      if (!matchesSearch || !taskMatchesFilter(task, taskFilter)) continue;
+      const current = grouped.get(task.campaign.id);
+      if (current) current.tasks.push(task);
+      else grouped.set(task.campaign.id, {
+        campaignId: task.campaign.id,
+        campaign: task.campaign,
+        tasks: [task],
+      });
+    }
+    return [...grouped.values()].map((group) => ({
+      ...group,
+      tasks: group.tasks.sort((a, b) => (
+        String(a.workDate ?? a.campaign.scheduledDate)
+          .localeCompare(String(b.workDate ?? b.campaign.scheduledDate))
+      )),
+    }));
+  }, [search, taskFilter, tasksQuery.data]);
+
+  const openTotalPages = Math.max(1, Math.ceil(filteredOpenCampaigns.length / PAGE_SIZE));
+  const taskTotalPages = Math.max(1, Math.ceil(taskGroups.length / PAGE_SIZE));
+  const effectiveOpenPage = Math.min(openPage, openTotalPages);
+  const effectiveTaskPage = Math.min(taskPage, taskTotalPages);
+  const pagedOpenCampaigns = filteredOpenCampaigns.slice(
+    (effectiveOpenPage - 1) * PAGE_SIZE,
+    effectiveOpenPage * PAGE_SIZE,
+  );
+  const pagedTaskGroups = taskGroups.slice(
+    (effectiveTaskPage - 1) * PAGE_SIZE,
+    effectiveTaskPage * PAGE_SIZE,
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -210,30 +288,63 @@ export default function VolunteerCampaignsScreen() {
         />
       </View>
 
+      <View style={styles.filters}>
+        <Searchbar
+          value={search}
+          onChangeText={(value) => {
+            setSearch(value);
+            setOpenPage(1);
+            setTaskPage(1);
+          }}
+          placeholder="Tìm theo tên hoặc địa chỉ"
+          style={styles.search}
+          inputStyle={styles.searchInput}
+        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+          {segment === 'open' ? (
+            <>
+              <FilterChip label="Tất cả" selected={openFilter === 'all'} onPress={() => { setOpenFilter('all'); setOpenPage(1); }} />
+              <FilterChip label="Sắp diễn ra" selected={openFilter === 'upcoming'} onPress={() => { setOpenFilter('upcoming'); setOpenPage(1); }} />
+              <FilterChip label="Đang diễn ra" selected={openFilter === 'in_progress'} onPress={() => { setOpenFilter('in_progress'); setOpenPage(1); }} />
+            </>
+          ) : (
+            <>
+              <FilterChip label="Tất cả" selected={taskFilter === 'all'} onPress={() => { setTaskFilter('all'); setTaskPage(1); }} />
+              <FilterChip label="Chờ xác nhận" selected={taskFilter === 'pending'} onPress={() => { setTaskFilter('pending'); setTaskPage(1); }} />
+              <FilterChip label="Đang làm" selected={taskFilter === 'active'} onPress={() => { setTaskFilter('active'); setTaskPage(1); }} />
+              <FilterChip label="Hoàn thành" selected={taskFilter === 'completed'} onPress={() => { setTaskFilter('completed'); setTaskPage(1); }} />
+            </>
+          )}
+        </ScrollView>
+      </View>
+
       {segment === 'open' ? (
         <FlashList
-          data={openQuery.data ?? []}
+          data={pagedOpenCampaigns}
           keyExtractor={(item: Campaign) => item.id}
           renderItem={({ item }: { item: Campaign }) => (
             <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
           )}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderOpenEmpty}
+          ListFooterComponent={filteredOpenCampaigns.length > 0 ? (
+            <Pagination page={effectiveOpenPage} totalPages={openTotalPages} onChange={setOpenPage} />
+          ) : null}
           refreshing={openQuery.isRefetching}
           onRefresh={() => openQuery.refetch()}
         />
       ) : (
         <FlashList
-          data={tasksQuery.data ?? []}
-          keyExtractor={(item: CampaignTask) => item.id}
-          renderItem={({ item }: { item: CampaignTask }) => (
-            <TaskCard
-              task={item}
+          data={pagedTaskGroups}
+          keyExtractor={(item: CampaignTaskGroup) => item.campaignId}
+          renderItem={({ item }: { item: CampaignTaskGroup }) => (
+            <TaskGroupCard
+              group={item}
               advancing={advanceMut.isPending}
               confirming={confirmMut.isPending}
-              onAdvance={() => handleAdvance(item)}
-              onConfirm={(decision) => confirmMut.mutate(
-                { assignmentId: item.id, decision },
+              onAdvance={handleAdvance}
+              onConfirm={(task, decision) => confirmMut.mutate(
+                { assignmentId: task.id, decision },
                 {
                   onSuccess: () => Popup.show({
                     type: 'success',
@@ -242,11 +353,14 @@ export default function VolunteerCampaignsScreen() {
                   onError: (error) => Popup.show({ type: 'error', text1: 'Không cập nhật được', text2: getErrorMessage(error) }),
                 },
               )}
-              onOpen={() => openTaskDetail(item.id)}
+              onOpen={openTaskDetail}
             />
           )}
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderTasksEmpty}
+          ListFooterComponent={taskGroups.length > 0 ? (
+            <Pagination page={effectiveTaskPage} totalPages={taskTotalPages} onChange={setTaskPage} />
+          ) : null}
           refreshing={tasksQuery.isRefetching}
           onRefresh={() => tasksQuery.refetch()}
         />
@@ -255,9 +369,84 @@ export default function VolunteerCampaignsScreen() {
   );
 }
 
+function FilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Chip
+      compact
+      selected={selected}
+      onPress={onPress}
+      style={[styles.filterChip, selected && styles.filterChipSelected]}
+      textStyle={[styles.filterChipText, selected && styles.filterChipTextSelected]}
+    >
+      {label}
+    </Chip>
+  );
+}
+
+function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
+  if (totalPages <= 1) return null;
+  return (
+    <View style={styles.pagination}>
+      <Button mode="outlined" compact disabled={page <= 1} onPress={() => onChange(page - 1)}>
+        Trước
+      </Button>
+      <Text style={styles.pageLabel}>{page}/{totalPages}</Text>
+      <Button mode="outlined" compact disabled={page >= totalPages} onPress={() => onChange(page + 1)}>
+        Sau
+      </Button>
+    </View>
+  );
+}
+
+function TaskGroupCard({
+  group,
+  advancing,
+  confirming,
+  onAdvance,
+  onConfirm,
+  onOpen,
+}: {
+  group: CampaignTaskGroup;
+  advancing: boolean;
+  confirming: boolean;
+  onAdvance: (task: CampaignTask) => void;
+  onConfirm: (task: CampaignTask, decision: 'confirmed' | 'declined') => void;
+  onOpen: (assignmentId: string) => void;
+}) {
+  return (
+    <View style={styles.taskGroupCard}>
+      <View style={styles.taskGroupHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.taskGroupTitle}>{group.campaign.title}</Text>
+          <View style={styles.metaRow}>
+            <MaterialCommunityIcons name="map-marker-outline" size={15} color={COLORS.onSurfaceVariant} />
+            <Text style={styles.metaText} numberOfLines={1}>{group.campaign.kitchenAddress}</Text>
+          </View>
+        </View>
+        <View style={styles.countBadge}>
+          <Text style={styles.countBadgeText}>{group.tasks.length} ca</Text>
+        </View>
+      </View>
+      {group.tasks.map((task) => (
+        <TaskCard
+          key={task.id}
+          task={task}
+          grouped
+          advancing={advancing}
+          confirming={confirming}
+          onAdvance={() => onAdvance(task)}
+          onConfirm={(decision) => onConfirm(task, decision)}
+          onOpen={() => onOpen(task.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
 /** Thẻ công việc TNV: chiến dịch + vai trò + timeline 4 bước + nút chuyển bước. */
 function TaskCard({
   task,
+  grouped = false,
   advancing,
   confirming,
   onAdvance,
@@ -265,6 +454,7 @@ function TaskCard({
   onOpen,
 }: {
   task: CampaignTask;
+  grouped?: boolean;
   advancing: boolean;
   confirming: boolean;
   onAdvance: () => void;
@@ -278,11 +468,15 @@ function TaskCard({
   const needsConfirmation = task.status === 'assigned' && task.confirmationStatus === 'pending';
 
   return (
-    <View style={styles.taskCard}>
+    <View style={grouped ? styles.groupedTask : styles.taskCard}>
       <View style={styles.taskHeader}>
-        <Text style={styles.taskTitle} numberOfLines={2} onPress={onOpen}>
-          {task.campaign.title}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={grouped ? styles.taskDateTitle : styles.taskTitle} numberOfLines={2} onPress={onOpen}>
+            {grouped
+              ? `${formatDate(task.workDate ?? task.campaign.scheduledDate)} · ${task.shift?.label ?? ASSIGNMENT_ROLE_LABEL[task.role] ?? task.role}`
+              : task.campaign.title}
+          </Text>
+        </View>
         <StatusBadge label={sm.label} tone={task.status === 'completed' ? 'success' : 'info'} />
       </View>
 
@@ -298,10 +492,10 @@ function TaskCard({
           {formatTime(task.shift?.endTime ?? task.campaign.endTime)}
         </Text>
       </View>
-      <View style={styles.metaRow}>
+      {!grouped ? <View style={styles.metaRow}>
         <MaterialCommunityIcons name="map-marker-outline" size={15} color={COLORS.onSurfaceVariant} />
         <Text style={styles.metaText} numberOfLines={1}>{task.campaign.kitchenAddress}</Text>
-      </View>
+      </View> : null}
 
       {/* Timeline 4 bước */}
       <View style={styles.timeline}>
@@ -388,7 +582,17 @@ const styles = StyleSheet.create({
   heroKicker: { color: COLORS.purpleContainer, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
   heroTitle: { marginTop: 5, color: COLORS.onPrimary, fontSize: 24, lineHeight: 30, fontWeight: '900' },
   segmentWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  filters: { paddingHorizontal: spacing.xl, paddingBottom: spacing.sm },
+  search: { height: 46, borderRadius: radius.xl, backgroundColor: COLORS.surface },
+  searchInput: { minHeight: 0, fontSize: 14 },
+  filterChips: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
+  filterChip: { backgroundColor: COLORS.surface },
+  filterChipSelected: { backgroundColor: COLORS.purpleContainer },
+  filterChipText: { color: COLORS.onSurfaceVariant, fontSize: 12 },
+  filterChipTextSelected: { color: COLORS.purple, fontWeight: '800' },
   list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
+  pagination: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  pageLabel: { minWidth: 42, textAlign: 'center', color: COLORS.onSurface, fontWeight: '800' },
   center: { alignItems: 'center', justifyContent: 'center', paddingTop: 64, paddingHorizontal: 32 },
   emptyIcon: {
     width: 96, height: 96, borderRadius: 48, backgroundColor: COLORS.purpleContainer,
@@ -398,6 +602,21 @@ const styles = StyleSheet.create({
   emptyBody: { fontSize: 14, color: COLORS.onSurfaceVariant, textAlign: 'center', lineHeight: 21 },
   retryBtn: { marginTop: 16, borderRadius: 12 },
   // Task card
+  taskGroupCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 28,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    ...elevation.card,
+  },
+  taskGroupHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingBottom: spacing.sm },
+  taskGroupTitle: { fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24, marginBottom: 6 },
+  countBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: COLORS.purpleContainer },
+  countBadgeText: { color: COLORS.purple, fontSize: 12, fontWeight: '900' },
+  groupedTask: { paddingTop: spacing.md, marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: COLORS.outlineVariant },
+  taskDateTitle: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface, lineHeight: 20 },
   taskCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 28,
