@@ -599,6 +599,7 @@ function RecruitmentReadinessPanel({
                         period={row.period}
                         role={row.role ?? undefined}
                         shiftId={row.shiftId}
+                        recruitmentClosed={['expired_understaffed', 'closed_ready'].includes(readiness.recruitmentStatus)}
                       />
                     )}
                   </td>
@@ -684,6 +685,7 @@ function AvailableVolunteersHint({
   period,
   role,
   shiftId,
+  recruitmentClosed,
 }: {
   campaignId: string;
   workDate: string;
@@ -691,6 +693,7 @@ function AvailableVolunteersHint({
   role?: string;
   /** Gửi kèm lời mời để TNV bấm "Nhận ca" là đăng ký đúng ca này ngay. */
   shiftId: string;
+  recruitmentClosed: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -700,6 +703,14 @@ function AvailableVolunteersHint({
     open ? { workDate, period, role } : null,
   );
   const invite = useInviteVolunteers(campaignId);
+
+  if (recruitmentClosed) {
+    return (
+      <p className="mt-1 text-[11px] font-semibold text-amber-700">
+        Đã đóng tuyển — hãy gia hạn tuyển trước khi mời thêm người.
+      </p>
+    );
+  }
 
   async function sendInvites() {
     try {

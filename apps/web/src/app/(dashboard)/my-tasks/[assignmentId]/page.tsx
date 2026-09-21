@@ -18,6 +18,7 @@ import { useMe } from '@/hooks/useProfile';
 import ShipperTaskView from './ShipperTaskView';
 import WaiterTaskView from './WaiterTaskView';
 import { errMsg, mediaUrl } from '@/lib/utils';
+import { formatVnDate } from '@/lib/vn-date';
 
 const STEP_ICONS: Record<number, string> = {
   1: 'inventory_2',
@@ -120,6 +121,12 @@ export default function MyTaskDetailPage() {
   // Phục vụ không nấu — họ chờ bếp ra món rồi chia suất, nên có màn riêng như shipper
   // thay vì dùng chung bảng 4 khâu của đầu bếp.
   const isWaiter = assignment.role === 'waiter';
+  // Chiến dịch nhiều ngày có một `scheduledDate` chung (ngày bắt đầu), còn ngày/giờ
+  // TNV thực sự đi làm nằm trên assignment + shift. Chỉ fallback cho dữ liệu cũ chưa
+  // được gắn ngày trực hoặc ca cụ thể.
+  const assignedDate = assignment.workDate ?? campaign.scheduledDate;
+  const assignedStartTime = assignment.shift?.startTime ?? campaign.startTime;
+  const assignedEndTime = assignment.shift?.endTime ?? campaign.endTime;
 
   const notCheckedIn = !['checked_in', 'in_progress', 'completed'].includes(assignment.status);
   const canAct = !notCheckedIn && assignment.status !== 'completed';
@@ -244,8 +251,8 @@ export default function MyTaskDetailPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-          <InfoTile icon="event" label="Ngày" value={new Date(campaign.scheduledDate).toLocaleDateString('vi-VN')} />
-          <InfoTile icon="schedule" label="Giờ" value={`${campaign.startTime}–${campaign.endTime}`} />
+          <InfoTile icon="event" label="Ngày" value={formatVnDate(assignedDate)} />
+          <InfoTile icon="schedule" label="Giờ" value={`${assignedStartTime}–${assignedEndTime}`} />
           <InfoTile icon="group" label="Tổ chức" value={campaign.charityReceiver.organizationName ?? campaign.charityReceiver.user.fullName} />
           <InfoTile icon="percent" label="Tiến độ" value={`${doneSteps}/${totalSteps} khâu (${overallPct}%)`} />
         </div>

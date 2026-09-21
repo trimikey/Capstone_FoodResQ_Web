@@ -172,8 +172,8 @@ export function useApplyShift() {
   return useMutation({
     mutationFn: async ({ campaignId, shiftId, role, workDate }: { campaignId: string; shiftId: string; role?: AssignmentRole; workDate?: string }) => {
       const res = await apiClient.post<ApiResponse<unknown>>(
-        endpoints.kitchen.applyShift(campaignId, shiftId),
-        { ...(role ? { role } : {}), ...(workDate ? { workDate } : {}) }
+        endpoints.campaigns.apply(campaignId),
+        { shiftId, ...(role ? { role } : {}), ...(workDate ? { workDate } : {}) }
       );
       return res.data.data;
     },
