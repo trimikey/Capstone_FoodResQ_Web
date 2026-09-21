@@ -3834,6 +3834,11 @@ export class CampaignsService {
     if (!['approved', 'in_progress'].includes(campaign.status)) {
       throw new BadRequestException('Chỉ mời được tình nguyện viên cho chiến dịch đang tuyển hoặc đang chạy.');
     }
+    if (new Date() >= campaign.recruitmentEndAt) {
+      throw new BadRequestException(
+        'Chiến dịch đã đóng tuyển. Vui lòng gia hạn thời gian tuyển trước khi gửi lời mời.',
+      );
+    }
     if (dto.volunteerIds.length === 0) {
       throw new BadRequestException('Chưa chọn tình nguyện viên nào để mời.');
     }

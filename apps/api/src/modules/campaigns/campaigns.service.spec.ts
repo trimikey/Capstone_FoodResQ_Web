@@ -947,3 +947,43 @@ describe('CampaignsService.purgeStalePendingCampaigns', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+describe('CampaignsService.inviteVolunteersToShift', () => {
+  const prisma = {
+    receiverProfile: { findUnique: jest.fn() },
+    kitchenCampaign: { findUnique: jest.fn() },
+    $queryRaw: jest.fn(),
+  };
+  const notifications = { notify: jest.fn() };
+  let service: CampaignsService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.receiverProfile.findUnique.mockResolvedValue({ id: 'receiver-1' });
+    service = new CampaignsService(
+      prisma as never,
+      notifications as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+  });
+
+  it('không tạo lời mời khi chiến dịch đã đóng tuyển', async () => {
+    prisma.kitchenCampaign.findUnique.mockResolvedValue({
+      id: 'campaign-1',
+      title: 'Bếp cộng đồng',
+      status: 'approved',
+      charityReceiverId: 'receiver-1',
+      recruitmentEndAt: new Date('2000-01-01T00:00:00.000Z'),
+    });
+
+    await expect(service.inviteVolunteersToShift('campaign-1', 'user-1', {
+      volunteerIds: ['11111111-1111-4111-8111-111111111111'],
+      workDate: '2099-01-01',
+      period: 'morning',
+      shiftId: '22222222-2222-4222-8222-222222222222',
+    })).rejects.toThrow('gia hạn thời gian tuyển');
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+});
