@@ -140,6 +140,9 @@
   }
   .cm-filter-row::-webkit-scrollbar { display: none; }
   .cm-filter-chip {
+    /* Nằm trong hàng cuộn ngang: thiếu cái này thì flex co chip lại thay vì cho
+       cuộn, chữ nowrap tràn ra và ĐÈ lên chip kế bên (thấy rõ ở khổ 375px). */
+    flex-shrink: 0;
     padding: 6px 12px;
     border-radius: 999px;
     border: 1px solid rgba(16, 24, 16, 0.12);
@@ -246,6 +249,9 @@
   }
   .cm-pills::-webkit-scrollbar { display: none; }
   .cm-pill {
+    /* Cùng lý do với .cm-filter-chip: nằm trong hàng cuộn ngang, thiếu cái này
+       là bị co lại và chữ nowrap đè lên pill kế bên. */
+    flex-shrink: 0;
     padding: 6px 12px;
     border-radius: 999px;
     font-size: 12px;
@@ -283,7 +289,8 @@
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 64px;
+    /* 64px thấp hơn chiều cao nav (4.5rem = 72px) nên mép dưới bị nav ăn mất */
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(8px);
@@ -386,7 +393,9 @@
   }
   @media (max-width: 1024px) {
     .cm-console {
-      padding: 80px 16px 100px; /* 64px header mobile + 16px gap */
+      /* 64px header mobile + 16px gap; đáy chừa cho bottom nav (72px) CỘNG thanh
+         CTA cố định nằm trên nó, nếu không thẻ cuối danh sách bị che. */
+      padding: 80px 16px 160px;
     }
   }
 
@@ -663,7 +672,10 @@
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
+    /* Bottom nav của mobile cũng fixed bottom-0 nhưng z-50 — để bottom:0 thì cả
+       thanh CTA này khuất hẳn sau nav, nút "Tạo chiến dịch" bấm không tới.
+       Đẩy lên ngay trên nav (4.5rem + safe-area, khớp .mobile-nav-pad). */
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
     z-index: 20;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
     background: rgba(255, 255, 255, 0.96);

@@ -181,7 +181,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       {/* Dưới md: KHÔNG pt-16 (main của dashboard layout đã pad 64px cho header
           mobile — pad thêm là dư 64px trống) và để document tự cuộn. Từ md:
           sidebar + vùng nội dung cao cố định tự cuộn riêng. */}
-      <div className="md:ml-64 min-h-screen md:min-h-0 md:h-[calc(100vh-104px)] md:overflow-hidden flex flex-col bg-[#f0f7f3]">
+      <div className="md:ml-64 min-h-[calc(100dvh-8.5rem)] md:min-h-0 md:h-[calc(100vh-104px)] md:overflow-hidden flex flex-col bg-[#f0f7f3]">
         {/* TopAppBar - Desktop - nút Back ở góc trên tay trái, user info ở tay phải */}
         <header className="hidden md:flex justify-between items-center w-full px-6 h-16 sticky top-0 z-30">
           <Link

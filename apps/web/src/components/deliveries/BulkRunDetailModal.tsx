@@ -84,7 +84,7 @@ export default function BulkRunDetailModal({
       <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
         {/* Tổng kết số lượng */}
         <section>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-3 gap-3">
             <Stat label="Nhận từ kho" value={`${run.quantity}`} unit={unit} />
             <Stat label="Đã phát" value={`${run.quantityDistributed}`} unit={unit} tone="emerald" />
             <Stat

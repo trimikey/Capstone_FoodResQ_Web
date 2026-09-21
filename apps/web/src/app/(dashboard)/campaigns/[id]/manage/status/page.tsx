@@ -183,7 +183,7 @@ function VolunteerDetailModal({
               <span className="material-symbols-outlined text-[13px]">workspace_premium</span>
               Năng lực &amp; Đánh giá
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2">
               <div className="rounded-xl border border-neutral-150 p-2.5 text-center bg-neutral-50">
                 <p className="text-[10px] text-neutral-500 mb-1">Xếp hạng</p>
                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${

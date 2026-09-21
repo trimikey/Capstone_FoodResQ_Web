@@ -30,7 +30,7 @@ export default function FilterBar<T extends string>({ value, onChange, options, 
               key={opt.value}
               type="button"
               onClick={() => onChange(opt.value)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+              className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
                 active
                   ? 'bg-emerald-700 text-white'
                   : 'text-neutral-600 hover:bg-neutral-100'

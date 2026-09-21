@@ -53,7 +53,7 @@ function FunnelCard({ icon, color, label, value }: { icon: string; color: string
     emerald: 'bg-emerald-50 text-emerald-600', rose: 'bg-rose-50 text-rose-500',
   };
   return (
-    <div className="border border-neutral-150 rounded-2xl p-4 flex items-center gap-3">
+    <div className="border border-neutral-150 rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cls[color]}`}>
         <span className="material-symbols-outlined text-[20px]">{icon}</span>
       </div>
@@ -101,7 +101,7 @@ export default function DashboardTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white border border-neutral-150 rounded-2xl p-6 shadow-sm flex flex-col">
-          <div className="flex justify-between items-center mb-8">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-6 md:mb-8">
             <h3 className="font-bold text-lg text-neutral-900">Tác động theo thời gian</h3>
             <span className="text-xs bg-neutral-100 px-3 py-1 rounded-full font-semibold text-neutral-600">6 tháng gần đây</span>
           </div>
@@ -149,9 +149,9 @@ export default function DashboardTab() {
                   <p className="text-[9px] font-bold text-neutral-500">Tổng đã cứu</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-8 text-xs font-semibold text-neutral-700 w-full px-2">
+              <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-x-4 gap-y-2 mt-8 text-xs font-semibold text-neutral-700 w-full px-2">
                 {segments.map((s) => (
-                  <div key={s.category} className="flex items-center gap-2">
+                  <div key={s.category} className="flex min-w-0 items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
                     {CATEGORY_LABEL[s.category] ?? s.category} ({Math.round((s.kg / totalCatKg) * 100)}%)
                   </div>

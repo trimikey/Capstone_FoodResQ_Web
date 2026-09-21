@@ -12,11 +12,11 @@ const CAT_ICON: Record<string, string> = {
 
 function DonStat({ icon, label, value }: { icon: string; label: string; value: number }) {
   return (
-    <div className="bg-white border border-neutral-150 rounded-3xl p-6 shadow-sm flex items-center gap-4">
-      <div className="w-12 h-12 rounded-xl bg-[#f0fdf4] text-emerald-600 flex items-center justify-center">
+    <div className="bg-white border border-neutral-150 rounded-3xl p-4 sm:p-6 shadow-sm flex items-center gap-3 sm:gap-4">
+      <div className="w-12 h-12 shrink-0 rounded-xl bg-[#f0fdf4] text-emerald-600 flex items-center justify-center">
         <span className="material-symbols-outlined">{icon}</span>
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-[10px] font-black text-neutral-500 tracking-widest uppercase">{label}</p>
         <p className="text-xl font-extrabold text-neutral-900">{value}</p>
       </div>
@@ -42,11 +42,11 @@ export default function DonationsTab() {
         <DonStat icon="assignment" label="Đang chờ nhận" value={ov?.donations.confirmed ?? 0} />
         <DonStat icon="hourglass_top" label="Chờ bàn giao" value={ov?.donations.pickedUp ?? 0} />
         <DonStat icon="check_circle" label="Hoàn thành" value={ov?.donations.completed ?? 0} />
-        <div className="bg-[#166534] rounded-3xl p-6 shadow-sm flex items-center gap-4 text-white">
-          <div className="w-12 h-12 rounded-xl bg-[#14532d] text-emerald-100 flex items-center justify-center">
+        <div className="bg-[#166534] rounded-3xl p-4 sm:p-6 shadow-sm flex items-center gap-3 sm:gap-4 text-white">
+          <div className="w-12 h-12 shrink-0 rounded-xl bg-[#14532d] text-emerald-100 flex items-center justify-center">
             <span className="material-symbols-outlined">kitchen</span>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] font-black text-emerald-200 tracking-widest uppercase">Tổng khối lượng</p>
             <p className="text-xl font-extrabold text-white">{(ov?.kgRescued ?? 0).toLocaleString('vi-VN')} kg</p>
           </div>

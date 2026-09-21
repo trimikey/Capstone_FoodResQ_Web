@@ -272,7 +272,7 @@ export default function ProviderEsgPage() {
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="bg-neutral-50 text-left text-[11px] uppercase tracking-wider text-neutral-500">
                   <th className="px-5 py-3 font-bold">Tháng</th>

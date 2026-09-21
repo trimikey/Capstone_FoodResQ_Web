@@ -506,7 +506,7 @@ export default function UsersTab() {
         <div className="flex gap-1 bg-white border border-neutral-200 rounded-full p-1 w-full overflow-x-auto lg:w-fit shadow-sm">
           {USER_FILTERS.map((f) => (
             <button key={f.key} onClick={() => setFilter(f.key)}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${filter === f.key ? 'bg-[#166534] text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}>
+              className={`shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${filter === f.key ? 'bg-[#166534] text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}>
               {f.label}
             </button>
           ))}

@@ -270,7 +270,7 @@ function ShiftCard({
             {menuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-xl border border-neutral-200 bg-white shadow-lg overflow-hidden"
+                className="absolute right-0 top-full mt-1 z-[60] min-w-[160px] max-h-64 overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg"
               >
                 <button
                   type="button"

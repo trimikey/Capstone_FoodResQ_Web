@@ -445,7 +445,7 @@ export default function ListingDetailPage({ params }: Props) {
   return (
     <div className="min-h-full bg-surface py-8 px-4 sm:px-8 max-w-7xl mx-auto flex flex-col gap-8">
       {/* Breadcrumbs */}
-      <nav className="flex items-center gap-2 text-sm text-on-surface-variant/70">
+      <nav className="flex flex-wrap items-center gap-2 text-sm text-on-surface-variant/70">
         {isOwnerProvider ? (
           <>
             <Link href="/provider" className="hover:text-primary transition-colors">Quản lý cửa hàng</Link>
@@ -456,7 +456,7 @@ export default function ListingDetailPage({ params }: Props) {
           <>
             <Link href="/listings" className="hover:text-primary transition-colors">Trang chủ</Link>
             <span className="material-symbols-outlined text-sm">chevron_right</span>
-            <span className="capitalize">{CATEGORIES[listing.category] || listing.category}</span>
+            <span className="max-w-[120px] truncate capitalize">{CATEGORIES[listing.category] || listing.category}</span>
             <span className="material-symbols-outlined text-sm">chevron_right</span>
             <span className="text-on-surface font-semibold truncate max-w-[200px]">{listing.title}</span>
           </>

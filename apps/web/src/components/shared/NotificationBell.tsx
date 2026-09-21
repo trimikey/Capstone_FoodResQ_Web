@@ -47,7 +47,7 @@ export default function NotificationBell({ variant = 'header' }: { variant?: 'he
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className={`absolute mt-2 w-80 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 ${sidebar ? 'left-0' : 'right-0'}`}>
+          <div className={`absolute mt-2 w-[min(20rem,calc(100vw-2rem))] bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 ${sidebar ? 'left-0' : 'right-0'}`}>
             <div className="px-4 py-2 border-b border-neutral-100">
               <h4 className="font-bold text-sm text-neutral-800">Thông báo</h4>
             </div>

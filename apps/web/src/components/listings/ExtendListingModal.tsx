@@ -191,7 +191,7 @@ export default function ExtendListingModal({ open, onClose, listing, defaultMode
         <div className="overflow-y-auto flex-1 min-h-0">
           <div className="p-5 space-y-5">
           {/* Tổng quan nhanh */}
-          <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 text-center">
             <Stat icon="inventory_2" label="Còn lại" value={`${remaining}`} unit={unit} />
             <Stat icon="shopping_bag" label="Đã đặt" value={`${reserved}`} unit={unit} />
             <Stat icon="schedule" label="Hết hạn" value={formatVietnamDateTime(listing.pickupEndTime).replace(/\/\d{4} /, ' ')} small />
@@ -350,7 +350,7 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors ${
+      className={`flex-1 flex items-center justify-center gap-1 px-2 py-2.5 text-[11px] font-semibold transition-colors sm:gap-1.5 sm:px-3 sm:text-xs ${
         active ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white' : 'text-neutral-500 hover:text-neutral-800'
       }`}
     >

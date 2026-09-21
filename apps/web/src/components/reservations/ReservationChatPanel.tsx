@@ -140,7 +140,7 @@ export default function ReservationChatPanel({
       </div>
 
       {/* Ô nhập */}
-      <div className="flex items-end gap-2 border-t border-neutral-100 bg-white p-3">
+      <div className="flex items-end gap-2 border-t border-neutral-100 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

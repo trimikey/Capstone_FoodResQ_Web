@@ -82,7 +82,7 @@ export default function Pagination({
         </span>
       )}
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-end">
         <button
           type="button"
           onClick={() => onChange(Math.max(1, page - 1))}

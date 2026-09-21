@@ -843,7 +843,7 @@ export default function DeliveriesPage() {
             nhưng vẫn là "đơn phải đi lấy" của shipper — gom về đây để quản lý một chỗ. */}
         {pendingPickups.length > 0 && (
           <div className="space-y-4 mt-8">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">inventory</span>
                 Đơn lấy nguyên liệu
@@ -917,7 +917,7 @@ export default function DeliveriesPage() {
         {/* LỊCH SỬ GIAO HÀNG */}
         {me?.isShipper && history && history.meta.total > 0 && (
           <div className="space-y-4 mt-8">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-extrabold text-xl text-neutral-900 flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">history</span>
                 Lịch sử giao hàng
