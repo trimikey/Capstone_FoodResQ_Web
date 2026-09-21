@@ -1229,3 +1229,74 @@ export function useProviderActiveListings(providerProfileId?: string | null) {
     },
   });
 }
+
+// ── Lời mời nhận ca do tổ chức gửi đích danh ────────────────────────────────
+
+export interface ShiftInvite {
+  notificationId: string;
+  campaignId: string;
+  campaignTitle: string;
+  kitchenAddress: string;
+  workDate: string;
+  period: string | null;
+  shiftId: string | null;
+  message: string;
+  invitedAt: string;
+  recruitmentEndAt: string;
+}
+
+/**
+ * Các lời mời ĐANG CHỜ phản hồi. Dùng để biết thông báo nào còn nhận được —
+ * đọc thông báo không phải là đã quyết định, nên chỉ danh sách này mới quyết
+ * định có hiện nút "Nhận ca"/"Bỏ qua" hay không.
+ */
+export function useMyShiftInvites(enabled = true) {
+  return useQuery({
+    queryKey: ['campaigns', 'shift-invites'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<ShiftInvite[]>>(
+        endpoints.campaigns.myShiftInvites
+      );
+      return res.data.data;
+    },
+  });
+}
+
+/** Nhận lời mời → vào THẲNG ca, không chờ tổ chức duyệt lại (họ đã chọn đích danh). */
+export function useAcceptShiftInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; notificationId: string }) => {
+      const res = await apiClient.post<
+        ApiResponse<{ ok: boolean; shiftLabel: string; workDate: string }>
+      >(endpoints.campaigns.acceptShiftInvite(p.campaignId), {
+        notificationId: p.notificationId,
+      });
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
+
+/** Bỏ qua lời mời — khác "đánh dấu đã đọc" của chuông thông báo. */
+export function useDismissShiftInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: string) => {
+      const res = await apiClient.post<ApiResponse<{ ok: boolean }>>(
+        endpoints.campaigns.dismissShiftInvite(notificationId)
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'shift-invites'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}

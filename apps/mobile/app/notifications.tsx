@@ -19,7 +19,34 @@ import {
   useUnreadCount,
   type AppNotification,
 } from '@/hooks/useNotifications';
+import {
+  useAcceptShiftInvite,
+  useDismissShiftInvite,
+  useMyShiftInvites,
+  type ShiftInvite,
+} from '@/hooks/useCampaigns';
+import { Toast } from '@/components/ui/AppPopup';
+import { notifyError, notifySuccess } from '@/services/haptics';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
+
+/** Nhãn ca trực — BE trả key tiếng Anh. */
+const PERIOD_VN: Record<string, string> = {
+  midnight: 'Ca khuya',
+  morning: 'Ca sáng',
+  afternoon: 'Ca chiều',
+  evening: 'Ca tối',
+};
+
+function inviteErrorMessage(e: unknown, fallback: string): string {
+  const res = (e as { response?: { data?: { error?: { message?: string } } } })?.response;
+  return res?.data?.error?.message ?? fallback;
+}
+
+/** '2026-09-21' → '21/09/2026' */
+function formatWorkDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
 
 type NotificationTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
@@ -119,10 +146,19 @@ function NotificationRow({
   item,
   role,
   onRead,
+  invite,
+  pending,
+  onAccept,
+  onDismiss,
 }: {
   item: AppNotification;
   role?: string | null;
   onRead: (id: string) => void;
+  /** Lời mời còn CHỜ PHẢN HỒI ứng với thông báo này (nếu có) → hiện nút nhận ca. */
+  invite?: ShiftInvite;
+  pending?: boolean;
+  onAccept?: (invite: ShiftInvite) => void;
+  onDismiss?: (invite: ShiftInvite) => void;
 }) {
   const meta = notificationMeta(item);
   const tone = TONE_STYLES[meta.tone];
@@ -168,6 +204,46 @@ function NotificationRow({
           {item.title ? `${item.title} - ${item.body}` : item.body}
         </Text>
         <Text style={styles.time}>{formatNotificationTime(item.createdAt)}</Text>
+
+        {invite ? (
+          <View style={styles.inviteBox}>
+            <View style={styles.inviteShiftLine}>
+              <MaterialCommunityIcons name="calendar-clock" size={16} color={COLORS.primary} />
+              <Text style={styles.inviteShiftText}>
+                {invite.period ? PERIOD_VN[invite.period] ?? invite.period : 'Ca trực'}
+                {' · '}
+                {formatWorkDate(invite.workDate)}
+              </Text>
+            </View>
+            <Text style={styles.inviteHint}>
+              Tổ chức mời đích danh — bấm nhận là vào thẳng ca, không chờ duyệt lại.
+            </Text>
+            <View style={styles.inviteButtons}>
+              <Button
+                mode="contained"
+                compact
+                disabled={pending}
+                loading={pending}
+                onPress={() => onAccept?.(invite)}
+                style={styles.inviteAccept}
+                labelStyle={styles.inviteBtnLabel}
+              >
+                Nhận ca này
+              </Button>
+              <Button
+                mode="outlined"
+                compact
+                disabled={pending}
+                onPress={() => onDismiss?.(invite)}
+                style={styles.inviteDismiss}
+                labelStyle={styles.inviteBtnLabel}
+                textColor={COLORS.onSurfaceVariant}
+              >
+                Bỏ qua
+              </Button>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {detailPath ? (
@@ -187,6 +263,61 @@ export default function NotificationsScreen() {
   const { data: unread = 0 } = useUnreadCount();
   const markRead = useMarkRead();
   const markAllRead = useMarkAllRead();
+
+  // Lời mời nhận ca: chỉ TNV mới có. Đối chiếu theo notificationId nên nút chỉ
+  // hiện đúng thông báo còn chờ phản hồi, và tự biến mất sau khi nhận/bỏ qua.
+  const isVolunteer = user?.role === 'volunteer';
+  const { data: invites = [] } = useMyShiftInvites(isVolunteer);
+  const acceptInvite = useAcceptShiftInvite();
+  const dismissInvite = useDismissShiftInvite();
+  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+
+  const inviteByNotificationId = useMemo(
+    () => new Map(invites.map((invite) => [invite.notificationId, invite])),
+    [invites],
+  );
+
+  const handleAcceptInvite = async (invite: ShiftInvite) => {
+    setPendingInviteId(invite.notificationId);
+    try {
+      const res = await acceptInvite.mutateAsync({
+        campaignId: invite.campaignId,
+        notificationId: invite.notificationId,
+      });
+      void notifySuccess();
+      Toast.show({
+        type: 'success',
+        text1: 'Đã nhận ca',
+        text2: `${res.shiftLabel} · ${formatWorkDate(res.workDate)}`,
+      });
+    } catch (e) {
+      void notifyError();
+      Toast.show({
+        type: 'error',
+        text1: 'Không nhận được ca',
+        text2: inviteErrorMessage(e, 'Vui lòng thử lại.'),
+      });
+    } finally {
+      setPendingInviteId(null);
+    }
+  };
+
+  const handleDismissInvite = async (invite: ShiftInvite) => {
+    setPendingInviteId(invite.notificationId);
+    try {
+      await dismissInvite.mutateAsync(invite.notificationId);
+      Toast.show({ type: 'info', text1: 'Đã bỏ qua lời mời' });
+    } catch (e) {
+      void notifyError();
+      Toast.show({
+        type: 'error',
+        text1: 'Không bỏ qua được',
+        text2: inviteErrorMessage(e, 'Vui lòng thử lại.'),
+      });
+    } finally {
+      setPendingInviteId(null);
+    }
+  };
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -302,6 +433,10 @@ export default function NotificationsScreen() {
             item={item}
             role={user?.role}
             onRead={(id) => markRead.mutate(id)}
+            invite={inviteByNotificationId.get(item.id)}
+            pending={pendingInviteId === item.id}
+            onAccept={handleAcceptInvite}
+            onDismiss={handleDismissInvite}
           />
         )}
         refreshControl={
@@ -483,6 +618,47 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '500',
+  },
+  inviteBox: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: COLORS.primaryContainer,
+    backgroundColor: COLORS.surface,
+    gap: 6,
+  },
+  inviteShiftLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inviteShiftText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.onSurface,
+  },
+  inviteHint: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: COLORS.onSurfaceVariant,
+  },
+  inviteButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  inviteAccept: {
+    borderRadius: radius.lg,
+  },
+  inviteDismiss: {
+    borderRadius: radius.lg,
+    borderColor: COLORS.outline,
+  },
+  inviteBtnLabel: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   time: {
     marginTop: spacing.sm,

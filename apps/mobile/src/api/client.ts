@@ -406,6 +406,11 @@ export const endpoints = {
       `/campaigns/${campaignId}/transports/${transportId}/receive`,
     // Volunteer: đăng ký 1 vai trò (chef/waiter/shipper) trong chiến dịch
     apply: (id: string) => `/campaigns/${id}/apply`,
+    // Volunteer: lời mời nhận ca do tổ chức gửi đích danh
+    myShiftInvites: '/campaigns/my-shift-invites',
+    acceptShiftInvite: (campaignId: string) => `/campaigns/${campaignId}/accept-invite`,
+    dismissShiftInvite: (notificationId: string) =>
+      `/campaigns/shift-invites/${notificationId}/dismiss`,
     // Volunteer: các công việc đã đăng ký
     myTasks: '/campaigns/my-tasks',
     myTaskDetail: (assignmentId: string) => `/campaigns/my-tasks/${assignmentId}`,
