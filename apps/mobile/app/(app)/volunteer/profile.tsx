@@ -13,6 +13,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnrollFace, useFaceEnrollment } from '@/hooks/useFaceEnrollment';
 import { useVolunteerMe, useUpdateLocation } from '@/hooks/useVolunteer';
+import { useMyProfile } from '@/hooks/useProfile';
 import { useMyDeliveryShifts } from '@/hooks/useDeliveries';
 import { volunteerRankLabel } from '@/utils/userFormat';
 import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
@@ -21,6 +22,7 @@ import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
+import { trustScoreMeta } from '@/utils/trustScore';
 
 function vehicleLabel(t?: string | null): string {
   switch (t) {
@@ -88,6 +90,11 @@ const PERIOD_LABEL: Record<string, string> = {
 export default function VolunteerProfileScreen() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const { data: vol, isLoading, isError, refetch, isRefetching } = useVolunteerMe();
+  const {
+    data: accountProfile,
+    isRefetching: isProfileRefetching,
+    refetch: refetchProfile,
+  } = useMyProfile();
   const faceEnrollment = useFaceEnrollment();
   const refetchFaceEnrollment = faceEnrollment.refetch;
   const enrollFace = useEnrollFace();
@@ -95,8 +102,8 @@ export default function VolunteerProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([refetch(), refetchFaceEnrollment()]);
-    }, [refetch, refetchFaceEnrollment])
+      void Promise.all([refetch(), refetchProfile(), refetchFaceEnrollment()]);
+    }, [refetch, refetchProfile, refetchFaceEnrollment])
   );
 
   const handleEnrollFace = async (mode: 'camera' | 'library') => {
@@ -156,6 +163,10 @@ export default function VolunteerProfileScreen() {
   const faceBusy = enrollFace.isPending;
   const faceEnrolled = faceEnrollment.data?.enrolled === true;
   const avgRatingLabel = formatDecimal(vol?.avgRating);
+  const trustScore = accountProfile?.trustScore ?? user?.trustScore;
+  const trustMeta = typeof trustScore === 'number'
+    ? trustScoreMeta(trustScore, accountProfile?.status ?? user?.status)
+    : null;
   const verifiedSpecs = vol?.specializations.filter((s) => s.isVerified).map((s) => s.specialization) ?? [];
   const hasChef = verifiedSpecs.includes('chef');
   const hasWaiter = verifiedSpecs.includes('waiter');
@@ -184,7 +195,12 @@ export default function VolunteerProfileScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching || isProfileRefetching}
+            onRefresh={() => void Promise.all([refetch(), refetchProfile()])}
+          />
+        }
       >
         {/* Header: avatar + tên + hạng */}
         <View style={styles.header}>
@@ -229,13 +245,13 @@ export default function VolunteerProfileScreen() {
           <>
             <View style={styles.quickStats}>
               <View style={styles.quickStat}>
-                <Text style={styles.quickStatValue}>{vol.dedicationPoints}</Text>
-                <Text style={styles.quickStatLabel}>điểm</Text>
+                <Text style={styles.quickStatValue}>{trustScore ?? '-'}</Text>
+                <Text style={styles.quickStatLabel}>tin cậy /100</Text>
               </View>
               <View style={styles.quickDivider} />
               <View style={styles.quickStat}>
                 <Text style={styles.quickStatValue}>{avgRatingLabel ?? '-'}</Text>
-                <Text style={styles.quickStatLabel}>rating</Text>
+                <Text style={styles.quickStatLabel}>đánh giá /5</Text>
               </View>
               <View style={styles.quickDivider} />
               <View style={styles.quickStat}>
@@ -247,6 +263,32 @@ export default function VolunteerProfileScreen() {
                 </Text>
               </View>
             </View>
+
+            {typeof trustScore === 'number' && trustMeta ? (
+              <View style={styles.card}>
+                <View style={styles.pointRow}>
+                  <MaterialCommunityIcons
+                    name="shield-check-outline"
+                    size={22}
+                    color={
+                      trustMeta.tone === 'danger'
+                        ? COLORS.error
+                        : trustMeta.tone === 'warning'
+                          ? COLORS.warning
+                          : COLORS.primary
+                    }
+                  />
+                  <View style={styles.trustCopy}>
+                    <Text style={styles.trustLabel}>Điểm tin cậy</Text>
+                    <Text style={styles.trustHint}>{trustMeta.label} · {trustMeta.hint}</Text>
+                  </View>
+                  <View style={styles.trustScoreBlock}>
+                    <Text style={styles.trustValue}>{trustScore}</Text>
+                    <Text style={styles.trustScale}>/100</Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
 
             {/* Ca giao hàng thay cho công tắc sẵn sàng cũ */}
             {hasShipper ? (
@@ -366,7 +408,7 @@ export default function VolunteerProfileScreen() {
               </View>
             ) : null}
 
-            {/* Điểm cống hiến */}
+            {/* Điểm cống hiến — khác với điểm tin cậy của tài khoản */}
             <View style={styles.card}>
               <View style={styles.pointRow}>
                 <MaterialCommunityIcons name="medal-outline" size={22} color={COLORS.amber} />
@@ -553,6 +595,12 @@ const styles = StyleSheet.create({
   pointRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pointLabel: { flex: 1, fontSize: 15, color: COLORS.onSurface },
   pointValue: { fontSize: 20, fontWeight: '800', color: COLORS.amber },
+  trustCopy: { flex: 1 },
+  trustLabel: { fontSize: 15, color: COLORS.onSurface },
+  trustHint: { marginTop: 2, fontSize: 11, lineHeight: 16, color: COLORS.onSurfaceVariant },
+  trustScoreBlock: { alignItems: 'flex-end' },
+  trustValue: { fontSize: 20, fontWeight: '900', color: COLORS.primary },
+  trustScale: { marginTop: -3, fontSize: 9, fontWeight: '800', color: COLORS.onSurfaceVariant },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { backgroundColor: COLORS.surfaceContainerLow },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
