@@ -15,6 +15,7 @@ import {
   type ShiftPeriod,
   type WeeklyAvailabilitySlot,
 } from '@/hooks/useDeliveries';
+import { useMyProfile } from '@/hooks/useProfile';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
@@ -83,8 +84,18 @@ function fmtVn(iso: string | null): string {
 }
 
 export default function DeliveryShiftsScreen() {
-  const shifts = useMyDeliveryShifts();
-  const availability = useMyWeeklyAvailability();
+  const profile = useMyProfile();
+  const verifiedSpecs = new Set(
+    (profile.data?.volunteer?.specializations ?? [])
+      .filter((specialization) => specialization.isVerified)
+      .map((specialization) => specialization.specialization),
+  );
+  const hasChef = verifiedSpecs.has('chef');
+  const hasShipper = verifiedSpecs.has('shipper');
+  const canManageAvailability = hasChef || hasShipper;
+
+  const shifts = useMyDeliveryShifts(hasShipper);
+  const availability = useMyWeeklyAvailability(canManageAvailability);
   const save = useSetMyDeliveryShifts();
   const saveAvailability = useSetMyWeeklyAvailability();
   const [draft, setDraft] = useState<Set<string> | null>(null);
@@ -206,54 +217,119 @@ export default function DeliveryShiftsScreen() {
       <ScreenHeader title="Lịch làm việc" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <>
-            <View style={styles.introCard}>
-              <Text style={styles.introTitle}>
-                {data?.isShipper ? 'Hai lịch, hai mục đích khác nhau' : 'Lịch rảnh cho chiến dịch bếp ăn'}
-              </Text>
-              <View style={styles.legendRow}>
-                <View style={[styles.legendIcon, styles.availabilityIcon]}>
-                  <MaterialCommunityIcons name="calendar-account-outline" size={20} color={COLORS.primary} />
+        {profile.isLoading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.stateTitle}>Đang kiểm tra lịch làm việc...</Text>
+          </View>
+        ) : profile.isError ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons name="calendar-alert-outline" size={34} color={COLORS.error} />
+            <Text style={styles.stateTitle}>Không tải được lịch làm việc</Text>
+            <Text style={styles.stateText}>Vui lòng kiểm tra kết nối rồi thử lại.</Text>
+            <Button mode="outlined" icon="refresh" onPress={() => void profile.refetch()}>
+              Thử lại
+            </Button>
+          </View>
+        ) : !canManageAvailability ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons
+              name="calendar-alert-outline"
+              size={34}
+              color={COLORS.warning}
+            />
+            <Text style={styles.stateTitle}>Chưa có quyền cập nhật lịch</Text>
+            <Text style={styles.stateText}>
+              Tài khoản cần được xác minh chuyên môn đầu bếp hoặc shipper.
+            </Text>
+          </View>
+        ) : hasShipper && shifts.isLoading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.stateTitle}>Đang tải ca giao hàng...</Text>
+          </View>
+        ) : hasShipper && (shifts.isError || !data || !data.isShipper) ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons name="calendar-alert-outline" size={34} color={COLORS.error} />
+            <Text style={styles.stateTitle}>Không tải được lịch làm việc</Text>
+            <Text style={styles.stateText}>Vui lòng kiểm tra kết nối rồi thử lại.</Text>
+            <Button mode="outlined" icon="refresh" onPress={() => void shifts.refetch()}>
+              Thử lại
+            </Button>
+          </View>
+        ) : (
+          <>
+            {hasShipper ? (
+              <View style={styles.introCard}>
+                <Text style={styles.introTitle}>Hai lịch, hai mục đích khác nhau</Text>
+                <View style={styles.legendRow}>
+                  <View style={[styles.legendIcon, styles.availabilityIcon]}>
+                    <MaterialCommunityIcons
+                      name="calendar-account-outline"
+                      size={20}
+                      color={COLORS.primary}
+                    />
+                  </View>
+                  <View style={styles.legendCopy}>
+                    <Text style={styles.legendTitle}>Lịch rảnh cho chiến dịch</Text>
+                    <Text style={styles.legendText}>
+                      Lặp hàng tuần để tổ chức biết lúc nào có thể mời bạn. Lịch này không tự xếp
+                      ca.
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.legendCopy}>
-                  <Text style={styles.legendTitle}>Lịch rảnh cho chiến dịch</Text>
-                  <Text style={styles.legendText}>Lặp hàng tuần để tổ chức biết lúc nào có thể mời bạn. Lịch này không tự xếp ca.</Text>
+                <View style={styles.legendDivider} />
+                <View style={styles.legendRow}>
+                  <View style={[styles.legendIcon, styles.deliveryIcon]}>
+                    <MaterialCommunityIcons
+                      name="truck-check-outline"
+                      size={20}
+                      color={COLORS.teal}
+                    />
+                  </View>
+                  <View style={styles.legendCopy}>
+                    <Text style={styles.legendTitle}>Ca giao hàng thường</Text>
+                    <Text style={styles.legendText}>
+                      Cam kết theo ngày cụ thể. Chỉ ca đã lưu mới được tự nhận đơn giao của người
+                      nhận.
+                    </Text>
+                  </View>
                 </View>
               </View>
-              {data?.isShipper ? (
-                <>
-                  <View style={styles.legendDivider} />
-                  <View style={styles.legendRow}>
-                    <View style={[styles.legendIcon, styles.deliveryIcon]}>
-                      <MaterialCommunityIcons name="truck-check-outline" size={20} color={COLORS.teal} />
-                    </View>
-                    <View style={styles.legendCopy}>
-                      <Text style={styles.legendTitle}>Ca giao hàng thường</Text>
-                      <Text style={styles.legendText}>Cam kết theo ngày cụ thể. Chỉ ca đã lưu mới được tự nhận đơn giao của người nhận.</Text>
-                    </View>
-                  </View>
-                </>
-              ) : (
+            ) : (
+              <View style={styles.introCard}>
+                <Text style={styles.introTitle}>Lịch rảnh cho chiến dịch bếp ăn</Text>
                 <View style={styles.campaignScheduleHint}>
                   <MaterialCommunityIcons name="chef-hat" size={18} color={COLORS.purple} />
                   <Text style={styles.campaignScheduleHintText}>
-                    Chọn các khung giờ bạn có thể tham gia ca bếp. Khi có chiến dịch phù hợp, tổ chức có thể tìm và mời bạn.
+                    Chọn các khung giờ bạn có thể tham gia ca bếp. Khi có chiến dịch phù hợp, tổ
+                    chức có thể tìm và mời bạn.
                   </Text>
                 </View>
-              )}
-            </View>
+              </View>
+            )}
 
             <View style={[styles.gridCard, styles.availabilityCard]}>
               <View style={styles.scheduleHeading}>
                 <View style={[styles.scheduleIcon, styles.availabilityIcon]}>
-                  <MaterialCommunityIcons name="calendar-account-outline" size={22} color={COLORS.primary} />
+                  <MaterialCommunityIcons
+                    name="calendar-account-outline"
+                    size={22}
+                    color={COLORS.primary}
+                  />
                 </View>
                 <View style={styles.scheduleCopy}>
                   <View style={styles.scheduleTitleRow}>
                     <Text style={styles.gridTitle}>Khung giờ tôi rảnh</Text>
-                    <View style={styles.recurringBadge}><Text style={styles.recurringBadgeText}>Lặp hàng tuần</Text></View>
+                    <View style={styles.recurringBadge}>
+                      <Text style={styles.recurringBadgeText}>Lặp hàng tuần</Text>
+                    </View>
                   </View>
-                  <Text style={styles.gridHint}>Dùng để nhận lời mời chiến dịch phù hợp. Bạn vẫn cần chấp nhận hoặc tự đăng ký từng ca.</Text>
+                  <Text style={styles.gridHint}>
+                    {hasShipper
+                      ? 'Dùng để nhận lời mời chiến dịch phù hợp. Bạn vẫn cần chấp nhận hoặc tự đăng ký từng ca.'
+                      : 'Mẫu lặp hàng tuần để tổ chức biết khi nào có thể mời bạn vào ca bếp. Lịch này không tự động xếp ca.'}
+                  </Text>
                 </View>
                 <View style={styles.availabilityCountBadge}>
                   <Text style={styles.availabilityCountValue}>{availabilityCount}</Text>
@@ -268,14 +344,28 @@ export default function DeliveryShiftsScreen() {
                 </View>
               ) : availability.isError ? (
                 <View style={styles.inlineState}>
-                  <MaterialCommunityIcons name="calendar-alert-outline" size={26} color={COLORS.error} />
-                  <Text style={styles.inlineStateText}>Không tải được lịch rảnh. Dữ liệu hiện tại chưa bị thay đổi.</Text>
-                  <Button mode="outlined" icon="refresh" onPress={() => void availability.refetch()}>
+                  <MaterialCommunityIcons
+                    name="calendar-alert-outline"
+                    size={26}
+                    color={COLORS.error}
+                  />
+                  <Text style={styles.inlineStateText}>
+                    Không tải được lịch rảnh. Dữ liệu hiện tại chưa bị thay đổi.
+                  </Text>
+                  <Button
+                    mode="outlined"
+                    icon="refresh"
+                    onPress={() => void availability.refetch()}
+                  >
                     Thử lại
                   </Button>
                 </View>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shiftGrid}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.shiftGrid}
+                >
                   {WEEK_DAYS.map((day) => (
                     <View key={day.id} style={styles.shiftDay}>
                       <Text style={styles.shiftDayLabel}>{day.label}</Text>
@@ -296,8 +386,12 @@ export default function DeliveryShiftsScreen() {
                               pressed && styles.cellPressed,
                             ]}
                           >
-                            <Text style={[styles.shiftCellLabel, on && styles.shiftCellLabelOn]}>{period.label}</Text>
-                            <Text style={[styles.shiftCellTime, on && styles.shiftCellLabelOn]}>{period.time}</Text>
+                            <Text style={[styles.shiftCellLabel, on && styles.shiftCellLabelOn]}>
+                              {period.label}
+                            </Text>
+                            <Text style={[styles.shiftCellTime, on && styles.shiftCellLabelOn]}>
+                              {period.time}
+                            </Text>
                           </Pressable>
                         );
                       })}
@@ -310,7 +404,9 @@ export default function DeliveryShiftsScreen() {
                 mode="contained"
                 icon={availabilityDraft === null ? 'check' : 'content-save-outline'}
                 onPress={onSaveAvailability}
-                disabled={availability.isError || availabilityDraft === null || saveAvailability.isPending}
+                disabled={
+                  availability.isError || availabilityDraft === null || saveAvailability.isPending
+                }
                 loading={saveAvailability.isPending}
                 buttonColor={COLORS.primary}
                 style={styles.sectionButton}
@@ -320,115 +416,118 @@ export default function DeliveryShiftsScreen() {
               </Button>
             </View>
 
-            {shifts.isLoading ? (
-              <View style={styles.stateCard}>
-                <ActivityIndicator color={COLORS.primary} />
-                <Text style={styles.stateTitle}>Đang kiểm tra ca giao hàng...</Text>
-              </View>
-            ) : shifts.isError || !data ? (
-              <View style={styles.stateCard}>
-                <MaterialCommunityIcons name="calendar-alert-outline" size={34} color={COLORS.error} />
-                <Text style={styles.stateTitle}>Không tải được ca giao hàng</Text>
-                <Text style={styles.stateText}>Lịch rảnh chiến dịch ở trên vẫn có thể sử dụng.</Text>
-                <Button mode="outlined" icon="refresh" onPress={() => void shifts.refetch()}>
-                  Thử lại
-                </Button>
-              </View>
-            ) : data.isShipper ? (
+            {hasShipper ? (
               <>
-            <View style={[styles.deliverySectionHeader, styles.deliveryCard]}>
-              <View style={[styles.scheduleIcon, styles.deliveryIcon]}>
-                <MaterialCommunityIcons name="truck-check-outline" size={22} color={COLORS.teal} />
-              </View>
-              <View style={styles.scheduleCopy}>
-                <Text style={styles.gridTitle}>Ca giao hàng thường</Text>
-                <Text style={styles.gridHint}>Dành cho đơn người nhận đặt từ tin thực phẩm, không phải ca vận chuyển của chiến dịch.</Text>
-              </View>
-              <View style={styles.deliveryCountBadge}>
-                <Text style={styles.deliveryCountValue}>{selectedCount}</Text>
-                <Text style={styles.countLabel}>ca</Text>
-              </View>
-            </View>
-
-            <View style={[styles.windowCard, styles.deliveryCard]}>
-              <View style={[styles.windowIcon, editable ? styles.windowIconOpen : styles.windowIconClosed]}>
-                <MaterialCommunityIcons
-                  name={editable ? 'lock-open-variant-outline' : 'lock-outline'}
-                  size={21}
-                  color={editable ? COLORS.teal : COLORS.warning}
-                />
-              </View>
-              <View style={styles.windowCopy}>
-                <Text style={styles.windowTitle}>
-                  {editable ? 'Đang mở đăng ký' : 'Ngoài cửa sổ đăng ký'}
-                </Text>
-                <Text style={styles.windowText}>
-                  {suggested.size > 0
-                    ? 'Đã gợi ý ca từ khung giờ bạn rảnh. Bấm Lưu ca để đăng ký thật.'
-                    : window_?.alwaysOpen
-                      ? 'Bạn có thể cập nhật ca giao hàng bất cứ lúc nào.'
-                      : editable
-                        ? `Có thể sửa đến ${fmtVn(window_?.closesAt ?? null)}.`
-                        : `Chỉ xem lịch. Mở lại ${fmtVn(window_?.nextOpensAt ?? null) || 'theo lịch hệ thống'}.`}
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.gridCard, styles.deliveryCard]}>
-              <View style={styles.gridHeader}>
-                <View>
-                  <Text style={styles.gridTitle}>Ca theo ngày cụ thể</Text>
-                  <Text style={styles.gridHint}>
-                    {suggested.size > 0
-                      ? `${suggested.size} ca được điền sẵn từ lịch rảnh; chưa có hiệu lực cho tới khi bạn lưu.`
-                      : 'Ngày/ca đã qua hoặc ngoài cửa sổ đăng ký sẽ bị khoá.'}
-                  </Text>
-                </View>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shiftGrid}>
-                {days.map((day) => (
-                  <View key={day} style={styles.shiftDay}>
-                    <Text style={styles.shiftDayLabel}>{dayLabel(day)}</Text>
-                    {SHIFT_PERIODS.map((period) => {
-                      const key = cellKey(day, period.id);
-                      const on = selected.has(key);
-                      const disabled = !editable || day < todayKey;
-                      return (
-                        <Pressable
-                          key={key}
-                          onPress={() => toggle(day, period.id)}
-                          disabled={disabled}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: on, disabled }}
-                          accessibilityLabel={`${dayLabel(day)}, ${period.label}, ${period.time}`}
-                          style={({ pressed }) => [
-                            styles.shiftCell,
-                            styles.deliveryCell,
-                            on && styles.deliveryCellOn,
-                            disabled && styles.shiftCellDisabled,
-                            pressed && !disabled && styles.cellPressed,
-                          ]}
-                        >
-                          <Text style={[styles.shiftCellLabel, on && styles.shiftCellLabelOn]}>
-                            {period.label}
-                          </Text>
-                          <Text style={[styles.shiftCellTime, on && styles.shiftCellLabelOn]}>
-                            {period.time}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                <View style={[styles.deliverySectionHeader, styles.deliveryCard]}>
+                  <View style={[styles.scheduleIcon, styles.deliveryIcon]}>
+                    <MaterialCommunityIcons
+                      name="truck-check-outline"
+                      size={22}
+                      color={COLORS.teal}
+                    />
                   </View>
-                ))}
-              </ScrollView>
-            </View>
+                  <View style={styles.scheduleCopy}>
+                    <Text style={styles.gridTitle}>Ca giao hàng thường</Text>
+                    <Text style={styles.gridHint}>
+                      Dành cho đơn người nhận đặt từ tin thực phẩm, không phải ca vận chuyển của
+                      chiến dịch.
+                    </Text>
+                  </View>
+                  <View style={styles.deliveryCountBadge}>
+                    <Text style={styles.deliveryCountValue}>{selectedCount}</Text>
+                    <Text style={styles.countLabel}>ca</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.windowCard, styles.deliveryCard]}>
+                  <View
+                    style={[
+                      styles.windowIcon,
+                      editable ? styles.windowIconOpen : styles.windowIconClosed,
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={editable ? 'lock-open-variant-outline' : 'lock-outline'}
+                      size={21}
+                      color={editable ? COLORS.teal : COLORS.warning}
+                    />
+                  </View>
+                  <View style={styles.windowCopy}>
+                    <Text style={styles.windowTitle}>
+                      {editable ? 'Đang mở đăng ký' : 'Ngoài cửa sổ đăng ký'}
+                    </Text>
+                    <Text style={styles.windowText}>
+                      {suggested.size > 0
+                        ? 'Đã gợi ý ca từ khung giờ bạn rảnh. Bấm Lưu ca để đăng ký thật.'
+                        : window_?.alwaysOpen
+                          ? 'Bạn có thể cập nhật ca giao hàng bất cứ lúc nào.'
+                          : editable
+                            ? `Có thể sửa đến ${fmtVn(window_?.closesAt ?? null)}.`
+                            : `Chỉ xem lịch. Mở lại ${fmtVn(window_?.nextOpensAt ?? null) || 'theo lịch hệ thống'}.`}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.gridCard, styles.deliveryCard]}>
+                  <View style={styles.gridHeader}>
+                    <View>
+                      <Text style={styles.gridTitle}>Ca theo ngày cụ thể</Text>
+                      <Text style={styles.gridHint}>
+                        {suggested.size > 0
+                          ? `${suggested.size} ca được điền sẵn từ lịch rảnh; chưa có hiệu lực cho tới khi bạn lưu.`
+                          : 'Ngày/ca đã qua hoặc ngoài cửa sổ đăng ký sẽ bị khoá.'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.shiftGrid}
+                  >
+                    {days.map((day) => (
+                      <View key={day} style={styles.shiftDay}>
+                        <Text style={styles.shiftDayLabel}>{dayLabel(day)}</Text>
+                        {SHIFT_PERIODS.map((period) => {
+                          const key = cellKey(day, period.id);
+                          const on = selected.has(key);
+                          const disabled = !editable || day < todayKey;
+                          return (
+                            <Pressable
+                              key={key}
+                              onPress={() => toggle(day, period.id)}
+                              disabled={disabled}
+                              accessibilityRole="checkbox"
+                              accessibilityState={{ checked: on, disabled }}
+                              accessibilityLabel={`${dayLabel(day)}, ${period.label}, ${period.time}`}
+                              style={({ pressed }) => [
+                                styles.shiftCell,
+                                styles.deliveryCell,
+                                on && styles.deliveryCellOn,
+                                disabled && styles.shiftCellDisabled,
+                                pressed && !disabled && styles.cellPressed,
+                              ]}
+                            >
+                              <Text style={[styles.shiftCellLabel, on && styles.shiftCellLabelOn]}>
+                                {period.label}
+                              </Text>
+                              <Text style={[styles.shiftCellTime, on && styles.shiftCellLabelOn]}>
+                                {period.time}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
               </>
             ) : null}
           </>
+        )}
       </ScrollView>
 
-      {data?.isShipper ? (
+      {hasShipper && data?.isShipper ? (
         <View style={styles.footer}>
           <Button
             mode="contained"

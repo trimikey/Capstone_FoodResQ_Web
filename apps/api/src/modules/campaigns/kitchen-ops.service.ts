@@ -147,7 +147,7 @@ export class KitchenOpsService {
     campaignId: string,
     shiftId: string,
     dto: ApplyShiftDto,
-  ): Promise<{ role: AssignmentRole; shiftId: string }> {
+  ): Promise<{ role: AssignmentRole; shiftId: string; workDate?: string }> {
     const shift = await this.prisma.campaignShift.findUnique({ where: { id: shiftId } });
     if (!shift || shift.campaignId !== campaignId) {
       throw new NotFoundException('Không tìm thấy ca làm việc.');
@@ -156,7 +156,11 @@ export class KitchenOpsService {
     if (!role) {
       throw new BadRequestException('Ca này là ca chung, vui lòng chọn vai trò bạn muốn đăng ký.');
     }
-    return { role: role as AssignmentRole, shiftId: shift.id };
+    return {
+      role: role as AssignmentRole,
+      shiftId: shift.id,
+      ...(dto.workDate ? { workDate: dto.workDate } : {}),
+    };
   }
 
   // ── Thực đơn liên kết công thức ──────────────────────────────────────────────

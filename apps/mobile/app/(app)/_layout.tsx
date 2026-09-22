@@ -37,6 +37,7 @@ export default function AppTabsLayout() {
   const profilePending = isVolunteer && !profile?.volunteer;
   const hasKitchenRole = hasVerifiedChef || hasVerifiedWaiter || hasVerifiedShipper;
   const showShipperTabs = isVolunteer && hasVerifiedShipper;
+  const showScheduleTab = isVolunteer && (hasVerifiedChef || hasVerifiedShipper);
   const showCampaignTab = isVolunteer && (profilePending || hasKitchenRole);
   // Tab "chung" (receiver + provider) bị ẩn với volunteer; volunteer dùng nhánh riêng.
   const hideReceiver = isProvider || isVolunteer;
@@ -187,7 +188,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/delivery-shifts"
         options={{
-          href: isVolunteer && hasKitchenRole ? undefined : null,
+          href: showScheduleTab ? undefined : null,
           title: 'Lịch làm việc',
           tabBarLabel: 'Lịch',
           tabBarIcon: ({ color, size }) => (

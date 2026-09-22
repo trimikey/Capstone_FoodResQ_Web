@@ -19,6 +19,7 @@ import { captureImage, pickImageFromLibrary } from '@/services/faceCapture';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SurfaceCard } from '@/components/ui/SurfaceCard';
 import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
+import { trustScoreMeta } from '@/utils/trustScore';
 
 type FaceFeedback = {
   type: 'info' | 'success' | 'error';
@@ -49,7 +50,7 @@ function getFaceFeedbackTextStyle(type: FaceFeedback['type']) {
 
 /**
  * Tài khoản (Luồng 4) — hiển thị hồ sơ đầy đủ từ GET /users/me:
- * avatar, vai trò, trạng thái xác minh, điểm uy tín, thống kê đóng góp.
+ * avatar, vai trò, trạng thái xác minh, điểm tin cậy, thống kê đóng góp.
  * Nút "Chỉnh sửa hồ sơ" mở màn /profile/edit. Logout đã nối; sau khi
  * logout, auth guard ở (app)/_layout tự redirect về /sign-in.
  */
@@ -71,6 +72,7 @@ export default function ProfileTab() {
   const status = profile?.status ?? user?.status;
   const avatarUrl = profile?.avatarUrl ?? user?.avatarUrl;
   const trustScore = profile?.trustScore ?? user?.trustScore;
+  const trustMeta = typeof trustScore === 'number' ? trustScoreMeta(trustScore, status) : null;
   const sd = statusDisplay(status);
   const isReceiver = role === 'receiver';
   const receiver = profile?.receiver ?? user?.receiver;
@@ -176,18 +178,35 @@ export default function ProfileTab() {
           <ScreenState kind="error" title="Không tải được hồ sơ" actionLabel="Thử lại" onAction={() => refetch()} />
         ) : (
           <>
-            {/* Điểm uy tín */}
-            {typeof trustScore === 'number' ? (
+            {/* Điểm tin cậy */}
+            {typeof trustScore === 'number' && trustMeta ? (
               <SurfaceCard style={styles.trustCard}>
                 <View style={styles.trustRow}>
                   <View style={styles.trustIcon}>
                     <MaterialCommunityIcons name="shield-check" size={22} color={COLORS.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.trustLabel}>Điểm uy tín</Text>
-                    <Text style={styles.trustHint}>Dùng cho xác minh, nhận món và giao hàng</Text>
+                    <View style={styles.trustTitleRow}>
+                      <Text style={styles.trustLabel}>Điểm tin cậy</Text>
+                      <View
+                        style={[
+                          styles.trustBadge,
+                          trustMeta.tone === 'danger'
+                            ? styles.trustBadgeDanger
+                            : trustMeta.tone === 'warning'
+                              ? styles.trustBadgeWarning
+                              : styles.trustBadgePositive,
+                        ]}
+                      >
+                        <Text style={styles.trustBadgeText}>{trustMeta.label}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.trustHint}>{trustMeta.hint}</Text>
                   </View>
-                  <Text style={styles.trustValue}>{trustScore}</Text>
+                  <View style={styles.trustScoreBlock}>
+                    <Text style={styles.trustValue}>{trustScore}</Text>
+                    <Text style={styles.trustScale}>/100</Text>
+                  </View>
                 </View>
               </SurfaceCard>
             ) : null}
@@ -511,8 +530,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryContainer,
   },
   trustLabel: { fontSize: 15, fontWeight: '900', color: COLORS.onSurface },
+  trustTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  trustBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  trustBadgePositive: { backgroundColor: COLORS.primary },
+  trustBadgeWarning: { backgroundColor: COLORS.warning },
+  trustBadgeDanger: { backgroundColor: COLORS.error },
+  trustBadgeText: { color: COLORS.onPrimary, fontSize: 9, fontWeight: '900', textTransform: 'uppercase' },
   trustHint: { marginTop: 2, fontSize: 12, color: COLORS.onSurfaceVariant },
+  trustScoreBlock: { alignItems: 'flex-end' },
   trustValue: { fontSize: 24, fontWeight: '900', color: COLORS.primary },
+  trustScale: { marginTop: -3, fontSize: 10, fontWeight: '800', color: COLORS.onSurfaceVariant },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   statItem: {
     width: '48%',

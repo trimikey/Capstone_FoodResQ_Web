@@ -51,9 +51,12 @@ export class ApplyShiftDto {
   @IsEnum(AssignmentRole)
   role?: AssignmentRole;
 
-  @ApiPropertyOptional({ example: '2026-08-13', description: 'Ngay truc (YYYY-MM-DD).' })
+  @ApiPropertyOptional({
+    example: '2026-09-22',
+    description: 'Ngày trực (YYYY-MM-DD). Bắt buộc với chiến dịch diễn ra nhiều ngày.',
+  })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngay truc phai theo dinh dang YYYY-MM-DD' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Ngày trực phải theo định dạng YYYY-MM-DD' })
   workDate?: string;
 }
 
