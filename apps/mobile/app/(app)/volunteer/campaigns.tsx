@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AppState, ScrollView, View, StyleSheet } from 'react-native';
+import { AppState, Pressable, ScrollView, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button, Chip, Searchbar, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -30,6 +30,7 @@ import {
   ASSIGNMENT_STEP_ORDER,
   ASSIGNMENT_ROLE_LABEL,
   assignmentStatusMeta,
+  statusMeta,
   nextAssignmentStatus,
   assignmentStepRequiresPhoto,
   advanceTaskLabel,
@@ -40,6 +41,8 @@ import {
 type Segment = 'open' | 'tasks';
 type OpenFilter = 'all' | 'upcoming' | 'in_progress';
 type TaskFilter = 'all' | 'pending' | 'active' | 'completed';
+type TaskCampaignStatusFilter = 'all' | 'approved' | 'in_progress' | 'completed' | 'cancelled';
+type DateFilter = 'all' | 'today' | 'next7' | 'past';
 
 const PAGE_SIZE = 5;
 
@@ -56,11 +59,48 @@ function normalizedSearch(value: string) {
 function taskMatchesFilter(task: CampaignTask, filter: TaskFilter) {
   if (filter === 'all') return true;
   if (filter === 'pending') {
-    return task.status === 'pending' || task.confirmationStatus === 'pending';
+    return task.status === 'assigned' && task.confirmationStatus === 'pending';
   }
   if (filter === 'completed') return task.status === 'completed';
   return ['assigned', 'checked_in', 'in_progress'].includes(task.status)
     && task.confirmationStatus !== 'pending';
+}
+
+function isApprovedTask(task: CampaignTask) {
+  return task.status !== 'pending' && task.status !== 'rejected';
+}
+
+function dateOnlyTime(value?: string | null) {
+  if (!value) return null;
+  const text = value.slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function taskDateTime(task: CampaignTask) {
+  return dateOnlyTime(task.workDate ?? task.campaign.scheduledDate) ?? 0;
+}
+
+function campaignDateTime(campaign: Pick<Campaign, 'scheduledDate'> | CampaignTask['campaign']) {
+  return dateOnlyTime(campaign.scheduledDate) ?? 0;
+}
+
+function matchesDateFilter(value: string | null | undefined, filter: DateFilter) {
+  if (filter === 'all') return true;
+  const target = dateOnlyTime(value);
+  if (target == null) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTime = today.getTime();
+  if (filter === 'today') return target === todayTime;
+  if (filter === 'past') return target < todayTime;
+  const next7 = todayTime + 7 * 86_400_000;
+  return target >= todayTime && target <= next7;
 }
 
 /**
@@ -77,11 +117,17 @@ export default function VolunteerCampaignsScreen() {
   const [search, setSearch] = useState('');
   const [openFilter, setOpenFilter] = useState<OpenFilter>('all');
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
+  const [taskCampaignStatusFilter, setTaskCampaignStatusFilter] = useState<TaskCampaignStatusFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [openPage, setOpenPage] = useState(1);
   const [taskPage, setTaskPage] = useState(1);
+  const [screenFocused, setScreenFocused] = useState(false);
+  const isVolunteer = user?.role === 'volunteer';
+  const queriesEnabled = isVolunteer;
+  const pollingEnabled = screenFocused && isVolunteer;
 
-  const openQuery = useCampaigns();
-  const tasksQuery = useMyTasks(user?.role === 'volunteer');
+  const openQuery = useCampaigns(queriesEnabled, pollingEnabled);
+  const tasksQuery = useMyTasks(queriesEnabled, pollingEnabled);
   const { refetch: refetchOpenCampaigns } = openQuery;
   const { refetch: refetchMyTasks } = tasksQuery;
   const advanceMut = useAdvanceTask();
@@ -95,17 +141,36 @@ export default function VolunteerCampaignsScreen() {
       const matchesStatus = openFilter === 'all'
         || (openFilter === 'upcoming' && campaign.status === 'approved')
         || (openFilter === 'in_progress' && campaign.status === 'in_progress');
-      return matchesSearch && matchesStatus;
-    });
-  }, [openFilter, openQuery.data, search]);
+      return matchesSearch && matchesStatus && matchesDateFilter(campaign.scheduledDate, dateFilter);
+    }).sort((a, b) => campaignDateTime(b) - campaignDateTime(a));
+  }, [dateFilter, openFilter, openQuery.data, search]);
+
+  const approvedTasks = useMemo(
+    () => (tasksQuery.data ?? []).filter(isApprovedTask),
+    [tasksQuery.data],
+  );
+
+  const taskStatusCounts = useMemo(() => {
+    const counts = { all: 0, pending: 0, active: 0, completed: 0 };
+    for (const task of approvedTasks) {
+      counts.all += 1;
+      if (taskMatchesFilter(task, 'pending')) counts.pending += 1;
+      else if (taskMatchesFilter(task, 'completed')) counts.completed += 1;
+      else if (taskMatchesFilter(task, 'active')) counts.active += 1;
+    }
+    return counts;
+  }, [approvedTasks]);
 
   const taskGroups = useMemo<CampaignTaskGroup[]>(() => {
     const query = normalizedSearch(search);
     const grouped = new Map<string, CampaignTaskGroup>();
-    for (const task of tasksQuery.data ?? []) {
+    for (const task of approvedTasks) {
       const matchesSearch = !query || [task.campaign.title, task.campaign.kitchenAddress]
         .some((value) => value?.toLocaleLowerCase('vi-VN').includes(query));
-      if (!matchesSearch || !taskMatchesFilter(task, taskFilter)) continue;
+      const matchesCampaignStatus = taskCampaignStatusFilter === 'all'
+        || task.campaign.status === taskCampaignStatusFilter;
+      const matchesDate = matchesDateFilter(task.workDate ?? task.campaign.scheduledDate, dateFilter);
+      if (!matchesSearch || !taskMatchesFilter(task, taskFilter) || !matchesCampaignStatus || !matchesDate) continue;
       const current = grouped.get(task.campaign.id);
       if (current) current.tasks.push(task);
       else grouped.set(task.campaign.id, {
@@ -116,12 +181,13 @@ export default function VolunteerCampaignsScreen() {
     }
     return [...grouped.values()].map((group) => ({
       ...group,
-      tasks: group.tasks.sort((a, b) => (
-        String(a.workDate ?? a.campaign.scheduledDate)
-          .localeCompare(String(b.workDate ?? b.campaign.scheduledDate))
-      )),
-    }));
-  }, [search, taskFilter, tasksQuery.data]);
+      tasks: group.tasks.sort((a, b) => taskDateTime(b) - taskDateTime(a)),
+    })).sort((a, b) => {
+      const latestA = Math.max(...a.tasks.map(taskDateTime), campaignDateTime(a.campaign));
+      const latestB = Math.max(...b.tasks.map(taskDateTime), campaignDateTime(b.campaign));
+      return latestB - latestA;
+    });
+  }, [approvedTasks, dateFilter, search, taskCampaignStatusFilter, taskFilter]);
 
   const openTotalPages = Math.max(1, Math.ceil(filteredOpenCampaigns.length / PAGE_SIZE));
   const taskTotalPages = Math.max(1, Math.ceil(taskGroups.length / PAGE_SIZE));
@@ -138,22 +204,26 @@ export default function VolunteerCampaignsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setScreenFocused(true);
       const nextSegment: Segment = params.segment === 'tasks' ? 'tasks' : 'open';
       setSegment((current) => (current === nextSegment ? current : nextSegment));
-      void refetchOpenCampaigns();
-      void refetchMyTasks();
-    }, [params.segment, refetchOpenCampaigns, refetchMyTasks])
+      if (isVolunteer) {
+        void refetchOpenCampaigns();
+        void refetchMyTasks();
+      }
+      return () => setScreenFocused(false);
+    }, [isVolunteer, params.segment, refetchOpenCampaigns, refetchMyTasks])
   );
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+      if (state === 'active' && screenFocused && isVolunteer) {
         void refetchOpenCampaigns();
         void refetchMyTasks();
       }
     });
     return () => sub.remove();
-  }, [refetchOpenCampaigns, refetchMyTasks]);
+  }, [isVolunteer, refetchOpenCampaigns, refetchMyTasks, screenFocused]);
 
   // Chỉ volunteer dùng tab này; role khác lỡ vào → về trang chủ.
   if (user && user.role !== 'volunteer') {
@@ -215,10 +285,10 @@ export default function VolunteerCampaignsScreen() {
 
   const openCampaignDetail = (campaignId: string, returnSegment: Segment) => {
     router.push({
-      pathname: '/volunteer/campaigns/[id]',
+      pathname: '/(app)/volunteer/campaigns/[id]',
       params: {
         id: campaignId,
-        returnTo: '/volunteer/campaigns',
+        returnTo: '/(app)/volunteer/campaigns',
         returnSegment,
       },
     });
@@ -226,7 +296,7 @@ export default function VolunteerCampaignsScreen() {
 
   const openTaskDetail = (assignmentId: string) => {
     router.push({
-      pathname: '/volunteer/tasks/[assignmentId]',
+      pathname: '/(app)/volunteer/tasks/[assignmentId]',
       params: { assignmentId },
     });
   };
@@ -316,6 +386,31 @@ export default function VolunteerCampaignsScreen() {
             </>
           )}
         </ScrollView>
+        {segment === 'tasks' ? (
+          <>
+            <View style={styles.taskStatusSummary}>
+              <TaskStatusSummaryItem label="Tất cả" value={taskStatusCounts.all} selected={taskFilter === 'all'} onPress={() => { setTaskFilter('all'); setTaskPage(1); }} />
+              <TaskStatusSummaryItem label="Chờ" value={taskStatusCounts.pending} selected={taskFilter === 'pending'} onPress={() => { setTaskFilter('pending'); setTaskPage(1); }} />
+              <TaskStatusSummaryItem label="Đang làm" value={taskStatusCounts.active} selected={taskFilter === 'active'} onPress={() => { setTaskFilter('active'); setTaskPage(1); }} />
+              <TaskStatusSummaryItem label="Xong" value={taskStatusCounts.completed} selected={taskFilter === 'completed'} onPress={() => { setTaskFilter('completed'); setTaskPage(1); }} />
+            </View>
+            <Text style={styles.filterLabel}>Trạng thái chiến dịch</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsTight}>
+              <FilterChip label="Tất cả" selected={taskCampaignStatusFilter === 'all'} onPress={() => { setTaskCampaignStatusFilter('all'); setTaskPage(1); }} />
+              <FilterChip label="Đã duyệt" selected={taskCampaignStatusFilter === 'approved'} onPress={() => { setTaskCampaignStatusFilter('approved'); setTaskPage(1); }} />
+              <FilterChip label="Đang diễn ra" selected={taskCampaignStatusFilter === 'in_progress'} onPress={() => { setTaskCampaignStatusFilter('in_progress'); setTaskPage(1); }} />
+              <FilterChip label="Hoàn thành" selected={taskCampaignStatusFilter === 'completed'} onPress={() => { setTaskCampaignStatusFilter('completed'); setTaskPage(1); }} />
+              <FilterChip label="Đã huỷ" selected={taskCampaignStatusFilter === 'cancelled'} onPress={() => { setTaskCampaignStatusFilter('cancelled'); setTaskPage(1); }} />
+            </ScrollView>
+          </>
+        ) : null}
+        <Text style={styles.filterLabel}>Ngày</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsTight}>
+          <FilterChip label="Tất cả ngày" selected={dateFilter === 'all'} onPress={() => { setDateFilter('all'); setOpenPage(1); setTaskPage(1); }} />
+          <FilterChip label="Hôm nay" selected={dateFilter === 'today'} onPress={() => { setDateFilter('today'); setOpenPage(1); setTaskPage(1); }} />
+          <FilterChip label="7 ngày tới" selected={dateFilter === 'next7'} onPress={() => { setDateFilter('next7'); setOpenPage(1); setTaskPage(1); }} />
+          <FilterChip label="Đã qua" selected={dateFilter === 'past'} onPress={() => { setDateFilter('past'); setOpenPage(1); setTaskPage(1); }} />
+        </ScrollView>
       </View>
 
       {segment === 'open' ? (
@@ -383,6 +478,32 @@ function FilterChip({ label, selected, onPress }: { label: string; selected: boo
   );
 }
 
+function TaskStatusSummaryItem({
+  label,
+  value,
+  selected,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.statusSummaryItem, selected && styles.statusSummaryItemSelected]}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+    >
+      <Text style={[styles.statusSummaryValue, selected && styles.statusSummaryValueSelected]}>{value}</Text>
+      <Text style={[styles.statusSummaryLabel, selected && styles.statusSummaryLabelSelected]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
   if (totalPages <= 1) return null;
   return (
@@ -413,6 +534,7 @@ function TaskGroupCard({
   onConfirm: (task: CampaignTask, decision: 'confirmed' | 'declined') => void;
   onOpen: (assignmentId: string) => void;
 }) {
+  const campaignStatus = statusMeta(group.campaign.status);
   return (
     <View style={styles.taskGroupCard}>
       <View style={styles.taskGroupHeader}>
@@ -423,8 +545,13 @@ function TaskGroupCard({
             <Text style={styles.metaText} numberOfLines={1}>{group.campaign.kitchenAddress}</Text>
           </View>
         </View>
-        <View style={styles.countBadge}>
-          <Text style={styles.countBadgeText}>{group.tasks.length} ca</Text>
+        <View style={styles.groupBadges}>
+          <View style={[styles.campaignStatusBadge, { backgroundColor: campaignStatus.bg }]}>
+            <Text style={[styles.campaignStatusBadgeText, { color: campaignStatus.color }]}>{campaignStatus.label}</Text>
+          </View>
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{group.tasks.length} ca</Text>
+          </View>
         </View>
       </View>
       {group.tasks.map((task) => (
@@ -586,10 +713,38 @@ const styles = StyleSheet.create({
   search: { height: 46, borderRadius: radius.xl, backgroundColor: COLORS.surface },
   searchInput: { minHeight: 0, fontSize: 14 },
   filterChips: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
+  filterChipsTight: { gap: spacing.sm, paddingTop: spacing.xs, paddingRight: spacing.md },
+  filterLabel: {
+    marginTop: spacing.sm,
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.onSurfaceVariant,
+    textTransform: 'uppercase',
+  },
   filterChip: { backgroundColor: COLORS.surface },
   filterChipSelected: { backgroundColor: COLORS.purpleContainer },
   filterChipText: { color: COLORS.onSurfaceVariant, fontSize: 12 },
   filterChipTextSelected: { color: COLORS.purple, fontWeight: '800' },
+  taskStatusSummary: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
+  statusSummaryItem: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  statusSummaryItemSelected: {
+    borderColor: COLORS.purple,
+    backgroundColor: COLORS.purpleContainer,
+  },
+  statusSummaryValue: { fontSize: 18, fontWeight: '900', color: COLORS.onSurface },
+  statusSummaryValueSelected: { color: COLORS.purple },
+  statusSummaryLabel: { marginTop: 2, fontSize: 11, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  statusSummaryLabelSelected: { color: COLORS.purple },
   list: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.section },
   pagination: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   pageLabel: { minWidth: 42, textAlign: 'center', color: COLORS.onSurface, fontWeight: '800' },
@@ -613,6 +768,9 @@ const styles = StyleSheet.create({
   },
   taskGroupHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingBottom: spacing.sm },
   taskGroupTitle: { fontSize: 19, fontWeight: '900', color: COLORS.onSurface, lineHeight: 24, marginBottom: 6 },
+  groupBadges: { alignItems: 'flex-end', gap: spacing.xs, maxWidth: 112 },
+  campaignStatusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  campaignStatusBadgeText: { fontSize: 11, fontWeight: '900' },
   countBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: COLORS.purpleContainer },
   countBadgeText: { color: COLORS.purple, fontSize: 12, fontWeight: '900' },
   groupedTask: { paddingTop: spacing.md, marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: COLORS.outlineVariant },

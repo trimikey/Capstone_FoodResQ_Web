@@ -140,12 +140,12 @@ export interface CreateDistributionInput {
 }
 
 /** Danh sách ca của chiến dịch. GET /campaigns/:id/shifts */
-export function useShifts(campaignId?: string) {
+export function useShifts(campaignId?: string, enabled: boolean = true, pollingEnabled: boolean = enabled) {
   return useQuery({
     queryKey: ['kitchen', 'shifts', campaignId],
-    enabled: !!campaignId,
+    enabled: enabled && !!campaignId,
     staleTime: 5_000,
-    refetchInterval: 8_000,
+    refetchInterval: pollingEnabled ? 15_000 : false,
     refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignShift[]>>(endpoints.kitchen.shifts(campaignId!));

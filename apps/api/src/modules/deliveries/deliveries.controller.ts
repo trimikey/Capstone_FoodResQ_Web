@@ -154,8 +154,8 @@ export class DeliveriesController {
       required: ['status'],
       properties: {
         status: { type: 'string' },
-        photo: { type: 'string', format: 'binary' },
-        qrToken: { type: 'string', description: 'Mã QR của người nhận (bắt buộc khi status=delivered)' },
+        photo: { type: 'string', format: 'binary', description: 'Anh xac nhan da giao (bat buoc khi status=delivered)' },
+        qrToken: { type: 'string', description: 'Legacy, khong con bat buoc khi status=delivered' },
       },
     },
   })

@@ -64,8 +64,8 @@ interface PhotoReviewState {
 type ChatRole = Extract<ReservationChatParticipant['role'], 'receiver' | 'provider'>;
 
 const CHAT_ROLE_LABEL: Record<ChatRole, string> = {
-  receiver: 'người nhận',
-  provider: 'cửa hàng',
+  receiver: 'ngu?i nh?n',
+  provider: 'c?a hàng',
 };
 
 const DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES = 20;
@@ -87,7 +87,7 @@ function minutesUntilLabel(ms: number): string {
   if (total < 60) return `${total} phút`;
   const h = Math.floor(total / 60);
   const m = total % 60;
-  return m > 0 ? `${h} giờ ${m} phút` : `${h} giờ`;
+  return m > 0 ? `${h} gi? ${m} phút` : `${h} gi?`;
 }
 
 function earlyCompleteMinutesOf(delivery: ActiveDelivery): number {
@@ -142,7 +142,7 @@ function PhotoReviewModal({
     >
       <View style={styles.reviewOverlay}>
         <View style={styles.reviewCard}>
-          <Text style={styles.reviewTitle}>Xem lại ảnh</Text>
+          <Text style={styles.reviewTitle}>Xem l?i ?nh</Text>
           {state != null ? (
             <Image
               source={{ uri: state.photo.uri }}
@@ -152,8 +152,8 @@ function PhotoReviewModal({
           ) : null}
           <Text style={styles.reviewHint}>
             {state?.action === 'qc'
-              ? 'Ảnh lấy hàng tại điểm nhận. Xem lại trước khi xác nhận.'
-              : 'Ảnh bàn giao tại điểm giao. Xem lại trước khi hoàn tất.'}
+              ? '?nh l?y hàng t?i di?m nh?n. Xem l?i tru?c khi xác nh?n.'
+              : '?nh bàn giao t?i di?m giao. Xem l?i tru?c khi hoàn t?t.'}
           </Text>
           <View style={styles.reviewActions}>
             <Button
@@ -164,7 +164,7 @@ function PhotoReviewModal({
               textColor={COLORS.danger}
               style={[styles.reviewBtn, { borderColor: COLORS.danger }]}
             >
-              Chụp lại
+              Ch?p l?i
             </Button>
             <Button
               mode="contained"
@@ -175,7 +175,7 @@ function PhotoReviewModal({
               buttonColor={COLORS.primary}
               style={styles.reviewBtn}
             >
-              Xác nhận
+              Xác nh?n
             </Button>
           </View>
         </View>
@@ -205,8 +205,8 @@ function DeliveredSuccessModal({
           <View style={styles.successIconWrap}>
             <MaterialCommunityIcons name="check-circle" size={72} color={COLORS.success} />
           </View>
-          <Text style={styles.successTitle}>Đã giao thành công</Text>
-          <Text style={styles.successSub}>Đơn hàng đã hoàn tất</Text>
+          <Text style={styles.successTitle}>Ðã giao thành công</Text>
+          <Text style={styles.successSub}>Ðon hàng dã hoàn t?t</Text>
 
           <View style={styles.successDivider} />
 
@@ -228,7 +228,7 @@ function DeliveredSuccessModal({
                   size={18}
                   color={COLORS.indigo}
                 />
-                <Text style={styles.successRowText}>{summary.quantity} phần</Text>
+                <Text style={styles.successRowText}>{summary.quantity} ph?n</Text>
               </View>
             )}
             {summary?.distanceLabel != null && (
@@ -239,7 +239,7 @@ function DeliveredSuccessModal({
             )}
             <View style={[styles.successRow, styles.pointsRow]}>
               <MaterialCommunityIcons name="medal-outline" size={18} color={COLORS.warning} />
-              <Text style={[styles.successRowText, styles.pointsText]}>+5 điểm cống hiến</Text>
+              <Text style={[styles.successRowText, styles.pointsText]}>+5 di?m c?ng hi?n</Text>
             </View>
           </View>
 
@@ -259,9 +259,7 @@ function DeliveredSuccessModal({
 }
 
 /**
- * Bước cuối: mã QR đã đúng, ĐỐI CHIẾU người nhận (ảnh đã đăng ký + thông tin)
- * rồi mới bàn giao — quét trúng mã chưa chắc đúng người cầm máy. Cùng luật với
- * bản web và với bước provider quét QR ở đơn tự đến lấy.
+ * Bước cuối: mã QR đã đúng, đối chiếu người nhận trước khi bàn giao.
  */
 function HandoverConfirmModal({
   delivery,
@@ -283,7 +281,7 @@ function HandoverConfirmModal({
       <View style={styles.successOverlay}>
         <View style={styles.successCard}>
           <Text style={styles.successTitle}>Đối chiếu người nhận</Text>
-          <Text style={styles.successSub}>Mã QR đã đúng — kiểm tra người trước mặt bạn</Text>
+          <Text style={styles.successSub}>Mã QR đã đúng, kiểm tra người trước mặt bạn</Text>
 
           <View style={styles.handoverPhotoWrap}>
             {registeredPhoto ? (
@@ -296,7 +294,7 @@ function HandoverConfirmModal({
                   color={COLORS.warning}
                 />
                 <Text style={styles.handoverNoPhotoText}>
-                  Chưa đăng ký ảnh — hỏi giấy tờ tuỳ thân
+                  Chưa đăng ký ảnh, hỏi giấy tờ tùy thân
                 </Text>
               </View>
             )}
@@ -308,7 +306,7 @@ function HandoverConfirmModal({
           <View style={styles.successDetails}>
             <View style={styles.successRow}>
               <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.blue} />
-              <Text style={styles.successRowText}>{receiver?.user.fullName ?? '—'}</Text>
+              <Text style={styles.successRowText}>{receiver?.user.fullName ?? '-'}</Text>
             </View>
             {receiver?.user.phone ? (
               <View style={styles.successRow}>
@@ -329,8 +327,8 @@ function HandoverConfirmModal({
             <View style={styles.successRow}>
               <MaterialCommunityIcons name="food-variant" size={18} color={COLORS.orange} />
               <Text style={styles.successRowText} numberOfLines={2}>
-                {reservation?.listing.title ?? '—'}
-                {reservation?.quantity != null ? ` · ${reservation.quantity} phần` : ''}
+                {reservation?.listing.title ?? '-'}
+                {reservation?.quantity != null ? ` - ${reservation.quantity} phần` : ''}
               </Text>
             </View>
           </View>
@@ -371,6 +369,7 @@ function HandoverConfirmModal({
     </Modal>
   );
 }
+
 
 type RouteTarget = {
   key: 'pickup' | 'dropoff';
@@ -425,15 +424,15 @@ function advanceLabel(
 ): string {
   switch (status) {
     case 'assigned':
-      return 'Đi tới điểm lấy';
+      return 'Ði t?i di?m l?y';
     case 'heading_to_provider':
-      return hasPickupPhoto ? 'Xác nhận đã lấy hàng' : 'Chụp ảnh hàng';
+      return hasPickupPhoto ? 'Xác nh?n dã l?y hàng' : 'Ch?p ?nh hàng';
     case 'qc_completed':
-      return 'Chỉ đường đến điểm giao';
+      return 'Ch? du?ng d?n di?m giao';
     case 'in_transit':
-      return isCampaignTransport ? 'Chụp ảnh bàn giao cho bếp' : 'Hoàn tất giao hàng';
+      return isCampaignTransport ? 'Ch?p ?nh bàn giao cho b?p' : 'Hoàn t?t giao hàng';
     default:
-      return 'Cập nhật trạng thái';
+      return 'C?p nh?t tr?ng thái';
   }
 }
 function advanceIcon(
@@ -445,7 +444,7 @@ function advanceIcon(
     case 'heading_to_provider':
       return hasPickupPhoto ? 'check-circle-outline' : 'camera';
     case 'in_transit':
-      return isCampaignTransport ? 'camera' : 'qrcode-scan';
+      return 'camera';
     default:
       return 'arrow-right-circle';
   }
@@ -453,19 +452,19 @@ function advanceIcon(
 function statusHint(status: string, hasPickupPhoto: boolean, isCampaignTransport: boolean): string {
   switch (status) {
     case 'assigned':
-      return 'Chờ đi lấy hàng';
+      return 'Ch? di l?y hàng';
     case 'heading_to_provider':
-      return hasPickupPhoto ? 'Ảnh đã chụp, chờ xác nhận' : 'Đang tới điểm lấy';
+      return hasPickupPhoto ? '?nh dã ch?p, ch? xác nh?n' : 'Ðang t?i di?m l?y';
     case 'qc_completed':
-      return 'Đã lấy hàng, chờ đi giao';
+      return 'Ðã l?y hàng, ch? di giao';
     case 'in_transit':
       return isCampaignTransport
-        ? 'Đang giao đến bếp, cần ảnh bàn giao'
-        : 'Đang giao, chờ mã người nhận';
+        ? 'Ðang giao d?n b?p, c?n ?nh bàn giao'
+        : 'Ðang giao, c?n ?nh bàn giao';
     case 'delivered':
-      return isCampaignTransport ? 'Đã giao, chờ bếp xác nhận nhận hàng' : 'Đơn đã hoàn tất';
+      return isCampaignTransport ? 'Ðã giao, ch? b?p xác nh?n nh?n hàng' : 'Ðon dã hoàn t?t';
     default:
-      return 'Theo dõi tiến trình giao hàng';
+      return 'Theo dõi ti?n trình giao hàng';
   }
 }
 
@@ -497,16 +496,16 @@ export default function VolunteerActiveScreen() {
   const [photoReview, setPhotoReview] = useState<PhotoReviewState | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrScanning, setQrScanning] = useState(false);
-  // Lỗi hiển thị NGAY TRONG sheet: Popup (Paper Portal) bị container của
-  // BottomSheetModal đè lên nên popup lỗi khi sheet đang mở là vô hình.
+  // L?i hi?n th? NGAY TRONG sheet: Popup (Paper Portal) b? container c?a
+  // BottomSheetModal dè lên nên popup l?i khi sheet dang m? là vô hình.
   const [qrError, setQrError] = useState<string | null>(null);
-  // Chặn camera bắn nhiều lần trước khi state `busy` kịp render (state là async,
-  // ref là đồng bộ) — tránh gọi API xác nhận trùng lặp.
+  // Ch?n camera b?n nhi?u l?n tru?c khi state `busy` k?p render (state là async,
+  // ref là d?ng b?) — tránh g?i API xác nh?n trùng l?p.
   const qrSubmittingRef = useRef(false);
   const [torch, setTorch] = useState(false);
   const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
-  // Mã QR đã quét đúng, đang chờ shipper ĐỐI CHIẾU người nhận rồi mới bàn giao —
-  // quét trúng mã chưa chắc đúng người cầm máy (giống luật của đơn tự đến lấy).
+  // Mã QR dã quét dúng, dang ch? shipper Ð?I CHI?U ngu?i nh?n r?i m?i bàn giao —
+  // quét trúng mã chua ch?c dúng ngu?i c?m máy (gi?ng lu?t c?a don t? d?n l?y).
   const [handoverToken, setHandoverToken] = useState<string | null>(null);
 
   const delivery = data ?? null;
@@ -585,7 +584,7 @@ export default function VolunteerActiveScreen() {
       requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
     } catch (e: any) {
       setChatError(
-        e?.response?.data?.error?.message ?? 'Không gửi được tin nhắn. Vui lòng thử lại.',
+        e?.response?.data?.error?.message ?? 'Không g?i du?c tin nh?n. Vui lòng th? l?i.',
       );
       void notifyError();
     }
@@ -606,8 +605,8 @@ export default function VolunteerActiveScreen() {
     if (!urls) {
       Popup.show({
         type: 'warning',
-        text1: 'Thiếu địa chỉ chỉ đường',
-        text2: 'Đơn này chưa có toạ độ hoặc địa chỉ đủ rõ để mở Google Maps.',
+        text1: 'Thi?u d?a ch? ch? du?ng',
+        text2: 'Ðon này chua có to? d? ho?c d?a ch? d? rõ d? m? Google Maps.',
       });
       void notifyWarning();
       return;
@@ -620,8 +619,8 @@ export default function VolunteerActiveScreen() {
       } catch {
         Popup.show({
           type: 'error',
-          text1: 'Không mở được Google Maps',
-          text2: 'Vui lòng thử lại.',
+          text1: 'Không m? du?c Google Maps',
+          text2: 'Vui lòng th? l?i.',
         });
         void notifyError();
       }
@@ -642,7 +641,7 @@ export default function VolunteerActiveScreen() {
     void notifySuccess();
     Popup.show({
       type: 'success',
-      text1: options?.successText ?? 'Đã cập nhật tiến trình',
+      text1: options?.successText ?? 'Ðã c?p nh?t ti?n trình',
       text2: deliveryStatusMeta(status).label,
     });
   };
@@ -665,11 +664,11 @@ export default function VolunteerActiveScreen() {
           );
           Popup.show({
             type: 'warning',
-            text1: 'Chưa tới giờ bàn giao',
+            text1: 'Chua t?i gi? bàn giao',
             text2:
               scheduledLabel && earliest
-                ? `Người nhận hẹn ${scheduledLabel}. Bạn chỉ có thể xác nhận trong ${earlyCompleteMinutes} phút trước giờ hẹn.`
-                : 'Vui lòng chờ gần tới giờ hẹn rồi bàn giao.',
+                ? `Ngu?i nh?n h?n ${scheduledLabel}. B?n ch? có th? xác nh?n trong ${earlyCompleteMinutes} phút tru?c gi? h?n.`
+                : 'Vui lòng ch? g?n t?i gi? h?n r?i bàn giao.',
           });
           void notifyWarning();
           return;
@@ -683,8 +682,8 @@ export default function VolunteerActiveScreen() {
         if (!photo) {
           Popup.show({
             type: 'info',
-            text1: 'Cần ảnh bàn giao',
-            text2: 'Hãy chụp ảnh thực phẩm tại bếp trước khi hoàn tất.',
+            text1: 'C?n ?nh bàn giao',
+            text2: 'Hãy ch?p ?nh th?c ph?m t?i b?p tru?c khi hoàn t?t.',
           });
           return;
         }
@@ -693,8 +692,8 @@ export default function VolunteerActiveScreen() {
         void notifyError();
         Popup.show({
           type: 'error',
-          text1: 'Không mở được camera',
-          text2: e?.message ?? 'Cần quyền camera.',
+          text1: 'Không m? du?c camera',
+          text2: e?.message ?? 'C?n quy?n camera.',
         });
       }
       return;
@@ -702,14 +701,14 @@ export default function VolunteerActiveScreen() {
 
     if (d.status === 'assigned') {
       try {
-        await updateDeliveryStatus(d, next, { successText: 'Đang tới điểm lấy' });
+        await updateDeliveryStatus(d, next, { successText: 'Ðang t?i di?m l?y' });
         await openMaps(pickupTarget);
       } catch (e: any) {
         void notifyError();
         Popup.show({
           type: 'error',
-          text1: 'Cập nhật thất bại',
-          text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
+          text1: 'C?p nh?t th?t b?i',
+          text2: e?.response?.data?.error?.message ?? 'Vui lòng th? l?i.',
         });
       }
       return;
@@ -723,8 +722,8 @@ export default function VolunteerActiveScreen() {
         if (!photo) {
           Popup.show({
             type: 'info',
-            text1: 'Cần ảnh lấy hàng',
-            text2: 'Hãy chụp ảnh hàng trước khi xác nhận.',
+            text1: 'C?n ?nh l?y hàng',
+            text2: 'Hãy ch?p ?nh hàng tru?c khi xác nh?n.',
           });
           return;
         }
@@ -732,8 +731,8 @@ export default function VolunteerActiveScreen() {
       } catch (e: any) {
         Popup.show({
           type: 'error',
-          text1: 'Không mở được camera',
-          text2: e?.message ?? 'Cần quyền camera.',
+          text1: 'Không m? du?c camera',
+          text2: e?.message ?? 'C?n quy?n camera.',
         });
       }
       return;
@@ -749,8 +748,8 @@ export default function VolunteerActiveScreen() {
       void notifyError();
       Popup.show({
         type: 'error',
-        text1: 'Cập nhật thất bại',
-        text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
+        text1: 'C?p nh?t th?t b?i',
+        text2: e?.response?.data?.error?.message ?? 'Vui lòng th? l?i.',
       });
     }
   };
@@ -767,12 +766,12 @@ export default function VolunteerActiveScreen() {
     if (qrSubmittingRef.current) return;
     const token = (tokenOverride ?? qrToken).trim();
     if (!token) {
-      setQrError('Nhập hoặc quét mã QR trên màn nhận hàng của người nhận.');
+      setQrError('Nh?p ho?c quét mã QR trên màn nh?n hàng c?a ngu?i nh?n.');
       void notifyWarning();
       return;
     }
-    // Đơn của người nhận → bắt buộc đối chiếu ảnh/thông tin trước khi bàn giao.
-    // Chuyến giao cho bếp chiến dịch không có hồ sơ người nhận nên chốt thẳng.
+    // Ðon c?a ngu?i nh?n ? b?t bu?c d?i chi?u ?nh/thông tin tru?c khi bàn giao.
+    // Chuy?n giao cho b?p chi?n d?ch không có h? so ngu?i nh?n nên ch?t th?ng.
     if (delivery.reservation) {
       qrSheetRef.current?.dismiss();
       setQrScannerOpen(false);
@@ -789,11 +788,11 @@ export default function VolunteerActiveScreen() {
       title:
         delivery.reservation?.listing.title ??
         delivery.campaignTransport?.campaignTitle ??
-        'Chuyến giao',
+        'Chuy?n giao',
       recipient:
         delivery.reservation?.receiver?.user.fullName ??
         delivery.campaignTransport?.campaignTitle ??
-        'Bếp chiến dịch',
+        'B?p chi?n d?ch',
       quantity: delivery.reservation?.quantity ?? null,
       distanceLabel: formatKm(delivery.distanceKm),
     };
@@ -814,9 +813,9 @@ export default function VolunteerActiveScreen() {
       setDeliveredSummary(snapshot);
     } catch (e: any) {
       void notifyError();
-      // Không dùng Popup ở đây: sheet đang mở sẽ che popup (Paper Portal nằm
-      // dưới container BottomSheetModal) — hiện lỗi inline trong sheet.
-      setQrError(e?.response?.data?.error?.message ?? 'Kiểm tra lại mã QR của người nhận.');
+      // Không dùng Popup ? dây: sheet dang m? s? che popup (Paper Portal n?m
+      // du?i container BottomSheetModal) — hi?n l?i inline trong sheet.
+      setQrError(e?.response?.data?.error?.message ?? 'Ki?m tra l?i mã QR c?a ngu?i nh?n.');
     } finally {
       qrSubmittingRef.current = false;
       setQrScanning(false);
@@ -827,7 +826,7 @@ export default function VolunteerActiveScreen() {
     if (!delivery) return;
     const reason = reasonText.trim();
     if (reasonMode === 'fail' && !reason) {
-      Popup.show({ type: 'warning', text1: 'Vui lòng nhập lý do giao thất bại' });
+      Popup.show({ type: 'warning', text1: 'Vui lòng nh?p lý do giao th?t b?i' });
       void notifyWarning();
       return;
     }
@@ -835,14 +834,14 @@ export default function VolunteerActiveScreen() {
       if (reasonMode === 'fail') {
         await failDelivery.mutateAsync({ deliveryId: delivery.id, reason });
         void notifyWarning();
-        Popup.show({ type: 'info', text1: 'Đã báo giao thất bại' });
+        Popup.show({ type: 'info', text1: 'Ðã báo giao th?t b?i' });
       } else {
         await cancelAssignment.mutateAsync({
           deliveryId: delivery.id,
           reason: reason || undefined,
         });
         void notifySuccess();
-        Popup.show({ type: 'info', text1: 'Đã huỷ nhận đơn' });
+        Popup.show({ type: 'info', text1: 'Ðã hu? nh?n don' });
       }
       closeReasonSheet();
       setReasonText('');
@@ -850,8 +849,8 @@ export default function VolunteerActiveScreen() {
       void notifyError();
       Popup.show({
         type: 'error',
-        text1: 'Thao tác thất bại',
-        text2: e?.response?.data?.error?.message ?? 'Vui lòng thử lại.',
+        text1: 'Thao tác th?t b?i',
+        text2: e?.response?.data?.error?.message ?? 'Vui lòng th? l?i.',
       });
     }
   };
@@ -865,21 +864,24 @@ export default function VolunteerActiveScreen() {
       void notifySuccess();
       Popup.show({
         type: 'success',
-        text1: 'Ảnh đã sẵn sàng',
-        text2: 'Bấm xác nhận để chuyển sang bước giao hàng.',
+        text1: '?nh dã s?n sàng',
+        text2: 'B?m xác nh?n d? chuy?n sang bu?c giao hàng.',
       });
     } else {
       try {
+        const successText = delivery.source === 'reservation'
+          ? 'Ðã bàn giao cho ngu?i nh?n'
+          : 'Ðã bàn giao cho b?p';
         await updateDeliveryStatus(delivery, 'delivered', {
           photo,
-          successText: 'Đã bàn giao cho bếp',
+          successText,
         });
       } catch (e: any) {
         void notifyError();
         Popup.show({
           type: 'error',
-          text1: 'Không thể hoàn tất giao hàng',
-          text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng thử lại.',
+          text1: 'Không th? hoàn t?t giao hàng',
+          text2: e?.response?.data?.error?.message ?? e?.message ?? 'Vui lòng th? l?i.',
         });
       } finally {
         setPhotoReview(null);
@@ -894,8 +896,8 @@ export default function VolunteerActiveScreen() {
   if (isLoading && !delivery) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ScreenHeader title="Đang giao" />
-        <ScreenState kind="loading" title="Đang tải đơn giao" />
+        <ScreenHeader title="Ðang giao" />
+        <ScreenState kind="loading" title="Ðang t?i don giao" />
       </SafeAreaView>
     );
   }
@@ -903,17 +905,17 @@ export default function VolunteerActiveScreen() {
   if (!delivery) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ScreenHeader title="Đang giao" />
+        <ScreenHeader title="Ðang giao" />
         <ScrollView
           contentContainerStyle={styles.emptyWrap}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         >
           <MaterialCommunityIcons name="truck-check-outline" size={64} color={COLORS.muted} />
-          <Text style={styles.emptyTitle}>Chưa có đơn đang giao</Text>
+          <Text style={styles.emptyTitle}>Chua có don dang giao</Text>
           <Text style={styles.emptySub}>
             {isError
-              ? 'Không tải được dữ liệu. Kéo để thử lại.'
-              : 'Hãy đăng ký ca giao hàng rồi tự nhận đơn phù hợp ở tab Giao hàng.'}
+              ? 'Không t?i du?c d? li?u. Kéo d? th? l?i.'
+              : 'Hãy dang ký ca giao hàng r?i t? nh?n don phù h?p ? tab Giao hàng.'}
           </Text>
         </ScrollView>
         <DeliveredSuccessModal
@@ -937,10 +939,10 @@ export default function VolunteerActiveScreen() {
   const phone = reservation?.receiver?.user.phone ?? null;
   const distanceLabel = formatKm(delivery.distanceKm);
   const deliveryTitle =
-    reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuyến giao chiến dịch';
+    reservation?.listing.title ?? transport?.campaignTitle ?? 'Chuy?n giao chi?n d?ch';
   const quantity = reservation?.quantity ?? null;
   const recipientName =
-    reservation?.receiver?.user.fullName ?? transport?.campaignTitle ?? 'Bếp chiến dịch';
+    reservation?.receiver?.user.fullName ?? transport?.campaignTitle ?? 'B?p chi?n d?ch';
   const scheduledDeliveryLabel = formatScheduledDelivery(reservation?.deliveryScheduledAt);
   const earlyCompleteMinutes = earlyCompleteMinutesOf(delivery);
   const earliestCompleteMs = earliestCompleteAtMs(
@@ -963,9 +965,9 @@ export default function VolunteerActiveScreen() {
   const routeTargets: RouteTarget[] = [
     {
       key: 'pickup',
-      title: 'Điểm lấy hàng',
+      title: 'Ði?m l?y hàng',
       subtitle:
-        delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chưa có địa chỉ lấy hàng',
+        delivery.pickup.address ?? reservation?.listing.pickupAddress ?? 'Chua có d?a ch? l?y hàng',
       address: delivery.pickup.address ?? reservation?.listing.pickupAddress,
       coords: pickup,
       icon: 'storefront-outline',
@@ -973,7 +975,7 @@ export default function VolunteerActiveScreen() {
     },
     {
       key: 'dropoff',
-      title: isCampaignTransport ? 'Bếp nhận hàng' : 'Điểm giao hàng',
+      title: isCampaignTransport ? 'B?p nh?n hàng' : 'Ði?m giao hàng',
       subtitle: delivery.destination.address ?? reservation?.receiver?.address ?? recipientName,
       address: delivery.destination.address ?? reservation?.receiver?.address,
       coords: dropoff,
@@ -995,7 +997,7 @@ export default function VolunteerActiveScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Đang giao" />
+      <ScreenHeader title="Ðang giao" />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
@@ -1021,7 +1023,7 @@ export default function VolunteerActiveScreen() {
 
         <FadeInUp delay={140} style={styles.routePanel}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Lộ trình hôm nay</Text>
+            <Text style={styles.sectionTitle}>L? trình hôm nay</Text>
             <Button
               mode="text"
               compact
@@ -1029,7 +1031,7 @@ export default function VolunteerActiveScreen() {
               textColor={COLORS.primary}
               onPress={() => void openMaps(activeTarget)}
             >
-              Mở Maps
+              M? Maps
             </Button>
           </View>
           {routeTargets.map((target) => {
@@ -1063,7 +1065,7 @@ export default function VolunteerActiveScreen() {
                   style={styles.mapButton}
                   onPress={() => void openMaps(target)}
                 >
-                  Đi
+                  Ði
                 </Button>
               </View>
             );
@@ -1077,13 +1079,13 @@ export default function VolunteerActiveScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{deliveryTitle}</Text>
-              {quantity != null ? <Text style={styles.qty}>Số lượng: {quantity}</Text> : null}
+              {quantity != null ? <Text style={styles.qty}>S? lu?ng: {quantity}</Text> : null}
             </View>
           </View>
           <View style={styles.receiverRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locLabel}>
-                {isCampaignTransport ? 'Bếp nhận hàng' : 'Người nhận'}
+                {isCampaignTransport ? 'B?p nh?n hàng' : 'Ngu?i nh?n'}
               </Text>
               <Text style={styles.locValue}>{recipientName}</Text>
               {routeTargets[1].address ? (
@@ -1099,7 +1101,7 @@ export default function VolunteerActiveScreen() {
                 style={styles.callButton}
                 onPress={() => Linking.openURL(`tel:${phone}`)}
               >
-                Gọi
+                G?i
               </Button>
             ) : null}
           </View>
@@ -1113,7 +1115,7 @@ export default function VolunteerActiveScreen() {
                 style={styles.chatActionBtn}
                 onPress={() => openChatSheet('receiver')}
               >
-                Nhắn người nhận
+                Nh?n ngu?i nh?n
               </Button>
               <Button
                 mode="outlined"
@@ -1123,7 +1125,7 @@ export default function VolunteerActiveScreen() {
                 style={styles.chatActionBtn}
                 onPress={() => openChatSheet('provider')}
               >
-                Nhắn cửa hàng
+                Nh?n c?a hàng
               </Button>
             </View>
           ) : null}
@@ -1146,23 +1148,23 @@ export default function VolunteerActiveScreen() {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.scheduleGuardTitle}>Giờ nhận đã hẹn</Text>
+                <Text style={styles.scheduleGuardTitle}>Gi? nh?n dã h?n</Text>
                 <Text style={styles.scheduleGuardTime}>{scheduledDeliveryLabel}</Text>
               </View>
             </View>
             <Text style={styles.scheduleGuardHint}>
               {isCompletingTooEarly
-                ? `Còn ${earlyCompletionWaitLabel} nữa mới được xác nhận bàn giao. Có thể chuẩn bị lộ trình, chat hoặc gọi trước.`
+                ? `Còn ${earlyCompletionWaitLabel} n?a m?i du?c xác nh?n bàn giao. Có th? chu?n b? l? trình, chat ho?c g?i tru?c.`
                 : earliestCompleteLabel
-                  ? `Có thể xác nhận bàn giao từ ${earliestCompleteLabel}.`
-                  : 'Có thể xác nhận bàn giao khi đã gặp đúng người nhận.'}
+                  ? `Có th? xác nh?n bàn giao t? ${earliestCompleteLabel}.`
+                  : 'Có th? xác nh?n bàn giao khi dã g?p dúng ngu?i nh?n.'}
             </Text>
           </FadeInUp>
         ) : null}
 
         <FadeInUp delay={260} style={styles.progressPanel}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Tiến trình giao hàng</Text>
+            <Text style={styles.sectionTitle}>Ti?n trình giao hàng</Text>
             <Text style={styles.stepCount}>
               {displayIndex + 1}/{progressSteps.length}
             </Text>
@@ -1210,16 +1212,16 @@ export default function VolunteerActiveScreen() {
           {hasPickupPhoto ? (
             <View style={styles.photoReady}>
               <MaterialCommunityIcons name="image-check-outline" size={18} color={COLORS.success} />
-              <Text style={styles.photoReadyText}>Ảnh hàng đã sẵn sàng, chờ xác nhận.</Text>
+              <Text style={styles.photoReadyText}>?nh hàng dã s?n sàng, ch? xác nh?n.</Text>
             </View>
           ) : null}
           {delivery.qcPhotoUrl ? (
             <View style={styles.qcPhotoReview}>
               <AppImage source={{ uri: delivery.qcPhotoUrl }} style={styles.qcPhotoThumb} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.qcPhotoTitle}>Ảnh QC lúc lấy hàng</Text>
+                <Text style={styles.qcPhotoTitle}>?nh QC lúc l?y hàng</Text>
                 <Text style={styles.qcPhotoHint}>
-                  Đã lưu làm bằng chứng tình trạng hàng trước khi bàn giao.
+                  Ðã luu làm b?ng ch?ng tình tr?ng hàng tru?c khi bàn giao.
                 </Text>
               </View>
             </View>
@@ -1238,7 +1240,7 @@ export default function VolunteerActiveScreen() {
             contentStyle={styles.primaryContent}
           >
             {isCompletingTooEarly
-              ? 'Chờ tới gần giờ hẹn'
+              ? 'Ch? t?i g?n gi? h?n'
               : advanceLabel(delivery.status, hasPickupPhoto, isCampaignTransport)}
           </Button>
         ) : null}
@@ -1253,7 +1255,7 @@ export default function VolunteerActiveScreen() {
               textColor={COLORS.onSurfaceVariant}
               style={[styles.secondaryBtn, { borderColor: COLORS.outline }]}
             >
-              Huỷ nhận đơn
+              Hu? nh?n don
             </Button>
           ) : null}
           {canFail ? (
@@ -1265,7 +1267,7 @@ export default function VolunteerActiveScreen() {
               textColor={COLORS.danger}
               style={[styles.secondaryBtn, { borderColor: COLORS.danger }]}
             >
-              Giao thất bại
+              Giao th?t b?i
             </Button>
           ) : null}
         </View>
@@ -1276,7 +1278,7 @@ export default function VolunteerActiveScreen() {
           onPress={() => setReportVisible(true)}
           textColor={COLORS.onSurfaceVariant}
         >
-          Báo cáo sự cố
+          Báo cáo s? c?
         </Button>
       </ScrollView>
 
@@ -1289,15 +1291,15 @@ export default function VolunteerActiveScreen() {
         keyboardBlurBehavior="restore"
         onDismiss={() => setReasonMode(null)}
         handleIndicatorStyle={styles.sheetHandle}
-        accessibilityLabel={reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
+        accessibilityLabel={reasonMode === 'fail' ? 'Báo giao th?t b?i' : 'Hu? nh?n don'}
       >
         <BottomSheetView style={styles.sheet}>
           <Text style={styles.dialogTitle}>
-            {reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
+            {reasonMode === 'fail' ? 'Báo giao th?t b?i' : 'Hu? nh?n don'}
           </Text>
           <BottomSheetTextInput
             placeholder={
-              reasonMode === 'fail' ? 'Lý do giao thất bại (bắt buộc)' : 'Lý do huỷ (tuỳ chọn)'
+              reasonMode === 'fail' ? 'Lý do giao th?t b?i (b?t bu?c)' : 'Lý do hu? (tu? ch?n)'
             }
             value={reasonText}
             onChangeText={setReasonText}
@@ -1306,12 +1308,12 @@ export default function VolunteerActiveScreen() {
             editable={!busy}
             style={styles.reasonInput}
             accessibilityLabel={
-              reasonMode === 'fail' ? 'Lý do giao thất bại' : 'Lý do huỷ nhận đơn'
+              reasonMode === 'fail' ? 'Lý do giao th?t b?i' : 'Lý do hu? nh?n don'
             }
           />
           <View style={styles.sheetActions}>
             <Button onPress={closeReasonSheet} textColor={COLORS.onSurfaceVariant} disabled={busy}>
-              Đóng
+              Ðóng
             </Button>
             <Button
               mode="contained"
@@ -1320,7 +1322,7 @@ export default function VolunteerActiveScreen() {
               disabled={busy}
               buttonColor={reasonMode === 'fail' ? COLORS.danger : COLORS.primary}
             >
-              Xác nhận
+              Xác nh?n
             </Button>
           </View>
         </BottomSheetView>
@@ -1334,7 +1336,7 @@ export default function VolunteerActiveScreen() {
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         handleIndicatorStyle={styles.sheetHandle}
-        accessibilityLabel="Nhập mã QR người nhận"
+        accessibilityLabel="Nh?p mã QR ngu?i nh?n"
       >
         <BottomSheetView style={styles.sheet}>
           <View style={styles.qrHeader}>
@@ -1342,9 +1344,9 @@ export default function VolunteerActiveScreen() {
               <MaterialCommunityIcons name="qrcode-scan" size={22} color={COLORS.purple} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.dialogTitle}>Mã người nhận</Text>
+              <Text style={styles.dialogTitle}>Mã ngu?i nh?n</Text>
               <Text style={styles.sheetSub}>
-                Quét hoặc nhập mã QR trên màn nhận hàng để hoàn tất.
+                Quét ho?c nh?p mã QR trên màn nh?n hàng d? hoàn t?t.
               </Text>
             </View>
           </View>
@@ -1368,13 +1370,13 @@ export default function VolunteerActiveScreen() {
                     size={38}
                     color={COLORS.onSurfaceVariant}
                   />
-                  <Text style={styles.scannerHint}>Cần quyền camera để quét mã QR.</Text>
+                  <Text style={styles.scannerHint}>C?n quy?n camera d? quét mã QR.</Text>
                   <Button
                     mode="contained"
                     buttonColor={COLORS.primary}
                     onPress={requestCameraPermission}
                   >
-                    Cấp quyền camera
+                    C?p quy?n camera
                   </Button>
                 </View>
               ) : (
@@ -1394,7 +1396,7 @@ export default function VolunteerActiveScreen() {
                     }}
                     hitSlop={8}
                     accessibilityRole="button"
-                    accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
+                    accessibilityLabel={torch ? 'T?t dèn flash' : 'B?t dèn flash'}
                   >
                     <MaterialCommunityIcons
                       name={torch ? 'flash' : 'flash-off'}
@@ -1408,13 +1410,13 @@ export default function VolunteerActiveScreen() {
               {qrScanning ? (
                 <View style={styles.scanningOverlay}>
                   <ActivityIndicator color="#fff" />
-                  <Text style={styles.scanningText}>Đang xác nhận</Text>
+                  <Text style={styles.scanningText}>Ðang xác nh?n</Text>
                 </View>
               ) : null}
             </View>
           ) : null}
           <BottomSheetTextInput
-            placeholder="Dán hoặc nhập mã QR"
+            placeholder="Dán ho?c nh?p mã QR"
             value={qrToken}
             onChangeText={(value) => {
               setQrToken(value);
@@ -1423,7 +1425,7 @@ export default function VolunteerActiveScreen() {
             autoCapitalize="none"
             editable={!busy}
             style={styles.qrInput}
-            accessibilityLabel="Mã QR người nhận"
+            accessibilityLabel="Mã QR ngu?i nh?n"
           />
           {qrError ? (
             <View style={styles.qrErrorRow}>
@@ -1437,7 +1439,7 @@ export default function VolunteerActiveScreen() {
               textColor={COLORS.onSurfaceVariant}
               disabled={busy}
             >
-              Đóng
+              Ðóng
             </Button>
             <Button
               mode="contained"
@@ -1447,7 +1449,7 @@ export default function VolunteerActiveScreen() {
               disabled={busy}
               buttonColor={COLORS.primary}
             >
-              Hoàn tất
+              Hoàn t?t
             </Button>
           </View>
         </BottomSheetView>
@@ -1462,7 +1464,7 @@ export default function VolunteerActiveScreen() {
         keyboardBlurBehavior="restore"
         onDismiss={handleChatDismiss}
         handleIndicatorStyle={styles.sheetHandle}
-        accessibilityLabel={chatRole ? `Nhắn ${CHAT_ROLE_LABEL[chatRole]}` : 'Nhắn tin theo đơn'}
+        accessibilityLabel={chatRole ? `Nh?n ${CHAT_ROLE_LABEL[chatRole]}` : 'Nh?n tin theo don'}
       >
         <BottomSheetView style={styles.chatSheet}>
           <View style={styles.chatHeader}>
@@ -1478,13 +1480,13 @@ export default function VolunteerActiveScreen() {
                 {chatPartner
                   ? chatPartner.name
                   : chatRole
-                    ? `Nhắn ${CHAT_ROLE_LABEL[chatRole]}`
-                    : 'Nhắn tin'}
+                    ? `Nh?n ${CHAT_ROLE_LABEL[chatRole]}`
+                    : 'Nh?n tin'}
               </Text>
               <Text style={styles.sheetSub}>
                 {chatRole
-                  ? `Trao đổi riêng với ${CHAT_ROLE_LABEL[chatRole]} về đơn này.`
-                  : 'Cuộc trò chuyện theo đơn.'}
+                  ? `Trao d?i riêng v?i ${CHAT_ROLE_LABEL[chatRole]} v? don này.`
+                  : 'Cu?c trò chuy?n theo don.'}
               </Text>
             </View>
             {chatPartner?.phone ? (
@@ -1492,7 +1494,7 @@ export default function VolunteerActiveScreen() {
                 style={styles.chatCallBtn}
                 onPress={() => Linking.openURL(`tel:${chatPartner.phone}`)}
                 accessibilityRole="button"
-                accessibilityLabel={`Gọi ${chatPartner.name}`}
+                accessibilityLabel={`G?i ${chatPartner.name}`}
                 hitSlop={8}
               >
                 <MaterialCommunityIcons name="phone-outline" size={20} color={COLORS.primary} />
@@ -1509,7 +1511,7 @@ export default function VolunteerActiveScreen() {
             {chat.isLoading ? (
               <View style={styles.chatState}>
                 <ActivityIndicator color={COLORS.primary} />
-                <Text style={styles.chatStateText}>Đang tải cuộc trò chuyện</Text>
+                <Text style={styles.chatStateText}>Ðang t?i cu?c trò chuy?n</Text>
               </View>
             ) : chat.isError ? (
               <View style={styles.chatState}>
@@ -1518,7 +1520,7 @@ export default function VolunteerActiveScreen() {
                   size={28}
                   color={COLORS.error}
                 />
-                <Text style={styles.chatStateText}>Không mở được cuộc trò chuyện.</Text>
+                <Text style={styles.chatStateText}>Không m? du?c cu?c trò chuy?n.</Text>
               </View>
             ) : chatMessagesCount === 0 ? (
               <View style={styles.chatState}>
@@ -1527,7 +1529,7 @@ export default function VolunteerActiveScreen() {
                   size={30}
                   color={COLORS.onSurfaceVariant}
                 />
-                <Text style={styles.chatStateText}>Chưa có tin nhắn nào.</Text>
+                <Text style={styles.chatStateText}>Chua có tin nh?n nào.</Text>
               </View>
             ) : (
               chat.data!.messages.map((message) => {
@@ -1565,7 +1567,7 @@ export default function VolunteerActiveScreen() {
 
           <View style={styles.chatComposer}>
             <BottomSheetTextInput
-              placeholder={chatPartner ? `Nhắn cho ${chatPartner.name}` : 'Nhập tin nhắn'}
+              placeholder={chatPartner ? `Nh?n cho ${chatPartner.name}` : 'Nh?p tin nh?n'}
               value={chatDraft}
               onChangeText={(value) => {
                 setChatDraft(value);
@@ -1575,7 +1577,7 @@ export default function VolunteerActiveScreen() {
               maxLength={1000}
               editable={!sendChat.isPending && !!chatPartner}
               style={styles.chatInput}
-              accessibilityLabel="Nội dung tin nhắn"
+              accessibilityLabel="N?i dung tin nh?n"
             />
             <Pressable
               style={[
@@ -1586,7 +1588,7 @@ export default function VolunteerActiveScreen() {
               onPress={() => void submitChatMessage()}
               disabled={!chatDraft.trim() || !chatPartner || sendChat.isPending}
               accessibilityRole="button"
-              accessibilityLabel="Gửi tin nhắn"
+              accessibilityLabel="G?i tin nh?n"
             >
               {sendChat.isPending ? (
                 <ActivityIndicator size={18} color={COLORS.surface} />
@@ -1601,7 +1603,7 @@ export default function VolunteerActiveScreen() {
             textColor={COLORS.onSurfaceVariant}
             disabled={sendChat.isPending}
           >
-            Đóng
+            Ðóng
           </Button>
         </BottomSheetView>
       </BottomSheetModal>
@@ -1610,11 +1612,11 @@ export default function VolunteerActiveScreen() {
         visible={reportVisible}
         targetType="delivery"
         targetId={delivery.id}
-        title="Báo cáo sự cố giao hàng"
+        title="Báo cáo s? c? giao hàng"
         onDismiss={() => setReportVisible(false)}
       />
 
-      {/* Đối chiếu người nhận sau khi quét đúng QR — xác nhận rồi mới bàn giao */}
+      {/* Ð?i chi?u ngu?i nh?n sau khi quét dúng QR — xác nh?n r?i m?i bàn giao */}
       {handoverToken && delivery ? (
         <HandoverConfirmModal
           delivery={delivery}
@@ -2033,7 +2035,7 @@ const styles = StyleSheet.create({
   pointsText: { color: COLORS.warning, fontWeight: '800' },
   successBtn: { borderRadius: 14, width: '100%', marginTop: 4 },
   successBtnContent: { paddingVertical: 8 },
-  // ── Đối chiếu người nhận trước khi bàn giao ──
+  // -- Ð?i chi?u ngu?i nh?n tru?c khi bàn giao --
   handoverPhotoWrap: { alignItems: 'center', gap: 6, marginTop: 4 },
   handoverPhoto: {
     width: 132,

@@ -361,14 +361,15 @@ export interface SubmitProviderProposalInput {
  * Danh sách chiến dịch đang mở/đang diễn ra (open + in_progress). GET /campaigns
  * Mọi role đăng nhập đều xem được; provider dùng để chọn chiến dịch quyên góp.
  */
-export function useCampaigns() {
+export function useCampaigns(enabled: boolean = true, pollingEnabled: boolean = enabled) {
   return useQuery({
     queryKey: ['campaigns', 'open'],
+    enabled,
     staleTime: 0,
     refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
-    refetchInterval: 5_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: enabled,
+    refetchInterval: pollingEnabled ? 15_000 : false,
     refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign[]>>(endpoints.campaigns.list);
@@ -378,12 +379,12 @@ export function useCampaigns() {
 }
 
 /** Chi tiết 1 chiến dịch (kèm menu, lịch trình, vật phẩm, TNV, quyên góp). GET /campaigns/:id */
-export function useCampaignDetail(id?: string) {
+export function useCampaignDetail(id?: string, enabled: boolean = true, pollingEnabled: boolean = enabled) {
   return useQuery({
     queryKey: ['campaign', id],
-    enabled: !!id,
+    enabled: enabled && !!id,
     staleTime: 5_000,
-    refetchInterval: 8_000,
+    refetchInterval: pollingEnabled ? 15_000 : false,
     refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<Campaign>>(endpoints.campaigns.detail(id!));
@@ -927,12 +928,12 @@ export function useApplyCampaign() {
 }
 
 /** Việc bếp ăn TNV đã đăng ký. GET /campaigns/my-tasks */
-export function useMyTasks(enabled: boolean = true) {
+export function useMyTasks(enabled: boolean = true, pollingEnabled: boolean = enabled) {
   return useQuery({
     queryKey: ['campaign-tasks'],
     enabled,
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    refetchInterval: pollingEnabled ? 15_000 : false,
     refetchIntervalInBackground: false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<CampaignTask[]>>(endpoints.campaigns.myTasks);
@@ -961,12 +962,12 @@ export function useConfirmCampaignAssignment() {
 }
 
 /** Chi tiết nhiệm vụ theo assignment, gồm món/khâu hoặc các đợt phát được giao. */
-export function useMyTaskDetail(assignmentId?: string, enabled: boolean = true) {
+export function useMyTaskDetail(assignmentId?: string, enabled: boolean = true, pollingEnabled: boolean = enabled) {
   return useQuery({
     queryKey: ['campaigns', 'my-task-detail', assignmentId],
     enabled: enabled && !!assignmentId,
     staleTime: 5_000,
-    refetchInterval: 15_000,
+    refetchInterval: pollingEnabled ? 15_000 : false,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<MyTaskDetail>>(
         endpoints.campaigns.myTaskDetail(assignmentId!)

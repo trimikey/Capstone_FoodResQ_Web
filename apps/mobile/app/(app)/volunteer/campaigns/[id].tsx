@@ -88,10 +88,13 @@ export default function VolunteerCampaignDetailScreen() {
     returnTo?: string;
     returnSegment?: 'open' | 'tasks';
   }>();
-  const { data: c, isLoading, isError, refetch } = useCampaignDetail(id);
+  const [screenFocused, setScreenFocused] = useState(false);
+  const queriesEnabled = !!id;
+  const pollingEnabled = screenFocused && !!id;
+  const { data: c, isLoading, isError, refetch } = useCampaignDetail(id, queriesEnabled, pollingEnabled);
   const { data: volunteerProfile } = useVolunteerMe();
-  const { data: myTasks, refetch: refetchTasks } = useMyTasks(true);
-  const { data: shifts = [], refetch: refetchShifts } = useShifts(id);
+  const { data: myTasks, refetch: refetchTasks } = useMyTasks(queriesEnabled, pollingEnabled);
+  const { data: shifts = [], refetch: refetchShifts } = useShifts(id, queriesEnabled, pollingEnabled);
   const { data: kitchenMenu = [] } = useMenuItems(id);
   const applyMut = useApplyCampaign();
   const applyShiftMut = useApplyShift();
@@ -104,16 +107,18 @@ export default function VolunteerCampaignDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setScreenFocused(true);
       refetchCampaignState();
+      return () => setScreenFocused(false);
     }, [refetchCampaignState])
   );
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refetchCampaignState();
+      if (state === 'active' && screenFocused) refetchCampaignState();
     });
     return () => sub.remove();
-  }, [refetchCampaignState]);
+  }, [refetchCampaignState, screenFocused]);
 
   const myCampaignTasks = (myTasks ?? []).filter((t) => t.campaign.id === id);
   const hasPendingApplication = myCampaignTasks.some((t) => t.status === 'pending');
@@ -130,8 +135,8 @@ export default function VolunteerCampaignDetailScreen() {
       return;
     }
     if (returnTo === '/volunteer/campaigns' || returnTo === '/(app)/volunteer/campaigns') {
-      router.navigate({
-        pathname: '/volunteer/campaigns',
+      router.replace({
+        pathname: '/(app)/volunteer/campaigns',
         params: returnSegment ? { segment: returnSegment } : undefined,
       });
       return;
@@ -140,7 +145,7 @@ export default function VolunteerCampaignDetailScreen() {
       router.back();
       return;
     }
-    router.navigate('/volunteer/campaigns');
+    router.replace('/(app)/volunteer/campaigns');
   };
 
   const Header = (
@@ -151,7 +156,7 @@ export default function VolunteerCampaignDetailScreen() {
     </View>
   );
 
-  if (isLoading) {
+  if (!screenFocused || isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {Header}

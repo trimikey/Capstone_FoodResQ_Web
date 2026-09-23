@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet, Pressable, Linking } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -36,12 +36,9 @@ function formatKm(km: unknown): string | null {
 /** Thẻ theo dõi giao hàng tận nơi: timeline trạng thái + thông tin shipper + khoảng cách. */
 export function DeliveryTrackingCard({ reservationId }: Props) {
   const { data, isLoading, isError } = useDeliveryTracking(reservationId);
-  const [photoFailed, setPhotoFailed] = useState(false);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   const profilePhotoUrl = data?.shipper?.profilePhotoUrl ?? null;
-
-  useEffect(() => {
-    setPhotoFailed(false);
-  }, [profilePhotoUrl]);
+  const photoFailed = profilePhotoUrl != null && failedPhotoUrl === profilePhotoUrl;
 
   if (isLoading) {
     return (
@@ -125,7 +122,7 @@ export function DeliveryTrackingCard({ reservationId }: Props) {
               <AppImage
                 source={{ uri: profilePhotoUrl }}
                 style={styles.avatarImg}
-                onError={() => setPhotoFailed(true)}
+                onError={() => setFailedPhotoUrl(profilePhotoUrl)}
               />
             ) : (
               <View style={styles.avatar}>

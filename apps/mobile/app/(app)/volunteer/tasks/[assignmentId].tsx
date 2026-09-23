@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Dialog, Portal, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, type Href, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   type AssignedDistribution,
   type DishStep,
@@ -57,8 +57,22 @@ function formatDateTime(value?: string | null) {
 
 export default function VolunteerTaskDetailScreen() {
   const { assignmentId } = useLocalSearchParams<{ assignmentId: string }>();
-  const taskQuery = useMyTaskDetail(assignmentId);
+  const [screenFocused, setScreenFocused] = useState(false);
+  const taskQuery = useMyTaskDetail(assignmentId, true, screenFocused);
+  const refetchTask = taskQuery.refetch;
   const advance = useAdvanceTask();
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      void refetchTask();
+      return () => setScreenFocused(false);
+    }, [refetchTask])
+  );
+
+  const handleBack = () => {
+    router.replace({ pathname: '/(app)/volunteer/campaigns', params: { segment: 'tasks' } });
+  };
 
   const handleCheckIn = async () => {
     const detail = taskQuery.data;
@@ -88,10 +102,10 @@ export default function VolunteerTaskDetailScreen() {
     }
   };
 
-  if (taskQuery.isLoading) {
+  if (!screenFocused || taskQuery.isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <TaskHeader title="Nhiệm vụ" />
+        <TaskHeader title="Nhiệm vụ" onBack={handleBack} />
         <ScreenState kind="loading" title="Đang tải nhiệm vụ" />
       </SafeAreaView>
     );
@@ -100,7 +114,7 @@ export default function VolunteerTaskDetailScreen() {
   if (taskQuery.isError || !taskQuery.data) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <TaskHeader title="Nhiệm vụ" />
+        <TaskHeader title="Nhiệm vụ" onBack={handleBack} />
         <ScreenState
           kind="error"
           title="Không tải được nhiệm vụ"
@@ -122,7 +136,7 @@ export default function VolunteerTaskDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca vận hành của tôi'} />
+      <TaskHeader title={detail.assignment.role === 'chef' ? 'Ca bếp của tôi' : 'Ca vận hành của tôi'} onBack={handleBack} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -195,10 +209,10 @@ export default function VolunteerTaskDetailScreen() {
   );
 }
 
-function TaskHeader({ title }: { title: string }) {
+function TaskHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <View style={styles.header}>
-      <BackButton onPress={() => router.back()} />
+      <BackButton onPress={onBack} />
       <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
       <NotificationBell />
     </View>
@@ -717,17 +731,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
           ) : (
             <View style={styles.distributionActions}>
               <Button
-                mode="outlined"
-                icon="qrcode-scan"
+                mode="contained"
+                icon="camera"
                 disabled={!checkedIn}
-                onPress={() => router.push(
-                  `/(app)/volunteer/scan-handoff?campaignId=${encodeURIComponent(detail.campaign.id)}&distributionId=${encodeURIComponent(distribution.id)}&roundLabel=${encodeURIComponent(distribution.roundLabel ?? 'Đợt phân phát')}` as Href
-                )}
+                onPress={() => openClose(distribution)}
               >
-                Quét người nhận
-              </Button>
-              <Button mode="contained" icon="check" disabled={!checkedIn} onPress={() => openClose(distribution)}>
-                Phát xong
+                Chụp ảnh xác nhận
               </Button>
             </View>
           )}

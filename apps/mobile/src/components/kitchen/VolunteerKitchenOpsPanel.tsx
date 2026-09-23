@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { router, type Href } from 'expo-router';
 import { Button, Chip, Dialog, Portal, Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafetyCheckResult, SafetyCheckType } from '@foodresq/types';
@@ -260,17 +259,6 @@ export function VolunteerKitchenOpsPanel({ campaignId, isChef, isWaiter }: Props
               </View>
               <View style={styles.rowActions}>
                 <Pressable
-                  style={[styles.iconButton, styles.scanButton]}
-                  onPress={() => router.push(
-                    `/(app)/volunteer/scan-handoff?campaignId=${encodeURIComponent(campaignId)}&distributionId=${encodeURIComponent(item.id)}&roundLabel=${encodeURIComponent(item.roundLabel ?? 'Đợt phân phát')}` as Href,
-                  )}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Quét mã người nhận"
-                >
-                  <MaterialCommunityIcons name="qrcode-scan" size={20} color={COLORS.purple} />
-                </Pressable>
-                <Pressable
                   style={styles.iconButton}
                   onPress={() => setFeedbackTarget(item)}
                   hitSlop={8}
@@ -463,7 +451,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.blueContainer,
   },
-  scanButton: { backgroundColor: COLORS.purpleContainer },
   dialogBody: { gap: spacing.md },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

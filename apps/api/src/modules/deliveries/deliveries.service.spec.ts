@@ -58,7 +58,7 @@ describe('DeliveriesService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('accepts campaign delivery proof without requiring reservation QR', async () => {
+  it('does not require receiver QR when a reservation handoff proof photo is present', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1' });
     prisma.delivery.findUnique.mockResolvedValue({
       id: 'delivery-1',
@@ -81,7 +81,7 @@ describe('DeliveriesService', () => {
     }));
   });
 
-  it('accepts receiver short QR code when completing a reservation delivery', async () => {
+  it('accepts handoff proof photo when completing a reservation delivery', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1', dedicationPoints: 10 });
     prisma.delivery.findUnique.mockResolvedValue({
       id: 'delivery-1',
@@ -104,9 +104,13 @@ describe('DeliveriesService', () => {
     });
 
     await expect(
-      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', undefined, '712B905E'),
+      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', 'https://proof.example/handoff.jpg'),
     ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
 
+    expect(prisma.delivery.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'delivery-1' },
+      data: expect.objectContaining({ deliveryProofUrl: 'https://proof.example/handoff.jpg' }),
+    }));
     expect(prisma.reservation.update).toHaveBeenCalledWith({
       where: { id: 'reservation-1' },
       data: { status: 'completed' },
@@ -143,10 +147,7 @@ describe('DeliveriesService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('giao hàng hoàn tất ngay cả khi QR gốc đã hết hạn — chỉ so khớp mã', async () => {
-    // Hồi quy QR 30 phút cho pickup: đơn giao thường lâu hơn nhiều. Nếu ai đó
-    // thêm check qrExpiresAt vào luồng delivered thì giao hàng đang đi sẽ
-    // fail oan tại cửa người nhận dù đã quét đúng mã.
+  it('does not require receiver QR when a reservation handoff proof photo is present', async () => {
     prisma.volunteerProfile.findUnique.mockResolvedValue({ id: 'shipper-1', dedicationPoints: 10 });
     prisma.delivery.findUnique.mockResolvedValue({
       id: 'delivery-1',
@@ -170,7 +171,7 @@ describe('DeliveriesService', () => {
     });
 
     await expect(
-      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', undefined, '712b905e'),
+      service.updateStatus('delivery-1', 'shipper-user-1', 'delivered', 'https://proof.example/handoff.jpg'),
     ).resolves.toEqual({ id: 'delivery-1', status: 'delivered' });
 
     expect(prisma.reservation.update).toHaveBeenCalled();
