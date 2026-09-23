@@ -751,6 +751,8 @@ export interface DishStep {
   scheduledTime: string;
   status: 'locked' | 'available' | 'in_progress' | 'done';
   effectiveStatus: 'locked' | 'available' | 'in_progress' | 'done';
+  /** 'ingredients' = khâu 1 khoá vì bếp chưa nhận đủ nguyên liệu. */
+  lockedReason?: 'ingredients' | null;
   completedAt: string | null;
   completedByVolunteerId: string | null;
   proofUrl: string | null;
@@ -895,6 +897,11 @@ export interface MyTaskDetail {
   distributions?: AssignedDistribution[];
   pickupOrders?: PickupOrder[];
   dishes?: DishProcessItem[];
+  /** Bếp đã NHẬN đủ nguyên liệu chưa — chưa đủ thì khâu sơ chế (và cả chuỗi) khoá. */
+  ingredients?: {
+    ready: boolean;
+    missing: Array<{ name: string; unit: string; missing: number; target: number }>;
+  };
   cookingTeam?: CookingTeamMember[];
 }
 

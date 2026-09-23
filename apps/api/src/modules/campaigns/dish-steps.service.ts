@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { missingReceivedSupplies } from './supply-progress';
 import { CampaignDishStep, CampaignMenuStepStatus } from '@prisma/client';
 import { UserRole } from '@foodresq/types';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -103,6 +104,34 @@ export class DishStepsService {
   }
 
   /** Khẳng định `userId` là TNV có phân công chef/waiter đang hoạt động trong campaign. */
+  /**
+   * Nguyên liệu bếp CÒN THIẾU (tính theo số đã NHẬN, không tính hàng mới hứa góp)
+   * của nhiều chiến dịch một lượt. Mảng rỗng = đủ nguyên liệu (hoặc chiến dịch không
+   * khai mục nguyên liệu đo được nào).
+   */
+  private async missingIngredientsByCampaign(
+    campaignIds: string[],
+  ): Promise<Map<string, Array<{ name: string; unit: string; missing: number; target: number }>>> {
+    const result = new Map<string, Array<{ name: string; unit: string; missing: number; target: number }>>();
+    if (campaignIds.length === 0) return result;
+    const campaigns = await this.prisma.kitchenCampaign.findMany({
+      where: { id: { in: campaignIds } },
+      select: {
+        id: true,
+        supplyItems: true,
+        donations: { select: { itemName: true, quantity: true, status: true } },
+      },
+    });
+    for (const c of campaigns) {
+      result.set(c.id, missingReceivedSupplies(c.supplyItems, c.donations));
+    }
+    return result;
+  }
+
+  private async missingIngredients(campaignId: string) {
+    return (await this.missingIngredientsByCampaign([campaignId])).get(campaignId) ?? [];
+  }
+
   private async assertAssignedVolunteer(campaignId: string, userId: string) {
     const volunteer = await this.prisma.volunteerProfile.findUnique({
       where: { userId },
@@ -273,8 +302,14 @@ export class DishStepsService {
     campaign: CampaignTiming,
     /** true (toggle admin bật) = bỏ ràng buộc "đến giờ dự kiến" — dùng để test. */
     ignoreSchedule = false,
+    /**
+     * Bếp đã NHẬN đủ nguyên liệu chưa. Chỉ chặn khâu 1 (sơ chế) — các khâu sau vốn
+     * đã chờ khâu trước, nên chưa đủ nguyên liệu thì cả chuỗi (kể cả nấu) đều khoá.
+     */
+    ingredientsReady = true,
   ): CampaignMenuStepStatus {
     if (step.status === 'done') return 'done';
+    if (isFirstStep && !ingredientsReady) return 'locked';
     const onTime =
       ignoreSchedule ||
       Date.now() >= stepDueAtUtc(campaign, step.scheduledTime, step.workDate ?? null).getTime();
@@ -322,6 +357,7 @@ export class DishStepsService {
     });
     if (campaigns.length === 0) return 0;
     const timingById = new Map(campaigns.map((c) => [c.id, c]));
+    const missingById = await this.missingIngredientsByCampaign(campaigns.map((c) => c.id));
 
     const allSteps = await this.prisma.campaignDishStep.findMany({
       where: { campaignId: { in: campaigns.map((c) => c.id) }, status: { in: ['locked', 'available'] } },
@@ -346,8 +382,10 @@ export class DishStepsService {
         // Toggle test của admin bật → coi như luôn đến giờ.
         const onTime =
           earlyOk || (timing ? nowMs >= stepDueAtUtc(timing, s.scheduledTime, s.workDate).getTime() : false);
-        // Chỉ mở nếu đến giờ VÀ khâu trước đã done.
-        if (onTime && prevDone && s.status === 'locked') {
+        // Khâu 1 còn phải chờ bếp NHẬN ĐỦ nguyên liệu.
+        const ingredientsOk = s.stepOrder !== 1 || (missingById.get(s.campaignId) ?? []).length === 0;
+        // Chỉ mở nếu đến giờ VÀ khâu trước đã done (VÀ đủ nguyên liệu với khâu 1).
+        if (onTime && prevDone && ingredientsOk && s.status === 'locked') {
           toOpen.push({ id: s.id });
         }
         // prevDone cho vòng lặp kế tiếp dựa trên DB status hiện tại
@@ -415,6 +453,17 @@ export class DishStepsService {
       prevStep?.status === 'done' &&
       (step.stepOrder !== 4 || prevStep.reviewStatus === 'approved');
     const earlyOk = await this.allowEarlySteps();
+    // Chưa nhận đủ nguyên liệu thì chưa được vào bếp — báo rõ còn thiếu gì.
+    if (step.stepOrder === 1 && step.status !== 'done') {
+      const missing = await this.missingIngredients(campaignId);
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Chưa đủ nguyên liệu để bắt đầu sơ chế — còn thiếu ${missing
+            .map((m) => `${m.name} ${m.missing} ${m.unit}`)
+            .join(', ')}. Bếp nhận đủ hàng thì khâu này mới mở.`,
+        );
+      }
+    }
     const effective = this.computeEffectiveStatus(step, prevOk, step.stepOrder === 1, campaignTiming, earlyOk);
     if (effective === 'locked') {
       throw new BadRequestException(
@@ -995,7 +1044,11 @@ export class DishStepsService {
       };
     }
     const earlyOk = await this.allowEarlySteps();
+    const missing = await this.missingIngredients(campaignId);
+    const ingredientsReady = missing.length === 0;
     return {
+      /** Bếp đã NHẬN đủ nguyên liệu chưa — chưa đủ thì khâu 1 (và cả chuỗi sau) khoá. */
+      ingredients: { ready: ingredientsReady, missing },
       dishes: reloaded.map((mi) => {
         const stepsWithStatus = mi.dishSteps.map((s, idx) => {
           const prev = mi.dishSteps[idx - 1];
@@ -1008,8 +1061,15 @@ export class DishStepsService {
             idx === 0,
             campaignTiming,
             earlyOk,
+            ingredientsReady,
           );
-          return { ...s, effectiveStatus: effective };
+          return {
+            ...s,
+            effectiveStatus: effective,
+            // Lý do khoá riêng cho khâu 1 để FE ghi "Chờ đủ nguyên liệu" thay vì chờ giờ.
+            lockedReason:
+              effective === 'locked' && idx === 0 && !ingredientsReady ? ('ingredients' as const) : null,
+          };
         });
         return {
           id: mi.id,

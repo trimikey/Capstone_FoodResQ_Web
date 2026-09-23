@@ -310,6 +310,19 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
         <MaterialCommunityIcons name="pot-steam-outline" size={22} color={COLORS.primary} />
         <Text style={styles.sectionOutsideTitle}>Món cần chuẩn bị ({dishes.length})</Text>
       </View>
+      {/* Chưa đủ nguyên liệu → cả chuỗi khâu khoá; nói rõ còn thiếu gì. */}
+      {detail.ingredients && !detail.ingredients.ready && dishes.length > 0 ? (
+        <View style={styles.ingredientsWarn}>
+          <MaterialCommunityIcons name="package-variant-closed-remove" size={20} color="#B45309" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ingredientsWarnTitle}>Chưa đủ nguyên liệu — chưa thể sơ chế & nấu</Text>
+            <Text style={styles.ingredientsWarnText}>
+              Còn thiếu: {detail.ingredients.missing.map((m) => `${m.name} ${m.missing} ${m.unit}`).join(', ')}.
+              {' '}Bếp nhận đủ hàng thì khâu sơ chế sẽ tự mở.
+            </Text>
+          </View>
+        </View>
+      ) : null}
       {dishes.length === 0 ? (
         <View style={styles.card}><Text style={styles.muted}>Bếp trưởng chưa thêm món cho chiến dịch.</Text></View>
       ) : dishes.map((dish) => {
@@ -409,7 +422,9 @@ function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, on
               ? step.qcFailureReason
               : awaitingQcReview
                 ? 'Chờ tổ chức duyệt ảnh QC'
-                : !previousDone
+                : step.lockedReason === 'ingredients'
+                  ? 'Chờ bếp nhận đủ nguyên liệu'
+                  : !previousDone
                   ? 'Chờ khâu trước hoàn thành'
                   : `Dự kiến ${step.scheduledTime}`}
         </Text>
@@ -1064,6 +1079,18 @@ const styles = StyleSheet.create({
   pointProofTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
   pointProofRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   pointProofThumb: { width: 56, height: 56, borderRadius: radius.sm },
+  ingredientsWarn: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+  },
+  ingredientsWarnTitle: { fontSize: 14, fontWeight: '700', color: '#78350F' },
+  ingredientsWarnText: { marginTop: 2, fontSize: 12, lineHeight: 17, color: '#92400E' },
   distributionPhotoEmpty: {
     alignItems: 'center',
     gap: 10,

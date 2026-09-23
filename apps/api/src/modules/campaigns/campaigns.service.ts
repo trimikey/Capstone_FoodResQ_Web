@@ -9,6 +9,15 @@ import { TrustService } from '@/modules/trust/trust.service';
 import { TrustScoreReason } from '@foodresq/types';
 import { DishStepsService } from './dish-steps.service';
 import { pickStockListing, unitsForQuantity, type StockListing } from './stock-match';
+import {
+  buildSupplyProgress,
+  normalizeSupplyKey,
+  parseDonationQuantity,
+  parseSupplyTargets,
+  roundQuantity,
+  type DonationForProgress,
+  type SupplyTarget,
+} from './supply-progress';
 
 /** Đơn vị số lượng của một đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
 function demandUnit(demand: { quantityUnit?: unknown } | null | undefined): string {
@@ -100,19 +109,6 @@ interface CampaignSlots {
   chefSlotsFilled: number;
   waiterSlotsFilled: number;
   shipperSlotsFilled: number;
-}
-
-interface SupplyTarget {
-  name: string;
-  key: string;
-  targetQuantity: number;
-  unit: string;
-}
-
-interface DonationForProgress {
-  itemName: string;
-  quantity: string | null;
-  status: string;
 }
 
 interface DonationDemandDetails {
@@ -279,77 +275,25 @@ export class CampaignsService {
     return 2 * R * Math.asin(Math.sqrt(h));
   }
 
+  // Logic tiến độ nguyên liệu nằm ở supply-progress.ts (dùng chung với DishStepsService).
   private normalizeSupplyKey(value: string): string {
-    return value.trim().toLocaleLowerCase('vi-VN').replace(/\s+/g, ' ');
+    return normalizeSupplyKey(value);
   }
 
   private roundQuantity(value: number): number {
-    return Math.round(value * 1000) / 1000;
+    return roundQuantity(value);
   }
 
   private parseSupplyTargets(raw: unknown): SupplyTarget[] {
-    if (!Array.isArray(raw)) return [];
-    const targets: SupplyTarget[] = [];
-    for (const item of raw) {
-      if (!item || typeof item !== 'object') continue;
-      const data = item as { name?: unknown; quantity?: unknown; unit?: unknown };
-      const name = typeof data.name === 'string' ? data.name.trim() : '';
-      const unit = typeof data.unit === 'string' ? data.unit.trim() : '';
-      const quantity =
-        typeof data.quantity === 'number'
-          ? data.quantity
-          : typeof data.quantity === 'string'
-            ? Number(data.quantity)
-            : NaN;
-      if (!name || !unit || !Number.isFinite(quantity) || quantity <= 0) continue;
-      targets.push({
-        name,
-        key: this.normalizeSupplyKey(name),
-        targetQuantity: this.roundQuantity(quantity),
-        unit,
-      });
-    }
-    return targets;
+    return parseSupplyTargets(raw);
   }
 
   private parseDonationQuantity(raw: string | null, expectedUnit: string): number | null {
-    if (!raw) return null;
-    const match = raw.trim().match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/);
-    if (!match) return null;
-    const quantity = Number(match[1].replace(',', '.'));
-    if (!Number.isFinite(quantity) || quantity <= 0) return null;
-    const unit = match[2].trim();
-    if (unit && this.normalizeSupplyKey(unit) !== this.normalizeSupplyKey(expectedUnit)) return null;
-    return quantity;
+    return parseDonationQuantity(raw, expectedUnit);
   }
 
   private buildSupplyProgress(supplyItems: unknown, donations: DonationForProgress[]) {
-    return this.parseSupplyTargets(supplyItems).map((target) => {
-      const related = donations.filter((d) => this.normalizeSupplyKey(d.itemName) === target.key);
-      const pledgedQuantity = related.reduce((sum, d) => {
-        if (!['pledged', 'received'].includes(d.status)) return sum;
-        return sum + (this.parseDonationQuantity(d.quantity, target.unit) ?? 0);
-      }, 0);
-      const receivedQuantity = related.reduce((sum, d) => {
-        if (d.status !== 'received') return sum;
-        return sum + (this.parseDonationQuantity(d.quantity, target.unit) ?? 0);
-      }, 0);
-      const committedQuantity = this.roundQuantity(pledgedQuantity);
-      const confirmedQuantity = this.roundQuantity(receivedQuantity);
-      const remainingQuantity = this.roundQuantity(Math.max(0, target.targetQuantity - committedQuantity));
-      const receivedRemainingQuantity = this.roundQuantity(Math.max(0, target.targetQuantity - confirmedQuantity));
-      return {
-        name: target.name,
-        unit: target.unit,
-        targetQuantity: target.targetQuantity,
-        pledgedQuantity: committedQuantity,
-        receivedQuantity: confirmedQuantity,
-        remainingQuantity,
-        receivedRemainingQuantity,
-        progressPercent: target.targetQuantity > 0 ? Math.min(100, Math.round((committedQuantity / target.targetQuantity) * 100)) : 0,
-        isTargetMet: remainingQuantity <= 0,
-      };
-    });
+    return buildSupplyProgress(supplyItems, donations);
   }
 
   private withSupplyProgress<T extends { supplyItems: unknown; donations?: DonationForProgress[] }>(campaign: T) {

@@ -114,7 +114,7 @@ export default function MyTaskDetailPage() {
     );
   }
 
-  const { assignment, campaign, dishes = [], cookingTeam = [], safetyLogs = [], delivery } = detail;
+  const { assignment, campaign, dishes = [], cookingTeam = [], safetyLogs = [], delivery, ingredients } = detail;
   const statusMeta = STATUS_META[assignment.status] ?? { label: assignment.status, chip: 'cm-chip cm-chip--ink' };
   const isShipper = assignment.role === 'shipper';
   const isChef = assignment.role === 'chef';
@@ -524,8 +524,29 @@ export default function MyTaskDetailPage() {
           </h2>
           <p className="text-xs text-neutral-500 mt-1">
             Mỗi khâu phải chờ <b>đến giờ dự kiến</b> VÀ <b>khâu trước hoàn thành</b> mới có thể tick.
+            Khâu sơ chế chỉ mở khi bếp đã <b>nhận đủ nguyên liệu</b>.
           </p>
         </div>
+
+        {/* Chưa đủ nguyên liệu → cả chuỗi khâu khoá; nói rõ còn thiếu gì để bếp biết đang chờ ai. */}
+        {ingredients && !ingredients.ready && dishes.length > 0 && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <span className="material-symbols-outlined shrink-0 text-amber-600">inventory_2</span>
+            <div className="min-w-0 text-sm text-amber-900">
+              <p className="font-bold">Chưa đủ nguyên liệu — chưa thể bắt đầu sơ chế &amp; nấu</p>
+              <p className="mt-1 text-xs">
+                Còn thiếu:{' '}
+                {ingredients.missing.map((m, i) => (
+                  <span key={m.name}>
+                    {i > 0 && ', '}
+                    <b>{m.name}</b> {m.missing} {m.unit}
+                  </span>
+                ))}
+                . Khi bếp xác nhận đã nhận đủ, khâu sơ chế sẽ tự mở.
+              </p>
+            </div>
+          </div>
+        )}
 
         {dishes.length === 0 ? (
           <div className="cm-card p-10 text-center">
@@ -972,7 +993,9 @@ function StepCell({
           <span className="material-symbols-outlined text-[14px]">lock</span>
           {awaitingQcReview
             ? 'Chờ tổ chức duyệt ảnh QC'
-            : !prevStepDone
+            : step.lockedReason === 'ingredients'
+              ? 'Chờ bếp nhận đủ nguyên liệu'
+              : !prevStepDone
               ? 'Chờ khâu trước hoàn thành'
               : `Chờ đến ${step.scheduledTime}`}
         </p>
