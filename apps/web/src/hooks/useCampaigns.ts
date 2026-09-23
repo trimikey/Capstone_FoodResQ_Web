@@ -861,6 +861,10 @@ export interface SupplierMatch {
   totalRemaining: number;
   /** CẬN DƯỚI: tin chưa khai `weightPerUnitKg` được tính là 0 kg. */
   estimatedKg: number;
+  /** Nhóm thực phẩm NCC đang đăng (enum FoodCategory) — để ghép đúng nguyên liệu. */
+  categories: string[];
+  /** Tên các tin đang đăng — khớp theo chữ, chắc hơn khớp theo nhóm. */
+  listingTitles: string[];
   lng: number;
   lat: number;
 }

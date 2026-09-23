@@ -6,19 +6,25 @@ import { FOOD_CATEGORY_LABEL, FoodCategory } from '@foodresq/types';
 import {
   useSupplierMatches,
   useSendSupplyRequest,
+  useSentRequests,
   type Campaign,
   type SupplierMatch,
 } from '@/hooks/useCampaigns';
 import { useProviderListings } from '@/hooks/useProviders';
+import {
+  defaultKg,
+  inferCategories,
+  suppliesForProvider,
+  type SupplyItem,
+  type SupplySuggestion,
+} from '@/lib/supply-match';
 
 /**
- * "Đơn xin thực phẩm đầu vào" — bếp khai nhu cầu nguyên liệu rồi gửi thẳng tới NCC
- * phù hợp nhất.
+ * "Đơn xin thực phẩm đầu vào" — bếp khai nhu cầu nguyên liệu rồi gửi tới NHIỀU NCC
+ * cùng lúc, mỗi NCC một dòng riêng với đúng món họ bán (vựa rau → rau, vựa gạo → gạo).
  *
- * Khác với ô "Yêu cầu" nhanh ở từng thẻ NCC bên dưới: ở đây bếp mô tả NHU CẦU trước
- * (cần gì, bao nhiêu kg, mấy giờ phải có mặt tại bếp), hệ thống mới xếp hạng NCC theo
- * khoảng cách thật từ bếp. Toàn bộ phần khai báo được lưu vào
- * `campaign_provider_requests.demand_details` để NCC đọc đúng thứ bếp cần.
+ * Mỗi dòng thành một `campaign_provider_requests` riêng; phần khai chung (ngày giờ nhận,
+ * số suất, tiêu chuẩn, ghi chú, cam kết) đi kèm mọi đơn trong `demand_details`.
  */
 
 const RADIUS_PRESETS = [2, 5, 10, 20];
@@ -30,6 +36,17 @@ const DEFAULT_STANDARDS = {
   requireQcPhoto: true,
 };
 
+/** Một NCC đã chọn + món sẽ xin từ chính NCC đó. */
+interface RequestLine {
+  providerId: string;
+  businessName: string;
+  distanceKm: number;
+  /** Nguyên liệu chiến dịch mà NCC này có thể bán — để bấm chọn nhanh. */
+  suggestions: SupplySuggestion[];
+  ingredientName: string;
+  quantityKg: string;
+}
+
 interface Props {
   campaigns: Campaign[];
 }
@@ -38,8 +55,6 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const [open, setOpen] = useState(false);
   const [campaignId, setCampaignId] = useState('');
   const [category, setCategory] = useState<string>('');
-  const [ingredientName, setIngredientName] = useState('');
-  const [quantityKg, setQuantityKg] = useState('');
   const [expectedServings, setExpectedServings] = useState('');
   const [neededDate, setNeededDate] = useState('');
   const [neededFrom, setNeededFrom] = useState('');
@@ -48,24 +63,24 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const [standards, setStandards] = useState(DEFAULT_STANDARDS);
   const [note, setNote] = useState('');
   const [waiver, setWaiver] = useState(false);
-  const [providerId, setProviderId] = useState('');
+  const [lines, setLines] = useState<RequestLine[]>([]);
+  const [sending, setSending] = useState(false);
 
   const openCampaigns = useMemo(
     () => campaigns.filter((c) => c.status === 'approved' || c.status === 'in_progress'),
     [campaigns],
   );
 
-  // Nguyên liệu tổ chức đã khai lúc TẠO chiến dịch (supplyItems) — hiện ra để bấm
-  // là điền vào đơn, khỏi nhớ/gõ lại tên + số kg. Dữ liệu cũ có thể là mảng string.
+  // Nguyên liệu tổ chức đã khai lúc TẠO chiến dịch (supplyItems). Dữ liệu cũ có thể là mảng string.
   const selectedCampaign = openCampaigns.find((c) => c.id === campaignId) ?? null;
-  const campaignSupplies = useMemo(() => {
+  const campaignSupplies = useMemo<SupplyItem[]>(() => {
     const raw = (selectedCampaign?.supplyItems ?? []) as Array<
       string | { name?: string; quantity?: number | null; unit?: string | null }
     >;
     return raw
       .map((s) =>
         typeof s === 'string'
-          ? { name: s, quantity: null as number | null, unit: null as string | null }
+          ? { name: s, quantity: null, unit: null }
           : { name: s.name ?? '', quantity: s.quantity ?? null, unit: s.unit ?? null },
       )
       .filter((s) => s.name.trim().length > 0);
@@ -75,17 +90,60 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     radiusKm,
     category: category || undefined,
   });
+  const { data: sentRequests } = useSentRequests();
   const sendRequest = useSendSupplyRequest();
 
   const matches = matchResult?.matches ?? [];
   const topMatch = matches[0] ?? null;
-  const selected = matches.find((m) => m.providerId === providerId) ?? null;
+  const selectedIds = new Set(lines.map((l) => l.providerId));
+
+  // Backend chỉ giữ MỘT đơn đang chờ cho mỗi cặp (chiến dịch, NCC): gửi lại là sửa đè
+  // đơn đó. Báo trước để bếp không tưởng mình vừa đặt thêm một món.
+  const pendingByProvider = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of sentRequests ?? []) {
+      if (r.campaignId === campaignId && r.status === 'pending') {
+        map.set(r.providerId, r.demandDetails?.ingredientName ?? 'một đơn');
+      }
+    }
+    return map;
+  }, [sentRequests, campaignId]);
+
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  function toggleProvider(m: SupplierMatch) {
+    if (selectedIds.has(m.providerId)) {
+      setLines((prev) => prev.filter((l) => l.providerId !== m.providerId));
+      return;
+    }
+    const suggestions = suppliesForProvider(campaignSupplies, m);
+    // Chỉ tự điền món NCC ĐANG ĐĂNG đúng tên — món chỉ cùng nhóm (tiệm cá ↔ thịt gà)
+    // để bếp tự bấm, tránh gửi nhầm món NCC không bán. Ưu tiên món chưa NCC nào nhận.
+    const exact = suggestions.filter((s) => s.exact);
+    const pick =
+      exact.find((s) => !lines.some((l) => sameName(l.ingredientName, s.name))) ??
+      exact[0] ??
+      null;
+    setLines((prev) => [
+      ...prev,
+      {
+        providerId: m.providerId,
+        businessName: m.businessName,
+        distanceKm: m.distanceKm,
+        suggestions,
+        ingredientName: pick?.name ?? '',
+        quantityKg: pick ? defaultKg(pick) : '',
+      },
+    ]);
+  }
+
+  function updateLine(providerId: string, patch: Partial<RequestLine>) {
+    setLines((prev) => prev.map((l) => (l.providerId === providerId ? { ...l, ...patch } : l)));
+  }
 
   function resetForm() {
     setCampaignId('');
     setCategory('');
-    setIngredientName('');
-    setQuantityKg('');
     setExpectedServings('');
     setNeededDate('');
     setNeededFrom('');
@@ -94,12 +152,14 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     setStandards(DEFAULT_STANDARDS);
     setNote('');
     setWaiver(false);
-    setProviderId('');
+    setLines([]);
   }
 
   async function handleSubmit() {
     if (!campaignId) return toast.error('Vui lòng chọn chiến dịch cần nguyên liệu.');
-    if (!providerId) return toast.error('Vui lòng chọn một nhà cung cấp ở cột bên phải.');
+    if (lines.length === 0) return toast.error('Vui lòng chọn ít nhất một nhà cung cấp ở cột bên phải.');
+    const missing = lines.find((l) => !l.ingredientName.trim());
+    if (missing) return toast.error(`Chưa nhập nguyên liệu cần lấy từ ${missing.businessName}.`);
     if (!waiver) return toast.error('Vui lòng xác nhận cam kết sử dụng phi thương mại.');
     if (neededFrom && neededTo && neededTo <= neededFrom) {
       return toast.error('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
@@ -111,36 +171,57 @@ export default function IngressRequestPanel({ campaigns }: Props) {
       return toast.error('Ngày cần nhận không được ở quá khứ.');
     }
 
-    const qty = Number(quantityKg);
     const servings = Number(expectedServings);
-    try {
-      await sendRequest.mutateAsync({
-        providerId,
-        campaignId,
-        message: note.trim() || undefined,
-        demandDetails: {
-          foodCategory: category || undefined,
-          ingredientName: ingredientName.trim() || undefined,
-          quantityKg: quantityKg && Number.isFinite(qty) && qty > 0 ? qty : undefined,
-          expectedServings:
-            expectedServings && Number.isFinite(servings) && servings > 0 ? servings : undefined,
-          neededDate: neededDate || undefined,
-          neededFrom: neededFrom || undefined,
-          neededTo: neededTo || undefined,
-          radiusKm,
-          ...standards,
-          nonCommercialWaiver: true,
-        },
-      });
-      toast.success(`Đã gửi đơn yêu cầu tới ${selected?.businessName ?? 'nhà cung cấp'}.`);
+    setSending(true);
+    const failed: RequestLine[] = [];
+    const errors: string[] = [];
+    // Gửi lần lượt: mỗi đơn là một thông báo tới một NCC, lỗi đơn này không được
+    // kéo đổ các đơn còn lại.
+    for (const line of lines) {
+      const qty = Number(line.quantityKg);
+      try {
+        await sendRequest.mutateAsync({
+          providerId: line.providerId,
+          campaignId,
+          message: note.trim() || undefined,
+          demandDetails: {
+            // Nhóm thực phẩm theo MÓN của dòng này, không theo bộ lọc chung.
+            foodCategory: inferCategories(line.ingredientName)[0] ?? (category || undefined),
+            ingredientName: line.ingredientName.trim(),
+            quantityKg: line.quantityKg && Number.isFinite(qty) && qty > 0 ? qty : undefined,
+            expectedServings:
+              expectedServings && Number.isFinite(servings) && servings > 0 ? servings : undefined,
+            neededDate: neededDate || undefined,
+            neededFrom: neededFrom || undefined,
+            neededTo: neededTo || undefined,
+            radiusKm,
+            ...standards,
+            nonCommercialWaiver: true,
+          },
+        });
+      } catch (e: unknown) {
+        failed.push(line);
+        errors.push(
+          `${line.businessName}: ${
+            (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+              ?.message ?? 'gửi thất bại'
+          }`,
+        );
+      }
+    }
+    setSending(false);
+
+    const okCount = lines.length - failed.length;
+    if (failed.length === 0) {
+      toast.success(`Đã gửi ${okCount} đơn tới ${okCount} nhà cung cấp.`);
       resetForm();
       setOpen(false);
-    } catch (e: unknown) {
-      const msg =
-        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message ?? 'Gửi đơn yêu cầu thất bại';
-      toast.error(msg);
+      return;
     }
+    // Giữ lại các dòng lỗi để bếp sửa rồi bấm gửi lại, dòng đã gửi thì bỏ ra.
+    setLines(failed);
+    if (okCount > 0) toast.success(`Đã gửi ${okCount} đơn.`);
+    toast.error(`Chưa gửi được ${failed.length} đơn — ${errors.join(' · ')}`);
   }
 
   if (!open) {
@@ -157,7 +238,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
           <div className="min-w-0">
             <p className="font-bold text-emerald-900">Tạo đơn yêu cầu nguyên liệu</p>
             <p className="text-xs text-emerald-700">
-              Khai nhu cầu của bếp (loại thực phẩm, số kg, giờ cần nhận) — hệ thống gợi ý NCC gần nhất.
+              Chọn một hoặc nhiều NCC gần bếp — mỗi NCC nhận đơn đúng món họ đang bán.
             </p>
           </div>
           <span className="material-symbols-outlined ml-auto shrink-0 text-emerald-600">chevron_right</span>
@@ -173,7 +254,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
         <div className="min-w-0">
           <h3 className="text-lg font-extrabold leading-tight">Yêu cầu cung cấp thực phẩm đầu vào</h3>
           <p className="mt-0.5 text-xs text-emerald-100">
-            Bếp gửi đơn đặt nguyên liệu tới nhà cung cấp
+            Bếp gửi đơn đặt nguyên liệu tới một hoặc nhiều nhà cung cấp
           </p>
         </div>
         <button
@@ -197,7 +278,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
 
       <div className="grid gap-5 p-5 lg:grid-cols-2">
         {/* ── Cột 1: form nhu cầu ── */}
-        <div className="space-y-4 rounded-2xl border border-neutral-200 p-4">
+        <div className="min-w-0 space-y-4 rounded-2xl border border-neutral-200 p-4">
           <h4 className="flex items-center gap-2 border-b border-neutral-100 pb-3 text-sm font-extrabold text-neutral-900">
             <span className="material-symbols-outlined text-[18px] text-emerald-600">assignment</span>
             1. Chi tiết đơn yêu cầu nguyên liệu
@@ -208,7 +289,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               value={campaignId}
               onChange={(e) => {
                 setCampaignId(e.target.value);
-                setProviderId('');
+                setLines([]);
                 // Gợi ý sẵn ngày nhận = ngày diễn ra chiến dịch (đổi được).
                 const picked = openCampaigns.find((c) => c.id === e.target.value);
                 if (picked?.scheduledDate) {
@@ -229,7 +310,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
             )}
           </Field>
 
-          {/* Nguyên liệu chiến dịch cần — bấm 1 mục để điền nhanh tên + số kg */}
+          {/* Nguyên liệu chiến dịch cần + đã có NCC nào nhận món đó trong đơn này chưa */}
           {campaignId && (
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
               <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
@@ -238,37 +319,42 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               </p>
               {campaignSupplies.length === 0 ? (
                 <p className="text-[11px] text-neutral-500">
-                  Chiến dịch chưa khai vật phẩm/nguyên liệu lúc tạo — nhập tay ở ô bên dưới.
+                  Chiến dịch chưa khai vật phẩm/nguyên liệu lúc tạo — nhập tay ở từng NCC bên phải.
                 </p>
               ) : (
                 <>
                   <p className="mb-2 text-[11px] text-neutral-500">
-                    Bấm một mục để điền vào đơn — dễ đối chiếu NCC nào đang có đúng thứ bếp cần.
+                    Bấm một mục để lọc NCC đang bán nhóm thực phẩm đó.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {campaignSupplies.map((s, i) => {
-                      const active =
-                        ingredientName.trim().toLowerCase() === s.name.trim().toLowerCase();
+                      const coveredBy = lines.find((l) => sameName(l.ingredientName, s.name));
+                      const itemCategory = inferCategories(s.name)[0] ?? '';
+                      const filtering = !!itemCategory && category === itemCategory;
                       return (
                         <button
                           key={`${s.name}-${i}`}
                           type="button"
-                          onClick={() => {
-                            setIngredientName(s.name);
-                            // Chỉ tự điền số lượng khi đơn vị là kg (hoặc không ghi đơn vị)
-                            if (s.quantity != null && (!s.unit || /kg/i.test(s.unit))) {
-                              setQuantityKg(String(s.quantity));
-                            }
-                          }}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
-                            active
+                          onClick={() => setCategory(filtering ? '' : itemCategory)}
+                          title={
+                            coveredBy
+                              ? `Đã xin từ ${coveredBy.businessName}`
+                              : itemCategory
+                                ? `Lọc NCC bán ${FOOD_CATEGORY_LABEL[itemCategory as FoodCategory] ?? itemCategory}`
+                                : 'Chưa đoán được nhóm thực phẩm'
+                          }
+                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            filtering
                               ? 'border-emerald-500 bg-emerald-600 text-white'
-                              : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
+                              : coveredBy
+                                ? 'border-emerald-300 bg-emerald-100 text-emerald-900'
+                                : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
                           }`}
                         >
+                          {coveredBy && <span className="material-symbols-outlined text-[14px]">check_circle</span>}
                           {s.name}
                           {s.quantity != null && (
-                            <span className={active ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
+                            <span className={filtering ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
                               {s.quantity} {s.unit || 'kg'}
                             </span>
                           )}
@@ -296,25 +382,6 @@ export default function IngressRequestPanel({ campaigns }: Props) {
           </Field>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Tên nguyên liệu chính">
-              <input
-                value={ingredientName}
-                onChange={(e) => setIngredientName(e.target.value)}
-                placeholder="Vd: Thịt heo / Rau xanh"
-                className="inp"
-              />
-            </Field>
-            <Field label="Số lượng cần (kg)">
-              <input
-                type="number"
-                min={0}
-                step="0.5"
-                value={quantityKg}
-                onChange={(e) => setQuantityKg(e.target.value)}
-                placeholder="30"
-                className="inp"
-              />
-            </Field>
             <Field label="Số suất dự kiến nấu">
               <input
                 type="number"
@@ -368,7 +435,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
               />
             </div>
             <p className="mt-1 text-[11px] text-neutral-400">
-              Ngày + giờ này sẽ thành lịch hẹn lấy hàng khi NCC chấp nhận đơn.
+              Áp dụng cho mọi đơn gửi đi — thành lịch hẹn lấy hàng khi từng NCC chấp nhận.
             </p>
           </Field>
 
@@ -413,22 +480,40 @@ export default function IngressRequestPanel({ campaigns }: Props) {
           </Field>
         </div>
 
-        {/* ── Cột 2: NCC khớp + cam kết ── */}
-        <div className="space-y-4 rounded-2xl border border-neutral-200 p-4">
+        {/* ── Cột 2: NCC khớp + từng đơn + cam kết ── */}
+        <div className="min-w-0 space-y-4 rounded-2xl border border-neutral-200 p-4">
           <h4 className="flex items-center gap-2 border-b border-neutral-100 pb-3 text-sm font-extrabold text-neutral-900">
             <span className="material-symbols-outlined text-[18px] text-emerald-600">location_on</span>
-            2. Nhà cung cấp phù hợp
+            2. Chọn nhà cung cấp (được chọn nhiều)
           </h4>
 
           <MatchList
             campaignId={campaignId}
             loading={matching}
             matches={matches}
-            selectedId={providerId}
-            onSelect={setProviderId}
+            selectedIds={selectedIds}
+            onToggle={toggleProvider}
             noKitchenLocation={matchResult?.reason === 'NO_KITCHEN_LOCATION'}
             radiusKm={radiusKm}
           />
+
+          {lines.length > 0 && (
+            <div className="space-y-2">
+              <p className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-800">
+                <span className="material-symbols-outlined text-[16px] text-emerald-600">receipt_long</span>
+                {lines.length} đơn sẽ gửi — mỗi NCC một món
+              </p>
+              {lines.map((line) => (
+                <RequestLineCard
+                  key={line.providerId}
+                  line={line}
+                  pendingIngredient={pendingByProvider.get(line.providerId) ?? null}
+                  onChange={(patch) => updateLine(line.providerId, patch)}
+                  onRemove={() => setLines((prev) => prev.filter((l) => l.providerId !== line.providerId))}
+                />
+              ))}
+            </div>
+          )}
 
           <label className="flex cursor-pointer gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
             <input
@@ -448,16 +533,20 @@ export default function IngressRequestPanel({ campaigns }: Props) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={sendRequest.isPending || !campaignId || !providerId || !waiver}
+            disabled={sending || !campaignId || lines.length === 0 || !waiver}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="material-symbols-outlined text-[18px]">
-              {sendRequest.isPending ? 'hourglass_top' : 'send'}
+              {sending ? 'hourglass_top' : 'send'}
             </span>
-            {sendRequest.isPending ? 'Đang gửi đơn…' : 'Gửi đơn yêu cầu tới NCC'}
+            {sending
+              ? 'Đang gửi đơn…'
+              : lines.length > 1
+                ? `Gửi ${lines.length} đơn tới ${lines.length} NCC`
+                : 'Gửi đơn yêu cầu tới NCC'}
           </button>
           <p className="text-center text-[11px] text-neutral-400">
-            NCC duyệt đơn rồi mới tới bước ghép shipper đến lấy hàng.
+            Từng NCC duyệt đơn của mình rồi mới tới bước ghép shipper đến lấy hàng.
           </p>
         </div>
       </div>
@@ -479,6 +568,104 @@ export default function IngressRequestPanel({ campaigns }: Props) {
         }
       `}</style>
     </section>
+  );
+}
+
+/** Một đơn sẽ gửi: NCC + món xin từ chính NCC đó + số kg. */
+function RequestLineCard({
+  line,
+  pendingIngredient,
+  onChange,
+  onRemove,
+}: {
+  line: RequestLine;
+  pendingIngredient: string | null;
+  onChange: (patch: Partial<RequestLine>) => void;
+  onRemove: () => void;
+}) {
+  const inputCls =
+    'w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-neutral-900">{line.businessName}</p>
+          <p className="text-[11px] text-neutral-500">cách bếp {line.distanceKm} km</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="shrink-0 rounded-full p-1 text-neutral-400 transition-colors hover:bg-white hover:text-rose-600"
+          aria-label={`Bỏ ${line.businessName}`}
+        >
+          <span className="material-symbols-outlined text-[18px]">close</span>
+        </button>
+      </div>
+
+      {line.suggestions.length > 0 && !line.suggestions.some((s) => s.exact) && (
+        <p className="mt-2 text-[11px] text-amber-700">
+          NCC chưa đăng đúng món chiến dịch cần — món dưới đây chỉ cùng nhóm, hãy chắc NCC có hàng.
+        </p>
+      )}
+      {line.suggestions.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {line.suggestions.map((s) => {
+            const active = line.ingredientName.trim().toLowerCase() === s.name.trim().toLowerCase();
+            return (
+              <button
+                key={s.name}
+                type="button"
+                onClick={() => onChange({ ingredientName: s.name, quantityKg: defaultKg(s) || line.quantityKg })}
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                  active
+                    ? 'border-emerald-500 bg-emerald-600 text-white'
+                    : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
+                }`}
+              >
+                {s.name}
+                {!s.exact && <span className="ml-1 font-normal opacity-70">· cùng nhóm</span>}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-amber-700">
+          NCC này không bán món nào trong danh sách của chiến dịch — nhập tay món cần xin.
+        </p>
+      )}
+
+      <div className="mt-2 grid grid-cols-[1fr_6.5rem] gap-2">
+        <input
+          value={line.ingredientName}
+          onChange={(e) => onChange({ ingredientName: e.target.value })}
+          placeholder="Nguyên liệu cần lấy"
+          className={inputCls}
+          aria-label={`Nguyên liệu cần lấy từ ${line.businessName}`}
+        />
+        <div className="relative">
+          <input
+            type="number"
+            min={0}
+            step="0.5"
+            value={line.quantityKg}
+            onChange={(e) => onChange({ quantityKg: e.target.value })}
+            placeholder="0"
+            className={`${inputCls} pr-8`}
+            aria-label={`Số kg từ ${line.businessName}`}
+          />
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+            kg
+          </span>
+        </div>
+      </div>
+
+      {pendingIngredient && (
+        <p className="mt-2 flex items-start gap-1 text-[11px] text-amber-700">
+          <span className="material-symbols-outlined text-[14px]">info</span>
+          NCC này còn đơn &ldquo;{pendingIngredient}&rdquo; đang chờ duyệt — gửi đơn này sẽ thay đơn đó.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -536,16 +723,16 @@ function MatchList({
   campaignId,
   loading,
   matches,
-  selectedId,
-  onSelect,
+  selectedIds,
+  onToggle,
   noKitchenLocation,
   radiusKm,
 }: {
   campaignId: string;
   loading: boolean;
   matches: SupplierMatch[];
-  selectedId: string;
-  onSelect: (id: string) => void;
+  selectedIds: Set<string>;
+  onToggle: (m: SupplierMatch) => void;
   noKitchenLocation: boolean;
   radiusKm: number;
 }) {
@@ -582,8 +769,8 @@ function MatchList({
           key={m.providerId}
           m={m}
           isNearest={idx === 0}
-          isSelected={m.providerId === selectedId}
-          onSelect={() => onSelect(m.providerId)}
+          isSelected={selectedIds.has(m.providerId)}
+          onSelect={() => onToggle(m)}
         />
       ))}
     </div>
@@ -591,7 +778,7 @@ function MatchList({
 }
 
 /**
- * 1 NCC trong danh sách gợi ý. Bấm thẻ để chọn; "Xem nguyên liệu" xổ danh sách
+ * 1 NCC trong danh sách gợi ý. Bấm thẻ để chọn/bỏ chọn (chọn được nhiều NCC); "Xem nguyên liệu" xổ danh sách
  * tin đăng thật của NCC (tên món, số lượng còn, khung giờ lấy) để bếp biết họ
  * đang có gì trước khi gửi đơn.
  */
@@ -630,7 +817,7 @@ function MatchRow({
     >
       <div className="flex items-start gap-2">
         <span
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
             isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-neutral-300'
           }`}
         >
@@ -651,6 +838,18 @@ function MatchRow({
             )}
           </div>
           {m.address && <p className="truncate text-xs text-neutral-400">{m.address}</p>}
+          {(m.categories ?? []).length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {m.categories.map((c) => (
+                <span
+                  key={c}
+                  className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"
+                >
+                  {FOOD_CATEGORY_LABEL[c as FoodCategory] ?? c}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-neutral-600">
             <span className="font-bold text-emerald-700">{m.distanceKm} km</span>
             <span>{m.listingCount} tin đăng</span>

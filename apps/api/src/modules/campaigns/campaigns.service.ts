@@ -5406,6 +5406,8 @@ export class CampaignsService {
         listing_count: bigint;
         total_remaining: string | null;
         total_kg: string | null;
+        categories: string[] | null;
+        listing_titles: string[] | null;
         lng: number;
         lat: number;
       }[]
@@ -5425,7 +5427,9 @@ export class CampaignsService {
         ST_Y(pp.location::geometry) AS lat,
         COUNT(fl.id)                             AS listing_count,
         SUM(fl.quantity_remaining)               AS total_remaining,
-        SUM(fl.quantity_remaining * COALESCE(fl.weight_per_unit_kg, 0)) AS total_kg
+        SUM(fl.quantity_remaining * COALESCE(fl.weight_per_unit_kg, 0)) AS total_kg,
+        ARRAY_AGG(DISTINCT fl.category::text) AS categories,
+        ARRAY_AGG(DISTINCT fl.title)          AS listing_titles
       FROM provider_profiles pp
       JOIN users u ON u.id = pp.user_id
       JOIN food_listings fl ON fl.provider_id = pp.id
@@ -5466,6 +5470,10 @@ export class CampaignsService {
         // Chỉ cộng được kg của tin đã khai `weight_per_unit_kg`; tin thiếu cân nặng
         // đóng góp 0 nên con số này là CẬN DƯỚI, FE phải nói rõ "ước tính tối thiểu".
         estimatedKg: r.total_kg != null ? Math.round(Number(r.total_kg) * 10) / 10 : 0,
+        // Nhóm thực phẩm + tên tin NCC đang đăng — FE dùng để ghép mỗi NCC với đúng
+        // nguyên liệu họ bán (vựa rau thì xin rau, vựa gạo thì xin gạo).
+        categories: r.categories ?? [],
+        listingTitles: r.listing_titles ?? [],
         lng: Number(r.lng),
         lat: Number(r.lat),
       })),
