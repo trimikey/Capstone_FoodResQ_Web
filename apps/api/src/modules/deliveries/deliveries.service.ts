@@ -824,10 +824,18 @@ export class DeliveriesService {
           `Đơn này hẹn nhận lúc ${label} — chỉ được xác nhận đã giao trong vòng ${earlyMin} phút trước giờ hẹn. Vui lòng chờ gần tới giờ rồi bàn giao.`,
         );
       }
-      // Xac nhan ban giao bang anh proof thay cho QR cua nguoi nhan.
-      if (!proofUrl) {
+      // Bàn giao cho NGƯỜI NHẬN chốt bằng mã QR (hoặc mã đơn ngắn) trên màn của họ —
+      // bằng chứng giao đúng người. Ảnh bàn giao KHÔNG bắt buộc: có thì lưu kèm.
+      // Không kiểm tra qr_expires_at — QR của đơn giao là mã xác nhận bàn giao,
+      // giao hàng thường lâu hơn 30 phút hiệu lực gốc.
+      if (!qrToken) {
         throw new BadRequestException(
-          'Can chup anh xac nhan da giao cho nguoi nhan.',
+          'Cần quét mã QR (hoặc nhập mã đơn) trên màn hình của người nhận để xác nhận bàn giao đúng người.',
+        );
+      }
+      if (!this.reservationQrMatches(qrToken, delivery.reservation.qrToken)) {
+        throw new BadRequestException(
+          'Mã QR không khớp với đơn này. Hãy quét mã trong trang theo dõi đơn của người nhận.',
         );
       }
 

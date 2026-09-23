@@ -13,7 +13,7 @@ export class UpdateDeliveryStatusDto {
   @IsUrl({ require_tld: false })
   proofUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Legacy QR token, khong con bat buoc khi chuyen sang delivered' })
+  @ApiPropertyOptional({ description: 'Mã QR của người nhận — bắt buộc khi chuyển sang delivered (xác nhận bàn giao đúng người)' })
   @IsOptional()
   @IsString()
   @MaxLength(128)
