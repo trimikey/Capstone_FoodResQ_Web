@@ -1021,3 +1021,69 @@ describe('CampaignsService.inviteVolunteersToShift', () => {
     expect(notifications.notify).not.toHaveBeenCalled();
   });
 });
+
+describe('CampaignsService — đơn nguyên liệu chỉ hiện cho shipper được phân công', () => {
+  const baseRow = {
+    campaign_id: 'camp-1',
+    campaign_title: 'Bếp Q3',
+    kitchen_address: 'Q3',
+    scheduled_date: null,
+    pickup_start_time: '06:55',
+    pickup_end_time: '11:56',
+    needs_transport: false,
+    demand_details: { ingredientName: 'Gạo', quantityKg: 10 },
+    message: null,
+    business_name: 'Vựa gạo',
+    provider_address: null,
+    provider_phone: null,
+    lng: null,
+    lat: null,
+    distance_km: null,
+    delivery_id: null,
+    delivery_status: null,
+    delivery_shipper_id: null,
+    pickup_id: null,
+    requested_kg: null,
+    received_kg: null,
+    photo_url: null,
+    pickup_note: null,
+    confirmed_at: null,
+    pickup_volunteer_id: null,
+    pickup_by_name: null,
+  };
+
+  function build(rows: unknown[]) {
+    const prisma = {
+      campaignVolunteerAssignment: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'assign-me' }]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue(rows),
+    };
+    const service = new CampaignsService(
+      prisma as never,
+      {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+    return (service as unknown as {
+      listPickupOrders: (c: string[], v: string) => Promise<Array<{ id: string }>>;
+    }).listPickupOrders.bind(service);
+  }
+
+  it('ẩn đơn tổ chức chưa phân công hoặc phân công cho người khác', async () => {
+    const list = build([
+      { ...baseRow, id: 'unassigned', pickup_assignee_ids: [] },
+      { ...baseRow, id: 'other', pickup_assignee_ids: ['assign-other'] },
+      { ...baseRow, id: 'mine', pickup_assignee_ids: ['assign-me'] },
+    ]);
+    const orders = await list(['camp-1'], 'vol-me');
+    expect(orders.map((o) => o.id)).toEqual(['mine']);
+  });
+
+  it('vẫn giữ đơn shipper này đã tự xác nhận lấy (lịch sử)', async () => {
+    const list = build([
+      { ...baseRow, id: 'done', pickup_assignee_ids: [], pickup_id: 'p1', pickup_volunteer_id: 'vol-me' },
+    ]);
+    const orders = await list(['camp-1'], 'vol-me');
+    expect(orders.map((o) => o.id)).toEqual(['done']);
+  });
+});

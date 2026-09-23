@@ -2441,6 +2441,16 @@ export class CampaignsService {
    */
   private async listPickupOrders(campaignIds: string[], volunteerId: string) {
     if (campaignIds.length === 0) return [];
+    // Ca của shipper này trong các chiến dịch — dùng để đối chiếu với
+    // `pickup_assignee_ids` (JSONB array assignmentId mà tổ chức tick khi phân công).
+    const myAssignmentIds = new Set(
+      (
+        await this.prisma.campaignVolunteerAssignment.findMany({
+          where: { campaignId: { in: campaignIds }, volunteerId },
+          select: { id: true },
+        })
+      ).map((a) => a.id),
+    );
     const rows = await this.prisma.$queryRaw<{
       id: string;
       campaign_id: string;
@@ -2469,6 +2479,7 @@ export class CampaignsService {
       confirmed_at: Date | null;
       pickup_volunteer_id: string | null;
       pickup_by_name: string | null;
+      pickup_assignee_ids: unknown;
     }[]>(Prisma.sql`
       SELECT
         cpr.id,
@@ -2497,7 +2508,8 @@ export class CampaignsService {
         cip.note AS pickup_note,
         cip.confirmed_at,
         cip.volunteer_id AS pickup_volunteer_id,
-        cu.full_name AS pickup_by_name
+        cu.full_name AS pickup_by_name,
+        cpr.pickup_assignee_ids
       FROM campaign_provider_requests cpr
       JOIN provider_profiles pp ON pp.id = cpr.provider_id
       JOIN users pu ON pu.id = pp.user_id
@@ -2511,7 +2523,20 @@ export class CampaignsService {
       ORDER BY cpr.pickup_start_time NULLS LAST, cpr.created_at ASC
     `);
 
-    return rows.map((r) => {
+    // Chỉ giữ đơn là việc của CHÍNH shipper này: được tổ chức phân công đi nhận, đang
+    // chạy chuyến hệ thống của đơn, hoặc đã tự xác nhận lấy (giữ lịch sử). Trước đây mọi
+    // shipper trong chiến dịch đều thấy mọi đơn đã chấp nhận — tổ chức chưa phân công
+    // mà app đã hiện "Cần lấy" + nút "Xác nhận lấy".
+    const mine = rows.filter((r) => {
+      const assignees = Array.isArray(r.pickup_assignee_ids) ? (r.pickup_assignee_ids as string[]) : [];
+      return (
+        assignees.some((id) => myAssignmentIds.has(id)) ||
+        r.delivery_shipper_id === volunteerId ||
+        r.pickup_volunteer_id === volunteerId
+      );
+    });
+
+    return mine.map((r) => {
       const demand = (r.demand_details ?? {}) as Record<string, unknown>;
       const num = (v: unknown) => (v == null ? null : Number(v));
       return {
@@ -2769,6 +2794,7 @@ export class CampaignsService {
         status: true,
         needsTransport: true,
         demandDetails: true,
+        pickupAssigneeIds: true,
         provider: { select: { businessName: true, userId: true } },
         delivery: { select: { id: true, status: true, shipperId: true } },
         campaign: {
@@ -2807,7 +2833,7 @@ export class CampaignsService {
 
     // Phải trực ca vận hành của chiến dịch VÀ đã điểm danh — cùng lý do với chốt đợt
     // phát: không điểm danh thì người ở nhà vẫn "xác nhận đã lấy" được.
-    const assignment = await this.prisma.campaignVolunteerAssignment.findFirst({
+    const opsAssignments = await this.prisma.campaignVolunteerAssignment.findMany({
       where: {
         campaignId: request.campaignId,
         volunteerId: volunteer.id,
@@ -2815,9 +2841,22 @@ export class CampaignsService {
       },
       select: { id: true, status: true },
     });
-    if (!assignment) {
+    if (opsAssignments.length === 0) {
       throw new ForbiddenException('Bạn không trực ca vận hành nào của chiến dịch này.');
     }
+    // Chỉ người tổ chức đã phân công đi nhận đơn này mới được xác nhận lấy hàng.
+    const assigneeIds = Array.isArray(request.pickupAssigneeIds)
+      ? (request.pickupAssigneeIds as string[])
+      : [];
+    const assignedShifts = opsAssignments.filter((a) => assigneeIds.includes(a.id));
+    if (assignedShifts.length === 0) {
+      throw new ForbiddenException(
+        'Tổ chức chưa phân công bạn đi nhận đơn nguyên liệu này.',
+      );
+    }
+    const assignment =
+      assignedShifts.find((a) => ['checked_in', 'in_progress', 'completed'].includes(a.status)) ??
+      assignedShifts[0];
     if (!['checked_in', 'in_progress', 'completed'].includes(assignment.status)) {
       throw new BadRequestException(
         'Bạn cần điểm danh tại bếp trước khi xác nhận đã lấy nguyên liệu.',
