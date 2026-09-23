@@ -9,6 +9,7 @@ import {
   useAssignRequestPickup,
   type SentRequestItem,
   type CampaignManageParticipant,
+  qtyUnit,
 } from '@/hooks/useCampaigns';
 import { useManageContext } from '../../../_components/ManageShell';
 import { formatVnDate } from '@/lib/vn-date';
@@ -180,6 +181,7 @@ function TransportRow({
   const hasAssigned = (r.pickupAssigneeIds ?? []).length > 0;
 
   const demand = r.demandDetails;
+  const unit = qtyUnit(demand);
   const transport = r.transport;
   const shipperName = transport?.delivery?.shipper?.user.fullName ?? null;
   const shipperPhone = transport?.delivery?.shipper?.user.phone ?? null;
@@ -235,7 +237,7 @@ function TransportRow({
     if (!transport) return;
     const kg = Number(receivedKg);
     if (!receivedKg || !Number.isFinite(kg) || kg < 0) {
-      toast.error('Vui lòng nhập số kg thực nhận.');
+      toast.error(`Vui lòng nhập số ${unit} thực nhận.`);
       return;
     }
     try {
@@ -243,7 +245,7 @@ function TransportRow({
         campaignId,
         transportId: transport.id,
         // BE lưu vào receipt_note + notify NCC — số thực nhận đi cùng biên nhận.
-        note: `Thực nhận: ${kg} kg${note.trim() ? ` — ${note.trim()}` : ''}`,
+        note: `Thực nhận: ${kg} ${unit}${note.trim() ? ` — ${note.trim()}` : ''}`,
       });
       toast.success('Đã xác nhận nhận hàng — NCC được thông báo giao thành công.');
       setReceivedKg('');
@@ -260,7 +262,7 @@ function TransportRow({
           <p className="font-bold text-neutral-900">{r.provider.businessName ?? r.provider.user.fullName}</p>
           <p className="mt-0.5 text-xs text-neutral-500">
             {demand?.ingredientName ? `${demand.ingredientName} · ` : ''}
-            {demand?.quantityKg != null ? `${demand.quantityKg} kg đặt · ` : ''}
+            {demand?.quantityKg != null ? `${demand.quantityKg} ${unit} đặt · ` : ''}
             {r.scheduledDate ? `${formatVnDate(r.scheduledDate)} · ` : ''}
             {r.pickupStartTime ? `${r.pickupStartTime}${r.pickupEndTime ? `–${r.pickupEndTime}` : ''}` : ''}
           </p>
@@ -419,20 +421,25 @@ function TransportRow({
       {/* Xác nhận thực nhận — chỉ khi shipper đã bàn giao */}
       {transport?.status === 'delivered' && (
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            step="0.1"
-            value={receivedKg}
-            onChange={(e) => setReceivedKg(e.target.value)}
-            placeholder="Số kg thực nhận"
-            className="w-36 rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
-          />
+          <div className="relative w-40 shrink-0">
+            <input
+              type="number"
+              min={0}
+              step="0.1"
+              value={receivedKg}
+              onChange={(e) => setReceivedKg(e.target.value)}
+              placeholder={`Số ${unit} thực nhận`}
+              className="w-full rounded-lg border border-neutral-200 py-2 pl-3 pr-12 text-sm outline-none focus:border-emerald-500"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-neutral-500">
+              {unit}
+            </span>
+          </div>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Ghi chú (vd: thiếu 2 kg, hàng tươi tốt…)"
+            placeholder={`Ghi chú (vd: thiếu 2 ${unit}, hàng tươi tốt…)`}
             className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
           />
           <button

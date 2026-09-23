@@ -56,6 +56,36 @@ export function unitsForKg(listing: Pick<StockListing, 'quantityUnit' | 'weightP
   return null;
 }
 
+/** Đơn vị bếp gõ ("lít", "hộp", "Kg") → mã đơn vị tin đăng. null = không quy được. */
+const UNIT_ALIASES: Record<string, string> = {
+  kg: 'kg', kilogram: 'kg', ky: 'kg', kilo: 'kg',
+  lit: 'liter', l: 'liter', liter: 'liter', litre: 'liter',
+  hop: 'box', box: 'box', thung: 'box',
+  cai: 'item', item: 'item', chiec: 'item', goi: 'item', chai: 'item',
+  phan: 'portion', suat: 'portion', portion: 'portion',
+};
+
+export function canonicalUnit(unit?: string | null): string | null {
+  if (!unit || !unit.trim()) return 'kg';
+  return UNIT_ALIASES[normalizeVi(unit)] ?? null;
+}
+
+/**
+ * Quy số lượng bếp xin (theo `unit`) về số đơn vị cần trừ trên tin.
+ * - kg → dùng `unitsForKg` (tin theo kg, hoặc tin theo phần/hộp đã khai kg mỗi đơn vị).
+ * - đơn vị khác → chỉ trừ khi tin cùng đơn vị (5 lít dầu ↔ tin tính theo lít).
+ */
+export function unitsForQuantity(
+  listing: Pick<StockListing, 'quantityUnit' | 'weightPerUnitKg'>,
+  quantity: number,
+  unit?: string | null,
+): number | null {
+  const u = canonicalUnit(unit);
+  if (u === 'kg') return unitsForKg(listing, quantity);
+  if (u != null && u === listing.quantityUnit) return Math.round(quantity * 100) / 100;
+  return null;
+}
+
 /**
  * Tin TỰ chọn để trừ khi NCC không chỉ định: chỉ nhận tin khớp đúng TÊN món — cùng
  * nhóm thôi thì không đủ (tiệm cá nhận đơn "thịt gà" mà trừ vào tin cá là sai kho).
@@ -65,10 +95,15 @@ export function pickStockListing(
   listings: StockListing[],
   ingredientName: string,
   foodCategory: string | null | undefined,
-  kg: number,
+  quantity: number,
+  unit?: string | null,
 ): StockListing | null {
   const ranked = listings
-    .map((l) => ({ l, score: listingMatchScore(l, ingredientName, foodCategory), units: unitsForKg(l, kg) }))
+    .map((l) => ({
+      l,
+      score: listingMatchScore(l, ingredientName, foodCategory),
+      units: unitsForQuantity(l, quantity, unit),
+    }))
     .filter((x) => x.score >= 2 && x.units != null)
     .sort(
       (a, b) =>

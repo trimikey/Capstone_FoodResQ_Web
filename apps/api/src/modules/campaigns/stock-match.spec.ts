@@ -1,4 +1,4 @@
-import { listingMatchScore, pickStockListing, unitsForKg, type StockListing } from './stock-match';
+import { canonicalUnit, listingMatchScore, pickStockListing, unitsForKg, unitsForQuantity, type StockListing } from './stock-match';
 
 const listing = (over: Partial<StockListing>): StockListing => ({
   id: 'l1',
@@ -32,5 +32,17 @@ describe('stock-match — chọn tin đăng để trừ tồn kho', () => {
     expect(unitsForKg({ quantityUnit: 'kg', weightPerUnitKg: null }, 10)).toBe(10);
     expect(unitsForKg({ quantityUnit: 'box', weightPerUnitKg: 5 }, 12)).toBe(3);
     expect(unitsForKg({ quantityUnit: 'portion', weightPerUnitKg: null }, 10)).toBeNull();
+  });
+
+  it('quy theo đơn vị bếp khai (lít, hộp…) chỉ khi tin cùng đơn vị', () => {
+    expect(canonicalUnit('Lít')).toBe('liter');
+    expect(canonicalUnit(undefined)).toBe('kg');
+    expect(canonicalUnit('bộ')).toBeNull();
+    expect(unitsForQuantity({ quantityUnit: 'liter', weightPerUnitKg: null }, 5, 'lít')).toBe(5);
+    expect(unitsForQuantity({ quantityUnit: 'kg', weightPerUnitKg: null }, 5, 'lít')).toBeNull();
+    expect(unitsForQuantity({ quantityUnit: 'kg', weightPerUnitKg: null }, 5, 'kg')).toBe(5);
+    const oil = listing({ id: 'oil', title: 'Dầu ăn Neptune', quantityUnit: 'liter', quantityRemaining: 20 });
+    expect(pickStockListing([oil], 'Dầu ăn', 'dry_goods', 2, 'lít')?.id).toBe('oil');
+    expect(pickStockListing([oil], 'Dầu ăn', 'dry_goods', 2, 'bộ')).toBeNull();
   });
 });

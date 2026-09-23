@@ -8,7 +8,13 @@ import { DeliveriesService } from '@/modules/deliveries/deliveries.service';
 import { TrustService } from '@/modules/trust/trust.service';
 import { TrustScoreReason } from '@foodresq/types';
 import { DishStepsService } from './dish-steps.service';
-import { pickStockListing, unitsForKg, type StockListing } from './stock-match';
+import { pickStockListing, unitsForQuantity, type StockListing } from './stock-match';
+
+/** Đơn vị số lượng của một đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
+function demandUnit(demand: { quantityUnit?: unknown } | null | undefined): string {
+  const u = typeof demand?.quantityUnit === 'string' ? demand.quantityUnit.trim() : '';
+  return u || 'kg';
+}
 
 /** Nhãn đơn vị tin đăng cho câu báo lỗi / thông báo tiếng Việt. */
 const UNIT_LABEL_VN: Record<string, string> = {
@@ -111,7 +117,9 @@ interface DonationForProgress {
 
 interface DonationDemandDetails {
   ingredientName?: string;
+  /** Số lượng theo `quantityUnit` (mặc định kg) — tên giữ nguyên vì dữ liệu cũ. */
   quantityKg?: number;
+  quantityUnit?: string;
   expectedServings?: number;
   /** NGÀY bếp cần nhận nguyên liệu (YYYY-MM-DD) — thành scheduled_date khi NCC nhận đơn. */
   neededDate?: string;
@@ -390,7 +398,7 @@ export class CampaignsService {
 
     const target = this.resolveTargetByName(input.campaign.supplyItems, details.ingredientName);
     const itemName = target?.name ?? details.ingredientName.trim();
-    const unit = target?.unit ?? 'kg';
+    const unit = target?.unit ?? demandUnit(details);
     const quantity = this.roundQuantity(Number(details.quantityKg));
     if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
@@ -1814,7 +1822,8 @@ export class CampaignsService {
       }),
       this.prisma.campaignIngredientPickup.findMany({
         where: { campaignId },
-        select: { receivedKg: true, confirmedAt: true },
+        // Kèm đơn vị của đơn: tổng "kg" chỉ cộng đơn tính theo kg (lít dầu / bộ gia vị thì không).
+        select: { receivedKg: true, confirmedAt: true, providerRequest: { select: { demandDetails: true } } },
         orderBy: { confirmedAt: 'asc' },
       }),
       this.prisma.campaignDonation.findMany({
@@ -1846,6 +1855,7 @@ export class CampaignsService {
     const kgByDay = new Map<string, number>();
     const dayKey = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
     for (const pk of pickups) {
+      if (demandUnit(pk.providerRequest.demandDetails as { quantityUnit?: unknown } | null) !== 'kg') continue;
       const key = dayKey(pk.confirmedAt);
       kgByDay.set(key, (kgByDay.get(key) ?? 0) + Number(pk.receivedKg));
     }
@@ -1931,7 +1941,8 @@ export class CampaignsService {
       }),
       this.prisma.campaignIngredientPickup.findMany({
         where: { campaignId: { in: ids } },
-        select: { receivedKg: true, confirmedAt: true },
+        // Kèm đơn vị của đơn: tổng "kg" chỉ cộng đơn tính theo kg (lít dầu / bộ gia vị thì không).
+        select: { receivedKg: true, confirmedAt: true, providerRequest: { select: { demandDetails: true } } },
       }),
       this.prisma.campaignDonation.findMany({
         where: { campaignId: { in: ids }, status: 'received', providerRequestId: null },
@@ -1963,6 +1974,7 @@ export class CampaignsService {
 
     const kgByDay = new Map<string, number>();
     for (const pk of pickups) {
+      if (demandUnit(pk.providerRequest.demandDetails as { quantityUnit?: unknown } | null) !== 'kg') continue;
       const key = dayKey(pk.confirmedAt);
       kgByDay.set(key, (kgByDay.get(key) ?? 0) + Number(pk.receivedKg));
     }
@@ -2032,8 +2044,10 @@ export class CampaignsService {
 
     for (const r of requests) {
       const demand = (r.demandDetails ?? {}) as Record<string, unknown>;
-      const ordered = demand.quantityKg == null ? 0 : Number(demand.quantityKg) || 0;
-      const received = r.ingredientPickup ? Number(r.ingredientPickup.receivedKg) : 0;
+      // Biểu đồ tính theo kg — đơn tính theo lít/bộ/hộp không cộng vào kẻo sai số liệu.
+      const isKg = demandUnit(demand) === 'kg';
+      const ordered = !isKg || demand.quantityKg == null ? 0 : Number(demand.quantityKg) || 0;
+      const received = isKg && r.ingredientPickup ? Number(r.ingredientPickup.receivedKg) : 0;
       const row = byCampaign.get(r.campaignId) ?? {
         campaignId: r.campaignId, title: r.campaign.title, status: r.campaign.status,
         scheduledDate: r.campaign.scheduledDate, orderedKg: 0, receivedKg: 0, orders: 0,
@@ -2150,6 +2164,7 @@ export class CampaignsService {
         id: r.id,
         ingredientName: (demand.ingredientName as string | undefined) ?? null,
         quantityKg: demand.quantityKg == null ? null : Number(demand.quantityKg),
+        quantityUnit: demandUnit(demand),
         pickupDate: r.scheduledDate,
         pickupStartTime: r.pickupStartTime?.slice(0, 5) ?? null,
         pickupEndTime: r.pickupEndTime?.slice(0, 5) ?? null,
@@ -2573,6 +2588,8 @@ export class CampaignsService {
         ingredientName: (demand.ingredientName as string | undefined) ?? null,
         foodCategory: (demand.foodCategory as string | undefined) ?? null,
         quantityKg: num(demand.quantityKg),
+        /** Đơn vị của quantityKg / requestedKg / receivedKg (kg, lít, bộ…). */
+        quantityUnit: demandUnit(demand),
         expectedServings: num(demand.expectedServings),
         requireColdChain: demand.requireColdChain === true,
         requireQcPhoto: demand.requireQcPhoto === true,
@@ -2759,6 +2776,8 @@ export class CampaignsService {
           message: req.message,
           ingredientName: (demand.ingredientName as string | undefined) ?? null,
           foodCategory: (demand.foodCategory as string | undefined) ?? null,
+          /** Đơn vị của requestedKg / receivedKg / shortfallKg. */
+          quantityUnit: demandUnit(demand),
           expectedServings: num(demand.expectedServings),
           requireColdChain: demand.requireColdChain === true,
           requireQcPhoto: demand.requireQcPhoto === true,
@@ -2878,9 +2897,10 @@ export class CampaignsService {
 
     const demand = (request.demandDetails ?? {}) as Record<string, unknown>;
     const requestedKg = demand.quantityKg == null ? null : Number(demand.quantityKg);
+    const unit = demandUnit(demand);
     if (requestedKg != null && dto.receivedKg > requestedKg * 1.5) {
       throw new BadRequestException(
-        `Số kg thực nhận (${dto.receivedKg}) vượt quá 150% số đã đặt (${requestedKg} kg) — kiểm tra lại con số.`,
+        `Số lượng thực nhận (${dto.receivedKg} ${unit}) vượt quá 150% số đã đặt (${requestedKg} ${unit}) — kiểm tra lại con số.`,
       );
     }
 
@@ -2931,13 +2951,13 @@ export class CampaignsService {
     // xong không nhận được dòng nào.
     void this.notifications.notify(request.provider.userId, {
       type: 'provider_request',
-      title: `Đã giao ${dto.receivedKg} kg cho chiến dịch "${request.campaign.title}"`,
+      title: `Đã giao ${dto.receivedKg} ${unit} cho chiến dịch "${request.campaign.title}"`,
       body:
         `Người lấy: ${volunteer.user.fullName} — ký nhận lúc ` +
         `${now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}. ` +
-        `Số lượng: ${dto.receivedKg} kg` +
-        (requestedKg != null ? ` trên đơn ${requestedKg} kg` : '') +
-        (shortfall > 0 ? ` (thiếu ${Math.round(shortfall * 10) / 10} kg)` : '') +
+        `Số lượng: ${dto.receivedKg} ${unit}` +
+        (requestedKg != null ? ` trên đơn ${requestedKg} ${unit}` : '') +
+        (shortfall > 0 ? ` (thiếu ${Math.round(shortfall * 10) / 10} ${unit})` : '') +
         '. Có ảnh xác nhận kèm theo trong đơn.',
       data: {
         providerRequestId,
@@ -2953,10 +2973,10 @@ export class CampaignsService {
       type: 'campaign',
       title: shortfall > 0 ? 'Nguyên liệu về THIẾU so với đơn' : 'Đã lấy nguyên liệu',
       body:
-        `${volunteer.user.fullName} đã lấy ${dto.receivedKg} kg` +
-        (requestedKg != null ? `/${requestedKg} kg` : '') +
+        `${volunteer.user.fullName} đã lấy ${dto.receivedKg} ${unit}` +
+        (requestedKg != null ? `/${requestedKg} ${unit}` : '') +
         ` từ ${request.provider.businessName} cho "${request.campaign.title}"` +
-        (shortfall > 0 ? ` — thiếu ${Math.round(shortfall * 10) / 10} kg.` : '.') +
+        (shortfall > 0 ? ` — thiếu ${Math.round(shortfall * 10) / 10} ${unit}.` : '.') +
         (dto.note?.trim() ? ` Ghi chú: ${dto.note.trim()}` : ''),
       data: {
         campaignId: request.campaignId,
@@ -5583,7 +5603,7 @@ export class CampaignsService {
     // Gửi notification cho provider — nêu rõ món + số kg để NCC không phải mở app
     // mới biết đơn hỏi gì (một chiến dịch giờ có thể gửi nhiều đơn tới cùng NCC).
     const askedItem = dto.demandDetails?.ingredientName
-      ? `${dto.demandDetails.ingredientName}${dto.demandDetails.quantityKg ? ` (${dto.demandDetails.quantityKg} kg)` : ''}`
+      ? `${dto.demandDetails.ingredientName}${dto.demandDetails.quantityKg ? ` (${dto.demandDetails.quantityKg} ${demandUnit(dto.demandDetails)})` : ''}`
       : null;
     await this.notifications.notify(provider.id, {
       type: 'provider_request',
@@ -5888,10 +5908,11 @@ export class CampaignsService {
     demand: DonationDemandDetails,
     listingId?: string,
   ): Promise<{ listingId: string; title: string; units: number; unit: string } | null> {
-    const kg = Number(demand.quantityKg);
-    if (!demand.ingredientName || !Number.isFinite(kg) || kg <= 0) {
+    const qty = Number(demand.quantityKg);
+    const unit = demandUnit(demand);
+    if (!demand.ingredientName || !Number.isFinite(qty) || qty <= 0) {
       if (listingId) {
-        throw new BadRequestException('Đơn không ghi số kg nên không trừ tồn kho được — bỏ chọn tin đăng.');
+        throw new BadRequestException('Đơn không ghi số lượng nên không trừ tồn kho được — bỏ chọn tin đăng.');
       }
       return null;
     }
@@ -5930,20 +5951,23 @@ export class CampaignsService {
         throw new BadRequestException('Tin đăng đã chọn không còn hiệu lực (hết hàng, hết giờ hoặc đã huỷ).');
       }
     } else {
-      listing = pickStockListing(listings, demand.ingredientName, demand.foodCategory, kg);
+      listing = pickStockListing(listings, demand.ingredientName, demand.foodCategory, qty, unit);
       if (!listing) return null;
     }
 
-    const units = unitsForKg(listing, kg);
+    const units = unitsForQuantity(listing, qty, unit);
     if (units == null) {
+      const listingUnit = UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit;
       throw new BadRequestException(
-        `Tin "${listing.title}" tính theo ${UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit} mà chưa khai kg mỗi đơn vị — không quy được ${kg} kg. Sửa tin (thêm kg/đơn vị) hoặc chọn tin khác.`,
+        unit === 'kg'
+          ? `Tin "${listing.title}" tính theo ${listingUnit} mà chưa khai kg mỗi đơn vị — không quy được ${qty} kg. Sửa tin (thêm kg/đơn vị) hoặc chọn tin khác.`
+          : `Tin "${listing.title}" tính theo ${listingUnit}, không quy được ${qty} ${unit} — chọn tin cùng đơn vị hoặc "Không trừ".`,
       );
     }
     if (listing.quantityRemaining < units) {
       const unitLabel = UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit;
       throw new BadRequestException(
-        `Tin "${listing.title}" chỉ còn ${listing.quantityRemaining} ${unitLabel}, không đủ ${units} ${unitLabel} cho đơn ${kg} kg ${demand.ingredientName}. Hãy cập nhật tồn kho, chọn tin khác hoặc từ chối.`,
+        `Tin "${listing.title}" chỉ còn ${listing.quantityRemaining} ${unitLabel}, không đủ ${units} ${unitLabel} cho đơn ${qty} ${unit} ${demand.ingredientName}. Hãy cập nhật tồn kho, chọn tin khác hoặc từ chối.`,
       );
     }
     return {
@@ -6067,7 +6091,11 @@ export class CampaignsService {
       where: { id: transportId },
       include: {
         providerRequest: {
-          select: { provider: { select: { userId: true } }, campaign: { select: { title: true } } },
+          select: {
+            demandDetails: true,
+            provider: { select: { userId: true } },
+            campaign: { select: { title: true } },
+          },
         },
       },
     });
@@ -6091,7 +6119,7 @@ export class CampaignsService {
         title: 'Tổ chức đã xác nhận nhận hàng',
         body:
           `Tổ chức xác nhận đã nhận thực phẩm cho chiến dịch "${result.providerRequest.campaign.title}" lúc ${confirmedAtVn}.` +
-          (pickupRow ? ` Số lượng ký nhận: ${Number(pickupRow.receivedKg)} kg — người lấy: ${pickerProfile?.user.fullName ?? 'TNV'}.` : '') +
+          (pickupRow ? ` Số lượng ký nhận: ${Number(pickupRow.receivedKg)} ${demandUnit(result.providerRequest.demandDetails as { quantityUnit?: unknown } | null)} — người lấy: ${pickerProfile?.user.fullName ?? 'TNV'}.` : '') +
           (dto.note?.trim() ? ` Ghi chú của bếp: ${dto.note.trim()}` : ''),
         data: {
           campaignId, transportId, deliveryId: transport.deliveryId, status: 'received',
@@ -6569,8 +6597,8 @@ export class CampaignsService {
   async completeDistribution(
     distributionId: string,
     userId: string,
-    report: { actualServings?: number; actualPeopleServed?: number; note?: string } = {},
-    proofPhotoUrl?: string,
+    report: { actualServings?: number; actualPeopleServed?: number; note?: string; photoPoints?: string } = {},
+    photos: Express.Multer.File[] = [],
   ) {
     const dist = await this.prisma.mealDistribution.findUnique({
       where: { id: distributionId },
@@ -6578,6 +6606,7 @@ export class CampaignsService {
         id: true,
         campaignId: true,
         assigneeIds: true,
+        points: true,
         completedAt: true,
         roundLabel: true,
         servingsServed: true,
@@ -6638,6 +6667,16 @@ export class CampaignsService {
       }
     }
 
+    // Mỗi điểm phát phải có ÍT NHẤT 1 ảnh làm bằng chứng đã giao tới đó — một ảnh
+    // chung cho cả đợt không chứng minh được shipper đã tới đủ các điểm.
+    const points = Array.isArray(dist.points) ? (dist.points as Record<string, unknown>[]) : [];
+    const photoPoints = this.mapDistributionPhotos(points.length, photos, report.photoPoints);
+    const urls = await Promise.all(photos.map((f) => this.saveProofPhoto(f)));
+    const pointsWithProof = points.map((pt, i) => ({
+      ...pt,
+      proofPhotoUrls: urls.filter((_, k) => photoPoints[k] === i),
+    }));
+
     // updateMany + điều kiện completedAt null: hai shipper cùng bấm thì chỉ một người ghi được.
     const claimed = await this.prisma.mealDistribution.updateMany({
       where: { id: distributionId, completedAt: null },
@@ -6647,7 +6686,9 @@ export class CampaignsService {
         actualServings,
         actualPeopleServed: actualPeople,
         completionNote: report.note?.trim() || null,
-        ...(proofPhotoUrl ? { photoUrl: proofPhotoUrl } : {}),
+        // photo_url giữ ảnh đầu tiên cho các màn/báo cáo cũ chỉ đọc một ảnh.
+        photoUrl: urls[0],
+        ...(points.length > 0 ? { points: pointsWithProof as Prisma.InputJsonValue } : {}),
       },
     });
     if (claimed.count !== 1) {
@@ -6688,6 +6729,54 @@ export class CampaignsService {
       actualPeopleServed: actualPeople,
       leftover: dist.servingsServed - actualServings,
     };
+  }
+
+  /**
+   * Ghép từng ảnh chốt đợt phát với điểm phát của nó và kiểm tra mỗi điểm có ≥ 1 ảnh.
+   * Trả về mảng chỉ số điểm theo thứ tự ảnh. Đợt không khai điểm nào → cần ≥ 1 ảnh chung.
+   */
+  private mapDistributionPhotos(
+    pointCount: number,
+    photos: Express.Multer.File[],
+    photoPointsRaw?: string,
+  ): number[] {
+    const notImage = photos.find((f) => !f.mimetype?.startsWith('image/'));
+    if (notImage) throw new BadRequestException('Ảnh bằng chứng phải là file ảnh (JPG/PNG/WebP).');
+
+    if (pointCount === 0) {
+      if (photos.length === 0) {
+        throw new BadRequestException('Cần chụp ít nhất 1 ảnh làm bằng chứng đã phát.');
+      }
+      return photos.map(() => -1);
+    }
+
+    let indexes: number[];
+    if (photoPointsRaw) {
+      indexes = photoPointsRaw.split(',').map(Number);
+      if (indexes.length !== photos.length) {
+        throw new BadRequestException('Số ảnh không khớp danh sách điểm phát của ảnh.');
+      }
+      if (indexes.some((i) => !Number.isInteger(i) || i < 0 || i >= pointCount)) {
+        throw new BadRequestException('Ảnh gắn với điểm phát không tồn tại trong đợt này.');
+      }
+    } else if (pointCount === 1) {
+      indexes = photos.map(() => 0);
+    } else if (photos.length === pointCount) {
+      indexes = photos.map((_, i) => i);
+    } else {
+      indexes = [];
+    }
+
+    const missing = Array.from({ length: pointCount }, (_, i) => i).filter((i) => !indexes.includes(i));
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        pointCount === 1
+          ? 'Cần chụp ít nhất 1 ảnh tại điểm phát làm bằng chứng đã giao.'
+          : `Đợt này có ${pointCount} điểm phát — mỗi điểm cần ít nhất 1 ảnh làm bằng chứng. ` +
+            `Còn thiếu ảnh ở điểm ${missing.map((i) => i + 1).join(', ')}.`,
+      );
+    }
+    return indexes;
   }
 
   /**
@@ -6995,7 +7084,8 @@ export class CampaignsService {
         orderBy: { operationEndAt: 'desc' },
       }),
       this.prisma.campaignIngredientPickup.findMany({
-        select: { receivedKg: true, confirmedAt: true },
+        // Kèm đơn vị của đơn: tổng "kg" chỉ cộng đơn tính theo kg (lít dầu / bộ gia vị thì không).
+        select: { receivedKg: true, confirmedAt: true, providerRequest: { select: { demandDetails: true } } },
       }),
       this.prisma.campaignDonation.findMany({
         where: { status: 'received' },
@@ -7038,6 +7128,7 @@ export class CampaignsService {
     };
     let kgFromKitchen = 0;
     for (const pk of pickups) {
+      if (demandUnit(pk.providerRequest.demandDetails as { quantityUnit?: unknown } | null) !== 'kg') continue;
       const kg = Number(pk.receivedKg);
       kgFromKitchen += kg > 0 ? kg : 0;
       addKg(pk.confirmedAt, kg);

@@ -6,6 +6,7 @@ import {
   useSentRequests,
   type SentRequestItem,
   type Campaign,
+  qtyUnit,
 } from '@/hooks/useCampaigns';
 import IngressRequestPanel from './IngressRequestPanel';
 
@@ -155,7 +156,7 @@ function SentRequestCard({
           {demand.quantityKg != null && (
             <span>
               <span className="material-symbols-outlined text-[13px] align-text-bottom">scale</span>{' '}
-              {demand.quantityKg} kg
+              {demand.quantityKg} {qtyUnit(demand)}
             </span>
           )}
           {(demand.neededDate || r.pickupStartTime) && (

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Modal } from '@/components/shared/Modal';
-import { useConfirmIngredientPickup, type PickupOrder } from '@/hooks/useCampaigns';
+import { qtyUnit, useConfirmIngredientPickup, type PickupOrder } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 
 /**
@@ -21,6 +21,7 @@ interface Props {
 
 export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
   const confirm = useConfirmIngredientPickup();
+  const unit = qtyUnit(order);
   const fileRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -48,9 +49,9 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
     const next: Record<string, string> = {};
     if (!photo) next.photo = 'Bắt buộc chụp ảnh nguyên liệu đã lấy';
     if (!kg.trim() || !Number.isFinite(received) || received < 0) {
-      next.kg = 'Nhập số kg thực nhận (≥ 0)';
+      next.kg = `Nhập số ${unit} thực nhận (≥ 0)`;
     } else if (requested != null && received > requested * 1.5) {
-      next.kg = `Vượt quá 150% số đã đặt (${requested} kg) — kiểm tra lại`;
+      next.kg = `Vượt quá 150% số đã đặt (${requested} ${unit}) — kiểm tra lại`;
     }
     setErrors(next);
     if (Object.keys(next).length > 0) return;
@@ -64,8 +65,8 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
       });
       toast.success(
         res.shortfallKg > 0
-          ? `Đã ghi nhận ${res.receivedKg} kg — thiếu ${res.shortfallKg} kg, tổ chức đã được báo.`
-          : `Đã ghi nhận lấy đủ ${res.receivedKg} kg.`,
+          ? `Đã ghi nhận ${res.receivedKg} ${unit} — thiếu ${res.shortfallKg} ${unit}, tổ chức đã được báo.`
+          : `Đã ghi nhận lấy đủ ${res.receivedKg} ${unit}.`,
       );
       onDone();
       onClose();
@@ -87,7 +88,7 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
         </h3>
         <p className="mt-1 text-xs text-white/80">
           {order.providerName}
-          {requested != null && ` · đơn đặt ${requested} kg`}
+          {requested != null && ` · đơn đặt ${requested} ${unit}`}
         </p>
       </div>
 
@@ -146,7 +147,7 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
 
         {/* Số kg thực nhận */}
         <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">
-          Số kg thực nhận <span className="text-rose-500">*</span>
+          Số {unit} thực nhận <span className="text-rose-500">*</span>
           <div className="relative">
             <input
               type="number"
@@ -161,13 +162,13 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
               className={`input-base pr-10 ${errors.kg ? '!border-rose-500 !ring-1 !ring-rose-200' : ''}`}
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-neutral-400">
-              kg
+              {unit}
             </span>
           </div>
           {errors.kg && <p className="text-[11px] font-semibold normal-case text-rose-600">{errors.kg}</p>}
           {requested == null && !errors.kg && (
             <p className="text-[11px] font-semibold normal-case text-neutral-400">
-              Đơn này chưa khai số kg — nhập đúng số cân thực tế bạn nhận được.
+              Đơn này chưa khai số lượng — nhập đúng số thực tế bạn nhận được.
             </p>
           )}
         </label>
@@ -175,7 +176,7 @@ export default function ConfirmPickupModal({ order, onClose, onDone }: Props) {
         {shortfall > 0 && (
           <p className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
             <span className="material-symbols-outlined text-[14px]">warning</span>
-            Thiếu {shortfall} kg so với đơn đặt ({requested} kg). Ghi rõ lý do bên dưới — bếp cần
+            Thiếu {shortfall} {unit} so với đơn đặt ({requested} {unit}). Ghi rõ lý do bên dưới — bếp cần
             biết ngay để tính lại thực đơn.
           </p>
         )}

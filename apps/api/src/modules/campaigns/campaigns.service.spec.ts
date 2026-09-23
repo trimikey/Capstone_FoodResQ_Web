@@ -1087,3 +1087,35 @@ describe('CampaignsService — đơn nguyên liệu chỉ hiện cho shipper đ�
     expect(orders.map((o) => o.id)).toEqual(['done']);
   });
 });
+
+describe('CampaignsService — mỗi điểm phát cần ít nhất 1 ảnh', () => {
+  const service = new CampaignsService(
+    {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+  );
+  const map = (n: number, count: number, raw?: string) =>
+    (service as unknown as {
+      mapDistributionPhotos: (n: number, p: Express.Multer.File[], r?: string) => number[];
+    }).mapDistributionPhotos(
+      n,
+      Array.from({ length: count }, () => ({ mimetype: 'image/jpeg' }) as Express.Multer.File),
+      raw,
+    );
+
+  it('ghép ảnh theo photoPoints, cho phép nhiều ảnh một điểm', () => {
+    expect(map(2, 3, '0,1,1')).toEqual([0, 1, 1]);
+  });
+
+  it('không có photoPoints mà số ảnh = số điểm thì ảnh i ↔ điểm i', () => {
+    expect(map(2, 2)).toEqual([0, 1]);
+  });
+
+  it('chặn khi còn điểm chưa có ảnh', () => {
+    expect(() => map(2, 1)).toThrow(/điểm 1, 2/);
+    expect(() => map(3, 2, '0,0')).toThrow(/điểm 2, 3/);
+  });
+
+  it('đợt không khai điểm vẫn cần ít nhất 1 ảnh', () => {
+    expect(() => map(0, 0)).toThrow(/ít nhất 1 ảnh/);
+    expect(map(0, 1)).toEqual([-1]);
+  });
+});

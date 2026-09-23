@@ -11,10 +11,11 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   ParseUUIDPipe,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { CampaignsService } from './campaigns.service';
 import { KitchenOpsService } from './kitchen-ops.service';
@@ -541,7 +542,13 @@ export class CampaignsController {
   @Post('distributions/:distributionId/complete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VOLUNTEER, UserRole.RECEIVER)
-  @UseInterceptors(FileInterceptor('photo'))
+  // `photos` = ảnh từng điểm phát (kèm `photoPoints`); `photo` = client cũ gửi 1 ảnh.
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'photos', maxCount: 30 },
+      { name: 'photo', maxCount: 1 },
+    ]),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
@@ -551,10 +558,11 @@ export class CampaignsController {
     @CurrentUser() user: User,
     @Param('distributionId', ParseUUIDPipe) distributionId: string,
     @Body() dto: CompleteDistributionDto,
-    @UploadedFile() photo?: Express.Multer.File,
+    @UploadedFiles() files?: { photos?: Express.Multer.File[]; photo?: Express.Multer.File[] },
   ) {
-    const proofUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
-    return this.campaignsService.completeDistribution(distributionId, user.id, dto, proofUrl);
+    // Ảnh được kiểm tra đủ cho từng điểm phát TRƯỚC khi upload — service tự lưu.
+    const photos = [...(files?.photos ?? []), ...(files?.photo ?? [])];
+    return this.campaignsService.completeDistribution(distributionId, user.id, dto, photos);
   }
 
   @Get('my-distributions')

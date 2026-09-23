@@ -14,6 +14,7 @@ import {
   useCompleteAssignedDistribution,
   useCompleteDishStep,
   useMyTaskDetail,
+  qtyUnit,
 } from '@/hooks/useCampaigns';
 import { VolunteerKitchenOpsPanel } from '@/components/kitchen/VolunteerKitchenOpsPanel';
 import { ScreenState } from '@/components/ui/ScreenState';
@@ -449,7 +450,8 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const [actualServings, setActualServings] = useState('');
   const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
-  const [distributionPhoto, setDistributionPhoto] = useState<CapturedImage | null>(null);
+  /** Ảnh chốt đợt phát theo từng điểm — mỗi điểm cần ít nhất 1 ảnh. */
+  const [distributionPhotos, setDistributionPhotos] = useState<Array<{ photo: CapturedImage; pointIndex: number }>>([]);
   const [pickupPhoto, setPickupPhoto] = useState<CapturedImage | null>(null);
 
   const dishes = detail.dishes ?? [];
@@ -459,11 +461,17 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     dish.steps.some((step) => step.stepOrder === 4 && step.effectiveStatus === 'done')
   );
 
+  const closingSlots = closing
+    ? closing.points.length > 0
+      ? closing.points.map((pt, i) => ({ index: i, title: `${i + 1}. ${pt.label}`, address: pt.address }))
+      : [{ index: -1, title: 'Ảnh bằng chứng phân phát', address: '' }]
+    : [];
+
   const openClose = (distribution: AssignedDistribution) => {
     setClosing(distribution);
     setActualServings(String(distribution.servingsServed));
     setNote('');
-    setDistributionPhoto(null);
+    setDistributionPhotos([]);
   };
 
   const openPickupConfirm = (order: PickupOrder) => {
@@ -491,11 +499,15 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
       });
       return;
     }
-    if (!distributionPhoto) {
+    const missing = closingSlots.filter((sl) => !distributionPhotos.some((p) => p.pointIndex === sl.index));
+    if (missing.length > 0) {
       Popup.show({
         type: 'warning',
-        text1: 'Thiếu ảnh phát suất',
-        text2: 'Chụp ảnh khu vực/phần ăn đã phát để tổ chức lưu tư liệu sau chiến dịch.',
+        text1: 'Thiếu ảnh bằng chứng',
+        text2:
+          closingSlots.length > 1
+            ? `Mỗi điểm phát cần ít nhất 1 ảnh — còn thiếu điểm ${missing.map((sl) => sl.index + 1).join(', ')}.`
+            : 'Chụp ít nhất 1 ảnh tại điểm phát làm bằng chứng đã giao.',
       });
       return;
     }
@@ -506,12 +518,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         campaignId: detail.campaign.id,
         actualServings: servings,
         note: note.trim() || undefined,
-        photo: distributionPhoto,
+        photos: distributionPhotos,
       });
       void notifySuccess();
       Popup.show({ type: 'success', text1: `Đã chốt ${servings}/${closing.servingsServed} suất` });
       setClosing(null);
-      setDistributionPhoto(null);
+      setDistributionPhotos([]);
       await onRefresh();
     } catch (error) {
       void notifyError();
@@ -535,11 +547,11 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     }
   };
 
-  const captureDistributionPhoto = async () => {
+  const captureDistributionPhoto = async (pointIndex: number) => {
     try {
       Keyboard.dismiss();
       const photo = await captureImage('id_card', 'proof');
-      if (photo) setDistributionPhoto(photo);
+      if (photo) setDistributionPhotos((prev) => [...prev, { photo, pointIndex }]);
     } catch (error) {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: getErrorMessage(error) });
@@ -552,8 +564,8 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     if (!Number.isFinite(kg) || kg < 0) {
       Popup.show({
         type: 'warning',
-        text1: 'Số kg không hợp lệ',
-        text2: 'Nhập số kg thực nhận trước khi xác nhận.',
+        text1: 'Số lượng không hợp lệ',
+        text2: `Nhập số ${qtyUnit(confirmingPickup)} thực nhận trước khi xác nhận.`,
       });
       return;
     }
@@ -575,7 +587,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         note: note.trim() || undefined,
       });
       void notifySuccess();
-      Popup.show({ type: 'success', text1: `Đã xác nhận lấy ${kg} kg nguyên liệu` });
+      Popup.show({ type: 'success', text1: `Đã xác nhận lấy ${kg} ${qtyUnit(confirmingPickup)} nguyên liệu` });
       setConfirmingPickup(null);
       setPickupPhoto(null);
       await onRefresh();
@@ -632,7 +644,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                     <Text style={styles.dishTitle}>{order.providerName}</Text>
                     <Text style={styles.muted}>
                       {order.ingredientName ?? 'Nguyên liệu chiến dịch'}
-                      {order.quantityKg != null ? ` · cần lấy ${order.quantityKg} kg` : ''}
+                      {order.quantityKg != null ? ` · cần lấy ${order.quantityKg} ${qtyUnit(order)}` : ''}
                     </Text>
                     <Text style={styles.smallMuted}>
                       {order.pickupStartTime && order.pickupEndTime
@@ -661,8 +673,8 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                   {order.pickup ? (
                     <View style={styles.completedBox}>
                       <Text style={styles.completedText}>
-                        Đã nhận {order.pickup.receivedKg} kg
-                        {order.pickup.requestedKg != null ? ` / đặt ${order.pickup.requestedKg} kg` : ''}
+                        Đã nhận {order.pickup.receivedKg} {qtyUnit(order)}
+                        {order.pickup.requestedKg != null ? ` / đặt ${order.pickup.requestedKg} ${qtyUnit(order)}` : ''}
                         {order.pickup.confirmedAt ? ` · ${formatDateTime(order.pickup.confirmedAt)}` : ''}
                       </Text>
                       {order.pickup.photoUrl ? (
@@ -749,7 +761,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
           onDismiss={() => {
             if (complete.isPending) return;
             setClosing(null);
-            setDistributionPhoto(null);
+            setDistributionPhotos([]);
           }}
         >
           <Dialog.Title>Chốt đợt phát</Dialog.Title>
@@ -759,41 +771,63 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
             {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
             <Text style={styles.muted}>Mỗi suất phát cho đúng 1 người — hệ thống tự ghi số người nhận bằng số suất.</Text>
             <TextInput mode="outlined" label="Ghi chú" value={note} onChangeText={setNote} multiline numberOfLines={3} />
-            {distributionPhoto ? (
-              <View style={styles.distributionPhotoReview}>
-                <View style={styles.pickupPhotoHead}>
-                  <MaterialCommunityIcons name="check-circle-outline" size={18} color={COLORS.success} />
-                  <Text style={styles.pickupPhotoTitle}>Ảnh phát suất đã chụp</Text>
+            {/* Mỗi điểm phát ≥ 1 ảnh bằng chứng đã giao tới đó */}
+            <Text style={styles.pickupPhotoTitle}>
+              Ảnh bằng chứng đã giao{closingSlots.length > 1 ? ` · ${closingSlots.filter((sl) => distributionPhotos.some((p) => p.pointIndex === sl.index)).length}/${closingSlots.length} điểm` : ''}
+            </Text>
+            {closingSlots.map((sl) => {
+              const mine = distributionPhotos.filter((p) => p.pointIndex === sl.index);
+              return (
+                <View key={sl.index} style={styles.pointProofSlot}>
+                  <View style={styles.pickupPhotoHead}>
+                    <MaterialCommunityIcons
+                      name={mine.length > 0 ? 'check-circle-outline' : 'camera-outline'}
+                      size={18}
+                      color={mine.length > 0 ? COLORS.success : COLORS.onSurfaceVariant}
+                    />
+                    <Text style={styles.pointProofTitle} numberOfLines={1}>{sl.title}</Text>
+                  </View>
+                  {sl.address ? <Text style={styles.muted} numberOfLines={1}>{sl.address}</Text> : null}
+                  <View style={styles.pointProofRow}>
+                    {mine.map((p, k) => (
+                      <Pressable
+                        key={`${sl.index}-${k}`}
+                        onLongPress={() => setDistributionPhotos((prev) => prev.filter((x) => x !== p))}
+                        accessibilityLabel="Giữ để xoá ảnh"
+                      >
+                        <AppImage source={{ uri: p.photo.uri }} style={styles.pointProofThumb} />
+                      </Pressable>
+                    ))}
+                    {mine.length < 3 ? (
+                      <Button
+                        compact
+                        mode={mine.length === 0 ? 'contained-tonal' : 'text'}
+                        icon="camera"
+                        onPress={() => captureDistributionPhoto(sl.index)}
+                        disabled={complete.isPending}
+                      >
+                        {mine.length === 0 ? 'Chụp ảnh' : 'Thêm'}
+                      </Button>
+                    ) : null}
+                  </View>
                 </View>
-                <AppImage source={{ uri: distributionPhoto.uri }} style={styles.distributionPhotoPreview} />
-                <Button compact icon="camera-retake-outline" onPress={captureDistributionPhoto} disabled={complete.isPending}>
-                  Chụp lại
-                </Button>
-              </View>
-            ) : (
-              <View style={styles.distributionPhotoEmpty}>
-                <View style={styles.pickupPhotoEmptyIcon}>
-                  <MaterialCommunityIcons name="camera-outline" size={28} color={COLORS.primary} />
-                </View>
-                <Text style={styles.pickupPhotoEmptyTitle}>Cần ảnh phát suất</Text>
-                <Text style={styles.pickupPhotoEmptyText}>Chụp rõ phần ăn hoặc điểm phát để tổ chức dùng làm tư liệu tổng kết.</Text>
-                <Button mode="contained-tonal" icon="camera" onPress={captureDistributionPhoto} disabled={complete.isPending}>
-                  Chụp ảnh
-                </Button>
-              </View>
-            )}
+              );
+            })}
+            {distributionPhotos.length > 0 ? (
+              <Text style={styles.muted}>Giữ lâu vào ảnh để xoá.</Text>
+            ) : null}
           </Dialog.Content>
           <Dialog.Actions>
             <Button
               onPress={() => {
                 setClosing(null);
-                setDistributionPhoto(null);
+                setDistributionPhotos([]);
               }}
               disabled={complete.isPending}
             >
               Huỷ
             </Button>
-            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending || !distributionPhoto} onPress={submitClose}>Xác nhận</Button>
+            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending || distributionPhotos.length === 0} onPress={submitClose}>Xác nhận</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -821,7 +855,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                   </View>
                   <View style={styles.flex}>
                     <Text style={styles.pickupSheetTitle}>Xác nhận lấy nguyên liệu</Text>
-                    <Text style={styles.pickupSheetSubtitle}>Nhập số kg, chụp ảnh rồi kiểm tra lại trước khi gửi.</Text>
+                    <Text style={styles.pickupSheetSubtitle}>Nhập số lượng thực nhận, chụp ảnh rồi kiểm tra lại trước khi gửi.</Text>
                   </View>
                   <Button compact onPress={closePickupConfirm} disabled={confirmPickup.isPending}>
                     Huỷ
@@ -840,7 +874,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                   </View>
                   <Text style={styles.pickupSummaryText}>
                     {confirmingPickup.ingredientName ?? 'Nguyên liệu chiến dịch'}
-                    {confirmingPickup.quantityKg != null ? ` · đặt ${confirmingPickup.quantityKg} kg` : ''}
+                    {confirmingPickup.quantityKg != null ? ` · đặt ${confirmingPickup.quantityKg} ${qtyUnit(confirmingPickup)}` : ''}
                   </Text>
                   {confirmingPickup.pickupStartTime && confirmingPickup.pickupEndTime ? (
                     <Text style={styles.pickupSummaryTime}>
@@ -852,7 +886,8 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                 <View style={styles.pickupFieldGroup}>
                   <TextInput
                     mode="outlined"
-                    label="Kg thực nhận *"
+                    label={`Số ${qtyUnit(confirmingPickup)} thực nhận *`}
+                    right={<TextInput.Affix text={qtyUnit(confirmingPickup)} />}
                     value={receivedKg}
                     onChangeText={setReceivedKg}
                     keyboardType="decimal-pad"
@@ -1019,6 +1054,16 @@ const styles = StyleSheet.create({
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   dialogBody: { gap: 12 },
   dialogInput: { marginTop: 12 },
+  pointProofSlot: {
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: radius.md,
+    padding: 10,
+    gap: 6,
+  },
+  pointProofTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
+  pointProofRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  pointProofThumb: { width: 56, height: 56, borderRadius: radius.sm },
   distributionPhotoEmpty: {
     alignItems: 'center',
     gap: 10,

@@ -101,7 +101,17 @@ export function suppliesForProvider(items: SupplyItem[], offer: SupplierOffer): 
     .map((x) => ({ ...x.item, exact: x.score >= 2 }));
 }
 
-/** Số kg điền sẵn — chỉ khi nguyên liệu khai theo kg (hoặc không ghi đơn vị). */
-export function defaultKg(item: SupplyItem): string {
-  return item.quantity != null && (!item.unit || /kg/i.test(item.unit)) ? String(item.quantity) : '';
+/** Đơn vị của nguyên liệu chiến dịch khai — không ghi đơn vị thì là kg. */
+export function itemUnit(item: Pick<SupplyItem, 'unit'>): string {
+  return item.unit?.trim() || 'kg';
+}
+
+/** Hai đơn vị có phải một không ("Lít" = "lít", "" = "kg"). */
+export function sameUnit(a?: string | null, b?: string | null): boolean {
+  return normalizeVi(a?.trim() || 'kg') === normalizeVi(b?.trim() || 'kg');
+}
+
+/** Số lượng điền sẵn theo đúng đơn vị nguyên liệu khai (3 kg, 1 lít, 1 bộ…). */
+export function defaultQty(item: SupplyItem): string {
+  return item.quantity != null ? String(item.quantity) : '';
 }

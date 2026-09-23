@@ -797,6 +797,8 @@ export interface DistributionPoint {
   address: string;
   lng?: number | null;
   lat?: number | null;
+  /** Ảnh bằng chứng đã giao tại điểm này — có sau khi chốt đợt phát. */
+  proofPhotoUrls?: string[];
 }
 
 export interface AssignedDistribution {
@@ -839,6 +841,8 @@ export interface PickupOrder {
   pickupStartTime: string | null;
   pickupEndTime: string | null;
   quantityKg: number | null;
+  /** Đơn vị của quantityKg / requestedKg / receivedKg (kg, lít, bộ…). */
+  quantityUnit?: string;
   pickup: {
     id: string;
     receivedKg: number;
@@ -1023,16 +1027,20 @@ export function useCampaignSupplies(campaignId?: string) {
 export function useCompleteAssignedDistribution() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note, photo }: {
+    mutationFn: async ({ distributionId, campaignId: _campaignId, actualServings, note, photos }: {
       distributionId: string;
       campaignId: string;
       actualServings: number;
       note?: string;
-      photo: CapturedImage;
+      /** Ảnh từng điểm phát (mỗi điểm ≥ 1); pointIndex -1 = đợt không khai điểm. */
+      photos: Array<{ photo: CapturedImage; pointIndex: number }>;
     }) => {
       const form = new FormData();
       form.append('actualServings', String(actualServings));
-      form.append('photo', photo as unknown as Blob);
+      for (const p of photos) form.append('photos', p.photo as unknown as Blob);
+      if (photos.length > 0 && photos.every((p) => p.pointIndex >= 0)) {
+        form.append('photoPoints', photos.map((p) => p.pointIndex).join(','));
+      }
       if (note) form.append('note', note);
       const res = await apiClient.post<ApiResponse<AssignedDistribution>>(
         endpoints.campaigns.completeDistribution(distributionId),
@@ -1310,4 +1318,9 @@ export function useDismissShiftInvite() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
+}
+
+/** Đơn vị hiển thị số lượng của đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
+export function qtyUnit(x: { quantityUnit?: string | null } | null | undefined): string {
+  return x?.quantityUnit?.trim() || 'kg';
 }

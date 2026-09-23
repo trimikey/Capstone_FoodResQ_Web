@@ -6,11 +6,12 @@ import { FOOD_CATEGORY_LABEL, type FoodCategory } from '@foodresq/types';
 import {
   useProviderRequests,
   useReviewProviderRequest,
+  qtyUnit,
   type DemandDetails,
   type ProviderRequestItem,
 } from '@/hooks/useCampaigns';
 import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
-import { supplyScore } from '@/lib/supply-match';
+import { normalizeVi, supplyScore } from '@/lib/supply-match';
 import { UNIT_LABEL } from '@/lib/utils';
 
 /** Giá trị ô chọn "không trừ tin nào". */
@@ -24,15 +25,29 @@ interface StockOption {
   exact: boolean;
 }
 
-/** Quy kg bếp xin về đơn vị của tin — cùng luật với BE (stock-match.ts). */
-function unitsForKg(l: ProviderListing, kg: number): number | null {
-  if (l.quantityUnit === 'kg') return Math.round(kg * 100) / 100;
-  const w = l.weightPerUnitKg != null ? Number(l.weightPerUnitKg) : NaN;
-  return Number.isFinite(w) && w > 0 ? Math.ceil(kg / w) : null;
+/** Đơn vị bếp gõ → mã đơn vị tin đăng — cùng bảng với BE (stock-match.ts). */
+const UNIT_ALIASES: Record<string, string> = {
+  kg: 'kg', kilogram: 'kg', ky: 'kg', kilo: 'kg',
+  lit: 'liter', l: 'liter', liter: 'liter', litre: 'liter',
+  hop: 'box', box: 'box', thung: 'box',
+  cai: 'item', item: 'item', chiec: 'item', goi: 'item', chai: 'item',
+  phan: 'portion', suat: 'portion', portion: 'portion',
+};
+
+/** Quy số lượng bếp xin về đơn vị của tin — cùng luật với BE (stock-match.ts). */
+function unitsForQuantity(l: ProviderListing, qty: number, unit: string): number | null {
+  const u = UNIT_ALIASES[normalizeVi(unit)] ?? null;
+  if (u === 'kg') {
+    if (l.quantityUnit === 'kg') return Math.round(qty * 100) / 100;
+    const w = l.weightPerUnitKg != null ? Number(l.weightPerUnitKg) : NaN;
+    return Number.isFinite(w) && w > 0 ? Math.ceil(qty / w) : null;
+  }
+  return u != null && u === l.quantityUnit ? Math.round(qty * 100) / 100 : null;
 }
 
 function stockOptionsFor(listings: ProviderListing[], d: DemandDetails | null): StockOption[] {
   const kg = Number(d?.quantityKg);
+  const unit = qtyUnit(d);
   if (!d?.ingredientName || !Number.isFinite(kg) || kg <= 0) return [];
   const now = Date.now();
   return listings
@@ -44,7 +59,7 @@ function stockOptionsFor(listings: ProviderListing[], d: DemandDetails | null): 
     )
     .map((l) => ({
       listing: l,
-      units: unitsForKg(l, kg),
+      units: unitsForQuantity(l, kg, unit),
       remaining: Number(l.quantityRemaining),
       exact:
         supplyScore(
@@ -296,6 +311,7 @@ function RequestCard({
       {isPending && !compact && req.demandDetails?.quantityKg != null && (
         <StockPicker
           kg={req.demandDetails.quantityKg}
+          unit={qtyUnit(req.demandDetails)}
           options={stockOptions}
           value={stockChoice ?? defaultStockChoice(stockOptions)}
           onChange={(v) => onStockChoice?.(v)}
@@ -388,11 +404,13 @@ function RequestCard({
  */
 function StockPicker({
   kg,
+  unit,
   options,
   value,
   onChange,
 }: {
   kg: number;
+  unit: string;
   options: StockOption[];
   value: string;
   onChange: (v: string) => void;
@@ -416,7 +434,7 @@ function StockPicker({
         {options.map((o) => (
           <option key={o.listing.id} value={o.listing.id} disabled={o.units == null}>
             {o.listing.title} — còn {o.remaining} {unitOf(o)}
-            {o.units == null ? ' (chưa khai kg/đơn vị)' : ` · trừ ${o.units} ${unitOf(o)}`}
+            {o.units == null ? ` (không quy được ${unit})` : ` · trừ ${o.units} ${unitOf(o)}`}
           </option>
         ))}
         <option value={NO_STOCK}>Không trừ — hàng lấy ngoài kho đăng trên FoodResQ</option>
@@ -432,7 +450,7 @@ function StockPicker({
       ) : short ? (
         <p className="text-[11px] font-semibold text-rose-600">
           Tin này chỉ còn {picked!.remaining} {unitOf(picked!)}, không đủ {picked!.units} {unitOf(picked!)} cho đơn{' '}
-          {kg} kg — chọn tin khác, cập nhật tồn kho hoặc từ chối.
+          {kg} {unit} — chọn tin khác, cập nhật tồn kho hoặc từ chối.
         </p>
       ) : picked ? (
         <p className="text-[11px] text-emerald-700">
@@ -459,7 +477,7 @@ function DemandDetailsCard({ d }: { d: DemandDetails }) {
       ? { icon: 'category', label: 'Phân loại', value: FOOD_CATEGORY_LABEL[d.foodCategory as FoodCategory] ?? d.foodCategory }
       : null,
     d.ingredientName ? { icon: 'grocery', label: 'Nguyên liệu', value: d.ingredientName } : null,
-    d.quantityKg != null ? { icon: 'scale', label: 'Số lượng cần', value: `${d.quantityKg} kg` } : null,
+    d.quantityKg != null ? { icon: 'scale', label: 'Số lượng cần', value: `${d.quantityKg} ${qtyUnit(d)}` } : null,
     d.expectedServings != null
       ? { icon: 'restaurant', label: 'Số suất dự kiến', value: `${d.expectedServings} suất` }
       : null,

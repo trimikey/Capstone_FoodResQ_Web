@@ -178,6 +178,8 @@ export interface MyTask {
     id: string;
     ingredientName: string | null;
     quantityKg: number | null;
+    /** Đơn vị của quantityKg (kg, lít, bộ…). */
+    quantityUnit?: string;
     pickupDate: string | null;
     pickupStartTime: string | null;
     pickupEndTime: string | null;
@@ -281,6 +283,8 @@ export interface DistributionPoint {
   address: string;
   lng?: number;
   lat?: number;
+  /** Ảnh bằng chứng đã giao tại điểm này — có sau khi shipper chốt đợt phát. */
+  proofPhotoUrls?: string[];
 }
 
 export interface CampaignDistribution {
@@ -846,6 +850,8 @@ export interface DemandDetails {
   foodCategory?: string;
   ingredientName?: string;
   quantityKg?: number;
+  /** Đơn vị của quantityKg — bỏ trống = kg (Dầu ăn 1 lít → 'lít'). */
+  quantityUnit?: string;
   expectedServings?: number;
   /** Ngày bếp cần nhận nguyên liệu (YYYY-MM-DD). */
   neededDate?: string;
@@ -1097,13 +1103,20 @@ export function useCompleteDistribution() {
        *  Số người KHÔNG gửi nữa: 1 suất = 1 người, BE tự ép bằng số suất. */
       actualServings?: number;
       note?: string;
-      /** Ảnh bằng chứng phân phát (multipart field `photo`). */
-      proofPhoto?: File;
+      /**
+       * Ảnh bằng chứng từng điểm phát: mỗi điểm cần ≥ 1 ảnh. `pointIndex` là thứ tự
+       * điểm trong đợt (0-based); đợt không khai điểm thì dùng -1.
+       */
+      photos: Array<{ file: File; pointIndex: number }>;
     }) => {
       const form = new FormData();
       if (p.actualServings != null) form.append('actualServings', String(p.actualServings));
       if (p.note) form.append('note', p.note);
-      if (p.proofPhoto) form.append('photo', p.proofPhoto);
+      for (const ph of p.photos) form.append('photos', ph.file);
+      const indexed = p.photos.filter((ph) => ph.pointIndex >= 0);
+      if (indexed.length === p.photos.length && indexed.length > 0) {
+        form.append('photoPoints', indexed.map((ph) => ph.pointIndex).join(','));
+      }
       return (await api.post(`/campaigns/distributions/${p.distributionId}/complete`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })).data.data;
@@ -1348,6 +1361,8 @@ export interface PickupOrder {
   foodCategory: string | null;
   /** Số kg bếp ĐẶT — null khi đơn cũ chưa khai chi tiết. */
   quantityKg: number | null;
+  /** Đơn vị của quantityKg / requestedKg / receivedKg. */
+  quantityUnit?: string;
   expectedServings: number | null;
   requireColdChain: boolean;
   requireQcPhoto: boolean;
@@ -1603,6 +1618,8 @@ export interface PickupHistoryItem {
   pickupEndTime: string | null;
   requestedKg: number | null;
   receivedKg: number;
+  /** Đơn vị của requestedKg / receivedKg / shortfallKg. */
+  quantityUnit?: string;
   shortfallKg: number;
   photoUrl: string;
   note: string | null;
@@ -2164,4 +2181,9 @@ export function useDismissShiftInvite() {
       ]);
     },
   });
+}
+
+/** Đơn vị hiển thị của số lượng trong đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
+export function qtyUnit(x: { quantityUnit?: string | null } | null | undefined): string {
+  return x?.quantityUnit?.trim() || 'kg';
 }

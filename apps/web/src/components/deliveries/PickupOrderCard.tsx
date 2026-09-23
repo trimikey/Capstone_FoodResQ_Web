@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import type { MyPickupOrder } from '@/hooks/useCampaigns';
+import { qtyUnit, type MyPickupOrder } from '@/hooks/useCampaigns';
 import { formatVnDate } from '@/lib/vn-date';
 import { mediaUrl } from '@/lib/utils';
 
@@ -82,7 +82,7 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
             {shortfall > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                 <span className="material-symbols-outlined text-[12px]">warning</span>
-                Thiếu {shortfall} kg
+                Thiếu {shortfall} {qtyUnit(order)}
               </span>
             )}
             {handledByDelivery && (
@@ -97,7 +97,7 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
           {!open && (
             <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-500">
               {order.quantityKg != null && (
-                <span className="font-bold text-emerald-700">Cần lấy {order.quantityKg} kg</span>
+                <span className="font-bold text-emerald-700">Cần lấy {order.quantityKg} {qtyUnit(order)}</span>
               )}
               {order.ingredientName && <span>{order.ingredientName}</span>}
               {order.distanceKm != null && <span>{order.distanceKm} km</span>}
@@ -128,7 +128,7 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
               title={order.checkedIn ? undefined : 'Cần điểm danh tại bếp chiến dịch trước'}
               className="rounded-xl bg-[#236c2a] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a4f1f] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500"
             >
-              Đã lấy — chụp ảnh &amp; nhập kg
+              Đã lấy — chụp ảnh &amp; nhập số lượng
             </button>
           )}
         </div>
@@ -145,7 +145,7 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
         )}
         {order.quantityKg != null && (
           <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white">
-            Cần lấy {order.quantityKg} kg
+            Cần lấy {order.quantityKg} {qtyUnit(order)}
           </span>
         )}
         {order.expectedServings != null && (
@@ -241,8 +241,8 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
           )}
           <div className="min-w-0 text-[11px]">
             <p className="font-bold text-emerald-800">
-              Thực nhận {pickup.receivedKg} kg
-              {pickup.requestedKg != null && ` / đặt ${pickup.requestedKg} kg`}
+              Thực nhận {pickup.receivedKg} {qtyUnit(order)}
+              {pickup.requestedKg != null && ` / đặt ${pickup.requestedKg} ${qtyUnit(order)}`}
             </p>
             <p className="text-neutral-500">
               {pickup.byName || 'Bạn'} chốt lúc {new Date(pickup.confirmedAt).toLocaleString('vi-VN')}

@@ -498,13 +498,24 @@ export class DemandDetailsDto {
   @MaxLength(255, { message: 'Tên nguyên liệu tối đa 255 ký tự' })
   ingredientName?: string;
 
-  @ApiPropertyOptional({ example: 30, description: 'Số kg cần' })
+  /**
+   * Số lượng cần, tính theo `quantityUnit` (mặc định kg). Tên field giữ `quantityKg`
+   * vì dữ liệu cũ + client cũ — với "Dầu ăn 1 lít" thì đây là 1 (lít).
+   */
+  @ApiPropertyOptional({ example: 30, description: 'Số lượng cần (theo quantityUnit, mặc định kg)' })
   @IsOptional()
   @IsNumber({}, { message: 'Số lượng phải là số' })
-  @Min(0.1, { message: 'Số lượng tối thiểu 0.1 kg' })
-  @Max(10000, { message: 'Số lượng tối đa 10.000 kg' })
+  @Min(0.1, { message: 'Số lượng tối thiểu 0.1' })
+  @Max(10000, { message: 'Số lượng tối đa 10.000' })
   @Type(() => Number)
   quantityKg?: number;
+
+  /** Đơn vị của số lượng: kg, lít, bộ, hộp… — lấy theo nguyên liệu chiến dịch khai. */
+  @ApiPropertyOptional({ example: 'kg', description: 'Đơn vị số lượng — bỏ trống = kg' })
+  @IsOptional()
+  @IsString({ message: 'Đơn vị phải là chuỗi' })
+  @MaxLength(20, { message: 'Đơn vị tối đa 20 ký tự' })
+  quantityUnit?: string;
 
   @ApiPropertyOptional({ example: 100, description: 'Số suất ăn dự kiến nấu được' })
   @IsOptional()
@@ -873,6 +884,16 @@ export class CompleteDistributionDto {
   @IsString({ message: 'Ghi chú phải là chuỗi' })
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
   note?: string;
+
+  /**
+   * Ảnh `photos[i]` chụp tại điểm phát số mấy (0-based), dạng "0,0,1" vì multipart
+   * không gửi được mảng số. Bỏ trống khi số ảnh = số điểm (ảnh i ↔ điểm i).
+   */
+  @ApiPropertyOptional({ example: '0,1,1', description: 'Chỉ số điểm phát của từng ảnh trong `photos`' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+(,\d+)*$/, { message: 'photoPoints phải dạng "0,1,1"' })
+  photoPoints?: string;
 }
 
 /**

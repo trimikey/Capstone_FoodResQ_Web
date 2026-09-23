@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { Modal } from '@/components/shared/Modal';
@@ -18,7 +18,13 @@ const PointsMap = dynamic(() => import('./DistributionPointsMap'), {
  * Trước đây bấm "Xác nhận đã phát xong" là đóng luôn theo số tổ chức lên kế hoạch —
  * kế hoạch 50 suất mà chỉ phát được 38 thì thống kê chiến dịch vẫn ghi 50. Nhập tay
  * con số thật ở đây mới ra báo cáo dùng được.
+ *
+ * Mỗi điểm phát phải có ÍT NHẤT 1 ảnh làm bằng chứng đã giao tới đó — một ảnh chung
+ * cho cả đợt không chứng minh được shipper đã tới đủ các điểm.
  */
+
+/** Tối đa ảnh cho một điểm phát — đủ chụp toàn cảnh + cận cảnh, không thành album. */
+const MAX_PHOTOS_PER_POINT = 3;
 
 interface Props {
   distributionId: string;
@@ -28,6 +34,14 @@ interface Props {
   points: DistributionPoint[];
   onClose: () => void;
   onDone: () => void;
+}
+
+interface ProofPhoto {
+  id: string;
+  file: File;
+  preview: string;
+  /** Thứ tự điểm phát (0-based); -1 = đợt không khai điểm, ảnh chung. */
+  pointIndex: number;
 }
 
 export default function CompleteDistributionModal({
@@ -44,10 +58,23 @@ export default function CompleteDistributionModal({
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showMap, setShowMap] = useState(true);
-  /** Ảnh bằng chứng phân phát — bắt buộc để tránh shipper bấm chốt mà không đi phát thật. */
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<ProofPhoto[]>([]);
+  /** Điểm đang chọn ảnh — input file dùng chung cho mọi điểm. */
+  const [pickingFor, setPickingFor] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Ảnh preview là blob URL — thu hồi khi đóng modal để không giữ file trong bộ nhớ.
+  const photosRef = useRef<ProofPhoto[]>([]);
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.preview)), []);
+
+  const slots =
+    points.length > 0
+      ? points.map((pt, i) => ({ index: i, title: `${i + 1}. ${pt.label}`, address: pt.address }))
+      : [{ index: -1, title: 'Ảnh bằng chứng phân phát', address: '' }];
+  const missingSlots = slots.filter((sl) => !photos.some((p) => p.pointIndex === sl.index));
 
   const s = Number(servings);
   const leftover = Number.isFinite(s) ? Math.max(0, plannedServings - s) : 0;
@@ -63,8 +90,11 @@ export default function CompleteDistributionModal({
     } else if (s > plannedServings) {
       next.servings = `Không thể vượt ${plannedServings} suất đã nhận`;
     }
-    if (!proofFile) {
-      next.proof = 'Chụp hoặc tải ảnh làm bằng chứng phân phát';
+    if (missingSlots.length > 0) {
+      next.proof =
+        points.length > 1
+          ? `Mỗi điểm phát cần ít nhất 1 ảnh — còn thiếu điểm ${missingSlots.map((sl) => sl.index + 1).join(', ')}.`
+          : 'Chụp hoặc tải ít nhất 1 ảnh làm bằng chứng đã phát.';
     }
     setErrors(next);
     if (Object.keys(next).length > 0) return;
@@ -76,7 +106,7 @@ export default function CompleteDistributionModal({
         campaignId,
         actualServings: s,
         note: note.trim() || undefined,
-        proofPhoto: proofFile!,
+        photos: photos.map((p) => ({ file: p.file, pointIndex: p.pointIndex })),
       });
       toast.success(
         leftover > 0
@@ -90,20 +120,36 @@ export default function CompleteDistributionModal({
     }
   }
 
+  function openPicker(pointIndex: number) {
+    setPickingFor(pointIndex);
+    fileRef.current?.click();
+  }
+
   function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    if (!file || pickingFor == null) return;
     if (!file.type.startsWith('image/')) {
       setErrors((prev) => ({ ...prev, proof: 'Chỉ chấp nhận file ảnh (JPG/PNG/WebP).' }));
       return;
     }
-    setProofFile(file);
-    setProofPreview(URL.createObjectURL(file));
+    const pointIndex = pickingFor;
+    setPhotos((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${prev.length}`, file, preview: URL.createObjectURL(file), pointIndex },
+    ]);
     setErrors((prev) => {
       const next = { ...prev };
       delete next.proof;
       return next;
+    });
+  }
+
+  function removePhoto(id: string) {
+    setPhotos((prev) => {
+      const gone = prev.find((p) => p.id === id);
+      if (gone) URL.revokeObjectURL(gone.preview);
+      return prev.filter((p) => p.id !== id);
     });
   }
 
@@ -173,11 +219,23 @@ export default function CompleteDistributionModal({
           </p>
         )}
 
-        {/* Ảnh bằng chứng phân phát — bắt buộc để xác minh đợt phát thực sự diễn ra. */}
-        <div className="space-y-1">
-          <p className="text-xs font-bold uppercase tracking-wide text-neutral-600">
-            Ảnh bằng chứng phân phát <span className="text-rose-500">*</span>
-          </p>
+        {/* Ảnh bằng chứng — mỗi điểm phát ít nhất 1 ảnh */}
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-600">
+              Ảnh bằng chứng đã giao <span className="text-rose-500">*</span>
+            </p>
+            {points.length > 1 && (
+              <span className="shrink-0 text-[11px] font-semibold text-neutral-500">
+                {slots.length - missingSlots.length}/{slots.length} điểm có ảnh
+              </span>
+            )}
+          </div>
+          {points.length > 1 && (
+            <p className="text-[11px] text-neutral-500">
+              Chụp ít nhất 1 ảnh tại <b>mỗi</b> điểm phát (tối đa {MAX_PHOTOS_PER_POINT} ảnh/điểm).
+            </p>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -186,57 +244,67 @@ export default function CompleteDistributionModal({
             className="hidden"
             onChange={handlePickFile}
           />
-          <div className="flex items-start gap-3">
-            {proofPreview ? (
-              <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-neutral-200">
-                <img src={proofPreview} alt="Ảnh bằng chứng" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProofFile(null);
-                    setProofPreview(null);
-                  }}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
-                  aria-label="Xoá ảnh"
-                >
-                  <span className="material-symbols-outlined text-[14px]">close</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed transition-colors ${
-                  errors.proof
-                    ? 'border-rose-400 bg-rose-50 text-rose-600'
-                    : 'border-neutral-300 bg-neutral-50 text-neutral-500 hover:border-emerald-400 hover:text-emerald-700'
+
+          {slots.map((sl) => {
+            const mine = photos.filter((p) => p.pointIndex === sl.index);
+            const missing = mine.length === 0;
+            return (
+              <div
+                key={sl.index}
+                className={`rounded-xl border p-3 ${
+                  missing && errors.proof ? 'border-rose-300 bg-rose-50/60' : 'border-neutral-200'
                 }`}
               >
-                <span className="material-symbols-outlined text-[28px]">photo_camera</span>
-                <span className="text-[10px] font-bold">Chụp / tải</span>
-              </button>
-            )}
-            <div className="min-w-0 flex-1">
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
-              >
-                <span className="material-symbols-outlined text-[14px]">add_a_photo</span>
-                {proofFile ? 'Đổi ảnh khác' : 'Chọn ảnh bằng chứng'}
-              </button>
-              <p className="mt-1 text-[11px] text-neutral-500">
-                Bắt buộc: chụp khung cảnh sau khi phát xong để làm bằng chứng cho tổ chức.
-              </p>
-              {proofFile && (
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-neutral-700">
-                  {proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB
-                </p>
-              )}
-            </div>
-          </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1 text-xs font-bold text-neutral-800">
+                      <span
+                        className={`material-symbols-outlined text-[15px] ${missing ? 'text-neutral-400' : 'text-emerald-600'}`}
+                      >
+                        {missing ? 'radio_button_unchecked' : 'check_circle'}
+                      </span>
+                      <span className="truncate">{sl.title}</span>
+                    </p>
+                    {sl.address && <p className="mt-0.5 truncate pl-5 text-[11px] text-neutral-500">{sl.address}</p>}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 pl-5">
+                  {mine.map((p) => (
+                    <div key={p.id} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-neutral-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.preview} alt={`Ảnh ${sl.title}`} className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(p.id)}
+                        className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+                        aria-label="Xoá ảnh"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                  {mine.length < MAX_PHOTOS_PER_POINT && (
+                    <button
+                      type="button"
+                      onClick={() => openPicker(sl.index)}
+                      className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed transition-colors ${
+                        missing && errors.proof
+                          ? 'border-rose-400 text-rose-600'
+                          : 'border-neutral-300 text-neutral-500 hover:border-emerald-400 hover:text-emerald-700'
+                      }`}
+                      aria-label={`Thêm ảnh cho ${sl.title}`}
+                    >
+                      <span className="material-symbols-outlined text-[22px]">add_a_photo</span>
+                      <span className="text-[9px] font-bold">{missing ? 'Chụp' : 'Thêm'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
           {errors.proof && (
-            <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1">
+            <p className="flex items-center gap-1 text-[11px] font-semibold text-rose-600">
               <span className="material-symbols-outlined text-[13px]">error</span>
               {errors.proof}
             </p>

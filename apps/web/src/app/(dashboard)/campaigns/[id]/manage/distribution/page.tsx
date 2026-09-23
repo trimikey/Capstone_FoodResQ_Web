@@ -337,6 +337,23 @@ export default function DistributionPage() {
                                       </span>
                                       <br />
                                       {pt.address}
+                                      {(pt.proofPhotoUrls ?? []).length > 0 && (
+                                        <span className="mt-1 flex flex-wrap gap-1">
+                                          {pt.proofPhotoUrls!.map((u, k) => (
+                                            <a
+                                              key={u}
+                                              href={mediaUrl(u)}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              title={`Ảnh ${k + 1} tại điểm ${i + 1}`}
+                                              className="block h-10 w-10 overflow-hidden rounded-md border border-emerald-200"
+                                            >
+                                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                                              <img src={mediaUrl(u)} alt={`Ảnh điểm ${i + 1}`} className="h-full w-full object-cover" />
+                                            </a>
+                                          ))}
+                                        </span>
+                                      )}
                                     </li>
                                   ))}
                                 </ul>

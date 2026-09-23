@@ -21,7 +21,7 @@ import {
   type ActiveDelivery,
   type DeliveryHistoryItem,
 } from '@/hooks/useDeliveries';
-import { useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
+import { qtyUnit, useMyPickupOrders, type MyPickupOrder } from '@/hooks/useCampaigns';
 import PickupOrderCard from '@/components/deliveries/PickupOrderCard';
 import ConfirmPickupModal from '@/components/deliveries/ConfirmPickupModal';
 import { mediaUrl, mapsDirUrl, haversineKm, UNIT_LABEL } from '@/lib/utils';
@@ -877,7 +877,7 @@ export default function DeliveriesPage() {
                           <span className="font-bold text-neutral-900">
                             {o.providerName}
                             {o.ingredientName ? ` — ${o.ingredientName}` : ''}
-                            {o.quantityKg != null ? ` (${o.quantityKg} kg)` : ''}
+                            {o.quantityKg != null ? ` (${o.quantityKg} ${qtyUnit(o)})` : ''}
                           </span>
                           <span className="block text-neutral-600">
                             {o.providerAddress || 'Chưa có địa chỉ'}

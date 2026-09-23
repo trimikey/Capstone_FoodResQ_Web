@@ -14,6 +14,7 @@ import {
   useMyPickupHistory,
   type DistributionHistoryItem,
   type PickupHistoryItem,
+  qtyUnit,
 } from '@/hooks/useCampaigns';
 import { formatVnDate } from '@/lib/vn-date';
 
@@ -587,7 +588,7 @@ function PickupRow({ p }: { p: PickupHistoryItem }) {
           <p className="text-lg font-extrabold text-emerald-700">
             {p.receivedKg}
             <span className="text-sm font-bold text-neutral-400">
-              {p.requestedKg != null ? `/${p.requestedKg} kg` : ' kg'}
+              {p.requestedKg != null ? `/${p.requestedKg} ${qtyUnit(p)}` : ` ${qtyUnit(p)}`}
             </span>
           </p>
           <span
@@ -595,7 +596,7 @@ function PickupRow({ p }: { p: PickupHistoryItem }) {
               p.shortfallKg > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
             }`}
           >
-            {p.shortfallKg > 0 ? `Thiếu ${p.shortfallKg} kg` : 'Lấy đủ'}
+            {p.shortfallKg > 0 ? `Thiếu ${p.shortfallKg} ${qtyUnit(p)}` : 'Lấy đủ'}
           </span>
           <div className="mt-2">
             <button
@@ -644,11 +645,11 @@ function PickupDetail({ p }: { p: PickupHistoryItem }) {
       <div className="md:col-span-2">
         <p className="mb-2 text-[11px] font-bold uppercase text-neutral-400">Đối chiếu số lượng</p>
         <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-2">
-          <KgTile label="Bếp đặt" value={p.requestedKg != null ? `${p.requestedKg} kg` : '—'} />
-          <KgTile label="Thực nhận" value={`${p.receivedKg} kg`} tone="emerald" />
+          <KgTile label="Bếp đặt" value={p.requestedKg != null ? `${p.requestedKg} ${qtyUnit(p)}` : '—'} />
+          <KgTile label="Thực nhận" value={`${p.receivedKg} ${qtyUnit(p)}`} tone="emerald" />
           <KgTile
             label={p.shortfallKg > 0 ? 'Thiếu' : 'Chênh lệch'}
-            value={p.shortfallKg > 0 ? `${p.shortfallKg} kg` : '0 kg'}
+            value={`${p.shortfallKg > 0 ? p.shortfallKg : 0} ${qtyUnit(p)}`}
             tone={p.shortfallKg > 0 ? 'amber' : undefined}
           />
         </div>

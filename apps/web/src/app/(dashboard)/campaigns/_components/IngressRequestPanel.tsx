@@ -12,9 +12,11 @@ import {
 } from '@/hooks/useCampaigns';
 import { useProviderListings } from '@/hooks/useProviders';
 import {
-  defaultKg,
+  defaultQty,
   inferCategories,
+  itemUnit,
   normalizeVi,
+  sameUnit,
   suppliesForProvider,
   type SupplyItem,
   type SupplySuggestion,
@@ -45,7 +47,10 @@ interface RequestLine {
   /** Nguyên liệu chiến dịch mà NCC này có thể bán — để bấm chọn nhanh. */
   suggestions: SupplySuggestion[];
   ingredientName: string;
+  /** Số lượng theo `unit` — tên giữ `quantityKg` cho khớp field API. */
   quantityKg: string;
+  /** Đơn vị theo nguyên liệu chiến dịch khai (kg, lít, bộ…); nhập tay thì mặc định kg. */
+  unit: string;
 }
 
 interface Props {
@@ -102,10 +107,10 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     const r = remainingOf(name);
     return r != null && r.remaining <= 0;
   };
-  /** Số kg nên xin: phần còn thiếu trừ đi phần các NCC khác trong đơn này đã nhận. */
+  /** Số lượng nên xin: phần còn thiếu trừ đi phần các NCC khác trong đơn này đã nhận. */
   const suggestKg = (item: SupplyItem, others: RequestLine[]) => {
     const r = remainingOf(item.name);
-    if (!r || !/kg/i.test(r.unit)) return defaultKg(item);
+    if (!r || !sameUnit(r.unit, itemUnit(item))) return defaultQty(item);
     const taken = others
       .filter((l) => sameName(l.ingredientName, item.name))
       .reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
@@ -160,6 +165,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
         suggestions,
         ingredientName: pick?.name ?? '',
         quantityKg: pick ? suggestKg(pick, lines) : '',
+        unit: pick ? itemUnit(pick) : 'kg',
       },
     ]);
   }
@@ -189,8 +195,9 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     if (missing) return toast.error(`Chưa nhập nguyên liệu cần lấy từ ${missing.businessName}.`);
     // Không xin quá phần còn thiếu — cộng dồn các NCC cùng xin một món.
     for (const [key, info] of remainingByName) {
-      if (!/kg/i.test(info.unit)) continue;
-      const sameItem = lines.filter((l) => normalizeVi(l.ingredientName) === key);
+      const sameItem = lines.filter(
+        (l) => normalizeVi(l.ingredientName) === key && sameUnit(l.unit, info.unit),
+      );
       if (sameItem.length === 0) continue;
       const asked = sameItem.reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
       const name = sameItem[0].ingredientName.trim();
@@ -232,6 +239,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
             foodCategory: inferCategories(line.ingredientName)[0] ?? (category || undefined),
             ingredientName: line.ingredientName.trim(),
             quantityKg: line.quantityKg && Number.isFinite(qty) && qty > 0 ? qty : undefined,
+            quantityUnit: line.unit || 'kg',
             expectedServings:
               expectedServings && Number.isFinite(servings) && servings > 0 ? servings : undefined,
             neededDate: neededDate || undefined,
@@ -564,6 +572,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                   onPickSuggestion={(item) =>
                     updateLine(line.providerId, {
                       ingredientName: item.name,
+                      unit: itemUnit(item),
                       quantityKg:
                         suggestKg(item, lines.filter((l) => l.providerId !== line.providerId)) || line.quantityKg,
                     })
@@ -725,10 +734,10 @@ function RequestLineCard({
             onChange={(e) => onChange({ quantityKg: e.target.value })}
             placeholder="0"
             className={`${inputCls} pr-8`}
-            aria-label={`Số kg từ ${line.businessName}`}
+            aria-label={`Số ${line.unit || 'kg'} từ ${line.businessName}`}
           />
           <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
-            kg
+            {line.unit || 'kg'}
           </span>
         </div>
       </div>

@@ -1,11 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { toast } from 'sonner';
-import { useCompleteDistribution, type MyTask } from '@/hooks/useCampaigns';
+import { qtyUnit, type MyTask } from '@/hooks/useCampaigns';
+import CompleteDistributionModal from '../../my-tasks/[assignmentId]/CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
-import { errMsg } from '@/lib/utils';
 import { ROLE_META } from './RoleBadge';
 import { TASK_NEXT } from './CampaignTaskAction';
 
@@ -77,7 +77,7 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
   // 1 TNV nhận nhiều ca cùng chiến dịch → BE tạo nhiều assignment. Gộp về 1 thẻ,
   // liệt kê từng ca (mỗi ca có màn nhiệm vụ riêng nên link riêng từng ca).
   const groupMembers = group && group.length > 1 ? group : null;
-  const completeDist = useCompleteDistribution();
+  const [closingDist, setClosingDist] = useState<NonNullable<MyTask['distributions']>[number] | null>(null);
   const campaignRunning = t.campaign.status === 'in_progress';
   const urgency = urgencyOf(t, new Date());
   const cardClass = urgency.kind === 'overdue'
@@ -233,7 +233,7 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
               <li key={p.id} className="rounded-lg bg-white/80 p-2 text-[11px] text-neutral-600">
                 <p className="text-xs font-bold text-neutral-800">
                   {p.ingredientName ?? 'Nguyên liệu'}
-                  {p.quantityKg != null ? ` · ${p.quantityKg} kg` : ''}
+                  {p.quantityKg != null ? ` · ${p.quantityKg} ${qtyUnit(p)}` : ''}
                   {' · từ '}
                   {p.provider.businessName}
                 </p>
@@ -309,24 +309,15 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
                 )}
                 {d.note && <p className="mt-1 text-[11px] text-neutral-500">Ghi chú: {d.note}</p>}
                 {!d.completedAt && (
+                  // Chốt đợt cần ảnh bằng chứng tại TỪNG điểm phát → mở modal chụp ảnh,
+                  // không cho bấm chốt suông như trước.
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        await completeDist.mutateAsync({
-                          distributionId: d.id,
-                          campaignId: t.campaign.id,
-                        });
-                        toast.success('Đã xác nhận phát xong đợt này.');
-                      } catch (err) {
-                        toast.error(errMsg(err, 'Xác nhận thất bại'));
-                      }
-                    }}
-                    disabled={completeDist.isPending}
-                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                    onClick={() => setClosingDist(d)}
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white transition-colors hover:bg-emerald-700"
                   >
-                    <span className="material-symbols-outlined text-[15px]">task_alt</span>
-                    {completeDist.isPending ? 'Đang lưu…' : 'Xác nhận đã phát xong'}
+                    <span className="material-symbols-outlined text-[15px]">add_a_photo</span>
+                    Chụp ảnh từng điểm &amp; chốt đợt
                   </button>
                 )}
               </li>
@@ -367,6 +358,17 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
           Còn việc cần xử lý — bấm “Vào nhiệm vụ”
         </p>
       ) : null}
+      {closingDist && (
+        <CompleteDistributionModal
+          distributionId={closingDist.id}
+          campaignId={t.campaign.id}
+          roundLabel={closingDist.roundLabel}
+          plannedServings={closingDist.servingsServed}
+          points={closingDist.points}
+          onClose={() => setClosingDist(null)}
+          onDone={() => undefined}
+        />
+      )}
     </div>
   );
 }
