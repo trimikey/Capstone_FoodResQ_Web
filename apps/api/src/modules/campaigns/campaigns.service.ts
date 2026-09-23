@@ -8,6 +8,16 @@ import { DeliveriesService } from '@/modules/deliveries/deliveries.service';
 import { TrustService } from '@/modules/trust/trust.service';
 import { TrustScoreReason } from '@foodresq/types';
 import { DishStepsService } from './dish-steps.service';
+import { pickStockListing, unitsForKg, type StockListing } from './stock-match';
+
+/** Nhãn đơn vị tin đăng cho câu báo lỗi / thông báo tiếng Việt. */
+const UNIT_LABEL_VN: Record<string, string> = {
+  kg: 'kg',
+  portion: 'phần',
+  item: 'cái',
+  box: 'hộp',
+  liter: 'lít',
+};
 import { CreateCampaignDto, ApplyCampaignDto, SubmitCampaignChangeDto, SendProviderRequestDto, SubmitProviderProposalDto, ReviewAssignmentDto, CreateDistributionDto, CreateShiftDto, UpdateShiftDto, AppendMenuItemDto, AppendSupplyItemDto, ReviewProviderRequestDto } from './dto/campaign.dto';
 
 // State machine cho công việc của TNV trong chiến dịch
@@ -111,6 +121,7 @@ interface DonationDemandDetails {
   requireColdChain?: boolean;
   requireQcPhoto?: boolean;
   nonCommercialWaiver?: boolean;
+  foodCategory?: string;
 }
 
 @Injectable()
@@ -389,7 +400,9 @@ export class CampaignsService {
       const remaining = itemProgress?.remainingQuantity ?? target.targetQuantity;
       if (quantity > remaining) {
         throw new BadRequestException(
-          `Yêu cầu chỉ còn thiếu ${remaining} ${target.unit} ${target.name}; provider không thể chấp nhận góp vượt số còn thiếu.`,
+          remaining <= 0
+            ? `Chiến dịch đã nhận đủ ${target.targetQuantity} ${target.unit} ${target.name}, không cần thêm — bạn có thể từ chối đơn này.`
+            : `Chiến dịch chỉ còn thiếu ${remaining} ${target.unit} ${target.name}, ít hơn ${quantity} ${target.unit} trong đơn — bạn có thể từ chối để bếp gửi lại đúng số.`,
         );
       }
     }
@@ -5632,7 +5645,7 @@ export class CampaignsService {
     requestId: string,
     action: 'accept' | 'reject',
     note?: string,
-    opts?: { pickupTime?: string; needsTransport?: boolean },
+    opts?: { pickupTime?: string; needsTransport?: boolean; listingId?: string; skipStockDeduction?: boolean },
   ) {
     const profile = await this.prisma.providerProfile.findUnique({
       where: { userId: providerUserId },
@@ -5728,6 +5741,13 @@ export class CampaignsService {
       : campaignSnapshot?.scheduledDate ?? null;
     const needsTransport = action === 'accept' && (opts?.needsTransport ?? true);
 
+    // Nhận đơn = NCC cam kết giao hàng thật → trừ tồn kho tin đăng tương ứng, để
+    // khách lẻ không đặt tiếp số gạo đã hứa cho bếp.
+    const stockPlan =
+      action === 'accept' && !opts?.skipStockDeduction
+        ? await this.planStockDeduction(profile.id, demand, opts?.listingId)
+        : null;
+
     const { updated, transport, donation } = await this.prisma.$transaction(async (tx) => {
       const requestUpdate = await tx.campaignProviderRequest.updateMany({
         where: { id: requestId, status: 'pending' },
@@ -5743,6 +5763,43 @@ export class CampaignsService {
       });
       if (requestUpdate.count !== 1) {
         throw new ConflictException('Yêu cầu đã được xử lý bởi thao tác khác.');
+      }
+
+      if (stockPlan) {
+        // Trừ CÓ ĐIỀU KIỆN (cùng pattern đặt đơn / giao sỉ): khách lẻ vừa đặt trong
+        // khe hở thì 0 dòng bị sửa và toàn bộ việc chấp nhận rollback.
+        const affected = await tx.$executeRaw(Prisma.sql`
+          UPDATE food_listings
+          SET
+            quantity_remaining = quantity_remaining - ${stockPlan.units},
+            status = CASE WHEN quantity_remaining - ${stockPlan.units} <= 0
+                          THEN 'fully_reserved'::listing_status ELSE status END,
+            updated_at = NOW()
+          WHERE id = ${stockPlan.listingId}::uuid
+            AND status = 'active'
+            AND quantity_remaining >= ${stockPlan.units}
+        `);
+        if (affected === 0) {
+          throw new BadRequestException(
+            `Tin "${stockPlan.title}" vừa có người đặt nên không còn đủ ${stockPlan.units} ${stockPlan.unit} — tải lại trang rồi thử lại.`,
+          );
+        }
+        await tx.campaignProviderRequest.update({
+          where: { id: requestId },
+          data: {
+            listingIds: JSON.stringify([stockPlan.listingId]),
+            demandDetails: {
+              ...((request.demandDetails ?? {}) as Record<string, unknown>),
+              stockDeduction: {
+                listingId: stockPlan.listingId,
+                listingTitle: stockPlan.title,
+                quantity: stockPlan.units,
+                unit: stockPlan.unit,
+                deductedAt: new Date().toISOString(),
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
       }
 
       const updated = await tx.campaignProviderRequest.findUniqueOrThrow({
@@ -5816,7 +5873,85 @@ export class CampaignsService {
       });
     }
 
-    return { ...updated, transportId };
+    return { ...updated, transportId, stockDeduction: stockPlan };
+  }
+
+  /**
+   * Tin đăng sẽ bị trừ khi NCC nhận đơn nguyên liệu, cùng số đơn vị trừ.
+   * - Có `listingId` (NCC tự chọn) → dùng đúng tin đó, sai điều kiện thì báo lỗi.
+   * - Không có → tự chọn tin khớp món; không tin nào khớp thì trả null (không trừ:
+   *   NCC có thể có hàng ngoài kho đăng trên nền tảng).
+   * Kiểm tra đủ hàng ở đây để báo lỗi dễ hiểu; chốt chặn thật là UPDATE có điều kiện.
+   */
+  private async planStockDeduction(
+    providerId: string,
+    demand: DonationDemandDetails,
+    listingId?: string,
+  ): Promise<{ listingId: string; title: string; units: number; unit: string } | null> {
+    const kg = Number(demand.quantityKg);
+    if (!demand.ingredientName || !Number.isFinite(kg) || kg <= 0) {
+      if (listingId) {
+        throw new BadRequestException('Đơn không ghi số kg nên không trừ tồn kho được — bỏ chọn tin đăng.');
+      }
+      return null;
+    }
+
+    const rows = await this.prisma.foodListing.findMany({
+      where: {
+        providerId,
+        deletedAt: null,
+        status: 'active',
+        pickupEndTime: { gt: new Date() },
+        quantityRemaining: { gt: 0 },
+        ...(listingId ? { id: listingId } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        quantityUnit: true,
+        quantityRemaining: true,
+        weightPerUnitKg: true,
+      },
+    });
+    const listings: StockListing[] = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      category: r.category,
+      quantityUnit: r.quantityUnit,
+      quantityRemaining: Number(r.quantityRemaining),
+      weightPerUnitKg: r.weightPerUnitKg != null ? Number(r.weightPerUnitKg) : null,
+    }));
+
+    let listing: StockListing | null;
+    if (listingId) {
+      listing = listings[0] ?? null;
+      if (!listing) {
+        throw new BadRequestException('Tin đăng đã chọn không còn hiệu lực (hết hàng, hết giờ hoặc đã huỷ).');
+      }
+    } else {
+      listing = pickStockListing(listings, demand.ingredientName, demand.foodCategory, kg);
+      if (!listing) return null;
+    }
+
+    const units = unitsForKg(listing, kg);
+    if (units == null) {
+      throw new BadRequestException(
+        `Tin "${listing.title}" tính theo ${UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit} mà chưa khai kg mỗi đơn vị — không quy được ${kg} kg. Sửa tin (thêm kg/đơn vị) hoặc chọn tin khác.`,
+      );
+    }
+    if (listing.quantityRemaining < units) {
+      const unitLabel = UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit;
+      throw new BadRequestException(
+        `Tin "${listing.title}" chỉ còn ${listing.quantityRemaining} ${unitLabel}, không đủ ${units} ${unitLabel} cho đơn ${kg} kg ${demand.ingredientName}. Hãy cập nhật tồn kho, chọn tin khác hoặc từ chối.`,
+      );
+    }
+    return {
+      listingId: listing.id,
+      title: listing.title,
+      units,
+      unit: UNIT_LABEL_VN[listing.quantityUnit] ?? listing.quantityUnit,
+    };
   }
 
   /**

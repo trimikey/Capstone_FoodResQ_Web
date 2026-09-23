@@ -622,7 +622,7 @@ export class CampaignsController {
       requestId,
       body.action,
       body.note,
-      { pickupTime: body.pickupTime, needsTransport: body.needsTransport },
+      { pickupTime: body.pickupTime, needsTransport: body.needsTransport, listingId: body.listingId, skipStockDeduction: body.skipStockDeduction },
     );
   }
 

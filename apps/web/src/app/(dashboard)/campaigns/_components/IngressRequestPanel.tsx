@@ -14,6 +14,7 @@ import { useProviderListings } from '@/hooks/useProviders';
 import {
   defaultKg,
   inferCategories,
+  normalizeVi,
   suppliesForProvider,
   type SupplyItem,
   type SupplySuggestion,
@@ -86,6 +87,32 @@ export default function IngressRequestPanel({ campaigns }: Props) {
       .filter((s) => s.name.trim().length > 0);
   }, [selectedCampaign]);
 
+  // Số còn thiếu của từng nguyên liệu (mục tiêu − đã có NCC nhận). BE chặn NCC chấp
+  // nhận vượt số này, nên form phải chặn từ lúc gửi — không thì NCC nhận một đơn
+  // mà bấm "Chấp nhận" chỉ ăn lỗi.
+  const remainingByName = useMemo(() => {
+    const map = new Map<string, { remaining: number; unit: string; target: number }>();
+    for (const p of selectedCampaign?.supplyProgress ?? []) {
+      map.set(normalizeVi(p.name), { remaining: p.remainingQuantity, unit: p.unit, target: p.targetQuantity });
+    }
+    return map;
+  }, [selectedCampaign]);
+  const remainingOf = (name: string) => remainingByName.get(normalizeVi(name)) ?? null;
+  const isFulfilled = (name: string) => {
+    const r = remainingOf(name);
+    return r != null && r.remaining <= 0;
+  };
+  /** Số kg nên xin: phần còn thiếu trừ đi phần các NCC khác trong đơn này đã nhận. */
+  const suggestKg = (item: SupplyItem, others: RequestLine[]) => {
+    const r = remainingOf(item.name);
+    if (!r || !/kg/i.test(r.unit)) return defaultKg(item);
+    const taken = others
+      .filter((l) => sameName(l.ingredientName, item.name))
+      .reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
+    const left = Math.max(0, Math.round((r.remaining - taken) * 100) / 100);
+    return left > 0 ? String(left) : '';
+  };
+
   const { data: matchResult, isLoading: matching } = useSupplierMatches(campaignId || null, {
     radiusKm,
     category: category || undefined,
@@ -119,7 +146,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     const suggestions = suppliesForProvider(campaignSupplies, m);
     // Chỉ tự điền món NCC ĐANG ĐĂNG đúng tên — món chỉ cùng nhóm (tiệm cá ↔ thịt gà)
     // để bếp tự bấm, tránh gửi nhầm món NCC không bán. Ưu tiên món chưa NCC nào nhận.
-    const exact = suggestions.filter((s) => s.exact);
+    const exact = suggestions.filter((s) => s.exact && !isFulfilled(s.name));
     const pick =
       exact.find((s) => !lines.some((l) => sameName(l.ingredientName, s.name))) ??
       exact[0] ??
@@ -132,7 +159,7 @@ export default function IngressRequestPanel({ campaigns }: Props) {
         distanceKm: m.distanceKm,
         suggestions,
         ingredientName: pick?.name ?? '',
-        quantityKg: pick ? defaultKg(pick) : '',
+        quantityKg: pick ? suggestKg(pick, lines) : '',
       },
     ]);
   }
@@ -160,6 +187,22 @@ export default function IngressRequestPanel({ campaigns }: Props) {
     if (lines.length === 0) return toast.error('Vui lòng chọn ít nhất một nhà cung cấp ở cột bên phải.');
     const missing = lines.find((l) => !l.ingredientName.trim());
     if (missing) return toast.error(`Chưa nhập nguyên liệu cần lấy từ ${missing.businessName}.`);
+    // Không xin quá phần còn thiếu — cộng dồn các NCC cùng xin một món.
+    for (const [key, info] of remainingByName) {
+      if (!/kg/i.test(info.unit)) continue;
+      const sameItem = lines.filter((l) => normalizeVi(l.ingredientName) === key);
+      if (sameItem.length === 0) continue;
+      const asked = sameItem.reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
+      const name = sameItem[0].ingredientName.trim();
+      if (info.remaining <= 0) {
+        return toast.error(`Chiến dịch đã nhận đủ ${info.target} ${info.unit} ${name} — bỏ món này khỏi đơn.`);
+      }
+      if (asked > info.remaining) {
+        return toast.error(
+          `${name} chỉ còn thiếu ${info.remaining} ${info.unit}, đơn đang xin tổng ${asked} ${info.unit} — giảm số kg.`,
+        );
+      }
+    }
     if (!waiver) return toast.error('Vui lòng xác nhận cam kết sử dụng phi thương mại.');
     if (neededFrom && neededTo && neededTo <= neededFrom) {
       return toast.error('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
@@ -329,6 +372,8 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                   <div className="flex flex-wrap gap-1.5">
                     {campaignSupplies.map((s, i) => {
                       const coveredBy = lines.find((l) => sameName(l.ingredientName, s.name));
+                      const progress = remainingOf(s.name);
+                      const done = progress != null && progress.remaining <= 0;
                       const itemCategory = inferCategories(s.name)[0] ?? '';
                       const filtering = !!itemCategory && category === itemCategory;
                       return (
@@ -344,7 +389,9 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                                 : 'Chưa đoán được nhóm thực phẩm'
                           }
                           className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
-                            filtering
+                            done
+                              ? 'border-neutral-200 bg-neutral-100 text-neutral-400 line-through'
+                              : filtering
                               ? 'border-emerald-500 bg-emerald-600 text-white'
                               : coveredBy
                                 ? 'border-emerald-300 bg-emerald-100 text-emerald-900'
@@ -353,11 +400,17 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                         >
                           {coveredBy && <span className="material-symbols-outlined text-[14px]">check_circle</span>}
                           {s.name}
-                          {s.quantity != null && (
+                          {done ? (
+                            <span className="font-normal no-underline">· đã đủ</span>
+                          ) : progress && progress.remaining < progress.target ? (
+                            <span className={filtering ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
+                              còn thiếu {progress.remaining} {progress.unit}
+                            </span>
+                          ) : s.quantity != null ? (
                             <span className={filtering ? 'font-normal text-emerald-100' : 'font-normal text-neutral-500'}>
                               {s.quantity} {s.unit || 'kg'}
                             </span>
-                          )}
+                          ) : null}
                         </button>
                       );
                     })}
@@ -507,6 +560,14 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                 <RequestLineCard
                   key={line.providerId}
                   line={line}
+                  isFulfilled={isFulfilled}
+                  onPickSuggestion={(item) =>
+                    updateLine(line.providerId, {
+                      ingredientName: item.name,
+                      quantityKg:
+                        suggestKg(item, lines.filter((l) => l.providerId !== line.providerId)) || line.quantityKg,
+                    })
+                  }
                   pendingIngredient={pendingByProvider.get(line.providerId) ?? null}
                   onChange={(patch) => updateLine(line.providerId, patch)}
                   onRemove={() => setLines((prev) => prev.filter((l) => l.providerId !== line.providerId))}
@@ -574,11 +635,15 @@ export default function IngressRequestPanel({ campaigns }: Props) {
 /** Một đơn sẽ gửi: NCC + món xin từ chính NCC đó + số kg. */
 function RequestLineCard({
   line,
+  isFulfilled,
+  onPickSuggestion,
   pendingIngredient,
   onChange,
   onRemove,
 }: {
   line: RequestLine;
+  isFulfilled: (name: string) => boolean;
+  onPickSuggestion: (item: SupplySuggestion) => void;
   pendingIngredient: string | null;
   onChange: (patch: Partial<RequestLine>) => void;
   onRemove: () => void;
@@ -611,19 +676,28 @@ function RequestLineCard({
         <div className="mt-2 flex flex-wrap gap-1.5">
           {line.suggestions.map((s) => {
             const active = line.ingredientName.trim().toLowerCase() === s.name.trim().toLowerCase();
+            const done = isFulfilled(s.name);
             return (
               <button
                 key={s.name}
                 type="button"
-                onClick={() => onChange({ ingredientName: s.name, quantityKg: defaultKg(s) || line.quantityKg })}
+                disabled={done}
+                onClick={() => onPickSuggestion(s)}
+                title={done ? 'Chiến dịch đã nhận đủ món này' : undefined}
                 className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                  active
+                  done
+                    ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400 line-through'
+                    : active
                     ? 'border-emerald-500 bg-emerald-600 text-white'
                     : 'border-emerald-200 bg-white text-emerald-800 hover:border-emerald-400'
                 }`}
               >
                 {s.name}
-                {!s.exact && <span className="ml-1 font-normal opacity-70">· cùng nhóm</span>}
+                {done ? (
+                  <span className="ml-1 font-normal">· đã đủ</span>
+                ) : (
+                  !s.exact && <span className="ml-1 font-normal opacity-70">· cùng nhóm</span>
+                )}
               </button>
             );
           })}
@@ -658,6 +732,13 @@ function RequestLineCard({
           </span>
         </div>
       </div>
+
+      {line.ingredientName.trim() && isFulfilled(line.ingredientName) && (
+        <p className="mt-2 flex items-start gap-1 text-[11px] font-semibold text-rose-600">
+          <span className="material-symbols-outlined text-[14px]">block</span>
+          Chiến dịch đã nhận đủ &ldquo;{line.ingredientName.trim()}&rdquo; — đổi món khác hoặc bỏ NCC này.
+        </p>
+      )}
 
       {pendingIngredient && (
         <p className="mt-2 flex items-start gap-1 text-[11px] text-amber-700">

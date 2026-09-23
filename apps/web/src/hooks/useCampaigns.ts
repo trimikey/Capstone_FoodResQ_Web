@@ -790,6 +790,10 @@ export function useReviewProviderRequest() {
       pickupTime?: string;
       /** Có cần hệ thống tìm TNV giao hàng không? Mặc định true. */
       needsTransport?: boolean;
+      /** Tin đăng bị trừ tồn kho. Bỏ trống → BE tự chọn tin khớp đúng tên món. */
+      listingId?: string;
+      /** true = hàng ngoài kho đăng, không trừ tin nào. */
+      skipStockDeduction?: boolean;
     }) => {
       const { data } = await api.patch(
         `/campaigns/provider-requests/${p.requestId}/review`,
@@ -798,12 +802,19 @@ export function useReviewProviderRequest() {
           note: p.note,
           pickupTime: p.pickupTime,
           needsTransport: p.needsTransport,
+          listingId: p.listingId,
+          skipStockDeduction: p.skipStockDeduction,
         },
       );
-      return data.data as ProviderRequestItem & { transportId?: string };
+      return data.data as ProviderRequestItem & {
+        transportId?: string;
+        stockDeduction?: StockDeduction | null;
+      };
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'provider-requests'] });
+      // Tồn kho tin đăng vừa bị trừ → làm mới danh sách tin của NCC.
+      void qc.invalidateQueries({ queryKey: ['listings', 'provider'] });
     },
   });
 }
@@ -847,6 +858,17 @@ export interface DemandDetails {
   nonCommercialWaiver: boolean;
   /** BE đóng dấu lúc nhận yêu cầu, FE không gửi lên. */
   waiverAcceptedAt?: string;
+  /** BE ghi khi NCC chấp nhận: đã trừ bao nhiêu khỏi tin đăng nào. */
+  stockDeduction?: StockDeduction;
+}
+
+export interface StockDeduction {
+  listingId: string;
+  listingTitle: string;
+  quantity: number;
+  /** Nhãn đơn vị tiếng Việt (kg, phần, hộp…). */
+  unit: string;
+  deductedAt?: string;
 }
 
 export interface SupplierMatch {

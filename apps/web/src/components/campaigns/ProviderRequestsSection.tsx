@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { FOOD_CATEGORY_LABEL, type FoodCategory } from '@foodresq/types';
 import {
@@ -9,6 +9,59 @@ import {
   type DemandDetails,
   type ProviderRequestItem,
 } from '@/hooks/useCampaigns';
+import { useProviderListings, type ProviderListing } from '@/hooks/useProviderListings';
+import { supplyScore } from '@/lib/supply-match';
+import { UNIT_LABEL } from '@/lib/utils';
+
+/** Giá trị ô chọn "không trừ tin nào". */
+const NO_STOCK = 'none';
+
+/** Một tin đăng có thể bị trừ cho đơn này, kèm số đơn vị cần trừ (null = không quy ra kg được). */
+interface StockOption {
+  listing: ProviderListing;
+  units: number | null;
+  remaining: number;
+  exact: boolean;
+}
+
+/** Quy kg bếp xin về đơn vị của tin — cùng luật với BE (stock-match.ts). */
+function unitsForKg(l: ProviderListing, kg: number): number | null {
+  if (l.quantityUnit === 'kg') return Math.round(kg * 100) / 100;
+  const w = l.weightPerUnitKg != null ? Number(l.weightPerUnitKg) : NaN;
+  return Number.isFinite(w) && w > 0 ? Math.ceil(kg / w) : null;
+}
+
+function stockOptionsFor(listings: ProviderListing[], d: DemandDetails | null): StockOption[] {
+  const kg = Number(d?.quantityKg);
+  if (!d?.ingredientName || !Number.isFinite(kg) || kg <= 0) return [];
+  const now = Date.now();
+  return listings
+    .filter(
+      (l) =>
+        l.status === 'active' &&
+        Number(l.quantityRemaining) > 0 &&
+        new Date(l.pickupEndTime).getTime() > now,
+    )
+    .map((l) => ({
+      listing: l,
+      units: unitsForKg(l, kg),
+      remaining: Number(l.quantityRemaining),
+      exact:
+        supplyScore(
+          { name: d.ingredientName!, quantity: null, unit: null },
+          { categories: [], listingTitles: [l.title] },
+        ) >= 2,
+    }))
+    // Tin khớp đúng món lên đầu, rồi tin còn nhiều hàng.
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || b.remaining - a.remaining);
+}
+
+/** Tin BE sẽ tự chọn khi NCC không đổi: khớp đúng tên + quy được kg, ưu tiên còn đủ hàng. */
+function defaultStockChoice(options: StockOption[]): string {
+  const usable = options.filter((o) => o.exact && o.units != null);
+  const enough = usable.find((o) => o.remaining >= (o.units as number));
+  return (enough ?? usable[0])?.listing.id ?? NO_STOCK;
+}
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   pending:   { label: 'Chờ duyệt', cls: 'bg-amber-100 text-amber-700 border border-amber-200' },
@@ -30,17 +83,35 @@ const TRANSPORT_STATUS_LABEL: Record<string, string> = {
 
 export default function ProviderRequestsSection() {
   const { data: requests, isLoading } = useProviderRequests();
+  const { data: myListings } = useProviderListings();
   const review = useReviewProviderRequest();
   const [noteById, setNoteById] = useState<Record<string, string>>({});
+  // Tin bị trừ tồn kho theo từng đơn; chưa có key = dùng lựa chọn mặc định.
+  const [stockById, setStockById] = useState<Record<string, string>>({});
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const listings = useMemo(() => myListings?.items ?? [], [myListings]);
 
-  async function handleReview(reqId: string, action: 'accept' | 'reject') {
+  async function handleReview(req: ProviderRequestItem, action: 'accept' | 'reject') {
+    const reqId = req.id;
+    const choice = stockById[reqId] ?? defaultStockChoice(stockOptionsFor(listings, req.demandDetails));
     setReviewingId(reqId);
     try {
-      await review.mutateAsync({ requestId: reqId, action, note: noteById[reqId] });
+      const res = await review.mutateAsync({
+        requestId: reqId,
+        action,
+        note: noteById[reqId],
+        ...(action === 'accept'
+          ? choice === NO_STOCK
+            ? { skipStockDeduction: true }
+            : { listingId: choice }
+          : {}),
+      });
+      const cut = res.stockDeduction;
       toast.success(
         action === 'accept'
-          ? 'Đã chấp nhận yêu cầu hợp tác!'
+          ? cut
+            ? `Đã chấp nhận — trừ ${cut.quantity} ${cut.unit} khỏi tin "${cut.listingTitle}".`
+            : 'Đã chấp nhận yêu cầu hợp tác!'
           : 'Đã từ chối yêu cầu.',
       );
     } catch (e: unknown) {
@@ -93,9 +164,12 @@ export default function ProviderRequestsSection() {
               req={req}
               note={noteById[req.id] ?? ''}
               onNote={(v) => setNoteById((p) => ({ ...p, [req.id]: v }))}
-              onAccept={() => handleReview(req.id, 'accept')}
-              onReject={() => handleReview(req.id, 'reject')}
+              onAccept={() => handleReview(req, 'accept')}
+              onReject={() => handleReview(req, 'reject')}
               loading={reviewingId === req.id}
+              stockOptions={stockOptionsFor(listings, req.demandDetails)}
+              stockChoice={stockById[req.id]}
+              onStockChoice={(v) => setStockById((p) => ({ ...p, [req.id]: v }))}
             />
           ))}
         </section>
@@ -134,6 +208,9 @@ function RequestCard({
   onReject,
   loading,
   compact = false,
+  stockOptions = [],
+  stockChoice,
+  onStockChoice,
 }: {
   req: ProviderRequestItem;
   note: string;
@@ -142,6 +219,9 @@ function RequestCard({
   onReject: () => void;
   loading: boolean;
   compact?: boolean;
+  stockOptions?: StockOption[];
+  stockChoice?: string;
+  onStockChoice?: (v: string) => void;
 }) {
   // Đơn ĐÃ XỬ LÝ hiển thị gọn, nhưng NCC vẫn cần tra lại chi tiết thoả thuận
   // (bếp cần gì, lịch hẹn lấy hàng, ghi chú) — bấm "Chi tiết" để bung ra.
@@ -200,6 +280,27 @@ function RequestCard({
 
       {/* Chi tiết nhu cầu nguyên liệu bếp khai */}
       {req.demandDetails && showDetails && <DemandDetailsCard d={req.demandDetails} />}
+
+      {/* Đã trừ tồn kho lúc chấp nhận */}
+      {showDetails && req.demandDetails?.stockDeduction && (
+        <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <span className="material-symbols-outlined text-[16px]">inventory</span>
+          <span>
+            Đã trừ <b>{req.demandDetails.stockDeduction.quantity} {req.demandDetails.stockDeduction.unit}</b> khỏi
+            tin &ldquo;{req.demandDetails.stockDeduction.listingTitle}&rdquo;.
+          </span>
+        </div>
+      )}
+
+      {/* Chọn tin đăng bị trừ tồn kho khi chấp nhận */}
+      {isPending && !compact && req.demandDetails?.quantityKg != null && (
+        <StockPicker
+          kg={req.demandDetails.quantityKg}
+          options={stockOptions}
+          value={stockChoice ?? defaultStockChoice(stockOptions)}
+          onChange={(v) => onStockChoice?.(v)}
+        />
+      )}
 
       {/* Lịch hẹn lấy hàng đã chốt (đơn accepted) */}
       {showDetails && req.status === 'accepted' && (req.scheduledDate || req.pickupStartTime) && (
@@ -277,6 +378,67 @@ function RequestCard({
       {compact && req.reviewedNote && (
         <p className="text-xs text-neutral-500 italic">Ghi chú: {req.reviewedNote}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * NCC chọn tin đăng sẽ bị trừ khi chấp nhận đơn — để khách lẻ không đặt tiếp số hàng
+ * đã hứa cho bếp. Mặc định là tin khớp đúng tên món (cùng luật BE tự chọn).
+ */
+function StockPicker({
+  kg,
+  options,
+  value,
+  onChange,
+}: {
+  kg: number;
+  options: StockOption[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const picked = options.find((o) => o.listing.id === value) ?? null;
+  const unitOf = (o: StockOption) =>
+    (UNIT_LABEL as Record<string, string>)[o.listing.quantityUnit] ?? o.listing.quantityUnit;
+  const short = picked && picked.units != null && picked.remaining < picked.units;
+
+  return (
+    <div className="space-y-1.5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
+      <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-neutral-600">
+        <span className="material-symbols-outlined text-[15px]">inventory_2</span>
+        Trừ tồn kho khi chấp nhận
+      </label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
+      >
+        {options.map((o) => (
+          <option key={o.listing.id} value={o.listing.id} disabled={o.units == null}>
+            {o.listing.title} — còn {o.remaining} {unitOf(o)}
+            {o.units == null ? ' (chưa khai kg/đơn vị)' : ` · trừ ${o.units} ${unitOf(o)}`}
+          </option>
+        ))}
+        <option value={NO_STOCK}>Không trừ — hàng lấy ngoài kho đăng trên FoodResQ</option>
+      </select>
+      {options.length === 0 ? (
+        <p className="text-[11px] text-neutral-500">
+          Bạn không có tin đăng nào đang mở — chấp nhận sẽ không trừ tồn kho.
+        </p>
+      ) : value === NO_STOCK ? (
+        <p className="text-[11px] text-neutral-500">
+          Không trừ tin nào — khách lẻ vẫn đặt được toàn bộ số hàng đang đăng.
+        </p>
+      ) : short ? (
+        <p className="text-[11px] font-semibold text-rose-600">
+          Tin này chỉ còn {picked!.remaining} {unitOf(picked!)}, không đủ {picked!.units} {unitOf(picked!)} cho đơn{' '}
+          {kg} kg — chọn tin khác, cập nhật tồn kho hoặc từ chối.
+        </p>
+      ) : picked ? (
+        <p className="text-[11px] text-emerald-700">
+          Còn lại sau khi trừ: {Math.round((picked.remaining - (picked.units ?? 0)) * 100) / 100} {unitOf(picked)}.
+        </p>
+      ) : null}
     </div>
   );
 }

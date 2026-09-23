@@ -1045,6 +1045,21 @@ export class ReviewProviderRequestDto {
   @IsBoolean({ message: 'needsTransport phải là boolean' })
   @Transform(({ value }) => (value === undefined ? true : value))
   needsTransport?: boolean;
+
+  /**
+   * Tin đăng bị TRỪ TỒN KHO khi chấp nhận. Bỏ trống → BE tự chọn tin khớp món
+   * (tên trước, rồi cùng nhóm); không có tin khớp thì không trừ (hàng ngoài kho đăng).
+   */
+  @ApiPropertyOptional({ description: 'Tin đăng bị trừ tồn kho khi chấp nhận' })
+  @IsOptional()
+  @IsUUID('4', { message: 'listingId không hợp lệ' })
+  listingId?: string;
+
+  /** true = hàng giao lấy từ kho ngoài nền tảng, không trừ tin đăng nào. */
+  @ApiPropertyOptional({ description: 'Không trừ tồn kho tin đăng nào' })
+  @IsOptional()
+  @IsBoolean({ message: 'skipStockDeduction phải là boolean' })
+  skipStockDeduction?: boolean;
 }
 
 /** Tổ chức mời TNV (đã khai rảnh khung này) vào một ca cụ thể. */
