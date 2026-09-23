@@ -18,6 +18,7 @@ import {
   type DishProcessItem,
   type DistributionPoint,
   type StaffingReadiness,
+  type CookedServingsSummary,
 } from '@/hooks/useCampaigns';
 import { errMsg, mediaUrl } from '@/lib/utils';
 import { Modal } from '@/components/shared/Modal';
@@ -171,6 +172,8 @@ type CampaignData = {
     | Array<{ name: string; quantity?: number | null; unit?: string | null }>;
   /** Quy trình bếp: món + 4 khâu + ảnh bằng chứng (chỉ có khi in_progress). */
   dishSteps?: DishProcessItem[];
+  /** Suất đã nấu xong (món qua khâu "Sẵn sàng xuất phát") — nguồn hàng cho đợt phát. */
+  cookedServings?: CookedServingsSummary;
   scheduledDate?: string;
   endDate?: string | null;
   startTime?: string;

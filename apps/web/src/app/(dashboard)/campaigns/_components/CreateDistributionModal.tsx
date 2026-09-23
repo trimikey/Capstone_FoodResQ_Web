@@ -9,6 +9,7 @@ import {
   useCreateDistribution,
   type CreateDistributionInput,
   type DistributionPoint,
+  type CookedServingsSummary,
 } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
 
@@ -31,8 +32,10 @@ interface Props {
      */
     shifts?: Array<{ label: string; start: string; end: string }>;
   }>;
-  /** Số suất còn được ghi nhận = mục tiêu − (đã phát + đã thừa). null = chưa đặt mục tiêu. */
+  /** Số suất còn đưa đi phát được (đã nấu xong, trừ phần đã đưa đi). null = không giới hạn. */
   remainingServings: number | null;
+  /** Món đã nấu xong — hiện ra để tổ chức biết đợt này mang đi món gì. null = không có quy trình bếp. */
+  cooked?: CookedServingsSummary | null;
   /** Toạ độ bếp — mốc mở bản đồ khi ghim điểm phát. Null thì rơi về trung tâm TP.HCM. */
   kitchenCoords?: { lng: number; lat: number } | null;
 }
@@ -103,6 +106,7 @@ export default function CreateDistributionModal({
   onCreated,
   volunteers,
   remainingServings,
+  cooked = null,
   kitchenCoords,
 }: Props) {
   const create = useCreateDistribution();
@@ -475,12 +479,34 @@ export default function CreateDistributionModal({
 
         {/* ── Cột phải: số liệu ghi nhận ── */}
         <div className="space-y-4">
-        {remainingServings != null && (
+        {cooked ? (
+          // Nguồn hàng của đợt phát = thức ăn ĐÃ NẤU XONG, không phải số suất đăng ký.
+          <div className="rounded-xl bg-emerald-50 px-3 py-2.5 text-[11px] text-emerald-900">
+            <p className="flex items-center gap-1.5 font-semibold">
+              <span className="material-symbols-outlined text-[14px]">soup_kitchen</span>
+              Bếp đã nấu xong {cooked.cookedServings} suất · đã đưa đi {cooked.usedServings} ·{' '}
+              <b>còn {remainingServings ?? cooked.availableServings} suất</b> để phát.
+            </p>
+            {cooked.readyDishes.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {cooked.readyDishes.map((d, i) => (
+                  <span
+                    key={`${d.menuItemId}-${d.workDate ?? i}`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-white px-2 py-0.5 font-semibold"
+                  >
+                    <span className="material-symbols-outlined text-[12px] text-emerald-600">check_circle</span>
+                    {d.name} · {d.servings} suất
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : remainingServings != null ? (
           <p className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
             <span className="material-symbols-outlined text-[14px]">inventory</span>
             Còn {remainingServings} suất có thể đưa đi phân phát.
           </p>
-        )}
+        ) : null}
 
         <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wide space-y-1">
           Tên đợt (tuỳ chọn)

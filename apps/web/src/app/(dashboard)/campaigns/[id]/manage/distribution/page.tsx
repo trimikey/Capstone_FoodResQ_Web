@@ -68,10 +68,17 @@ export default function DistributionPage() {
     (sum, d) => sum + d.servingsServed + d.leftoverServings,
     0,
   );
-  const remainingServings =
+  const targetRemaining =
     c.expectedServings != null && c.expectedServings > 0
       ? Math.max(c.expectedServings - distributed, 0)
       : null;
+  // Chỉ mang đi phát được thức ăn ĐÃ NẤU XONG — lấy mức nhỏ hơn giữa số còn trong
+  // mục tiêu và số suất bếp đã hoàn tất khâu "Sẵn sàng xuất phát" mà chưa đưa đi.
+  const cooked = c.cookedServings?.hasKitchenFlow ? c.cookedServings : null;
+  const remainingServings =
+    cooked
+      ? Math.min(cooked.availableServings, targetRemaining ?? cooked.availableServings)
+      : targetRemaining;
   const [filter, setFilter] = useState<FilterKey>('all');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -82,12 +89,15 @@ export default function DistributionPage() {
   const readyDishes = (c.dishSteps ?? []).filter((d) =>
     d.steps.some((s) => s.stepOrder === 4 && s.effectiveStatus === 'done'),
   );
-  const dishesNotReady = c.status === 'in_progress' && readyDishes.length === 0;
+  const dishesNotReady =
+    c.status === 'in_progress' && (cooked ? cooked.availableServings <= 0 : readyDishes.length === 0);
   const createDisabled = !['in_progress', 'completed'].includes(c.status) || dishesNotReady;
   const createDisabledReason = !['in_progress', 'completed'].includes(c.status)
     ? 'Chỉ ghi đợt khi chiến dịch đang diễn ra hoặc đã hoàn tất'
     : dishesNotReady
-      ? 'Món chưa sẵn sàng — cần chef hoàn tất "Sẵn sàng xuất phát" (sau khi tổ chức duyệt ảnh QC) rồi mới tạo đợt phát.'
+      ? cooked && cooked.cookedServings > 0
+        ? `Đã đưa đi hết ${cooked.cookedServings} suất bếp nấu xong — chờ bếp hoàn tất thêm món rồi mới tạo đợt mới.`
+        : 'Món chưa sẵn sàng — cần chef hoàn tất "Sẵn sàng xuất phát" (sau khi tổ chức duyệt ảnh QC) rồi mới tạo đợt phát.'
       : '';
   /** Đợt đang mở xem đủ danh sách điểm phát (chỉ một đợt tại một thời điểm). */
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -512,6 +522,7 @@ export default function DistributionPage() {
           onClose={() => setCreateOpen(false)}
           volunteers={approvedDistributors}
           remainingServings={remainingServings}
+          cooked={cooked}
           kitchenCoords={
             c.kitchenLng != null && c.kitchenLat != null
               ? { lng: c.kitchenLng, lat: c.kitchenLat }

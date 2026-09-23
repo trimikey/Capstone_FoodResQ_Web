@@ -3238,6 +3238,8 @@ export class CampaignsService {
       dishSteps: campaign.status === 'in_progress'
         ? (await this.dishSteps.getStepsForCampaign(id, userId)).dishes
         : [],
+      /** Suất đã nấu xong / đã đưa đi / còn lại — nguồn hàng cho đợt phát. */
+      cookedServings: await this.cookedServingsSummary(id),
     };
   }
 
@@ -6348,6 +6350,50 @@ export class CampaignsService {
   }
 
   /**
+   * Suất ĐÃ NẤU XONG có thể mang đi phát: cộng `plannedServings` của các món đã qua
+   * khâu 4 "Sẵn sàng xuất phát" (mỗi ngày trực một mẻ). Một suất = một phần món —
+   * số suất các món trong thực đơn cộng lại bằng số suất chiến dịch đăng ký.
+   * `hasKitchenFlow = false` khi chiến dịch không có quy trình bếp (dữ liệu cũ /
+   * không khai món) — lúc đó không chặn theo món nấu xong.
+   */
+  async cookedServingsSummary(campaignId: string) {
+    const [stepCount, readySteps, agg] = await Promise.all([
+      this.prisma.campaignDishStep.count({ where: { campaignId } }),
+      this.prisma.campaignDishStep.findMany({
+        where: { campaignId, stepOrder: 4, status: 'done' },
+        select: {
+          workDate: true,
+          completedAt: true,
+          menuItem: {
+            select: { id: true, customName: true, plannedServings: true, recipe: { select: { name: true } } },
+          },
+        },
+        orderBy: [{ workDate: 'asc' }, { completedAt: 'asc' }],
+      }),
+      this.prisma.mealDistribution.aggregate({
+        where: { campaignId },
+        _sum: { servingsServed: true, leftoverServings: true },
+      }),
+    ]);
+    const readyDishes = readySteps.map((st) => ({
+      menuItemId: st.menuItem.id,
+      name: st.menuItem.customName ?? st.menuItem.recipe?.name ?? 'Món chưa đặt tên',
+      servings: st.menuItem.plannedServings ?? 0,
+      workDate: st.workDate,
+      readyAt: st.completedAt,
+    }));
+    const cooked = readyDishes.reduce((sum, d) => sum + d.servings, 0);
+    const used = (agg._sum.servingsServed ?? 0) + (agg._sum.leftoverServings ?? 0);
+    return {
+      hasKitchenFlow: stepCount > 0,
+      cookedServings: cooked,
+      usedServings: used,
+      availableServings: Math.max(0, cooked - used),
+      readyDishes,
+    };
+  }
+
+  /**
    * Tổ chức ghi nhận 1 đợt phát suất ăn. ServedByVolunteerId lấy từ currentUser
    * (charity userId → tìm volunteerProfile liên kết qua user chung;
    * nếu charity user không có volunteer profile thì fallback về 1 volunteer
@@ -6385,6 +6431,19 @@ export class CampaignsService {
             `Đợt này đang ghi ${dto.servingsServed} suất phát + ${leftover} suất thừa.`,
         );
       }
+    }
+
+    // Chỉ mang đi phát được thức ăn ĐÃ NẤU XONG (món qua khâu "Sẵn sàng xuất phát").
+    // Trước đây đợt phát chỉ bị giới hạn bởi số suất đăng ký, nên tổ chức tạo được
+    // đợt 100 suất khi bếp mới xong 1 món 34 suất.
+    const cooked = await this.cookedServingsSummary(campaignId);
+    if (cooked.hasKitchenFlow && dto.servingsServed + leftover > cooked.availableServings) {
+      throw new BadRequestException(
+        cooked.cookedServings === 0
+          ? 'Chưa có món nào nấu xong (qua khâu "Sẵn sàng xuất phát") — chưa thể tạo đợt phát.'
+          : `Bếp mới nấu xong ${cooked.cookedServings} suất, đã đưa đi ${cooked.usedServings} suất — ` +
+            `chỉ còn ${cooked.availableServings} suất để phát. Đợt này đang ghi ${dto.servingsServed + leftover} suất.`,
+      );
     }
 
     // Người phụ trách phải là TNV ĐÃ ĐƯỢC DUYỆT của CHÍNH chiến dịch này.

@@ -763,10 +763,14 @@ describe('CampaignsService.createDistribution', () => {
     kitchenCampaign: { findUnique: jest.fn() },
     campaignVolunteerAssignment: { findFirst: jest.fn() },
     mealDistribution: { aggregate: jest.fn(), create: jest.fn() },
+    campaignDishStep: { count: jest.fn(), findMany: jest.fn() },
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Mặc định: chiến dịch không có quy trình bếp → không chặn theo món nấu xong.
+    prisma.campaignDishStep.count.mockResolvedValue(0);
+    prisma.campaignDishStep.findMany.mockResolvedValue([]);
     const moduleRef = await Test.createTestingModule({
       providers: [
         CampaignsService,
@@ -818,6 +822,26 @@ describe('CampaignsService.createDistribution', () => {
     await expect(
       service.createDistribution('campaign-1', 'user-1', { servingsServed: 20, peopleServed: 20 }),
     ).rejects.toThrow('chỉ còn 15 suất');
+  });
+
+  it('chỉ phát được số suất ĐÃ NẤU XONG (món qua khâu Sẵn sàng xuất phát)', async () => {
+    prisma.campaignDishStep.count.mockResolvedValue(8);
+    prisma.campaignDishStep.findMany.mockResolvedValue([
+      { workDate: null, completedAt: new Date(), menuItem: { id: 'm1', customName: 'Cơm trắng', plannedServings: 34, recipe: null } },
+    ]);
+    await expect(
+      service.createDistribution('campaign-1', 'user-1', { servingsServed: 50, peopleServed: 50 }),
+    ).rejects.toThrow('Bếp mới nấu xong 34 suất');
+    await expect(
+      service.createDistribution('campaign-1', 'user-1', { servingsServed: 34, peopleServed: 34 }),
+    ).resolves.toEqual(expect.objectContaining({ servingsServed: 34 }));
+  });
+
+  it('chưa món nào nấu xong thì chưa tạo được đợt phát', async () => {
+    prisma.campaignDishStep.count.mockResolvedValue(8);
+    await expect(
+      service.createDistribution('campaign-1', 'user-1', { servingsServed: 1, peopleServed: 1 }),
+    ).rejects.toThrow('Chưa có món nào nấu xong');
   });
 
   it('suất THỪA cũng tính vào hạn mức — cùng một mẻ nấu', async () => {

@@ -1062,6 +1062,8 @@ export interface CampaignManageDetail extends Omit<PublicCampaignDetail, 'partic
   menuItemRefs?: Array<{ id: string; customName: string; plannedServings: number | null; recipeId: string | null; sortOrder: number }>;
   /** Dish steps — tổ chức dùng để duyệt "Sẵn sàng xuất phát" từ chef */
   dishSteps?: DishProcessItem[];
+  /** Suất đã nấu xong (món qua khâu "Sẵn sàng xuất phát") — nguồn hàng cho đợt phát. */
+  cookedServings?: CookedServingsSummary;
   /**
    * Nhân sự đã tuyển so với ngưỡng tối thiểu (`CAMPAIGN_MIN_FILL_PERCENT` do admin
    * chỉnh). Chưa đạt `minPercent` thì BE chặn bắt đầu chiến dịch.
@@ -2193,4 +2195,20 @@ export function useDismissShiftInvite() {
 /** Đơn vị hiển thị của số lượng trong đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
 export function qtyUnit(x: { quantityUnit?: string | null } | null | undefined): string {
   return x?.quantityUnit?.trim() || 'kg';
+}
+
+/** Suất đã nấu xong có thể mang đi phát (BE: cookedServingsSummary). */
+export interface CookedServingsSummary {
+  /** false = chiến dịch không có quy trình bếp → không giới hạn theo món nấu xong. */
+  hasKitchenFlow: boolean;
+  cookedServings: number;
+  usedServings: number;
+  availableServings: number;
+  readyDishes: Array<{
+    menuItemId: string;
+    name: string;
+    servings: number;
+    workDate: string | null;
+    readyAt: string | null;
+  }>;
 }
