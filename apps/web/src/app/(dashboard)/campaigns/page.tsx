@@ -963,6 +963,32 @@ function StatsSection({
 /** Số chiến dịch mỗi trang ở tab "Chiến dịch của tôi". */
 const MINE_PER_PAGE = 8;
 
+/** Ngày diễn ra tính theo lịch UTC — cùng cách MyCampaignCard gắn nhãn "Quá ngày diễn ra". */
+function scheduledDayUtc(c: Campaign): number {
+  const [yy, mm, dd] = c.scheduledDate.slice(0, 10).split('-').map(Number);
+  return Date.UTC(yy, mm - 1, dd);
+}
+
+/** Đã qua ngày diễn ra mà vẫn CHƯA bắt đầu (còn tuyển / chờ duyệt) — chiến dịch đã chạy thì không tính. */
+function isStaleCampaign(c: Campaign, todayUtc: number): boolean {
+  return c.status !== 'in_progress' && scheduledDayUtc(c) < todayUtc;
+}
+
+/**
+ * Chiến dịch còn hạn lên trước (sắp diễn ra nhất đứng đầu), chiến dịch quá ngày mà
+ * chưa bắt đầu dồn xuống cuối (quá hạn gần nhất đứng trước) — trước đây danh sách
+ * xếp lẫn lộn, mấy chiến dịch cũ từ tháng trước chiếm hết trang đầu.
+ */
+function freshFirst(list: Campaign[], todayUtc: number): Campaign[] {
+  const fresh = list
+    .filter((c) => !isStaleCampaign(c, todayUtc))
+    .sort((a, b) => scheduledDayUtc(a) - scheduledDayUtc(b));
+  const stale = list
+    .filter((c) => isStaleCampaign(c, todayUtc))
+    .sort((a, b) => scheduledDayUtc(b) - scheduledDayUtc(a));
+  return [...fresh, ...stale];
+}
+
 type MineTab = 'all' | 'recruiting' | 'running' | 'pending' | 'finished';
 
 const MINE_TABS: Array<{ key: MineTab; label: string; icon: string }> = [
@@ -1007,10 +1033,23 @@ function MineTabbedSection({
 
   // stats.active gồm cả approved (đang tuyển) lẫn in_progress (đang chạy) — tách ra
   // để mỗi tab phản ánh đúng một giai đoạn.
-  const recruiting = stats.active.filter((c) => c.status === 'approved');
-  const running = stats.active.filter((c) => c.status === 'in_progress');
-  const pendingCampaigns = stats.drafts;
-  const finished = stats.finished;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const recruiting = freshFirst(stats.active.filter((c) => c.status === 'approved'), todayUtc);
+  const running = freshFirst(stats.active.filter((c) => c.status === 'in_progress'), todayUtc);
+  const pendingCampaigns = freshFirst(stats.drafts, todayUtc);
+  // Đã kết thúc: mới kết thúc lên trước.
+  const finished = [...stats.finished].sort((a, b) => scheduledDayUtc(b) - scheduledDayUtc(a));
+  // Tab "Tất cả": đang chạy → đang tuyển → chờ duyệt (đều còn hạn), rồi mọi chiến dịch
+  // quá ngày chưa bắt đầu, cuối cùng là đã kết thúc.
+  const allOrdered = [
+    ...[...running, ...recruiting, ...pendingCampaigns].filter((c) => !isStaleCampaign(c, todayUtc)),
+    ...freshFirst(
+      [...recruiting, ...pendingCampaigns].filter((c) => isStaleCampaign(c, todayUtc)),
+      todayUtc,
+    ),
+    ...finished,
+  ];
   const pendingTNVCount = stats.pendingApprovals;
 
   // Đăng ký TNV chờ duyệt (gộp các assignment pending từ tất cả campaign)
@@ -1157,13 +1196,13 @@ function MineTabbedSection({
           ) : (
             <>
               <div className="grid sm:grid-cols-2 gap-3">
-                {pageSlice([...recruiting, ...running, ...pendingCampaigns, ...finished]).map((c) => (
+                {pageSlice(allOrdered).map((c) => (
                   <MyCampaignCard key={c.id} c={c} allowEarlyStart={allowEarlyStart} />
                 ))}
               </div>
               <Pagination
                 page={minePage}
-                totalPages={totalPagesOf([...recruiting, ...running, ...pendingCampaigns, ...finished])}
+                totalPages={totalPagesOf(allOrdered)}
                 onChange={setMinePage}
                 total={recruiting.length + running.length + pendingCampaigns.length + finished.length}
                 perPage={MINE_PER_PAGE}
