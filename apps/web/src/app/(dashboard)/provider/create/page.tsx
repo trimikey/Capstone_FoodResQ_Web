@@ -14,8 +14,11 @@ import { DateTimeField, dateTimeDisplay } from '@/components/forms/date-time-fie
 import {
   buildForm,
   combineToIso,
+  formatVietnamDateTime,
   DEFAULT_CATEGORIES,
   DEFAULT_UNITS,
+  MAX_SHELF_LIFE_DAYS,
+  MIN_SHELF_LIFE_DAYS,
   type ListingForm,
 } from '@/lib/listing-form';
 
@@ -25,6 +28,15 @@ const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), 
 });
 
 type Step = 1 | 2 | 3;
+
+/** Mốc HSD hay dùng nhất của NCC — bấm 1 phát thay vì gõ. */
+const SHELF_LIFE_PRESETS = [1, 2, 3, 7] as const;
+
+function clampShelfLifeDays(raw: string): number {
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n)) return MIN_SHELF_LIFE_DAYS;
+  return Math.min(MAX_SHELF_LIFE_DAYS, Math.max(MIN_SHELF_LIFE_DAYS, n));
+}
 
 const inputCls =
     'w-full border border-neutral-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#236c2a]/20 focus:border-[#236c2a] text-sm transition-colors';
@@ -149,7 +161,7 @@ export default function ProviderCreateListingPage() {
       weightPerUnitKg: form.weightPerUnitKg ? Number(form.weightPerUnitKg) : undefined,
       pickupStartTime: combineToIso(form.pickupStartDate, form.pickupStartTime),
       pickupEndTime: combineToIso(form.pickupEndDate, form.pickupEndTime),
-      expiryTime: combineToIso(form.expiryDate, form.expiryTime),
+      shelfLifeDays: Number(form.shelfLifeDays),
       pickupAddress: form.pickupAddress.trim(),
       lng: form.lng,
       lat: form.lat,
@@ -170,6 +182,14 @@ export default function ProviderCreateListingPage() {
     }
   }
 
+  // Chỉ để NCC hình dung tin sẽ tự đóng lúc nào — người nhận KHÔNG thấy mốc này.
+  const expiryPreview = useMemo(() => {
+    const days = Number(form.shelfLifeDays);
+    if (!form.pickupEndDate || !form.pickupEndTime || !(days >= MIN_SHELF_LIFE_DAYS)) return null;
+    const end = new Date(combineToIso(form.pickupEndDate, form.pickupEndTime));
+    return formatVietnamDateTime(end.getTime() + days * 86_400_000);
+  }, [form.pickupEndDate, form.pickupEndTime, form.shelfLifeDays]);
+
   const validations = useMemo(() => ({
     step1: form.title.trim().length >= 5 && form.title.trim().length > 0,
     step2:
@@ -179,8 +199,8 @@ export default function ProviderCreateListingPage() {
       Boolean(form.pickupStartTime) &&
       Boolean(form.pickupEndDate) &&
       Boolean(form.pickupEndTime) &&
-      Boolean(form.expiryDate) &&
-      Boolean(form.expiryTime),
+      Number(form.shelfLifeDays) >= MIN_SHELF_LIFE_DAYS &&
+      Number(form.shelfLifeDays) <= MAX_SHELF_LIFE_DAYS,
     // Ảnh là BẮT BUỘC: tin không ảnh gần như không ai đặt, và người nhận không có
     // cách nào đánh giá thực phẩm trước khi tới lấy.
     step3:
@@ -446,7 +466,7 @@ export default function ProviderCreateListingPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <DateTimeField
                 label="Bắt đầu lấy"
                 dateValue={form.pickupStartDate}
@@ -473,19 +493,61 @@ export default function ProviderCreateListingPage() {
                     : undefined
                 }
               />
-              <DateTimeField
+            </div>
+
+            {/* HSD nhập theo SỐ NGÀY chứ không phải một mốc ngày: người nhận nhìn thấy
+                một ngày cụ thể trên tin rất dễ đọc nhầm thành NGÀY SẢN XUẤT. Mốc hết hạn
+                thật vẫn do BE tính (hạn lấy + N ngày) cho cron và chặn đặt đơn. */}
+            <div className="mt-4 rounded-xl border border-neutral-200 p-4">
+              <Field
                 label="Hạn sử dụng"
-                dateValue={form.expiryDate}
-                timeValue={form.expiryTime}
-                onDateChange={(v) => set('expiryDate', v)}
-                onTimeChange={(v) => set('expiryTime', v)}
-                minDate={form.pickupEndDate ? new Date(form.pickupEndDate + 'T00:00:00') : new Date()}
-                minTime={
-                  form.expiryDate === form.pickupEndDate
-                    ? form.pickupEndTime
-                    : undefined
-                }
-              />
+                required
+                hint={`Nhập số ngày dùng được KỂ TỪ KHI người nhận lấy hàng (${MIN_SHELF_LIFE_DAYS}–${MAX_SHELF_LIFE_DAYS} ngày).`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex shrink-0 items-center rounded-xl border border-neutral-200 bg-white transition-colors focus-within:border-[#236c2a] focus-within:ring-2 focus-within:ring-[#236c2a]/20">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={MIN_SHELF_LIFE_DAYS}
+                      max={MAX_SHELF_LIFE_DAYS}
+                      step={1}
+                      value={form.shelfLifeDays || ''}
+                      // Cho phép xoá trống tạm thời khi đang gõ, chỉ kẹp về 1..30 lúc rời ô.
+                      onChange={(e) => set('shelfLifeDays', e.target.value === '' ? 0 : Math.round(Number(e.target.value)))}
+                      onBlur={(e) => set('shelfLifeDays', clampShelfLifeDays(e.target.value))}
+                      className="w-20 bg-transparent px-3 py-2.5 text-sm focus:outline-none"
+                      aria-label="Số ngày sử dụng kể từ khi nhận"
+                    />
+                    <span className="pr-3 text-sm text-neutral-500">ngày</span>
+                  </div>
+                  {SHELF_LIFE_PRESETS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => set('shelfLifeDays', d)}
+                      className={`shrink-0 min-h-9 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        Number(form.shelfLifeDays) === d
+                          ? 'border-[#236c2a] bg-[#236c2a] text-white'
+                          : 'border-neutral-200 bg-white text-neutral-600 hover:border-[#236c2a]/40'
+                      }`}
+                    >
+                      {d} ngày
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <p className="mt-3 rounded-lg bg-[#f4f1e8] px-3 py-2 text-xs leading-relaxed text-neutral-600">
+                Người nhận sẽ thấy đúng dòng này:{' '}
+                <strong className="text-[#236c2a]">
+                  &ldquo;Dùng trong {Number(form.shelfLifeDays) || MIN_SHELF_LIFE_DAYS} ngày kể từ khi nhận&rdquo;
+                </strong>
+                {expiryPreview && (
+                  <>
+                    {' '}— tin tự đóng chậm nhất {expiryPreview}.
+                  </>
+                )}
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
@@ -655,8 +717,12 @@ export default function ProviderCreateListingPage() {
                       if (!form.pickupStartTime) missing.push('Giờ bắt đầu lấy');
                       if (!form.pickupEndDate) missing.push('Ngày hạn lấy');
                       if (!form.pickupEndTime) missing.push('Giờ hạn lấy');
-                      if (!form.expiryDate) missing.push('Ngày hạn sử dụng');
-                      if (!form.expiryTime) missing.push('Giờ hạn sử dụng');
+                      if (
+                        !(Number(form.shelfLifeDays) >= MIN_SHELF_LIFE_DAYS) ||
+                        Number(form.shelfLifeDays) > MAX_SHELF_LIFE_DAYS
+                      ) {
+                        missing.push(`Hạn sử dụng (${MIN_SHELF_LIFE_DAYS}–${MAX_SHELF_LIFE_DAYS} ngày)`);
+                      }
                     }
                     toast.error(
                       missing.length > 0

@@ -105,6 +105,9 @@ export default function ProviderListingDetailScreen() {
             <Row icon="clock-outline" text={formatPickupWindow(listing.pickupStartTime, listing.pickupEndTime)} />
             <Row icon="map-marker-outline" text={listing.pickupAddress} />
             <Row icon="account-multiple-outline" text={`Tối đa ${listing.maxPerReservation}/lượt đặt`} />
+            {listing.shelfLifeDays ? (
+              <Row icon="calendar-check-outline" text={`HSD: dùng trong ${listing.shelfLifeDays} ngày kể từ khi nhận`} />
+            ) : null}
             {listing.storageConditions ? (
               <Row icon="fridge-outline" text={listing.storageConditions} />
             ) : null}

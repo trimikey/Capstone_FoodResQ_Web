@@ -55,8 +55,23 @@ const EDITABLE_WHEN_ACTIVE = new Set<keyof UpdateListingDto>([
   'pickupStartTime',
   'pickupEndTime',
   'expiryTime',
+  'shelfLifeDays',
   'quantityTotal',
 ]);
+
+const MS_PER_DAY = 86_400_000;
+const MIN_SHELF_LIFE_DAYS = 1;
+const MAX_SHELF_LIFE_DAYS = 30;
+
+function addDays(base: Date, days: number): Date {
+  return new Date(base.getTime() + days * MS_PER_DAY);
+}
+
+/** Quy một mốc HSD tuyệt đối về "số ngày kể từ khi nhận" (làm tròn lên, kẹp trong 1..30). */
+function toShelfLifeDays(pickupEnd: Date, expiry: Date): number {
+  const days = Math.ceil((expiry.getTime() - pickupEnd.getTime()) / MS_PER_DAY);
+  return Math.min(MAX_SHELF_LIFE_DAYS, Math.max(MIN_SHELF_LIFE_DAYS, days));
+}
 
 export interface NearbyRow {
   id: string;
@@ -73,6 +88,7 @@ export interface NearbyRow {
   pickup_address: string;
   storage_conditions: string | null;
   allergen_notes: string | null;
+  shelf_life_days: number | null;
   max_per_reservation: number;
   image_urls: unknown;
   status: string;
@@ -115,8 +131,24 @@ export class ListingsService {
     if (new Date(dto.pickupEndTime) <= new Date(dto.pickupStartTime)) {
       throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
     }
-    if (new Date(dto.expiryTime) < new Date(dto.pickupEndTime)) {
-      throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
+    // HSD nhập theo SỐ NGÀY kể từ khi nhận — mốc `expiry_time` chỉ là hệ quả
+    // (pickup_end_time + N ngày) để cron near-expiry và guard đặt đơn vẫn chạy như cũ.
+    // `expiryTime` tuyệt đối chỉ còn dùng cho client cũ chưa cập nhật.
+    const pickupEnd = new Date(dto.pickupEndTime);
+    let shelfLifeDays: number | null = dto.shelfLifeDays ?? null;
+    let expiryTime: Date;
+    if (shelfLifeDays != null) {
+      expiryTime = addDays(pickupEnd, shelfLifeDays);
+    } else if (dto.expiryTime) {
+      expiryTime = new Date(dto.expiryTime);
+      if (expiryTime < pickupEnd) {
+        throw new BadRequestException('Hạn sử dụng phải sau hoặc bằng giờ kết thúc nhận.');
+      }
+      shelfLifeDays = toShelfLifeDays(pickupEnd, expiryTime);
+    } else {
+      throw new BadRequestException(
+        'Vui lòng nhập hạn sử dụng: số ngày dùng được kể từ khi người nhận lấy hàng.',
+      );
     }
 
     // Khung giờ trong ngày đi theo cặp — có mở thì phải có đóng, và không hỗ trợ
@@ -136,7 +168,7 @@ export class ListingsService {
       INSERT INTO food_listings (
         provider_id, title, description, category,
         quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
-        pickup_start_time, pickup_end_time, expiry_time,
+        pickup_start_time, pickup_end_time, expiry_time, shelf_life_days,
         daily_start_minute, daily_end_minute,
         pickup_address, pickup_location,
         storage_conditions, allergen_notes, max_per_reservation, image_urls,
@@ -146,7 +178,7 @@ export class ListingsService {
         ${dto.quantityTotal}, ${dto.quantityTotal}, ${dto.quantityUnit}::quantity_unit,
         ${dto.weightPerUnitKg ?? null},
         ${dto.pickupStartTime}::timestamptz, ${dto.pickupEndTime}::timestamptz,
-        ${dto.expiryTime}::timestamptz,
+        ${expiryTime}::timestamptz, ${shelfLifeDays},
         ${dto.dailyStartMinute ?? null}, ${dto.dailyEndMinute ?? null},
         ${dto.pickupAddress}, ST_SetSRID(ST_MakePoint(${dto.lng}, ${dto.lat}), 4326)::geography,
         ${dto.storageConditions ?? null}, ${dto.allergenNotes ?? null},
@@ -179,7 +211,7 @@ export class ListingsService {
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
           fl.daily_start_minute, fl.daily_end_minute,
-          fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
+          fl.pickup_address, fl.storage_conditions, fl.allergen_notes, fl.shelf_life_days,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
           ST_X(fl.pickup_location::geometry) AS lng,
@@ -211,7 +243,7 @@ export class ListingsService {
           fl.id, fl.title, fl.category, fl.quantity_remaining, fl.quantity_unit,
           fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time,
           fl.daily_start_minute, fl.daily_end_minute,
-          fl.pickup_address, fl.storage_conditions, fl.allergen_notes,
+          fl.pickup_address, fl.storage_conditions, fl.allergen_notes, fl.shelf_life_days,
           fl.max_per_reservation, fl.image_urls, fl.status,
           fl.provider_id, pp.business_name,
           ST_X(fl.pickup_location::geometry) AS lng,
@@ -244,6 +276,7 @@ export class ListingsService {
       pickupAddress: r.pickup_address,
       storageConditions: r.storage_conditions,
       allergenNotes: r.allergen_notes,
+      shelfLifeDays: r.shelf_life_days ?? null,
       maxPerReservation: r.max_per_reservation,
       imageUrls: r.image_urls,
       status: r.status,
@@ -262,7 +295,8 @@ export class ListingsService {
         fl.id, fl.title, fl.description, fl.category, fl.quantity_remaining, fl.quantity_unit,
         fl.weight_per_unit_kg, fl.pickup_start_time, fl.pickup_end_time, fl.pickup_address,
         fl.daily_start_minute, fl.daily_end_minute,
-        fl.storage_conditions, fl.allergen_notes, fl.max_per_reservation, fl.image_urls, fl.status,
+        fl.storage_conditions, fl.allergen_notes, fl.shelf_life_days,
+        fl.max_per_reservation, fl.image_urls, fl.status,
         fl.provider_id, pp.business_name,
         ST_X(fl.pickup_location::geometry) AS lng,
         ST_Y(fl.pickup_location::geometry) AS lat
@@ -299,6 +333,7 @@ export class ListingsService {
       pickupAddress: r.pickup_address,
       storageConditions: r.storage_conditions,
       allergenNotes: r.allergen_notes,
+      shelfLifeDays: r.shelf_life_days ?? null,
       maxPerReservation: r.max_per_reservation,
       imageUrls: r.image_urls,
       status: r.status,
@@ -433,11 +468,28 @@ export class ListingsService {
       }
     }
 
+    const newStart = dto.pickupStartTime ? new Date(dto.pickupStartTime) : listing.pickupStartTime;
+    const newEnd = dto.pickupEndTime ? new Date(dto.pickupEndTime) : listing.pickupEndTime;
+
+    // HSD = "dùng trong N ngày kể từ khi nhận", nên khi giờ kết thúc nhận dịch đi thì
+    // mốc expiry_time phải dịch theo. Thứ tự ưu tiên: số ngày trong dto → mốc tuyệt đối
+    // trong dto (client cũ) → số ngày đã lưu → mốc cũ.
+    const expiryTouched =
+      dto.shelfLifeDays !== undefined || dto.expiryTime !== undefined || dto.pickupEndTime !== undefined;
+    let newShelfLifeDays = listing.shelfLifeDays;
+    let newExp = listing.expiryTime;
+    if (dto.shelfLifeDays != null) {
+      newShelfLifeDays = dto.shelfLifeDays;
+      newExp = addDays(newEnd, dto.shelfLifeDays);
+    } else if (dto.expiryTime !== undefined) {
+      newExp = new Date(dto.expiryTime);
+      newShelfLifeDays = toShelfLifeDays(newEnd, newExp);
+    } else if (listing.shelfLifeDays != null) {
+      newExp = addDays(newEnd, listing.shelfLifeDays);
+    }
+
     // Validate thời gian nếu có thay đổi
     if (isDraft) {
-      const newStart = dto.pickupStartTime ? new Date(dto.pickupStartTime) : listing.pickupStartTime;
-      const newEnd = dto.pickupEndTime ? new Date(dto.pickupEndTime) : listing.pickupEndTime;
-      const newExp = dto.expiryTime ? new Date(dto.expiryTime) : listing.expiryTime;
       if (newEnd <= newStart) {
         throw new BadRequestException('Giờ kết thúc nhận phải sau giờ bắt đầu nhận.');
       }
@@ -459,7 +511,7 @@ export class ListingsService {
       if (dto.pickupEndTime && new Date(dto.pickupEndTime) < new Date()) {
         throw new BadRequestException('Giờ kết thúc nhận phải ở trong tương lai.');
       }
-      if (dto.expiryTime && new Date(dto.expiryTime) < listing.expiryTime) {
+      if (expiryTouched && newExp < listing.expiryTime) {
         throw new BadRequestException('Không thể rút ngắn hạn sử dụng.');
       }
     }
@@ -509,7 +561,10 @@ export class ListingsService {
     if (dto.weightPerUnitKg !== undefined) data.weightPerUnitKg = dto.weightPerUnitKg ?? null;
     if (dto.pickupStartTime !== undefined) data.pickupStartTime = new Date(dto.pickupStartTime);
     if (dto.pickupEndTime !== undefined) data.pickupEndTime = new Date(dto.pickupEndTime);
-    if (dto.expiryTime !== undefined) data.expiryTime = new Date(dto.expiryTime);
+    if (expiryTouched) {
+      data.expiryTime = newExp;
+      data.shelfLifeDays = newShelfLifeDays;
+    }
     if (dto.pickupAddress !== undefined) data.pickupAddress = dto.pickupAddress;
     if (dto.storageConditions !== undefined) data.storageConditions = dto.storageConditions ?? null;
     if (dto.allergenNotes !== undefined) data.allergenNotes = dto.allergenNotes ?? null;
@@ -560,7 +615,7 @@ export class ListingsService {
       INSERT INTO food_listings (
         provider_id, title, description, category,
         quantity_total, quantity_remaining, quantity_unit, weight_per_unit_kg,
-        pickup_start_time, pickup_end_time, expiry_time,
+        pickup_start_time, pickup_end_time, expiry_time, shelf_life_days,
         daily_start_minute, daily_end_minute,
         pickup_address, pickup_location,
         storage_conditions, allergen_notes, max_per_reservation, image_urls,
@@ -577,6 +632,7 @@ export class ListingsService {
         ${original.pickupStartTime}::timestamptz,
         ${original.pickupEndTime}::timestamptz,
         ${original.expiryTime}::timestamptz,
+        ${original.shelfLifeDays},
         ${original.dailyStartMinute}, ${original.dailyEndMinute},
         ${original.pickupAddress},
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,

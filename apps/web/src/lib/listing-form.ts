@@ -11,8 +11,12 @@ export interface ListingForm {
   pickupStartTime: string;
   pickupEndDate: string;
   pickupEndTime: string;
-  expiryDate: string;
-  expiryTime: string;
+  /**
+   * HSD tính bằng SỐ NGÀY kể từ khi người nhận lấy hàng (1..30).
+   * Trước đây form bắt NCC chọn một mốc ngày; người nhận nhìn ngày đó trên tin hay
+   * hiểu nhầm là ngày sản xuất, nên giờ nhập theo số ngày và hiển thị đúng như vậy.
+   */
+  shelfLifeDays: number;
   pickupAddress: string;
   lng: number;
   lat: number;
@@ -121,6 +125,25 @@ export function isSameVietnamDate(first: DateValue, second: DateValue): boolean 
 }
 
 
+export const MIN_SHELF_LIFE_DAYS = 1;
+export const MAX_SHELF_LIFE_DAYS = 30;
+export const DEFAULT_SHELF_LIFE_DAYS = 2;
+
+/** Quy mốc HSD cũ (tin tạo trước khi đổi sang số ngày) về số ngày, để form điền lại được. */
+export function shelfLifeDaysFrom(pickupEndTime: DateValue, expiryTime: DateValue): number {
+  const end = asDate(pickupEndTime).getTime();
+  const exp = asDate(expiryTime).getTime();
+  if (Number.isNaN(end) || Number.isNaN(exp)) return DEFAULT_SHELF_LIFE_DAYS;
+  const days = Math.ceil((exp - end) / 86_400_000);
+  return Math.min(MAX_SHELF_LIFE_DAYS, Math.max(MIN_SHELF_LIFE_DAYS, days));
+}
+
+/** Câu chữ hiển thị cho người nhận — luôn gắn với "kể từ khi nhận" để không bị đọc thành ngày sản xuất. */
+export function shelfLifeLabel(days: number | null | undefined): string | null {
+  if (days == null || !Number.isFinite(days) || days < 1) return null;
+  return `Dùng trong ${days} ngày kể từ khi nhận`;
+}
+
 export function buildForm(
   provider: { address?: string | null; lng?: number | null; lat?: number | null } | null | undefined,
   source?: ProviderListing | null,
@@ -130,7 +153,6 @@ export function buildForm(
   if (source) {
     const start = toLocalInput(source.pickupStartTime);
     const end = toLocalInput(source.pickupEndTime);
-    const expiry = toLocalInput(source.expiryTime);
     return {
       title: source.title ?? '',
       description: source.description ?? '',
@@ -142,8 +164,7 @@ export function buildForm(
       pickupStartTime: start.time,
       pickupEndDate: end.date,
       pickupEndTime: end.time,
-      expiryDate: expiry.date,
-      expiryTime: expiry.time,
+      shelfLifeDays: source.shelfLifeDays ?? shelfLifeDaysFrom(source.pickupEndTime, source.expiryTime),
       pickupAddress: source.pickupAddress ?? '',
       lng: source.lng ?? (hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG),
       lat: source.lat ?? (hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT),
@@ -165,8 +186,7 @@ export function buildForm(
     pickupStartTime: '',
     pickupEndDate: '',
     pickupEndTime: '',
-    expiryDate: '',
-    expiryTime: '',
+    shelfLifeDays: DEFAULT_SHELF_LIFE_DAYS,
     pickupAddress: provider?.address ?? '',
     lng: hasProviderLocation ? (provider!.lng as number) : FALLBACK_LNG,
     lat: hasProviderLocation ? (provider!.lat as number) : FALLBACK_LAT,

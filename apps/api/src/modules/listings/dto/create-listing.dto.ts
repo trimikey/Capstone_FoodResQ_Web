@@ -59,9 +59,24 @@ export class CreateListingDto {
   @IsDateString()
   pickupEndTime!: string;
 
-  @ApiProperty({ example: '2026-06-08T14:00:00Z' })
+  /**
+   * HSD theo SỐ NGÀY kể từ khi người nhận lấy hàng (1..30) — cách nhập được khuyến nghị.
+   * BE tự quy ra `expiry_time = pickupEndTime + N ngày`, nên FE không cần gửi expiryTime.
+   * Nhập theo số ngày tránh việc người nhận đọc một mốc ngày trên tin và tưởng đó là ngày sản xuất.
+   */
+  @ApiPropertyOptional({ example: 2, minimum: 1, maximum: 30, description: 'Dùng trong N ngày kể từ khi nhận' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  @Type(() => Number)
+  shelfLifeDays?: number;
+
+  /** Mốc HSD tuyệt đối — giữ lại cho client cũ. Bỏ qua nếu đã có `shelfLifeDays`. */
+  @ApiPropertyOptional({ example: '2026-06-08T14:00:00Z', deprecated: true })
+  @IsOptional()
   @IsDateString()
-  expiryTime!: string;
+  expiryTime?: string;
 
   @ApiProperty({ example: '12 Nguyễn Huệ, Q1, TP.HCM' })
   @IsString()

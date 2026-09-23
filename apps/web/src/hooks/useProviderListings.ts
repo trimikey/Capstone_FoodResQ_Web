@@ -13,7 +13,10 @@ export interface ProviderListing {
   weightPerUnitKg: string | null;
   pickupStartTime: string;
   pickupEndTime: string;
+  /** Mốc HSD tuyệt đối do BE suy ra từ `shelfLifeDays` — dùng cho cron/guard, không hiển thị. */
   expiryTime: string;
+  /** HSD theo số ngày kể từ khi nhận. Null = tin cũ tạo trước khi đổi cách nhập. */
+  shelfLifeDays: number | null;
   pickupAddress: string;
   /** Tọa độ điểm lấy hàng (do service `findByProvider` của BE trả về). */
   lng: number | null;
@@ -36,7 +39,8 @@ export interface CreateListingInput {
   weightPerUnitKg?: number;
   pickupStartTime: string;
   pickupEndTime: string;
-  expiryTime: string;
+  /** HSD: số ngày dùng được kể từ khi người nhận lấy hàng (1..30). BE tự tính `expiryTime`. */
+  shelfLifeDays: number;
   pickupAddress: string;
   lng: number;
   lat: number;
@@ -49,7 +53,10 @@ export interface CreateListingInput {
 }
 
 /** Field phụ được sửa khi tin đã đăng. Field cứng (giờ/địa điểm/số lượng) phải huỷ rồi tạo lại. */
-export type UpdateListingInput = Partial<CreateListingInput>;
+export type UpdateListingInput = Partial<CreateListingInput> & {
+  /** Gia hạn bằng mốc tuyệt đối (ExtendListingModal) — BE quy ngược ra số ngày HSD. */
+  expiryTime?: string;
+};
 
 interface Paginated<T> {
   items: T[];

@@ -248,9 +248,18 @@ export default function ListingDetailScreen({ id }: Props) {
             />
           </SurfaceCard>
 
-          {(listing.storageConditions || listing.allergenNotes) ? (
+          {(listing.storageConditions || listing.allergenNotes || listing.shelfLifeDays) ? (
             <SurfaceCard style={styles.infoCard}>
               <SectionHeader title="Lưu ý an toàn" />
+              {/* HSD luôn ghi "kể từ khi nhận" — không in ngày cụ thể để khỏi bị đọc
+                  thành ngày sản xuất. */}
+              {listing.shelfLifeDays ? (
+                <InfoRow
+                  icon="calendar-check-outline"
+                  label="Hạn sử dụng"
+                  text={`Dùng trong ${listing.shelfLifeDays} ngày kể từ khi nhận`}
+                />
+              ) : null}
               {listing.storageConditions ? (
                 <InfoRow icon="fridge-outline" label="Bảo quản" text={listing.storageConditions} />
               ) : null}

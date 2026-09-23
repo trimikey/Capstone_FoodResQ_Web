@@ -16,7 +16,7 @@ const VALID_BASE = {
   maxPerReservation: 3,
   pickupStartTime: min(60),
   pickupEndTime: min(180),
-  expiryTime: min(300),
+  shelfLifeDays: 2,
   pickupAddress: '123 Nguyễn Huệ, Q.1, TP.HCM',
   description: undefined as string | undefined,
   weightPerUnitKg: undefined as number | undefined,
@@ -155,7 +155,7 @@ describe('pickupStartTime minimum lead time', () => {
 
   it('accepts start time at the current time', () => {
     assert.equal(
-      parse({ pickupStartTime: min(0), pickupEndTime: min(60), expiryTime: min(90) }).success,
+      parse({ pickupStartTime: min(0), pickupEndTime: min(60) }).success,
       true,
     );
   });
@@ -172,7 +172,17 @@ describe('time ordering rules', () => {
     assert.ok(errPaths({ pickupStartTime: min(60), pickupEndTime: min(50) }).includes('pickupEndTime'));
   });
 
-  it('rejects expiryTime before pickupEndTime', () => {
-    assert.ok(errPaths({ pickupEndTime: min(180), expiryTime: min(120) }).includes('expiryTime'));
+});
+
+describe('shelfLifeDays', () => {
+  it('accepts 1..30 days', () => {
+    assert.equal(parse({ shelfLifeDays: 1 }).success, true);
+    assert.equal(parse({ shelfLifeDays: 30 }).success, true);
+  });
+
+  it('rejects 0, >30 and fractional days', () => {
+    assert.ok(errPaths({ shelfLifeDays: 0 }).includes('shelfLifeDays'));
+    assert.ok(errPaths({ shelfLifeDays: 31 }).includes('shelfLifeDays'));
+    assert.ok(errPaths({ shelfLifeDays: 1.5 }).includes('shelfLifeDays'));
   });
 });

@@ -13,7 +13,8 @@ export interface CreateListingInput {
   quantityUnit: QuantityUnit;
   pickupStartTime: string; // ISO
   pickupEndTime: string; // ISO, > pickupStartTime
-  expiryTime: string; // ISO, >= pickupEndTime
+  /** HSD: dùng trong N ngày kể từ khi nhận (1..30). BE tự tính expiryTime. */
+  shelfLifeDays: number;
   pickupAddress: string;
   lat: number;
   lng: number;
@@ -27,7 +28,10 @@ export interface CreateListingInput {
   dailyEndMinute?: number;
 }
 
-export type UpdateListingInput = Partial<CreateListingInput>;
+export type UpdateListingInput = Partial<CreateListingInput> & {
+  /** Gia hạn bằng mốc tuyệt đối (ExtendListingModal) — BE quy ngược ra số ngày. */
+  expiryTime?: string;
+};
 
 /** Response phân trang của GET /listings/provider/my. */
 interface Paginated<T> {

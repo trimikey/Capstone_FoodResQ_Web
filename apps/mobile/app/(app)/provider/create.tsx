@@ -53,6 +53,16 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 const UNIT_KEYS = Object.keys(UNIT_LABELS);
 const DISCRETE_UNITS = ['portion', 'item', 'box'];
+/** Mốc HSD hay dùng nhất — bấm 1 phát thay vì gõ. */
+const SHELF_LIFE_PRESETS = [1, 2, 3, 7] as const;
+
+/** Quy mốc HSD cũ (tin tạo trước khi đổi sang số ngày) về số ngày, kẹp 1..30. */
+function shelfLifeDaysFrom(pickupEndTime: string, expiryTime?: string): number {
+  const end = new Date(pickupEndTime).getTime();
+  const exp = expiryTime ? new Date(expiryTime).getTime() : NaN;
+  if (Number.isNaN(end) || Number.isNaN(exp)) return 2;
+  return Math.min(30, Math.max(1, Math.ceil((exp - end) / 86_400_000)));
+}
 const CREATE_STEPS = [
   { key: 1, label: 'Th\u00f4ng tin', icon: 'food-apple-outline' },
   { key: 2, label: 'S\u1ed1 l\u01b0\u1ee3ng & gi\u1edd', icon: 'clock-outline' },
@@ -181,7 +191,7 @@ export default function CreateListingScreen() {
       maxPerReservation: 1,
       pickupStartTime: undefined,
       pickupEndTime: undefined,
-      expiryTime: undefined,
+      shelfLifeDays: 2,
       pickupAddress: '',
       description: '',
       weightPerUnitKg: undefined,
@@ -203,7 +213,7 @@ export default function CreateListingScreen() {
       maxPerReservation: editingListing.maxPerReservation ?? 1,
       pickupStartTime: new Date(editingListing.pickupStartTime),
       pickupEndTime: new Date(editingListing.pickupEndTime),
-      expiryTime: new Date(editingListing.expiryTime ?? editingListing.pickupEndTime),
+      shelfLifeDays: editingListing.shelfLifeDays ?? shelfLifeDaysFrom(editingListing.pickupEndTime, editingListing.expiryTime),
       pickupAddress: editingListing.pickupAddress ?? '',
       description: editingListing.description ?? '',
       weightPerUnitKg: editingListing.weightPerUnitKg ?? undefined,
@@ -222,7 +232,7 @@ export default function CreateListingScreen() {
   const pickupAddress = watch('pickupAddress');
   const pickupStart = watch('pickupStartTime');
   const pickupEnd = watch('pickupEndTime');
-  const expiry = watch('expiryTime');
+  const shelfLifeDays = watch('shelfLifeDays');
   const dailyStartMinute = watch('dailyStartMinute');
   const dailyEndMinute = watch('dailyEndMinute');
   const profileProvider = profile?.provider ?? user?.provider ?? null;
@@ -350,13 +360,13 @@ export default function CreateListingScreen() {
         'weightPerUnitKg',
         'pickupStartTime',
         'pickupEndTime',
-        'expiryTime',
+        'shelfLifeDays',
         'dailyStartMinute',
         'dailyEndMinute',
         'storageConditions',
         'allergenNotes',
       ]);
-      if (!ok || !pickupStart || !pickupEnd || !expiry) {
+      if (!ok || !pickupStart || !pickupEnd) {
         Popup.show({
           type: 'warning',
           text1: 'C\u1ea7n ho\u00e0n t\u1ea5t s\u1ed1 l\u01b0\u1ee3ng v\u00e0 th\u1eddi gian',
@@ -392,11 +402,11 @@ export default function CreateListingScreen() {
       });
       return;
     }
-    if (!editingIsPublished && (!form.pickupStartTime || !form.pickupEndTime || !form.expiryTime)) {
+    if (!editingIsPublished && (!form.pickupStartTime || !form.pickupEndTime)) {
       Popup.show({
         type: 'warning',
         text1: 'Chưa chọn đủ thời gian',
-        text2: 'Vui lòng chọn giờ bắt đầu, giờ kết thúc và hạn sử dụng.',
+        text2: 'Vui lòng chọn giờ bắt đầu và giờ kết thúc lấy hàng.',
       });
       return;
     }
@@ -408,7 +418,7 @@ export default function CreateListingScreen() {
       maxPerReservation: form.maxPerReservation,
       pickupStartTime: form.pickupStartTime!.toISOString(),
       pickupEndTime: form.pickupEndTime!.toISOString(),
-      expiryTime: form.expiryTime!.toISOString(),
+      shelfLifeDays: Number(form.shelfLifeDays),
       pickupAddress: form.pickupAddress,
       lat: coords.lat,
       lng: coords.lng,
@@ -752,14 +762,12 @@ export default function CreateListingScreen() {
                   value={pickupEnd}
                   onPress={() => openDateTimePicker(pickupEnd ?? new Date(), (d) => {
                     setValue('pickupEndTime', d, { shouldValidate: true });
-                    if (expiry) trigger('expiryTime');
                   })}
                   hasError={!!errors.pickupEndTime}
                 />
                 <Pressable
                   onPress={() => {
                     setValue('pickupEndTime', new Date(), { shouldValidate: true });
-                    if (expiry) trigger('expiryTime');
                   }}
                   style={styles.nowBtn}
                   accessibilityRole="button"
@@ -769,22 +777,45 @@ export default function CreateListingScreen() {
                   <Text style={styles.nowBtnText}>Hiện tại</Text>
                 </Pressable>
               </Field>
-              <Field label="Hạn sử dụng *" error={errors.expiryTime?.message}>
-                <DateButton
-                  label="Hạn dùng"
-                  value={expiry}
-                  onPress={() => openDateTimePicker(expiry ?? new Date(), (d) => setValue('expiryTime', d, { shouldValidate: true }))}
-                  hasError={!!errors.expiryTime}
-                />
-                <Pressable
-                  onPress={() => setValue('expiryTime', new Date(), { shouldValidate: true })}
-                  style={styles.nowBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="Dùng thời điểm hiện tại"
-                >
-                  <MaterialCommunityIcons name="clock-fast" size={13} color={COLORS.primary} />
-                  <Text style={styles.nowBtnText}>Hiện tại</Text>
-                </Pressable>
+              {/* HSD nhập theo SỐ NGÀY kể từ khi nhận, không chọn mốc ngày — người nhận
+                  nhìn một ngày cụ thể rất dễ hiểu nhầm là ngày sản xuất. */}
+              <Field
+                label="Hạn sử dụng *"
+                helper={`Người nhận sẽ thấy: "Dùng trong ${Number(shelfLifeDays) || 1} ngày kể từ khi nhận".`}
+                error={errors.shelfLifeDays?.message}
+              >
+                <Controller control={control} name="shelfLifeDays" render={({ field: { onChange, value } }) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Số ngày dùng được kể từ khi nhận"
+                    keyboardType="number-pad"
+                    placeholder="VD: 2"
+                    value={value ? String(value) : ''}
+                    onChangeText={onChange}
+                    right={<TextInput.Affix text="ngày" />}
+                    outlineColor={COLORS.outline}
+                    activeOutlineColor={COLORS.primary}
+                    style={styles.input}
+                    dense
+                    error={!!errors.shelfLifeDays}
+                  />
+                )} />
+                <View style={styles.shelfPresetRow}>
+                  {SHELF_LIFE_PRESETS.map((d) => {
+                    const active = Number(shelfLifeDays) === d;
+                    return (
+                      <Pressable
+                        key={d}
+                        onPress={() => setValue('shelfLifeDays', d, { shouldValidate: true })}
+                        style={[styles.shelfPreset, active && styles.shelfPresetActive]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Hạn dùng ${d} ngày`}
+                      >
+                        <Text style={[styles.shelfPresetText, active && styles.shelfPresetTextActive]}>{d} ngày</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </Field>
 
               <View style={styles.inlinePanel}>
@@ -1382,6 +1413,19 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   nowBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '700' },
+  shelfPresetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  shelfPreset: {
+    paddingHorizontal: 14,
+    minHeight: 36,
+    justifyContent: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    backgroundColor: '#FFFFFF',
+  },
+  shelfPresetActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  shelfPresetText: { fontSize: 13, fontWeight: '600', color: COLORS.onSurfaceVariant },
+  shelfPresetTextActive: { color: '#FFFFFF' },
   pickupOptionRow: {
     flexDirection: 'row',
     gap: 8,

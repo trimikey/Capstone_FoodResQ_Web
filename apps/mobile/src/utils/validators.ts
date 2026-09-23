@@ -219,7 +219,13 @@ export function makeCreateListingSchema(now: Date = new Date()) {
         .max(10, 'Tối đa 10'),
       pickupStartTime: z.date().optional(),
       pickupEndTime: z.date().optional(),
-      expiryTime: z.date().optional(),
+      // HSD theo SỐ NGÀY kể từ khi người nhận lấy hàng — BE tự tính mốc hết hạn.
+      // Nhập một mốc ngày cụ thể hay bị người nhận đọc nhầm thành ngày sản xuất.
+      shelfLifeDays: z.coerce
+        .number({ invalid_type_error: 'Nhập số ngày' })
+        .int('Phải là số nguyên')
+        .min(1, 'Tối thiểu 1 ngày')
+        .max(30, 'Tối đa 30 ngày'),
       pickupAddress: z.string().min(1, 'Nhập địa chỉ lấy hàng'),
       description: z.string().optional(),
       weightPerUnitKg: optionalPositive,
@@ -263,10 +269,6 @@ export function makeCreateListingSchema(now: Date = new Date()) {
     .refine(
       (d) => !d.pickupEndTime || !d.pickupStartTime || d.pickupEndTime > d.pickupStartTime,
       { message: 'Giờ kết thúc phải sau giờ bắt đầu', path: ['pickupEndTime'] }
-    )
-    .refine(
-      (d) => !d.expiryTime || !d.pickupEndTime || d.expiryTime >= d.pickupEndTime,
-      { message: 'Hạn dùng phải từ giờ kết thúc lấy trở đi', path: ['expiryTime'] }
     )
     .refine(
       (d) => d.dailyStartMinute == null || d.dailyEndMinute == null || d.dailyStartMinute < d.dailyEndMinute,

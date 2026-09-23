@@ -18,6 +18,7 @@ import {
   formatVietnamDateTime,
   formatVietnamTime,
   isSameVietnamDate,
+  shelfLifeLabel,
 } from '@/lib/listing-form';
 import { QuantityUnit } from '@foodresq/types';
 import { toast } from 'sonner';
@@ -598,7 +599,21 @@ export default function ListingDetailPage({ params }: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* HSD luôn ghi "kể từ khi nhận" — không bao giờ in một ngày cụ thể, vì
+                  người nhận hay đọc ngày đó thành ngày sản xuất. */}
+              {shelfLifeLabel(listing.shelfLifeDays) && (
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">event_available</span>
+                  <div>
+                    <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Hạn sử dụng</p>
+                    <p className="font-label-sm text-xs text-on-surface font-semibold">
+                      {shelfLifeLabel(listing.shelfLifeDays)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="col-span-2 flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px] bg-primary/10 p-2 rounded-xl">schedule</span>
                 <div>
                   <p className="text-[11px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">Giờ nhận hàng</p>

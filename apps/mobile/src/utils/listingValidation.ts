@@ -10,7 +10,7 @@ const FIELD_LABELS: Partial<Record<keyof CreateListingFormInput, string>> = {
   maxPerReservation: 'Tối đa mỗi lượt',
   pickupStartTime: 'Giờ bắt đầu lấy',
   pickupEndTime: 'Giờ kết thúc lấy',
-  expiryTime: 'Hạn sử dụng',
+  shelfLifeDays: 'Hạn sử dụng (số ngày)',
   pickupAddress: 'Địa chỉ lấy hàng',
   description: 'Mô tả',
   weightPerUnitKg: 'Khối lượng/phần',

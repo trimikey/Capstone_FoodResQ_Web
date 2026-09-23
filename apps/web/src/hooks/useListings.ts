@@ -13,6 +13,8 @@ export interface ListingItem {
   pickupAddress: string;
   storageConditions: string | null;
   allergenNotes: string | null;
+  /** HSD: dùng trong N ngày kể từ khi nhận. Null = tin cũ chưa khai theo số ngày. */
+  shelfLifeDays?: number | null;
   maxPerReservation: number;
   imageUrls: string[];
   isSurpriseBag?: boolean;

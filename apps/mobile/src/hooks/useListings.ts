@@ -39,7 +39,9 @@ export interface Listing {
   /** Giờ mở/đóng nhận hàng trong ngày — phút từ 00:00 giờ VN; null = không giới hạn */
   dailyStartMinute?: number | null;
   dailyEndMinute?: number | null;
-  expiryTime?: string; // ISO
+  expiryTime?: string; // ISO — mốc nội bộ, KHÔNG hiển thị cho người nhận
+  /** HSD: dùng trong N ngày kể từ khi nhận. Null = tin cũ. */
+  shelfLifeDays?: number | null;
   pickupAddress: string;
   storageConditions?: string | null;
   allergenNotes?: string | null;

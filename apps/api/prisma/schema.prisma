@@ -462,7 +462,12 @@ model FoodListing {
   /// Null = tin cũ chưa có khung giờ ngày → không áp ràng buộc này.
   dailyStartMinute  Int?                                   @map("daily_start_minute") @db.SmallInt
   dailyEndMinute    Int?                                   @map("daily_end_minute") @db.SmallInt
+  /// Deadline cứng: cron near-expiry + chặn đặt đơn đều đọc cột này.
+  /// Được suy ra = pickup_end_time + shelfLifeDays ngày khi NCC nhập theo số ngày.
   expiryTime        DateTime                               @map("expiry_time") @db.Timestamptz
+  /// HSD theo SỐ NGÀY kể từ khi người nhận lấy hàng (1..30). Null = tin cũ chỉ có mốc tuyệt đối.
+  /// Hiển thị "dùng trong N ngày kể từ khi nhận" để không bị hiểu nhầm là ngày sản xuất.
+  shelfLifeDays     Int?                                   @map("shelf_life_days") @db.SmallInt
   pickupAddress     String                                 @map("pickup_address")
   pickupLocation    Unsupported("geography(Point, 4326)")? @map("pickup_location")
   storageConditions String?                                @map("storage_conditions")

@@ -6,6 +6,7 @@ import {
   IsPositive,
   IsDateString,
   IsOptional,
+  IsInt,
   IsArray,
   Min,
   Max,
@@ -69,6 +70,15 @@ export class UpdateListingDto {
   @IsOptional()
   @IsDateString()
   pickupEndTime?: string;
+
+  /** HSD theo số ngày kể từ khi nhận (1..30). Gửi cùng/không cùng pickupEndTime đều được — BE tính lại mốc. */
+  @ApiPropertyOptional({ example: 2, minimum: 1, maximum: 30 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  @Type(() => Number)
+  shelfLifeDays?: number;
 
   @ApiPropertyOptional({ example: '2026-06-08T14:00:00Z' })
   @IsOptional()
