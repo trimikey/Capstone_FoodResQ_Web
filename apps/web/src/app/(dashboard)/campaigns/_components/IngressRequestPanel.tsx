@@ -32,6 +32,12 @@ import {
 
 const RADIUS_PRESETS = [2, 5, 10, 20];
 
+const PICKUP_WINDOWS = [
+  { label: 'Ca sáng', start: '06:00', end: '12:00' },
+  { label: 'Ca chiều', start: '12:00', end: '18:00' },
+  { label: 'Ca tối', start: '18:00', end: '00:00' },
+] as const;
+
 /** Mặc định bật 2 tiêu chí quan trọng nhất; chuỗi lạnh tuỳ loại thực phẩm nên để tắt. */
 const DEFAULT_STANDARDS = {
   requireAtvstpCert: true,
@@ -211,11 +217,8 @@ export default function IngressRequestPanel({ campaigns }: Props) {
       }
     }
     if (!waiver) return toast.error('Vui lòng xác nhận cam kết sử dụng phi thương mại.');
-    if (neededFrom && neededTo && neededTo <= neededFrom) {
-      return toast.error('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
-    }
-    if ((neededFrom || neededTo) && !neededDate) {
-      return toast.error('Vui lòng chọn ngày cần nhận nguyên liệu.');
+    if (!neededDate || !neededFrom || !neededTo) {
+      return toast.error('Vui lòng chọn ngày và ca nhận nguyên liệu.');
     }
     if (neededDate && neededDate < new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)) {
       return toast.error('Ngày cần nhận không được ở quá khứ.');
@@ -346,6 +349,8 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                 if (picked?.scheduledDate) {
                   setNeededDate((prev) => prev || picked.scheduledDate.slice(0, 10));
                 }
+                setNeededFrom((prev) => prev || PICKUP_WINDOWS[0].start);
+                setNeededTo((prev) => prev || PICKUP_WINDOWS[0].end);
               }}
               className="inp"
             >
@@ -473,27 +478,40 @@ export default function IngressRequestPanel({ campaigns }: Props) {
             </Field>
           </div>
 
-          <Field label="Ngày & khung giờ cần nhận tại bếp">
-            <div className="flex flex-wrap items-center gap-2">
+          <Field label="Ngày & khung giờ cần nhận tại bếp" required>
+            <div className="space-y-2">
               <input
                 type="date"
                 value={neededDate}
                 onChange={(e) => setNeededDate(e.target.value)}
                 className="inp"
               />
-              <input
-                type="time"
-                value={neededFrom}
-                onChange={(e) => setNeededFrom(e.target.value)}
-                className="inp"
-              />
-              <span className="text-sm text-neutral-400">→</span>
-              <input
-                type="time"
-                value={neededTo}
-                onChange={(e) => setNeededTo(e.target.value)}
-                className="inp"
-              />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {PICKUP_WINDOWS.map((window) => {
+                  const selected = neededFrom === window.start && neededTo === window.end;
+                  return (
+                    <button
+                      key={`${window.start}-${window.end}`}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setNeededFrom(window.start);
+                        setNeededTo(window.end);
+                      }}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                          : 'border-neutral-200 bg-white text-neutral-600 hover:border-emerald-300'
+                      }`}
+                    >
+                      <span className="block text-xs font-extrabold">{window.label}</span>
+                      <span className="text-[11px] font-semibold">
+                        {window.start}–{window.end === '00:00' ? '24:00' : window.end}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <p className="mt-1 text-[11px] text-neutral-400">
               Áp dụng cho mọi đơn gửi đi — thành lịch hẹn lấy hàng khi từng NCC chấp nhận.

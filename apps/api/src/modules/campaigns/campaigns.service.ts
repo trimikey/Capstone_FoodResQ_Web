@@ -5485,12 +5485,18 @@ export class CampaignsService {
         'Bếp phải xác nhận cam kết sử dụng thực phẩm cho mục đích từ thiện phi thương mại trước khi gửi yêu cầu.',
       );
     }
-    if (
-      dto.demandDetails?.neededFrom &&
-      dto.demandDetails.neededTo &&
-      dto.demandDetails.neededTo <= dto.demandDetails.neededFrom
-    ) {
-      throw new BadRequestException('Giờ kết thúc nhận hàng phải sau giờ bắt đầu.');
+    const neededDate = dto.demandDetails?.neededDate;
+    const neededFrom = dto.demandDetails?.neededFrom;
+    const neededTo = dto.demandDetails?.neededTo;
+    const hasPickupWindow = Boolean(neededDate || neededFrom || neededTo);
+    if (hasPickupWindow && (!neededDate || !neededFrom || !neededTo)) {
+      throw new BadRequestException('Vui lòng chọn đầy đủ ngày và ca nhận nguyên liệu.');
+    }
+    const allowedPickupWindows = new Set(['06:00-12:00', '12:00-18:00', '18:00-00:00']);
+    if (neededFrom && neededTo && !allowedPickupWindows.has(`${neededFrom}-${neededTo}`)) {
+      throw new BadRequestException(
+        'Khung giờ nhận hàng phải là 06:00-12:00, 12:00-18:00 hoặc 18:00-00:00.',
+      );
     }
     // Ngày cần nhận không được ở quá khứ (so theo ngày VN).
     if (dto.demandDetails?.neededDate) {

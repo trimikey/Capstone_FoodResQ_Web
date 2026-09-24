@@ -1749,9 +1749,18 @@ export function useReviewQcStep() {
       );
       return data.data as { id: string; reviewStatus: string; dishName: string };
     },
-    onSuccess: (_d, p) => {
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
-      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    onSuccess: async (_d, p) => {
+      // Trang Quy trình bếp đọc query riêng theo ngày, không đọc manage-detail.
+      // Chờ refetch query đang hiển thị để nút duyệt, badge chờ duyệt và khâu kế tiếp
+      // đổi trạng thái ngay, không cần rời tab rồi quay lại.
+      await Promise.all([
+        qc.invalidateQueries({
+          queryKey: ['campaigns', 'dish-steps', p.campaignId],
+          refetchType: 'active',
+        }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] }),
+        qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] }),
+      ]);
     },
   });
 }
