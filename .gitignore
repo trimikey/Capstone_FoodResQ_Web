@@ -26,3 +26,6 @@ apps/mobile/UI_UX_TASTE_GUIDE.md
 # Vercel nhận nhầm package manager rồi chạy npm trên workspace pnpm.
 package-lock.json
 yarn.lock
+
+# Gói nộp bài (file nén lớn, không đưa vào git)
+submission/

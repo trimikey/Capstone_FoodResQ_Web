@@ -399,9 +399,10 @@ NEXTAUTH_URL=http://localhost:3000
 | QR code validity | 30 min | `QR_VALIDITY_MINUTES` |
 | Trust score ban threshold | ≤ 30 | `TRUST_BAN_THRESHOLD` |
 | Trust score restriction threshold | ≤ 60 | `TRUST_RESTRICT_THRESHOLD` |
-| Shipper offer expiry (sequential, one shipper at a time) | 15 s | hardcoded `OFFER_EXPIRY_SECONDS` |
-| Shipper lets an offer lapse (no accept, no reject) | auto `is_available = false` | hardcoded in DeliveriesService |
-| Shipper assignment timeout (no one accepts → close order, notify receiver) | 4 min 30 s | hardcoded `ASSIGNMENT_TIMEOUT_MS` |
+| Shipper claim radius (open list of pending deliveries, shipper picks one) | 5 km | hardcoded `BROADCAST_RADIUS_M` |
+| Shipper may claim a delivery only inside a registered shift | `delivery_shift_registrations` covering the slot | enforced in DeliveriesService.claimDelivery |
+| Immediate order stays claimable (nobody claims → close order, notify receiver) | 30 min | `DELIVERY_CLAIM_WINDOW_MINUTES` |
+| Scheduled order stops being claimable before its appointment | 15 min | `DELIVERY_SCHEDULED_CUTOFF_MINUTES` (0 = claimable until the appointment) |
 | Stalled delivery auto-fail (no status update after accept) | 6 h | hardcoded `DELIVERY_STALL_HOURS` |
 | Bulk run minimum quantity | 2 portions | hardcoded `BULK_MIN_QTY` |
 | Bulk run: provider must approve/reject within | 24 h | `REQUEST_EXPIRY_HOURS` |
@@ -432,29 +433,39 @@ Receiver searches nearby listings (PostGIS ST_DWithin)
   → Trust score +2, dedication points awarded
 Cancel: allowed while confirmed; late cancel (<30 min before pickup_end_time) → −10 trust
   (FE shows a penalty-warning popup with the projected score & ban/restrict outcome);
-  cancelling a delivery order also closes the delivery + recalls offers + frees the shipper
+  cancelling a delivery order also closes the delivery (it leaves the claim list) + frees the shipper
   (not allowed once the shipper picked the food up).
 No-show cron (pickup orders only — delivery orders are governed by the delivery lifecycle):
   confirmed past qr_expires_at → no_show, stock restored, −20 trust.
 ```
 
-### Shipper offer flow
+### Shipper claim flow
+> Replaces the old sequential ride-hailing offer model (`shipper_task_offers`, 15 s per
+> offer, 4 m 30 s timeout). Volunteers are not employees — pushing an offer at one person
+> at a time and punishing a miss with `is_available = false` punished people who were
+> simply away from the phone. Availability is now expressed up front, by registering a
+> shift; inside that shift the shipper picks what they can actually do.
+> The `shipper_task_offers` table is kept only so legacy rows can be closed.
+
 ```
 Reservation created with delivery=true (receiver must have address + location in profile)
   → BE: create deliveries row (status=pending_assignment) + copy pickup/delivery coords
-  → offer SEQUENTIALLY, one shipper at a time (ride-hailing model): pick the single
-    nearest available VERIFIED shipper (ST_DWithin 5km) not yet offered this delivery
-    → insert 1 shipper_task_offer (expires_at=+15s), max 5 offers per delivery
-  → socket `delivery:offer` pops a global accept popup on the shipper app
-  → accept → UPDATE deliveries.shipper_id, status=assigned
-    (blocked if the shipper already has an active delivery or bulk run)
-  → explicit reject → offer moves to the next-nearest immediately (no penalty)
-  → LAPSE (neither accept nor reject within 15s) → offer expires, shipper is set
-    `is_available = false` (nobody is actually at the device — otherwise a dead
-    account blocks the queue for every later order), then the next-nearest is offered
-  → sweep cron (30s): expire stale offers + re-broadcast to next-nearest shippers
-  → no acceptance within 4m30s → delivery failed, reservation cancelled (no penalty),
-    stock restored, receiver notified to re-order
+  → the delivery joins an OPEN LIST: every pending delivery within ST_DWithin 5 km of the
+    shipper's current position, ordered by delivery_scheduled_at then created_at, max 30
+    (GET /deliveries/available — each row carries distance, trip km and a flag saying
+     whether the shipper's shift covers it, so the FE can grey the button out instead of
+     failing the tap)
+  → shipper claims one (POST /deliveries/:id/claim). Rejected when:
+      · no `delivery_shift_registrations` row covers that slot (work_date + period)
+      · a campaign shift already occupies that slot (busy)
+      · the shipper already has an active delivery or bulk run
+      · the claim deadline has passed
+      · someone else claimed first (conditional updateMany + ConflictException)
+  → claim deadline: immediate orders = created_at + DELIVERY_CLAIM_WINDOW_MINUTES (30 min);
+    scheduled orders = delivery_scheduled_at − DELIVERY_SCHEDULED_CUTOFF_MINUTES (15 min),
+    because claiming at the last minute guarantees a late delivery
+  → nobody claims before the deadline → `expireUnclaimedDeliveries` cron fails the delivery,
+    cancels the reservation (no penalty), restores stock, notifies the receiver to re-order
   → delivery lifecycle: assigned → heading_to_provider → qc_completed (QC photo)
     → in_transit (live GPS tracking) → delivered
   → delivered REQUIRES scanning the receiver's QR token (proof of correct handoff);

@@ -1,0 +1,1043 @@
+// FoodResQ — Database diagram (DBML)
+// Dán toàn bộ file này vào https://dbdiagram.io/d
+// Kiểu PostGIS geography(Point, 4326) được ghi là `geography`.
+
+// ─────────────────────────── ENUMS ───────────────────────────
+
+Enum user_role {
+  admin
+  provider
+  receiver
+  volunteer
+}
+
+Enum user_status {
+  pending_verification
+  active
+  suspended
+  banned
+}
+
+Enum business_type {
+  restaurant
+  supermarket
+  bakery
+  hotel
+  other
+}
+
+Enum verification_status {
+  pending
+  under_review
+  approved
+  rejected
+}
+
+Enum volunteer_rank {
+  newcomer
+  active
+  experienced
+  expert
+}
+
+Enum volunteer_specialization {
+  shipper
+  chef
+  waiter
+}
+
+Enum food_category {
+  cooked_meal
+  bakery
+  fresh_fruit
+  beverage
+  vegetables
+  raw_protein
+  dry_goods
+  canned_packaged
+  other
+  prepared_meal
+  raw_ingredients
+}
+
+Enum listing_status {
+  draft
+  active
+  fully_reserved
+  completed
+  expired
+  cancelled
+}
+
+Enum quantity_unit {
+  kg
+  portion
+  item
+  box
+  liter
+}
+
+Enum reservation_status {
+  confirmed
+  picked_up
+  completed
+  cancelled
+  expired
+  no_show
+}
+
+Enum pickup_verification_type {
+  face
+  id_card
+}
+
+Enum delivery_status {
+  pending_assignment
+  assigned
+  heading_to_provider
+  qc_completed
+  in_transit
+  delivered
+  failed
+  cancelled
+}
+
+Enum campaign_status {
+  pending_approval
+  approved
+  in_progress
+  completed
+  cancelled
+}
+
+Enum recruitment_status {
+  scheduled
+  open
+  staffed
+  expired_understaffed
+  closed_ready
+}
+
+Enum campaign_shift_period {
+  midnight
+  morning
+  afternoon
+  evening
+}
+
+Enum assignment_confirmation_status {
+  pending
+  confirmed
+  declined
+}
+
+Enum assignment_role {
+  chef
+  waiter
+  shipper
+}
+
+Enum assignment_status {
+  pending
+  assigned
+  checked_in
+  in_progress
+  completed
+  absent
+  rejected
+  cancelled
+}
+
+Enum verification_request_type {
+  provider_registration
+  charity_registration
+  volunteer_chef_cert
+  receiver_income_proof
+}
+
+Enum trust_score_reason {
+  late_cancellation
+  no_show
+  bad_rating_received
+  food_safety_violation
+  hoarding_detected
+  manual_penalty
+  successful_rescue
+  high_rating_received
+  manual_bonus
+  late_pickup
+  bulk_run_cancelled_after_approval
+  late_check_in
+  volunteer_no_show
+}
+
+Enum offer_status {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+Enum report_target_type {
+  user
+  listing
+  delivery
+  campaign
+}
+
+Enum report_reason {
+  spoiled_food
+  fake_account
+  hoarding
+  no_show_provider
+  unsafe_food
+  harassment
+  fraud
+  other
+}
+
+Enum report_status {
+  pending
+  under_review
+  resolved
+  dismissed
+}
+
+Enum bulk_run_status {
+  requested
+  approved
+  rejected
+  picked_up
+  completed
+  cancelled
+}
+
+Enum campaign_request_status {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+Enum campaign_change_status {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+Enum provider_proposal_status {
+  pending
+  approved
+  rejected
+  expired
+}
+
+Enum recipe_difficulty {
+  easy
+  medium
+  hard
+}
+
+Enum safety_check_type {
+  temperature
+  hygiene
+  storage
+  cross_contamination
+  handwashing
+  other
+}
+
+Enum safety_check_result {
+  pass
+  warning
+  fail
+}
+
+Enum campaign_dish_step_status {
+  locked
+  available
+  in_progress
+  done
+}
+
+// ─────────────────────── USERS & PROFILES ───────────────────────
+
+Table users {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  email varchar [not null, unique]
+  phone varchar [unique]
+  password_hash text [not null]
+  full_name varchar [not null]
+  avatar_url text
+  role user_role [not null]
+  status user_status [not null, default: 'pending_verification']
+  trust_score smallint [not null, default: 100]
+  fcm_token text
+  last_login_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+}
+
+Table provider_profiles {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, unique, ref: - users.id]
+  business_name varchar [not null]
+  business_type business_type [not null]
+  tax_code varchar
+  description text
+  address text [not null]
+  location geography
+  contact_phone varchar
+  website_url text
+  is_verified boolean [not null, default: false]
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  total_food_rescued_kg numeric [not null, default: 0]
+  total_co2_saved_kg numeric [not null, default: 0]
+  avg_rating numeric
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table receiver_profiles {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, unique, ref: - users.id]
+  is_charity_org boolean [not null, default: false]
+  organization_name varchar
+  id_card_number varchar
+  id_card_image_url text
+  face_image_url text
+  face_descriptor jsonb
+  address text
+  location geography
+  income_proof_url text
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  reservations_today smallint [not null, default: 0]
+  avg_rating numeric
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table volunteer_profiles {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, unique, ref: - users.id]
+  id_card_number varchar
+  id_card_image_url text
+  face_image_url text
+  face_descriptor jsonb
+  current_location geography
+  location_updated_at timestamptz
+  is_available boolean [not null, default: false]
+  dedication_points integer [not null, default: 0]
+  rank volunteer_rank [not null, default: 'newcomer']
+  vehicle_type varchar
+  vehicle_plate varchar
+  avg_rating numeric
+  verification_status verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by uuid
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table volunteer_specializations {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  specialization volunteer_specialization [not null]
+  food_safety_cert_url text
+  cert_expiry_date date
+  is_verified boolean [not null, default: false]
+  verified_at timestamptz
+
+  indexes {
+    (volunteer_id, specialization) [unique]
+  }
+}
+
+Table volunteer_availability {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  day_of_week smallint [not null, note: '1..7']
+  period campaign_shift_period [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (volunteer_id, day_of_week, period) [unique]
+  }
+}
+
+Table delivery_shift_registrations {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  work_date date [not null]
+  period campaign_shift_period [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (volunteer_id, work_date, period) [unique]
+  }
+}
+
+Table liability_waivers {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  waiver_version varchar [not null, default: 'v1.0']
+  accepted_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  ip_address text
+
+  indexes {
+    (user_id, waiver_version) [unique]
+  }
+}
+
+Table refresh_tokens {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  token_hash text [not null, unique]
+  device_info varchar
+  ip_address text
+  is_revoked boolean [not null, default: false]
+  revoked_at timestamptz
+  expires_at timestamptz [not null]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table verification_requests {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  request_type verification_request_type [not null]
+  documents jsonb [not null, default: '[]']
+  status verification_status [not null, default: 'pending']
+  reviewer_id uuid
+  reviewer_notes text
+  submitted_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+// ─────────────────── LISTINGS / RESERVATIONS / DELIVERY ───────────────────
+
+Table food_listings {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  title varchar [not null]
+  description text
+  category food_category [not null]
+  quantity_total numeric [not null]
+  quantity_remaining numeric [not null]
+  quantity_unit quantity_unit [not null, default: 'portion']
+  weight_per_unit_kg numeric
+  pickup_start_time timestamptz [not null]
+  pickup_end_time timestamptz [not null]
+  expiry_time timestamptz [not null]
+  pickup_address text [not null]
+  pickup_location geography
+  storage_conditions text
+  allergen_notes text
+  max_per_reservation smallint [not null, default: 1]
+  image_urls jsonb [not null, default: '[]']
+  status listing_status [not null, default: 'draft']
+  cancelled_reason text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+  is_surprise_bag boolean [not null, default: false]
+  daily_start_minute smallint
+  daily_end_minute smallint
+}
+
+Table reservations {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  listing_id uuid [not null, ref: > food_listings.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  quantity numeric [not null]
+  status reservation_status [not null, default: 'confirmed']
+  qr_token varchar [not null, unique]
+  qr_expires_at timestamptz [not null]
+  pickup_proof_url text
+  pickup_proof_at timestamptz
+  pickup_verification_type pickup_verification_type
+  scanned_by uuid
+  scanned_at timestamptz
+  cancelled_at timestamptz
+  cancellation_reason text
+  receiver_notes text
+  trust_penalty_applied boolean [not null, default: false]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+  bulk_run_stop_id uuid [unique, ref: - bulk_run_stops.id]
+  delivery_evidence_url text
+  delivery_address text
+  delivery_location geography
+  delivery_scheduled_at timestamptz
+}
+
+Table reservation_messages {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reservation_id uuid [not null, ref: > reservations.id]
+  sender_user_id uuid [not null, ref: > users.id]
+  recipient_user_id uuid [not null, ref: > users.id]
+  content text [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table deliveries {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reservation_id uuid [unique, ref: - reservations.id]
+  shipper_id uuid [ref: > volunteer_profiles.id]
+  provider_request_id uuid [unique, ref: - campaign_provider_requests.id]
+  status delivery_status [not null, default: 'pending_assignment']
+  qc_photo_url text
+  qc_photo_at timestamptz
+  pickup_proof_url text
+  pickup_proof_at timestamptz
+  delivery_proof_url text
+  delivery_proof_at timestamptz
+  pickup_location geography
+  delivery_location geography
+  distance_km numeric
+  assigned_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  failed_reason text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table shipper_task_offers {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  delivery_id uuid [not null, ref: > deliveries.id]
+  shipper_id uuid [not null, ref: > volunteer_profiles.id]
+  status offer_status [not null, default: 'pending']
+  offered_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  responded_at timestamptz
+  expires_at timestamptz [not null]
+  reject_reason text
+
+  indexes {
+    (delivery_id, shipper_id) [unique]
+  }
+}
+
+Table bulk_runs {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  listing_id uuid [not null, ref: > food_listings.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  shipper_id uuid [not null, ref: > volunteer_profiles.id]
+  quantity integer [not null]
+  quantity_distributed integer [not null, default: 0]
+  status bulk_run_status [not null, default: 'requested']
+  note text
+  reject_reason text
+  qc_photo_url text
+  approved_at timestamptz
+  picked_up_at timestamptz
+  completed_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table bulk_run_stops {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  run_id uuid [not null, ref: > bulk_runs.id]
+  label varchar [not null]
+  address text
+  location geography
+  planned_qty integer
+  served_qty integer [not null, default: 0]
+  photo_url text
+  note text
+  created_by varchar [not null]
+  order_index integer [not null, default: 0]
+  served_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  reservation_id uuid [unique]
+}
+
+// ─────────────────────────── KITCHEN CAMPAIGNS ───────────────────────────
+
+Table kitchen_campaigns {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  charity_receiver_id uuid [not null, ref: > receiver_profiles.id]
+  title varchar [not null]
+  description text
+  kitchen_address text [not null]
+  kitchen_location geography
+  scheduled_date date [not null]
+  end_date date
+  start_time varchar [not null]
+  end_time varchar [not null]
+  chef_slots_needed smallint [not null, default: 0]
+  waiter_slots_needed smallint [not null, default: 0]
+  shipper_slots_needed smallint [not null, default: 0]
+  chef_slots_filled smallint [not null, default: 0]
+  waiter_slots_filled smallint [not null, default: 0]
+  shipper_slots_filled smallint [not null, default: 0]
+  status campaign_status [not null, default: 'pending_approval']
+  expected_servings integer
+  actual_servings integer
+  image_urls jsonb [not null, default: '[]']
+  notes text
+  menu_items jsonb [not null, default: '[]']
+  schedule_items jsonb [not null, default: '[]']
+  supply_items jsonb [not null, default: '[]']
+  operation_start_at timestamptz [not null]
+  operation_end_at timestamptz [not null]
+  recruitment_start_at timestamptz [not null]
+  recruitment_end_at timestamptz [not null]
+  recruitment_buffer_hours smallint [not null, default: 24, note: '6..48']
+  recruitment_status recruitment_status [not null, default: 'scheduled']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table campaign_shifts {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  label varchar [not null]
+  role assignment_role
+  period campaign_shift_period
+  start_time varchar [not null]
+  end_time varchar [not null]
+  end_day_offset smallint [not null, default: 0, note: '0 or 1']
+  slots_needed smallint [not null, default: 0]
+  slots_filled smallint [not null, default: 0]
+  needs_review boolean [not null, default: false]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+}
+
+Table campaign_volunteer_assignments {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  shift_id uuid [ref: > campaign_shifts.id]
+  role assignment_role [not null]
+  status assignment_status [not null, default: 'assigned']
+  confirmation_status assignment_confirmation_status [not null, default: 'pending']
+  confirmed_at timestamptz
+  work_date date
+  check_in_time timestamptz
+  check_in_late_minutes integer
+  check_in_location geography
+  check_out_time timestamptz
+  ingredient_proof_url text
+  ingredient_proof_at timestamptz
+  cooked_proof_url text
+  cooked_proof_at timestamptz
+  distribution_proof_url text
+  distribution_proof_at timestamptz
+  points_awarded smallint
+  notes text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (shift_id, volunteer_id, role, work_date) [unique]
+  }
+}
+
+Table campaign_change_requests {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  requested_by_user_id uuid [not null, ref: > users.id]
+  status campaign_change_status [not null, default: 'pending']
+  reason text
+  scheduled_date date
+  end_date date
+  start_time varchar
+  end_time varchar
+  kitchen_address text
+  lng "double precision"
+  lat "double precision"
+  chef_slots_needed smallint
+  waiter_slots_needed smallint
+  shipper_slots_needed smallint
+  review_note text
+  reviewed_by_user_id uuid [ref: > users.id]
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table campaign_provider_requests {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  message varchar
+  status campaign_request_status [not null, default: 'pending']
+  duration_months integer
+  reviewed_at timestamptz
+  reviewed_note varchar
+  scheduled_date date
+  pickup_start_time varchar
+  pickup_end_time varchar
+  needs_transport boolean [not null, default: false]
+  listing_ids varchar
+  demand_details jsonb
+  pickup_assignee_ids jsonb [not null, default: '[]']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+}
+
+Table campaign_donations {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  provider_id uuid [not null, ref: > provider_profiles.id]
+  provider_request_id uuid [ref: > campaign_provider_requests.id]
+  item_name varchar [not null]
+  quantity varchar
+  note text
+  status varchar [not null, default: 'pledged']
+  pickup_date date
+  pickup_start_time varchar
+  pickup_end_time varchar
+  pickup_assignee_ids jsonb [not null, default: '[]']
+  received_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table campaign_transports {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_request_id uuid [not null, unique, ref: - campaign_provider_requests.id]
+  delivery_id uuid [unique, ref: - deliveries.id]
+  status varchar [not null, default: 'pending']
+  assigned_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  received_at timestamptz
+  failed_at timestamptz
+  failure_reason text
+  received_by_user_id uuid [ref: > users.id]
+  receipt_note varchar
+  receipt_photo_url text
+  last_broadcast_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+}
+
+Table campaign_ingredient_pickups {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  provider_request_id uuid [not null, unique, ref: - campaign_provider_requests.id]
+  campaign_id uuid [not null]
+  assignment_id uuid [not null]
+  volunteer_id uuid [not null]
+  requested_kg numeric
+  received_kg numeric [not null]
+  photo_url text [not null]
+  note varchar
+  confirmed_at timestamptz [not null, default: `now()`]
+}
+
+Table provider_proposals {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  proposed_by_user_id uuid [not null, ref: > users.id]
+  business_name varchar [not null]
+  contact_name varchar
+  contact_phone varchar
+  contact_email varchar
+  address varchar
+  note varchar
+  duration_months smallint [not null, default: 1]
+  status provider_proposal_status [not null, default: 'pending']
+  reviewed_by_user_id uuid [ref: > users.id]
+  reviewed_at timestamptz
+  review_note varchar
+  created_provider_id uuid [ref: > provider_profiles.id]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table campaign_experiences {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  content text [not null]
+  image_urls jsonb [not null, default: '[]']
+  rating smallint
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (campaign_id, volunteer_id) [unique]
+  }
+}
+
+// ─────────────────────── RECIPES / KITCHEN OPS ───────────────────────
+
+Table recipes {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  created_by_user_id uuid [not null, ref: > users.id]
+  name varchar [not null]
+  description text
+  servings integer [not null, default: 0]
+  prep_minutes integer
+  cook_minutes integer
+  difficulty recipe_difficulty [not null, default: 'medium']
+  instructions text
+  image_urls jsonb [not null, default: '[]']
+  is_public boolean [not null, default: true]
+  avg_rating numeric
+  times_used integer [not null, default: 0]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+}
+
+Table recipe_ingredients {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  recipe_id uuid [not null, ref: > recipes.id]
+  name varchar [not null]
+  quantity varchar
+  unit varchar
+  note text
+}
+
+Table campaign_menu_items {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  recipe_id uuid [ref: > recipes.id]
+  custom_name varchar
+  planned_servings integer
+  sort_order integer [not null, default: 0]
+}
+
+Table campaign_dish_steps {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  menu_item_id uuid [not null, ref: > campaign_menu_items.id]
+  step_order smallint [not null]
+  step_name varchar [not null]
+  scheduled_time varchar [not null]
+  work_date date
+  status campaign_dish_step_status [not null, default: 'locked']
+  opened_at timestamptz
+  completed_at timestamptz
+  completed_by_volunteer_id uuid [ref: > volunteer_profiles.id]
+  proof_url text
+  note varchar
+  qc_failed_at timestamptz
+  qc_failed_by_volunteer_id uuid [ref: > volunteer_profiles.id]
+  qc_failure_reason varchar
+  review_status varchar
+  review_note varchar
+  reviewed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (menu_item_id, work_date, step_order) [unique]
+  }
+}
+
+Table kitchen_safety_logs {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  checked_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  check_type safety_check_type [not null]
+  measured_value varchar
+  result safety_check_result [not null, default: 'pass']
+  photo_url text
+  note text
+  checked_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table meal_distributions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  campaign_id uuid [not null, ref: > kitchen_campaigns.id]
+  served_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  round_label varchar
+  servings_served integer [not null, default: 0]
+  people_served integer [not null, default: 0]
+  leftover_servings integer [not null, default: 0]
+  location geography
+  photo_url text
+  note text
+  assignee_ids jsonb
+  points jsonb
+  distributed_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  completed_at timestamptz
+  completed_by_volunteer_id uuid
+  actual_servings integer
+  actual_people_served integer
+  completion_note text
+}
+
+Table meal_feedback {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  distribution_id uuid [not null, ref: > meal_distributions.id]
+  satisfaction smallint [not null]
+  comment text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table receiver_handoff_qr_tokens {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  qr_token varchar [not null, unique]
+  qr_expires_at timestamptz [not null]
+  consumed_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table meal_handoffs {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  distribution_id uuid [not null, ref: > meal_distributions.id]
+  receiver_id uuid [not null, ref: > receiver_profiles.id]
+  scanned_by_volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  qr_token_id uuid [not null, unique, ref: - receiver_handoff_qr_tokens.id]
+  served_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (distribution_id, receiver_id) [unique]
+  }
+}
+
+Table beneficiary_feedback {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  handoff_id uuid [not null, unique, ref: - meal_handoffs.id]
+  satisfaction smallint [not null, note: '1..5']
+  comment text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+// ─────────────────────── FOOD CATALOG ───────────────────────
+
+Table food_catalog_categories {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar [not null]
+  "group" varchar [not null, default: 'other']
+  description text
+  sort_order integer [not null, default: 0]
+  is_active boolean [not null, default: true]
+  created_by uuid
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+}
+
+Table food_catalog_items {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  category_id uuid [not null, ref: > food_catalog_categories.id]
+  name varchar [not null]
+  description text
+  is_active boolean [not null, default: true]
+  created_by uuid
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null]
+  deleted_at timestamptz
+}
+
+// ─────────────────────── TRUST / RATINGS / SYSTEM ───────────────────────
+
+Table ratings {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reference_type varchar [not null]
+  reference_id uuid [not null]
+  rater_id uuid [not null, ref: > users.id]
+  ratee_id uuid [not null, ref: > users.id]
+  score smallint [not null]
+  comment text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (reference_type, reference_id, rater_id, ratee_id) [unique]
+  }
+}
+
+Table trust_score_history {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  delta smallint [not null]
+  reason trust_score_reason [not null]
+  reference_type varchar
+  reference_id uuid
+  score_before smallint [not null]
+  score_after smallint [not null]
+  created_by uuid
+  note text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table dedication_points_history {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  volunteer_id uuid [not null, ref: > volunteer_profiles.id]
+  delta integer [not null]
+  reason varchar [not null]
+  reference_type varchar
+  reference_id uuid
+  points_before integer [not null]
+  points_after integer [not null]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table reports {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  reporter_id uuid [not null, ref: > users.id]
+  target_type report_target_type [not null]
+  target_id uuid [not null]
+  reason report_reason [not null]
+  description text
+  evidence_urls jsonb [not null, default: '[]']
+  status report_status [not null, default: 'pending']
+  resolver_id uuid [ref: > users.id]
+  resolution_note text
+  resolved_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table notifications {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  user_id uuid [not null, ref: > users.id]
+  type varchar [not null]
+  title varchar [not null]
+  body text [not null]
+  data jsonb [not null, default: '{}']
+  is_read boolean [not null, default: false]
+  read_at timestamptz
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table audit_logs {
+  id bigint [pk, increment]
+  actor_id uuid [ref: > users.id]
+  action varchar [not null]
+  target_type varchar
+  target_id uuid
+  payload jsonb
+  ip_address text
+  user_agent text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table system_configs {
+  id integer [pk, increment]
+  "key" varchar [not null, unique]
+  value jsonb [not null]
+  description text
+  updated_by uuid
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table esg_snapshots {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  snapshot_date date [not null]
+  provider_id uuid [ref: > provider_profiles.id]
+  total_food_rescued_kg numeric [not null, default: 0]
+  total_co2_saved_kg numeric [not null, default: 0]
+  total_reservations integer [not null, default: 0]
+  total_volunteers_active integer [not null, default: 0]
+  total_providers_active integer [not null, default: 0]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (snapshot_date, provider_id) [unique]
+  }
+}
