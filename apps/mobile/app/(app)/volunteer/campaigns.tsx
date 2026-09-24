@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AppState, Pressable, ScrollView, View, StyleSheet } from 'react-native';
+import { AppState, Pressable, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Text, Button, Chip, Searchbar, SegmentedButtons } from 'react-native-paper';
+import { Text, Button, Menu, Searchbar, SegmentedButtons } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -45,6 +45,27 @@ type TaskCampaignStatusFilter = 'all' | 'approved' | 'in_progress' | 'completed'
 type DateFilter = 'all' | 'today' | 'next7' | 'past';
 
 const PAGE_SIZE = 5;
+
+const OPEN_STATUS_OPTIONS: { value: OpenFilter; label: string }[] = [
+  { value: 'all', label: 'Tất cả trạng thái' },
+  { value: 'upcoming', label: 'Sắp diễn ra' },
+  { value: 'in_progress', label: 'Đang diễn ra' },
+];
+
+const CAMPAIGN_STATUS_OPTIONS: { value: TaskCampaignStatusFilter; label: string }[] = [
+  { value: 'all', label: 'Mọi chiến dịch' },
+  { value: 'approved', label: 'Đã duyệt' },
+  { value: 'in_progress', label: 'Đang diễn ra' },
+  { value: 'completed', label: 'Hoàn thành' },
+  { value: 'cancelled', label: 'Đã huỷ' },
+];
+
+const DATE_OPTIONS: { value: DateFilter; label: string }[] = [
+  { value: 'all', label: 'Mọi ngày' },
+  { value: 'today', label: 'Hôm nay' },
+  { value: 'next7', label: '7 ngày tới' },
+  { value: 'past', label: 'Đã qua' },
+];
 
 interface CampaignTaskGroup {
   campaignId: string;
@@ -370,47 +391,57 @@ export default function VolunteerCampaignsScreen() {
           style={styles.search}
           inputStyle={styles.searchInput}
         />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
-          {segment === 'open' ? (
-            <>
-              <FilterChip label="Tất cả" selected={openFilter === 'all'} onPress={() => { setOpenFilter('all'); setOpenPage(1); }} />
-              <FilterChip label="Sắp diễn ra" selected={openFilter === 'upcoming'} onPress={() => { setOpenFilter('upcoming'); setOpenPage(1); }} />
-              <FilterChip label="Đang diễn ra" selected={openFilter === 'in_progress'} onPress={() => { setOpenFilter('in_progress'); setOpenPage(1); }} />
-            </>
-          ) : (
-            <>
-              <FilterChip label="Tất cả" selected={taskFilter === 'all'} onPress={() => { setTaskFilter('all'); setTaskPage(1); }} />
-              <FilterChip label="Chờ xác nhận" selected={taskFilter === 'pending'} onPress={() => { setTaskFilter('pending'); setTaskPage(1); }} />
-              <FilterChip label="Đang làm" selected={taskFilter === 'active'} onPress={() => { setTaskFilter('active'); setTaskPage(1); }} />
-              <FilterChip label="Hoàn thành" selected={taskFilter === 'completed'} onPress={() => { setTaskFilter('completed'); setTaskPage(1); }} />
-            </>
-          )}
-        </ScrollView>
+        {/* Bố cục lọc gọn: trạng thái việc = 4 ô đếm (bấm để lọc), các tiêu chí phụ
+            gom vào nút thả xuống trên CÙNG một hàng — trước đây 4 tầng chip xếp
+            chồng (trạng thái lặp 2 lần) chiếm gần nửa màn hình. */}
         {segment === 'tasks' ? (
-          <>
-            <View style={styles.taskStatusSummary}>
-              <TaskStatusSummaryItem label="Tất cả" value={taskStatusCounts.all} selected={taskFilter === 'all'} onPress={() => { setTaskFilter('all'); setTaskPage(1); }} />
-              <TaskStatusSummaryItem label="Chờ" value={taskStatusCounts.pending} selected={taskFilter === 'pending'} onPress={() => { setTaskFilter('pending'); setTaskPage(1); }} />
-              <TaskStatusSummaryItem label="Đang làm" value={taskStatusCounts.active} selected={taskFilter === 'active'} onPress={() => { setTaskFilter('active'); setTaskPage(1); }} />
-              <TaskStatusSummaryItem label="Xong" value={taskStatusCounts.completed} selected={taskFilter === 'completed'} onPress={() => { setTaskFilter('completed'); setTaskPage(1); }} />
-            </View>
-            <Text style={styles.filterLabel}>Trạng thái chiến dịch</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsTight}>
-              <FilterChip label="Tất cả" selected={taskCampaignStatusFilter === 'all'} onPress={() => { setTaskCampaignStatusFilter('all'); setTaskPage(1); }} />
-              <FilterChip label="Đã duyệt" selected={taskCampaignStatusFilter === 'approved'} onPress={() => { setTaskCampaignStatusFilter('approved'); setTaskPage(1); }} />
-              <FilterChip label="Đang diễn ra" selected={taskCampaignStatusFilter === 'in_progress'} onPress={() => { setTaskCampaignStatusFilter('in_progress'); setTaskPage(1); }} />
-              <FilterChip label="Hoàn thành" selected={taskCampaignStatusFilter === 'completed'} onPress={() => { setTaskCampaignStatusFilter('completed'); setTaskPage(1); }} />
-              <FilterChip label="Đã huỷ" selected={taskCampaignStatusFilter === 'cancelled'} onPress={() => { setTaskCampaignStatusFilter('cancelled'); setTaskPage(1); }} />
-            </ScrollView>
-          </>
+          <View style={styles.taskStatusSummary}>
+            <TaskStatusSummaryItem label="Tất cả" value={taskStatusCounts.all} selected={taskFilter === 'all'} onPress={() => { setTaskFilter('all'); setTaskPage(1); }} />
+            <TaskStatusSummaryItem label="Chờ xác nhận" value={taskStatusCounts.pending} tone="amber" selected={taskFilter === 'pending'} onPress={() => { setTaskFilter('pending'); setTaskPage(1); }} />
+            <TaskStatusSummaryItem label="Đang làm" value={taskStatusCounts.active} tone="blue" selected={taskFilter === 'active'} onPress={() => { setTaskFilter('active'); setTaskPage(1); }} />
+            <TaskStatusSummaryItem label="Xong" value={taskStatusCounts.completed} tone="green" selected={taskFilter === 'completed'} onPress={() => { setTaskFilter('completed'); setTaskPage(1); }} />
+          </View>
         ) : null}
-        <Text style={styles.filterLabel}>Ngày</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipsTight}>
-          <FilterChip label="Tất cả ngày" selected={dateFilter === 'all'} onPress={() => { setDateFilter('all'); setOpenPage(1); setTaskPage(1); }} />
-          <FilterChip label="Hôm nay" selected={dateFilter === 'today'} onPress={() => { setDateFilter('today'); setOpenPage(1); setTaskPage(1); }} />
-          <FilterChip label="7 ngày tới" selected={dateFilter === 'next7'} onPress={() => { setDateFilter('next7'); setOpenPage(1); setTaskPage(1); }} />
-          <FilterChip label="Đã qua" selected={dateFilter === 'past'} onPress={() => { setDateFilter('past'); setOpenPage(1); setTaskPage(1); }} />
-        </ScrollView>
+        <View style={styles.dropdownRow}>
+          {segment === 'open' ? (
+            <FilterDropdown
+              icon="progress-clock"
+              value={openFilter}
+              options={OPEN_STATUS_OPTIONS}
+              onChange={(v) => { setOpenFilter(v); setOpenPage(1); }}
+            />
+          ) : (
+            <FilterDropdown
+              icon="flag-outline"
+              value={taskCampaignStatusFilter}
+              options={CAMPAIGN_STATUS_OPTIONS}
+              onChange={(v) => { setTaskCampaignStatusFilter(v); setTaskPage(1); }}
+            />
+          )}
+          <FilterDropdown
+            icon="calendar-range"
+            value={dateFilter}
+            options={DATE_OPTIONS}
+            onChange={(v) => { setDateFilter(v); setOpenPage(1); setTaskPage(1); }}
+          />
+          {(segment === 'open' ? openFilter !== 'all' : taskCampaignStatusFilter !== 'all') || dateFilter !== 'all' ? (
+            <Pressable
+              onPress={() => {
+                setOpenFilter('all');
+                setTaskCampaignStatusFilter('all');
+                setDateFilter('all');
+                setOpenPage(1);
+                setTaskPage(1);
+              }}
+              style={styles.clearFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Xoá bộ lọc"
+            >
+              <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.onSurfaceVariant} />
+              <Text style={styles.clearFiltersText}>Xoá lọc</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {segment === 'open' ? (
@@ -464,30 +495,75 @@ export default function VolunteerCampaignsScreen() {
   );
 }
 
-function FilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+/** Nút thả xuống cho một tiêu chí lọc — hiện giá trị đang chọn, nổi màu khi khác mặc định. */
+function FilterDropdown<T extends string>({
+  icon,
+  value,
+  options,
+  onChange,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value) ?? options[0];
+  const active = value !== options[0].value;
   return (
-    <Chip
-      compact
-      selected={selected}
-      onPress={onPress}
-      style={[styles.filterChip, selected && styles.filterChipSelected]}
-      textStyle={[styles.filterChipText, selected && styles.filterChipTextSelected]}
+    <Menu
+      visible={open}
+      onDismiss={() => setOpen(false)}
+      anchorPosition="bottom"
+      anchor={
+        <Pressable
+          onPress={() => setOpen(true)}
+          style={[styles.dropdownPill, active && styles.dropdownPillActive]}
+          accessibilityRole="button"
+          accessibilityLabel={`Lọc: ${current.label}`}
+        >
+          <MaterialCommunityIcons name={icon} size={16} color={active ? COLORS.purple : COLORS.onSurfaceVariant} />
+          <Text style={[styles.dropdownText, active && styles.dropdownTextActive]} numberOfLines={1}>
+            {current.label}
+          </Text>
+          <MaterialCommunityIcons name="chevron-down" size={16} color={active ? COLORS.purple : COLORS.onSurfaceVariant} />
+        </Pressable>
+      }
     >
-      {label}
-    </Chip>
+      {options.map((o) => (
+        <Menu.Item
+          key={o.value}
+          title={o.label}
+          leadingIcon={o.value === value ? 'check' : undefined}
+          onPress={() => {
+            onChange(o.value);
+            setOpen(false);
+          }}
+        />
+      ))}
+    </Menu>
   );
 }
+
+const SUMMARY_TONES = {
+  default: COLORS.onSurface,
+  amber: '#B45309',
+  blue: '#1D4ED8',
+  green: '#15803D',
+} as const;
 
 function TaskStatusSummaryItem({
   label,
   value,
   selected,
   onPress,
+  tone = 'default',
 }: {
   label: string;
   value: number;
   selected: boolean;
   onPress: () => void;
+  tone?: keyof typeof SUMMARY_TONES;
 }) {
   return (
     <Pressable
@@ -496,7 +572,7 @@ function TaskStatusSummaryItem({
       accessibilityRole="button"
       accessibilityState={{ selected }}
     >
-      <Text style={[styles.statusSummaryValue, selected && styles.statusSummaryValueSelected]}>{value}</Text>
+      <Text style={[styles.statusSummaryValue, { color: SUMMARY_TONES[tone] }, selected && styles.statusSummaryValueSelected]}>{value}</Text>
       <Text style={[styles.statusSummaryLabel, selected && styles.statusSummaryLabelSelected]} numberOfLines={1}>
         {label}
       </Text>
@@ -712,23 +788,27 @@ const styles = StyleSheet.create({
   filters: { paddingHorizontal: spacing.xl, paddingBottom: spacing.sm },
   search: { height: 46, borderRadius: radius.xl, backgroundColor: COLORS.surface },
   searchInput: { minHeight: 0, fontSize: 14 },
-  filterChips: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
-  filterChipsTight: { gap: spacing.sm, paddingTop: spacing.xs, paddingRight: spacing.md },
-  filterLabel: {
-    marginTop: spacing.sm,
-    fontSize: 12,
-    fontWeight: '900',
-    color: COLORS.onSurfaceVariant,
-    textTransform: 'uppercase',
+  taskStatusSummary: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
+  dropdownRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, paddingTop: spacing.sm },
+  dropdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
   },
-  filterChip: { backgroundColor: COLORS.surface },
-  filterChipSelected: { backgroundColor: COLORS.purpleContainer },
-  filterChipText: { color: COLORS.onSurfaceVariant, fontSize: 12 },
-  filterChipTextSelected: { color: COLORS.purple, fontWeight: '800' },
-  taskStatusSummary: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
+  dropdownPillActive: { borderColor: COLORS.purple, backgroundColor: COLORS.purpleContainer },
+  dropdownText: { fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  dropdownTextActive: { color: COLORS.purple },
+  clearFilters: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 36, paddingHorizontal: 6 },
+  clearFiltersText: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
   statusSummaryItem: {
     flex: 1,
-    minHeight: 64,
+    minHeight: 56,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: COLORS.outlineVariant,
