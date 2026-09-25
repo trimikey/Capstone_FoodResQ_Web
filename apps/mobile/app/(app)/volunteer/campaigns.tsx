@@ -474,7 +474,7 @@ export default function VolunteerCampaignsScreen() {
                 {
                   onSuccess: () => Popup.show({
                     type: 'success',
-                    text1: decision === 'confirmed' ? 'Đã xác nhận tham gia' : 'Đã từ chối ca',
+                    text1: decision === 'confirmed' ? 'Xác nhận ca thành công' : 'Đã từ chối ca',
                   }),
                   onError: (error) => Popup.show({ type: 'error', text1: 'Không cập nhật được', text2: getErrorMessage(error) }),
                 },

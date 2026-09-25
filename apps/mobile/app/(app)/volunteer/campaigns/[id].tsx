@@ -125,7 +125,7 @@ export default function VolunteerCampaignDetailScreen() {
 
   useEffect(() => {
     if (!hasPendingApplication) return;
-    const timer = setInterval(refetchCampaignState, 4_000);
+    const timer = setInterval(refetchCampaignState, 15_000);
     return () => clearInterval(timer);
   }, [hasPendingApplication, refetchCampaignState]);
 

@@ -57,22 +57,24 @@ function patchCampaignTaskFromNotification(qc: ReturnType<typeof useQueryClient>
 
 function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignId: string, notification?: AppNotification) {
   if (notification) patchCampaignTaskFromNotification(qc, notification);
-  void qc.invalidateQueries({ queryKey: ['campaign', campaignId] });
-  void qc.invalidateQueries({ queryKey: ['campaigns', 'public', campaignId] });
-  void qc.invalidateQueries({ queryKey: ['campaigns'] });
-  void qc.invalidateQueries({ queryKey: ['campaign-tasks'] });
-  void qc.invalidateQueries({ queryKey: ['kitchen', 'shifts', campaignId] });
-  void qc.refetchQueries({ queryKey: ['campaign', campaignId], type: 'active' });
-  void qc.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
-  void qc.refetchQueries({ queryKey: ['campaigns'], type: 'active' });
-  void qc.refetchQueries({ queryKey: ['campaign-tasks'], type: 'active' });
-  void qc.refetchQueries({ queryKey: ['kitchen', 'shifts', campaignId], type: 'active' });
+  const invalidateActive = (queryKey: readonly unknown[]) => {
+    void qc.invalidateQueries({ queryKey, refetchType: 'active' });
+  };
+
+  invalidateActive(['campaign', campaignId]);
+  invalidateActive(['campaigns', 'public', campaignId]);
+  invalidateActive(['campaigns']);
+  invalidateActive(['campaign-tasks']);
+  invalidateActive(['kitchen', 'shifts', campaignId]);
 }
 
 /** Danh sách 50 thông báo gần nhất. GET /notifications/my */
 export function useNotifications() {
+  const enabled = useAuthStore((s) => !!s.accessToken && !!s.user);
+
   return useQuery({
     queryKey: ['notifications', 'my'],
+    enabled,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<AppNotification[]>>(endpoints.notifications.my);
       return res.data.data;
@@ -83,8 +85,11 @@ export function useNotifications() {
 
 /** Số thông báo chưa đọc. GET /notifications/unread-count */
 export function useUnreadCount() {
+  const enabled = useAuthStore((s) => !!s.accessToken && !!s.user);
+
   return useQuery({
     queryKey: ['notifications', 'unread'],
+    enabled,
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<{ count: number }>>(
         endpoints.notifications.unreadCount
@@ -180,13 +185,10 @@ export function useNotificationSocket() {
       socketRef.current = socket;
 
       if (__DEV__) {
-        socket.on('connect', () => console.log('[notif-ws] connected', socket?.id));
         socket.on('connect_error', (e) => console.log('[notif-ws] connect_error', e.message));
-        socket.on('disconnect', (r) => console.log('[notif-ws] disconnect', r));
       }
 
       socket.on('notification:new', (n: AppNotification) => {
-        if (__DEV__) console.log('[notif-ws] notification:new', n.title);
         Toast.show({ type: 'info', text1: n.title, text2: n.body });
         void qc.invalidateQueries({ queryKey: ['notifications'] });
         const campaignId = notificationCampaignId(n);

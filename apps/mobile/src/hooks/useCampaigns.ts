@@ -962,11 +962,14 @@ export function useConfirmCampaignAssignment() {
         endpoints.campaigns.confirmAssignment(assignmentId),
         { decision },
       );
-      return res.data.data;
+      return res.data?.data ?? null;
     },
-    onSuccess: (task) => {
+    onSuccess: (task, { assignmentId }) => {
       queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['campaign', task.campaign.id] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail', assignmentId] });
+      if (task?.campaign?.id) {
+        queryClient.invalidateQueries({ queryKey: ['campaign', task.campaign.id] });
+      }
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     },
   });

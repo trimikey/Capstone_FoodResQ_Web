@@ -29,7 +29,7 @@ export function NotificationBell() {
   });
 
   const openNotifications = () => {
-    void refetchUnread();
+    void refetchUnread().catch(() => undefined);
     router.push({
       pathname: '/notifications',
       params: pathname && pathname !== '/notifications' ? { returnTo: pathname } : undefined,

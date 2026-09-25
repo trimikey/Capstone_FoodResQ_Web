@@ -62,11 +62,16 @@ interface PhotoReviewState {
 }
 
 type ChatRole = Extract<ReservationChatParticipant['role'], 'receiver' | 'provider'>;
+type ReasonMode = 'cancel' | 'fail' | 'handover_fail';
 
 const CHAT_ROLE_LABEL: Record<ChatRole, string> = {
   receiver: 'người nhận',
   provider: 'cửa hàng',
 };
+
+function isFailureReason(mode: ReasonMode | null): boolean {
+  return mode === 'fail' || mode === 'handover_fail';
+}
 
 const DEFAULT_DELIVERY_EARLY_COMPLETE_MINUTES = 20;
 
@@ -351,7 +356,7 @@ function HandoverConfirmModal({
               textColor={COLORS.onSurface}
               style={styles.handoverBtn}
             >
-              Chưa đúng người
+              Không bàn giao được
             </Button>
             <Button
               mode="contained"
@@ -481,7 +486,7 @@ export default function VolunteerActiveScreen() {
   const cancelAssignment = useCancelAssignment();
   const sendChat = useSendReservationMessage();
 
-  const [reasonMode, setReasonMode] = useState<'cancel' | 'fail' | null>(null);
+  const [reasonMode, setReasonMode] = useState<ReasonMode | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [qrToken, setQrToken] = useState('');
   const [chatRole, setChatRole] = useState<ChatRole | null>(null);
@@ -496,16 +501,16 @@ export default function VolunteerActiveScreen() {
   const [photoReview, setPhotoReview] = useState<PhotoReviewState | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [qrScanning, setQrScanning] = useState(false);
-  // Lỗi hiển thị NGAY TRONG sheet: Popup (Paper Portal) bị container của
+  // Lỗi hiển thị ngay trong sheet: Popup (Paper Portal) bị container của
   // BottomSheetModal đè lên nên popup lỗi khi sheet đang mở là vô hình.
   const [qrError, setQrError] = useState<string | null>(null);
   // Chặn camera bắn nhiều lần trước khi state `busy` kịp render (state là async,
-  // ref là đồng bộ) — tránh gọi API xác nhận trùng lặp.
+  // ref là đồng bộ) - tránh gọi API xác nhận trùng lặp.
   const qrSubmittingRef = useRef(false);
   const [torch, setTorch] = useState(false);
   const [deliveredSummary, setDeliveredSummary] = useState<DeliveredSummary | null>(null);
-  // Mã QR đã quét đúng, đang chờ shipper ĐỐI CHIẾU người nhận rồi mới bàn giao —
-  // quét trúng mã chưa chắc đúng người cầm máy (giống luật của đơn tự đến lấy).
+  // Mã QR đã quét đúng, đang chờ shipper đối chiếu người nhận rồi mới bàn giao.
+  // Quét trúng mã chưa chắc đúng người cầm máy, giống luồng đơn tự đến lấy.
   const [handoverToken, setHandoverToken] = useState<string | null>(null);
 
   const delivery = data ?? null;
@@ -542,10 +547,17 @@ export default function VolunteerActiveScreen() {
     setReasonMode(null);
     reasonSheetRef.current?.dismiss();
   };
-  const openReasonSheet = (mode: 'cancel' | 'fail') => {
-    setReasonText('');
+  const openReasonSheet = (mode: ReasonMode, initialText = '') => {
+    setReasonText(initialText);
     setReasonMode(mode);
     reasonSheetRef.current?.present();
+  };
+  const openHandoverFailureSheet = () => {
+    setHandoverToken(null);
+    setQrError(null);
+    setReasonMode('handover_fail');
+    setReasonText('');
+    requestAnimationFrame(() => reasonSheetRef.current?.present());
   };
   const openQrSheet = () => {
     setQrToken('');
@@ -606,7 +618,7 @@ export default function VolunteerActiveScreen() {
       Popup.show({
         type: 'warning',
         text1: 'Thiếu địa chỉ chỉ đường',
-        text2: 'Đơn này chưa có toạ độ hoặc địa chỉ đủ rõ để mở Google Maps.',
+        text2: 'Đơn này chưa có tọa độ hoặc địa chỉ đủ rõ để mở Google Maps.',
       });
       void notifyWarning();
       return;
@@ -770,8 +782,8 @@ export default function VolunteerActiveScreen() {
       void notifyWarning();
       return;
     }
-    // Đơn của người nhận → bắt buộc đối chiếu ảnh/thông tin trước khi bàn giao.
-    // Chuyến giao cho bếp chiến dịch không có hồ sơ người nhận nên chốt thẳng.
+    // Đơn của người nhận bắt buộc đối chiếu ảnh/thông tin trước khi bàn giao.
+    // Chuyển giao cho bếp chiến dịch không có hồ sơ người nhận nên chốt thẳng.
     if (delivery.reservation) {
       qrSheetRef.current?.dismiss();
       setQrScannerOpen(false);
@@ -781,7 +793,7 @@ export default function VolunteerActiveScreen() {
     await finalizeHandover(token);
   };
 
-  /** Goi API chot ban giao - chay SAU khi da doi chieu (hoac don chien dich). */
+  /** Gọi API chốt bàn giao - chạy sau khi đã đối chiếu hoặc đơn chiến dịch. */
   const finalizeHandover = async (token: string) => {
     if (!delivery) return;
     const snapshot = {
@@ -825,16 +837,22 @@ export default function VolunteerActiveScreen() {
   const submitReason = async () => {
     if (!delivery) return;
     const reason = reasonText.trim();
-    if (reasonMode === 'fail' && !reason) {
-      Popup.show({ type: 'warning', text1: 'Vui lòng nhập lý do giao thất bại' });
+    const isFailure = isFailureReason(reasonMode);
+    if (isFailure && !reason) {
+      Popup.show({ type: 'warning', text1: 'Vui lòng nhập lý do không bàn giao được' });
       void notifyWarning();
       return;
     }
     try {
-      if (reasonMode === 'fail') {
+      if (isFailure) {
         await failDelivery.mutateAsync({ deliveryId: delivery.id, reason });
         void notifyWarning();
-        Popup.show({ type: 'info', text1: 'Đã báo giao thất bại' });
+        Popup.show({
+          type: 'info',
+          text1: reasonMode === 'handover_fail'
+            ? 'Đã ghi nhận không bàn giao được'
+            : 'Đã báo giao thất bại',
+        });
       } else {
         await cancelAssignment.mutateAsync({
           deliveryId: delivery.id,
@@ -994,6 +1012,25 @@ export default function VolunteerActiveScreen() {
   );
   const hasPickupPhoto =
     delivery.status === 'heading_to_provider' && pendingPickupPhoto?.deliveryId === delivery.id;
+  const reasonIsFailure = isFailureReason(reasonMode);
+  const reasonTitle =
+    reasonMode === 'handover_fail'
+      ? 'Không bàn giao được'
+      : reasonIsFailure
+        ? 'Báo giao thất bại'
+        : 'Huỷ nhận đơn';
+  const reasonPlaceholder =
+    reasonMode === 'handover_fail'
+      ? 'Nhập nguyên nhân: không đúng người, người nhận vắng mặt, từ chối nhận...'
+      : reasonIsFailure
+        ? 'Lý do giao thất bại (bắt buộc)'
+        : 'Lý do huỷ (tuỳ chọn)';
+  const reasonAccessibilityLabel =
+    reasonMode === 'handover_fail'
+      ? 'Nguyên nhân không bàn giao được'
+      : reasonIsFailure
+        ? 'Lý do giao thất bại'
+        : 'Lý do huỷ nhận đơn';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1291,25 +1328,24 @@ export default function VolunteerActiveScreen() {
         keyboardBlurBehavior="restore"
         onDismiss={() => setReasonMode(null)}
         handleIndicatorStyle={styles.sheetHandle}
-        accessibilityLabel={reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
+        accessibilityLabel={reasonTitle}
       >
         <BottomSheetView style={styles.sheet}>
-          <Text style={styles.dialogTitle}>
-            {reasonMode === 'fail' ? 'Báo giao thất bại' : 'Huỷ nhận đơn'}
-          </Text>
+          <Text style={styles.dialogTitle}>{reasonTitle}</Text>
+          {reasonMode === 'handover_fail' ? (
+            <Text style={styles.sheetSub}>
+              Ghi rõ nguyên nhân để nhà bếp và điều phối viên xử lý đơn này.
+            </Text>
+          ) : null}
           <BottomSheetTextInput
-            placeholder={
-              reasonMode === 'fail' ? 'Lý do giao thất bại (bắt buộc)' : 'Lý do huỷ (tuỳ chọn)'
-            }
+            placeholder={reasonPlaceholder}
             value={reasonText}
             onChangeText={setReasonText}
             multiline
             numberOfLines={3}
             editable={!busy}
             style={styles.reasonInput}
-            accessibilityLabel={
-              reasonMode === 'fail' ? 'Lý do giao thất bại' : 'Lý do huỷ nhận đơn'
-            }
+            accessibilityLabel={reasonAccessibilityLabel}
           />
           <View style={styles.sheetActions}>
             <Button onPress={closeReasonSheet} textColor={COLORS.onSurfaceVariant} disabled={busy}>
@@ -1320,7 +1356,7 @@ export default function VolunteerActiveScreen() {
               onPress={submitReason}
               loading={failDelivery.isPending || cancelAssignment.isPending}
               disabled={busy}
-              buttonColor={reasonMode === 'fail' ? COLORS.danger : COLORS.primary}
+              buttonColor={reasonIsFailure ? COLORS.danger : COLORS.primary}
             >
               Xác nhận
             </Button>
@@ -1616,13 +1652,13 @@ export default function VolunteerActiveScreen() {
         onDismiss={() => setReportVisible(false)}
       />
 
-      {/* Đối chiếu người nhận sau khi quét đúng QR — xác nhận rồi mới bàn giao */}
+      {/* Đối chiếu người nhận sau khi quét đúng QR - xác nhận rồi mới bàn giao */}
       {handoverToken && delivery ? (
         <HandoverConfirmModal
           delivery={delivery}
           busy={qrScanning || updateStatus.isPending}
           onConfirm={() => void finalizeHandover(handoverToken)}
-          onCancel={() => setHandoverToken(null)}
+          onCancel={openHandoverFailureSheet}
         />
       ) : null}
 

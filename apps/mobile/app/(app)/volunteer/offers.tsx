@@ -1265,7 +1265,7 @@ function useCountdownClock(expiresAt: string, onExpire?: () => void) {
 
   useEffect(() => {
     notifiedRef.current = false;
-    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    const timer = setInterval(() => setClockNow(Date.now()), 10_000);
     return () => clearInterval(timer);
   }, [expiresAt]);
 

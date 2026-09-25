@@ -81,7 +81,7 @@ export default function ProviderListingsScreen() {
   }, [initialize]);
   useEffect(() => {
     if (!isPending) return;
-    const id = setInterval(() => { void initializeRef.current(); }, 10_000);
+    const id = setInterval(() => { void initializeRef.current(); }, 30_000);
     return () => clearInterval(id);
   }, [isPending]);
 

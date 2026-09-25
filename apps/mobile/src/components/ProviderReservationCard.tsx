@@ -46,9 +46,13 @@ export function useCountdown(targetIso?: string | null): string | null {
   };
   const [left, setLeft] = useState<string | null>(compute);
   useEffect(() => {
+    if (!targetIso) {
+      setLeft(null);
+      return;
+    }
     const update = () => setLeft(compute());
     const initial = setTimeout(update, 0);
-    const t = setInterval(update, 1000);
+    const t = setInterval(update, 5_000);
     return () => {
       clearTimeout(initial);
       clearInterval(t);

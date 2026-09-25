@@ -1,16 +1,8 @@
 import type { DeliveryStatus } from '@/hooks/useDeliveries';
 
-/**
- * Định dạng hiển thị trạng thái giao hàng (DeliveryStatus). Giá trị khớp enum
- * backend: pending_assignment → assigned → heading_to_provider → qc_completed
- * → in_transit → delivered | failed.
- */
-
 export interface DeliveryStatusMeta {
   label: string;
-  /** Màu chữ / icon */
   color: string;
-  /** Màu nền badge (nhạt) */
   bg: string;
 }
 
@@ -34,7 +26,6 @@ export function deliveryStatusLabel(status?: string | null): string {
   return deliveryStatusMeta(status).label;
 }
 
-/** Thứ tự bước tiến triển (để so sánh bước nào đã hoàn thành). */
 export const DELIVERY_STEP_ORDER: DeliveryStatus[] = [
   'pending_assignment',
   'assigned',
@@ -44,7 +35,6 @@ export const DELIVERY_STEP_ORDER: DeliveryStatus[] = [
   'delivered',
 ];
 
-/** Các bước hiển thị trên timeline (góc nhìn shipper). */
 export const DELIVERY_STEPS: { key: DeliveryStatus; label: string }[] = [
   { key: 'assigned', label: 'Đã nhận đơn' },
   { key: 'heading_to_provider', label: 'Tới lấy hàng' },
@@ -53,7 +43,6 @@ export const DELIVERY_STEPS: { key: DeliveryStatus; label: string }[] = [
   { key: 'delivered', label: 'Hoàn tất' },
 ];
 
-/** Trạng thái kế tiếp theo luồng tiến triển (khớp transitions backend). */
 const NEXT: Record<string, DeliveryStatus> = {
   assigned: 'heading_to_provider',
   heading_to_provider: 'qc_completed',
@@ -65,7 +54,6 @@ export function nextDeliveryStatus(status?: string | null): DeliveryStatus | nul
   return (status && NEXT[status]) || null;
 }
 
-/** Bước qc_completed bắt buộc kèm ảnh QC khi chuyển từ heading_to_provider. */
 export function requiresQcPhoto(nextStatus: DeliveryStatus): boolean {
   return nextStatus === 'qc_completed';
 }

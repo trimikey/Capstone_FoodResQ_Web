@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 
 type NetInfoModule = typeof import('@react-native-community/netinfo');
@@ -34,13 +34,15 @@ export function useNetworkStatus() {
   const isOnline = netInfoModule
     ? isReachable(nativeNetInfo?.isConnected, nativeNetInfo?.isInternetReachable)
     : true;
+  const wasOnlineRef = useRef(isOnline);
 
   useEffect(() => {
     onlineManager.setOnline(isOnline);
-    if (isOnline) {
+    if (isOnline && !wasOnlineRef.current) {
       void queryClient.invalidateQueries({ queryKey: ['deliveries'] });
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
+    wasOnlineRef.current = isOnline;
   }, [isOnline, queryClient]);
 
   return { isOnline, isOffline: !isOnline };
