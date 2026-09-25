@@ -101,3 +101,55 @@ describe('AdminService', () => {
     expect(res.message).toContain('cập nhật');
   });
 });
+
+describe('AdminService.setCampaignStatus — chỉ duyệt khi NCC đã nhận lời đủ nguyên liệu', () => {
+  const future = new Date(Date.now() + 3 * 86_400_000);
+  const prisma = {
+    kitchenCampaign: {
+      findUnique: jest.fn(),
+      update: jest.fn().mockResolvedValue({}),
+    },
+  };
+  const config = { getNumber: jest.fn() };
+  const service = new AdminService(prisma as never, { notify: jest.fn() } as never, config as never);
+
+  const campaign = {
+    id: 'c1',
+    title: 'Bếp Q3',
+    status: 'pending_approval',
+    recruitmentStartAt: new Date(Date.now() - 3_600_000),
+    recruitmentEndAt: future,
+    recruitmentStatus: 'scheduled',
+    charityReceiver: { userId: 'org-1' },
+  };
+  const supplies = {
+    supplyItems: [{ name: 'Gạo sạch', quantity: 10, unit: 'kg' }],
+    providerRequests: [],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    config.getNumber.mockResolvedValue(1);
+  });
+
+  it('chưa NCC nào nhận lời → không duyệt được, báo món còn thiếu', async () => {
+    prisma.kitchenCampaign.findUnique
+      .mockResolvedValueOnce(campaign)
+      .mockResolvedValueOnce({ ...supplies, donations: [] });
+    await expect(service.setCampaignStatus('c1', 'approved', 'admin-1')).rejects.toThrow('Gạo sạch 10 kg');
+    expect(prisma.kitchenCampaign.update).not.toHaveBeenCalled();
+  });
+
+  it('NCC đã nhận lời đủ (hàng hứa góp) → duyệt được', async () => {
+    prisma.kitchenCampaign.findUnique
+      .mockResolvedValueOnce(campaign)
+      .mockResolvedValueOnce({ ...supplies, donations: [{ itemName: 'Gạo sạch', quantity: '10 kg', status: 'pledged' }] });
+    await expect(service.setCampaignStatus('c1', 'approved', 'admin-1')).resolves.toEqual({ id: 'c1', status: 'approved' });
+  });
+
+  it('admin tắt luật trong Cài đặt → duyệt không cần NCC', async () => {
+    config.getNumber.mockResolvedValue(0);
+    prisma.kitchenCampaign.findUnique.mockResolvedValueOnce(campaign);
+    await expect(service.setCampaignStatus('c1', 'approved', 'admin-1')).resolves.toEqual({ id: 'c1', status: 'approved' });
+  });
+});

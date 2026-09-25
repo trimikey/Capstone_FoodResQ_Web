@@ -580,6 +580,37 @@ export class CampaignsController {
     });
   }
 
+  @Get('supplier-matches/near')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Charity: gợi ý NCC quanh toạ độ bếp — dùng trong form TẠO chiến dịch' })
+  suggestSuppliersNear(
+    @Query('lng') lng: string,
+    @Query('lat') lat: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('category') category?: string,
+  ) {
+    const x = Number(lng);
+    const y = Number(lat);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 180 || Math.abs(y) > 90) {
+      throw new BadRequestException('Toạ độ bếp không hợp lệ.');
+    }
+    const r = radiusKm != null ? Number(radiusKm) : undefined;
+    return this.campaignsService.suggestSuppliersNear({
+      lng: x,
+      lat: y,
+      radiusKm: Number.isFinite(r) ? r : undefined,
+      category: category || undefined,
+    });
+  }
+
+  @Get(':id/supplier-readiness')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Nguyên liệu chiến dịch đã được NCC nhận lời đủ chưa (điều kiện admin duyệt)' })
+  supplierReadiness(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.supplierReadiness(id);
+  }
+
   @Get(':id/supplier-matches')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.RECEIVER)

@@ -905,6 +905,44 @@ export interface SupplierMatchResult {
   matches: SupplierMatch[];
 }
 
+/**
+ * Gợi ý NCC quanh toạ độ bếp — dùng trong form TẠO chiến dịch (chưa có campaignId).
+ */
+export function useSupplierMatchesNear(
+  coords: { lng: number; lat: number } | null,
+  opts: { radiusKm?: number; enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: ['campaigns', 'supplier-matches-near', coords?.lng, coords?.lat, opts.radiusKm],
+    enabled: !!coords && opts.enabled !== false,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data } = await api.get('/campaigns/supplier-matches/near', {
+        params: { lng: coords!.lng, lat: coords!.lat, radiusKm: opts.radiusKm },
+      });
+      return data.data as SupplierMatchResult;
+    },
+  });
+}
+
+/** Nguyên liệu chiến dịch đã được NCC nhận lời đủ chưa — điều kiện để admin duyệt. */
+export interface SupplierReadiness {
+  /** false = admin tắt luật "NCC nhận lời mới duyệt". */
+  required: boolean;
+  ready: boolean;
+  missing: Array<{ name: string; unit: string; missing: number; target: number }>;
+  requests: { pending: number; accepted: number; rejected: number };
+}
+
+export function useSupplierReadiness(campaignId: string | null) {
+  return useQuery({
+    queryKey: ['campaigns', 'supplier-readiness', campaignId],
+    enabled: !!campaignId,
+    staleTime: 15_000,
+    queryFn: async () => (await api.get(`/campaigns/${campaignId}/supplier-readiness`)).data.data as SupplierReadiness,
+  });
+}
+
 /** Gợi ý NCC gần bếp nhất (PostGIS). Chỉ chạy khi đã chọn chiến dịch. */
 export function useSupplierMatches(
   campaignId: string | null,

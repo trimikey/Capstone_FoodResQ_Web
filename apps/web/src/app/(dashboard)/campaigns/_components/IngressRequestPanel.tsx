@@ -79,7 +79,9 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const [sending, setSending] = useState(false);
 
   const openCampaigns = useMemo(
-    () => campaigns.filter((c) => c.status === 'approved' || c.status === 'in_progress'),
+    // Gồm cả chiến dịch CHỜ DUYỆT: admin chỉ duyệt khi NCC đã nhận lời đủ nguyên liệu,
+    // nên NCC nào từ chối thì tổ chức phải gửi được đơn thay thế ngay lúc này.
+    () => campaigns.filter((c) => ['pending_approval', 'approved', 'in_progress'].includes(c.status)),
     [campaigns],
   );
 
@@ -135,13 +137,13 @@ export default function IngressRequestPanel({ campaigns }: Props) {
   const topMatch = matches[0] ?? null;
   const selectedIds = new Set(lines.map((l) => l.providerId));
 
-  // Backend chỉ giữ MỘT đơn đang chờ cho mỗi cặp (chiến dịch, NCC): gửi lại là sửa đè
-  // đơn đó. Báo trước để bếp không tưởng mình vừa đặt thêm một món.
+  // Backend giữ MỘT đơn đang chờ cho mỗi (chiến dịch, NCC, món): gửi lại CÙNG món là
+  // sửa đè đơn đó. Báo trước để bếp không tưởng mình vừa đặt thêm.
   const pendingByProvider = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, string[]>();
     for (const r of sentRequests ?? []) {
       if (r.campaignId === campaignId && r.status === 'pending') {
-        map.set(r.providerId, r.demandDetails?.ingredientName ?? 'một đơn');
+        map.set(r.providerId, [...(map.get(r.providerId) ?? []), r.demandDetails?.ingredientName ?? '']);
       }
     }
     return map;
@@ -595,7 +597,11 @@ export default function IngressRequestPanel({ campaigns }: Props) {
                         suggestKg(item, lines.filter((l) => l.providerId !== line.providerId)) || line.quantityKg,
                     })
                   }
-                  pendingIngredient={pendingByProvider.get(line.providerId) ?? null}
+                  pendingIngredient={
+                    (pendingByProvider.get(line.providerId) ?? []).find(
+                      (name) => name && sameName(name, line.ingredientName),
+                    ) ?? null
+                  }
                   onChange={(patch) => updateLine(line.providerId, patch)}
                   onRemove={() => setLines((prev) => prev.filter((l) => l.providerId !== line.providerId))}
                 />

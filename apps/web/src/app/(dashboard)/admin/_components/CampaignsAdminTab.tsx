@@ -9,6 +9,7 @@ import {
   useAdminCampaignDetail,
   type AdminCampaign,
 } from '@/hooks/useAdmin';
+import { useSupplierReadiness } from '@/hooks/useCampaigns';
 import { usePaged, Pagination, Skeleton, Empty } from './admin-shared';
 
 const CAMPAIGN_STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -103,6 +104,51 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
               })}
             </div>
 
+            {/* Điều kiện duyệt: NCC đã nhận lời đủ nguyên liệu chưa */}
+            {c.supplierReadiness && (
+              <div>
+                <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-600">storefront</span>
+                  Nguyên liệu từ nhà cung cấp
+                </h4>
+                <p
+                  className={`mb-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+                    c.supplierReadiness.ready ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'
+                  }`}
+                >
+                  {c.supplierReadiness.ready
+                    ? 'NCC đã nhận lời đủ nguyên liệu — đủ điều kiện duyệt.'
+                    : `Còn thiếu: ${c.supplierReadiness.missing.map((m) => `${m.name} ${m.missing} ${m.unit}`).join(', ')}.`}
+                  {!c.requireSupplierConfirmation && ' (Luật "NCC nhận lời mới duyệt" đang tắt trong Cài đặt.)'}
+                </p>
+                {c.supplierReadiness.requests.length === 0 ? (
+                  <p className="text-sm text-neutral-400 text-center py-4 bg-neutral-50 rounded-2xl">Tổ chức chưa gửi đơn nguyên liệu nào</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {c.supplierReadiness.requests.map((r, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-150 px-3 py-2 text-xs">
+                        <span className="font-bold text-neutral-800">{r.ingredientName ?? 'Nguyên liệu'}</span>
+                        {r.quantity != null && <span className="text-neutral-500">{r.quantity} {r.unit}</span>}
+                        <span className="text-neutral-400">·</span>
+                        <span className="min-w-0 flex-1 truncate text-neutral-600">{r.providerName}</span>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            r.status === 'accepted'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : r.status === 'rejected'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {r.status === 'accepted' ? 'Đã nhận lời' : r.status === 'rejected' ? 'Từ chối' : 'Chờ NCC'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <h4 className="font-bold text-neutral-900 mb-3 flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">groups</span>
@@ -141,6 +187,47 @@ function CampaignDetailModal({ id, onClose }: { id: string; onClose: () => void 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Nút Duyệt kèm điều kiện "NCC đã nhận lời đủ nguyên liệu": chưa đủ thì khoá nút và
+ * ghi tiến độ ngay dưới, bấm để mở chi tiết xem NCC nào còn chờ.
+ */
+function ApproveButton({
+  campaignId,
+  busy,
+  onApprove,
+  onDetail,
+}: {
+  campaignId: string;
+  busy: boolean;
+  onApprove: () => void;
+  onDetail: () => void;
+}) {
+  const { data: r } = useSupplierReadiness(campaignId);
+  const blocked = !!r && r.required && !r.ready;
+  const total = r ? r.requests.pending + r.requests.accepted + r.requests.rejected : 0;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button
+        onClick={onApprove}
+        disabled={busy || blocked}
+        title={blocked ? `Chờ NCC nhận lời — còn thiếu ${r!.missing.map((m) => `${m.name} ${m.missing} ${m.unit}`).join(', ')}` : ''}
+        className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+      >
+        Duyệt
+      </button>
+      {r && (
+        <button
+          type="button"
+          onClick={onDetail}
+          className={`whitespace-nowrap text-[10px] font-bold hover:underline ${r.ready ? 'text-emerald-700' : 'text-amber-700'}`}
+        >
+          {r.ready ? 'NCC đã nhận đủ' : `NCC nhận ${r.requests.accepted}/${total} đơn`}
+        </button>
+      )}
     </div>
   );
 }
@@ -254,10 +341,12 @@ export default function CampaignsAdminTab() {
                       <td className="px-6 py-4">
                         {c.status === 'pending_approval' ? (
                           <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => changeStatus(c.id, 'approved')} disabled={setCampaignStatus.isPending}
-                              className="w-[88px] h-8 bg-[#166534] hover:bg-[#14532d] text-white rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center">
-                              Duyệt
-                            </button>
+                            <ApproveButton
+                              campaignId={c.id}
+                              busy={setCampaignStatus.isPending}
+                              onApprove={() => changeStatus(c.id, 'approved')}
+                              onDetail={() => setDetailId(c.id)}
+                            />
                             <button onClick={() => changeStatus(c.id, 'cancelled')} disabled={setCampaignStatus.isPending}
                               className="w-[88px] h-8 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-full text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center">
                               Từ chối

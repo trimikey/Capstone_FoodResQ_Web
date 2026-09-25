@@ -3,7 +3,9 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { type CreateCampaignInput, useCampaignCreateConstraints, useUploadCampaignImage } from '@/hooks/useCampaigns';
+import { type CreateCampaignInput, useCampaignCreateConstraints, useSendSupplyRequest, useUploadCampaignImage } from '@/hooks/useCampaigns';
+import { inferCategories } from '@/lib/supply-match';
+import SupplierRequestStep, { supplyKey, type SupplierPick } from './SupplierRequestStep';
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
 import { errMsg, mediaUrl } from '@/lib/utils';
@@ -23,7 +25,9 @@ import {
 
 const LocationPicker = dynamic(() => import('@/components/map/LocationPicker'), { ssr: false });
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
+/** Bước cuối (Kiểm tra & gửi). */
+const LAST_STEP: Step = 6;
 type Period = 'midnight' | 'morning' | 'afternoon' | 'evening';
 type StaffRole = 'chef' | 'waiter' | 'shipper';
 type MenuRow = {
@@ -54,6 +58,7 @@ const STEPS = [
   ['Thực đơn & số suất', 'restaurant_menu'],
   ['Ca & nhân sự', 'groups'],
   ['Tuyển & ngày vận hành', 'event'],
+  ['Nguyên liệu & NCC', 'storefront'],
   ['Kiểm tra & gửi', 'fact_check'],
 ] as const;
 
@@ -140,6 +145,9 @@ interface CampaignDraft {
   staffing: Record<string, number>;
   stepTimes?: string[];
   stepTimesTouched?: boolean;
+  /** NCC chọn cho từng nguyên liệu (khoá = tên bỏ dấu). */
+  supplierPicks?: Record<string, SupplierPick>;
+  supplierRadiusKm?: number;
 }
 
 const DRAFT_KEY = 'foodresq:draft:create-campaign';
@@ -160,6 +168,11 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   const [step, setStep] = useState<Step>(restored?.step ?? 1);
   // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
   const [confirmedReview, setConfirmedReview] = useState(false);
+  const [supplierPicks, setSupplierPicks] = useState<Record<string, SupplierPick>>(restored?.supplierPicks ?? {});
+  const [supplierRadiusKm, setSupplierRadiusKm] = useState(restored?.supplierRadiusKm ?? 5);
+  // Cam kết phi thương mại đi kèm đơn gửi NCC — như confirmedReview, phải tick lại mỗi lần.
+  const [supplierWaiver, setSupplierWaiver] = useState(false);
+  const sendSupplyRequest = useSendSupplyRequest();
   const [title, setTitle] = useState(restored?.title ?? '');
   const [description, setDescription] = useState(restored?.description ?? '');
   const [kitchenAddress, setKitchenAddress] = useState(restored?.kitchenAddress ?? '');
@@ -198,6 +211,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     step, title, description, kitchenAddress, addressSource, lng, lat, imageUrl,
     expectedServings, menu, supplies, scheduledDate, endDate, activePeriods,
     recruitmentStartAt, recruitmentEndAt, staffing, stepTimes, stepTimesTouched,
+    supplierPicks, supplierRadiusKm,
   } satisfies CampaignDraft);
   useEffect(() => {
     saveDraftJson(DRAFT_KEY, draftJson);
@@ -224,6 +238,8 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     setRecruitmentStartAt(toVnLocalInput(new Date(Date.now() + 3600_000)));
     setRecruitmentEndAt('');
     setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
+    setSupplierPicks({});
+    setSupplierRadiusKm(5);
   }
 
   const { data: me } = useMe();
@@ -454,6 +470,14 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   }
 
   function validate(current: Step) {
+    if (current === 5) {
+      const named = supplies.filter((item) => item.name.trim());
+      const missing = named.filter((item) => !supplierPicks[supplyKey(item.name)]);
+      if (missing.length > 0) {
+        return `Chọn nhà cung cấp cho: ${missing.map((item) => item.name.trim()).join(', ')}.`;
+      }
+      if (named.length > 0 && !supplierWaiver) return 'Vui lòng tick cam kết sử dụng phi thương mại.';
+    }
     if (current === 1) {
       if (title.trim().length < 5) return 'Tiêu đề phải có ít nhất 5 ký tự.';
       if (kitchenAddress.trim().length < 5) return 'Vui lòng nhập địa chỉ bếp.';
@@ -530,7 +554,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     // Form không có nút submit ở bước 1–4 → nhấn Enter trong ô nhập sẽ kích hoạt
     // implicit submission và GỬI LUÔN, bỏ qua bước kiểm tra. Chưa ở bước 5 thì
     // Enter chỉ được hiểu là "Tiếp tục".
-    if (step !== 5) {
+    if (step !== LAST_STEP) {
       nextStep();
       return;
     }
@@ -538,7 +562,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     if (!confirmedReview) {
       return toast.error('Vui lòng tick xác nhận đã kiểm tra kỹ thông tin trước khi gửi.');
     }
-    for (const candidate of [1, 2, 3, 4] as Step[]) {
+    for (const candidate of [1, 2, 3, 4, 5] as Step[]) {
       const error = validate(candidate);
       if (error) {
         if (candidate === 2) {
@@ -555,7 +579,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       return slotsNeeded > 0 ? [{ label: `${period.label} — ${role.label}`, period: period.id, role: role.id, slotsNeeded }] : [];
     }));
     try {
-      await onSubmit({
+      const created = (await onSubmit({
         title: title.trim(), description: description.trim() || undefined, kitchenAddress: kitchenAddress.trim(), lng, lat,
         scheduledDate, endDate: endDate || undefined,
         recruitmentStartAt: `${recruitmentStartAt}:00+07:00`, recruitmentEndAt: `${recruitmentEndAt}:00+07:00`,
@@ -564,11 +588,51 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
         supplyItems: supplies.filter((item) => item.name.trim()).map((item) => ({ ...item, name: item.name.trim(), unit: item.unit?.trim() || undefined })),
         shifts,
         stepTimes,
-      });
+      })) as { id?: string } | undefined;
+
+      // Gửi luôn đơn xin nguyên liệu tới NCC đã chọn — admin chỉ duyệt khi NCC nhận lời đủ.
+      const namedSupplies = supplies.filter((item) => item.name.trim());
+      let sent = 0;
+      const failed: string[] = [];
+      if (created?.id) {
+        for (const item of namedSupplies) {
+          const pick = supplierPicks[supplyKey(item.name)];
+          if (!pick) continue;
+          try {
+            await sendSupplyRequest.mutateAsync({
+              providerId: pick.providerId,
+              campaignId: created.id,
+              demandDetails: {
+                foodCategory: inferCategories(item.name)[0],
+                ingredientName: item.name.trim(),
+                quantityKg: item.quantity != null && item.quantity > 0 ? item.quantity : undefined,
+                quantityUnit: item.unit?.trim() || 'kg',
+                expectedServings: expectedServingsValue || undefined,
+                neededDate: scheduledDate,
+                radiusKm: supplierRadiusKm,
+                requireAtvstpCert: true,
+                requireColdChain: false,
+                requireQcPhoto: true,
+                nonCommercialWaiver: true,
+              },
+            });
+            sent += 1;
+          } catch {
+            failed.push(`${item.name.trim()} → ${pick.businessName}`);
+          }
+        }
+      }
       // Gửi thành công thì nháp hết ý nghĩa — giữ lại sẽ khiến lần tạo sau bị điền
       // sẵn nội dung của chiến dịch vừa gửi.
       clearDraft(DRAFT_KEY);
-      toast.success('Đã gửi kế hoạch chiến dịch để admin duyệt.');
+      toast.success(
+        sent > 0
+          ? `Đã gửi chiến dịch và ${sent} đơn xin nguyên liệu. Admin duyệt khi NCC đã nhận lời đủ.`
+          : 'Đã gửi kế hoạch chiến dịch để admin duyệt.',
+      );
+      if (failed.length > 0) {
+        toast.error(`Chưa gửi được đơn: ${failed.join('; ')} — gửi lại ở tab Nhà cung cấp.`);
+      }
       onClose();
     } catch (error) {
       toast.error(errMsg(error, 'Không thể tạo chiến dịch'));
@@ -588,7 +652,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       <div className="cm-modal cm-create-modal">
         <form onSubmit={submit}>
           <div className="cm-modal-header">
-            <div><p className="text-xs font-bold uppercase tracking-wider text-emerald-200">Yêu cầu mới · Chờ admin duyệt</p><h2 id="cm-create-title" className="text-2xl font-extrabold text-white">Tạo chiến dịch mới</h2><p className="mt-1 text-sm text-white/80">Hoàn thành 5 bước. Dữ liệu chỉ được gửi sau khi bạn kiểm tra lại.</p></div>
+            <div><p className="text-xs font-bold uppercase tracking-wider text-emerald-200">Yêu cầu mới · Chờ admin duyệt</p><h2 id="cm-create-title" className="text-2xl font-extrabold text-white">Tạo chiến dịch mới</h2><p className="mt-1 text-sm text-white/80">Hoàn thành 6 bước. Dữ liệu chỉ được gửi sau khi bạn kiểm tra lại.</p></div>
             <button type="button" onClick={onClose} className="cm-modal-close" aria-label="Đóng"><span className="material-symbols-outlined">close</span></button>
           </div>
 
@@ -836,8 +900,31 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
               </Block>
             </>}
 
-            {step === 5 && <>
-              <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /><Summary label="Giờ 4 khâu bếp" value={stepTimes.join(' · ')} /></Block>
+            {step === 5 && (
+              <Block title="Nguyên liệu & nhà cung cấp" icon="storefront">
+                <SupplierRequestStep
+                  lng={lng}
+                  lat={lat}
+                  supplies={supplies}
+                  picks={supplierPicks}
+                  onPick={(key, pick) =>
+                    setSupplierPicks((prev) => {
+                      const next = { ...prev };
+                      if (pick) next[key] = pick;
+                      else delete next[key];
+                      return next;
+                    })
+                  }
+                  radiusKm={supplierRadiusKm}
+                  onRadiusChange={setSupplierRadiusKm}
+                  waiver={supplierWaiver}
+                  onWaiverChange={setSupplierWaiver}
+                />
+              </Block>
+            )}
+
+            {step === LAST_STEP && <>
+              <Block title="Tổng quan trước khi gửi" icon="fact_check"><Summary label="Chiến dịch" value={title} /><Summary label="Thực đơn" value={`${menu.filter((item) => item.name.trim()).length} món · ${expectedServingsValue} suất`} /><Summary label="Vận hành" value={`${formatDateTime(operationStartAt)} → ${formatDateTime(operationEndAt)}`} /><Summary label="Tuyển tình nguyện viên" value={`${formatDateTime(parseVnLocal(recruitmentStartAt))} → ${formatDateTime(parseVnLocal(recruitmentEndAt))}`} /><Summary label="Nhu cầu" value={`${totalShiftSlots} lượt ca; kiểm tra đủ 100% riêng từng ca/vai trò`} /><Summary label="Giờ 4 khâu bếp" value={stepTimes.join(' · ')} /><Summary label="Nguyên liệu" value={supplies.filter((item) => item.name.trim()).map((item) => `${item.name.trim()} → ${supplierPicks[supplyKey(item.name)]?.businessName ?? 'chưa chọn NCC'}`).join(' · ') || 'Không khai nguyên liệu'} /></Block>
               {/* Cảnh báo + cam kết bắt buộc: đăng lên là KHÔNG chỉnh sửa được nữa
                   (tính năng chỉnh sửa chiến dịch đã bị gỡ) — bắt tổ chức xem kỹ. */}
               <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
@@ -866,7 +953,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
             </>}
           </div></div>
 
-          <div className="cm-modal-footer"><button type="button" onClick={onClose} className="cm-btn-cancel">Huỷ</button>{step > 1 && <button type="button" onClick={() => setStep((step - 1) as Step)} className="cm-btn-cancel cm-btn-back"><span className="material-symbols-outlined text-[18px]">arrow_back</span>Quay lại</button>}{step < 5 ? <button type="button" onClick={nextStep} className="cm-btn-submit">Tiếp tục<span className="material-symbols-outlined text-[18px]">arrow_forward</span></button> : <button type="submit" disabled={pending || !confirmedReview} className="cm-btn-submit" title={!confirmedReview ? 'Tick xác nhận đã kiểm tra kỹ thông tin trước khi gửi' : ''}>{pending ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button>}</div>
+          <div className="cm-modal-footer"><button type="button" onClick={onClose} className="cm-btn-cancel">Huỷ</button>{step > 1 && <button type="button" onClick={() => setStep((step - 1) as Step)} className="cm-btn-cancel cm-btn-back"><span className="material-symbols-outlined text-[18px]">arrow_back</span>Quay lại</button>}{step < LAST_STEP ? <button type="button" onClick={nextStep} className="cm-btn-submit">Tiếp tục<span className="material-symbols-outlined text-[18px]">arrow_forward</span></button> : <button type="submit" disabled={pending || sendSupplyRequest.isPending || !confirmedReview} className="cm-btn-submit" title={!confirmedReview ? 'Tick xác nhận đã kiểm tra kỹ thông tin trước khi gửi' : ''}>{pending || sendSupplyRequest.isPending ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button>}</div>
         </form>
       </div>
     </div>

@@ -310,7 +310,9 @@ export class CampaignsService {
     endTime: string;
     operationEndAt?: Date | null;
   }) {
-    if (!['approved', 'in_progress'].includes(campaign.status)) {
+    // Nhận cả khi CHỜ DUYỆT: tổ chức xin nguyên liệu ngay lúc tạo chiến dịch, và admin
+    // chỉ duyệt khi NCC đã nhận lời đủ (CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION).
+    if (!['pending_approval', 'approved', 'in_progress'].includes(campaign.status)) {
       throw new BadRequestException('Chiến dịch này không còn nhận quyên góp.');
     }
     const endAt = campaign.operationEndAt?.getTime()
@@ -5369,6 +5371,25 @@ export class CampaignsService {
       return { radiusKm, kitchen: null, matches: [], reason: 'NO_KITCHEN_LOCATION' as const };
     }
 
+    return this.suppliersAround(
+      { lng: Number(kitchen.lng), lat: Number(kitchen.lat) },
+      radiusKm,
+      opts.category,
+    );
+  }
+
+  /**
+   * Gợi ý NCC quanh một toạ độ bếp — dùng khi chiến dịch CHƯA được tạo (form tạo
+   * chiến dịch xin nguyên liệu luôn), chỉ cần toạ độ bếp đang ghim trên form.
+   */
+  async suggestSuppliersNear(opts: { lng: number; lat: number; radiusKm?: number; category?: string }) {
+    const radiusKm = Math.min(Math.max(opts.radiusKm ?? 5, 0.5), 50);
+    return this.suppliersAround({ lng: opts.lng, lat: opts.lat }, radiusKm, opts.category);
+  }
+
+  private async suppliersAround(kitchen: { lng: number; lat: number }, radiusKm: number, category?: string) {
+    const radiusM = radiusKm * 1000;
+    const opts = { category };
     const categoryFilter = opts.category
       ? Prisma.sql`AND fl.category = ${opts.category}::food_category`
       : Prisma.empty;
@@ -5519,8 +5540,18 @@ export class CampaignsService {
     // quay lại đặt thêm thịt từ CÙNG một NCC là đơn gạo bị ghi đè mất — một chiến
     // dịch vì thế chỉ đặt được đúng một món từ mỗi nhà cung cấp.
     const campaignId = dto.campaignId ?? '00000000-0000-0000-0000-000000000000';
+    // Chỉ sửa đè đơn đang chờ của CÙNG món: xin gạo và dầu ăn từ cùng một vựa là hai
+    // đơn riêng (form tạo chiến dịch gửi một lượt nhiều món).
+    const ingredientName = dto.demandDetails?.ingredientName?.trim();
     const existing = await this.prisma.campaignProviderRequest.findFirst({
-      where: { campaignId, providerId: provider.providerProfile.id, status: 'pending' },
+      where: {
+        campaignId,
+        providerId: provider.providerProfile.id,
+        status: 'pending',
+        ...(ingredientName
+          ? { demandDetails: { path: ['ingredientName'], equals: ingredientName } }
+          : {}),
+      },
       select: { id: true },
     });
 
@@ -5819,10 +5850,14 @@ export class CampaignsService {
       } else {
         // Đồng bộ với luồng phân phát: KHÔNG tìm shipper hệ thống — tổ chức tự
         // phân công shipper của chiến dịch có ca phủ khung giờ lấy hàng.
+        const providerName = profile.businessName?.trim() || 'Nhà cung cấp';
+        const donationSummary = donation
+          ? [donation.quantity?.trim(), donation.itemName?.trim()].filter(Boolean).join(' ')
+          : '';
         title = 'Nhà cung cấp đã chấp nhận — phân công shipper chiến dịch đến lấy';
         body =
-          `${profile.businessName ?? 'Nhà cung cấp'} đã đồng ý`
-          + (donation ? ` và cam kết ${donation.quantity ?? ''} ${donation.itemName}` : '')
+          `${providerName} đã đồng ý`
+          + (donationSummary ? ` và cam kết ${donationSummary}` : '')
           + `. Lịch lấy hàng: ${pickupTimeStr}${pickupEndStr ? `–${pickupEndStr}` : ''} ngày ${pickupDateStr}. `
           + 'Vào tab "Giao & nhận hàng" để phân công shipper của chiến dịch đi nhận.';
       }
@@ -5836,7 +5871,7 @@ export class CampaignsService {
           providerRequestId: requestId,
           transportId,
           donationId: donation?.id ?? null,
-          campaignId: campaignSnapshot?.id,
+          campaignId: request.campaignId,
           action,
           pickupDate: pickupDateStr,
           pickupTime: pickupTimeStr,
@@ -5845,7 +5880,57 @@ export class CampaignsService {
       });
     }
 
+    if (action === 'accept') void this.notifyAdminsIfSuppliersReady(request.campaignId);
+
     return { ...updated, transportId, stockDeduction: stockPlan };
+  }
+
+  /**
+   * Nguyên liệu của chiến dịch đã được NCC NHẬN LỜI đủ chưa (tính hàng đã hứa góp +
+   * đã nhận). Admin chỉ duyệt chiến dịch khi đủ — xem CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION.
+   */
+  async supplierReadiness(campaignId: string) {
+    const campaign = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: {
+        supplyItems: true,
+        donations: { select: { itemName: true, quantity: true, status: true } },
+        providerRequests: { select: { status: true } },
+      },
+    });
+    if (!campaign) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    const progress = buildSupplyProgress(campaign.supplyItems, campaign.donations);
+    const missing = progress
+      .filter((p) => p.remainingQuantity > 0)
+      .map((p) => ({ name: p.name, unit: p.unit, missing: p.remainingQuantity, target: p.targetQuantity }));
+    const count = (st: string) => campaign.providerRequests.filter((r) => r.status === st).length;
+    return {
+      /** Luật đang bật (admin tắt trong Cài đặt thì duyệt không cần NCC nhận lời). */
+      required: (await this.systemConfig.getNumber('CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION')) > 0,
+      ready: missing.length === 0,
+      missing,
+      requests: { pending: count('pending'), accepted: count('accepted'), rejected: count('rejected') },
+    };
+  }
+
+  private async notifyAdminsIfSuppliersReady(campaignId: string) {
+    try {
+      const campaign = await this.prisma.kitchenCampaign.findUnique({
+        where: { id: campaignId },
+        select: { title: true, status: true },
+      });
+      if (campaign?.status !== 'pending_approval') return;
+      const readiness = await this.supplierReadiness(campaignId);
+      if (!readiness.ready) return;
+      await this.notifications.notifyAdmins({
+        type: 'campaign',
+        title: 'Chiến dịch đã đủ nhà cung cấp nhận lời',
+        body: `Nguyên liệu của chiến dịch "${campaign.title}" đã được nhà cung cấp nhận đủ — có thể xem xét duyệt.`,
+        data: { campaignId, status: 'pending_approval' },
+      });
+    } catch (e) {
+      this.logger.warn(`notifyAdminsIfSuppliersReady lỗi: ${(e as Error).message}`);
+    }
   }
 
   /**

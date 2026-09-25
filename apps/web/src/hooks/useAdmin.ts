@@ -267,6 +267,19 @@ export interface CampaignAssignment {
 }
 
 export interface AdminCampaignDetail {
+  /** Điều kiện duyệt: nguyên liệu đã được NCC nhận lời đủ chưa. */
+  supplierReadiness?: {
+    ready: boolean;
+    missing: Array<{ name: string; unit: string; missing: number; target: number }>;
+    requests: Array<{
+      providerName: string;
+      status: string;
+      ingredientName: string | null;
+      quantity: number | null;
+      unit: string;
+    }>;
+  };
+  requireSupplierConfirmation?: boolean;
   id: string;
   title: string;
   description: string | null;

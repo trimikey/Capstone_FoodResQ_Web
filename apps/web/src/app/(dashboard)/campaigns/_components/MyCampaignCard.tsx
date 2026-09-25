@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   useConfirmDonation,
+  useSupplierReadiness,
   type Campaign,
 } from '@/hooks/useCampaigns';
 import { errMsg } from '@/lib/utils';
@@ -46,6 +47,8 @@ const DONATION_STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Campaign; allowEarlyStart?: boolean }) {
+  // Mốc "bây giờ" lấy MỘT lần lúc thẻ hiển thị — gọi Date.now() thẳng trong render là không thuần.
+  const [renderedAt] = useState(() => Date.now());
   const confirmDon = useConfirmDonation();
   const [confirmingDonationId, setConfirmingDonationId] = useState<string | null>(null);
   const [receiptNote, setReceiptNote] = useState('');
@@ -85,7 +88,7 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
   // Đã tới giờ vận hành chưa — điều kiện BE bắt buộc để bấm "Bắt đầu chiến dịch",
   // TRỪ KHI admin bật "Cho phép bắt đầu/điểm danh sớm" trong Cài đặt hệ thống.
   const reachedOperationTime = c.operationStartAt
-    ? Date.now() >= new Date(c.operationStartAt).getTime()
+    ? renderedAt >= new Date(c.operationStartAt).getTime()
     : overdue;
   const canShowStart = reachedOperationTime || allowEarlyStart;
 
@@ -199,12 +202,7 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
         </Link>
       </div>
 
-      {c.status === 'pending_approval' && (
-        <p className="text-[11px] text-honey-700 mt-3 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
-          Đang chờ quản trị viên duyệt
-        </p>
-      )}
+      {c.status === 'pending_approval' && <PendingSupplierStatus campaignId={c.id} />}
 
       {/* Thao tác vòng đời (bắt đầu / huỷ / kết thúc) làm trong trang QUẢN LÝ, không
           làm ngoài card. Lý do: mỗi thao tác đều cần thông tin mà card không có —
@@ -385,6 +383,38 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
         </div>
       )}
 
+    </div>
+  );
+}
+
+/**
+ * Chiến dịch chờ duyệt: admin chỉ duyệt khi NCC đã nhận lời đủ nguyên liệu — nói rõ
+ * đang chờ ai (NCC hay admin) để tổ chức biết cần làm gì tiếp.
+ */
+function PendingSupplierStatus({ campaignId }: { campaignId: string }) {
+  const { data: r } = useSupplierReadiness(campaignId);
+  if (!r || !r.required || r.ready) {
+    return (
+      <p className="text-[11px] text-honey-700 mt-3 flex items-center gap-1">
+        <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
+        {r?.required && r.ready ? 'NCC đã nhận lời đủ nguyên liệu — chờ quản trị viên duyệt' : 'Đang chờ quản trị viên duyệt'}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+      <p className="flex items-center gap-1 font-bold">
+        <span className="material-symbols-outlined text-[14px]">storefront</span>
+        Chờ nhà cung cấp nhận lời ({r.requests.accepted} đã nhận
+        {r.requests.pending > 0 ? ` · ${r.requests.pending} đang chờ` : ''}
+        {r.requests.rejected > 0 ? ` · ${r.requests.rejected} từ chối` : ''})
+      </p>
+      <p className="mt-0.5">
+        Còn thiếu: {r.missing.map((m) => `${m.name} ${m.missing} ${m.unit}`).join(', ')}. Admin duyệt khi đủ.
+        {r.requests.rejected > 0 || r.requests.pending + r.requests.accepted === 0
+          ? ' Gửi đơn cho NCC khác ở tab Nhà cung cấp.'
+          : ''}
+      </p>
     </div>
   );
 }

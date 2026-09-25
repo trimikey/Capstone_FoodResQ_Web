@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { buildSupplyProgress } from '../campaigns/supply-progress';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -303,6 +304,49 @@ export class AdminService {
         phone: a.volunteer.user.phone,
         avatarUrl: a.volunteer.user.avatarUrl,
       })),
+      /** Điều kiện duyệt: nguyên liệu đã được NCC nhận lời đủ chưa. */
+      supplierReadiness: await this.supplierReadiness(id),
+      requireSupplierConfirmation:
+        (await this.systemConfig.getNumber('CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION')) > 0,
+    };
+  }
+
+  /** Nguyên liệu đã được NCC nhận lời đủ chưa — cùng cách tính với CampaignsService. */
+  private async supplierReadiness(campaignId: string) {
+    const c = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: {
+        supplyItems: true,
+        donations: { select: { itemName: true, quantity: true, status: true } },
+        providerRequests: {
+          select: {
+            status: true,
+            demandDetails: true,
+            provider: { select: { businessName: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!c) throw new NotFoundException('Không tìm thấy chiến dịch.');
+    const progress = buildSupplyProgress(c.supplyItems, c.donations);
+    const missing = progress
+      .filter((p) => p.remainingQuantity > 0)
+      .map((p) => ({ name: p.name, unit: p.unit, missing: p.remainingQuantity, target: p.targetQuantity }));
+    return {
+      ready: missing.length === 0,
+      missing,
+      progress,
+      requests: c.providerRequests.map((r) => {
+        const d = (r.demandDetails ?? {}) as Record<string, unknown>;
+        return {
+          providerName: r.provider.businessName,
+          status: r.status,
+          ingredientName: (d.ingredientName as string | undefined) ?? null,
+          quantity: d.quantityKg == null ? null : Number(d.quantityKg),
+          unit: (typeof d.quantityUnit === 'string' && d.quantityUnit.trim()) || 'kg',
+        };
+      }),
     };
   }
 
@@ -631,6 +675,17 @@ export class AdminService {
     }
     if (status === 'approved' && new Date() >= campaign.recruitmentEndAt) {
       throw new BadRequestException('Thời gian tuyển đã hết; tổ chức cần cập nhật lịch trước khi được duyệt.');
+    }
+    // Chiến dịch không có nguồn nguyên liệu thì duyệt cũng vô nghĩa — chờ NCC nhận lời đủ.
+    if (status === 'approved' && (await this.systemConfig.getNumber('CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION')) > 0) {
+      const readiness = await this.supplierReadiness(id);
+      if (!readiness.ready) {
+        throw new BadRequestException(
+          `Chưa đủ nhà cung cấp nhận lời nguyên liệu — còn thiếu ${readiness.missing
+            .map((m) => `${m.name} ${m.missing} ${m.unit}`)
+            .join(', ')}. Chờ NCC chấp nhận đơn rồi mới duyệt.`,
+        );
+      }
     }
 
     const recruitmentStatus = status === 'approved'
