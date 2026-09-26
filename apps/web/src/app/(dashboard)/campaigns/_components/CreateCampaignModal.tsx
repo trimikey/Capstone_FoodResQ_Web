@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { type CreateCampaignInput, useCampaignCreateConstraints, useSendSupplyRequest, useUploadCampaignImage } from '@/hooks/useCampaigns';
 import { inferCategories } from '@/lib/supply-match';
-import SupplierRequestStep, { supplyKey, type SupplierPick } from './SupplierRequestStep';
+import SupplierRequestStep, {
+  PICKUP_WINDOWS,
+  supplyKey,
+  type SupplierPick,
+  type SupplierRequestDetails,
+} from './SupplierRequestStep';
 import { useMe } from '@/hooks/useProfile';
 import { reverseGeocode } from '@/lib/geocode';
 import { errMsg, mediaUrl } from '@/lib/utils';
@@ -148,6 +153,8 @@ interface CampaignDraft {
   /** NCC chọn cho từng nguyên liệu (khoá = tên bỏ dấu). */
   supplierPicks?: Record<string, SupplierPick>;
   supplierRadiusKm?: number;
+  /** Chi tiết đơn xin nguyên liệu người dùng đã CHỈNH (trống = theo lịch chiến dịch). */
+  supplierDetails?: Partial<SupplierRequestDetails>;
 }
 
 const DRAFT_KEY = 'foodresq:draft:create-campaign';
@@ -170,6 +177,11 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   const [confirmedReview, setConfirmedReview] = useState(false);
   const [supplierPicks, setSupplierPicks] = useState<Record<string, SupplierPick>>(restored?.supplierPicks ?? {});
   const [supplierRadiusKm, setSupplierRadiusKm] = useState(restored?.supplierRadiusKm ?? 5);
+  // Chỉ lưu phần người dùng CHỈNH; phần còn lại suy từ lịch chiến dịch để đổi ngày/ca ở
+  // bước 3–4 thì đơn xin nguyên liệu tự theo.
+  const [supplierDetailEdits, setSupplierDetailEdits] = useState<Partial<SupplierRequestDetails>>(
+    restored?.supplierDetails ?? {},
+  );
   // Cam kết phi thương mại đi kèm đơn gửi NCC — như confirmedReview, phải tick lại mỗi lần.
   const [supplierWaiver, setSupplierWaiver] = useState(false);
   const sendSupplyRequest = useSendSupplyRequest();
@@ -211,7 +223,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     step, title, description, kitchenAddress, addressSource, lng, lat, imageUrl,
     expectedServings, menu, supplies, scheduledDate, endDate, activePeriods,
     recruitmentStartAt, recruitmentEndAt, staffing, stepTimes, stepTimesTouched,
-    supplierPicks, supplierRadiusKm,
+    supplierPicks, supplierRadiusKm, supplierDetails: supplierDetailEdits,
   } satisfies CampaignDraft);
   useEffect(() => {
     saveDraftJson(DRAFT_KEY, draftJson);
@@ -240,6 +252,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
     setSupplierPicks({});
     setSupplierRadiusKm(5);
+    setSupplierDetailEdits({});
   }
 
   const { data: me } = useMe();
@@ -469,6 +482,19 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     return null;
   }
 
+  // Mặc định: nhận nguyên liệu ngày vận hành đầu tiên, ca = ca đầu tiên của chiến dịch.
+  const defaultWindow = PICKUP_WINDOWS.find((w) => w.period === firstPeriod?.id) ?? PICKUP_WINDOWS[0];
+  const supplierDetails: SupplierRequestDetails = {
+    neededDate: scheduledDate,
+    neededFrom: defaultWindow.start,
+    neededTo: defaultWindow.end,
+    requireAtvstpCert: true,
+    requireColdChain: false,
+    requireQcPhoto: true,
+    note: '',
+    ...supplierDetailEdits,
+  };
+
   function validate(current: Step) {
     if (current === 5) {
       const named = supplies.filter((item) => item.name.trim());
@@ -476,7 +502,13 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       if (missing.length > 0) {
         return `Chọn nhà cung cấp cho: ${missing.map((item) => item.name.trim()).join(', ')}.`;
       }
-      if (named.length > 0 && !supplierWaiver) return 'Vui lòng tick cam kết sử dụng phi thương mại.';
+      if (named.length > 0) {
+        if (!supplierDetails.neededDate || !supplierDetails.neededFrom || !supplierDetails.neededTo) {
+          return 'Chọn ngày và ca cần nhận nguyên liệu tại bếp.';
+        }
+        if (supplierDetails.neededDate < dateAfter(0)) return 'Ngày cần nhận nguyên liệu không được ở quá khứ.';
+        if (!supplierWaiver) return 'Vui lòng tick cam kết sử dụng phi thương mại.';
+      }
     }
     if (current === 1) {
       if (title.trim().length < 5) return 'Tiêu đề phải có ít nhất 5 ký tự.';
@@ -608,17 +640,21 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 quantityKg: item.quantity != null && item.quantity > 0 ? item.quantity : undefined,
                 quantityUnit: item.unit?.trim() || 'kg',
                 expectedServings: expectedServingsValue || undefined,
-                neededDate: scheduledDate,
+                neededDate: supplierDetails.neededDate,
+                neededFrom: supplierDetails.neededFrom,
+                neededTo: supplierDetails.neededTo,
                 radiusKm: supplierRadiusKm,
-                requireAtvstpCert: true,
-                requireColdChain: false,
-                requireQcPhoto: true,
+                requireAtvstpCert: supplierDetails.requireAtvstpCert,
+                requireColdChain: supplierDetails.requireColdChain,
+                requireQcPhoto: supplierDetails.requireQcPhoto,
                 nonCommercialWaiver: true,
               },
+              message: supplierDetails.note.trim() || undefined,
             });
             sent += 1;
-          } catch {
-            failed.push(`${item.name.trim()} → ${pick.businessName}`);
+          } catch (err) {
+            // Ghi kèm lý do BE trả về — trước đây nuốt lỗi nên tổ chức không biết vì sao.
+            failed.push(`${item.name.trim()} → ${pick.businessName} (${errMsg(err, 'lỗi không rõ')})`);
           }
         }
       }
@@ -905,6 +941,10 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                 <SupplierRequestStep
                   lng={lng}
                   lat={lat}
+                  details={supplierDetails}
+                  onDetailsChange={(patch) => setSupplierDetailEdits((prev) => ({ ...prev, ...patch }))}
+                  minDate={dateAfter(0)}
+                  maxDate={endDate || scheduledDate}
                   supplies={supplies}
                   picks={supplierPicks}
                   onPick={(key, pick) =>
