@@ -80,29 +80,17 @@ export function scaleByServings(value: number, servings: number): number {
 }
 
 // ─── Templates ─────────────────────────────────────────────────────────────
+// Mỗi mẫu là MỘT món do một nhóm bếp nấu — không ghép "Cơm + món mặn" (vd "Cơm gà xối
+// mỡ") vì nồi cơm và món gà là hai việc riêng, ghép lại thì không phân được ai nấu gì.
+// Suất ăn = Cơm trắng + các món mặn/rau/canh chọn kèm.
 export const MENU_TEMPLATES: MenuTemplate[] = [
-  // ── Cơm (cần gạo + 1 loại đạm)
+  // ── Cơm (nồi cơm riêng, ăn kèm các món bên dưới)
   { id: 'menu-com-trang', name: 'Cơm trắng', type: 'lunch', requires: ['gạo'] },
-  { id: 'menu-com-ga', name: 'Cơm gà xối mỡ', type: 'lunch', requires: ['gạo', 'gà'] },
-  {
-    id: 'menu-com-thit-kho',
-    name: 'Cơm thịt kho trứng',
-    type: 'lunch',
-    requires: ['gạo', 'thịt', 'trứng'],
-  },
-  {
-    id: 'menu-com-suon',
-    name: 'Cơm sườn xào chua ngọt',
-    type: 'lunch',
-    requires: ['gạo', 'thịt'],
-  },
-  {
-    id: 'menu-com-ca-ri',
-    name: 'Cơm cà ri gà',
-    type: 'dinner',
-    requires: ['gạo', 'gà'],
-  },
-  { id: 'menu-com-ca', name: 'Cơm cá kho', type: 'lunch', requires: ['gạo', 'cá'] },
+
+  // ── Món mặn từ gà / thịt (tách khỏi cơm)
+  { id: 'menu-ga-xoi-mo', name: 'Gà xối mỡ', type: 'lunch', requires: ['gà'] },
+  { id: 'menu-suon-xao', name: 'Sườn xào chua ngọt', type: 'lunch', requires: ['thịt'] },
+  { id: 'menu-ca-ri-ga', name: 'Cà ri gà', type: 'dinner', requires: ['gà'] },
 
   // ── Cháo (cần gạo + 1 loại topping)
   { id: 'menu-chao-ga', name: 'Cháo gà', type: 'breakfast', requires: ['gạo', 'gà'] },
@@ -155,27 +143,13 @@ export const MENU_TEMPLATES: MenuTemplate[] = [
   { id: 'menu-canh-rau-tap-tang', name: 'Canh rau tập tàng', type: 'lunch', requires: ['rau'] },
   { id: 'menu-do-xao-thap-cam', name: 'Đồ xào thập cẩm', type: 'dinner', requires: ['rau'] },
 
-  // ── Cơm kết hợp rau (combo hay gặp nhất: gạo + rau + đạm)
+  // ── Cơm chiên (bản thân là MỘT món, một người đứng chảo)
   { id: 'menu-com-chien-rau', name: 'Cơm chiên rau củ', type: 'lunch', requires: ['gạo', 'rau'] },
-  {
-    id: 'menu-com-thit-xao-rau',
-    name: 'Cơm thịt xào rau củ',
-    type: 'lunch',
-    requires: ['gạo', 'thịt', 'rau'],
-  },
-  {
-    id: 'menu-com-ga-xao-rau',
-    name: 'Cơm gà xào rau củ',
-    type: 'lunch',
-    requires: ['gạo', 'gà', 'rau'],
-  },
   { id: 'menu-com-chien-trung', name: 'Cơm chiên trứng', type: 'lunch', requires: ['gạo', 'trứng'] },
-  {
-    id: 'menu-com-ca-chien',
-    name: 'Cơm cá chiên sả nghệ',
-    type: 'lunch',
-    requires: ['gạo', 'cá'],
-  },
+
+  // ── Món xào đạm + rau (tách khỏi cơm)
+  { id: 'menu-thit-xao-rau', name: 'Thịt xào rau củ', type: 'lunch', requires: ['thịt', 'rau'] },
+  { id: 'menu-ga-xao-rau', name: 'Gà xào rau củ', type: 'lunch', requires: ['gà', 'rau'] },
 
   // ── Món mặn bổ sung
   { id: 'menu-thit-kho-tieu', name: 'Thịt kho tiêu', type: 'lunch', requires: ['thịt'] },
