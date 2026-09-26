@@ -27,6 +27,10 @@ function refreshCampaignQueries(qc: ReturnType<typeof useQueryClient>, campaignI
   void qc.invalidateQueries({ queryKey: ['campaigns', 'open'] });
   void qc.invalidateQueries({ queryKey: ['campaigns', 'mine'] });
   void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+  // Màn nhiệm vụ của TNV (đầu bếp chờ tổ chức duyệt ảnh QC, shipper chờ phân công…)
+  // phải đổi NGAY khi có thông báo — trước đây sót key này nên phải chờ poll 30 giây.
+  void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+  void qc.refetchQueries({ queryKey: ['campaigns', 'my-task-detail'], type: 'active' });
   void qc.refetchQueries({ queryKey: ['campaigns', 'manage-detail', campaignId], type: 'active' });
   void qc.refetchQueries({ queryKey: ['campaigns', 'public', campaignId], type: 'active' });
   void qc.refetchQueries({ queryKey: ['campaigns', 'open'], type: 'active' });
