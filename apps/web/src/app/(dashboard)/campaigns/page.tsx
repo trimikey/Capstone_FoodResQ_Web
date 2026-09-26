@@ -1016,6 +1016,9 @@ function MineTabbedSection({
   // Phân trang phía client: danh sách chiến dịch của một tổ chức là hữu hạn và đã
   // nằm sẵn trong cache, cắt trang tại chỗ thì đổi trang tức thì, không gọi lại API.
   const [minePage, setMinePage] = useState(1);
+  // Chiến dịch quá ngày diễn ra mà vẫn chưa bắt đầu mặc định ẨN — chúng là rác của các
+  // lần thử, làm rối danh sách. Không xoá dữ liệu: bấm "Hiện" để xem/xử lý lại.
+  const [showStale, setShowStale] = useState(false);
 
   // Gom 3 nhóm: active (đang chạy), drafts (campaign chờ admin duyệt), finished
   /** Cắt danh sách theo trang đang xem. */
@@ -1035,9 +1038,11 @@ function MineTabbedSection({
   // để mỗi tab phản ánh đúng một giai đoạn.
   const now = new Date();
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const recruiting = freshFirst(stats.active.filter((c) => c.status === 'approved'), todayUtc);
-  const running = freshFirst(stats.active.filter((c) => c.status === 'in_progress'), todayUtc);
-  const pendingCampaigns = freshFirst(stats.drafts, todayUtc);
+  const staleCount = [...stats.active, ...stats.drafts].filter((c) => isStaleCampaign(c, todayUtc)).length;
+  const visible = (list: Campaign[]) => (showStale ? list : list.filter((c) => !isStaleCampaign(c, todayUtc)));
+  const recruiting = freshFirst(visible(stats.active.filter((c) => c.status === 'approved')), todayUtc);
+  const running = freshFirst(visible(stats.active.filter((c) => c.status === 'in_progress')), todayUtc);
+  const pendingCampaigns = freshFirst(visible(stats.drafts), todayUtc);
   // Đã kết thúc: mới kết thúc lên trước.
   const finished = [...stats.finished].sort((a, b) => scheduledDayUtc(b) - scheduledDayUtc(a));
   // Tab "Tất cả": đang chạy → đang tuyển → chờ duyệt (đều còn hạn), rồi mọi chiến dịch
@@ -1074,6 +1079,22 @@ function MineTabbedSection({
 
   return (
     <section className="space-y-5">
+      {staleCount > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            setShowStale((v) => !v);
+            setMinePage(1);
+          }}
+          className="flex w-full items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-100"
+        >
+          <span className="material-symbols-outlined text-[16px]">{showStale ? 'visibility_off' : 'visibility'}</span>
+          {showStale
+            ? `Đang hiện ${staleCount} chiến dịch quá ngày diễn ra mà chưa bắt đầu — bấm để ẩn`
+            : `Đã ẩn ${staleCount} chiến dịch quá ngày diễn ra mà chưa bắt đầu — bấm để hiện`}
+        </button>
+      )}
+
       {/* Header + tabs */}
       <div className="cm-section-head !flex-col sm:!flex-row sm:items-center gap-3">
         <h2 className="cm-section-title">

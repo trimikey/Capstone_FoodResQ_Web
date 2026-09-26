@@ -156,8 +156,10 @@ export default function MyCampaignCard({ c, allowEarlyStart = false }: { c: Camp
           </div>
           <p className="mt-1.5 text-[11px] text-neutral-500">
             Bếp {Math.min(c.chefSlotsFilled, c.chefSlotsNeeded)}/{c.chefSlotsNeeded}
-            {' · '}Phục vụ {Math.min(c.waiterSlotsFilled, c.waiterSlotsNeeded)}/{c.waiterSlotsNeeded}
-            {' · '}Giao hàng {Math.min(c.shipperSlotsFilled, c.shipperSlotsNeeded)}/{c.shipperSlotsNeeded}
+            {/* Phục vụ + giao hàng đã gộp thành một vai vận hành */}
+            {' · '}Giao hàng &amp; phục vụ{' '}
+            {Math.min(c.shipperSlotsFilled + c.waiterSlotsFilled, c.shipperSlotsNeeded + c.waiterSlotsNeeded)}/
+            {c.shipperSlotsNeeded + c.waiterSlotsNeeded}
           </p>
           {/* Lối vào tìm/mời TNV. Bảng định biên (nơi có nút "Ai rảnh khung này?") nằm
               trong trang Quản lý nên rất khó tự tìm ra — chỉ đường thẳng từ đây khi ca
