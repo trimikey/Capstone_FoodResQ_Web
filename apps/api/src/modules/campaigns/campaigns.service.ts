@@ -3313,8 +3313,14 @@ export class CampaignsService {
     }
 
     // Chỉ cho ứng tuyển đúng chuyên môn đã đăng ký (chef/waiter/shipper)
-    const roleVN = ROLE_VN[dto.role] ?? dto.role;
-    const hasRole = volunteer.specializations.some((s) => s.specialization === dto.role);
+    // Phục vụ và giao hàng đã gộp thành MỘT vai vận hành ("Giao hàng & phục vụ"): có
+    // chuyên môn nào trong hai thì nhận được ca của vai kia.
+    const isOps = (r: string | null | undefined) => !!r && (OPS_ROLES as readonly string[]).includes(r);
+    let role = dto.role;
+    const roleVN = isOps(role) ? 'Giao hàng & phục vụ' : ROLE_VN[role] ?? role;
+    const hasRole = volunteer.specializations.some(
+      (s) => s.specialization === role || (isOps(role) && isOps(s.specialization)),
+    );
     if (!hasRole) {
       throw new BadRequestException(
         `Bạn chưa đăng ký chuyên môn "${roleVN}". Chỉ ứng tuyển được vai trò đúng chuyên môn của mình.`,
@@ -3367,8 +3373,13 @@ export class CampaignsService {
       if (!shift || shift.campaignId !== campaignId) {
         throw new BadRequestException('Ca trực không thuộc chiến dịch này.');
       }
-      if (shift.role && shift.role !== dto.role) {
-        throw new BadRequestException(`Ca "${shift.label}" không phù hợp với vai trò ${roleVN}.`);
+      if (shift.role && shift.role !== role) {
+        if (isOps(shift.role) && isOps(role)) {
+          // Ghi đúng vai của CA để đếm chỗ/duyệt theo cùng một vai.
+          role = shift.role as typeof role;
+        } else {
+          throw new BadRequestException(`Ca "${shift.label}" không phù hợp với vai trò ${roleVN}.`);
+        }
       }
 
       if (dto.workDate) {
@@ -3427,7 +3438,7 @@ export class CampaignsService {
       where: {
         campaignId,
         volunteerId: volunteer.id,
-        role: dto.role,
+        role,
         // Chiến dịch không chia ca (shiftId = null) thì vẫn giữ quy tắc cũ: 1 lần/vai trò.
         shiftId: shiftId ?? null,
         // Cùng ca nhưng KHÁC NGÀY là hai suất trực khác nhau, không phải đăng ký trùng.
@@ -3468,7 +3479,7 @@ export class CampaignsService {
 
     await this.prisma.campaignVolunteerAssignment.create({
       data: {
-        campaignId, volunteerId: volunteer.id, shiftId, workDate, role: dto.role,
+        campaignId, volunteerId: volunteer.id, shiftId, workDate, role,
         status: 'pending', confirmationStatus: 'pending',
       },
     });

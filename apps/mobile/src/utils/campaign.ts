@@ -177,7 +177,12 @@ export interface SlotProgress {
 export function slotProgress(c: Campaign): SlotProgress[] {
   return [
     { role: 'chef' as const, label: 'Đầu bếp', filled: c.chefSlotsFilled, needed: c.chefSlotsNeeded },
-    { role: 'waiter' as const, label: 'Phục vụ', filled: c.waiterSlotsFilled, needed: c.waiterSlotsNeeded },
-    { role: 'shipper' as const, label: 'Giao nhận / phục vụ', filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
+    // Phục vụ + giao hàng đã gộp thành một vai vận hành — cộng dồn chỗ của cả hai.
+    {
+      role: 'shipper' as const,
+      label: 'Giao hàng & phục vụ',
+      filled: c.shipperSlotsFilled + c.waiterSlotsFilled,
+      needed: c.shipperSlotsNeeded + c.waiterSlotsNeeded,
+    },
   ].filter((s) => s.needed > 0);
 }

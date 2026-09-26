@@ -188,6 +188,12 @@ export default function VolunteerCampaignDetailScreen() {
   const verifiedSpecs = new Set(
     (volunteerProfile?.specializations ?? []).filter((s) => s.isVerified).map((s) => s.specialization)
   );
+  // Phục vụ và giao hàng là MỘT vai vận hành: có chuyên môn nào trong hai thì nhận
+  // được ca của cả hai (BE cũng coi như nhau).
+  if (verifiedSpecs.has('waiter') || verifiedSpecs.has('shipper')) {
+    verifiedSpecs.add('waiter');
+    verifiedSpecs.add('shipper');
+  }
   // Role-level apply chỉ là assignment tổng không gắn ca. Shift-level apply phải xét theo shiftId.
   const appliedRoles = new Set(myCampaignTasks.filter((t) => !t.shiftId).map((t) => t.role));
   const findShiftApplication = (shiftId: string) => myCampaignTasks.find((task) => (

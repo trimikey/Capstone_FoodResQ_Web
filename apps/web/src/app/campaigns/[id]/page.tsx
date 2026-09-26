@@ -44,9 +44,18 @@ function formatDayLabel(date: string): string {
 
 const ROLE_META: Record<string, { label: string; icon: string }> = {
   chef: { label: 'Đầu bếp', icon: 'skillet' },
-  waiter: { label: 'Phục vụ', icon: 'room_service' },
-  shipper: { label: 'Giao hàng', icon: 'local_shipping' },
+  waiter: { label: 'Giao hàng & phục vụ', icon: 'local_shipping' },
+  shipper: { label: 'Giao hàng & phục vụ', icon: 'local_shipping' },
 };
+
+/**
+ * Phục vụ và giao hàng đã gộp thành MỘT vai vận hành ("Giao hàng & phục vụ") — ca của
+ * chiến dịch chỉ còn vai `shipper`. TNV có chuyên môn phục vụ vẫn nhận được ca đó
+ * (BE coi hai chuyên môn là một), nên trên giao diện quy `waiter` về `shipper`.
+ */
+function toUiRole(role: string): AssignmentRole {
+  return (role === 'waiter' ? 'shipper' : role) as AssignmentRole;
+}
 
 const PROOF_KIND: Record<string, string> = {
   ingredient: 'Nguyên liệu',
@@ -77,16 +86,9 @@ const ROLE_CARDS: Array<{
     iconCls: 'cm-role-icon--chef',
   },
   {
-    key: AssignmentRole.WAITER,
-    title: 'Phục vụ',
-    sub: 'Hỗ trợ phân phát suất ăn, sắp xếp khu vực',
-    icon: 'room_service',
-    iconCls: 'cm-role-icon--waiter',
-  },
-  {
     key: AssignmentRole.SHIPPER,
-    title: 'Giao hàng',
-    sub: 'Vận chuyển suất ăn đến người nhận cuối',
+    title: 'Giao hàng & phục vụ',
+    sub: 'Đi lấy nguyên liệu, chia suất và phát suất ăn tới người nhận',
     icon: 'local_shipping',
     iconCls: 'cm-role-icon--shipper',
   },
@@ -153,7 +155,11 @@ export default function CampaignPublicDetailPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const myRoles = (vol?.specializations ?? []).map((s: { specialization: string }) => s.specialization);
+  const myRoles = [
+    ...new Set(
+      (vol?.specializations ?? []).map((s: { specialization: string }) => toUiRole(s.specialization)),
+    ),
+  ];
 
   // TNV đã khai chuyên môn lúc đăng ký tài khoản, và backend chỉ nhận đúng chuyên môn đó.
   // Chỉ có MỘT chuyên môn thì bắt chọn lại là thao tác thừa — suy ra luôn.
@@ -167,7 +173,7 @@ export default function CampaignPublicDetailPage() {
   // Lọc trực tiếp, không useMemo: danh sách ca chỉ vài phần tử, và optional chaining
   // trong mảng deps làm React Compiler bỏ qua memo hoá cả component.
   const roleShiftsAll = (c?.shifts ?? []).filter(
-    (s) => !effectiveRole || s.role === null || s.role === effectiveRole,
+    (s) => !effectiveRole || s.role === null || toUiRole(s.role) === effectiveRole,
   );
   // Lọc theo khung giờ TNV đã khai rảnh. Chỉ là bộ lọc hiển thị — tắt đi là thấy
   // lại toàn bộ ca, và việc đăng ký / tổ chức duyệt không hề thay đổi.
@@ -217,20 +223,26 @@ export default function CampaignPublicDetailPage() {
     && !recruitmentEnded
     && ['scheduled', 'open', 'staffed'].includes(c.recruitmentStatus);
 
+  // Vai vận hành cộng dồn cả suất phục vụ lẫn giao hàng (dữ liệu cũ còn tách hai vai).
   const slots = c
-    ? (['chef', 'waiter', 'shipper'] as AssignmentRole[]).map((role) => ({
-        role,
-        needed: c[`${role}SlotsNeeded` as const],
-        filled: c[`${role}SlotsFilled` as const],
-      }))
+    ? [
+        { role: 'chef' as AssignmentRole, needed: c.chefSlotsNeeded, filled: c.chefSlotsFilled },
+        {
+          role: 'shipper' as AssignmentRole,
+          needed: c.shipperSlotsNeeded + c.waiterSlotsNeeded,
+          filled: c.shipperSlotsFilled + c.waiterSlotsFilled,
+        },
+      ]
     : [];
 
   const slotInfo = useMemo(() => {
     if (!c) return null;
     return {
       chef: { filled: c.chefSlotsFilled, needed: c.chefSlotsNeeded },
-      waiter: { filled: c.waiterSlotsFilled, needed: c.waiterSlotsNeeded },
-      shipper: { filled: c.shipperSlotsFilled, needed: c.shipperSlotsNeeded },
+      shipper: {
+        filled: c.shipperSlotsFilled + c.waiterSlotsFilled,
+        needed: c.shipperSlotsNeeded + c.waiterSlotsNeeded,
+      },
     };
   }, [c]);
 
@@ -1327,7 +1339,7 @@ function LogisticsTab({
             <span className="material-symbols-outlined text-emerald-600 text-[20px]">groups</span>
             Nhu cầu nhân lực
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {slots
               .filter((s) => s.needed > 0)
               .map((s) => {
