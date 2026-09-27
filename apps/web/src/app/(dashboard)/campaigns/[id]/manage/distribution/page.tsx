@@ -9,7 +9,8 @@ import CampaignPlaybook, {
 } from '@/components/campaigns/CampaignPlaybook';
 import { mediaUrl } from '@/lib/utils';
 import CampaignIncidentsPanel from '@/components/campaigns/CampaignIncidentsPanel';
-import type { CampaignManageParticipant } from '@/hooks/useCampaigns';
+import { useCampaignIncidents, type CampaignIncident, type CampaignManageParticipant } from '@/hooks/useCampaigns';
+import AssignDistributionButton from '@/components/campaigns/AssignDistributionButton';
 
 type FilterKey = 'all' | 'today' | 'pending' | 'done';
 
@@ -22,6 +23,15 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 export default function DistributionPage() {
   const { campaign: c } = useManageContext();
+  // Sự cố còn mở theo đợt phát — để bảng đợt phát nói đúng tình trạng thay vì "Đang chờ".
+  const { data: incidents } = useCampaignIncidents(c.id);
+  const openIncidentByRef = new Map<string, CampaignIncident>();
+  for (const inc of incidents ?? []) {
+    if (inc.context !== 'distribution' || inc.status !== 'open' || !inc.referenceId) continue;
+    const prev = openIncidentByRef.get(inc.referenceId);
+    // Ưu tiên sự cố đang chặn việc (shipper không đi tiếp được).
+    if (!prev || (prev.canContinue && !inc.canContinue)) openIncidentByRef.set(inc.referenceId, inc);
+  }
 
   // SHIPPER và PHỤC VỤ đã duyệt đều được phân công đi phát: đợt phát tại chỗ là việc
   // của phục vụ, chỉ cho shipper thì phục vụ không có việc nào. Đầu bếp không nằm ở đây
@@ -310,7 +320,19 @@ export default function DistributionPage() {
                   {filteredList.map((d) => {
                     // Trạng thái theo `completedAt` — trước đây suy từ "có feedback chưa",
                     // nên đợt phát xong mà chưa ai góp ý vẫn bị coi là đang chờ.
-                    const distStatus = d.completedAt ? 'done' : 'pending';
+                    // Shipper trả việc (sự cố) → danh sách người đi phát rỗng dù tên người
+                    // đứng tên cũ vẫn còn; hiển thị theo danh sách thật, không theo tên cũ.
+                    const unassigned = !d.completedAt && (d.assignees?.length ?? 0) === 0;
+                    const incident = openIncidentByRef.get(d.id);
+                    const statusMeta = d.completedAt
+                      ? { label: 'Đã xong', cls: 'cm-dist-status--done' }
+                      : incident && !incident.canContinue
+                        ? { label: 'Cần đổi shipper', cls: '!bg-rose-600 !text-white' }
+                        : unassigned
+                          ? { label: 'Chưa có người', cls: '!bg-rose-100 !text-rose-700' }
+                          : incident
+                            ? { label: 'Có sự cố', cls: '!bg-amber-100 !text-amber-800' }
+                            : { label: 'Đang chờ', cls: 'cm-dist-status--pending' };
                     const initials = d.servedBy.split(' ').map((w: string) => w.charAt(0)).slice(0, 2).join('').toUpperCase();
                     return (
                       <tr key={d.id}>
@@ -395,10 +417,22 @@ export default function DistributionPage() {
                         </td>
                         <td>{d.completedAt ? (d.actualPeopleServed ?? d.peopleServed) : d.peopleServed}</td>
                         <td>
-                          <div className="flex items-center gap-2">
-                            <span className="cm-dist-table-avatar">{initials}</span>
-                            <span className="text-xs font-bold text-neutral-700">{d.servedBy}</span>
-                          </div>
+                          {unassigned ? (
+                            <>
+                              <p className="text-xs font-bold text-rose-700">Chưa có người phụ trách</p>
+                              <p className="text-[11px] text-neutral-500">{d.servedBy} đã trả việc</p>
+                              <AssignDistributionButton
+                                campaignId={c.id}
+                                distributionId={d.id}
+                                candidates={approvedDistributors.filter((v) => v.fullName !== d.servedBy)}
+                              />
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="cm-dist-table-avatar">{initials}</span>
+                              <span className="text-xs font-bold text-neutral-700">{d.servedBy}</span>
+                            </div>
+                          )}
                           {/* Đợt phân công nhiều shipper: liệt kê những người còn lại */}
                           {d.assignees?.length > 1 && (
                             <p className="mt-1 pl-8 text-[11px] text-neutral-500">
@@ -410,8 +444,8 @@ export default function DistributionPage() {
                         <td>
                           {/* whitespace-nowrap: chip 2 chữ "Đang chờ" bị ngắt dòng làm
                               lệch chiều cao cả hàng. */}
-                          <span className={`cm-dist-status whitespace-nowrap ${distStatus === 'done' ? 'cm-dist-status--done' : 'cm-dist-status--pending'}`}>
-                            {distStatus === 'done' ? 'Đã xong' : 'Đang chờ'}
+                          <span className={`cm-dist-status whitespace-nowrap ${statusMeta.cls}`}>
+                            {statusMeta.label}
                           </span>
                           {d.photoUrl ? (
                             <a

@@ -2361,3 +2361,18 @@ export function useResolveCampaignIncident() {
     },
   });
 }
+
+/** Tổ chức phân công (thêm) người đi phát cho đợt đang bỏ trống — `ids` là volunteer id. */
+export function useAssignDistribution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; distributionId: string; ids: string[] }) =>
+      (await api.patch(`/campaigns/distributions/${p.distributionId}/assignees`, { ids: p.ids })).data.data as {
+        assignedTo: string[];
+      },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+    },
+  });
+}

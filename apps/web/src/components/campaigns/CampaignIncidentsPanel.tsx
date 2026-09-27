@@ -202,7 +202,7 @@ function IncidentRow({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={500}
-              placeholder="Đã xử lý thế nào? (vd: đổi shipper khác đi lấy)"
+              placeholder={blocking ? 'Vì sao đóng mà không đổi người? (vd: đã huỷ đợt, tự xử lý)' : 'Đã xử lý thế nào?'}
               className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs outline-none focus:border-emerald-500"
             />
             <button
@@ -217,6 +217,17 @@ function IncidentRow({
               Huỷ
             </button>
           </div>
+        ) : blocking ? (
+          // Sự cố shipper trả việc: đóng mà không đổi người sẽ bỏ việc đó KHÔNG ai làm —
+          // để nút phụ, việc chính là "Đổi shipper" ở trên.
+          <button
+            type="button"
+            onClick={() => setResolving(true)}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-neutral-500 underline-offset-2 hover:underline"
+            title="Việc vẫn chưa có người làm — chỉ đóng khi đã huỷ hoặc xử lý cách khác"
+          >
+            Đóng mà không đổi người
+          </button>
         ) : (
           <button
             type="button"

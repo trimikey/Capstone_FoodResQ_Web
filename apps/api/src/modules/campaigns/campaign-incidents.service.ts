@@ -259,45 +259,7 @@ export class CampaignIncidentsService {
       });
       names = rows.map((r) => r.volunteer.user.fullName);
     } else {
-      const dist = await this.prisma.mealDistribution.findFirst({
-        where: { id: incident.referenceId, campaignId: incident.campaignId },
-        select: { assigneeIds: true, completedAt: true, roundLabel: true, servedByVolunteerId: true },
-      });
-      if (!dist) throw new NotFoundException('Không tìm thấy đợt phát.');
-      if (dist.completedAt) throw new BadRequestException('Đợt phát đã chốt xong — không cần đổi người.');
-      const valid = await this.prisma.campaignVolunteerAssignment.findMany({
-        where: {
-          campaignId: incident.campaignId,
-          volunteerId: { in: uniqueIds },
-          role: { in: [...OPS_ROLES] },
-          status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
-        },
-        select: { volunteerId: true, volunteer: { select: { userId: true, user: { select: { fullName: true } } } } },
-      });
-      const byId = new Map(valid.map((v) => [v.volunteerId, v]));
-      const missing = uniqueIds.filter((id) => !byId.has(id));
-      if (missing.length > 0) {
-        throw new BadRequestException('Người thay phải là TNV giao hàng & phục vụ đã được duyệt của chiến dịch này.');
-      }
-      const current = Array.isArray(dist.assigneeIds) ? (dist.assigneeIds as string[]) : [];
-      const next = [...new Set([...current, ...uniqueIds])];
-      await this.prisma.mealDistribution.update({
-        where: { id: incident.referenceId },
-        data: {
-          assigneeIds: next,
-          // Người đứng tên chính đã bị gỡ → chuyển cho người thay đầu tiên.
-          ...(current.includes(dist.servedByVolunteerId) ? {} : { servedByVolunteerId: uniqueIds[0] }),
-        },
-      });
-      names = uniqueIds.map((id) => byId.get(id)!.volunteer.user.fullName);
-      for (const id of uniqueIds) {
-        void this.notifications.notify(byId.get(id)!.volunteer.userId, {
-          type: 'campaign',
-          title: 'Bạn được phân công đi phát thay',
-          body: `Tổ chức giao bạn đợt "${dist.roundLabel ?? 'đợt phát'}" của chiến dịch "${incident.campaign.title}" thay cho shipper gặp sự cố. Vào "Việc của tôi" để xem điểm phát.`,
-          data: { campaignId: incident.campaignId, distributionId: incident.referenceId },
-        });
-      }
+      names = await this.assignDistribution(incident.campaignId, incident.referenceId, uniqueIds);
     }
 
     await this.prisma.campaignIncident.update({
@@ -310,6 +272,81 @@ export class CampaignIncidentsService {
       },
     });
     return { id: incidentId, status: 'resolved', actionTaken: 'reassigned', reassignedTo: names };
+  }
+
+  /**
+   * Tổ chức phân công (thêm) người đi phát cho một đợt — dùng khi đợt bị bỏ trống vì
+   * shipper trả việc, kể cả khi sự cố đã bị đóng mà chưa đổi người. Khép luôn các sự cố
+   * "không thể tiếp tục" còn mở của đợt này.
+   */
+  async reassignDistributionByOwner(distributionId: string, userId: string, ids: string[]) {
+    const dist = await this.prisma.mealDistribution.findUnique({
+      where: { id: distributionId },
+      select: { campaignId: true, campaign: { select: { charityReceiver: { select: { userId: true } } } } },
+    });
+    if (!dist) throw new NotFoundException('Không tìm thấy đợt phát.');
+    if (dist.campaign.charityReceiver.userId !== userId) {
+      throw new ForbiddenException('Chỉ tổ chức chủ chiến dịch mới phân công được.');
+    }
+    const names = await this.assignDistribution(dist.campaignId, distributionId, [...new Set(ids)]);
+    await this.prisma.campaignIncident.updateMany({
+      where: { referenceId: distributionId, context: 'distribution', status: 'open', canContinue: false },
+      data: {
+        status: 'resolved',
+        resolvedAt: new Date(),
+        actionTaken: 'reassigned',
+        resolvedNote: `Đã đổi sang ${names.join(', ')}`,
+      },
+    });
+    return { id: distributionId, assignedTo: names };
+  }
+
+  /** Thêm người đi phát cho đợt (TNV giao hàng & phục vụ đã duyệt), báo người mới. */
+  private async assignDistribution(campaignId: string, distributionId: string, uniqueIds: string[]) {
+    const dist = await this.prisma.mealDistribution.findFirst({
+      where: { id: distributionId, campaignId },
+      select: {
+        assigneeIds: true,
+        completedAt: true,
+        roundLabel: true,
+        servedByVolunteerId: true,
+        campaign: { select: { title: true } },
+      },
+    });
+    if (!dist) throw new NotFoundException('Không tìm thấy đợt phát.');
+    if (dist.completedAt) throw new BadRequestException('Đợt phát đã chốt xong — không cần đổi người.');
+    const valid = await this.prisma.campaignVolunteerAssignment.findMany({
+      where: {
+        campaignId,
+        volunteerId: { in: uniqueIds },
+        role: { in: [...OPS_ROLES] },
+        status: { in: ['assigned', 'checked_in', 'in_progress', 'completed'] },
+      },
+      select: { volunteerId: true, volunteer: { select: { userId: true, user: { select: { fullName: true } } } } },
+    });
+    const byId = new Map(valid.map((v) => [v.volunteerId, v]));
+    const missing = uniqueIds.filter((id) => !byId.has(id));
+    if (missing.length > 0) {
+      throw new BadRequestException('Người thay phải là TNV giao hàng & phục vụ đã được duyệt của chiến dịch này.');
+    }
+    const current = Array.isArray(dist.assigneeIds) ? (dist.assigneeIds as string[]) : [];
+    await this.prisma.mealDistribution.update({
+      where: { id: distributionId },
+      data: {
+        assigneeIds: [...new Set([...current, ...uniqueIds])],
+        // Người đứng tên chính đã bị gỡ (không còn trong danh sách) → chuyển cho người mới.
+        ...(current.includes(dist.servedByVolunteerId) ? {} : { servedByVolunteerId: uniqueIds[0] }),
+      },
+    });
+    for (const id of uniqueIds) {
+      void this.notifications.notify(byId.get(id)!.volunteer.userId, {
+        type: 'campaign',
+        title: 'Bạn được phân công đi phát thay',
+        body: `Tổ chức giao bạn đợt "${dist.roundLabel ?? 'đợt phát'}" của chiến dịch "${dist.campaign.title}". Vào "Việc của tôi" để xem điểm phát.`,
+        data: { campaignId, distributionId },
+      });
+    }
+    return uniqueIds.map((id) => byId.get(id)!.volunteer.user.fullName);
   }
 
   /** Danh sách sự cố — tổ chức chủ chiến dịch thấy hết, TNV chỉ thấy sự cố của mình. */

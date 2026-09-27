@@ -66,6 +66,18 @@ export class CampaignIncidentsController {
     return this.incidents.reassign(incidentId, user.id, dto.ids);
   }
 
+  @Patch('distributions/:distributionId/assignees')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức phân công (thêm) người đi phát cho đợt đang bỏ trống' })
+  assignDistribution(
+    @CurrentUser() user: User,
+    @Param('distributionId', ParseUUIDPipe) distributionId: string,
+    @Body() dto: ReassignCampaignIncidentDto,
+  ) {
+    return this.incidents.reassignDistributionByOwner(distributionId, user.id, dto.ids);
+  }
+
   @Patch('incidents/:incidentId/resolve')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)
