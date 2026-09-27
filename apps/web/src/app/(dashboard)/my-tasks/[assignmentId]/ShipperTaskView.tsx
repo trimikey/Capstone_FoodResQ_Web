@@ -9,6 +9,7 @@ import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
 import { errMsg } from '@/lib/utils';
+import ReportIncidentButton from '@/components/campaigns/ReportIncidentButton';
 
 /**
  * Màn "Vào nhiệm vụ" của SHIPPER.
@@ -315,15 +316,23 @@ export default function ShipperTaskView({ detail, onCheckedIn }: Props) {
             lockedHint="Điểm danh tại bếp trước đã"
             action={
               !d.completedAt ? (
-                <button
-                  type="button"
-                  onClick={() => setClosing(d)}
-                  disabled={!checkedIn}
-                  title={checkedIn ? undefined : 'Cần điểm danh tại bếp trước'}
-                  className="rounded-xl bg-[#236c2a] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a4f1f] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500"
-                >
-                  Phát xong — nhập số liệu
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ReportIncidentButton
+                    campaignId={campaign.id}
+                    context="distribution"
+                    referenceId={d.id}
+                    subject={d.roundLabel ?? 'Đợt phát'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setClosing(d)}
+                    disabled={!checkedIn}
+                    title={checkedIn ? undefined : 'Cần điểm danh tại bếp trước'}
+                    className="rounded-xl bg-[#236c2a] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a4f1f] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500"
+                  >
+                    Phát xong — nhập số liệu
+                  </button>
+                </div>
               ) : null
             }
           >

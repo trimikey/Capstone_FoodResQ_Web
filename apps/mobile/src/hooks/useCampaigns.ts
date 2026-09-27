@@ -1334,3 +1334,38 @@ export function useDismissShiftInvite() {
 export function qtyUnit(x: { quantityUnit?: string | null } | null | undefined): string {
   return x?.quantityUnit?.trim() || 'kg';
 }
+
+// ─── Sự cố của shipper trong chiến dịch (lấy nguyên liệu / phát suất ăn) ─────
+
+export type IncidentContext = 'pickup' | 'distribution';
+
+/** Shipper báo sự cố — chỉ luồng CHIẾN DỊCH, không dùng cho giao hàng đơn lẻ. */
+export function useReportCampaignIncident() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      campaignId: string;
+      context: IncidentContext;
+      referenceId?: string;
+      reasonCode: string;
+      detail?: string;
+      photo?: CapturedImage | null;
+    }) => {
+      const form = new FormData();
+      form.append('context', p.context);
+      if (p.referenceId) form.append('referenceId', p.referenceId);
+      form.append('reasonCode', p.reasonCode);
+      if (p.detail?.trim()) form.append('detail', p.detail.trim());
+      if (p.photo) form.append('photo', p.photo as unknown as Blob);
+      const res = await apiClient.post<ApiResponse<{ id: string }>>(
+        endpoints.campaigns.reportIncident(p.campaignId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      return res.data.data;
+    },
+    onSuccess: (_d, p) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+    },
+  });
+}

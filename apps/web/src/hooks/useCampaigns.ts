@@ -2259,3 +2259,75 @@ export interface CookedServingsSummary {
     readyAt: string | null;
   }>;
 }
+
+// ─── Sự cố của shipper trong chiến dịch (lấy nguyên liệu / phát suất ăn) ─────
+
+export type IncidentContext = 'pickup' | 'distribution';
+
+export interface CampaignIncident {
+  id: string;
+  context: IncidentContext;
+  referenceId: string | null;
+  reasonCode: string;
+  reasonLabel: string;
+  detail: string | null;
+  photoUrl: string | null;
+  status: 'open' | 'resolved';
+  resolvedAt: string | null;
+  resolvedNote: string | null;
+  createdAt: string;
+  reporterName: string;
+  reporterPhone: string | null;
+}
+
+/** Sự cố của chiến dịch — tổ chức thấy hết, TNV thấy sự cố của mình. */
+export function useCampaignIncidents(campaignId: string | null) {
+  return useQuery({
+    queryKey: ['campaigns', 'incidents', campaignId],
+    enabled: !!campaignId,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    queryFn: async () =>
+      (await api.get(`/campaigns/${campaignId}/incidents`)).data.data as CampaignIncident[],
+  });
+}
+
+export function useReportCampaignIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      campaignId: string;
+      context: IncidentContext;
+      referenceId?: string;
+      reasonCode: string;
+      detail?: string;
+      photo?: File | null;
+    }) => {
+      const form = new FormData();
+      form.append('context', p.context);
+      if (p.referenceId) form.append('referenceId', p.referenceId);
+      form.append('reasonCode', p.reasonCode);
+      if (p.detail?.trim()) form.append('detail', p.detail.trim());
+      if (p.photo) form.append('photo', p.photo);
+      return (
+        await api.post(`/campaigns/${p.campaignId}/incidents`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      ).data.data as CampaignIncident;
+    },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+    },
+  });
+}
+
+export function useResolveCampaignIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { incidentId: string; campaignId: string; note?: string }) =>
+      (await api.patch(`/campaigns/incidents/${p.incidentId}/resolve`, { note: p.note })).data.data,
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+    },
+  });
+}

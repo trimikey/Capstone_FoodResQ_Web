@@ -23,6 +23,7 @@ import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
 import { BackButton } from '@/components/ui/BackButton';
 import { NotificationBell } from '@/components/NotificationBell';
+import { ReportIncidentButton } from '@/components/ReportIncidentButton';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage, type CapturedImage } from '@/services/faceCapture';
 import { getCurrentCoords } from '@/services/geolocation';
@@ -466,7 +467,7 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
   const [receivedKg, setReceivedKg] = useState('');
   const [note, setNote] = useState('');
   /** Ảnh chốt đợt phát theo từng điểm — mỗi điểm cần ít nhất 1 ảnh. */
-  const [distributionPhotos, setDistributionPhotos] = useState<Array<{ photo: CapturedImage; pointIndex: number }>>([]);
+  const [distributionPhotos, setDistributionPhotos] = useState<{ photo: CapturedImage; pointIndex: number }[]>([]);
   const [pickupPhoto, setPickupPhoto] = useState<CapturedImage | null>(null);
 
   const dishes = detail.dishes ?? [];
@@ -703,6 +704,14 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                   {order.lat != null && order.lng != null ? (
                     <Button compact icon="directions" onPress={() => openDirections(order.lat, order.lng)}>Đi NCC</Button>
                   ) : null}
+                  {!done ? (
+                    <ReportIncidentButton
+                      campaignId={detail.campaign.id}
+                      context="pickup"
+                      referenceId={order.id}
+                      subject={[order.ingredientName, order.providerName].filter(Boolean).join(' · ')}
+                    />
+                  ) : null}
                   <Button
                     mode="contained"
                     icon="camera"
@@ -757,6 +766,12 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
             </View>
           ) : (
             <View style={styles.distributionActions}>
+              <ReportIncidentButton
+                campaignId={detail.campaign.id}
+                context="distribution"
+                referenceId={distribution.id}
+                subject={distribution.roundLabel || 'Đợt phân phát'}
+              />
               <Button
                 mode="contained"
                 icon="camera"

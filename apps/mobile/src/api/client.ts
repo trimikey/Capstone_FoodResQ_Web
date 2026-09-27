@@ -424,6 +424,8 @@ export const endpoints = {
       `/campaigns/distributions/${distributionId}/complete`,
     myPickupOrders: '/campaigns/my-pickup-orders',
     confirmPickupOrder: (requestId: string) => `/campaigns/pickup-orders/${requestId}/confirm`,
+    // Sự cố shipper báo khi đi lấy nguyên liệu / đi phát suất ăn (chỉ luồng chiến dịch)
+    reportIncident: (campaignId: string) => `/campaigns/${campaignId}/incidents`,
   },
   recipes: {
     // Thư viện công thức nấu ăn (đầu bếp/chef đóng góp). List + detail công khai.

@@ -8,6 +8,7 @@ import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
 import { ROLE_META } from './RoleBadge';
 import { TASK_NEXT } from './CampaignTaskAction';
+import ReportIncidentButton from '@/components/campaigns/ReportIncidentButton';
 
 const TASK_STATUS_META: Record<string, { label: string; chip: string }> = {
   pending: { label: 'Chờ duyệt', chip: 'cm-chip cm-chip--honey' },
@@ -308,6 +309,17 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
                   </p>
                 )}
                 {d.note && <p className="mt-1 text-[11px] text-neutral-500">Ghi chú: {d.note}</p>}
+                {!d.completedAt && (
+                  <div className="mt-2">
+                    <ReportIncidentButton
+                      compact
+                      campaignId={t.campaign.id}
+                      context="distribution"
+                      referenceId={d.id}
+                      subject={d.roundLabel ?? 'Đợt phát'}
+                    />
+                  </div>
+                )}
                 {!d.completedAt && (
                   // Chốt đợt cần ảnh bằng chứng tại TỪNG điểm phát → mở modal chụp ảnh,
                   // không cho bấm chốt suông như trước.

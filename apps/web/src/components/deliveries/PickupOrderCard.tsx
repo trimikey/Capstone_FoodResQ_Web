@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { qtyUnit, type MyPickupOrder } from '@/hooks/useCampaigns';
 import { formatVnDate } from '@/lib/vn-date';
 import { mediaUrl } from '@/lib/utils';
+import ReportIncidentButton from '@/components/campaigns/ReportIncidentButton';
 
 /**
  * Một ĐƠN LẤY NGUYÊN LIỆU của chiến dịch, hiển thị trong Trung tâm giao hàng.
@@ -120,6 +121,14 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
             </span>
             {open ? 'Thu gọn' : 'Chi tiết'}
           </button>
+          {!done && !handledByDelivery && (
+            <ReportIncidentButton
+              campaignId={order.campaignId}
+              context="pickup"
+              referenceId={order.id}
+              subject={[order.ingredientName, order.providerName].filter(Boolean).join(' · ')}
+            />
+          )}
           {!done && !handledByDelivery && (
             <button
               type="button"

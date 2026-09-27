@@ -409,6 +409,7 @@ model VolunteerProfile {
   scannedMealHandoffs    MealHandoff[]
   bulkRuns               BulkRun[]
   dishStepsCompleted     CampaignDishStep[]
+  campaignIncidents      CampaignIncident[]
   dishStepsQcFailed      CampaignDishStep[]             @relation("CampaignDishStep_QCFailure")
 
   @@index([userId])
@@ -736,6 +737,7 @@ model KitchenCampaign {
   mealDistributions MealDistribution[]
   shifts            CampaignShift[]
   providerRequests  CampaignProviderRequest[]
+  incidents         CampaignIncident[]
 
   @@index([charityReceiverId])
   @@index([scheduledDate, status])
@@ -1589,4 +1591,32 @@ model BeneficiaryFeedback {
   handoff      MealHandoff @relation(fields: [handoffId], references: [id], onDelete: Cascade)
 
   @@map("beneficiary_feedback")
+}
+
+/// Sự cố shipper gặp khi làm việc vận hành CHIẾN DỊCH (đi lấy nguyên liệu / đi phát
+/// suất ăn) — tách khỏi luồng giao hàng đơn lẻ (deliveries). Tổ chức được báo ngay và
+/// đánh dấu đã xử lý.
+model CampaignIncident {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  campaignId   String    @map("campaign_id") @db.Uuid
+  volunteerId  String    @map("volunteer_id") @db.Uuid
+  /// 'pickup' = đi lấy nguyên liệu tại NCC, 'distribution' = đi phát suất ăn.
+  context      String    @db.VarChar(20)
+  /// campaign_provider_requests.id (pickup) hoặc meal_distributions.id (distribution).
+  referenceId  String?   @map("reference_id") @db.Uuid
+  /// Mã lý do chọn sẵn (vehicle, traffic, accident, …) hoặc 'other' khi nhập tay.
+  reasonCode   String    @map("reason_code") @db.VarChar(40)
+  detail       String?
+  photoUrl     String?   @map("photo_url")
+  /// 'open' | 'resolved'
+  status       String    @default("open") @db.VarChar(20)
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedNote String?   @map("resolved_note")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  campaign  KitchenCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  volunteer VolunteerProfile @relation(fields: [volunteerId], references: [id])
+
+  @@index([campaignId, createdAt])
+  @@map("campaign_incidents")
 }

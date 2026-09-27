@@ -8,6 +8,7 @@ import CampaignPlaybook, {
   type CampaignPhaseKey,
 } from '@/components/campaigns/CampaignPlaybook';
 import { mediaUrl } from '@/lib/utils';
+import CampaignIncidentsPanel from '@/components/campaigns/CampaignIncidentsPanel';
 
 type FilterKey = 'all' | 'today' | 'pending' | 'done';
 
@@ -182,6 +183,9 @@ export default function DistributionPage() {
     <>
     <div className="cm-manage-2col">
       <div className="cm-manage-2col-main space-y-4">
+        {/* Sự cố shipper báo khi đi phát suất ăn */}
+        <CampaignIncidentsPanel campaignId={c.id} context="distribution" />
+
         {/* Gợi ý quy trình tổ chức — collapsible dropdown */}
         <section className="cm-manage-card">
           <CampaignPlaybook variant="inline" highlightKey={playbookHighlight} />

@@ -14,6 +14,7 @@ import {
 import { useManageContext } from '../../../_components/ManageShell';
 import { formatVnDate } from '@/lib/vn-date';
 import { errMsg } from '@/lib/utils';
+import CampaignIncidentsPanel from '@/components/campaigns/CampaignIncidentsPanel';
 
 const TRANSPORT_LABEL: Record<string, string> = {
   pending: 'Chờ shipper chiến dịch đi nhận',
@@ -84,6 +85,9 @@ export default function LogisticsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Sự cố shipper báo khi đi lấy nguyên liệu — xử lý trước khi xem từng đơn */}
+      <CampaignIncidentsPanel campaignId={c.id} context="pickup" />
+
       {/* ── Đơn nguyên liệu từ NCC (có vận chuyển) ── */}
       <section className="cm-manage-card">
         <h2 className="cm-manage-card-title !mb-1">
