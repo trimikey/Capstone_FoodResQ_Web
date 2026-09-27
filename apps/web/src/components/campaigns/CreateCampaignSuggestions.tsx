@@ -7,7 +7,7 @@ import {
   MENU_TEMPLATES,
   SCHEDULE_TEMPLATES,
   buildScaledTemplates,
-  buildMatchedMenuTemplates,
+  buildMenuSuggestions,
   getServingsTier,
   requiredIngredientsForDishes,
   type ShiftTemplate,
@@ -634,12 +634,9 @@ export function MenuSuggestions({
 
   const matched = useMemo(
     () => {
-      const suppliedMatches = buildMatchedMenuTemplates(
-        supplies,
-        expectedServings,
-        currentMenuCount,
-      );
-      if (supplies.length > 0) return suppliedMatches;
+      if (supplies.length > 0) {
+        return buildMenuSuggestions(supplies, expectedServings, currentMenuCount);
+      }
 
       const shareIfAdded = Math.max(
         1,
@@ -684,7 +681,7 @@ export function MenuSuggestions({
           }
           subtitle={
             supplies.length > 0
-              ? `Dựa trên ${supplies.length} vật phẩm đã nhập — ${expectedServings} suất sẽ được chia đều cho các món.`
+              ? `Món đủ nguyên liệu (${supplies.length} vật phẩm đã nhập) xếp trước; món còn thiếu ghi rõ cần thêm gì — thêm món thì nguyên liệu được bổ sung theo.`
               : 'Chọn nhanh một món, hoặc thêm nguyên liệu bên dưới để nhận gợi ý sát hơn.'
           }
           remainingCount={remaining}
@@ -772,6 +769,9 @@ function MenuRow({
               restaurant
             </span>
             {item.plannedServings ? `~${item.plannedServings} suất` : '—'}
+            {item.missing && item.missing.length > 0 && (
+              <span className="font-semibold text-amber-700">· cần thêm: {item.missing.join(', ')}</span>
+            )}
           </p>
         </div>
         <span

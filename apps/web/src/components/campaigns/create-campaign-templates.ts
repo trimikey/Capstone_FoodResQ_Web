@@ -52,6 +52,8 @@ export interface MenuTemplate {
   /** Số suất ước tính cho món này (~30% tổng servings chia đều các món match).
    *  Computed lúc buildMatchedMenuTemplates. */
   plannedServings?: number;
+  /** Nguyên liệu món này cần mà danh sách vật phẩm chưa có (vd ['gà']). Rỗng = đủ. */
+  missing?: string[];
 }
 
 // ─── Tier helpers ──────────────────────────────────────────────────────────
@@ -392,6 +394,32 @@ export function buildMatchedMenuTemplates(
   const safeServings = Math.max(1, Math.floor(servings || 1));
   const shareIfAdded = Math.max(1, Math.round(safeServings / (currentMenuCount + 1)));
   return matched.map((m) => ({ ...m, plannedServings: shareIfAdded }));
+}
+
+/**
+ * Gợi ý món khi ĐÃ có vật phẩm: vẫn liệt kê MỌI món — món đủ nguyên liệu xếp trước,
+ * món còn thiếu ghi rõ thiếu gì. Trước đây chỉ giữ món đủ nguyên liệu, nên thêm "Cơm
+ * trắng" (form tự thêm gạo) là mọi món khác biến mất vì chưa khai gà, cá, rau…
+ */
+export function buildMenuSuggestions(
+  supplies: Array<{ name: string }>,
+  servings: number,
+  currentMenuCount = 0,
+): MenuTemplate[] {
+  const available = new Set<string>();
+  for (const s of supplies) {
+    for (const ing of detectIngredients(s.name ?? '')) available.add(ing);
+  }
+  const safeServings = Math.max(1, Math.floor(servings || 1));
+  const shareIfAdded = Math.max(1, Math.round(safeServings / (currentMenuCount + 1)));
+  return MENU_TEMPLATES.map((m, index) => ({
+    ...m,
+    plannedServings: shareIfAdded,
+    missing: m.requires.filter((kw) => !available.has(kw)),
+    index,
+  }))
+    .sort((a, b) => a.missing.length - b.missing.length || a.index - b.index)
+    .map(({ index: _index, ...m }) => m);
 }
 
 /**
