@@ -79,6 +79,17 @@ const STEPS = [
   ['Kiểm tra & gửi', 'fact_check'],
 ] as const;
 
+/** Phút hiện tại trong ngày theo giờ VN (0..1439). */
+function vnMinuteOf(ms: number): number {
+  const d = new Date(ms + 7 * 3600_000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+function hhmmToMinute(value: string): number {
+  const [h, m] = value.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
 function dateAfter(days: number) {
   const d = new Date(Date.now() + 7 * 3600_000);
   d.setUTCDate(d.getUTCDate() + days);
@@ -187,6 +198,12 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   const [step, setStep] = useState<Step>(restored?.step ?? 1);
   // Bước 5: phải tick "đã kiểm tra kỹ" mới gửi được — chiến dịch không sửa được sau khi đăng.
   const [confirmedReview, setConfirmedReview] = useState(false);
+  // Đồng hồ cho việc khoá ca đã qua giờ (ngày vận hành = hôm nay) — tick mỗi phút.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [supplierPicks, setSupplierPicks] = useState<Record<string, SupplierPick>>(restored?.supplierPicks ?? {});
   const [supplierRadiusKm, setSupplierRadiusKm] = useState(restored?.supplierRadiusKm ?? 5);
   // Chỉ lưu phần người dùng CHỈNH; phần còn lại suy từ lịch chiến dịch để đổi ngày/ca ở
@@ -432,6 +449,27 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     });
   }, [menuNamesKey]);
 
+  // Ngày vận hành = HÔM NAY thì ca đã tới giờ bắt đầu coi như đã qua — không cho chọn,
+  // tránh lập chiến dịch cho một ca đã diễn ra.
+  const isPastPeriod = (period: (typeof PERIODS)[number]) =>
+    scheduledDate === dateAfter(0) && hhmmToMinute(period.start) <= vnMinuteOf(nowMs);
+
+  function changeScheduledDate(value: string) {
+    setScheduledDate(value);
+    if (value !== dateAfter(0)) return;
+    const nowMinute = vnMinuteOf(Date.now());
+    const past = PERIODS.filter((period) => hhmmToMinute(period.start) <= nowMinute).map((period) => period.id);
+    const kept = activePeriods.filter((id) => !past.includes(id));
+    if (kept.length !== activePeriods.length) {
+      setActivePeriods(kept);
+      toast.info(
+        kept.length > 0
+          ? 'Đã bỏ các ca đã qua giờ của hôm nay — chỉ giữ ca còn tới được.'
+          : 'Các ca đã chọn đều đã qua giờ hôm nay — quay lại bước "Ca & nhân sự" để chọn ca còn lại.',
+      );
+    }
+  }
+
   function togglePeriod(id: Period) {
     const next = activePeriods.includes(id) ? activePeriods.filter((period) => period !== id) : [...activePeriods, id];
     setActivePeriods(PERIODS.filter((period) => next.includes(period.id)).map((period) => period.id));
@@ -533,6 +571,7 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     }
     if (current === 3) {
       if (!periodsAreContiguous()) return 'Hãy chọn ít nhất một ca và các ca phải liên tiếp.';
+      if (selectedPeriods.some(isPastPeriod)) return 'Có ca đã qua giờ bắt đầu của hôm nay — bỏ chọn ca đó.';
       if (totalShiftSlots < 1) return 'Phải có ít nhất một vị trí tình nguyện viên cần tuyển.';
     }
     if (current === 4) {
@@ -541,8 +580,11 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
       if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return 'Thời gian tuyển không hợp lệ.';
       if (start.getTime() < Date.now() - 60_000) return 'Thời gian mở tuyển không được ở quá khứ.';
       if (start >= end) return 'Thời gian mở tuyển phải trước thời gian đóng tuyển.';
-      if (!scheduledDate || scheduledDate < dateAfter(1)) {
-        return 'Ngày vận hành phải từ ngày mai trở đi.';
+      if (!scheduledDate || scheduledDate < dateAfter(0)) {
+        return 'Ngày vận hành không được ở quá khứ.';
+      }
+      if (selectedPeriods.some(isPastPeriod)) {
+        return 'Ngày vận hành là hôm nay nhưng có ca đã qua giờ — quay lại bước "Ca & nhân sự" để bỏ ca đó.';
       }
       if (endDate && endDate < scheduledDate) return 'Ngày kết thúc không được trước ngày bắt đầu.';
       if (endDate) {
@@ -845,7 +887,22 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
               <Block title="Chọn các ca cần tuyển" icon="schedule">
                 <p className="mb-3 text-xs text-neutral-500">Chọn các ca hoạt động liên tiếp để lập nhu cầu nhân sự cho chiến dịch.</p>
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {PERIODS.map((period) => <button key={period.id} type="button" onClick={() => togglePeriod(period.id)} className={`rounded-2xl border p-4 text-left ${activePeriods.includes(period.id) ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-neutral-200 bg-white'}`}><span className="block text-sm font-extrabold">{period.label}</span><span className="text-xs">{period.time}</span></button>)}
+                  {PERIODS.map((period) => {
+                    const past = isPastPeriod(period);
+                    return (
+                      <button
+                        key={period.id}
+                        type="button"
+                        disabled={past}
+                        onClick={() => togglePeriod(period.id)}
+                        title={past ? 'Ca này đã qua giờ bắt đầu của hôm nay' : undefined}
+                        className={`rounded-2xl border p-4 text-left ${past ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400' : activePeriods.includes(period.id) ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-neutral-200 bg-white'}`}
+                      >
+                        <span className="block text-sm font-extrabold">{period.label}</span>
+                        <span className="text-xs">{past ? `${period.time} · Đã qua giờ` : period.time}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 {!periodsAreContiguous() && <p className="mt-2 text-xs font-bold text-rose-600">Các ca phải liên tiếp, không được bỏ trống ca ở giữa.</p>}
               </Block>
@@ -926,8 +983,8 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
                       type="date"
                       className={`cm-input mt-1 ${recruitmentBufferIsTooShort ? 'border-rose-500 ring-2 ring-rose-100' : ''}`}
                       value={scheduledDate}
-                      min={dateAfter(1)}
-                      onChange={(e) => setScheduledDate(e.target.value)}
+                      min={dateAfter(0)}
+                      onChange={(e) => changeScheduledDate(e.target.value)}
                       aria-invalid={recruitmentBufferIsTooShort}
                       aria-describedby={recruitmentBufferMinutes !== null ? 'cm-operation-date-rule' : undefined}
                     />

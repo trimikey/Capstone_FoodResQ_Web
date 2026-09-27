@@ -462,10 +462,11 @@ export class CampaignsService {
 
     // Validate & default endDate (>= scheduledDate, mặc định = scheduledDate nếu bỏ trống)
     const startDateObj = new Date(`${dto.scheduledDate}T00:00:00Z`);
-    const nowVn = new Date(Date.now() + 7 * 3600_000);
-    const tomorrowVn = new Date(Date.UTC(nowVn.getUTCFullYear(), nowVn.getUTCMonth(), nowVn.getUTCDate() + 1));
-    if (dto.scheduledDate < tomorrowVn.toISOString().slice(0, 10)) {
-      throw new BadRequestException('Ngày vận hành phải từ ngày mai trở đi.');
+    // Cho vận hành từ HÔM NAY (ca chưa tới giờ); ràng buộc thời gian tuyển bên dưới vẫn
+    // bảo đảm đủ thời gian đóng tuyển trước ca đầu.
+    const todayVn = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    if (dto.scheduledDate < todayVn) {
+      throw new BadRequestException('Ngày vận hành không được ở quá khứ.');
     }
     let endDateObj: Date;
     if (dto.endDate) {
@@ -501,6 +502,11 @@ export class CampaignsService {
       }
     }
     const operationStartAt = new Date(this.vnDateTimeToUtc(startDateObj, firstPeriod.startTime));
+    if (operationStartAt.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        `Ca đầu tiên (${firstPeriod.startTime}) của ngày vận hành đã qua giờ — chọn ca còn tới được hoặc ngày khác.`,
+      );
+    }
     const operationEndDate = new Date(endDateObj);
     operationEndDate.setUTCDate(operationEndDate.getUTCDate() + lastPeriod.endDayOffset);
     const operationEndAt = new Date(this.vnDateTimeToUtc(operationEndDate, lastPeriod.endTime));
@@ -3640,8 +3646,10 @@ export class CampaignsService {
         ...(opts?.excludeAssignmentId ? { id: { not: opts.excludeAssignmentId } } : {}),
         // Lấy thêm ngày kề để phát hiện ca tối kéo qua 00:00.
         workDate: { gte: rangeStart, lte: rangeEnd },
+        // Ca TNV đã LÀM XONG (completed) không còn giữ khung giờ — xong ca sáng ở chiến
+        // dịch này thì nhận được ca/lời mời khác cùng buổi, dù chiến dịch kia chưa đóng.
         status: {
-          in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress', 'completed'],
+          in: opts?.statuses ?? ['pending', 'assigned', 'checked_in', 'in_progress'],
         },
         // Chiến dịch đã kết thúc/huỷ thì ca của nó KHÔNG còn chiếm khung giờ —
         // chiến dịch kết thúc sớm đóng ca tương lai thành completed, tính cả
@@ -6340,7 +6348,8 @@ export class CampaignsService {
       if (selectedShiftId && a.workDate) {
         await this.assertShiftNotOverlapping(tx, campaignId, a.volunteerId, selectedShiftId, a.workDate, {
           excludeAssignmentId: assignmentId,
-          statuses: ['assigned', 'checked_in', 'in_progress', 'completed'],
+          // Ca TNV đã làm xong không còn giữ khung giờ (cùng luật với lúc TNV tự nhận).
+          statuses: ['assigned', 'checked_in', 'in_progress'],
           orgView: true,
         });
       }
