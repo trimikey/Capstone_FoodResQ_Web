@@ -71,6 +71,9 @@ function ReportIncidentModal({
   const [detail, setDetail] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // null = chưa chọn — bắt shipper nói rõ còn đi tiếp được không, tổ chức xử lý theo đó.
+  const [canContinue, setCanContinue] = useState<boolean | null>(null);
+  const [delayMinutes, setDelayMinutes] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const reasons = INCIDENT_REASONS[context];
 
@@ -86,6 +89,7 @@ function ReportIncidentModal({
     if (reasonCode === 'other' && !detail.trim()) {
       return toast.error('Mô tả ngắn sự cố bạn đang gặp.');
     }
+    if (canContinue === null) return toast.error('Cho biết bạn còn tiếp tục được không.');
     try {
       await report.mutateAsync({
         campaignId,
@@ -94,8 +98,14 @@ function ReportIncidentModal({
         reasonCode,
         detail: detail.trim() || undefined,
         photo,
+        canContinue,
+        delayMinutes: canContinue ? delayMinutes : undefined,
       });
-      toast.success('Đã báo sự cố — tổ chức đã nhận được thông báo.');
+      toast.success(
+        canContinue
+          ? 'Đã báo sự cố — tổ chức đã nhận được thông báo.'
+          : 'Đã báo sự cố và trả việc — tổ chức sẽ đổi người khác thay bạn.',
+      );
       onClose();
     } catch (e) {
       toast.error(errMsg(e, 'Không gửi được báo cáo sự cố'));
@@ -139,6 +149,65 @@ function ReportIncidentModal({
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-600">
+            Bạn còn tiếp tục được không? <span className="text-rose-500">*</span>
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              aria-pressed={canContinue === true}
+              onClick={() => setCanContinue(true)}
+              className={`rounded-xl border px-3 py-2 text-left text-xs transition-colors ${
+                canContinue === true
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                  : 'border-neutral-200 bg-white text-neutral-700 hover:border-emerald-300'
+              }`}
+            >
+              <span className="block font-bold">Vẫn tiếp tục</span>
+              <span className="text-[11px]">Chỉ báo để tổ chức nắm, có thể trễ</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={canContinue === false}
+              onClick={() => setCanContinue(false)}
+              className={`rounded-xl border px-3 py-2 text-left text-xs transition-colors ${
+                canContinue === false
+                  ? 'border-rose-500 bg-rose-50 text-rose-800'
+                  : 'border-neutral-200 bg-white text-neutral-700 hover:border-rose-300'
+              }`}
+            >
+              <span className="block font-bold">Không thể tiếp tục</span>
+              <span className="text-[11px]">Trả việc để tổ chức đổi người khác</span>
+            </button>
+          </div>
+          {canContinue === true && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-neutral-600">Trễ khoảng:</span>
+              {[0, 15, 30, 60].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setDelayMinutes(m)}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                    delayMinutes === m
+                      ? 'border-emerald-500 bg-emerald-600 text-white'
+                      : 'border-neutral-200 bg-white text-neutral-600'
+                  }`}
+                >
+                  {m === 0 ? 'Không trễ' : `${m} phút`}
+                </button>
+              ))}
+            </div>
+          )}
+          {canContinue === false && (
+            <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">
+              Việc này sẽ được gỡ khỏi danh sách của bạn và trở về chờ tổ chức phân công người khác.
+              Bạn không bị trừ uy tín khi báo sự cố hợp lệ.
+            </p>
+          )}
         </div>
 
         <label className="block space-y-1 text-xs font-bold uppercase tracking-wide text-neutral-600">

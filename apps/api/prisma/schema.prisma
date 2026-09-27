@@ -1608,6 +1608,12 @@ model CampaignIncident {
   reasonCode   String    @map("reason_code") @db.VarChar(40)
   detail       String?
   photoUrl     String?   @map("photo_url")
+  /// false = shipper KHÔNG đi tiếp được — đã bị gỡ khỏi việc, tổ chức phải đổi người.
+  canContinue  Boolean   @default(true) @map("can_continue")
+  /// Vẫn tiếp tục nhưng trễ khoảng bao nhiêu phút.
+  delayMinutes Int?      @map("delay_minutes") @db.SmallInt
+  /// Cách tổ chức khép sự cố: 'continued' | 'reassigned' | 'resolved'.
+  actionTaken  String?   @map("action_taken") @db.VarChar(30)
   /// 'open' | 'resolved'
   status       String    @default("open") @db.VarChar(20)
   resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz

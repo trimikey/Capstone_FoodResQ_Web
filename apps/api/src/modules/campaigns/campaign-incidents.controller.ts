@@ -20,7 +20,11 @@ import { ActiveAccountGuard } from '@/common/guards/active-account.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { CampaignIncidentsService } from './campaign-incidents.service';
-import { ReportCampaignIncidentDto, ResolveCampaignIncidentDto } from './dto/campaign-incident.dto';
+import {
+  ReassignCampaignIncidentDto,
+  ReportCampaignIncidentDto,
+  ResolveCampaignIncidentDto,
+} from './dto/campaign-incident.dto';
 
 @ApiTags('Campaign incidents')
 @Controller('campaigns')
@@ -48,6 +52,18 @@ export class CampaignIncidentsController {
   @ApiOperation({ summary: 'Sự cố của chiến dịch — tổ chức thấy hết, TNV thấy sự cố của mình' })
   list(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.incidents.list(id, user.id);
+  }
+
+  @Patch('incidents/:incidentId/reassign')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.RECEIVER)
+  @ApiOperation({ summary: 'Tổ chức đổi shipper cho việc bị bỏ dở vì sự cố' })
+  reassign(
+    @CurrentUser() user: User,
+    @Param('incidentId', ParseUUIDPipe) incidentId: string,
+    @Body() dto: ReassignCampaignIncidentDto,
+  ) {
+    return this.incidents.reassign(incidentId, user.id, dto.ids);
   }
 
   @Patch('incidents/:incidentId/resolve')

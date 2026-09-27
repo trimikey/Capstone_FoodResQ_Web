@@ -86,7 +86,11 @@ export default function LogisticsPage() {
   return (
     <div className="space-y-4">
       {/* Sự cố shipper báo khi đi lấy nguyên liệu — xử lý trước khi xem từng đơn */}
-      <CampaignIncidentsPanel campaignId={c.id} context="pickup" />
+      <CampaignIncidentsPanel
+        campaignId={c.id}
+        context="pickup"
+        participants={(c.participants ?? []) as CampaignManageParticipant[]}
+      />
 
       {/* ── Đơn nguyên liệu từ NCC (có vận chuyển) ── */}
       <section className="cm-manage-card">

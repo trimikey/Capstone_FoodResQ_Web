@@ -52,13 +52,22 @@ export function ReportIncidentButton({
   const [reasonCode, setReasonCode] = useState('');
   const [detail, setDetail] = useState('');
   const [photo, setPhoto] = useState<CapturedImage | null>(null);
+  // null = chưa chọn — bắt shipper nói rõ còn đi tiếp được không.
+  const [canContinue, setCanContinue] = useState<boolean | null>(null);
+  const [delayMinutes, setDelayMinutes] = useState(0);
+
+  const reset = () => {
+    setReasonCode('');
+    setDetail('');
+    setPhoto(null);
+    setCanContinue(null);
+    setDelayMinutes(0);
+  };
 
   const close = () => {
     if (report.isPending) return;
     setOpen(false);
-    setReasonCode('');
-    setDetail('');
-    setPhoto(null);
+    reset();
   };
 
   const takePhoto = async () => {
@@ -79,14 +88,29 @@ export function ReportIncidentButton({
       Popup.show({ type: 'warning', text1: 'Mô tả ngắn sự cố bạn đang gặp' });
       return;
     }
+    if (canContinue === null) {
+      Popup.show({ type: 'warning', text1: 'Cho biết bạn còn tiếp tục được không' });
+      return;
+    }
     try {
-      await report.mutateAsync({ campaignId, context, referenceId, reasonCode, detail, photo });
+      await report.mutateAsync({
+        campaignId,
+        context,
+        referenceId,
+        reasonCode,
+        detail,
+        photo,
+        canContinue,
+        delayMinutes: canContinue ? delayMinutes : undefined,
+      });
       void notifySuccess();
-      Popup.show({ type: 'success', text1: 'Đã báo sự cố', text2: 'Tổ chức đã nhận được thông báo.' });
+      Popup.show({
+        type: 'success',
+        text1: canContinue ? 'Đã báo sự cố' : 'Đã báo sự cố và trả việc',
+        text2: canContinue ? 'Tổ chức đã nhận được thông báo.' : 'Tổ chức sẽ đổi người khác thay bạn.',
+      });
       setOpen(false);
-      setReasonCode('');
-      setDetail('');
-      setPhoto(null);
+      reset();
     } catch (error) {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Không gửi được báo cáo', text2: getErrorMessage(error) });
@@ -120,6 +144,47 @@ export function ReportIncidentButton({
                   </Pressable>
                 );
               })}
+              <Text style={styles.label}>Bạn còn tiếp tục được không? *</Text>
+              <View style={styles.choiceRow}>
+                <Pressable
+                  onPress={() => setCanContinue(true)}
+                  style={[styles.choice, canContinue === true && styles.choiceGo]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: canContinue === true }}
+                >
+                  <Text style={[styles.choiceTitle, canContinue === true && styles.choiceTitleGo]}>Vẫn tiếp tục</Text>
+                  <Text style={styles.choiceSub}>Chỉ báo, có thể trễ</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setCanContinue(false)}
+                  style={[styles.choice, canContinue === false && styles.choiceStop]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: canContinue === false }}
+                >
+                  <Text style={[styles.choiceTitle, canContinue === false && styles.choiceTitleStop]}>Không thể tiếp tục</Text>
+                  <Text style={styles.choiceSub}>Trả việc cho tổ chức</Text>
+                </Pressable>
+              </View>
+              {canContinue === true ? (
+                <View style={styles.delayRow}>
+                  {[0, 15, 30, 60].map((m) => (
+                    <Pressable
+                      key={m}
+                      onPress={() => setDelayMinutes(m)}
+                      style={[styles.delay, delayMinutes === m && styles.delayActive]}
+                    >
+                      <Text style={[styles.delayText, delayMinutes === m && styles.delayTextActive]}>
+                        {m === 0 ? 'Không trễ' : `Trễ ${m}'`}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              {canContinue === false ? (
+                <Text style={styles.stopHint}>
+                  Việc này được gỡ khỏi danh sách của bạn và trở về chờ tổ chức phân công người khác. Báo sự cố hợp lệ không bị trừ uy tín.
+                </Text>
+              ) : null}
               <TextInput
                 mode="outlined"
                 label={reasonCode === 'other' ? 'Mô tả sự cố *' : 'Mô tả thêm (tuỳ chọn)'}
@@ -170,6 +235,20 @@ const styles = StyleSheet.create({
   reasonText: { flex: 1, fontSize: 13, color: COLORS.onSurface },
   reasonTextActive: { fontWeight: '700', color: COLORS.error },
   input: { marginTop: 4 },
+  choiceRow: { flexDirection: 'row', gap: 8 },
+  choice: { flex: 1, padding: 10, borderRadius: radius.md, borderWidth: 1, borderColor: COLORS.outline },
+  choiceGo: { borderColor: COLORS.success, backgroundColor: '#ECFDF5' },
+  choiceStop: { borderColor: COLORS.error, backgroundColor: '#FEF2F2' },
+  choiceTitle: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
+  choiceTitleGo: { color: COLORS.success },
+  choiceTitleStop: { color: COLORS.error },
+  choiceSub: { marginTop: 2, fontSize: 11, color: COLORS.onSurfaceVariant },
+  delayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  delay: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: COLORS.outline },
+  delayActive: { backgroundColor: COLORS.success, borderColor: COLORS.success },
+  delayText: { fontSize: 12, fontWeight: '700', color: COLORS.onSurfaceVariant },
+  delayTextActive: { color: '#FFFFFF' },
+  stopHint: { fontSize: 12, lineHeight: 17, fontWeight: '600', color: COLORS.error },
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   photo: { width: 56, height: 56, borderRadius: radius.sm },
 });

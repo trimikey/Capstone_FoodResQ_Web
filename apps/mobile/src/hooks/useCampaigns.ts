@@ -1350,11 +1350,15 @@ export function useReportCampaignIncident() {
       reasonCode: string;
       detail?: string;
       photo?: CapturedImage | null;
+      canContinue: boolean;
+      delayMinutes?: number;
     }) => {
       const form = new FormData();
       form.append('context', p.context);
       if (p.referenceId) form.append('referenceId', p.referenceId);
       form.append('reasonCode', p.reasonCode);
+      form.append('canContinue', String(p.canContinue));
+      if (p.canContinue && p.delayMinutes) form.append('delayMinutes', String(p.delayMinutes));
       if (p.detail?.trim()) form.append('detail', p.detail.trim());
       if (p.photo) form.append('photo', p.photo as unknown as Blob);
       const res = await apiClient.post<ApiResponse<{ id: string }>>(
@@ -1366,6 +1370,9 @@ export function useReportCampaignIncident() {
     },
     onSuccess: (_d, p) => {
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+      // Không tiếp tục được → việc bị gỡ khỏi danh sách của mình ngay.
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-tasks'] });
     },
   });
 }

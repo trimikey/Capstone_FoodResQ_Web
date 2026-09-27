@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 /** Shipper báo sự cố (multipart: ảnh ở field `photo`, tuỳ chọn). */
 export class ReportCampaignIncidentDto {
@@ -22,6 +36,35 @@ export class ReportCampaignIncidentDto {
   @IsString()
   @MaxLength(500, { message: 'Mô tả tối đa 500 ký tự' })
   detail?: string;
+
+  /** false = không đi tiếp được → gỡ shipper khỏi việc để tổ chức đổi người. Mặc định true. */
+  @ApiPropertyOptional({ example: true, description: 'Shipper còn tiếp tục được không' })
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @IsBoolean({ message: 'canContinue phải là true/false' })
+  canContinue?: boolean;
+
+  @ApiPropertyOptional({ example: 30, description: 'Vẫn tiếp tục nhưng trễ khoảng bao nhiêu phút' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Số phút trễ phải là số nguyên' })
+  @Min(0)
+  @Max(600, { message: 'Trễ tối đa 600 phút' })
+  delayMinutes?: number;
+}
+
+/** Tổ chức đổi shipper cho việc bị bỏ dở vì sự cố. */
+export class ReassignCampaignIncidentDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      'Người nhận việc thay: assignment id (đơn nguyên liệu) hoặc volunteer_profile id (đợt phát)',
+  })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Chọn ít nhất một người thay' })
+  @ArrayMaxSize(10)
+  @IsUUID('4', { each: true, message: 'ID người thay không hợp lệ' })
+  ids!: string[];
 }
 
 export class ResolveCampaignIncidentDto {

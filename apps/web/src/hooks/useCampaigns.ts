@@ -2272,10 +2272,16 @@ export interface CampaignIncident {
   reasonLabel: string;
   detail: string | null;
   photoUrl: string | null;
+  /** false = shipper không đi tiếp được, đã bị gỡ khỏi việc — tổ chức cần đổi người. */
+  canContinue: boolean;
+  delayMinutes: number | null;
+  /** 'continued' | 'reassigned' | 'resolved' */
+  actionTaken: string | null;
   status: 'open' | 'resolved';
   resolvedAt: string | null;
   resolvedNote: string | null;
   createdAt: string;
+  reporterVolunteerId: string;
   reporterName: string;
   reporterPhone: string | null;
 }
@@ -2302,11 +2308,15 @@ export function useReportCampaignIncident() {
       reasonCode: string;
       detail?: string;
       photo?: File | null;
+      canContinue: boolean;
+      delayMinutes?: number;
     }) => {
       const form = new FormData();
       form.append('context', p.context);
       if (p.referenceId) form.append('referenceId', p.referenceId);
       form.append('reasonCode', p.reasonCode);
+      form.append('canContinue', String(p.canContinue));
+      if (p.canContinue && p.delayMinutes) form.append('delayMinutes', String(p.delayMinutes));
       if (p.detail?.trim()) form.append('detail', p.detail.trim());
       if (p.photo) form.append('photo', p.photo);
       return (
@@ -2317,6 +2327,26 @@ export function useReportCampaignIncident() {
     },
     onSuccess: (_d, p) => {
       void qc.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+      // Không tiếp tục được → việc bị gỡ khỏi danh sách của mình ngay.
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-tasks'] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-pickup-orders'] });
+    },
+  });
+}
+
+/** Tổ chức đổi shipper cho việc bị bỏ dở vì sự cố. `ids`: assignment id (pickup) / volunteer id (distribution). */
+export function useReassignCampaignIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { incidentId: string; campaignId: string; ids: string[] }) =>
+      (await api.patch(`/campaigns/incidents/${p.incidentId}/reassign`, { ids: p.ids })).data.data as {
+        reassignedTo: string[];
+      },
+    onSuccess: (_d, p) => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'incidents', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'manage-detail', p.campaignId] });
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-sent-requests'] });
     },
   });
 }
