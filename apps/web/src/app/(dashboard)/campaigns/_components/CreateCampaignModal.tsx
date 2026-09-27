@@ -53,6 +53,18 @@ const PERIODS: Array<{ id: Period; label: string; time: string; start: string; e
 // nguyên liệu, chiều chia suất rồi đi phát. Không tạo ca "Phục vụ" riêng nữa — tách
 // hai hàng chỉ đẻ ra cảnh có người trực đúng giờ mà hệ thống báo thiếu người vai kia.
 // Chiến dịch cũ đã có ca waiter vẫn hiển thị bình thường (dữ liệu lịch sử).
+// Mặc định khi mở form: đủ 3 ca sáng/chiều/tối, mỗi ca 1 đầu bếp + 1 giao hàng & phục vụ —
+// tổ chức chỉ cần chỉnh chỗ khác, không phải bấm chọn từng ca rồi gõ từng ô.
+const DEFAULT_PERIODS: Period[] = ['morning', 'afternoon', 'evening'];
+const DEFAULT_STAFFING: Record<string, number> = {
+  'morning:chef': 1,
+  'morning:shipper': 1,
+  'afternoon:chef': 1,
+  'afternoon:shipper': 1,
+  'evening:chef': 1,
+  'evening:shipper': 1,
+};
+
 const ROLES: Array<{ id: StaffRole; label: string }> = [
   { id: 'chef', label: 'Đầu bếp' },
   { id: 'shipper', label: 'Giao hàng & phục vụ' },
@@ -201,13 +213,13 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
   const [supplies, setSupplies] = useState<Array<{ name: string; quantity?: number; unit?: string }>>(restored?.supplies ?? []);
   const [scheduledDate, setScheduledDate] = useState(restored?.scheduledDate ?? dateAfter(7));
   const [endDate, setEndDate] = useState(restored?.endDate ?? '');
-  const [activePeriods, setActivePeriods] = useState<Period[]>(restored?.activePeriods ?? ['morning']);
+  const [activePeriods, setActivePeriods] = useState<Period[]>(restored?.activePeriods ?? DEFAULT_PERIODS);
   const [recruitmentStartAt, setRecruitmentStartAt] = useState(
     () => restored?.recruitmentStartAt ?? toVnLocalInput(new Date(Date.now() + 3600_000)),
   );
   const [recruitmentEndAt, setRecruitmentEndAt] = useState(restored?.recruitmentEndAt ?? '');
   const [staffing, setStaffing] = useState<Record<string, number>>(
-    restored?.staffing ?? { 'morning:chef': 2, 'morning:shipper': 4 },
+    restored?.staffing ?? DEFAULT_STAFFING,
   );
   // Giờ 4 khâu bếp: mặc định DERIVE theo ca sớm nhất ngay trong render (đổi ca là
   // gợi ý đổi theo); tổ chức chỉnh tay thì lưu bản custom và thôi không gợi ý nữa.
@@ -246,10 +258,10 @@ export default function CreateCampaignModal({ onClose, onSubmit, pending }: Prop
     setSupplies([]);
     setScheduledDate(dateAfter(7));
     setEndDate('');
-    setActivePeriods(['morning']);
+    setActivePeriods(DEFAULT_PERIODS);
     setRecruitmentStartAt(toVnLocalInput(new Date(Date.now() + 3600_000)));
     setRecruitmentEndAt('');
-    setStaffing({ 'morning:chef': 2, 'morning:shipper': 4 });
+    setStaffing(DEFAULT_STAFFING);
     setSupplierPicks({});
     setSupplierRadiusKm(5);
     setSupplierDetailEdits({});
