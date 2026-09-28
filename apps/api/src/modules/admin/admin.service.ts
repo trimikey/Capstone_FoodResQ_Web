@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { buildSupplyProgress } from '../campaigns/supply-progress';
+import { collectRescuedKg, vnMonthKey } from '../campaigns/rescued-kg';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -97,17 +98,37 @@ export class AdminService {
   /**
    * Tổng quan dashboard — TẤT CẢ số liệu thật, gộp trong 1 lần gọi.
    * kg cứu trợ, CO2 tránh, danh mục, xu hướng 6 tháng, trạng thái quyên góp, khiếu nại.
+   *
+   * kg + xu hướng lấy từ `collectRescuedKg` (tin đăng + nguyên liệu bếp chiến dịch +
+   * quyên góp chiến dịch) — cùng nguồn với báo cáo minh bạch. Bản cũ chỉ cộng đơn nhận
+   * từ tin đăng nên dashboard báo ~17 kg trong khi chiến dịch đã nhận hàng trăm kg.
    */
   async getOverview() {
     const CO2_PER_KG = 2.5;
 
-    const [agg] = await this.prisma.$queryRaw<{ kg: number | null; meals: bigint; people: bigint }[]>(Prisma.sql`
+    const [agg] = await this.prisma.$queryRaw<{ meals: bigint; people: bigint }[]>(Prisma.sql`
       SELECT
-        COALESCE(SUM(r.quantity * COALESCE(fl.weight_per_unit_kg, 0)) FILTER (WHERE r.status = 'completed'), 0) AS kg,
         COUNT(*) FILTER (WHERE r.status = 'completed') AS meals,
         COUNT(DISTINCT r.receiver_id) FILTER (WHERE r.status = 'completed') AS people
-      FROM reservations r JOIN food_listings fl ON fl.id = r.listing_id
+      FROM reservations r
     `);
+
+    // Suất ăn chiến dịch: sum(actualServings) của chiến dịch đã hoàn tất — cùng nguồn
+    // với số "suất ăn đã phát" ở trang chủ / báo cáo minh bạch.
+    const campaignServings = await this.prisma.kitchenCampaign.aggregate({
+      where: { status: 'completed' },
+      _sum: { actualServings: true },
+    });
+
+    const kgEntries = await collectRescuedKg(this.prisma);
+    const kgBySource = { kitchen: 0, donation: 0, listing: 0 };
+    const kgByMonth = new Map<string, number>();
+    for (const e of kgEntries) {
+      kgBySource[e.source] += e.kg;
+      const key = vnMonthKey(e.at);
+      kgByMonth.set(key, (kgByMonth.get(key) ?? 0) + e.kg);
+    }
+    const round1 = (n: number) => Math.round(n * 10) / 10;
 
     const catRows = await this.prisma.$queryRaw<{ category: string; kg: number | null }[]>(Prisma.sql`
       SELECT fl.category::text AS category,
@@ -117,21 +138,13 @@ export class AdminService {
       ORDER BY kg DESC
     `);
 
-    // generate_series để LUÔN đủ 6 tháng liên tục — tháng không có đơn trả kg=0,
-    // nếu chỉ GROUP BY tháng có dữ liệu thì biểu đồ "6 tháng" co lại còn 2-3 điểm.
-    const trendRows = await this.prisma.$queryRaw<{ ym: string; kg: number | null }[]>(Prisma.sql`
-      SELECT to_char(m.month, 'YYYY-MM') AS ym,
-        COALESCE(SUM(r.quantity * COALESCE(fl.weight_per_unit_kg, 0)) FILTER (WHERE r.status = 'completed'), 0) AS kg
-      FROM generate_series(
-        date_trunc('month', CURRENT_DATE) - INTERVAL '5 months',
-        date_trunc('month', CURRENT_DATE),
-        INTERVAL '1 month'
-      ) AS m(month)
-      LEFT JOIN reservations r ON date_trunc('month', r.created_at) = m.month
-      LEFT JOIN food_listings fl ON fl.id = r.listing_id
-      GROUP BY m.month
-      ORDER BY m.month
-    `);
+    // LUÔN đủ 6 tháng liên tục (giờ VN) — tháng không có dữ liệu trả kg=0, nếu chỉ lấy
+    // tháng có dữ liệu thì biểu đồ "6 tháng" co lại còn 2-3 điểm.
+    const nowVn = new Date(Date.now() + 7 * 3600_000);
+    const trendMonths = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(Date.UTC(nowVn.getUTCFullYear(), nowVn.getUTCMonth() - 5 + i, 1));
+      return d.toISOString().slice(0, 7);
+    });
 
     const statusRows = await this.prisma.$queryRaw<{ status: string; c: bigint }[]>(Prisma.sql`
       SELECT status::text AS status, COUNT(*) AS c FROM reservations GROUP BY status
@@ -145,15 +158,20 @@ export class AdminService {
     const newUsers = await this.prisma.user.count({
       where: { deletedAt: null, createdAt: { gte: new Date(Date.now() - 7 * 86400000) } },
     });
-    const kg = Math.round(Number(agg?.kg ?? 0) * 10) / 10;
+    const kg = round1(kgBySource.kitchen + kgBySource.donation + kgBySource.listing);
     const statusCount = (s: string) => Number(statusRows.find((r) => r.status === s)?.c ?? 0);
 
     return {
       ...stats,
       newUsers,
       kgRescued: kg,
-      co2SavedKg: Math.round(kg * CO2_PER_KG * 10) / 10,
-      mealsServed: Number(agg?.meals ?? 0),
+      kgBySource: {
+        kitchen: round1(kgBySource.kitchen),
+        donation: round1(kgBySource.donation),
+        listing: round1(kgBySource.listing),
+      },
+      co2SavedKg: round1(kg * CO2_PER_KG),
+      mealsServed: Number(agg?.meals ?? 0) + Number(campaignServings._sum.actualServings ?? 0),
       peopleHelped: Number(agg?.people ?? 0),
       categories: catRows
         .map((c) => {
@@ -179,7 +197,7 @@ export class AdminService {
       )
         .map((g) => ({ ...g, kg: Math.round(g.kg * 10) / 10 }))
         .filter((g) => g.kg > 0),
-      trend: trendRows.map((t) => ({ ym: t.ym, kg: Math.round(Number(t.kg ?? 0) * 10) / 10 })),
+      trend: trendMonths.map((ym) => ({ ym, kg: round1(kgByMonth.get(ym) ?? 0) })),
       donations: {
         confirmed: statusCount('confirmed'),
         pickedUp: statusCount('picked_up'),

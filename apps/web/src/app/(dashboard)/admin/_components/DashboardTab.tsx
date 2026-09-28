@@ -13,6 +13,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   dry_goods: 'Đồ khô',
   canned_packaged: 'Đồ hộp',
   other: 'Khác',
+  campaign: 'Chiến dịch bếp ăn',
 };
 const CATEGORY_COLOR: Record<string, string> = {
   cooked_meal: '#166534',
@@ -24,6 +25,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   dry_goods: '#d97706',
   canned_packaged: '#8b5cf6',
   other: '#a8a29e',
+  campaign: '#ea580c',
 };
 const MONTH_TARGET_KG = 2000;
 const fmtKg = (n: number) => `${n.toLocaleString('vi-VN')} kg`;
@@ -70,12 +72,18 @@ export default function DashboardTab() {
 
   if (isLoading || !data) return <Skeleton />;
 
-  const totalCatKg = data.categories.reduce((s, c) => s + c.kg, 0) || 1;
+  // Danh mục chỉ có ở tin đăng; nguyên liệu + quyên góp chiến dịch không gắn danh mục
+  // nên gộp thành một lát riêng — tổng vòng tròn khớp với thẻ "Thực phẩm đã cứu trợ".
+  const campaignKg = (data.kgBySource?.kitchen ?? 0) + (data.kgBySource?.donation ?? 0);
+  const donutItems = campaignKg > 0
+    ? [...data.categories, { category: 'campaign', kg: campaignKg }].sort((a, b) => b.kg - a.kg)
+    : data.categories;
+  const totalCatKg = donutItems.reduce((s, c) => s + c.kg, 0) || 1;
   const maxTrend = Math.max(1, ...data.trend.map((t) => t.kg));
   const goalPct = Math.min(100, Math.round((data.kgRescued / MONTH_TARGET_KG) * 100));
 
   let acc = 0;
-  const segments = data.categories.map((c) => {
+  const segments = donutItems.map((c) => {
     const start = (acc / totalCatKg) * 360;
     acc += c.kg;
     const end = (acc / totalCatKg) * 360;
@@ -139,7 +147,7 @@ export default function DashboardTab() {
 
         <div className="bg-white border border-neutral-150 rounded-2xl p-6 shadow-sm flex flex-col items-center">
           <h3 className="font-bold text-lg text-neutral-900 w-full text-left mb-6">Phân bổ danh mục</h3>
-          {data.categories.length === 0 ? (
+          {donutItems.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-sm text-neutral-400 py-10">Chưa có dữ liệu</div>
           ) : (
             <>

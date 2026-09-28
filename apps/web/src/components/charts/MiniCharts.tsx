@@ -239,6 +239,104 @@ export function PairedBars({
   );
 }
 
+// ─── Cột xếp chồng theo mốc thời gian (vd số ca mỗi tháng, tách theo vai trò) ─
+export function StackedColumns({
+  data,
+  series,
+  unit,
+}: {
+  data: Array<{ label: string; values: number[]; note?: string }>;
+  series: string[];
+  unit: string;
+}) {
+  const totals = data.map((d) => d.values.reduce((s, v) => s + v, 0));
+  const maxV = Math.max(1, ...totals);
+  if (totals.every((t) => t === 0)) {
+    return <p className="py-8 text-center text-xs text-neutral-400">Chưa có dữ liệu.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-neutral-600">
+        {series.map((s, i) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-[3px]" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            {s}
+          </span>
+        ))}
+      </div>
+      <div className="flex h-44 items-end gap-2 border-b border-neutral-200 sm:gap-3">
+        {data.map((d, i) => (
+          <div key={d.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+            {/* Nhãn tổng đặt thẳng trên đỉnh cột — không cần hover mới đọc được. */}
+            {totals[i] > 0 && (
+              <span className="text-[11px] font-bold text-neutral-900">{fmt(totals[i])}</span>
+            )}
+            <div
+              className="flex w-full max-w-[44px] flex-col-reverse gap-[2px] overflow-hidden rounded-t-[4px]"
+              style={{ height: `calc((100% - 20px) * ${totals[i] / maxV})` }}
+              title={`${d.label}: ${d.values.map((v, k) => `${series[k]} ${fmt(v)}`).join(' · ')} ${unit}`}
+            >
+              {d.values.map((v, k) =>
+                v > 0 ? (
+                  <div
+                    key={series[k]}
+                    style={{ flexGrow: v, background: CHART_COLORS[k % CHART_COLORS.length] }}
+                  />
+                ) : null,
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 sm:gap-3">
+        {data.map((d) => (
+          <div key={d.label} className="min-w-0 flex-1 text-center">
+            <p className="truncate text-[10px] font-semibold text-neutral-500">{d.label}</p>
+            {d.note && <p className="truncate text-[10px] text-neutral-400">{d.note}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Thanh ngang xếp hạng (một đại lượng mỗi hàng, nhãn số ở cuối thanh) ──────
+export function RankBars({
+  data,
+  unit,
+  color = CHART_COLORS[0],
+}: {
+  data: Array<{ label: string; value: number; sub?: string }>;
+  unit: string;
+  color?: string;
+}) {
+  if (data.length === 0) {
+    return <p className="py-8 text-center text-xs text-neutral-400">Chưa có dữ liệu.</p>;
+  }
+  const maxV = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <ul className="space-y-2.5">
+      {data.map((d, i) => (
+        <li key={`${d.label}-${i}`} className="space-y-1">
+          <div className="flex items-baseline justify-between gap-3 text-xs">
+            <span className="min-w-0 flex-1 truncate font-semibold text-neutral-800">{d.label}</span>
+            <span className="shrink-0 font-bold text-neutral-900">
+              {fmt(d.value)} <span className="font-normal text-neutral-400">{unit}</span>
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-neutral-100">
+            <div
+              className="h-2 rounded-full"
+              style={{ width: `${Math.max(2, (d.value / maxV) * 100)}%`, background: color }}
+            />
+          </div>
+          {d.sub && <p className="truncate text-[10px] text-neutral-400">{d.sub}</p>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // ─── Bảng số liệu kèm theo (nghĩa vụ của contrast WARN) ──────────────────────
 export function DataTable({
   headers,

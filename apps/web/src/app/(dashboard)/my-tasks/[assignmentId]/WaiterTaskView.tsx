@@ -378,7 +378,9 @@ function TaskItem({
 }) {
   return (
     <section className={`cm-card p-4 ${done ? 'opacity-80' : ''} ${locked ? 'opacity-60' : ''}`}>
-      <div className="flex items-start gap-3">
+      {/* Mobile: nút xuống dòng dưới nội dung (cùng bố cục với màn shipper) — để nút
+          `shrink-0` bên phải thì ở 375px nội dung bị ép còn ~1 chữ/dòng. */}
+      <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap">
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
             done && index != null ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
@@ -389,7 +391,7 @@ function TaskItem({
           </span>
         </span>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[calc(100%-52px)] sm:basis-0">
           <div className="flex flex-wrap items-center gap-2">
             {index != null && (
               <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
@@ -419,7 +421,7 @@ function TaskItem({
           {children}
         </div>
 
-        {action && <div className="shrink-0">{action}</div>}
+        {action && <div className="ml-[52px] min-w-0 sm:ml-0 sm:shrink-0">{action}</div>}
       </div>
     </section>
   );

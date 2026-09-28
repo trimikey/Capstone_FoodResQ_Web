@@ -18,12 +18,8 @@ import {
   type DonationForProgress,
   type SupplyTarget,
 } from './supply-progress';
-
-/** Đơn vị số lượng của một đơn nguyên liệu — đơn cũ không ghi đơn vị là kg. */
-function demandUnit(demand: { quantityUnit?: unknown } | null | undefined): string {
-  const u = typeof demand?.quantityUnit === 'string' ? demand.quantityUnit.trim() : '';
-  return u || 'kg';
-}
+import { collectRescuedKg, demandUnit, vnMonthKey } from './rescued-kg';
+import { buildVolunteerImpact } from './volunteer-impact';
 
 /** Nhãn đơn vị tin đăng cho câu báo lỗi / thông báo tiếng Việt. */
 const UNIT_LABEL_VN: Record<string, string> = {
@@ -7176,13 +7172,10 @@ export class CampaignsService {
    *  - Suất ăn: `operationEndAt` của chiến dịch đã hoàn tất, giá trị `actualServings`
    *    (số tổ chức chốt khi kết thúc). Cùng nguồn với `getSystemStats` nên tổng của
    *    chuỗi LUÔN khớp con số hiển thị ở trang chủ — không để hai chỗ lệch nhau.
-   *  - Lương thực cứu được (kg) gộp 3 nguồn: nguyên liệu tình nguyện viên đã ký nhận
-   *    về bếp, quyên góp nhà cung cấp đã nhận, và thực phẩm người nhận đã lấy từ tin
-   *    đăng (chỉ tin khai `weightPerUnitKg` mới quy ra kg được — phần thiếu khai bị
-   *    bỏ qua, nên đây là con số THẬN TRỌNG, không phóng đại).
+   *  - Lương thực cứu được (kg): `collectRescuedKg` — cùng nguồn với dashboard admin.
    */
   async getPublicImpactReport() {
-    const [campaigns, pickups, donations, reservations, peopleRows] = await Promise.all([
+    const [campaigns, kgEntries, peopleRows] = await Promise.all([
       this.prisma.kitchenCampaign.findMany({
         where: { status: 'completed' },
         select: {
@@ -7197,30 +7190,12 @@ export class CampaignsService {
         },
         orderBy: { operationEndAt: 'desc' },
       }),
-      this.prisma.campaignIngredientPickup.findMany({
-        // Kèm đơn vị của đơn: tổng "kg" chỉ cộng đơn tính theo kg (lít dầu / bộ gia vị thì không).
-        select: { receivedKg: true, confirmedAt: true, providerRequest: { select: { demandDetails: true } } },
-      }),
-      this.prisma.campaignDonation.findMany({
-        where: { status: 'received' },
-        select: { quantity: true, receivedAt: true },
-      }),
-      this.prisma.reservation.findMany({
-        where: { status: 'completed' },
-        select: {
-          quantity: true,
-          updatedAt: true,
-          listing: { select: { weightPerUnitKg: true } },
-        },
-      }),
+      collectRescuedKg(this.prisma),
       this.prisma.mealDistribution.findMany({
         where: { completedAt: { not: null } },
         select: { peopleServed: true, actualPeopleServed: true },
       }),
     ]);
-
-    const monthKey = (d: Date) =>
-      new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 7);
 
     // ── Suất ăn theo tháng ────────────────────────────────────────────────
     const servingsByMonth = new Map<string, number>();
@@ -7229,41 +7204,19 @@ export class CampaignsService {
       const servings = c.actualServings ?? 0;
       mealsServed += servings;
       if (servings <= 0) continue;
-      const key = monthKey(c.operationEndAt);
+      const key = vnMonthKey(c.operationEndAt);
       servingsByMonth.set(key, (servingsByMonth.get(key) ?? 0) + servings);
     }
 
     // ── Kg lương thực cứu được theo tháng ─────────────────────────────────
     const kgByMonth = new Map<string, number>();
-    const addKg = (at: Date | null, kg: number) => {
-      if (!at || !Number.isFinite(kg) || kg <= 0) return;
-      const key = monthKey(at);
-      kgByMonth.set(key, (kgByMonth.get(key) ?? 0) + kg);
-    };
-    let kgFromKitchen = 0;
-    for (const pk of pickups) {
-      if (demandUnit(pk.providerRequest.demandDetails as { quantityUnit?: unknown } | null) !== 'kg') continue;
-      const kg = Number(pk.receivedKg);
-      kgFromKitchen += kg > 0 ? kg : 0;
-      addKg(pk.confirmedAt, kg);
+    const kgBySourceTotal = { kitchen: 0, donation: 0, listing: 0 };
+    for (const e of kgEntries) {
+      kgBySourceTotal[e.source] += e.kg;
+      const key = vnMonthKey(e.at);
+      kgByMonth.set(key, (kgByMonth.get(key) ?? 0) + e.kg);
     }
-    let kgFromDonation = 0;
-    for (const don of donations) {
-      const kg = this.parseDonationQuantity(don.quantity, 'kg');
-      if (kg != null) {
-        kgFromDonation += kg;
-        addKg(don.receivedAt, kg);
-      }
-    }
-    let kgFromListing = 0;
-    for (const r of reservations) {
-      const perUnit = r.listing?.weightPerUnitKg ? Number(r.listing.weightPerUnitKg) : 0;
-      const kg = perUnit * Number(r.quantity);
-      if (kg > 0) {
-        kgFromListing += kg;
-        addKg(r.updatedAt, kg);
-      }
-    }
+    const { kitchen: kgFromKitchen, donation: kgFromDonation, listing: kgFromListing } = kgBySourceTotal;
 
     const round1 = (n: number) => Math.round(n * 10) / 10;
     const months = [...new Set([...servingsByMonth.keys(), ...kgByMonth.keys()])].sort();
@@ -7300,6 +7253,17 @@ export class CampaignsService {
           c.charityReceiver?.organizationName ?? c.charityReceiver?.user.fullName ?? null,
       })),
     };
+  }
+
+  /** Đóng góp cá nhân của TNV (bếp / giao hàng / phục vụ) — dashboard Tổng quan của TNV. */
+  async getMyVolunteerImpact(userId: string) {
+    const volunteer = await this.prisma.volunteerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!volunteer) throw new NotFoundException('Không tìm thấy hồ sơ tình nguyện viên.');
+    const grace = await this.systemConfig.getNumber('CHECKIN_GRACE_MINUTES');
+    return buildVolunteerImpact(this.prisma, volunteer.id, grace);
   }
 
   async getSystemStats() {

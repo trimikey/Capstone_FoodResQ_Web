@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Dialog, Portal, Text, TextInput } from 'react-native-paper';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Button, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useReportCampaignIncident, type IncidentContext } from '@/hooks/useCampaigns';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
@@ -8,6 +8,7 @@ import { captureImage, type CapturedImage } from '@/services/faceCapture';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { Popup } from '@/components/ui/AppPopup';
 import { AppImage } from '@/components/ui/AppImage';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { mobileColors as COLORS, radius } from '@/theme/design';
 
 /** Cùng bộ mã với BE (campaign-incidents.service.ts). 'other' = nhập tay, bắt buộc mô tả. */
@@ -122,13 +123,35 @@ export function ReportIncidentButton({
       <Button compact mode="outlined" icon="alert-octagon-outline" textColor={COLORS.error} style={styles.trigger} onPress={() => setOpen(true)}>
         Báo sự cố
       </Button>
-      <Portal>
-        <Dialog visible={open} onDismiss={close}>
-          <Dialog.Title>Báo sự cố</Dialog.Title>
-          <Dialog.ScrollArea style={styles.scrollArea}>
-            <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-              {subject ? <Text style={styles.subject}>{subject}</Text> : null}
+      <BottomSheet
+        visible={open}
+        onClose={close}
+        busy={report.isPending}
+        icon="alert-octagon-outline"
+        tone="danger"
+        title="Báo sự cố"
+        subtitle={subject || 'Tổ chức nhận thông báo ngay khi bạn gửi.'}
+        footer={
+          <>
+            <Button mode="outlined" onPress={close} disabled={report.isPending} style={styles.cancelBtn}>
+              Huỷ
+            </Button>
+            <Button
+              mode="contained"
+              icon="send"
+              buttonColor={COLORS.error}
+              loading={report.isPending}
+              disabled={report.isPending}
+              onPress={submit}
+              style={styles.submitBtn}
+            >
+              Gửi báo cáo
+            </Button>
+          </>
+        }
+      >
               <Text style={styles.label}>Chuyện gì đang xảy ra? *</Text>
+              <View style={styles.group}>
               {REASONS[context].map((r) => {
                 const active = reasonCode === r.code;
                 return (
@@ -144,6 +167,7 @@ export function ReportIncidentButton({
                   </Pressable>
                 );
               })}
+              </View>
               <Text style={styles.label}>Bạn còn tiếp tục được không? *</Text>
               <View style={styles.choiceRow}>
                 <Pressable
@@ -197,30 +221,21 @@ export function ReportIncidentButton({
               />
               <View style={styles.photoRow}>
                 {photo ? <AppImage source={{ uri: photo.uri }} style={styles.photo} /> : null}
-                <Button compact icon="camera" onPress={takePhoto} disabled={report.isPending}>
+                <Button compact mode="contained-tonal" icon="camera" onPress={takePhoto} disabled={report.isPending}>
                   {photo ? 'Chụp lại' : 'Chụp ảnh hiện trường'}
                 </Button>
               </View>
-            </ScrollView>
-          </Dialog.ScrollArea>
-          <Dialog.Actions>
-            <Button onPress={close} disabled={report.isPending}>Huỷ</Button>
-            <Button mode="contained" buttonColor={COLORS.error} loading={report.isPending} disabled={report.isPending} onPress={submit}>
-              Gửi báo cáo
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      </BottomSheet>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   trigger: { borderColor: COLORS.error },
-  scrollArea: { paddingHorizontal: 0, maxHeight: 460 },
-  body: { paddingHorizontal: 20, paddingVertical: 8, gap: 8 },
-  subject: { fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
-  label: { fontSize: 12, fontWeight: '800', color: COLORS.onSurfaceVariant },
+  cancelBtn: { minWidth: 96 },
+  submitBtn: { flex: 1 },
+  group: { gap: 8 },
+  label: { marginTop: 2, marginBottom: -4, fontSize: 13, fontWeight: '900', color: COLORS.onSurface },
   reason: {
     flexDirection: 'row',
     alignItems: 'center',

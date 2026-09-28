@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Dialog, Portal, ProgressBar, Text, TextInput } from 'react-native-paper';
+import { Button, IconButton, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -21,6 +21,7 @@ import { ScreenState } from '@/components/ui/ScreenState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { AppImage } from '@/components/ui/AppImage';
 import { Popup } from '@/components/ui/AppPopup';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { BackButton } from '@/components/ui/BackButton';
 import { NotificationBell } from '@/components/NotificationBell';
 import { ReportIncidentButton } from '@/components/ReportIncidentButton';
@@ -479,9 +480,26 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
 
   const closingSlots = closing
     ? closing.points.length > 0
-      ? closing.points.map((pt, i) => ({ index: i, title: `${i + 1}. ${pt.label}`, address: pt.address }))
-      : [{ index: -1, title: 'Ảnh bằng chứng phân phát', address: '' }]
+      ? closing.points.map((pt, i) => ({ index: i, label: pt.label, address: pt.address }))
+      : [{ index: -1, label: 'Ảnh bằng chứng phân phát', address: '' }]
     : [];
+  const photoDoneCount = closingSlots.filter((sl) => distributionPhotos.some((p) => p.pointIndex === sl.index)).length;
+  const plannedServings = closing?.servingsServed ?? 0;
+  const servingsValue = parseNonNegativeInt(actualServings);
+  const servingsInvalid = actualServings.trim() !== '' && (servingsValue == null || servingsValue > plannedServings);
+  const leftover = servingsValue != null && servingsValue <= plannedServings ? plannedServings - servingsValue : 0;
+
+  const bumpServings = (delta: number) => {
+    const next = Math.min(plannedServings, Math.max(0, (servingsValue ?? 0) + delta));
+    setActualServings(String(next));
+  };
+
+  const closeDistributionSheet = () => {
+    if (complete.isPending) return;
+    Keyboard.dismiss();
+    setClosing(null);
+    setDistributionPhotos([]);
+  };
 
   const openClose = (distribution: AssignedDistribution) => {
     setClosing(distribution);
@@ -785,118 +803,200 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
         </View>
       ))}
 
-      <Portal>
-        <Dialog
-          visible={!!closing}
-          onDismiss={() => {
-            if (complete.isPending) return;
-            setClosing(null);
-            setDistributionPhotos([]);
-          }}
-        >
-          <Dialog.Title>Chốt đợt phát</Dialog.Title>
-          <Dialog.Content style={styles.dialogBody}>
-            <Text style={styles.muted}>Kế hoạch: {closing?.servingsServed ?? 0} suất</Text>
-            <TextInput mode="outlined" label="Số suất thực phát *" value={actualServings} onChangeText={setActualServings} keyboardType="number-pad" />
-            {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
-            <Text style={styles.muted}>Mỗi suất phát cho đúng 1 người — hệ thống tự ghi số người nhận bằng số suất.</Text>
-            <TextInput mode="outlined" label="Ghi chú" value={note} onChangeText={setNote} multiline numberOfLines={3} />
-            {/* Mỗi điểm phát ≥ 1 ảnh bằng chứng đã giao tới đó */}
-            <Text style={styles.pickupPhotoTitle}>
-              Ảnh bằng chứng đã giao{closingSlots.length > 1 ? ` · ${closingSlots.filter((sl) => distributionPhotos.some((p) => p.pointIndex === sl.index)).length}/${closingSlots.length} điểm` : ''}
-            </Text>
-            {closingSlots.map((sl) => {
-              const mine = distributionPhotos.filter((p) => p.pointIndex === sl.index);
-              return (
-                <View key={sl.index} style={styles.pointProofSlot}>
-                  <View style={styles.pickupPhotoHead}>
-                    <MaterialCommunityIcons
-                      name={mine.length > 0 ? 'check-circle-outline' : 'camera-outline'}
-                      size={18}
-                      color={mine.length > 0 ? COLORS.success : COLORS.onSurfaceVariant}
-                    />
-                    <Text style={styles.pointProofTitle} numberOfLines={1}>{sl.title}</Text>
-                  </View>
-                  {sl.address ? <Text style={styles.muted} numberOfLines={1}>{sl.address}</Text> : null}
-                  <View style={styles.pointProofRow}>
-                    {mine.map((p, k) => (
-                      <Pressable
-                        key={`${sl.index}-${k}`}
-                        onLongPress={() => setDistributionPhotos((prev) => prev.filter((x) => x !== p))}
-                        accessibilityLabel="Giữ để xoá ảnh"
-                      >
-                        <AppImage source={{ uri: p.photo.uri }} style={styles.pointProofThumb} />
-                      </Pressable>
-                    ))}
-                    {mine.length < 3 ? (
-                      <Button
-                        compact
-                        mode={mine.length === 0 ? 'contained-tonal' : 'text'}
-                        icon="camera"
-                        onPress={() => captureDistributionPhoto(sl.index)}
-                        disabled={complete.isPending}
-                      >
-                        {mine.length === 0 ? 'Chụp ảnh' : 'Thêm'}
-                      </Button>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-            {distributionPhotos.length > 0 ? (
-              <Text style={styles.muted}>Giữ lâu vào ảnh để xoá.</Text>
-            ) : null}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              onPress={() => {
-                setClosing(null);
-                setDistributionPhotos([]);
-              }}
-              disabled={complete.isPending}
-            >
+      <BottomSheet
+        visible={!!closing}
+        onClose={closeDistributionSheet}
+        busy={complete.isPending}
+        icon="food-takeout-box-outline"
+        title="Chốt đợt phát"
+        subtitle="Nhập số suất thực phát và chụp ảnh tại từng điểm trước khi gửi."
+        footer={
+          <>
+            <Button mode="outlined" onPress={closeDistributionSheet} disabled={complete.isPending} style={styles.sheetBtn}>
               Huỷ
             </Button>
-            <Button mode="contained" loading={complete.isPending} disabled={complete.isPending || distributionPhotos.length === 0} onPress={submitClose}>Xác nhận</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-      <Modal
+            <Button
+              mode="contained"
+              icon="check"
+              loading={complete.isPending}
+              disabled={complete.isPending || photoDoneCount < closingSlots.length}
+              onPress={submitClose}
+              style={styles.sheetSubmitBtn}
+            >
+              Xác nhận đã phát
+            </Button>
+          </>
+        }
+      >
+        {closing ? (
+          <>
+            {/* Tóm tắt đợt đang chốt */}
+            <View style={styles.pickupSummary}>
+              <View style={styles.pickupSummaryRow}>
+                <MaterialCommunityIcons name="flag-checkered" size={18} color={COLORS.primary} />
+                <Text style={styles.pickupSummaryTitle}>{closing.roundLabel || 'Đợt phân phát'}</Text>
+              </View>
+              <Text style={styles.pickupSummaryText}>
+                Kế hoạch {plannedServings} suất
+                {closing.points.length > 0 ? ` · ${closing.points.length} điểm phát` : ''}
+              </Text>
+            </View>
+
+            {/* Số suất thực phát — stepper để chỉnh nhanh, vẫn gõ tay được */}
+            <View style={styles.sheetBlock}>
+              <Text style={styles.sheetLabel}>Số suất thực phát *</Text>
+              <View style={styles.stepperRow}>
+                <IconButton
+                  icon="minus"
+                  mode="outlined"
+                  size={20}
+                  onPress={() => bumpServings(-1)}
+                  disabled={complete.isPending || (servingsValue ?? 0) <= 0}
+                  style={styles.stepperBtn}
+                  accessibilityLabel="Giảm 1 suất"
+                />
+                <TextInput
+                  mode="outlined"
+                  value={actualServings}
+                  onChangeText={(v) => setActualServings(v.replace(/[^0-9]/g, ''))}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                  right={<TextInput.Affix text={`/ ${plannedServings}`} />}
+                  error={servingsInvalid}
+                  style={styles.stepperInput}
+                  contentStyle={styles.stepperInputText}
+                />
+                <IconButton
+                  icon="plus"
+                  mode="outlined"
+                  size={20}
+                  onPress={() => bumpServings(1)}
+                  disabled={complete.isPending || (servingsValue ?? 0) >= plannedServings}
+                  style={styles.stepperBtn}
+                  accessibilityLabel="Tăng 1 suất"
+                />
+              </View>
+              {servingsInvalid ? (
+                <Text style={styles.sheetError}>Nhập số từ 0 đến {plannedServings}.</Text>
+              ) : leftover > 0 ? (
+                <View style={styles.leftoverBox}>
+                  <MaterialCommunityIcons name="package-variant" size={16} color={COLORS.onWarningContainer} />
+                  <Text style={styles.leftoverText}>
+                    Còn dư {leftover} suất — ghi chú bên dưới cách xử lý (gửi lại bếp, chuyển điểm khác…).
+                  </Text>
+                </View>
+              ) : null}
+              {/* 1 suất = 1 người — số người nhận tự ghi bằng số suất, không nhập tay */}
+              <View style={styles.sheetHintRow}>
+                <MaterialCommunityIcons name="account-multiple-check-outline" size={16} color={COLORS.onSurfaceVariant} />
+                <Text style={styles.sheetHint}>
+                  1 suất = 1 người · hệ thống tự ghi <Text style={styles.sheetHintStrong}>{servingsValue ?? 0} người nhận</Text>
+                </Text>
+              </View>
+            </View>
+
+            {/* Mỗi điểm phát ≥ 1 ảnh bằng chứng đã giao tới đó */}
+            <View style={styles.sheetBlock}>
+              <View style={styles.sheetLabelRow}>
+                <Text style={[styles.sheetLabel, styles.flex]}>Ảnh bằng chứng tại điểm phát *</Text>
+                <View style={[styles.countPill, photoDoneCount === closingSlots.length && styles.countPillDone]}>
+                  <Text style={[styles.countPillText, photoDoneCount === closingSlots.length && styles.countPillTextDone]}>
+                    {photoDoneCount}/{closingSlots.length} điểm
+                  </Text>
+                </View>
+              </View>
+              {closingSlots.map((sl) => {
+                const mine = distributionPhotos.filter((p) => p.pointIndex === sl.index);
+                const has = mine.length > 0;
+                return (
+                  <View key={sl.index} style={[styles.proofSlot, has && styles.proofSlotDone]}>
+                    <View style={styles.proofSlotHead}>
+                      <View style={[styles.proofSlotIndex, has && styles.proofSlotIndexDone]}>
+                        {has ? (
+                          <MaterialCommunityIcons name="check" size={14} color={COLORS.white} />
+                        ) : (
+                          <Text style={styles.proofSlotIndexText}>{sl.index >= 0 ? sl.index + 1 : '•'}</Text>
+                        )}
+                      </View>
+                      <View style={styles.flex}>
+                        <Text style={styles.proofSlotTitle} numberOfLines={2}>{sl.label}</Text>
+                        {sl.address ? <Text style={styles.smallMuted} numberOfLines={2}>{sl.address}</Text> : null}
+                      </View>
+                    </View>
+                    <View style={styles.proofThumbRow}>
+                      {mine.map((p, k) => (
+                        <View key={`${sl.index}-${k}`} style={styles.proofThumbWrap}>
+                          <AppImage source={{ uri: p.photo.uri }} style={styles.proofThumb} />
+                          <Pressable
+                            onPress={() => setDistributionPhotos((prev) => prev.filter((x) => x !== p))}
+                            disabled={complete.isPending}
+                            hitSlop={8}
+                            style={styles.proofThumbRemove}
+                            accessibilityLabel="Xoá ảnh"
+                          >
+                            <MaterialCommunityIcons name="close" size={13} color={COLORS.white} />
+                          </Pressable>
+                        </View>
+                      ))}
+                      {mine.length < 3 ? (
+                        <Pressable
+                          onPress={() => captureDistributionPhoto(sl.index)}
+                          disabled={complete.isPending}
+                          style={({ pressed }) => [styles.proofAddTile, pressed && styles.proofAddTilePressed]}
+                          accessibilityLabel={`Chụp ảnh cho ${sl.label}`}
+                        >
+                          <MaterialCommunityIcons name="camera-plus-outline" size={22} color={COLORS.primary} />
+                          <Text style={styles.proofAddText}>{has ? 'Thêm' : 'Chụp ảnh'}</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            <TextInput
+              mode="outlined"
+              label="Ghi chú (tuỳ chọn)"
+              placeholder="VD: mưa lớn nên ít người tới, dư 12 suất đã gửi lại bếp."
+              value={note}
+              onChangeText={setNote}
+              multiline
+              numberOfLines={3}
+              maxLength={500}
+              style={styles.pickupInput}
+            />
+          </>
+        ) : null}
+      </BottomSheet>
+      <BottomSheet
         visible={!!confirmingPickup}
-        transparent
-        animationType="slide"
-        statusBarTranslucent
-        onRequestClose={closePickupConfirm}
+        onClose={closePickupConfirm}
+        busy={confirmPickup.isPending}
+        icon="basket-check-outline"
+        title="Xác nhận lấy nguyên liệu"
+        subtitle="Nhập số lượng thực nhận, chụp ảnh rồi kiểm tra lại trước khi gửi."
+        footer={
+          <>
+            <Button mode="outlined" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending} style={styles.sheetBtn}>
+              {pickupPhoto ? 'Chụp lại' : 'Chụp ảnh'}
+            </Button>
+            <Button
+              mode="contained"
+              icon="check"
+              loading={confirmPickup.isPending}
+              disabled={confirmPickup.isPending || !pickupPhoto}
+              onPress={submitPickupConfirm}
+              style={styles.sheetSubmitBtn}
+            >
+              Xác nhận gửi
+            </Button>
+          </>
+        }
       >
         {confirmingPickup ? (
-          <View style={styles.pickupModalRoot} pointerEvents="box-none">
-            <Pressable style={styles.pickupBackdrop} onPress={closePickupConfirm} />
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
-              style={styles.pickupSheetAvoider}
-              pointerEvents="box-none"
-            >
-              <View style={styles.pickupSheet}>
-                <View style={styles.pickupHandle} />
-                <View style={styles.pickupSheetHeader}>
-                  <View style={styles.pickupHeaderIcon}>
-                    <MaterialCommunityIcons name="basket-check-outline" size={22} color={COLORS.primary} />
-                  </View>
-                  <View style={styles.flex}>
-                    <Text style={styles.pickupSheetTitle}>Xác nhận lấy nguyên liệu</Text>
-                    <Text style={styles.pickupSheetSubtitle}>Nhập số lượng thực nhận, chụp ảnh rồi kiểm tra lại trước khi gửi.</Text>
-                  </View>
-                  <Button compact onPress={closePickupConfirm} disabled={confirmPickup.isPending}>
-                    Huỷ
-                  </Button>
-                </View>
-
-              <ScrollView
-                contentContainerStyle={styles.pickupSheetContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
+              <>
                 <View style={styles.pickupSummary}>
                   <View style={styles.pickupSummaryRow}>
                     <MaterialCommunityIcons name="store-marker-outline" size={18} color={COLORS.primary} />
@@ -961,27 +1061,9 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                     </Button>
                   </View>
                 )}
-              </ScrollView>
-                <View style={styles.pickupSheetFooter}>
-                  <Button mode="outlined" icon="camera" onPress={capturePickupPhoto} disabled={confirmPickup.isPending}>
-                    {pickupPhoto ? 'Chụp lại' : 'Chụp ảnh'}
-                  </Button>
-                  <Button
-                    mode="contained"
-                    icon="check"
-                    loading={confirmPickup.isPending}
-                    disabled={confirmPickup.isPending || !pickupPhoto}
-                    onPress={submitPickupConfirm}
-                    style={styles.pickupSubmitBtn}
-                  >
-                    Xác nhận gửi
-                  </Button>
-                </View>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
+              </>
         ) : null}
-      </Modal>
+      </BottomSheet>
     </>
   );
 }
@@ -1082,18 +1164,82 @@ const styles = StyleSheet.create({
   completedBox: { marginTop: 10, padding: 10, borderRadius: radius.md, backgroundColor: COLORS.successContainer },
   completedText: { color: COLORS.success, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  dialogBody: { gap: 12 },
-  dialogInput: { marginTop: 12 },
-  pointProofSlot: {
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    borderRadius: radius.md,
-    padding: 10,
+  // ── Bottom sheet chốt đợt phát / xác nhận lấy nguyên liệu ──
+  sheetBtn: { minWidth: 96 },
+  sheetSubmitBtn: { flex: 1 },
+  sheetBlock: { gap: 8 },
+  sheetLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sheetLabel: { color: COLORS.onSurface, fontSize: 13, fontWeight: '900' },
+  sheetError: { color: COLORS.error, fontSize: 12, fontWeight: '700' },
+  sheetHintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sheetHint: { flex: 1, color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17 },
+  sheetHintStrong: { color: COLORS.onSurface, fontWeight: '800' },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepperBtn: { margin: 0, borderRadius: radius.md, borderColor: COLORS.outline },
+  stepperInput: { flex: 1, backgroundColor: COLORS.surface },
+  stepperInputText: { textAlign: 'center', fontSize: 20, fontWeight: '900' },
+  leftoverBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 6,
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: COLORS.warningContainer,
   },
-  pointProofTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.onSurface },
-  pointProofRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  pointProofThumb: { width: 56, height: 56, borderRadius: radius.sm },
+  leftoverText: { flex: 1, color: COLORS.onWarningContainer, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  countPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: COLORS.surfaceVariant },
+  countPillDone: { backgroundColor: COLORS.successContainer },
+  countPillText: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '800' },
+  countPillTextDone: { color: COLORS.onSuccessContainer },
+  proofSlot: {
+    gap: 10,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    backgroundColor: COLORS.surface,
+  },
+  proofSlotDone: { borderColor: '#bbe5c6', backgroundColor: '#f4fbf6' },
+  proofSlotHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  proofSlotIndex: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  proofSlotIndexDone: { backgroundColor: COLORS.success },
+  proofSlotIndexText: { color: COLORS.primary, fontSize: 11, fontWeight: '900' },
+  proofSlotTitle: { color: COLORS.onSurface, fontSize: 13, lineHeight: 18, fontWeight: '800' },
+  proofThumbRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 34 },
+  proofThumbWrap: { width: 72, height: 72 },
+  proofThumb: { width: 72, height: 72, borderRadius: radius.md },
+  proofThumbRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(18, 28, 42, 0.7)',
+  },
+  proofAddTile: {
+    width: 72,
+    height: 72,
+    gap: 2,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryContainer,
+  },
+  proofAddTilePressed: { opacity: 0.7 },
+  proofAddText: { color: COLORS.primary, fontSize: 10, fontWeight: '800' },
   ingredientsWarn: {
     flexDirection: 'row',
     gap: 10,
@@ -1124,53 +1270,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceVariant,
   },
   distributionPhotoPreview: { width: '100%', height: 170, borderRadius: radius.md },
-  pickupModalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  pickupBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(18, 28, 42, 0.42)',
-  },
-  pickupSheetAvoider: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  pickupSheet: {
-    maxHeight: '92%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: COLORS.surface,
-    overflow: 'hidden',
-    ...elevation.card,
-  },
-  pickupHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 5,
-    borderRadius: 999,
-    marginTop: 10,
-    marginBottom: 8,
-    backgroundColor: COLORS.outlineVariant,
-  },
-  pickupSheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  pickupHeaderIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primaryContainer,
-  },
-  pickupSheetTitle: { color: COLORS.onSurface, fontSize: 18, lineHeight: 23, fontWeight: '900' },
-  pickupSheetSubtitle: { marginTop: 2, color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 17 },
-  pickupSheetContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 14 },
   pickupSummary: {
     padding: spacing.md,
     borderRadius: radius.lg,
@@ -1183,17 +1282,6 @@ const styles = StyleSheet.create({
   pickupSummaryTime: { color: COLORS.primary, fontSize: 12, lineHeight: 17, fontWeight: '800' },
   pickupFieldGroup: { gap: 10 },
   pickupInput: { backgroundColor: COLORS.surface },
-  pickupSheetFooter: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.outlineVariant,
-    backgroundColor: COLORS.surface,
-  },
-  pickupSubmitBtn: { flex: 1 },
   pickupPhotoEmpty: {
     alignItems: 'center',
     gap: 10,

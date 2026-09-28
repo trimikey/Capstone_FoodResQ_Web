@@ -88,6 +88,8 @@ export function useAdminStats() {
 
 export interface AdminOverview extends AdminStats {
   kgRescued: number;
+  /** kitchen = nguyên liệu về bếp chiến dịch, donation = quyên góp chiến dịch, listing = tin đăng. */
+  kgBySource: { kitchen: number; donation: number; listing: number };
   co2SavedKg: number;
   mealsServed: number;
   peopleHelped: number;
