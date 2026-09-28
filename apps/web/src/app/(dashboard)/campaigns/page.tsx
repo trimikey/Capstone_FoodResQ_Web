@@ -28,6 +28,7 @@ import MyCampaignCard from './_components/MyCampaignCard';
 import CompletedCampaignsSection from './_components/CompletedCampaignsSection';
 import CreateCampaignModal from './_components/CreateCampaignModal';
 import CharityOverviewCharts from '@/components/campaigns/CharityOverviewCharts';
+import VolunteerImpactDashboard from '@/components/campaigns/VolunteerImpactDashboard';
 import SuppliersSection from './_components/SuppliersSection';
 import ProviderSection from './_components/ProviderSection';
 import EmbeddedTab from './_components/EmbeddedPage';
@@ -454,7 +455,12 @@ function OverviewDashboard({
         
       </div>
 
+      {/* TNV: số liệu CÁ NHÂN + biểu đồ đóng góp. Trước đây TNV thấy 4 ô toàn hệ
+          thống ("Tất cả chiến dịch") — không cho biết bản thân đã góp được gì. */}
+      {isVolunteer && <VolunteerImpactDashboard />}
+
       {/* KPI tiles — impact / higher-level metrics */}
+      {!isVolunteer && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KPITile
           label="Suất ăn đã phát"
@@ -489,6 +495,7 @@ function OverviewDashboard({
           onClick={() => onJumpTo('mine')}
         />
       </div>
+      )}
 
       {/* Biểu đồ gộp toàn tổ chức — chỉ charity; TNV/NCC có dashboard riêng. */}
       {isCharity && isAccountActive && <CharityOverviewCharts />}

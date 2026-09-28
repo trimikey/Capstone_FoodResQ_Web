@@ -138,6 +138,14 @@ export class CampaignsController {
     return this.campaignsService.myAssignments(user.id);
   }
 
+  @Get('my-impact')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Volunteer: đóng góp cá nhân — chiến dịch đã tham gia, ca, suất phát, kg, khâu bếp, biểu đồ theo tháng' })
+  myImpact(@CurrentUser() user: User) {
+    return this.campaignsService.getMyVolunteerImpact(user.id);
+  }
+
   @Get('my-tasks/:assignmentId')
   @UseGuards(RolesGuard, ActiveAccountGuard)
   @Roles(UserRole.VOLUNTEER)
