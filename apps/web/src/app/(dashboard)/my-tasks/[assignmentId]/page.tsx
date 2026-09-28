@@ -195,11 +195,11 @@ export default function MyTaskDetailPage() {
     <div className="cm-scope p-4 md:p-6 max-w-5xl mx-auto pb-24">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-neutral-500 mb-4">
-        <Link href="/campaigns?tab=tasks" className="hover:text-emerald-700">
+        <Link href="/campaigns?tab=tasks" className="shrink-0 hover:text-emerald-700">
           Việc của tôi
         </Link>
-        <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-        <span className="font-semibold text-neutral-700">{campaign.title}</span>
+        <span className="material-symbols-outlined shrink-0 text-[14px]">chevron_right</span>
+        <span className="min-w-0 truncate font-semibold text-neutral-700">{campaign.title}</span>
       </div>
 
       {/* Shipper có quy trình khác hẳn bếp: không có 4 khâu nấu, mà là chuỗi việc
@@ -258,9 +258,11 @@ export default function MyTaskDetailPage() {
         </div>
 
         {notCheckedIn && (
-          <div className="mt-5 rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
-            <span className="material-symbols-outlined text-amber-600">info</span>
-            <div className="flex-1 min-w-0">
+          // Mobile: nút xuống dòng riêng, rộng hết khung — đứng cạnh chữ thì ở 375px
+          // đoạn giải thích bị ép thành cột hẹp.
+          <div className="mt-5 rounded-2xl bg-amber-50 border border-amber-200 p-4 flex flex-wrap items-start gap-3 sm:flex-nowrap">
+            <span className="material-symbols-outlined shrink-0 text-amber-600">info</span>
+            <div className="min-w-0 flex-1 basis-[calc(100%-36px)] sm:basis-0">
               <p className="font-bold text-amber-900 text-sm">Bạn chưa điểm danh tại bếp</p>
               <p className="text-xs text-amber-800 mt-1">
                 Sau khi điểm danh thành công, bạn sẽ thấy danh sách món cần nấu và quy trình 4 khâu bên dưới.
@@ -270,7 +272,7 @@ export default function MyTaskDetailPage() {
               type="button"
               onClick={handleCheckIn}
               disabled={isCheckingIn || advance.isPending}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+              className="w-full sm:w-auto shrink-0 px-3 py-2 sm:py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
             >
               {isCheckingIn || advance.isPending ? 'Đang điểm danh…' : 'Điểm danh ngay'}
             </button>
@@ -385,7 +387,7 @@ export default function MyTaskDetailPage() {
               <>
                 {/* 1. CẦN — từ supplyItems (lúc đăng ký) */}
                 <div className="cm-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-2">
                     <span className="material-symbols-outlined text-amber-600 text-[18px]">
                       shopping_basket
                     </span>
@@ -429,7 +431,7 @@ export default function MyTaskDetailPage() {
 
                 {/* 2. ĐÃ CÓ — từ donations received */}
                 <div className="cm-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-2">
                     <span className="material-symbols-outlined text-emerald-600 text-[18px]">
                       check_circle
                     </span>
@@ -476,23 +478,25 @@ export default function MyTaskDetailPage() {
                           </summary>
                           <ul className="mt-2 divide-y divide-neutral-100">
                             {supplies.donations.map((d) => (
+                              // flex-wrap: nhà cung cấp · món · số lượng · giờ trên một hàng
+                              // tràn ngang ở 375px — cho xuống dòng, giờ nhận dạt phải.
                               <li
                                 key={d.id}
-                                className="py-1.5 text-[11px] flex items-center gap-2 text-neutral-600"
+                                className="py-1.5 text-[11px] flex flex-wrap items-center gap-x-2 gap-y-0.5 text-neutral-600"
                               >
                                 <span className="material-symbols-outlined text-[14px] text-neutral-400">
                                   storefront
                                 </span>
-                                <span className="font-semibold text-neutral-800">
+                                <span className="min-w-0 break-words font-semibold text-neutral-800">
                                   {d.provider.businessName}
                                 </span>
                                 <span className="text-neutral-400">·</span>
-                                <span className="truncate">{d.itemName}</span>
+                                <span className="min-w-0 break-words">{d.itemName}</span>
                                 {d.quantity && (
                                   <span className="text-neutral-500">{d.quantity}</span>
                                 )}
                                 {d.receivedAt && (
-                                  <span className="ml-auto text-neutral-400">
+                                  <span className="ml-auto shrink-0 text-neutral-400">
                                     {new Date(d.receivedAt).toLocaleString('vi-VN', {
                                       day: '2-digit',
                                       month: '2-digit',
