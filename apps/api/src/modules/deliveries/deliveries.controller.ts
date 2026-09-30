@@ -81,11 +81,18 @@ export class DeliveriesController {
     });
   }
 
+  @Get('nearby/settings')
+  @Roles(UserRole.VOLUNTEER)
+  @ApiOperation({ summary: 'Shipper: bán kính tìm đơn hiện hành (admin cấu hình DELIVERY_CLAIM_RADIUS_KM)' })
+  async nearbySettings() {
+    return { radiusKm: await this.deliveriesService.getClaimRadiusKm() };
+  }
+
   @Get('nearby')
   @Roles(UserRole.VOLUNTEER)
   @ApiOperation({
     summary:
-      'Shipper: đơn đang chờ trong bán kính 5km quanh vị trí hiện tại — tự chọn đơn thay vì chờ lời mời',
+      'Shipper: đơn đang chờ trong bán kính cấu hình (mặc định 5km) quanh vị trí hiện tại — tự chọn đơn thay vì chờ lời mời',
   })
   nearbyPending(
     @CurrentUser() user: User,

@@ -345,6 +345,7 @@ export const endpoints = {
     track: (reservationId: string) => `/deliveries/track/${reservationId}`,
     // Volunteer (shipper): đơn gần bạn / đơn đang giao / lịch sử / thành tích
     nearby: '/deliveries/nearby',
+    nearbySettings: '/deliveries/nearby/settings',
     myActive: '/deliveries/my/active',
     myHistory: '/deliveries/my/history',
     myStats: '/deliveries/my/stats',

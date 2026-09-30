@@ -259,6 +259,18 @@ export interface WeeklyAvailabilityData {
   updatedAt?: string | null;
 }
 
+/** Bán kính shipper thấy đơn (km) — admin chỉnh ở Cấu hình hệ thống. */
+export function useDeliveryClaimRadius() {
+  return useQuery({
+    queryKey: ['deliveries', 'nearby', 'settings'],
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse<{ radiusKm: number }>>(endpoints.deliveries.nearbySettings);
+      return res.data.data.radiusKm;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** Một đơn đang chờ trong bán kính, trả về từ GET /deliveries/nearby. */
 interface NearbyDeliveryRow {
   deliveryId: string;

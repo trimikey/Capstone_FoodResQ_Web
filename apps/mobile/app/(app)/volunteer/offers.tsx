@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import {
   useMyOffers,
+  useDeliveryClaimRadius,
   useAcceptOffer,
   useRejectOffer,
   useActiveDelivery,
@@ -124,7 +125,8 @@ function claimBlockedReason(offer: TaskOffer): string | null {
 }
 
 /**
- * Đơn cần giao (tab volunteer) — đơn đang chờ trong bán kính 5km quanh shipper.
+ * Đơn cần giao (tab volunteer) — đơn đang chờ trong bán kính admin cấu hình
+ * (`DELIVERY_CLAIM_RADIUS_KM`, mặc định 5km) quanh shipper.
  *
  * Hệ mời tuần tự 15s đã gỡ: đơn không gán riêng cho ai, shipper trong ca tự
  * chọn đơn. Đếm ngược giờ là HẠN CỦA ĐƠN (quá hạn không ai nhận thì đơn bị huỷ),
@@ -133,6 +135,7 @@ function claimBlockedReason(offer: TaskOffer): string | null {
 export default function VolunteerOffersScreen() {
   const offerSheetRef = useRef<BottomSheetModal>(null);
   const { data, isLoading, isError, refetch } = useMyOffers();
+  const { data: claimRadiusKm } = useDeliveryClaimRadius();
   const {
     data: volunteer,
     isLoading: isVolunteerLoading,
@@ -704,7 +707,7 @@ export default function VolunteerOffersScreen() {
 
   const locationHint = (() => {
     if (isVolunteerError) return 'Kéo để tải lại hoặc mở tab Hồ sơ kiểm tra trạng thái.';
-    if (!currentLocation) return 'Ứng dụng cần GPS để tìm đơn quanh bạn trong bán kính 5km.';
+    if (!currentLocation) return `Ứng dụng cần GPS để tìm đơn quanh bạn trong bán kính ${claimRadiusKm != null ? `${claimRadiusKm} km` : 'cho phép'}.`;
     return visibleOffers.length > 0
       ? `${visibleOffers.length} đơn quanh bạn, ${claimableOfferCount} đơn có thể nhận`
       : 'Nếu chưa có đơn, hãy kiểm tra ca giao hàng và vị trí lấy hàng của tin.';
@@ -1029,6 +1032,7 @@ const MapWatchCard = memo(function MapWatchCard({
   onSelectListing: (id: string) => void;
   compact?: boolean;
 }) {
+  const { data: claimRadiusKm } = useDeliveryClaimRadius();
   const hasRoute = Boolean(route?.pickup || route?.dropoff);
   const hasMap = listings.length > 0 || hasRoute;
   const mapKey = [
@@ -1074,7 +1078,7 @@ const MapWatchCard = memo(function MapWatchCard({
             size={16}
             color={hasRoute ? COLORS.blue : COLORS.teal}
           />
-          <Text style={styles.watchBadgeText}>{hasRoute ? 'Đơn' : '5 km'}</Text>
+          <Text style={styles.watchBadgeText}>{hasRoute ? 'Đơn' : claimRadiusKm != null ? `${claimRadiusKm} km` : 'GPS'}</Text>
         </View>
       </View>
 

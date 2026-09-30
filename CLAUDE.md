@@ -399,7 +399,7 @@ NEXTAUTH_URL=http://localhost:3000
 | QR code validity | 30 min | `QR_VALIDITY_MINUTES` |
 | Trust score ban threshold | ≤ 30 | `TRUST_BAN_THRESHOLD` |
 | Trust score restriction threshold | ≤ 60 | `TRUST_RESTRICT_THRESHOLD` |
-| Shipper claim radius (open list of pending deliveries, shipper picks one) | 5 km | hardcoded `BROADCAST_RADIUS_M` |
+| Shipper claim radius (open list of pending deliveries, shipper picks one) | 5 km | `DELIVERY_CLAIM_RADIUS_KM` |
 | Shipper may claim a delivery only inside a registered shift | `delivery_shift_registrations` covering the slot | enforced in DeliveriesService.claimDelivery |
 | Immediate order stays claimable (nobody claims → close order, notify receiver) | 30 min | `DELIVERY_CLAIM_WINDOW_MINUTES` |
 | Scheduled order stops being claimable before its appointment | 15 min | `DELIVERY_SCHEDULED_CUTOFF_MINUTES` (0 = claimable until the appointment) |

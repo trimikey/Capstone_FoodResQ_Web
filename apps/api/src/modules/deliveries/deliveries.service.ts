@@ -15,7 +15,6 @@ import { NotificationsService } from '@/modules/notifications/notifications.serv
 import { TrustService } from '@/modules/trust/trust.service';
 import { SystemConfigService } from '@/common/system-config/system-config.service';
 
-const BROADCAST_RADIUS_M = 5000; // 5km
 // Đơn giao không có cập nhật trạng thái quá số giờ này → coi như shipper bỏ ngang, auto-fail
 const DELIVERY_STALL_HOURS = 6;
 
@@ -420,12 +419,18 @@ export class DeliveriesService {
     );
   }
 
+  /** Bán kính (km) quanh shipper để thấy đơn — admin chỉnh qua `DELIVERY_CLAIM_RADIUS_KM`. */
+  async getClaimRadiusKm() {
+    return this.systemConfig.getNumber('DELIVERY_CLAIM_RADIUS_KM');
+  }
+
   async getNearbyPendingDeliveries(
     shipperUserId: string,
     lng: number,
     lat: number,
   ) {
     const volunteer = await this.requireVerifiedShipper(shipperUserId);
+    const radiusM = (await this.getClaimRadiusKm()) * 1000;
 
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -463,7 +468,7 @@ export class DeliveriesService {
         AND ST_DWithin(
           d.pickup_location::geography,
           ST_MakePoint(${lng}, ${lat})::geography,
-          ${BROADCAST_RADIUS_M}
+          ${radiusM}
         )
       ORDER BY r.delivery_scheduled_at ASC NULLS FIRST, d.created_at ASC
       LIMIT 30

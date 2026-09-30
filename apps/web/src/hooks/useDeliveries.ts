@@ -485,6 +485,16 @@ export interface NearbyDelivery {
   claimExpiresAt: string;
 }
 
+/** Bán kính shipper thấy đơn (km) — admin chỉnh ở Cấu hình hệ thống. */
+export function useDeliveryClaimRadius() {
+  return useQuery({
+    queryKey: ['deliveries', 'nearby', 'settings'],
+    queryFn: async () =>
+      ((await api.get('/deliveries/nearby/settings')).data.data as { radiusKm: number }).radiusKm,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useNearbyDeliveries(coords: { lng: number; lat: number } | null) {
   return useQuery({
     queryKey: ['deliveries', 'nearby', coords],

@@ -10,6 +10,7 @@ import {
   useVolunteerMe,
   useMyDeliveryShifts,
   useNearbyDeliveries,
+  useDeliveryClaimRadius,
   useClaimDelivery,
   useActiveDelivery,
   useShipperStats,
@@ -99,6 +100,8 @@ export default function DeliveriesPage() {
   const { data: myShifts } = useMyDeliveryShifts();
   const [gps, setGps] = useState<{ lng: number; lat: number } | null>(null);
   const { data: nearby, isLoading: nearbyLoading } = useNearbyDeliveries(!active ? gps : null);
+  const { data: claimRadiusKm } = useDeliveryClaimRadius();
+  const radiusLabel = claimRadiusKm != null ? `${claimRadiusKm} km` : 'cho phép';
   const claimDelivery = useClaimDelivery();
   const { data: stats } = useShipperStats(!!me?.isShipper);
   const { data: history } = useDeliveryHistory({ limit: 3, enabled: !!me?.isShipper });
@@ -716,7 +719,7 @@ export default function DeliveriesPage() {
               <div className="text-center py-10 bg-white rounded-3xl border border-neutral-200">
                 <span className="material-symbols-outlined text-neutral-300 text-[48px]">my_location</span>
                 <p className="font-bold text-neutral-700 mt-3">Đang xác định vị trí của bạn…</p>
-                <p className="text-xs text-neutral-500 mt-1">Cho phép trình duyệt truy cập GPS để xem đơn trong bán kính 5km.</p>
+                <p className="text-xs text-neutral-500 mt-1">Cho phép trình duyệt truy cập GPS để xem đơn trong bán kính {radiusLabel}.</p>
               </div>
             )}
 
@@ -725,7 +728,7 @@ export default function DeliveriesPage() {
                 <span className="material-symbols-outlined text-neutral-300 text-[56px]">inbox</span>
                 <p className="font-bold text-neutral-700 mt-3">Chưa có đơn nào quanh bạn</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Đơn trong bán kính 5km sẽ hiện ở đây (tự làm mới mỗi 20 giây). Bạn chỉ nhận được đơn thuộc ca đã đăng ký.
+                  Đơn trong bán kính {radiusLabel} sẽ hiện ở đây (tự làm mới mỗi 20 giây). Bạn chỉ nhận được đơn thuộc ca đã đăng ký.
                 </p>
               </div>
             )}
