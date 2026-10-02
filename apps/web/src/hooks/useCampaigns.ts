@@ -1603,7 +1603,6 @@ export interface CampaignCreateConstraints {
   /** Ngày bắt đầu sớm nhất cho chiến dịch dài ngày (YYYY-MM-DD, tính sẵn theo giờ VN). */
   multiDayEarliestStartDate: string;
   minFillPercent: number;
-  changeLockDays: number;
   /** Hạn đóng tuyển phải trước ca đầu tiên ít nhất bấy nhiêu phút. */
   recruitmentCloseLeadMinutes: number;
   /** Admin bật "Cho phép bắt đầu/điểm danh sớm" → cho bấm Bắt đầu trước giờ vận hành. */

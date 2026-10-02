@@ -3692,10 +3692,9 @@ export class CampaignsService {
    * `/admin/configs` chỉ admin gọi được nên tổ chức cần lối riêng, chỉ lộ đúng phần cần.
    */
   async getCreateConstraints() {
-    const [multiDayLeadDays, minFillPercent, changeLockDays, allowEarlyStart, recruitmentCloseLeadMinutes] = await Promise.all([
+    const [multiDayLeadDays, minFillPercent, allowEarlyStart, recruitmentCloseLeadMinutes] = await Promise.all([
       this.systemConfig.getNumber('MULTIDAY_CAMPAIGN_LEAD_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_MIN_FILL_PERCENT'),
-      this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS'),
       this.systemConfig.getNumber('CAMPAIGN_ALLOW_EARLY_START_AND_CHECKIN'),
       this.systemConfig.getNumber('CAMPAIGN_RECRUITMENT_CLOSE_LEAD_MINUTES'),
     ]);
@@ -3707,7 +3706,6 @@ export class CampaignsService {
       multiDayLeadDays,
       multiDayEarliestStartDate: earliest.toISOString().slice(0, 10),
       minFillPercent,
-      changeLockDays,
       recruitmentCloseLeadMinutes,
       // Admin bật "Cho phép bắt đầu/điểm danh sớm" thì FE phải hiện nút Bắt đầu
       // TRƯỚC giờ vận hành — nếu không, cấu hình bật mà giao diện vẫn giấu nút.
@@ -5225,8 +5223,7 @@ export class CampaignsService {
 
   /**
    * Tổ chức gửi YÊU CẦU thay đổi chiến dịch (giờ/ngày, địa chỉ+vị trí, số slot TNV).
-   * Không áp dụng ngay — tạo bản ghi chờ admin duyệt. Chỉ cho gửi khi còn ≥ ngưỡng
-   * CAMPAIGN_CHANGE_LOCK_DAYS ngày tới ngày diễn ra, và mỗi chiến dịch chỉ 1 yêu cầu pending.
+   * Không áp dụng ngay — tạo bản ghi chờ admin duyệt. Mỗi chiến dịch chỉ 1 yêu cầu pending.
    */
   async submitChangeRequest(campaignId: string, userId: string, dto: SubmitCampaignChangeDto) {
     const campaign = await this.assertOwner(campaignId, userId);
@@ -5246,17 +5243,9 @@ export class CampaignsService {
     ].some((v) => v !== undefined);
     if (!hasChange) throw new BadRequestException('Chưa có thay đổi nào được đề xuất.');
 
-    // Khóa thay đổi cận ngày
-    const lockDays = await this.systemConfig.getNumber('CAMPAIGN_CHANGE_LOCK_DAYS');
-    const daysLeft = this.daysUntil(campaign.scheduledDate);
-    if (daysLeft < lockDays) {
-      throw new BadRequestException(
-        `Chỉ được gửi yêu cầu thay đổi khi còn ít nhất ${lockDays} ngày trước ngày diễn ra (hiện còn ${daysLeft} ngày).`,
-      );
-    }
-    // Ngày diễn ra mới cũng phải cách hiện tại ≥ ngưỡng
-    if (dto.scheduledDate && this.daysUntil(new Date(dto.scheduledDate)) < lockDays) {
-      throw new BadRequestException(`Ngày diễn ra mới phải cách hôm nay ít nhất ${lockDays} ngày.`);
+    // Không còn khoá đổi lịch cận ngày — chỉ chặn dời về ngày đã qua.
+    if (dto.scheduledDate && this.daysUntil(new Date(dto.scheduledDate)) < 0) {
+      throw new BadRequestException('Ngày diễn ra mới không được ở trong quá khứ.');
     }
     // Ngày bắt đầu/kết thúc SAU thay đổi phải hợp lệ. So bằng chuỗi YYYY-MM-DD để
     // không dính lệch múi giờ. Trước đây chỉ kiểm khi có endDate, nên dời riêng ngày
