@@ -64,9 +64,9 @@ function shelfLifeDaysFrom(pickupEndTime: string, expiryTime?: string): number {
   return Math.min(30, Math.max(1, Math.ceil((exp - end) / 86_400_000)));
 }
 const CREATE_STEPS = [
-  { key: 1, label: 'Th\u00f4ng tin', icon: 'food-apple-outline' },
-  { key: 2, label: 'S\u1ed1 l\u01b0\u1ee3ng & gi\u1edd', icon: 'clock-outline' },
-  { key: 3, label: '\u1ea2nh & \u0111\u1ecba \u0111i\u1ec3m', icon: 'map-marker-radius-outline' },
+  { key: 1, label: 'Thông tin', icon: 'food-apple-outline' },
+  { key: 2, label: 'Số lượng & giờ', icon: 'clock-outline' },
+  { key: 3, label: 'Ảnh & địa điểm', icon: 'map-marker-radius-outline' },
 ] as const;
 
 // FoodResQ chỉ hoạt động ở VN — ép cứng timezone này cho picker thay vì để
@@ -312,8 +312,8 @@ export default function CreateListingScreen() {
     if (!storePickup) {
       Popup.show({
         type: 'warning',
-        text1: 'Ch\u01b0a c\u00f3 \u0111\u1ecba ch\u1ec9 c\u1eeda h\u00e0ng',
-        text2: 'Vui l\u00f2ng c\u1eadp nh\u1eadt \u0111\u1ecba ch\u1ec9 v\u00e0 to\u1ea1 \u0111\u1ed9 trong h\u1ed3 s\u01a1 tr\u01b0\u1edbc.',
+        text1: 'Chưa có địa chỉ cửa hàng',
+        text2: 'Vui lòng cập nhật địa chỉ và toạ độ trong hồ sơ trước.',
       });
       return;
     }
@@ -329,8 +329,8 @@ export default function CreateListingScreen() {
       if (!result.coords) {
         Popup.show({
           type: 'warning',
-          text1: 'Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i',
-          text2: 'Vui l\u00f2ng b\u1eadt \u0111\u1ecbnh v\u1ecb ho\u1eb7c ch\u1ecdn \u0111\u1ecba ch\u1ec9 tr\u00ean b\u1ea3n \u0111\u1ed3.',
+          text1: 'Không lấy được vị trí hiện tại',
+          text2: 'Vui lòng bật định vị hoặc chọn địa chỉ trên bản đồ.',
         });
         return;
       }
@@ -348,7 +348,7 @@ export default function CreateListingScreen() {
     if (activeStep === 1) {
       const ok = await trigger(['title', 'categories', 'categoryOtherLabel', 'description']);
       if (!ok) {
-        Popup.show({ type: 'warning', text1: 'C\u1ea7n ho\u00e0n t\u1ea5t th\u00f4ng tin m\u00f3n \u0103n' });
+        Popup.show({ type: 'warning', text1: 'Cần hoàn tất thông tin món ăn' });
         return;
       }
     }
@@ -369,8 +369,8 @@ export default function CreateListingScreen() {
       if (!ok || !pickupStart || !pickupEnd) {
         Popup.show({
           type: 'warning',
-          text1: 'C\u1ea7n ho\u00e0n t\u1ea5t s\u1ed1 l\u01b0\u1ee3ng v\u00e0 th\u1eddi gian',
-          text2: 'Ch\u1ecdn \u0111\u1ee7 b\u1eaft \u0111\u1ea7u l\u1ea5y, h\u1ea1n l\u1ea5y, h\u1ea1n s\u1eed d\u1ee5ng v\u00e0 khung gi\u1edd m\u1edf c\u1eeda trong ng\u00e0y.',
+          text1: 'Cần hoàn tất số lượng và thời gian',
+          text2: 'Chọn đủ bắt đầu lấy, hạn lấy, hạn sử dụng và khung giờ mở cửa trong ngày.',
         });
         return;
       }
@@ -450,8 +450,8 @@ export default function CreateListingScreen() {
         const created = await createListing.mutateAsync(fullPayload);
         Popup.show({
           type: 'success',
-          text1: '\u0110\u00e3 t\u1ea1o tin nh\u00e1p',
-          text2: 'B\u1ea5m \"\u0110\u0103ng tin\" \u1edf m\u00e0n chi ti\u1ebft \u0111\u1ec3 hi\u1ec3n th\u1ecb tr\u00ean web.',
+          text1: 'Đã tạo tin nháp',
+          text2: 'Bấm \"Đăng tin\" ở màn chi tiết để hiển thị trên web.',
         });
         router.replace(`/(app)/provider/${created.id}`);
         return;
@@ -822,15 +822,15 @@ export default function CreateListingScreen() {
                 <View style={styles.inlinePanelHead}>
                   <MaterialCommunityIcons name="store-clock-outline" size={18} color={COLORS.primary} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.inlinePanelTitle}>Gi\u1edd m\u1edf c\u1eeda nh\u1eadn h\u00e0ng trong ng\u00e0y</Text>
-                    <Text style={styles.inlinePanelHelper}>Ng\u01b0\u1eddi nh\u1eadn ch\u1ec9 \u0111\u1eb7t/l\u1ea5y trong khung n\u00e0y m\u1ed7i ng\u00e0y, t\u01b0\u01a1ng t\u1ef1 web c\u1eeda h\u00e0ng.</Text>
+                    <Text style={styles.inlinePanelTitle}>Giờ mở cửa nhận hàng trong ngày</Text>
+                    <Text style={styles.inlinePanelHelper}>Người nhận chỉ đặt/lấy trong khung này mỗi ngày, tương tự web cửa hàng.</Text>
                   </View>
                 </View>
                 <View style={[styles.rowFields, compactLayout && styles.rowFieldsStacked]}>
                   <View style={styles.rowField}>
-                    <Field label="M\u1edf nh\u1eadn t\u1eeb *" error={errors.dailyStartMinute?.message}>
+                    <Field label="Mở nhận từ *" error={errors.dailyStartMinute?.message}>
                       <TimeButton
-                        label="M\u1edf nh\u1eadn"
+                        label="Mở nhận"
                         value={dailyStartMinute}
                         onPress={() => openTimePicker(dailyStartMinute, (minute) => {
                           setValue('dailyStartMinute', minute, { shouldValidate: true });
@@ -841,9 +841,9 @@ export default function CreateListingScreen() {
                     </Field>
                   </View>
                   <View style={styles.rowField}>
-                    <Field label="\u0110\u00f3ng nh\u1eadn l\u00fac *" error={errors.dailyEndMinute?.message}>
+                    <Field label="Đóng nhận lúc *" error={errors.dailyEndMinute?.message}>
                       <TimeButton
-                        label="\u0110\u00f3ng nh\u1eadn"
+                        label="Đóng nhận"
                         value={dailyEndMinute}
                         onPress={() => openTimePicker(dailyEndMinute, (minute) => {
                           setValue('dailyEndMinute', minute, { shouldValidate: true });
@@ -943,7 +943,7 @@ export default function CreateListingScreen() {
           ) : null}
 
           {(editingIsPublished || activeStep === 2) ? (
-          <Section icon="shield-check-outline" title="Ghi ch\u00fa an to\u00e0n">
+          <Section icon="shield-check-outline" title="Ghi chú an toàn">
             <Field label="Mô tả (tuỳ chọn)" helper="Ghi tình trạng món, cách đóng gói hoặc thời điểm nấu.">
               <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
                 <TextInput
@@ -1003,7 +1003,7 @@ export default function CreateListingScreen() {
               labelStyle={styles.submitLabel}
               icon="arrow-left"
             >
-              Quay l\u1ea1i
+              Quay lại
             </Button>
           ) : null}
           <Button
@@ -1019,7 +1019,7 @@ export default function CreateListingScreen() {
             accessibilityState={{ disabled: submitting || uploading, busy: submitting }}
             icon={!editingIsPublished && activeStep < 3 ? 'arrow-right' : undefined}
           >
-            {!editingIsPublished && activeStep < 3 ? 'Ti\u1ebfp t\u1ee5c' : isEdit ? 'L\u01b0u thay \u0111\u1ed5i' : 'T\u1ea1o tin (Nh\u00e1p)'}
+            {!editingIsPublished && activeStep < 3 ? 'Tiếp tục' : isEdit ? 'Lưu thay đổi' : 'Tạo tin (Nháp)'}
           </Button>
           <Text style={styles.footerHint} numberOfLines={2}>
             {isEdit ? 'Lưu xong sẽ quay lại danh sách tin.' : 'Tin sẽ được lưu ở trạng thái nháp để bạn kiểm tra trước khi đăng.'}

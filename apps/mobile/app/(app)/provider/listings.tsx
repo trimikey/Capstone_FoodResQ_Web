@@ -218,7 +218,7 @@ export default function ProviderListingsScreen() {
 
       <FAB
         icon="plus"
-        label="T\u1ea1o nh\u00e1p"
+        label="Tạo nháp"
         color={COLORS.onPrimary}
         style={styles.fab}
         onPress={() => router.push('/(app)/provider/create')}
