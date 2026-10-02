@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { AdminOperationsService } from './admin-operations.service';
 import {
   ReviewVerificationDto,
   ResolveReportDto,
@@ -28,7 +29,34 @@ import { User } from '@prisma/client';
 @Roles(UserRole.ADMIN)
 @ApiBearerAuth()
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(
+    private adminService: AdminService,
+    private operations: AdminOperationsService,
+  ) {}
+
+  @Get('providers')
+  @ApiOperation({ summary: 'Admin: nhà cung cấp kèm số liệu hoạt động (?q tìm theo tên/địa chỉ/email)' })
+  providers(@Query('q') q?: string) {
+    return this.operations.listProviders(q);
+  }
+
+  @Get('volunteers/overview')
+  @ApiOperation({ summary: 'Admin: tình nguyện viên / shipper kèm chuyên môn, điểm, ca giao hàng, lịch sử (?q)' })
+  volunteersOverview(@Query('q') q?: string) {
+    return this.operations.listVolunteers(q);
+  }
+
+  @Get('deliveries/monitor')
+  @ApiOperation({ summary: 'Admin: giám sát giao hàng — chờ nhận, đang giao, bị treo, hết hạn, giao sỉ' })
+  deliveryMonitor() {
+    return this.operations.deliveryMonitor();
+  }
+
+  @Get('campaign-incidents')
+  @ApiOperation({ summary: 'Admin: sự cố shipper báo trên mọi chiến dịch (?status=open|resolved)' })
+  campaignIncidents(@Query('status') status?: string) {
+    return this.operations.listCampaignIncidents(status);
+  }
 
   @Get('stats')
   @ApiOperation({ summary: 'Admin: số liệu tổng quan' })

@@ -36,6 +36,8 @@ const ADMIN_NAV_GROUPS: Array<{
       { href: '/admin/donations', label: 'Đơn nhận thực phẩm', icon: 'receipt_long' },
       { href: '/admin/campaigns', label: 'Quản lý Chiến dịch', icon: 'soup_kitchen' },
       { href: '/admin/food', label: 'Tin đăng thực phẩm', icon: 'restaurant_menu' },
+      { href: '/admin/deliveries', label: 'Giám sát giao hàng', icon: 'local_shipping' },
+      { href: '/admin/incidents', label: 'Sự cố chiến dịch', icon: 'report' },
     ],
   },
   {
@@ -44,6 +46,8 @@ const ADMIN_NAV_GROUPS: Array<{
       { href: '/admin/catalog', label: 'Danh mục thực phẩm', icon: 'category' },
       { href: '/admin/reports', label: 'Xử lý khiếu nại', icon: 'warning' },
       { href: '/admin/users', label: 'Quản lý tài khoản', icon: 'manage_accounts' },
+      { href: '/admin/providers', label: 'Nhà cung cấp', icon: 'storefront' },
+      { href: '/admin/volunteers', label: 'Tình nguyện viên', icon: 'volunteer_activism' },
     ],
   },
 ];

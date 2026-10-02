@@ -26,15 +26,24 @@ const FoodCatalogTab = dynamic(() => import('./_components/FoodCatalogTab'), { l
 const ReportsTab = dynamic(() => import('./_components/ReportsTab'), { loading });
 const UsersTab = dynamic(() => import('./_components/UsersTab'), { loading });
 const SettingsTab = dynamic(() => import('./_components/SettingsTab'), { loading });
+const ProvidersTab = dynamic(() => import('./_components/ProvidersTab'), { loading });
+const VolunteersTab = dynamic(() => import('./_components/VolunteersTab'), { loading });
+const DeliveryMonitorTab = dynamic(() => import('./_components/DeliveryMonitorTab'), { loading });
+const IncidentsTab = dynamic(() => import('./_components/IncidentsTab'), { loading });
 
-type Tab = 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'catalog' | 'reports' | 'users' | 'settings';
+type Tab =
+  | 'dashboard' | 'map' | 'donations' | 'campaigns' | 'food' | 'catalog' | 'reports' | 'users' | 'settings'
+  | 'providers' | 'volunteers' | 'deliveries' | 'incidents';
 
 export default function AdminPage() {
   return <AdminShell />;
 }
 
 export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
-  const VALID_TABS = new Set<Tab>(['dashboard', 'map', 'donations', 'campaigns', 'food', 'catalog', 'reports', 'users', 'settings']);
+  const VALID_TABS = new Set<Tab>([
+    'dashboard', 'map', 'donations', 'campaigns', 'food', 'catalog', 'reports', 'users', 'settings',
+    'providers', 'volunteers', 'deliveries', 'incidents',
+  ]);
   const tab: Tab =
     initialTab && VALID_TABS.has(initialTab as Tab) ? (initialTab as Tab) : 'dashboard';
 
@@ -49,6 +58,10 @@ export function AdminShell({ initialTab }: { initialTab?: string } = {}) {
       {tab === 'reports' && <ReportsTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'settings' && <SettingsTab />}
+      {tab === 'providers' && <ProvidersTab />}
+      {tab === 'volunteers' && <VolunteersTab />}
+      {tab === 'deliveries' && <DeliveryMonitorTab />}
+      {tab === 'incidents' && <IncidentsTab />}
     </>
   );
 }
