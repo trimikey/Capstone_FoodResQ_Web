@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient, { ApiResponse, endpoints } from '../api/client';
 import type { ReservationStatus } from './useProviderReservations';
@@ -121,11 +122,22 @@ export function useMyReservations(page = 1, limit = 20) {
   });
 }
 
+const ACTIVE_ORDER_POLL_MS = 5_000;
+
 /** Chi tiết 1 đơn. GET /reservations/:id */
 export function useReservationDetail(id?: string) {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: ['reservation', id],
     enabled: !!id,
+    // Mở lại màn là tải lại — đơn đổi trạng thái do NGƯỜI KHÁC (NCC quét QR, shipper giao).
+    staleTime: 0,
+    // Đơn còn dang dở thì hỏi lại định kỳ: NCC quét xong, màn của người nhận phải tự
+    // bỏ mã QR và chuyển sang bước kế tiếp, không bắt họ thoát ra vào lại.
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      return status === 'confirmed' || status === 'picked_up' ? ACTIVE_ORDER_POLL_MS : false;
+    },
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse<ReservationDetail>>(
         endpoints.reservations.detail(id!)
@@ -133,6 +145,18 @@ export function useReservationDetail(id?: string) {
       return normalizeReservationListingImages(res.data.data);
     },
   });
+
+  // Trạng thái vừa đổi → danh sách "Đơn của tôi" cũng phải theo.
+  const status = query.data?.status;
+  const lastStatus = useRef(status);
+  useEffect(() => {
+    if (lastStatus.current && status && lastStatus.current !== status) {
+      void queryClient.invalidateQueries({ queryKey: ['reservations'] });
+    }
+    lastStatus.current = status;
+  }, [status, queryClient]);
+
+  return query;
 }
 
 /** Tạo đơn đặt chỗ. POST /reservations → trả { reservationId, qrToken, qrExpiresAt }. */
