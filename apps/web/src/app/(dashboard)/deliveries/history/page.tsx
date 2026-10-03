@@ -5,7 +5,7 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useVolunteerMe, useDeliveryHistory, type DeliveryHistoryItem } from '@/hooks/useDeliveries';
 import { useCreateReport } from '@/hooks/useReports';
-import { mediaUrl } from '@/lib/utils';
+import { mapsDirUrl, mediaUrl } from '@/lib/utils';
 import { ReportReason, ReportTargetType } from '@foodresq/types';
 import { toast } from 'sonner';
 import Pagination from '@/components/shared/Pagination';
@@ -718,7 +718,7 @@ function PickupDetail({ p }: { p: PickupHistoryItem }) {
               {p.providerAddress || 'Chưa có địa chỉ'}
               {p.lng != null && p.lat != null && (
                 <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
+                  href={mapsDirUrl(p.lat, p.lng)}
                   target="_blank"
                   rel="noreferrer"
                   className="ml-2 inline-flex items-center gap-0.5 text-xs font-bold text-emerald-700 hover:underline"

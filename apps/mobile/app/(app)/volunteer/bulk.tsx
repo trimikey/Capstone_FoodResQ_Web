@@ -70,7 +70,9 @@ function statusMeta(status: string): { label: string; tone: 'neutral' | 'success
 
 function mapsUrl(address?: string | null, coords?: { lat: number; lng: number } | null): string | null {
   const target = coords ? `${coords.lat},${coords.lng}` : address?.trim();
-  return target ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(target)}` : null;
+  return target
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(target)}&travelmode=two-wheeler`
+    : null;
 }
 
 // ─── Listing picker card ────────────────────────────────────────────────────

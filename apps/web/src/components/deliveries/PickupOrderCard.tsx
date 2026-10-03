@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { qtyUnit, type MyPickupOrder } from '@/hooks/useCampaigns';
 import { formatVnDate } from '@/lib/vn-date';
-import { mediaUrl } from '@/lib/utils';
+import { mapsDirUrl, mediaUrl } from '@/lib/utils';
 import ReportIncidentButton from '@/components/campaigns/ReportIncidentButton';
 
 /**
@@ -201,7 +201,7 @@ export default function PickupOrderCard({ order, onConfirm }: Props) {
             <span className="text-neutral-700">{order.providerAddress || 'Chưa có địa chỉ'}</span>
             {order.lng != null && order.lat != null && (
               <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${order.lat},${order.lng}`}
+                href={mapsDirUrl(order.lat, order.lng)}
                 target="_blank"
                 rel="noreferrer"
                 className="ml-2 inline-flex items-center gap-0.5 font-bold text-emerald-700 hover:underline"

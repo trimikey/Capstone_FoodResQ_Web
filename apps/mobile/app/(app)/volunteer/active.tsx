@@ -415,9 +415,11 @@ function mapsUrls(target: RouteTarget): { primary: string; fallback: string } | 
   const raw = mapsDestination(target);
   if (!raw) return null;
   const encoded = encodeURIComponent(raw);
-  const fallback = `https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=driving`;
+  // Shipper đi xe máy → chế độ two-wheeler (mode=l trên Android); chế độ ô tô hay vẽ
+  // tuyến xe máy không đi được hoặc bỏ qua hẻm.
+  const fallback = `https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=two-wheeler`;
   if (Platform.OS === 'android')
-    return { primary: `google.navigation:q=${encoded}&mode=d`, fallback };
+    return { primary: `google.navigation:q=${encoded}&mode=l`, fallback };
   if (Platform.OS === 'ios')
     return { primary: `comgooglemaps://?daddr=${encoded}&directionsmode=driving`, fallback };
   return { primary: fallback, fallback };

@@ -7,7 +7,7 @@ import { useAdvanceTask, type MyTaskDetail, type PickupOrder } from '@/hooks/use
 import CompleteDistributionModal from './CompleteDistributionModal';
 import { formatCampaignRange } from '@/lib/campaign-schedule';
 import { formatVnDate } from '@/lib/vn-date';
-import { errMsg, mediaUrl } from '@/lib/utils';
+import { errMsg, mapsDirUrl, mediaUrl } from '@/lib/utils';
 import ReportIncidentButton from '@/components/campaigns/ReportIncidentButton';
 
 /**
@@ -317,7 +317,7 @@ export default function WaiterTaskView({ detail, onCheckedIn }: Props) {
                       <span className="text-neutral-500">{pt.address}</span>
                       {pt.lng != null && pt.lat != null && (
                         <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${pt.lat},${pt.lng}`}
+                          href={mapsDirUrl(pt.lat, pt.lng)}
                           target="_blank"
                           rel="noreferrer"
                           className="ml-2 inline-flex items-center gap-0.5 font-bold text-emerald-700 hover:underline"

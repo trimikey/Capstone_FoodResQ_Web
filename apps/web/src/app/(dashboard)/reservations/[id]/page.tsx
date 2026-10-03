@@ -20,7 +20,7 @@ import {
   scoreAfterLateCancel,
 } from '@/lib/cancel-penalty';
 import { useDeliveryTracking, useCancelDeliverySearch } from '@/hooks/useDeliveries';
-import { haversineKm, mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
+import { haversineKm, mapsDirUrl, mediaUrl, UNIT_LABEL, pickupCodeFromQrToken } from '@/lib/utils';
 import { QuantityUnit } from '@foodresq/types';
 import CameraCapture, { type CaptureMode } from '@/components/shared/CameraCapture';
 import ReportIssueModal from '@/components/reservations/ReportIssueModal';
@@ -1649,12 +1649,17 @@ export default function ReservationDetailsPage() {
                     </button>
                   )}
                   <button
-                    onClick={() =>
+                    onClick={() => {
+                      // Ưu tiên toạ độ điểm lấy (ghim cửa hàng đặt khi đăng tin); chỉ khi
+                      // đơn cũ không có toạ độ mới tìm theo chữ địa chỉ.
+                      const coords = (reservation as { pickupCoords?: { lat: number; lng: number } | null }).pickupCoords;
                       window.open(
-                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reservation.listing.provider.address)}`,
+                        coords
+                          ? mapsDirUrl(coords.lat, coords.lng)
+                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reservation.listing.provider.address)}`,
                         '_blank',
-                      )
-                    }
+                      );
+                    }}
                     className="w-full py-2.5 border border-emerald-700 hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
                   >
                     <span className="material-symbols-outlined text-[16px]">explore</span>

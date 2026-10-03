@@ -1377,8 +1377,17 @@ export class ReservationsService {
     const providerUserId = reservation.listing.provider.userId;
     const shipperUserId = reservation.delivery?.shipper?.userId ?? null;
 
+    // Toạ độ ĐÚNG ĐIỂM LẤY (ghim cửa hàng đặt khi đăng tin) — để nút chỉ đường dẫn tới
+    // đúng ghim. Tìm theo chữ địa chỉ thì Google có thể chọn nhầm nơi khác trùng tên.
+    const [pickup] = await this.prisma.$queryRaw<{ lng: number | null; lat: number | null }[]>(Prisma.sql`
+      SELECT ST_X(pickup_location::geometry) AS lng,
+             ST_Y(pickup_location::geometry) AS lat
+      FROM food_listings WHERE id = ${reservation.listingId}::uuid
+    `);
+
     return {
       ...reservation,
+      pickupCoords: pickup?.lat != null && pickup?.lng != null ? { lat: pickup.lat, lng: pickup.lng } : null,
       ratedScore: ratings.find((r) => r.rateeId === providerUserId)?.score ?? null,
       ratedShipperScore:
         shipperUserId != null

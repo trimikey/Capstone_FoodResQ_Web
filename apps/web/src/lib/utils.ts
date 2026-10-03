@@ -36,9 +36,17 @@ export function mediaUrl(path: string): string {
   return uploadPath.startsWith('/uploads') ? `${API_ORIGIN}${uploadPath}` : uploadPath;
 }
 
-// Link điều hướng Google Maps tới một toạ độ
+/**
+ * Link chỉ đường Google Maps tới MỘT TOẠ ĐỘ — dùng chung cho mọi nút "Chỉ đường".
+ *
+ * - Luôn truyền lat,lng (không truyền chữ địa chỉ): Google sẽ dẫn tới đúng ghim đã đặt,
+ *   không đoán lại địa chỉ rồi chọn nhầm nơi trùng tên.
+ * - `travelmode=two-wheeler`: tình nguyện viên đi xe máy; để mặc định thì Google chọn
+ *   ô tô và hay vẽ tuyến xe máy không đi được / bỏ qua hẻm. Nơi không hỗ trợ chế độ
+ *   xe máy (vd Google Maps bản máy tính) sẽ tự về chế độ mặc định.
+ */
 export function mapsDirUrl(lat: number, lng: number): string {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=two-wheeler`;
 }
 
 /**

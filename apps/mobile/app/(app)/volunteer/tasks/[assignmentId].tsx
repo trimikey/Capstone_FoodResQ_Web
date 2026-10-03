@@ -614,7 +614,8 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
 
   const openDirections = async (lat?: number | null, lng?: number | null) => {
     if (lat == null || lng == null) return;
-    await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
+    // Toạ độ + chế độ xe máy: dẫn tới đúng ghim, tuyến đường xe máy đi được.
+    await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=two-wheeler`);
   };
 
   const capturePickupPhoto = async () => {

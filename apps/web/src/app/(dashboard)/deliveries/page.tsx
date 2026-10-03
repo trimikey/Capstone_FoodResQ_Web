@@ -895,7 +895,7 @@ export default function DeliveriesPage() {
                         </span>
                         {o.lng != null && o.lat != null && (
                           <a
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}`}
+                            href={mapsDirUrl(o.lat, o.lng)}
                             target="_blank"
                             rel="noreferrer"
                             className="shrink-0 inline-flex items-center gap-0.5 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"

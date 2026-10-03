@@ -21,6 +21,52 @@ const TASK_STATUS_META: Record<string, { label: string; chip: string }> = {
   cancelled: { label: 'Đã huỷ', chip: 'cm-chip cm-chip--ink' },
 };
 
+/**
+ * Khối chi tiết thu gọn được trong thẻ việc. Mặc định ĐÓNG để danh sách "Việc của tôi"
+ * gọn — một thẻ từng dài cả màn hình vì liệt kê hết đơn nguyên liệu và điểm phát.
+ * `defaultOpen` dành cho khối còn việc phải làm ngay trên thẻ.
+ */
+function Fold({
+  icon,
+  title,
+  summary,
+  wrapClass,
+  titleClass,
+  defaultOpen = false,
+  children,
+}: {
+  icon: string;
+  title: string;
+  /** Tóm tắt ngắn hiện cạnh tiêu đề khi đang đóng (vd "2 đã xong"). */
+  summary?: string;
+  wrapClass: string;
+  titleClass: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`mt-3 rounded-xl border ${wrapClass}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-[11px] font-extrabold uppercase tracking-wide ${titleClass}`}
+      >
+        <span className="material-symbols-outlined text-[15px]">{icon}</span>
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {summary && !open && (
+          <span className="shrink-0 font-bold normal-case tracking-normal opacity-80">{summary}</span>
+        )}
+        <span className={`material-symbols-outlined text-[18px] transition-transform ${open ? 'rotate-180' : ''}`}>
+          expand_more
+        </span>
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
+    </div>
+  );
+}
+
 function taskStartDate(t: MyTask): Date | null {
   const datePart = t.campaign.scheduledDate?.slice(0, 10);
   if (!datePart) return null;
@@ -132,10 +178,13 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
       </div>
 
       {groupMembers && (
-        <div className="mt-2 space-y-1 rounded-xl border border-neutral-100 bg-neutral-50 p-2.5">
-          <p className="text-[10px] font-extrabold uppercase tracking-wide text-neutral-500">
-            {groupMembers.length} ca trong chiến dịch này
-          </p>
+        <Fold
+          icon="schedule"
+          title={`${groupMembers.length} ca trong chiến dịch này`}
+          wrapClass="border-neutral-100 bg-neutral-50"
+          titleClass="text-neutral-500"
+        >
+          <div className="space-y-1">
           {groupMembers.map((m) => {
             const ms = TASK_STATUS_META[m.status] ?? { label: m.status, chip: 'cm-chip cm-chip--ink' };
             return (
@@ -158,7 +207,8 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
               </div>
             );
           })}
-        </div>
+          </div>
+        </Fold>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -186,12 +236,13 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
       {/* Khoản quyên góp NCC mà tổ chức phân công TNV này đi nhận — khung giờ
           luôn nằm trong ca trực (BE validate), kèm địa chỉ + SĐT để đi luôn. */}
       {(t.donationPickups ?? []).length > 0 && (
-        <div className="mt-3 rounded-xl border border-honey-200 bg-honey-50/70 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-honey-800">
-            <span className="material-symbols-outlined text-[15px]">volunteer_activism</span>
-            Đi nhận quyên góp ({(t.donationPickups ?? []).length})
-          </p>
-          <ul className="mt-2 space-y-2">
+        <Fold
+          icon="volunteer_activism"
+          title={`Đi nhận quyên góp (${(t.donationPickups ?? []).length})`}
+          wrapClass="border-honey-200 bg-honey-50/70"
+          titleClass="text-honey-800"
+        >
+          <ul className="space-y-2">
             {(t.donationPickups ?? []).map((d) => (
               <li key={d.id} className="rounded-lg bg-white/80 p-2 text-[11px] text-neutral-600">
                 <p className="text-xs font-bold text-neutral-800">
@@ -218,18 +269,19 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
               </li>
             ))}
           </ul>
-        </div>
+        </Fold>
       )}
 
       {/* Đơn nguyên liệu NCC mà tổ chức cử shipper này đi nhận — thay cho vòng
           tìm shipper hệ thống; khung giờ luôn nằm trong ca trực. */}
       {(t.requestPickups ?? []).length > 0 && (
-        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-sky-800">
-            <span className="material-symbols-outlined text-[15px]">package_2</span>
-            Đi nhận nguyên liệu NCC ({(t.requestPickups ?? []).length})
-          </p>
-          <ul className="mt-2 space-y-2">
+        <Fold
+          icon="package_2"
+          title={`Đi nhận nguyên liệu NCC (${(t.requestPickups ?? []).length})`}
+          wrapClass="border-sky-200 bg-sky-50/70"
+          titleClass="text-sky-800"
+        >
+          <ul className="space-y-2">
             {(t.requestPickups ?? []).map((p) => (
               <li key={p.id} className="rounded-lg bg-white/80 p-2 text-[11px] text-neutral-600">
                 <p className="text-xs font-bold text-neutral-800">
@@ -265,19 +317,23 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
             Lấy hàng xong, bấm &quot;Vào nhiệm vụ&quot; để chụp ảnh xác nhận số kg thực nhận — bếp
             sẽ chốt và báo NCC.
           </p>
-        </div>
+        </Fold>
       )}
 
       {/* Đợt phát tổ chức giao cho shipper này — kèm địa chỉ để đi luôn.
           Đây là nơi shipper quản lý việc phát tận điểm; /deliveries chỉ quản lý các
           đơn `deliveries` (chở hàng), không có dữ liệu của đợt phát. */}
       {distributions.length > 0 && (
-        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
-            <span className="material-symbols-outlined text-[15px]">takeout_dining</span>
-            Bạn được giao {distributions.length} đợt phát
-          </p>
-          <ul className="mt-2 space-y-2">
+        <Fold
+          icon="takeout_dining"
+          title={`Bạn được giao ${distributions.length} đợt phát`}
+          summary={`${distributions.filter((d) => d.completedAt).length}/${distributions.length} đã xong`}
+          wrapClass="border-emerald-200 bg-emerald-50/70"
+          titleClass="text-emerald-800"
+          // Còn đợt chưa chốt → mở sẵn, vì nút chốt đợt nằm ngay trong khối này.
+          defaultOpen={distributions.some((d) => !d.completedAt)}
+        >
+          <ul className="space-y-2">
             {distributions.map((d) => (
               <li key={d.id} className="rounded-lg bg-white/80 p-2">
                 <div className="flex items-start justify-between gap-2">
@@ -338,7 +394,7 @@ export default function CampaignTaskCard({ t, group }: { t: MyTask; group?: MyTa
           <p className="mt-2 text-[10px] text-emerald-700">
             Số suất chỉ được tính vào thống kê chiến dịch sau khi bạn xác nhận.
           </p>
-        </div>
+        </Fold>
       )}
 
       {t.status === 'pending' ? (
