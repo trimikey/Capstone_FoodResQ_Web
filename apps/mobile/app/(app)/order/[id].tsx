@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Pressable, Linking, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
@@ -71,6 +71,18 @@ export default function OrderDetailScreen() {
     id: string;
     title: string;
   } | null>(null);
+
+  // Đơn vừa HOÀN TẤT ngay lúc đang mở màn (NCC xác nhận / shipper giao xong) → chuyển
+  // thẳng sang màn thành công. Mở lại một đơn đã xong từ trước thì không bật lại.
+  const [showSuccess, setShowSuccess] = useState(false);
+  const prevStatus = useRef(order?.status);
+  useEffect(() => {
+    const prev = prevStatus.current;
+    if (order?.status === 'completed' && (prev === 'confirmed' || prev === 'picked_up')) {
+      setShowSuccess(true);
+    }
+    prevStatus.current = order?.status;
+  }, [order?.status]);
 
   const onSubmitRating = (score: number, comment?: string) => {
     if (!id) return;
@@ -156,6 +168,66 @@ export default function OrderDetailScreen() {
   const ratedScore = justRatedScore ?? order.ratedScore ?? null;
   const completed = order.status === 'completed';
   const alreadyRated = ratedScore != null;
+  const isDelivery = !!order.delivery;
+
+  if (showSuccess) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {Header}
+        <ScrollView contentContainerStyle={styles.successScreen}>
+          <View style={styles.successIcon}>
+            <MaterialCommunityIcons name="check-circle" size={84} color={COLORS.success} />
+          </View>
+          <Text style={styles.successTitle}>{isDelivery ? 'Đã giao thành công' : 'Nhận hàng thành công'}</Text>
+          <Text style={styles.successSub}>
+            Thực phẩm cứu trợ đã được bàn giao an toàn. Cảm ơn bạn đã chung tay!
+          </Text>
+
+          <SurfaceCard style={styles.successSummary}>
+            <Row icon="food-variant" text={order.listing.title} />
+            <Row icon="package-variant-closed" text={`${order.quantity} ${order.listing.quantityUnit}`} />
+            <Row icon="store-outline" text={provider.businessName} />
+          </SurfaceCard>
+
+          <View style={styles.trustCard}>
+            <MaterialCommunityIcons name="shield-check" size={26} color={COLORS.success} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.trustTitle}>+2 điểm uy tín</Text>
+              <Text style={styles.meta}>Điểm uy tín của bạn đã được cập nhật.</Text>
+            </View>
+          </View>
+
+          {!alreadyRated ? (
+            <Button
+              mode="contained"
+              icon="star"
+              buttonColor={COLORS.primary}
+              onPress={() => {
+                setShowSuccess(false);
+                setRatingVisible(true);
+              }}
+              style={styles.successBtn}
+              labelStyle={{ fontSize: 15, fontWeight: '700' }}
+            >
+              Đánh giá nhà cung cấp
+            </Button>
+          ) : null}
+          <Button
+            mode="outlined"
+            textColor={COLORS.primary}
+            onPress={() => setShowSuccess(false)}
+            style={styles.successBtn}
+            labelStyle={{ fontSize: 15, fontWeight: '700' }}
+          >
+            Xem chi tiết đơn
+          </Button>
+          <Button mode="text" textColor={COLORS.onSurfaceVariant} onPress={() => router.back()}>
+            Về danh sách đơn
+          </Button>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -178,6 +250,15 @@ export default function OrderDetailScreen() {
             <Text style={styles.heroMetaLabel}>Số lượng đã đặt</Text>
           </View>
         </View>
+
+        {completed ? (
+          <View style={styles.doneBanner}>
+            <MaterialCommunityIcons name="check-circle" size={22} color={COLORS.success} />
+            <Text style={styles.doneBannerText}>
+              {isDelivery ? 'Đơn đã giao thành công' : 'Bạn đã nhận hàng thành công'}
+            </Text>
+          </View>
+        ) : null}
 
         {/* QR pickup */}
         {showQr ? (
@@ -454,6 +535,25 @@ const styles = StyleSheet.create({
     fontSize: 22, fontWeight: '800', letterSpacing: 3, color: COLORS.primary,
     fontFamily: 'monospace', textAlign: 'center',
   },
+  successScreen: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+  successIcon: {
+    width: 128, height: 128, borderRadius: 64, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.successContainer,
+  },
+  successTitle: { fontSize: 24, fontWeight: '900', color: COLORS.onSurface, textAlign: 'center' },
+  successSub: { fontSize: 14, lineHeight: 20, color: COLORS.onSurfaceVariant, textAlign: 'center' },
+  successSummary: { width: '100%', padding: spacing.lg, gap: 10 },
+  trustCard: {
+    width: '100%', flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    padding: spacing.lg, borderRadius: radius.lg, backgroundColor: COLORS.successContainer,
+  },
+  trustTitle: { fontSize: 15, fontWeight: '800', color: COLORS.success },
+  successBtn: { width: '100%', borderRadius: radius.lg },
+  doneBanner: {
+    marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: spacing.md, borderRadius: radius.lg, backgroundColor: COLORS.successContainer,
+  },
+  doneBannerText: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.success },
   sectionLabel: {
     fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant,
     marginTop: 22, marginBottom: 8, textTransform: 'uppercase',
