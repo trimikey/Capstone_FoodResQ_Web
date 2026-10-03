@@ -15,6 +15,7 @@ import {
   type CampaignTask,
 } from '@/hooks/useCampaigns';
 import { CampaignCard } from '@/components/CampaignCard';
+import { ShiftInvitesSection } from '@/components/ShiftInvitesSection';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Popup } from '@/components/ui/AppPopup';
@@ -452,6 +453,7 @@ export default function VolunteerCampaignsScreen() {
             <CampaignCard campaign={item} onPress={() => openCampaignDetail(item.id, 'open')} />
           )}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={<ShiftInvitesSection />}
           ListEmptyComponent={renderOpenEmpty}
           ListFooterComponent={filteredOpenCampaigns.length > 0 ? (
             <Pagination page={effectiveOpenPage} totalPages={openTotalPages} onChange={setOpenPage} />
