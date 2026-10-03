@@ -205,8 +205,8 @@ export default function ScanQrScreen() {
 
         <SurfaceCard style={styles.manualCard}>
           <Text style={styles.label}>Hoặc nhập mã thủ công</Text>
-          <TextInput mode="outlined" placeholder="Dán mã QR (token)" value={manualToken} onChangeText={setManualToken}
-            autoCapitalize="none" outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
+          <TextInput mode="outlined" placeholder="Mã nhận hàng, vd: A1B2 C3D4" value={manualToken} onChangeText={setManualToken}
+            autoCapitalize="characters" outlineColor={COLORS.outline} activeOutlineColor={COLORS.primary} style={styles.input} />
           <Button mode="contained-tonal" icon="magnify" onPress={() => handleScan(manualToken)}
             disabled={scanning || !manualToken.trim()} style={{ marginTop: 8 }}>
             Tra cứu mã

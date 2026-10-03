@@ -37,6 +37,17 @@ function fmtDateTime(iso?: string): string {
 }
 
 /**
+ * Mã nhận hàng đọc-được: 8 ký tự CUỐI của qrToken, in hoa, chia đôi ("A1B2 C3D4") —
+ * cùng quy ước với web. Backend nhận 6–16 ký tự cuối, bỏ khoảng trắng và hoa/thường.
+ */
+function pickupCode(qrToken?: string | null): string | null {
+  const token = (qrToken ?? '').trim();
+  if (token.length < 8) return null;
+  const tail = token.slice(-8).toUpperCase();
+  return `${tail.slice(0, 4)} ${tail.slice(4)}`;
+}
+
+/**
  * Chi tiết đơn đặt (Receiver) — trình QR cho provider quét khi đến lấy.
  * confirmed: hiển thị QR + đếm ngược + nút huỷ. Trạng thái khác: chỉ thông tin.
  */
@@ -83,9 +94,10 @@ export default function OrderDetailScreen() {
   };
 
   const onShareToken = async () => {
-    if (!order?.qrToken) return;
+    const code = pickupCode(order?.qrToken);
+    if (!code) return;
     try {
-      await Share.share({ message: order.qrToken });
+      await Share.share({ message: code.replace(' ', '') });
     } catch {
       // người dùng đóng share sheet — bỏ qua
     }
@@ -183,10 +195,10 @@ export default function OrderDetailScreen() {
               <Text style={[styles.countdown, { color: COLORS.danger }]}>Mã QR đã hết hạn</Text>
             )}
 
-            {/* Mã token dạng text — để test/nhập thủ công ở màn Quét QR của provider */}
+            {/* Mã ngắn — đọc cho nhà cung cấp nhập tay khi camera không quét được */}
             <View style={styles.tokenWrap}>
-              <Text style={styles.tokenLabel}>Mã đặt chỗ (nhập thủ công khi test)</Text>
-              <Text selectable style={styles.tokenText}>{order.qrToken}</Text>
+              <Text style={styles.tokenLabel}>Mã nhận hàng (đọc cho nhà cung cấp nếu không quét được)</Text>
+              <Text selectable style={styles.tokenText}>{pickupCode(order.qrToken)}</Text>
             </View>
             <Button
               mode="text"
@@ -437,8 +449,11 @@ const styles = StyleSheet.create({
     width: '100%', marginTop: 4, padding: 10, borderRadius: radius.md,
     backgroundColor: COLORS.neutralContainer, borderWidth: 1, borderColor: COLORS.outline,
   },
-  tokenLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginBottom: 4 },
-  tokenText: { fontSize: 12, color: COLORS.onSurface, fontFamily: 'monospace' },
+  tokenLabel: { fontSize: 11, color: COLORS.onSurfaceVariant, marginBottom: 4, textAlign: 'center' },
+  tokenText: {
+    fontSize: 22, fontWeight: '800', letterSpacing: 3, color: COLORS.primary,
+    fontFamily: 'monospace', textAlign: 'center',
+  },
   sectionLabel: {
     fontSize: 13, fontWeight: '700', color: COLORS.onSurfaceVariant,
     marginTop: 22, marginBottom: 8, textTransform: 'uppercase',
