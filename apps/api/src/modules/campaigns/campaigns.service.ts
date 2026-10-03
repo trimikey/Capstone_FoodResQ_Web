@@ -6831,6 +6831,100 @@ export class CampaignsService {
   }
 
   /**
+   * Shipper CHỤP LẠI ảnh nguyên liệu sau khi đã xác nhận lấy (chụp nhầm / ảnh mờ).
+   * Chỉ thay ảnh — số lượng thực nhận và giờ ký nhận giữ nguyên, vì biên nhận đã gửi
+   * cho NCC và tổ chức. Chỉ chính người đã xác nhận, và chỉ khi chiến dịch chưa kết thúc.
+   */
+  async retakeIngredientPickupPhoto(providerRequestId: string, userId: string, photoUrl?: string) {
+    if (!photoUrl) throw new BadRequestException('Cần ảnh chụp lại nguyên liệu.');
+    const pickup = await this.prisma.campaignIngredientPickup.findUnique({
+      where: { providerRequestId },
+      select: { id: true, campaignId: true, assignmentId: true, volunteerId: true },
+    });
+    if (!pickup) throw new BadRequestException('Đơn này chưa được xác nhận lấy hàng — chưa có ảnh để chụp lại.');
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId }, select: { id: true } });
+    if (!volunteer || volunteer.id !== pickup.volunteerId) {
+      throw new ForbiddenException('Chỉ người đã xác nhận lấy đơn này mới chụp lại ảnh được.');
+    }
+    await this.assertProofEditable(pickup.campaignId);
+
+    await this.prisma.$transaction([
+      this.prisma.campaignIngredientPickup.update({ where: { id: pickup.id }, data: { photoUrl } }),
+      this.prisma.campaignVolunteerAssignment.update({
+        where: { id: pickup.assignmentId },
+        data: { ingredientProofUrl: photoUrl, ingredientProofAt: new Date() },
+      }),
+    ]);
+    return { providerRequestId, photoUrl };
+  }
+
+  /**
+   * Shipper CHỤP LẠI ảnh bằng chứng của một đợt phát đã chốt. `pointIndex` = điểm phát
+   * cần thay ảnh (bỏ trống khi đợt không khai điểm). Ảnh mới THAY ảnh cũ của điểm đó;
+   * số suất đã chốt giữ nguyên.
+   */
+  async retakeDistributionPhoto(
+    distributionId: string,
+    userId: string,
+    photoUrl: string | undefined,
+    pointIndex?: number,
+  ) {
+    if (!photoUrl) throw new BadRequestException('Cần ảnh chụp lại tại điểm phát.');
+    const dist = await this.prisma.mealDistribution.findUnique({
+      where: { id: distributionId },
+      select: {
+        id: true,
+        campaignId: true,
+        assigneeIds: true,
+        points: true,
+        completedAt: true,
+        completedByVolunteerId: true,
+      },
+    });
+    if (!dist) throw new NotFoundException('Không tìm thấy đợt phát.');
+    if (!dist.completedAt) throw new BadRequestException('Đợt phát chưa chốt — chụp ảnh ở bước xác nhận đã phát.');
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId }, select: { id: true } });
+    const assigneeIds = Array.isArray(dist.assigneeIds) ? (dist.assigneeIds as string[]) : [];
+    // Tổ chức chốt hộ thì completedBy rỗng — khi đó người được phân công đợt này được sửa ảnh.
+    const allowed =
+      !!volunteer &&
+      (dist.completedByVolunteerId ? dist.completedByVolunteerId === volunteer.id : assigneeIds.includes(volunteer.id));
+    if (!allowed) throw new ForbiddenException('Chỉ người đã chốt đợt phát này mới chụp lại ảnh được.');
+    await this.assertProofEditable(dist.campaignId);
+
+    const points = Array.isArray(dist.points) ? (dist.points as Record<string, unknown>[]) : [];
+    if (points.length === 0) {
+      await this.prisma.mealDistribution.update({ where: { id: distributionId }, data: { photoUrl } });
+      return { id: distributionId, photoUrl };
+    }
+    const index = pointIndex ?? (points.length === 1 ? 0 : undefined);
+    if (index == null || !Number.isInteger(index) || index < 0 || index >= points.length) {
+      throw new BadRequestException('Cho biết điểm phát cần chụp lại ảnh.');
+    }
+    const nextPoints = points.map((pt, i) => (i === index ? { ...pt, proofPhotoUrls: [photoUrl] } : pt));
+    await this.prisma.mealDistribution.update({
+      where: { id: distributionId },
+      data: {
+        points: nextPoints as Prisma.InputJsonValue,
+        // photo_url giữ ảnh của điểm đầu tiên cho các màn chỉ đọc một ảnh.
+        ...(index === 0 ? { photoUrl } : {}),
+      },
+    });
+    return { id: distributionId, pointIndex: index, photoUrl };
+  }
+
+  /** Ảnh bằng chứng chỉ sửa được khi chiến dịch chưa kết thúc — sau đó số liệu đã lên báo cáo. */
+  private async assertProofEditable(campaignId: string) {
+    const campaign = await this.prisma.kitchenCampaign.findUnique({
+      where: { id: campaignId },
+      select: { status: true },
+    });
+    if (!campaign || campaign.status === 'completed' || campaign.status === 'cancelled') {
+      throw new BadRequestException('Chiến dịch đã kết thúc — không chụp lại ảnh bằng chứng được nữa.');
+    }
+  }
+
+  /**
    * Ghép từng ảnh chốt đợt phát với điểm phát của nó và kiểm tra mỗi điểm có ≥ 1 ảnh.
    * Trả về mảng chỉ số điểm theo thứ tự ảnh. Đợt không khai điểm nào → cần ≥ 1 ảnh chung.
    */

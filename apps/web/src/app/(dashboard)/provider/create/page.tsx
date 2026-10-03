@@ -421,7 +421,9 @@ export default function ProviderCreateListingPage() {
                 <input
                   type="number"
                   min={1}
-                  value={form.quantityTotal}
+                  // 0 hiển thị là ô trống: nếu để "0" thì gõ tiếp ra "0500" / "001" — React
+                  // không ghi lại ô number khi giá trị số không đổi, nên số 0 đầu không tự mất.
+                  value={form.quantityTotal || ''}
                   onChange={(e) => set('quantityTotal', Number(e.target.value))}
                   className={inputCls}
                 />
@@ -444,7 +446,7 @@ export default function ProviderCreateListingPage() {
                   type="number"
                   min={1}
                   max={10}
-                  value={form.maxPerReservation}
+                  value={form.maxPerReservation || ''}
                   onChange={(e) => set('maxPerReservation', Number(e.target.value))}
                   className={inputCls}
                 />

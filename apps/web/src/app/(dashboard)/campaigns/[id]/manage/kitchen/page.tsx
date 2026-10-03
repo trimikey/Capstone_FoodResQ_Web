@@ -138,7 +138,8 @@ function DishCard({ dish, campaignId }: { dish: DishProcessItem; campaignId: str
         )}
       </div>
 
-      <ol className="grid grid-cols-1 divide-y divide-neutral-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+      {/* 4 cột chỉ khi đủ rộng (xl) — ở màn hẹp hơn mỗi khâu còn ~130px, chữ và nút duyệt bị vỡ. */}
+      <ol className="-ml-px -mt-px grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
         {dish.steps.map((step) => (
           <StepReviewCell key={step.id} step={step} campaignId={campaignId} />
         ))}
@@ -189,10 +190,10 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
         : 'bg-neutral-50 opacity-80';
 
   return (
-    <li className={`flex flex-col gap-2 p-4 ${tone}`}>
-      <div className="flex items-center justify-between">
+    <li className={`flex min-w-0 flex-col gap-2 border-l border-t border-neutral-100 p-4 ${tone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
         <p className="text-sm font-extrabold text-neutral-900">{step.stepName}</p>
-        <span className="text-[10px] font-bold text-neutral-400">Khâu {step.stepOrder} · {step.scheduledTime}</span>
+        <span className="whitespace-nowrap text-[10px] font-bold text-neutral-400">Khâu {step.stepOrder} · {step.scheduledTime}</span>
       </div>
 
       <span
@@ -246,12 +247,12 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
                 placeholder="Lý do từ chối (vd: món chưa đủ chín, trình bày chưa đạt…)"
                 className="w-full resize-none rounded-md border border-neutral-200 px-2 py-1.5 text-xs outline-none focus:border-rose-400"
               />
-              <div className="flex gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
                   onClick={() => void submit('reject')}
                   disabled={review.isPending}
-                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                  className="whitespace-nowrap rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
                 >
                   {review.isPending ? 'Đang gửi…' : 'Xác nhận từ chối'}
                 </button>
@@ -266,12 +267,12 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
               </div>
             </>
           ) : (
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
                 onClick={() => void submit('approve')}
                 disabled={review.isPending}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[14px]">check</span>
                 {review.isPending ? 'Đang duyệt…' : 'Duyệt ảnh'}
@@ -280,7 +281,7 @@ function StepReviewCell({ step, campaignId }: { step: DishStep; campaignId: stri
                 type="button"
                 onClick={() => setRejecting(true)}
                 disabled={review.isPending}
-                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-50"
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 px-3 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-50"
               >
                 <span className="material-symbols-outlined text-[14px]">close</span>
                 Từ chối

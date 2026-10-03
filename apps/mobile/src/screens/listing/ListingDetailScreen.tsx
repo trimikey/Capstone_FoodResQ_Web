@@ -12,6 +12,7 @@ import {
   IconButton,
 } from 'react-native-paper';
 import { router } from 'expo-router';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Popup } from '@/components/ui/AppPopup';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -34,6 +35,15 @@ import { mobileColors as COLORS, radius, spacing } from '@/theme/design';
 
 interface Props {
   id: string;
+}
+
+const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/** '2026-10-03T14:17' (giờ VN) → '14:17 · 03/10/2026'. */
+function formatScheduledTime(value: string): string {
+  const [date, time] = value.split('T');
+  const [y, m, d] = (date ?? '').split('-');
+  return `${time ?? ''} · ${d}/${m}/${y}`;
 }
 
 export default function ListingDetailScreen({ id }: Props) {
@@ -123,9 +133,33 @@ export default function ListingDetailScreen({ id }: Props) {
     setDialogVisible(true);
   };
 
-  const setDefaultScheduledTime = () => {
-    const t = new Date(Date.now() + 60 * 60_000 + 7 * 3600_000);
-    setScheduledTime(t.toISOString().slice(0, 16));
+  /**
+   * Mở popup chọn NGÀY rồi GIỜ hẹn giao (giờ Việt Nam). `scheduledTime` vẫn lưu dạng
+   * 'YYYY-MM-DDTHH:mm' theo giờ VN để phần gửi đơn bên dưới không phải đổi.
+   */
+  const pickScheduledTime = () => {
+    const current = scheduledTime
+      ? new Date(`${scheduledTime}:00+07:00`)
+      : new Date(Date.now() + 60 * 60_000);
+    DateTimePickerAndroid.open({
+      value: current,
+      mode: 'date',
+      minimumDate: new Date(),
+      timeZoneName: VN_TIMEZONE,
+      onChange: (event, date) => {
+        if (event.type !== 'set' || !date) return;
+        DateTimePickerAndroid.open({
+          value: date,
+          mode: 'time',
+          is24Hour: true,
+          timeZoneName: VN_TIMEZONE,
+          onChange: (event2, picked) => {
+            if (event2.type !== 'set' || !picked) return;
+            setScheduledTime(new Date(picked.getTime() + 7 * 3600_000).toISOString().slice(0, 16));
+          },
+        });
+      },
+    });
   };
 
   const pickEvidence = async (fromCamera: boolean) => {
@@ -380,22 +414,21 @@ export default function ListingDetailScreen({ id }: Props) {
                       compact
                       mode={scheduledTime ? 'contained-tonal' : 'outlined'}
                       icon="clock-outline"
-                      onPress={setDefaultScheduledTime}
+                      onPress={pickScheduledTime}
                     >
                       Hẹn giờ
                     </Button>
                   </View>
                   {scheduledTime ? (
-                    <TextInput
+                    <Button
                       mode="outlined"
-                      label="Giờ hẹn (YYYY-MM-DDTHH:mm)"
-                      value={scheduledTime}
-                      onChangeText={setScheduledTime}
-                      placeholder="2026-08-26T14:30"
-                      autoCapitalize="none"
-                      outlineColor={COLORS.outlineVariant}
-                      activeOutlineColor={COLORS.primary}
-                    />
+                      icon="calendar-clock"
+                      textColor={COLORS.primary}
+                      onPress={pickScheduledTime}
+                      contentStyle={styles.scheduledBtnContent}
+                    >
+                      {formatScheduledTime(scheduledTime)} · Đổi
+                    </Button>
                   ) : null}
                 </View>
               </View>
@@ -510,4 +543,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   deliveryTimeActions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  scheduledBtnContent: { justifyContent: 'flex-start' },
 });

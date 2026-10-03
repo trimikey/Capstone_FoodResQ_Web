@@ -1067,6 +1067,38 @@ export function useCompleteAssignedDistribution() {
   });
 }
 
+/**
+ * Chụp lại ảnh bằng chứng sau khi đã xác nhận — lấy nguyên liệu (`pickup`) hoặc đợt phát
+ * đã chốt (`distribution`, `pointIndex` = điểm phát). Chỉ thay ảnh, số liệu giữ nguyên.
+ */
+export function useRetakeProofPhoto() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: {
+      kind: 'pickup' | 'distribution';
+      id: string;
+      photo: CapturedImage;
+      pointIndex?: number;
+    }) => {
+      const form = new FormData();
+      form.append('photo', p.photo as unknown as Blob);
+      if (p.pointIndex != null) form.append('pointIndex', String(p.pointIndex));
+      const url =
+        p.kind === 'pickup'
+          ? endpoints.campaigns.retakePickupPhoto(p.id)
+          : endpoints.campaigns.retakeDistributionPhoto(p.id);
+      const res = await apiClient.post<ApiResponse<{ photoUrl: string }>>(url, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-pickup-orders'] });
+    },
+  });
+}
+
 export function useMyPickupOrders(enabled: boolean = true) {
   return useQuery({
     queryKey: ['campaigns', 'my-pickup-orders'],

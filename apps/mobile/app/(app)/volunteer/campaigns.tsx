@@ -669,6 +669,8 @@ function TaskCard({
   const canAdvance = nextAssignmentStatus(task.status) != null;
   const hasRoleSpecificTask = task.role === 'chef' || task.role === 'waiter' || task.role === 'shipper';
   const needsConfirmation = task.status === 'assigned' && task.confirmationStatus === 'pending';
+  // Chiến dịch đã kết thúc / bị huỷ → không còn việc gì để vào làm, ẩn hết nút thao tác.
+  const campaignEnded = task.campaign.status === 'completed' || task.campaign.status === 'cancelled';
 
   return (
     <View style={grouped ? styles.groupedTask : styles.taskCard}>
@@ -726,7 +728,13 @@ function TaskCard({
         })}
       </View>
 
-      {needsConfirmation ? (
+      {campaignEnded ? (
+        <Text style={styles.doneNote}>
+          {task.campaign.status === 'cancelled'
+            ? 'Chiến dịch đã bị huỷ.'
+            : 'Chiến dịch đã kết thúc. Cảm ơn bạn đã tham gia!'}
+        </Text>
+      ) : needsConfirmation ? (
         <View style={styles.confirmActions}>
           <Button mode="outlined" disabled={confirming} onPress={() => onConfirm('declined')} style={{ flex: 1 }}>
             Từ chối

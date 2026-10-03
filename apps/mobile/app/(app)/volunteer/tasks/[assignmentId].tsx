@@ -11,6 +11,7 @@ import {
   useAdvanceTask,
   useCampaignSupplies,
   useConfirmIngredientPickup,
+  useRetakeProofPhoto,
   useCompleteAssignedDistribution,
   useCompleteDishStep,
   useMyTaskDetail,
@@ -462,6 +463,11 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
 }) {
   const complete = useCompleteAssignedDistribution();
   const confirmPickup = useConfirmIngredientPickup();
+  const retake = useRetakeProofPhoto();
+  /** Khoá của ảnh đang được chụp lại — để chỉ nút đó quay vòng. */
+  const [retakingKey, setRetakingKey] = useState<string | null>(null);
+  // Chiến dịch kết thúc thì ảnh bằng chứng đã lên báo cáo — không cho sửa nữa.
+  const canRetake = detail.campaign.status !== 'completed' && detail.campaign.status !== 'cancelled';
   const [closing, setClosing] = useState<AssignedDistribution | null>(null);
   const [confirmingPickup, setConfirmingPickup] = useState<PickupOrder | null>(null);
   const [actualServings, setActualServings] = useState('');
@@ -592,6 +598,25 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
     }
   };
 
+  /** Chụp lại ảnh bằng chứng đã gửi (chụp nhầm / ảnh mờ) — chỉ thay ảnh, số liệu giữ nguyên. */
+  const retakeProof = async (kind: 'pickup' | 'distribution', id: string, pointIndex?: number) => {
+    if (retake.isPending) return;
+    try {
+      const photo = await captureImage('id_card', 'proof');
+      if (!photo) return;
+      setRetakingKey(`${kind}:${id}:${pointIndex ?? ''}`);
+      await retake.mutateAsync({ kind, id, photo, pointIndex });
+      void notifySuccess();
+      Popup.show({ type: 'success', text1: 'Đã thay ảnh bằng chứng' });
+      await onRefresh();
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không thay được ảnh', text2: getErrorMessage(error) });
+    } finally {
+      setRetakingKey(null);
+    }
+  };
+
   const submitPickupConfirm = async () => {
     if (!confirmingPickup) return;
     const kg = Number.parseFloat(receivedKg.replace(',', '.').trim());
@@ -714,6 +739,19 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
                       {order.pickup.photoUrl ? (
                         <AppImage source={{ uri: order.pickup.photoUrl }} style={styles.pickupProof} />
                       ) : null}
+                      {canRetake ? (
+                        <Button
+                          compact
+                          icon="camera-retake-outline"
+                          textColor={COLORS.success}
+                          loading={retakingKey === `pickup:${order.providerRequestId || order.id}:`}
+                          disabled={retake.isPending}
+                          onPress={() => retakeProof('pickup', order.providerRequestId || order.id)}
+                          style={styles.retakeBtn}
+                        >
+                          Chụp lại ảnh
+                        </Button>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -781,6 +819,22 @@ function WaiterTask({ detail, checkedIn, onRefresh }: {
               {distribution.photoUrl ? (
                 <AppImage source={{ uri: distribution.photoUrl }} style={styles.distributionProof} />
               ) : null}
+              {canRetake
+                ? (distribution.points.length > 1 ? distribution.points.map((_, i) => i) : [undefined]).map((pointIndex) => (
+                    <Button
+                      key={`retake-${pointIndex ?? 'all'}`}
+                      compact
+                      icon="camera-retake-outline"
+                      textColor={COLORS.success}
+                      loading={retakingKey === `distribution:${distribution.id}:${pointIndex ?? ''}`}
+                      disabled={retake.isPending}
+                      onPress={() => retakeProof('distribution', distribution.id, pointIndex)}
+                      style={styles.retakeBtn}
+                    >
+                      {pointIndex == null ? 'Chụp lại ảnh' : `Chụp lại ảnh điểm ${pointIndex + 1}`}
+                    </Button>
+                  ))
+                : null}
             </View>
           ) : (
             <View style={styles.distributionActions}>
@@ -1163,6 +1217,7 @@ const styles = StyleSheet.create({
   pointTitle: { color: COLORS.onSurface, fontSize: 13, fontWeight: '800' },
   completedBox: { marginTop: 10, padding: 10, borderRadius: radius.md, backgroundColor: COLORS.successContainer },
   completedText: { color: COLORS.success, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+  retakeBtn: { alignSelf: 'flex-start', marginTop: 6 },
   distributionActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   // ── Bottom sheet chốt đợt phát / xác nhận lấy nguyên liệu ──
   sheetBtn: { minWidth: 96 },

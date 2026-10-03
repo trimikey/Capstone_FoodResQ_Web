@@ -539,6 +539,44 @@ export class CampaignsController {
     return this.campaignsService.confirmIngredientPickup(requestId, user.id, dto, photoUrl);
   }
 
+  @Post('pickup-orders/:requestId/retake-photo')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Shipper: chụp lại ảnh nguyên liệu sau khi đã xác nhận lấy (chỉ thay ảnh)' })
+  async retakeIngredientPickupPhoto(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: User,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    if (photo && !photo.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Ảnh bằng chứng phải là file ảnh (JPG/PNG/WebP).');
+    }
+    const photoUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.retakeIngredientPickupPhoto(requestId, user.id, photoUrl);
+  }
+
+  @Post('distributions/:distributionId/retake-photo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('photo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Shipper: chụp lại ảnh bằng chứng của đợt phát đã chốt (?pointIndex = điểm phát)' })
+  async retakeDistributionPhoto(
+    @CurrentUser() user: User,
+    @Param('distributionId', ParseUUIDPipe) distributionId: string,
+    @Body('pointIndex') pointIndexRaw?: string,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    if (photo && !photo.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Ảnh bằng chứng phải là file ảnh (JPG/PNG/WebP).');
+    }
+    const pointIndex = pointIndexRaw == null || pointIndexRaw === '' ? undefined : Number(pointIndexRaw);
+    const photoUrl = photo ? await this.campaignsService.saveProofPhoto(photo) : undefined;
+    return this.campaignsService.retakeDistributionPhoto(distributionId, user.id, photoUrl, pointIndex);
+  }
+
   @Post('requests')
   @UseGuards(RolesGuard)
   @Roles(UserRole.RECEIVER)

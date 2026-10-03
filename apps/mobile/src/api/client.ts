@@ -425,6 +425,10 @@ export const endpoints = {
       `/campaigns/distributions/${distributionId}/complete`,
     myPickupOrders: '/campaigns/my-pickup-orders',
     confirmPickupOrder: (requestId: string) => `/campaigns/pickup-orders/${requestId}/confirm`,
+    // Chụp lại ảnh bằng chứng sau khi đã xác nhận (chụp nhầm / ảnh mờ) — chỉ thay ảnh
+    retakePickupPhoto: (requestId: string) => `/campaigns/pickup-orders/${requestId}/retake-photo`,
+    retakeDistributionPhoto: (distributionId: string) =>
+      `/campaigns/distributions/${distributionId}/retake-photo`,
     // Sự cố shipper báo khi đi lấy nguyên liệu / đi phát suất ăn (chỉ luồng chiến dịch)
     reportIncident: (campaignId: string) => `/campaigns/${campaignId}/incidents`,
   },
