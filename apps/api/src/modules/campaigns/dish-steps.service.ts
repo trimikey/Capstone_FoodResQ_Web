@@ -550,6 +550,60 @@ export class DishStepsService {
     return updated;
   }
 
+  /**
+   * Chef CHỤP LẠI ảnh bằng chứng của một khâu đã xong (tải nhầm ảnh / ảnh mờ).
+   * Chỉ thay ảnh — trạng thái và giờ hoàn thành giữ nguyên.
+   *
+   * Ảnh QC đã được tổ chức duyệt thì KHÔNG đổi được nữa: đổi sau khi duyệt là đưa
+   * một ảnh chưa ai xem vào đúng chỗ đã ghi "đã duyệt". Ảnh QC còn chờ duyệt thì đổi
+   * thoải mái — tổ chức sẽ duyệt trên ảnh mới.
+   */
+  async retakeStepProof(
+    campaignId: string,
+    userId: string,
+    stepId: string,
+    proof: Express.Multer.File | undefined,
+  ) {
+    if (!proof) throw new BadRequestException('Vui lòng chụp ảnh mới để thay ảnh bằng chứng.');
+    if (!proof.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Ảnh bằng chứng phải là file ảnh (JPG/PNG/WebP).');
+    }
+    const step = await this.prisma.campaignDishStep.findUnique({
+      where: { id: stepId },
+      select: {
+        id: true,
+        campaignId: true,
+        stepOrder: true,
+        status: true,
+        reviewStatus: true,
+        completedByVolunteerId: true,
+        campaign: { select: { status: true } },
+      },
+    });
+    if (!step || step.campaignId !== campaignId) {
+      throw new NotFoundException('Không tìm thấy khâu này trong chiến dịch.');
+    }
+    if (step.status !== 'done') {
+      throw new BadRequestException('Khâu này chưa hoàn thành — chụp ảnh ở bước xác nhận khâu.');
+    }
+    const volunteer = await this.prisma.volunteerProfile.findUnique({ where: { userId }, select: { id: true } });
+    if (!volunteer || volunteer.id !== step.completedByVolunteerId) {
+      throw new ForbiddenException('Chỉ người đã xác nhận khâu này mới chụp lại ảnh được.');
+    }
+    if (step.campaign.status === 'completed' || step.campaign.status === 'cancelled') {
+      throw new BadRequestException('Chiến dịch đã kết thúc — không chụp lại ảnh bằng chứng được nữa.');
+    }
+    if (step.stepOrder === 3 && step.reviewStatus === 'approved') {
+      throw new BadRequestException('Ảnh QC đã được tổ chức duyệt — không thay ảnh được nữa.');
+    }
+    if (step.stepOrder === 3 && step.reviewStatus === 'rejected') {
+      throw new BadRequestException('Món này đã bị tổ chức huỷ vì QC không đạt — không thay ảnh được.');
+    }
+
+    const proofUrl = await this.storage.saveImage(proof, 'dish-step-proofs');
+    return this.prisma.campaignDishStep.update({ where: { id: stepId }, data: { proofUrl } });
+  }
+
   /** Nếu tất cả step cuối (order=4) của các món đã done → set assignment = completed. */
   private async maybeCompleteAssignment(campaignId: string, volunteerId: string) {
     const assignment = await this.prisma.campaignVolunteerAssignment.findFirst({

@@ -1747,6 +1747,26 @@ export function useTickDishStep() {
   });
 }
 
+/** TNV: chụp lại ảnh bằng chứng của khâu đã xong (tải nhầm ảnh) — chỉ thay ảnh. */
+export function useRetakeDishStepProof() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { campaignId: string; stepId: string; proof: File }) => {
+      const fd = new FormData();
+      fd.append('proof', p.proof);
+      const { data } = await api.post(
+        `/campaigns/${p.campaignId}/dish-steps/${p.stepId}/retake-proof`,
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      return data.data as DishStep;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
 /** Tổ chức: thiết lập 4 giờ dự kiến cho 1 món. */
 export function useSetDishStepTimes() {
   const qc = useQueryClient();

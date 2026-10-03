@@ -1019,6 +1019,30 @@ export function useCompleteDishStep() {
 }
 
 
+/** Chụp lại ảnh bằng chứng của khâu đã xong (tải nhầm ảnh) — chỉ thay ảnh. */
+export function useRetakeDishStepProof() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ campaignId, stepId, proof }: {
+      campaignId: string;
+      stepId: string;
+      proof: CapturedImage;
+    }) => {
+      const form = new FormData();
+      form.append('proof', proof as unknown as Blob);
+      const res = await apiClient.post<ApiResponse<DishStep>>(
+        endpoints.campaigns.retakeDishStepProof(campaignId, stepId),
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'my-task-detail'] });
+    },
+  });
+}
+
 export function useCampaignSupplies(campaignId?: string) {
   return useQuery({
     queryKey: ['campaigns', 'supplies', campaignId],

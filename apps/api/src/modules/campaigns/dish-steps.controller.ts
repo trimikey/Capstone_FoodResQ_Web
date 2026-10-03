@@ -99,6 +99,22 @@ export class DishStepsController {
     return this.service.completeStep(campaignId, user.id, stepId, proof, note);
   }
 
+  /** TNV chụp lại ảnh bằng chứng của khâu mình đã xác nhận (tải nhầm ảnh). */
+  @Post('dish-steps/:stepId/retake-proof')
+  @UseGuards(RolesGuard, ActiveAccountGuard)
+  @Roles(UserRole.VOLUNTEER)
+  @UseInterceptors(FileInterceptor('proof'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'TNV chụp lại ảnh bằng chứng của khâu đã xong — chỉ thay ảnh, không đổi trạng thái' })
+  retakeStepProof(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Param('stepId', ParseUUIDPipe) stepId: string,
+    @CurrentUser() user: User,
+    @UploadedFile() proof?: Express.Multer.File,
+  ) {
+    return this.service.retakeStepProof(campaignId, user.id, stepId, proof);
+  }
+
   /**
    * Tổ chức: duyệt / từ chối ẢNH khâu QC chef đã tải lên.
    * Duyệt xong khâu 4 "Sẵn sàng xuất phát" mới mở; từ chối thì khâu QC quay về

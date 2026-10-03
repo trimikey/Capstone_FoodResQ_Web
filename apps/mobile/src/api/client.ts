@@ -420,6 +420,8 @@ export const endpoints = {
     advanceTask: (assignmentId: string) => `/campaigns/assignments/${assignmentId}/advance`,
     completeDishStep: (campaignId: string, stepId: string) =>
       `/campaigns/${campaignId}/dish-steps/${stepId}/complete`,
+    retakeDishStepProof: (campaignId: string, stepId: string) =>
+      `/campaigns/${campaignId}/dish-steps/${stepId}/retake-proof`,
     supplies: (campaignId: string) => `/campaigns/${campaignId}/supplies`,
     completeDistribution: (distributionId: string) =>
       `/campaigns/distributions/${distributionId}/complete`,

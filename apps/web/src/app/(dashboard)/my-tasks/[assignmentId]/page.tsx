@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import {
   useMyTaskDetail,
   useTickDishStep,
+  useRetakeDishStepProof,
   useAdvanceTask,
   useCampaignSupplies,
   type DishStep,
@@ -74,6 +75,9 @@ export default function MyTaskDetailPage() {
   const { data: me } = useMe();
   const { data: detail, isLoading, refetch } = useMyTaskDetail(params.assignmentId);
   const tick = useTickDishStep();
+  const retake = useRetakeDishStepProof();
+  /** true = ảnh sắp chọn dùng để THAY ảnh của khâu đã xong, không phải xác nhận khâu mới. */
+  const [retaking, setRetaking] = useState(false);
   const advance = useAdvanceTask();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingStep, setPendingStep] = useState<DishStep | null>(null);
@@ -145,8 +149,16 @@ export default function MyTaskDetailPage() {
   }
 
   function startTick(step: DishStep) {
+    setRetaking(false);
     setPendingStep(step);
     setNote('');
+    fileRef.current?.click();
+  }
+
+  /** Chụp lại ảnh của khâu đã xong (tải nhầm ảnh) — chỉ thay ảnh. */
+  function startRetake(step: DishStep) {
+    setRetaking(true);
+    setPendingStep(step);
     fileRef.current?.click();
   }
 
@@ -154,6 +166,18 @@ export default function MyTaskDetailPage() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !pendingStep || !detail) return;
+    if (retaking) {
+      try {
+        await retake.mutateAsync({ campaignId: detail.campaign.id, stepId: pendingStep.id, proof: file });
+        toast.success(`Đã thay ảnh của khâu "${pendingStep.stepName}".`);
+      } catch (error) {
+        toast.error(errMsg(error, 'Không thay được ảnh — thử lại'));
+      } finally {
+        setPendingStep(null);
+        setRetaking(false);
+      }
+      return;
+    }
     try {
       await tick.mutateAsync({
         campaignId: detail.campaign.id,
@@ -565,6 +589,10 @@ export default function MyTaskDetailPage() {
               dish={dish}
               canAct={canAct}
               onTick={startTick}
+              onRetake={startRetake}
+              // Chiến dịch kết thúc thì ảnh đã lên báo cáo — không cho thay nữa.
+              canRetake={campaign.status !== 'completed' && campaign.status !== 'cancelled'}
+              retaking={retake.isPending}
               pending={tick.isPending}
               myAvatarUrl={me?.avatarUrl ?? null}
               myName={me?.fullName ?? 'Bạn'}
@@ -648,6 +676,9 @@ function DishProcessBoard({
   dish,
   canAct,
   onTick,
+  onRetake,
+  canRetake,
+  retaking,
   pending,
   myAvatarUrl,
   myName,
@@ -658,6 +689,9 @@ function DishProcessBoard({
   dish: DishProcessItem;
   canAct: boolean;
   onTick: (s: DishStep) => void;
+  onRetake: (s: DishStep) => void;
+  canRetake: boolean;
+  retaking: boolean;
   pending: boolean;
   myAvatarUrl: string | null;
   myName: string;
@@ -824,6 +858,9 @@ function DishProcessBoard({
             // liệu cũ còn để khâu 3 ở 'available' theo luật chụp-lại trước đây.
             canAct={canAct && !dishCancelled}
             onTick={() => onTick(step)}
+            onRetake={() => onRetake(step)}
+            canRetake={canRetake && !dishCancelled}
+            retaking={retaking}
             pending={pending}
             prevStepDone={idx === 0 || dish.steps[idx - 1]?.effectiveStatus === 'done'}
             // Khâu 4 bị giữ vì ảnh QC (khâu 3) chưa được tổ chức duyệt
@@ -845,6 +882,9 @@ function StepCell({
   step,
   canAct,
   onTick,
+  onRetake,
+  canRetake,
+  retaking,
   pending,
   prevStepDone,
   awaitingQcReview,
@@ -854,6 +894,9 @@ function StepCell({
   step: DishStep;
   canAct: boolean;
   onTick: () => void;
+  onRetake: () => void;
+  canRetake: boolean;
+  retaking: boolean;
   pending: boolean;
   prevStepDone: boolean;
   /** true khi khâu 4 bị giữ vì ảnh QC chưa được tổ chức duyệt. */
@@ -991,6 +1034,22 @@ function StepCell({
               Tổ chức đã duyệt ảnh
             </p>
           )}
+          {/* Tải nhầm ảnh → chụp lại. Chỉ người đã xác nhận khâu; ảnh QC đã được tổ chức
+              duyệt thì khoá (đổi sau khi duyệt là đưa ảnh chưa ai xem vào chỗ "đã duyệt"). */}
+          {canRetake &&
+            step.proofUrl &&
+            completedBy?.user.fullName === myName &&
+            !(isQCStep && step.reviewStatus === 'approved') && (
+              <button
+                type="button"
+                onClick={onRetake}
+                disabled={retaking || pending}
+                className="inline-flex items-center justify-center gap-1 self-start rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[14px]">photo_camera</span>
+                {retaking ? 'Đang thay ảnh…' : 'Chụp lại ảnh'}
+              </button>
+            )}
         </>
       ) : isLocked ? (
         <p className="text-[11px] text-neutral-500 flex items-center gap-1">

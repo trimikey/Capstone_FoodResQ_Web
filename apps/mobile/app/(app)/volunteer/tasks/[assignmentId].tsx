@@ -14,6 +14,7 @@ import {
   useRetakeProofPhoto,
   useCompleteAssignedDistribution,
   useCompleteDishStep,
+  useRetakeDishStepProof,
   useMyTaskDetail,
   qtyUnit,
 } from '@/hooks/useCampaigns';
@@ -28,6 +29,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { ReportIncidentButton } from '@/components/ReportIncidentButton';
 import { getErrorMessage } from '@/hooks/useErrorHandler';
 import { captureImage, type CapturedImage } from '@/services/faceCapture';
+import { useAuthStore } from '@/stores/auth';
 import { getCurrentCoords } from '@/services/geolocation';
 import { notifyError, notifySuccess } from '@/services/haptics';
 import { formatDate, formatTime } from '@/utils/campaign';
@@ -230,6 +232,10 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
 }) {
   const supplies = useCampaignSupplies(detail.campaign.id);
   const completeStep = useCompleteDishStep();
+  const retakeStep = useRetakeDishStepProof();
+  const myName = useAuthStore((s) => s.user?.name);
+  // Chiến dịch kết thúc thì ảnh đã lên báo cáo — không cho thay nữa.
+  const canRetakeProof = detail.campaign.status !== 'completed' && detail.campaign.status !== 'cancelled';
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
 
   const dishes = detail.dishes ?? [];
@@ -252,6 +258,21 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
     } catch (error) {
       void notifyError();
       Popup.show({ type: 'error', text1: 'Không thể xác nhận khâu', text2: getErrorMessage(error) });
+    }
+  };
+
+  /** Chụp lại ảnh của khâu đã xong (tải nhầm ảnh) — chỉ thay ảnh, trạng thái giữ nguyên. */
+  const handleRetake = async (step: DishStep) => {
+    try {
+      const photo = await captureImage('id_card', 'proof');
+      if (!photo) return;
+      await retakeStep.mutateAsync({ campaignId: detail.campaign.id, stepId: step.id, proof: photo });
+      void notifySuccess();
+      Popup.show({ type: 'success', text1: `Đã thay ảnh khâu “${STEP_LABELS[step.stepOrder]}”` });
+      await onRefresh();
+    } catch (error) {
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không thay được ảnh', text2: getErrorMessage(error) });
     }
   };
 
@@ -383,6 +404,16 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
                   dish.steps[index - 1]?.reviewStatus !== 'approved'
                 }
                 onComplete={() => handleComplete(step)}
+                // Chỉ người đã xác nhận khâu; ảnh QC đã được tổ chức duyệt thì khoá.
+                canRetake={
+                  canRetakeProof &&
+                  !dishCancelled &&
+                  !!step.proofUrl &&
+                  step.completedByVolunteer?.user.fullName === myName &&
+                  !(step.stepOrder === 3 && step.reviewStatus === 'approved')
+                }
+                retaking={retakeStep.isPending}
+                onRetake={() => handleRetake(step)}
               />
             ))}
           </View>
@@ -395,13 +426,16 @@ function ChefTask({ detail, checkedIn, onRefresh }: {
   );
 }
 
-function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, onComplete }: {
+function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, onComplete, canRetake, retaking, onRetake }: {
   step: DishStep;
   previousDone: boolean;
   canAct: boolean;
   pending: boolean;
   awaitingQcReview?: boolean;
   onComplete: () => void;
+  canRetake: boolean;
+  retaking: boolean;
+  onRetake: () => void;
 }) {
   const done = step.effectiveStatus === 'done';
   const available = step.effectiveStatus === 'available';
@@ -443,6 +477,13 @@ function DishStepRow({ step, previousDone, canAct, pending, awaitingQcReview, on
           <Text style={styles.stepRejectedText}>
             Món đã bị huỷ vì QC không đạt{step.reviewNote ? `: ${step.reviewNote}` : ''}.
           </Text>
+        ) : null}
+        {done && canRetake ? (
+          <View style={styles.stepActions}>
+            <Button compact icon="camera-retake-outline" loading={retaking} disabled={retaking} onPress={onRetake}>
+              Chụp lại ảnh
+            </Button>
+          </View>
         ) : null}
         {available && canAct && !qcFailed ? (
           <View style={styles.stepActions}>
