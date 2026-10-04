@@ -301,8 +301,8 @@ function RequestCard({
         <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           <span className="material-symbols-outlined text-[16px]">inventory</span>
           <span>
-            Đã trừ <b>{req.demandDetails.stockDeduction.quantity} {req.demandDetails.stockDeduction.unit}</b> khỏi
-            tin &ldquo;{req.demandDetails.stockDeduction.listingTitle}&rdquo;.
+            Đã trừ <b>{req.demandDetails.stockDeduction.quantity} {req.demandDetails.stockDeduction.unit}</b>{' '}
+            khỏi tin &ldquo;{req.demandDetails.stockDeduction.listingTitle}&rdquo;.
           </span>
         </div>
       )}
