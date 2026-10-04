@@ -13,7 +13,7 @@ describe('BulkRunsService', () => {
       findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(),
       create: jest.fn(), update: jest.fn(), updateMany: jest.fn(),
     },
-    bulkRunStop: { update: jest.fn(), delete: jest.fn(), aggregate: jest.fn() },
+    bulkRunStop: { update: jest.fn(), delete: jest.fn(), aggregate: jest.fn(), findMany: jest.fn() },
     delivery: { findFirst: jest.fn() },
     foodListing: { findFirst: jest.fn() },
     reservation: { update: jest.fn() },
@@ -52,6 +52,7 @@ describe('BulkRunsService', () => {
     prisma.delivery.findFirst.mockResolvedValue(null);
     prisma.foodListing.findFirst.mockResolvedValue(okListing);
     prisma.bulkRunStop.aggregate.mockResolvedValue({ _sum: { plannedQty: 0 } });
+    prisma.bulkRunStop.findMany.mockResolvedValue([]);
     service = new BulkRunsService(
       prisma as never,
       {} as never,           // redlock
@@ -341,11 +342,21 @@ describe('BulkRunsService', () => {
       prisma.bulkRun.findUnique.mockResolvedValue({ ...runOwned, quantity: 10 });
       prisma.$queryRaw.mockResolvedValue([{ id: 'stop-2', served_qty: 0, reservation_id: null }]);
       // Các điểm khác đã dự kiến 5 phần → điểm này chỉ còn tối đa 5
-      prisma.bulkRunStop.aggregate.mockResolvedValue({ _sum: { plannedQty: 5 } });
+      prisma.bulkRunStop.findMany.mockResolvedValue([{ plannedQty: 5, servedQty: 0, servedAt: null }]);
 
       await expect(service.updateStop('run-1', 'stop-2', 'shipper-user-1', { plannedQty: 10 }))
         .rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.bulkRunStop.update).not.toHaveBeenCalled();
+    });
+
+    it('điểm đã phát tính theo số thực phát — phần dự kiến chưa phát dồn được sang điểm mới', async () => {
+      prisma.bulkRun.findUnique.mockResolvedValue({ ...runOwned, quantity: 10 });
+      prisma.$queryRaw.mockResolvedValue([{ id: 'stop-2', served_qty: 0, reservation_id: null }]);
+      // Điểm 1 dự kiến 10 nhưng mới phát 2 → còn 8 cho điểm khác
+      prisma.bulkRunStop.findMany.mockResolvedValue([{ plannedQty: 10, servedQty: 2, servedAt: new Date() }]);
+
+      await service.updateStop('run-1', 'stop-2', 'shipper-user-1', { plannedQty: 8 });
+      expect(prisma.bulkRunStop.update).toHaveBeenCalled();
     });
 
     it('gỡ điểm kèm huỷ reservation ghi sổ, KHÔNG hoàn kho', async () => {

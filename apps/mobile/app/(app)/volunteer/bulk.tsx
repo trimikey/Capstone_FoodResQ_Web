@@ -260,10 +260,13 @@ function StopItem({
 function AddStopForm({
   busy,
   initialCoords,
+  remaining,
   onAdd,
 }: {
   busy: boolean;
   initialCoords: Coords | null;
+  /** Số phần chưa phát của chuyến — số dự kiến của điểm mới không vượt quá. */
+  remaining: number;
   /** `location` null = ghim bằng vị trí GPS hiện tại. */
   onAdd: (label: string, location: AddressValue | null, plannedQty: string) => Promise<void>;
 }) {
@@ -288,6 +291,14 @@ function AddStopForm({
       });
       return;
     }
+    if (plannedQty && Number(plannedQty) > remaining) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Số phần dự kiến quá nhiều',
+        text2: `Chuyến chỉ còn ${remaining} phần chưa phát — để trống hoặc nhập tối đa ${remaining}.`,
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       await onAdd(label.trim(), useGps ? null : location, plannedQty);
@@ -295,6 +306,10 @@ function AddStopForm({
       setLocation(null);
       setPlannedQty('');
       setOpen(false);
+    } catch (e) {
+      // Trước đây không bắt lỗi → server từ chối là app văng màn lỗi đỏ "status code 400".
+      void notifyError();
+      Popup.show({ type: 'error', text1: 'Không thêm được điểm phát', text2: errorMessage(e, 'Vui lòng thử lại.') });
     } finally {
       setSubmitting(false);
     }
@@ -323,7 +338,7 @@ function AddStopForm({
           />
           <TextInput
             mode="outlined"
-            label="Số phần dự kiến (tuỳ chọn)"
+            label={`Số phần dự kiến (tuỳ chọn · còn ${remaining})`}
             value={plannedQty}
             onChangeText={(t) => setPlannedQty(t.replace(/\D/g, ''))}
             keyboardType="number-pad"
@@ -868,6 +883,7 @@ export default function VolunteerBulkRunScreen() {
                 <AddStopForm
                   busy={busy}
                   initialCoords={currentCoords}
+                  remaining={remaining}
                   onAdd={(label, location, plannedQtyText) =>
                     handleAddStop(activeRun, label, location, plannedQtyText)
                   }

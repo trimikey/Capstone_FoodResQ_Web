@@ -613,11 +613,17 @@ export class BulkRunsService implements OnModuleInit {
     plannedQty: number,
     excludeStopId?: string,
   ) {
-    const agg = await this.prisma.bulkRunStop.aggregate({
+    // Điểm ĐÃ PHÁT tính theo số phần thực phát, không theo số dự kiến: dự kiến 10 mà
+    // chỉ phát 2 thì 8 phần còn lại phải dồn được sang điểm mới. Trước đây vẫn tính đủ 10
+    // nên shipper không thêm nổi điểm nào cho phần còn lại.
+    const stops = await this.prisma.bulkRunStop.findMany({
       where: { runId, ...(excludeStopId ? { id: { not: excludeStopId } } : {}) },
-      _sum: { plannedQty: true },
+      select: { plannedQty: true, servedQty: true, servedAt: true },
     });
-    const used = Number(agg._sum.plannedQty ?? 0);
+    const used = stops.reduce(
+      (sum, st) => sum + (st.servedAt ? st.servedQty : (st.plannedQty ?? 0)),
+      0,
+    );
     if (used + plannedQty > runQuantity) {
       throw new BadRequestException(
         `Chuyến chỉ có ${runQuantity} phần, các điểm khác đã dự kiến ${used} phần — điểm này tối đa ${Math.max(0, runQuantity - used)} phần.`,
