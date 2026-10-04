@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityIndicator, Button, ProgressBar, Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { BulkRun, BulkRunStop } from '@foodresq/types';
 import {
   BULK_MIN_QTY,
@@ -19,7 +18,6 @@ import {
 import { useListings, type Listing } from '@/hooks/useListings';
 import { ListingsMapView } from '@/components/ListingsMapView';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { QRDisplay } from '@/components/QRDisplay';
 import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -28,6 +26,7 @@ import { captureImage, type CapturedImage } from '@/services/faceCapture';
 import { PhotoReviewDialog } from '@/components/PhotoReviewDialog';
 import { DEFAULT_MAP_COORDS, getCurrentCoords, type Coords } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
+import { AddressPicker, type AddressValue } from '@/components/AddressPicker';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
 import { mobileColors as COLORS, elevation, radius, spacing } from '@/theme/design';
 import { formatDistance, formatPickupWindow, quantityLabel } from '@/utils/listingFormat';
@@ -42,23 +41,6 @@ function errorMessage(e: unknown, fallback: string): string {
 
 function formatQty(value: number, unit = 'phần'): string {
   return `${value} ${unit}`;
-}
-
-function shortCode(token?: string | null): string | null {
-  const clean = token?.trim();
-  return clean ? clean.slice(-8).toUpperCase() : null;
-}
-
-function formatExpiry(value?: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function statusMeta(status: string): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' } {
@@ -148,8 +130,6 @@ function StopItem({
   remaining,
   canServe,
   busy,
-  qrVerified,
-  onOpenQr,
   onServe,
 }: {
   stop: BulkRunStop;
@@ -157,11 +137,21 @@ function StopItem({
   remaining: number;
   canServe: boolean;
   busy: boolean;
-  qrVerified: boolean;
-  onOpenQr: () => void;
   onServe: (servedQty: number, note?: string, withPhoto?: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Điểm ghim bằng GPS mà lúc đó không tra được địa chỉ → tra lại từ toạ độ để
+  // không hiện "Chưa có địa chỉ" cho một điểm vẫn có vị trí trên bản đồ.
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  useEffect(() => {
+    if (stop.address || !stop.coords) return;
+    const ctrl = new AbortController();
+    void reverseGeocode(stop.coords.lat, stop.coords.lng, ctrl.signal).then((a) => {
+      if (a) setResolvedAddress(a);
+    });
+    return () => ctrl.abort();
+  }, [stop.address, stop.coords]);
+  const addressText = stop.address || resolvedAddress || (stop.coords ? 'Đã ghim vị trí trên bản đồ' : 'Chưa có địa chỉ');
   const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
   const served = stop.servedQty > 0;
@@ -196,8 +186,8 @@ function StopItem({
         </View>
         <View style={styles.stopInfo}>
           <Text style={styles.stopTitle} numberOfLines={1}>{stop.label}</Text>
-          <Text style={styles.stopSub} numberOfLines={1}>
-            {stop.address ?? 'Chưa có địa chỉ'}
+          <Text style={styles.stopSub} numberOfLines={2}>
+            {addressText}
             {stop.createdBy === 'provider' ? ' · NCC gợi ý' : ''}
             {stop.plannedQty ? ` · dự kiến ${formatQty(stop.plannedQty)}` : ''}
           </Text>
@@ -208,19 +198,20 @@ function StopItem({
           </View>
         ) : canServe ? (
           <View style={styles.stopActions}>
-            <Pressable
-              onPress={onOpenQr}
-              style={[styles.iconBtn, qrVerified && styles.iconBtnSuccess]}
-              accessibilityRole="button"
-              accessibilityLabel="Mở mã QR điểm phát"
-              hitSlop={8}
-            >
-              <MaterialCommunityIcons
-                name={qrVerified ? 'check-decagram-outline' : 'qrcode-scan'}
-                size={18}
-                color={qrVerified ? COLORS.teal : COLORS.primary}
-              />
-            </Pressable>
+            {stop.coords ? (
+              <Pressable
+                onPress={() => {
+                  const url = mapsUrl(stop.address, stop.coords);
+                  if (url) void Linking.openURL(url);
+                }}
+                style={styles.iconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Chỉ đường tới điểm phát"
+                hitSlop={8}
+              >
+                <MaterialCommunityIcons name="directions" size={18} color={COLORS.primary} />
+              </Pressable>
+            ) : null}
             <Button compact mode="contained-tonal" onPress={() => setOpen((v) => !v)}
               buttonColor={open ? COLORS.surfaceVariant : COLORS.primaryContainer}
               textColor={open ? COLORS.onSurfaceVariant : COLORS.primary}
@@ -230,19 +221,6 @@ function StopItem({
           </View>
         ) : null}
       </View>
-
-      {canServe && stop.reservation?.qrToken ? (
-        <View style={styles.qrInline}>
-          <MaterialCommunityIcons
-            name={qrVerified ? 'shield-check-outline' : 'qrcode'}
-            size={15}
-            color={qrVerified ? COLORS.teal : COLORS.onSurfaceVariant}
-          />
-          <Text style={[styles.qrInlineText, qrVerified && styles.qrInlineTextDone]}>
-            {qrVerified ? 'Đã quét đúng điểm' : `Mã điểm ${shortCode(stop.reservation.qrToken)}`}
-          </Text>
-        </View>
-      ) : null}
 
       {open && canServe ? (
         <View style={styles.stopForm}>
@@ -277,160 +255,44 @@ function StopItem({
   );
 }
 
-function StopQrModal({
-  stop,
-  visible,
-  verified,
-  scanning,
-  permissionGranted,
-  torch,
-  onClose,
-  onScan,
-  onToggleScanner,
-  onRequestPermission,
-  onToggleTorch,
-}: {
-  stop: BulkRunStop | null;
-  visible: boolean;
-  verified: boolean;
-  scanning: boolean;
-  permissionGranted: boolean;
-  torch: boolean;
-  onClose: () => void;
-  onScan: (token: string) => void;
-  onToggleScanner: () => void;
-  onRequestPermission: () => void;
-  onToggleTorch: () => void;
-}) {
-  const token = stop?.reservation?.qrToken ?? null;
-  const code = shortCode(token);
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.qrModalCard}>
-          <View style={styles.qrModalHeader}>
-            <View style={styles.qrModalTitleBlock}>
-              <Text style={styles.qrModalKicker}>Điểm phát</Text>
-              <Text style={styles.qrModalTitle} numberOfLines={2}>{stop?.label ?? 'Mã QR'}</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Đóng">
-              <MaterialCommunityIcons name="close" size={20} color={COLORS.onSurfaceVariant} />
-            </Pressable>
-          </View>
-
-          {!token ? (
-            <View style={styles.qrMissing}>
-              <MaterialCommunityIcons name="qrcode-remove" size={42} color={COLORS.onSurfaceVariant} />
-              <Text style={styles.qrMissingTitle}>Chưa có mã cho điểm này</Text>
-              <Text style={styles.qrMissingText}>
-                Mã QR được tạo sau khi chuyến chuyển sang trạng thái đã lấy hàng. Kéo để làm mới nếu bạn vừa xác nhận lấy.
-              </Text>
-            </View>
-          ) : scanning ? (
-            <View style={styles.scannerBox}>
-              {!permissionGranted ? (
-                <View style={styles.scannerPermission}>
-                  <MaterialCommunityIcons name="camera-off-outline" size={42} color={COLORS.onSurfaceVariant} />
-                  <Text style={styles.qrMissingText}>Cần quyền camera để quét mã điểm phát.</Text>
-                  <Button mode="contained" onPress={onRequestPermission} buttonColor={COLORS.primary}>
-                    Cấp quyền camera
-                  </Button>
-                </View>
-              ) : (
-                <>
-                  <CameraView
-                    style={StyleSheet.absoluteFill}
-                    facing="back"
-                    enableTorch={torch}
-                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                    onBarcodeScanned={({ data }) => onScan(data)}
-                  />
-                  <Pressable
-                    style={styles.torchBtn}
-                    onPress={onToggleTorch}
-                    accessibilityRole="button"
-                    accessibilityLabel={torch ? 'Tắt đèn flash' : 'Bật đèn flash'}
-                  >
-                    <MaterialCommunityIcons name={torch ? 'flash' : 'flash-off'} size={22} color={COLORS.onPrimary} />
-                  </Pressable>
-                </>
-              )}
-            </View>
-          ) : (
-            <View style={styles.qrDisplayBlock}>
-              <View style={styles.qrFrame}>
-                <QRDisplay value={token} size={210} />
-              </View>
-              <View style={styles.shortCodeBlock}>
-                <Text style={styles.shortCodeLabel}>Mã nhập tay</Text>
-                <Text selectable style={styles.shortCodeText}>{code}</Text>
-              </View>
-              {stop?.reservation?.qrExpiresAt ? (
-                <Text style={styles.qrExpiry}>Hết hạn: {formatExpiry(stop.reservation.qrExpiresAt)}</Text>
-              ) : null}
-              {verified ? (
-                <View style={styles.verifiedBanner}>
-                  <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.teal} />
-                  <Text style={styles.verifiedText}>Mã này đã được quét đúng với điểm phát.</Text>
-                </View>
-              ) : null}
-            </View>
-          )}
-
-          <View style={styles.qrModalActions}>
-            {token ? (
-              <>
-                <Button mode="outlined" icon={scanning ? 'qrcode' : 'qrcode-scan'} onPress={onToggleScanner} style={styles.flexBtn}>
-                  {scanning ? 'Hiện mã' : 'Quét kiểm tra'}
-                </Button>
-                <Button
-                  mode="contained"
-                  icon="share-variant-outline"
-                  buttonColor={COLORS.primary}
-                  onPress={() => void Share.share({ message: token })}
-                  style={styles.flexBtn}
-                >
-                  Chia sẻ
-                </Button>
-              </>
-            ) : (
-              <Button mode="contained" onPress={onClose} buttonColor={COLORS.primary} style={styles.flexBtn}>
-                Đã hiểu
-              </Button>
-            )}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 // ─── Add-stop form (collapsible) ────────────────────────────────────────────
 
 function AddStopForm({
   busy,
+  initialCoords,
   onAdd,
 }: {
   busy: boolean;
-  onAdd: (label: string, address: string, plannedQty: string) => Promise<void>;
+  initialCoords: Coords | null;
+  /** `location` null = ghim bằng vị trí GPS hiện tại. */
+  onAdd: (label: string, location: AddressValue | null, plannedQty: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
-  const [address, setAddress] = useState('');
+  const [location, setLocation] = useState<AddressValue | null>(null);
   const [plannedQty, setPlannedQty] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleAdd = async () => {
+  const handleAdd = async (useGps: boolean) => {
     if (!label.trim()) {
       Popup.show({ type: 'warning', text1: 'Nhập tên điểm phát' });
       return;
     }
+    // Chọn địa chỉ thì phải là địa chỉ đã chọn từ gợi ý / ghim trên bản đồ, không phải
+    // chữ gõ dở — gõ dở thì toạ độ vẫn là chỗ cũ và chỉ đường sẽ sai.
+    if (!useGps && !location?.address.trim()) {
+      Popup.show({
+        type: 'warning',
+        text1: 'Chọn địa chỉ điểm phát',
+        text2: 'Gõ địa chỉ rồi chọn một gợi ý, hoặc bấm "Dùng vị trí hiện tại".',
+      });
+      return;
+    }
     setSubmitting(true);
     try {
-      await onAdd(label.trim(), address.trim(), plannedQty);
+      await onAdd(label.trim(), useGps ? null : location, plannedQty);
       setLabel('');
-      setAddress('');
+      setLocation(null);
       setPlannedQty('');
       setOpen(false);
     } finally {
@@ -453,7 +315,12 @@ function AddStopForm({
       {open ? (
         <View style={styles.addStopForm}>
           <TextInput mode="outlined" label="Tên điểm phát *" value={label} onChangeText={setLabel} dense />
-          <TextInput mode="outlined" label="Địa chỉ (tuỳ chọn)" value={address} onChangeText={setAddress} dense />
+          <AddressPicker
+            initialCoords={initialCoords}
+            value={location}
+            onChange={setLocation}
+            placeholder="Địa chỉ điểm phát — gõ rồi chọn gợi ý"
+          />
           <TextInput
             mode="outlined"
             label="Số phần dự kiến (tuỳ chọn)"
@@ -464,12 +331,20 @@ function AddStopForm({
           />
           <Button
             mode="contained"
-            icon="crosshairs-gps"
+            icon="map-marker-check-outline"
             disabled={busy || submitting}
             loading={submitting}
-            onPress={handleAdd}
+            onPress={() => void handleAdd(false)}
           >
-            Ghim bằng vị trí hiện tại
+            Thêm điểm phát
+          </Button>
+          <Button
+            mode="outlined"
+            icon="crosshairs-gps"
+            disabled={busy || submitting}
+            onPress={() => void handleAdd(true)}
+          >
+            Dùng vị trí hiện tại
           </Button>
         </View>
       ) : null}
@@ -480,7 +355,6 @@ function AddStopForm({
 // ─── Main screen ────────────────────────────────────────────────────────────
 
 export default function VolunteerBulkRunScreen() {
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const { data: runs, isLoading, isError, refetch, isRefetching } = useMyBulkRuns();
   const [currentCoords, setCurrentCoords] = useState<Coords | null>(null);
   const [locationFallback, setLocationFallback] = useState(false);
@@ -496,10 +370,6 @@ export default function VolunteerBulkRunScreen() {
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
-  const [qrStop, setQrStop] = useState<BulkRunStop | null>(null);
-  const [qrScannerOpen, setQrScannerOpen] = useState(false);
-  const [torch, setTorch] = useState(false);
-  const [verifiedStopIds, setVerifiedStopIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let active = true;
@@ -607,19 +477,27 @@ export default function VolunteerBulkRunScreen() {
     void act(() => pickupRun.mutateAsync({ runId: run.id }), 'Đã xác nhận lấy hàng.');
   };
 
-  const handleAddStop = async (run: BulkRun, label: string, addressText: string, plannedQtyText: string) => {
-    const pos = await getCurrentCoords();
-    if (!pos.coords) {
-      Popup.show({ type: 'warning', text1: 'Chưa lấy được vị trí', text2: 'Hãy bật GPS và thử lại.' });
-      return;
+  const handleAddStop = async (run: BulkRun, label: string, location: AddressValue | null, plannedQtyText: string) => {
+    let point = location;
+    if (!point) {
+      // "Dùng vị trí hiện tại": lấy GPS rồi tra địa chỉ từ toạ độ để điểm có tên đường.
+      const pos = await getCurrentCoords();
+      if (!pos.coords) {
+        Popup.show({ type: 'warning', text1: 'Chưa lấy được vị trí', text2: 'Hãy bật GPS và thử lại.' });
+        return;
+      }
+      point = {
+        lat: pos.coords.lat,
+        lng: pos.coords.lng,
+        address: await reverseGeocode(pos.coords.lat, pos.coords.lng),
+      };
     }
-    const address = addressText || (await reverseGeocode(pos.coords.lat, pos.coords.lng)) || undefined;
     await addStop.mutateAsync({
       runId: run.id,
       label,
-      address,
-      lng: pos.coords.lng,
-      lat: pos.coords.lat,
+      address: point.address.trim() || undefined,
+      lng: point.lng,
+      lat: point.lat,
       plannedQty: plannedQtyText ? Number(plannedQtyText) : undefined,
     });
     void notifySuccess();
@@ -645,42 +523,6 @@ export default function VolunteerBulkRunScreen() {
     const url = mapsUrl(run.listing.pickupAddress, run.pickupCoords ?? null);
     if (!url) { Popup.show({ type: 'warning', text1: 'Thiếu địa chỉ lấy hàng' }); return; }
     await Linking.openURL(url);
-  };
-
-  const openStopQr = (stop: BulkRunStop) => {
-    setQrStop(stop);
-    setQrScannerOpen(false);
-    setTorch(false);
-  };
-
-  const toggleStopScanner = async () => {
-    if (!qrStop?.reservation?.qrToken) return;
-    const next = !qrScannerOpen;
-    setQrScannerOpen(next);
-    if (next && !cameraPermission?.granted) {
-      await requestCameraPermission();
-    }
-  };
-
-  const handleStopQrScan = (token: string) => {
-    if (!qrStop?.reservation?.qrToken) return;
-    setQrScannerOpen(false);
-    if (token.trim() !== qrStop.reservation.qrToken.trim()) {
-      void notifyWarning();
-      Popup.show({
-        type: 'warning',
-        text1: 'Không đúng mã điểm phát',
-        text2: 'Hãy kiểm tra lại điểm đang đứng hoặc chọn đúng điểm trong danh sách.',
-      });
-      return;
-    }
-    setVerifiedStopIds((prev) => {
-      const next = new Set(prev);
-      next.add(qrStop.id);
-      return next;
-    });
-    void notifySuccess();
-    Toast.show({ type: 'success', text1: 'Đã xác minh đúng điểm phát.' });
   };
 
   if (isLoading) {
@@ -1015,8 +857,6 @@ export default function VolunteerBulkRunScreen() {
                         remaining={remaining}
                         canServe={activeRun.status === 'picked_up'}
                         busy={busy}
-                        qrVerified={verifiedStopIds.has(stop.id)}
-                        onOpenQr={() => openStopQr(stop)}
                         onServe={(servedQty, noteText, withPhoto) =>
                           handleServe(activeRun, stop, servedQty, noteText, withPhoto)
                         }
@@ -1027,8 +867,9 @@ export default function VolunteerBulkRunScreen() {
 
                 <AddStopForm
                   busy={busy}
-                  onAdd={(label, address, plannedQtyText) =>
-                    handleAddStop(activeRun, label, address, plannedQtyText)
+                  initialCoords={currentCoords}
+                  onAdd={(label, location, plannedQtyText) =>
+                    handleAddStop(activeRun, label, location, plannedQtyText)
                   }
                 />
               </View>
@@ -1087,23 +928,6 @@ export default function VolunteerBulkRunScreen() {
         ) : null}
 
       </ScrollView>
-      <StopQrModal
-        stop={qrStop}
-        visible={!!qrStop}
-        verified={!!qrStop && verifiedStopIds.has(qrStop.id)}
-        scanning={qrScannerOpen}
-        permissionGranted={cameraPermission?.granted === true}
-        torch={torch}
-        onClose={() => {
-          setQrStop(null);
-          setQrScannerOpen(false);
-          setTorch(false);
-        }}
-        onScan={handleStopQrScan}
-        onToggleScanner={() => void toggleStopScanner()}
-        onRequestPermission={() => void requestCameraPermission()}
-        onToggleTorch={() => setTorch((v) => !v)}
-      />
       <PhotoReviewDialog
         photo={review?.photo ?? null}
         title={review?.title ?? ''}
@@ -1328,19 +1152,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.primaryContainer,
   },
-  iconBtnSuccess: { backgroundColor: COLORS.tealContainer },
-  qrInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    backgroundColor: COLORS.surfaceContainerLow,
-  },
-  qrInlineText: { color: COLORS.onSurfaceVariant, fontSize: 11, fontWeight: '800' },
-  qrInlineTextDone: { color: COLORS.teal },
   stopDoneBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1440,87 +1251,4 @@ const styles = StyleSheet.create({
   historyTitle: { color: COLORS.onSurface, fontWeight: '800', fontSize: 13 },
   historySub: { color: COLORS.onSurfaceVariant, fontSize: 11, marginTop: 2 },
 
-  // QR modal
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(18,28,42,0.45)',
-  },
-  qrModalCard: {
-    maxHeight: '92%',
-    gap: 14,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: COLORS.surface,
-  },
-  qrModalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  qrModalTitleBlock: { flex: 1 },
-  qrModalKicker: { color: COLORS.amber, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  qrModalTitle: { color: COLORS.onSurface, fontSize: 20, lineHeight: 25, fontWeight: '900', marginTop: 2 },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surfaceContainerLow,
-  },
-  qrDisplayBlock: { alignItems: 'center', gap: 12 },
-  qrFrame: {
-    padding: 14,
-    borderRadius: 22,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-  },
-  shortCodeBlock: {
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: COLORS.amberContainer,
-  },
-  shortCodeLabel: { color: COLORS.onAmberContainer, fontSize: 11, fontWeight: '800' },
-  shortCodeText: { color: COLORS.onSurface, fontSize: 24, fontWeight: '900', letterSpacing: 1 },
-  qrExpiry: { color: COLORS.onSurfaceVariant, fontSize: 12, fontWeight: '700' },
-  verifiedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: COLORS.tealContainer,
-  },
-  verifiedText: { flex: 1, color: COLORS.teal, fontSize: 12, fontWeight: '800' },
-  qrMissing: { alignItems: 'center', gap: 8, paddingVertical: 28 },
-  qrMissingTitle: { color: COLORS.onSurface, fontSize: 16, fontWeight: '900' },
-  qrMissingText: { color: COLORS.onSurfaceVariant, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  scannerBox: {
-    height: 310,
-    overflow: 'hidden',
-    borderRadius: 22,
-    backgroundColor: COLORS.heroDriver,
-  },
-  scannerPermission: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: spacing.lg,
-    backgroundColor: COLORS.surfaceContainerLow,
-  },
-  torchBtn: {
-    position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(18,28,42,0.65)',
-  },
-  qrModalActions: { flexDirection: 'row', gap: 10 },
 });
