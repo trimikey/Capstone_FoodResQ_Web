@@ -11,7 +11,7 @@ import {
   useRemoveBulkStop,
   type BulkRun,
 } from '@/hooks/useBulkRuns';
-import { errMsg, mapsPlaceUrl } from '@/lib/utils';
+import { UNIT_LABEL, errMsg, mapsPlaceUrl, mediaUrl } from '@/lib/utils';
 import BulkStopForm from '@/components/deliveries/BulkStopForm';
 import RunDeadline from '@/components/deliveries/RunDeadline';
 
@@ -342,12 +342,34 @@ export default function BulkRunRequests() {
 
                   {/* Chi tiết chuyến đã xong: từng điểm phát và số phần thực tế */}
                   {expandedDone === r.id && (
-                    <div className="px-3 pb-3 space-y-2">
-                      <div className="text-[11px] text-neutral-500 flex flex-wrap gap-x-4 gap-y-0.5">
-                        <span>TNV: {r.shipper?.user.fullName ?? '—'}{r.shipper?.user.phone ? ` · ${r.shipper.user.phone}` : ''}</span>
-                        {r.pickedUpAt && <span>Lấy hàng: {new Date(r.pickedUpAt).toLocaleString('vi-VN')}</span>}
-                        {r.completedAt && <span>Kết thúc: {new Date(r.completedAt).toLocaleString('vi-VN')}</span>}
+                    <div className="px-3 pb-3 space-y-3">
+                      {/* Chi tiết đơn — đủ để NCC đối chiếu sổ kho mà không phải hỏi lại TNV */}
+                      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-neutral-50 p-3 text-[11px] sm:grid-cols-2">
+                        <DetailRow k="Tin thực phẩm" v={r.listing.title} />
+                        <DetailRow
+                          k="Số lượng"
+                          v={`${r.quantity} ${(UNIT_LABEL as Record<string, string>)[r.listing.quantityUnit ?? 'portion']?.toLowerCase() ?? 'phần'} · đã phát ${r.quantityDistributed}`}
+                        />
+                        <DetailRow
+                          k="Tình nguyện viên"
+                          v={`${r.shipper?.user.fullName ?? '—'}${r.shipper?.user.phone ? ` · ${r.shipper.user.phone}` : ''}`}
+                        />
+                        <DetailRow k="Gửi yêu cầu" v={new Date(r.createdAt).toLocaleString('vi-VN')} />
+                        {r.approvedAt && <DetailRow k="Duyệt lúc" v={new Date(r.approvedAt).toLocaleString('vi-VN')} />}
+                        {r.pickedUpAt && <DetailRow k="Lấy hàng" v={new Date(r.pickedUpAt).toLocaleString('vi-VN')} />}
+                        {r.completedAt && <DetailRow k="Kết thúc" v={new Date(r.completedAt).toLocaleString('vi-VN')} />}
+                        {r.note && <DetailRow k="Ghi chú tuyến" v={r.note} />}
+                      </dl>
+
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-bold text-neutral-700">Ảnh lúc lấy hàng</p>
+                        {r.qcPhotoUrl ? (
+                          <ProofThumb url={r.qcPhotoUrl} alt="Ảnh hàng lúc TNV lấy tại cửa hàng" />
+                        ) : (
+                          <p className="text-[11px] text-neutral-400">TNV không chụp ảnh lúc lấy hàng.</p>
+                        )}
                       </div>
+                      <p className="text-[11px] font-bold text-neutral-700">Các điểm phát &amp; ảnh bằng chứng</p>
                       {r.stops.length === 0 ? (
                         <p className="text-[11px] text-neutral-400">Chuyến này không ghim điểm phát nào.</p>
                       ) : (
@@ -488,6 +510,7 @@ function StopRow({
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[10px] text-neutral-500">
           {stop.plannedQty != null && <span>Dự kiến {stop.plannedQty} phần</span>}
           {served && <span className="text-emerald-700 font-bold">Đã phát {stop.servedQty} phần</span>}
+          {stop.servedAt && <span>{new Date(stop.servedAt).toLocaleString('vi-VN')}</span>}
           {stop.coords && (
             <a
               href={mapsPlaceUrl(stop.coords.lat, stop.coords.lng)}
@@ -499,6 +522,12 @@ function StopRow({
             </a>
           )}
         </div>
+        {stop.note && <p className="mt-1 text-[11px] text-neutral-600">Ghi chú: {stop.note}</p>}
+        {stop.photoUrl && (
+          <div className="mt-1.5">
+            <ProofThumb url={stop.photoUrl} alt={`Ảnh bằng chứng tại ${stop.label}`} />
+          </div>
+        )}
       </div>
 
       {!served && !readOnly && (
@@ -522,5 +551,31 @@ function StopRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** Một dòng "nhãn: giá trị" trong khối chi tiết chuyến giao sỉ. */
+function DetailRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-28 shrink-0 text-neutral-500">{k}</dt>
+      <dd className="min-w-0 break-words font-semibold text-neutral-800">{v}</dd>
+    </div>
+  );
+}
+
+/** Ảnh bằng chứng thu nhỏ — bấm để mở ảnh gốc ở tab mới. */
+function ProofThumb({ url, alt }: { url: string; alt: string }) {
+  return (
+    <a
+      href={mediaUrl(url)}
+      target="_blank"
+      rel="noreferrer"
+      title="Bấm để xem ảnh gốc"
+      className="block h-24 w-32 overflow-hidden rounded-lg border border-neutral-200 hover:opacity-90"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={mediaUrl(url)} alt={alt} className="h-full w-full object-cover" />
+    </a>
   );
 }

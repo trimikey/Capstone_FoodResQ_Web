@@ -474,6 +474,17 @@ export default function VolunteerProfileScreen() {
             Lịch sử giao hàng
           </Button>
         ) : null}
+        {hasShipper ? (
+          <Button
+            mode="outlined"
+            icon="package-variant-closed"
+            onPress={() => router.push('/(app)/volunteer/bulk')}
+            style={styles.actionBtn}
+            textColor={COLORS.primary}
+          >
+            Giao sỉ nhiều điểm
+          </Button>
+        ) : null}
         {hasChef ? (
           <Button
             mode="outlined"

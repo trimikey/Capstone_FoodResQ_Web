@@ -168,7 +168,8 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="volunteer/bulk"
         options={{
-          href: showShipperTabs ? undefined : null,
+          // Không còn là tab — thanh dưới quá chật; vào từ trang Hồ sơ (nút "Giao sỉ").
+          href: null,
           title: 'Giao sỉ',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="package-variant-closed" color={color} size={size} />

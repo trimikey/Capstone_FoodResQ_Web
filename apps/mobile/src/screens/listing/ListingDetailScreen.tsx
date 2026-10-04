@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Image } from 'react-native';
 import {
   Text,
   Chip,
@@ -386,17 +386,33 @@ export default function ListingDetailScreen({ id }: Props) {
                 <Text style={styles.evidenceHint}>
                   Giấy khám bệnh, ảnh chấn thương… Tình nguyện viên xem ảnh này trước khi nhận đơn.
                 </Text>
-                <View style={styles.evidenceActions}>
-                  <Button compact mode="outlined" icon="camera" onPress={() => pickEvidence(true)}>
-                    Chụp
-                  </Button>
-                  <Button compact mode="outlined" icon="image" onPress={() => pickEvidence(false)}>
-                    Chọn ảnh
-                  </Button>
-                </View>
                 {evidence ? (
-                  <Text style={styles.evidenceOk}>✓ Đã chọn ảnh bằng chứng</Text>
-                ) : null}
+                  // Đã có ảnh → cho xem lại, chụp nhầm thì chụp lại / bỏ ảnh trước khi đặt.
+                  <View style={styles.evidencePreviewRow}>
+                    <Image source={{ uri: evidence.uri }} style={styles.evidencePreview} resizeMode="cover" />
+                    <View style={styles.evidencePreviewActions}>
+                      <Text style={styles.evidenceOk}>✓ Đã có ảnh bằng chứng</Text>
+                      <Button compact mode="outlined" icon="camera-retake-outline" onPress={() => pickEvidence(true)}>
+                        Chụp lại
+                      </Button>
+                      <Button compact mode="text" icon="image" onPress={() => pickEvidence(false)}>
+                        Chọn ảnh khác
+                      </Button>
+                      <Button compact mode="text" icon="close" textColor={COLORS.error} onPress={() => setEvidence(null)}>
+                        Bỏ ảnh
+                      </Button>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.evidenceActions}>
+                    <Button compact mode="outlined" icon="camera" onPress={() => pickEvidence(true)}>
+                      Chụp
+                    </Button>
+                    <Button compact mode="outlined" icon="image" onPress={() => pickEvidence(false)}>
+                      Chọn ảnh
+                    </Button>
+                  </View>
+                )}
                 <View style={styles.deliveryTimeBox}>
                   <Text style={styles.evidenceTitle}>Giờ nhận hàng</Text>
                   <Text style={styles.evidenceHint}>
@@ -535,6 +551,9 @@ const styles = StyleSheet.create({
   evidenceHint: { fontSize: 11, lineHeight: 16, color: '#92400e' },
   evidenceActions: { flexDirection: 'row', gap: spacing.sm, marginTop: 2 },
   evidenceOk: { fontSize: 12, fontWeight: '700', color: '#15803d' },
+  evidencePreviewRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: 2 },
+  evidencePreview: { width: 96, height: 96, borderRadius: 10, backgroundColor: '#fef3c7' },
+  evidencePreviewActions: { flex: 1, alignItems: 'flex-start', gap: 2 },
   deliveryTimeBox: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,

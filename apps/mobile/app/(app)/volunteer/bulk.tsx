@@ -24,7 +24,8 @@ import { Popup, Toast } from '@/components/ui/AppPopup';
 import { ScreenState } from '@/components/ui/ScreenState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { AppImage, foodFallbackSourceForCategory } from '@/components/ui/AppImage';
-import { captureImage } from '@/services/faceCapture';
+import { captureImage, type CapturedImage } from '@/services/faceCapture';
+import { PhotoReviewDialog } from '@/components/PhotoReviewDialog';
 import { DEFAULT_MAP_COORDS, getCurrentCoords, type Coords } from '@/services/geolocation';
 import { reverseGeocode } from '@/services/geocoding';
 import { notifyError, notifySuccess, notifyWarning } from '@/services/haptics';
@@ -551,12 +552,59 @@ export default function VolunteerBulkRunScreen() {
     }, 'Đã gửi yêu cầu — chờ nhà cung cấp duyệt.');
   };
 
+  /**
+   * Ảnh đang chờ người dùng xem lại trước khi gửi. Trước đây chụp xong là gửi luôn —
+   * chụp nhầm thì không cách nào sửa.
+   */
+  const [review, setReview] = useState<{
+    title: string;
+    photo: CapturedImage;
+    submit: (photo: CapturedImage) => Promise<unknown>;
+    success: string;
+  } | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+
+  const shootThenReview = async (
+    title: string,
+    submit: (photo: CapturedImage) => Promise<unknown>,
+    success: string,
+  ) => {
+    try {
+      const photo = await captureImage('id_card');
+      if (photo) setReview({ title, photo, submit, success });
+    } catch (e) {
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: errorMessage(e, 'Vui lòng thử lại.') });
+    }
+  };
+
+  const retakeReview = async () => {
+    if (!review) return;
+    try {
+      const photo = await captureImage('id_card');
+      if (photo) setReview({ ...review, photo });
+    } catch (e) {
+      Popup.show({ type: 'error', text1: 'Không chụp được ảnh', text2: errorMessage(e, 'Vui lòng thử lại.') });
+    }
+  };
+
+  const confirmReview = async () => {
+    if (!review) return;
+    setReviewBusy(true);
+    await act(() => review.submit(review.photo), review.success);
+    setReviewBusy(false);
+    setReview(null);
+  };
+
   const handlePickup = (run: BulkRun, withPhoto: boolean) => {
-    void act(async () => {
-      const photo = withPhoto ? await captureImage('id_card') : null;
-      if (withPhoto && !photo) return;
-      await pickupRun.mutateAsync({ runId: run.id, photo: photo ?? undefined });
-    }, 'Đã xác nhận lấy hàng.');
+    if (withPhoto) {
+      void shootThenReview(
+        'Ảnh hàng lúc lấy',
+        (photo) => pickupRun.mutateAsync({ runId: run.id, photo }),
+        'Đã xác nhận lấy hàng.',
+      );
+      return;
+    }
+    void act(() => pickupRun.mutateAsync({ runId: run.id }), 'Đã xác nhận lấy hàng.');
   };
 
   const handleAddStop = async (run: BulkRun, label: string, addressText: string, plannedQtyText: string) => {
@@ -579,11 +627,18 @@ export default function VolunteerBulkRunScreen() {
   };
 
   const handleServe = (run: BulkRun, stop: BulkRunStop, servedQty: number, noteText?: string, withPhoto = false) => {
-    void act(async () => {
-      const photo = withPhoto ? await captureImage('id_card') : null;
-      if (withPhoto && !photo) return;
-      await serveStop.mutateAsync({ runId: run.id, stopId: stop.id, servedQty, note: noteText, photo: photo ?? undefined });
-    }, 'Đã ghi nhận phát hàng.');
+    if (withPhoto) {
+      void shootThenReview(
+        `Ảnh tại điểm “${stop.label}”`,
+        (photo) => serveStop.mutateAsync({ runId: run.id, stopId: stop.id, servedQty, note: noteText, photo }),
+        'Đã ghi nhận phát hàng.',
+      );
+      return;
+    }
+    void act(
+      () => serveStop.mutateAsync({ runId: run.id, stopId: stop.id, servedQty, note: noteText }),
+      'Đã ghi nhận phát hàng.',
+    );
   };
 
   const openPickupMap = async (run: BulkRun) => {
@@ -631,7 +686,7 @@ export default function VolunteerBulkRunScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ScreenHeader title="Giao sỉ" />
+        <ScreenHeader title="Giao sỉ" showBack />
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
       </SafeAreaView>
     );
@@ -640,7 +695,7 @@ export default function VolunteerBulkRunScreen() {
   if (isError) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ScreenHeader title="Giao sỉ" />
+        <ScreenHeader title="Giao sỉ" showBack />
         <ScreenState kind="error" title="Không tải được chuyến giao sỉ" onAction={() => refetch()} />
       </SafeAreaView>
     );
@@ -650,7 +705,7 @@ export default function VolunteerBulkRunScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Giao sỉ" />
+      <ScreenHeader title="Giao sỉ" showBack />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -1048,6 +1103,14 @@ export default function VolunteerBulkRunScreen() {
         onToggleScanner={() => void toggleStopScanner()}
         onRequestPermission={() => void requestCameraPermission()}
         onToggleTorch={() => setTorch((v) => !v)}
+      />
+      <PhotoReviewDialog
+        photo={review?.photo ?? null}
+        title={review?.title ?? ''}
+        busy={reviewBusy}
+        onRetake={() => void retakeReview()}
+        onConfirm={() => void confirmReview()}
+        onCancel={() => setReview(null)}
       />
     </SafeAreaView>
   );
