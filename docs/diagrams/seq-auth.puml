@@ -1,9 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Auth (4)
-' 01. Register · 02. Login · 03. Token Lifecycle · 04. Password Reset
-'==============================================================
-
-'──────────────────── 01. Register ───────────────────────────
 @startuml seq-auth-register
 title Register Sequence Diagram
 
@@ -13,12 +7,11 @@ participant ":AuthController" as Ctrl
 participant ":AuthService" as Svc
 participant ":FaceMatchService" as Face
 participant ":StorageService" as Storage
-participant ":bcrypt" as Bcrypt
-participant ":JwtService" as Jwt
+participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database" as DB
 
-User -> Screen : fill register form (role, email, phone, selfie)
+User -> Screen : fill register form (role, email, phone, selfie, ID card)
 activate Screen
 Screen -> Ctrl : POST /auth/check-email · /auth/check-phone
 activate Ctrl
@@ -32,41 +25,51 @@ Ctrl --> Screen : return data (201)
 deactivate Ctrl
 Screen --> User : inline validation hint
 
-Screen -> Ctrl : POST /auth/register (RegisterDto + selfie)
+Screen -> Ctrl : POST /auth/register (RegisterDto + selfie, idCard, vehiclePlateImage)
 activate Ctrl
-Ctrl -> Svc : register(dto, selfie)
+Ctrl -> Svc : register(dto, files)
 activate Svc
-Svc -> Repo : user.findUnique(email)
+Svc -> Repo : user.findUnique(email) · user.findUnique(phone)
 Repo -> DB : SELECT users
 DB --> Repo : existing | null
 Repo --> Svc : existing
 
-alt Email already registered
+alt Email or phone already registered
   Svc --> Ctrl : 409 Conflict
 else available
-  alt role = receiver / volunteer (individual)
+  opt individual receiver OR volunteer
     Svc -> Face : getFaceDescriptor(selfie)
     activate Face
     Face --> Svc : descriptor | null
-    deactivate Face
     alt No face detected
       Svc --> Ctrl : 400 "No face detected in the selfie"
     else face detected
-      Svc -> Storage : saveImage(selfie, 'faces')
-      Storage --> Svc : faceImageUrl
+      Svc -> Face : assertNotDuplicateFace(descriptor)
+      Face --> Svc : ok | 409 face already used
+    end
+    deactivate Face
+  end
+  opt role = volunteer
+    Svc -> Face : getFaceDescriptor(idCard) + compare(selfie, idCard)
+    Face --> Svc : matched?
+    alt Selfie does not match the ID card
+      Svc --> Ctrl : 400 "Selfie does not match the ID card"
     end
   end
-  Svc -> Bcrypt : hash(password, 12)
-  Bcrypt --> Svc : passwordHash
+  Svc -> Storage : saveImage(selfie / idCard / vehiclePlateImage)
+  Storage --> Svc : image URLs
+  Svc -> Svc : bcrypt.hash(password, 12)
   group $transaction
-    Svc -> Repo : user.create(status = pending_verification | active)
+    Svc -> Repo : user.create(status = active | pending_verification)
     Svc -> Repo : create role profile (receiver / volunteer / provider)
-    Repo -> DB : INSERT users + profile
+    Svc -> Repo : verificationRequest.create(status = pending)
+    Repo -> DB : INSERT users + profile + verification_requests
   end
-  Svc -> Jwt : sign(access 15m) + sign(refresh 30d)
-  Jwt --> Svc : tokens
-  Svc -> Bcrypt : hash(refreshToken)
-  Svc -> Repo : refreshToken.create(tokenHash, expiresAt)
+  opt role = provider OR volunteer
+    Svc -> Notif : notifyAdmins(new account awaiting verification)
+  end
+  Svc -> Svc : issueTokens(user)\nsign access 15m + refresh 30d
+  Svc -> Repo : refreshToken.create(sha256(refreshToken), expiresAt)
   Repo -> DB : INSERT refresh_tokens
   Svc --> Ctrl : { accessToken, refreshToken, user }
 end
@@ -77,7 +80,6 @@ Screen --> User : account created (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 02. Login ──────────────────────────────
 @startuml seq-auth-login
 title Login Sequence Diagram
 
@@ -86,7 +88,6 @@ participant ":LoginScreen" as Screen
 participant ":AuthController" as Ctrl
 participant ":AuthService" as Svc
 participant ":OAuth2Client\n(Google / Firebase)" as OAuth
-participant ":bcrypt" as Bcrypt
 participant ":JwtService" as Jwt
 participant ":PrismaService" as Repo
 database "Database" as DB
@@ -103,8 +104,7 @@ alt email + password
   Repo -> DB : SELECT users
   DB --> Repo : user | null
   Repo --> Svc : user
-  Svc -> Bcrypt : compare(password, user.passwordHash)
-  Bcrypt --> Svc : matched?
+  Svc -> Svc : bcrypt.compare(password, user.passwordHash)
   alt Not found OR wrong password
     Svc --> Ctrl : 401 "Incorrect email or password"
   end
@@ -123,7 +123,6 @@ else Google / Firebase
     Svc -> Repo : user.findUnique(email)
     Repo --> Svc : user | null
     opt No account yet
-      Svc -> Bcrypt : hash(random 32 bytes, 12)
       group $transaction
         Svc -> Repo : user.create(role = receiver, status = active)
         Svc -> Repo : receiverProfile.create(userId)
@@ -138,8 +137,7 @@ alt user.status = banned
 else active
   Svc -> Jwt : sign(access 15m) + sign(refresh 30d)
   Jwt --> Svc : tokens
-  Svc -> Bcrypt : hash(refreshToken)
-  Svc -> Repo : refreshToken.create(tokenHash, deviceInfo, ipAddress, expiresAt)
+  Svc -> Repo : refreshToken.create(sha256(refreshToken), deviceInfo, ipAddress, expiresAt)
   Repo -> DB : INSERT refresh_tokens
   Svc --> Ctrl : { accessToken, refreshToken, user }
 end
@@ -150,9 +148,7 @@ Screen --> User : logged in (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 03. Token Lifecycle ────────────────────
 @startuml seq-auth-token-lifecycle
-!include _seq-style.iuml
 title Refresh Token and Logout Sequence Diagram
 
 actor "User" as User
@@ -160,7 +156,6 @@ participant ":AppShell\n(axios interceptor)" as Screen
 participant ":AuthController" as Ctrl
 participant ":JwtAuthGuard" as Guard
 participant ":AuthService" as Svc
-participant ":bcrypt" as Bcrypt
 participant ":JwtService" as Jwt
 participant ":PrismaService" as Repo
 database "Database" as DB
@@ -170,28 +165,24 @@ alt access token expired (401 from any API call)
   activate Screen
   Screen -> Ctrl : POST /auth/refresh (refreshToken)
   activate Ctrl
-  Ctrl -> Svc : refresh(refreshToken)
+  Ctrl -> Svc : refresh(refreshToken, deviceInfo, ipAddress)
   activate Svc
-  Svc -> Jwt : verify(refreshToken, JWT_REFRESH_SECRET)
-  Jwt --> Svc : payload | throw
-  Svc -> Repo : refreshToken.findMany(userId, isRevoked = false, expiresAt > now)
+  Svc -> Repo : refreshToken.findUnique(tokenHash = sha256(refreshToken))
   Repo -> DB : SELECT refresh_tokens
-  DB --> Repo : tokens[]
-  Repo --> Svc : tokens
-  Svc -> Bcrypt : compare(refreshToken, token.tokenHash) for each row
-  Bcrypt --> Svc : matched | none
-  alt Token invalid / revoked / expired
+  DB --> Repo : token | null
+  Repo --> Svc : token + user
+  alt Token not found / revoked / expired
     Svc --> Ctrl : 401 Unauthorized
     Ctrl --> Screen : return error
     Screen --> User : redirect to the login screen
   else valid
-    group $transaction
-      Svc -> Repo : refreshToken.update(old row → isRevoked = true)
-      Svc -> Jwt : sign(new access) + sign(new refresh)
-      Svc -> Repo : refreshToken.create(new tokenHash)
-      Repo -> DB : UPDATE + INSERT refresh_tokens
-    end
-    Svc --> Ctrl : { accessToken, refreshToken }
+    Svc -> Repo : refreshToken.update(old row → isRevoked = true)
+    Repo -> DB : UPDATE refresh_tokens
+    Svc -> Jwt : sign(new access) + sign(new refresh)
+    Jwt --> Svc : tokens
+    Svc -> Repo : refreshToken.create(sha256(new refreshToken))
+    Repo -> DB : INSERT refresh_tokens
+    Svc --> Ctrl : { accessToken, refreshToken, user }
     Ctrl --> Screen : return data (201)
     Screen --> User : original request replayed, no visible interruption
   end
@@ -218,9 +209,7 @@ end
 deactivate Screen
 @enduml
 
-'──────────────────── 04. Password Reset ─────────────────────
 @startuml seq-auth-password-reset
-!include _seq-style.iuml
 title Forgot and Reset Password Sequence Diagram
 
 actor "User" as User
@@ -228,8 +217,7 @@ participant ":ForgotPasswordScreen" as Screen
 participant ":AuthController" as Ctrl
 participant ":AuthService" as Svc
 participant ":Redis" as Redis
-participant ":MailService" as Mail
-participant ":bcrypt" as Bcrypt
+participant ":SMTP Server" as Mail
 participant ":PrismaService" as Repo
 database "Database" as DB
 
@@ -246,10 +234,10 @@ Repo --> Svc : user
 alt Not found OR status = banned
   Svc --> Ctrl : { message } — identical to the success case
 else eligible
-  Svc -> Svc : token = randomBytes(32).base64url\ntokenHash = sha256(token)
+  Svc -> Svc : token = randomBytes(32)\ntokenHash = sha256(token)
   Svc -> Redis : SETEX reset:{tokenHash} TTL { userId }
   Svc -> Mail : sendPasswordResetEmail(email, fullName, token)
-  Mail --> User : email containing the raw token link
+  Mail --> User : email containing the reset link
   Svc --> Ctrl : { message }
 end
 deactivate Svc
@@ -264,7 +252,7 @@ Ctrl -> Svc : resetPassword(dto)
 activate Svc
 Svc -> Redis : GET reset:{sha256(token)}
 Redis --> Svc : payload | null
-alt Key missing / payload unparseable / user banned
+alt Key missing / payload invalid / user banned
   Svc -> Redis : DEL reset:{tokenHash}
   Svc --> Ctrl : 400 "Reset code is invalid or expired"
   Ctrl --> Screen : return error
@@ -272,8 +260,7 @@ alt Key missing / payload unparseable / user banned
 else valid
   Svc -> Repo : user.findUnique(userId, deletedAt = null)
   Repo --> Svc : user
-  Svc -> Bcrypt : hash(newPassword, 12)
-  Bcrypt --> Svc : passwordHash
+  Svc -> Svc : bcrypt.hash(newPassword, 12)
   group $transaction
     Svc -> Repo : user.update(passwordHash)
     Svc -> Repo : refreshToken.updateMany(userId → isRevoked = true)

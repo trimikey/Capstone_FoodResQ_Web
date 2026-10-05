@@ -1,15 +1,4 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Bulk Runs (4)
-' 32. Request & Review · 33. Pickup · 34. Manage Stops · 35. Serve & Close
-'
-' Constants: BULK_MIN_QTY = 2 · REQUEST_EXPIRY_HOURS = 24 ·
-'            PICKUP_DEADLINE_HOURS = 4 · RUN_COMPLETION_HOURS = 8 ·
-'            BULK_CANCEL_PENALTY = 10
-'==============================================================
-
-'──────────────────── 32. Request & Review ───────────────────
 @startuml seq-bulk-request-review
-!include _seq-style.iuml
 title Request and Review Bulk Run Sequence Diagram
 
 actor "Shipper" as User
@@ -96,7 +85,6 @@ Screen --> Provider : decision saved — the shipper must collect within 4 hours
 deactivate Screen
 @enduml
 
-'──────────────────── 33. Pickup ─────────────────────────────
 @startuml seq-bulk-pickup
 title Bulk Run Pickup Sequence Diagram
 
@@ -140,23 +128,21 @@ else valid
   group $transaction
     Svc -> Repo : bulkRun.update(status = picked_up, pickedUpAt, qcPhotoUrl?)
     loop for each distribution stop
-      Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt = +24h, status = confirmed)
+      Svc -> Repo : reservation.create(bulkRunStopId, status = confirmed) — bookkeeping row of the stop
     end
     Repo -> DB : UPDATE bulk_runs / INSERT reservations
   end
-  Svc -> Notif : notify(shipper, "Collected — {n} QR codes generated")
+  Svc -> Notif : notify(shipper, "Food collected — {n} stops ready")
   Svc --> Ctrl : { id, status: picked_up, stopCount }
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
-Screen --> User : per-stop QR list — distribution must finish within 8 hours
+Screen --> User : list of distribution stops — distribution must finish within 8 hours
 deactivate Screen
 @enduml
 
-'──────────────────── 34. Manage Stops ───────────────────────
 @startuml seq-bulk-manage-stops
-!include _seq-style.iuml
 title Manage Distribution Stops Sequence Diagram
 
 actor "Shipper / Provider" as User
@@ -198,8 +184,9 @@ else already picked up and the caller is the provider
   Svc --> Ctrl : 403 "The volunteer is on the road — only they can adjust stops"
 else allowed
   opt plannedQty supplied
-    Svc -> Repo : bulkRunStop.aggregate(SUM plannedQty)
-    Repo --> Svc : used
+    Svc -> Repo : bulkRunStop.findMany(runId)
+    Repo --> Svc : stops[]
+    Svc -> Svc : used = Σ (served stop ? servedQty : plannedQty)
     alt used + plannedQty > run.quantity
       Svc --> Ctrl : 400 "This stop can take at most {quantity − used} portions"
     end
@@ -208,7 +195,7 @@ else allowed
     Svc -> Repo : bulkRunStop.create(label, address, plannedQty, orderIndex)
     Svc -> Repo : $executeRaw UPDATE location = ST_MakePoint(lng, lat)
     opt the run is already picked_up
-      Svc -> Repo : reservation.create(bulkRunStopId, qrToken, qrExpiresAt = +24h)
+      Svc -> Repo : reservation.create(bulkRunStopId, status = confirmed) — bookkeeping row
     end
   else action = edit / remove
     Svc -> Repo : $queryRaw stop LEFT JOIN reservations ON r.bulk_run_stop_id = s.id
@@ -243,9 +230,7 @@ Screen --> User : refresh the route (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 35. Serve & Close ──────────────────────
 @startuml seq-bulk-serve-close
-!include _seq-style.iuml
 title Serve Portions and Close Bulk Run Sequence Diagram
 
 actor "Shipper" as User
@@ -271,7 +256,7 @@ else valid
   Svc -> Repo : $queryRaw stop LEFT JOIN reservations
   Repo -> DB : SELECT bulk_run_stops
   DB --> Repo : stop | null
-  alt Stop not in this run / no QR code yet
+  alt Stop not in this run / stop has no bookkeeping row yet
     Svc --> Ctrl : 404 / 400 error
   else recordable
     Svc -> Repo : $executeRaw UPDATE bulk_runs SET quantity_distributed += servedQty\nWHERE status = 'picked_up' AND quantity_distributed + servedQty <= quantity
@@ -312,8 +297,9 @@ else cancel (requested / approved)
     Repo -> DB : UPDATE bulk_runs / food_listings
   end
   opt it had been approved
-    Svc -> Trust : applyDelta(shipper, −10, BULK_RUN_CANCELLED_AFTER_APPROVAL)
+    Svc -> Trust : applyDelta(shipper, −BULK_CANCEL_PENALTY, BULK_RUN_CANCELLED_AFTER_APPROVAL)
   end
+  Svc -> Notif : notify(provider, "The shipper cancelled the bulk run")
 else complete
   Svc -> Repo : bulkRun.updateMany(id, status = picked_up → completed, completedAt)
   Repo --> Svc : claimed.count

@@ -1,10 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Listings (8)
-' 10. Search & Detail · 11. Create · 12. Update · 13. Publish ·
-' 14. Cancel · 15. Delete Draft · 16. Duplicate · 17. Provider Overview
-'==============================================================
-
-'──────────────────── 10. Search & Detail ────────────────────
 @startuml seq-listing-search
 title Search Nearby Listings Sequence Diagram
 
@@ -16,19 +9,14 @@ participant ":SystemConfigService" as Cfg
 participant ":PrismaService" as Repo
 database "Database (PostGIS)" as DB
 
-User -> Screen : grant location access, set filters (radius, category)
+User -> Screen : grant location access, set filters (radius, category, keyword)
 activate Screen
-Screen -> Ctrl : GET /listings?lat&lng&radius&category&page&limit
+Screen -> Ctrl : GET /listings?lat&lng&radiusKm&category&search&page&limit
 activate Ctrl
 Ctrl -> Svc : findNearby(query)
 activate Svc
-opt radius not provided
-  Svc -> Cfg : getNumber(SEARCH_RADIUS_KM)
-  activate Cfg
-  Cfg --> Svc : 5 km
-  deactivate Cfg
-end
-Svc -> Repo : $queryRaw ST_Distance + ST_DWithin(pickup_location, ST_MakePoint(lng, lat), radiusM)\nWHERE status = 'active' AND deleted_at IS NULL AND pickup_end_time > NOW()\nORDER BY distance_m LIMIT/OFFSET
+Svc -> Svc : radiusM = (radiusKm ?? 5) × 1000
+Svc -> Repo : $queryRaw ST_Distance + ST_DWithin(pickup_location, ST_MakePoint(lng, lat), radiusM)\nWHERE status = 'active' AND deleted_at IS NULL AND pickup_end_time > NOW()\nAND quantity_remaining > 0 ORDER BY distance_m LIMIT/OFFSET
 Repo -> DB : SELECT food_listings (GIST index)
 DB --> Repo : rows + distance_m
 Repo --> Svc : listings[]
@@ -54,7 +42,11 @@ alt Not found or soft-deleted
 else found
   Svc -> Repo : $queryRaw ST_X / ST_Y (pickup_location)
   Repo --> Svc : { lng, lat }
-  Svc --> Ctrl : listing + pickup coordinates + provider info
+  Svc -> Cfg : getNumber(PLATFORM_ORDER_OPEN_MINUTE / PLATFORM_ORDER_CLOSE_MINUTE)
+  activate Cfg
+  Cfg --> Svc : platform order window
+  deactivate Cfg
+  Svc --> Ctrl : listing + pickup coordinates + provider info + orderWindow
   Ctrl --> Screen : return data (200)
   Screen --> User : render details with the Reserve button
 end
@@ -63,7 +55,6 @@ deactivate Ctrl
 deactivate Screen
 @enduml
 
-'──────────────────── 11. Create Listing ─────────────────────
 @startuml seq-listing-create
 title Create Listing Sequence Diagram
 
@@ -83,7 +74,7 @@ activate Upload
 Upload -> Storage : saveImage(file, 'listings')
 activate Storage
 Storage -> Storage : check MIME and magic bytes
-Storage --> Upload : "/uploads/listings/{uuid}.{ext}"
+Storage --> Upload : Cloudinary image URL
 deactivate Storage
 Upload --> Screen : { url }
 deactivate Upload
@@ -100,10 +91,13 @@ alt No provider profile
   Svc --> Ctrl : 404 "Provider profile not found"
 else verificationStatus != approved
   Svc --> Ctrl : 403 "Provider profile is not approved yet"
-else pickupEndTime <= pickupStartTime OR expiryTime < pickupEndTime
+else pickupEndTime <= pickupStartTime
   Svc --> Ctrl : 400 "Invalid time window"
+else neither shelfLifeDays nor expiryTime provided
+  Svc --> Ctrl : 400 "Shelf life is required"
 else valid
-  Svc -> Repo : $queryRaw INSERT food_listings (..., quantity_remaining = quantity_total,\npickup_location = ST_SetSRID(ST_MakePoint(lng, lat), 4326), status) RETURNING id
+  Svc -> Svc : expiryTime = pickupEndTime + shelfLifeDays
+  Svc -> Repo : $queryRaw INSERT food_listings (..., quantity_remaining = quantity_total,\nshelf_life_days, pickup_location = ST_SetSRID(ST_MakePoint(lng, lat), 4326), status) RETURNING id
   Repo -> DB : INSERT food_listings
   DB --> Repo : { id }
   Repo --> Svc : newId
@@ -117,7 +111,6 @@ Screen --> User : listing created (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 12. Update Listing ─────────────────────
 @startuml seq-listing-update
 title Update Listing Sequence Diagram
 
@@ -179,7 +172,6 @@ Screen --> User : listing saved (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 13. Publish Listing ────────────────────
 @startuml seq-listing-publish
 title Publish Listing Sequence Diagram
 
@@ -222,7 +214,6 @@ Screen --> User : the listing is now visible in nearby search (or show error mes
 deactivate Screen
 @enduml
 
-'──────────────────── 14. Cancel Listing ─────────────────────
 @startuml seq-listing-cancel
 title Cancel Listing Sequence Diagram
 
@@ -270,7 +261,6 @@ Screen --> User : the listing disappears from search (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 15. Delete Draft ───────────────────────
 @startuml seq-listing-delete-draft
 title Delete Draft Listing Sequence Diagram
 
@@ -311,7 +301,6 @@ Screen --> User : draft removed from the list (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 16. Duplicate Listing ──────────────────
 @startuml seq-listing-duplicate
 title Duplicate Listing Sequence Diagram
 
@@ -360,7 +349,6 @@ Screen --> User : open the copy for editing (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 17. Provider Overview ──────────────────
 @startuml seq-listing-provider-overview
 title Provider Listings and Stats Sequence Diagram
 

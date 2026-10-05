@@ -1,12 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Admin (7)
-' 62. Dashboard · 63. Verification Review · 64. User Management ·
-' 65. Campaign Governance · 66. Manage Food Catalog ·
-' 67. Handle Reports · 68. System Configuration
-' NOTE: every admin route is guarded by JwtAuthGuard + RolesGuard(@Roles ADMIN)
-'==============================================================
-
-'──────────────────── 62. Dashboard ──────────────────────────
 @startuml seq-admin-dashboard
 title Admin Dashboard Sequence Diagram
 
@@ -23,13 +14,14 @@ Screen -> Ctrl : GET /admin/overview
 activate Ctrl
 Ctrl -> Svc : getOverview()
 activate Svc
-Svc -> Repo : $queryRaw kg rescued / meals served / people helped
-Svc -> Repo : $queryRaw breakdown by food category + 6 month trend
-Svc -> Repo : getStats() counts of users, providers, listings, reports
+Svc -> Repo : $queryRaw meals served / people helped + kitchenCampaign.aggregate(actualServings)
+Svc -> Repo : collectRescuedKg() — kg by source (kitchen / donation / listing)
+Svc -> Repo : $queryRaw breakdown by food category, order status and report counts
 Repo -> DB : SELECT aggregates
 DB --> Repo : metrics
 Repo --> Svc : rows
-Svc --> Ctrl : { kgRescued, co2SavedKg, categories, trend, donations, reports }
+Svc -> Svc : build the 6 month trend from the rescued-kg entries
+Svc --> Ctrl : { kgRescued, kgBySource, co2SavedKg, mealsServed, categories, trend, donations, reports }
 deactivate Svc
 Ctrl --> Screen : return data (200)
 deactivate Ctrl
@@ -65,9 +57,7 @@ Screen --> User : activity timeline
 deactivate Screen
 @enduml
 
-'──────────────────── 63. Verification Review ────────────────
 @startuml seq-admin-verification
-!include _seq-style.iuml
 title Review Verification Sequence Diagram
 
 actor "Admin" as User
@@ -77,7 +67,7 @@ participant ":AdminService" as Svc
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database" as DB
-actor "Provider / Volunteer" as Applicant
+actor "Provider / Volunteer / Charity" as Applicant
 
 User -> Screen : open the pending verification queue
 activate Screen
@@ -87,7 +77,8 @@ Ctrl -> Svc : listVerifications()
 activate Svc
 Svc -> Repo : providerProfile.findMany(verificationStatus = pending)
 Svc -> Repo : volunteerProfile.findMany(verificationStatus = pending)
-Repo -> DB : SELECT provider_profiles / volunteer_profiles
+Svc -> Repo : receiverProfile.findMany(isCharityOrg = true, verificationStatus = pending)
+Repo -> DB : SELECT provider_profiles / volunteer_profiles / receiver_profiles
 DB --> Repo : pending[]
 Repo --> Svc : rows
 Svc -> Svc : merge and sort by createdAt
@@ -102,7 +93,7 @@ Screen -> Ctrl : PATCH /admin/verifications/:type/:id (ReviewVerificationDto)
 activate Ctrl
 Ctrl -> Svc : reviewVerification(type, profileId, adminUserId, dto)
 activate Svc
-Svc -> Repo : providerProfile | volunteerProfile.findUnique(profileId)
+Svc -> Repo : providerProfile | volunteerProfile | receiverProfile.findUnique(profileId)
 Repo -> DB : SELECT profile
 DB --> Repo : profile | null
 Repo --> Svc : profile
@@ -131,7 +122,6 @@ deactivate Ctrl
 deactivate Screen
 @enduml
 
-'──────────────────── 64. User Management ────────────────────
 @startuml seq-admin-users
 title Admin User Management Sequence Diagram
 
@@ -213,7 +203,6 @@ Screen --> User : refresh the user table (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 65. Campaign Governance ────────────────
 @startuml seq-admin-campaigns
 title Admin Campaign Governance Sequence Diagram
 
@@ -221,71 +210,63 @@ actor "Admin" as User
 participant ":CampaignManageScreen" as Screen
 participant ":AdminController" as Ctrl
 participant ":AdminService" as Svc
+participant ":SystemConfigService" as Cfg
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database (PostGIS)" as DB
-actor "Charity Org / Volunteer" as Target
+actor "Charity Org" as Target
 
 User -> Screen : open campaign governance
 activate Screen
-Screen -> Ctrl : GET /admin/campaigns · /admin/campaign-assignments/pending\n· /admin/campaign-change-requests
+Screen -> Ctrl : GET /admin/campaigns?status · /admin/campaign-change-requests
 activate Ctrl
-Ctrl -> Svc : listCampaigns() · listPendingAssignments() · listChangeRequests()
+Ctrl -> Svc : listCampaigns(status, dateFrom, dateTo) · listCampaignChangeRequests(status)
 activate Svc
-Svc -> Repo : kitchenCampaign / assignment / changeRequest.findMany(...)
-Repo -> DB : SELECT kitchen_campaigns / assignments / change requests
+Svc -> Repo : kitchenCampaign.findMany(...) · campaignChangeRequest.findMany(...)
+Repo -> DB : SELECT kitchen_campaigns / campaign_change_requests
 DB --> Repo : rows[]
-Svc --> Ctrl : the matching lists
+Svc --> Ctrl : the matching lists (pending approval first)
 deactivate Svc
 Ctrl --> Screen : return data (200)
 deactivate Ctrl
 Screen --> User : the review queues
 
-alt Create a campaign on behalf of an organization
-  User -> Screen : fill the campaign form for a chosen organization
-  Screen -> Ctrl : POST /admin/campaigns (AdminCreateCampaignDto)
+User -> Screen : open one campaign awaiting approval
+Screen -> Ctrl : GET /admin/campaigns/:id
+activate Ctrl
+Ctrl -> Svc : getCampaignDetail(id)
+activate Svc
+Svc -> Repo : kitchenCampaign.findUnique(id) include shifts, assignments, donations, providerRequests
+Repo --> Svc : campaign
+Svc -> Svc : supplierReadiness(id) — supply targets vs accepted donations
+Svc --> Ctrl : campaign + supplierReadiness
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : plan, staffing and supplier readiness
+
+alt Approve or reject a campaign
+  User -> Screen : approve the plan, or reject it with a reason
+  Screen -> Ctrl : POST /admin/campaigns/:id/approve · /admin/campaigns/:id/reject (reason)
   activate Ctrl
-  Ctrl -> Svc : adminCreateCampaign(dto)
+  Ctrl -> Svc : setCampaignStatus(id, approved | cancelled, userId, rejectReason)
   activate Svc
-  Svc -> Repo : receiverProfile.findUnique(charityReceiverId)
-  Repo --> Svc : charity | null
-  alt Organization not found
+  Svc -> Repo : kitchenCampaign.findUnique(id) include charityReceiver
+  Repo --> Svc : campaign | null
+  alt Campaign not found
     Svc --> Ctrl : 404 NotFound
+  else status != pending_approval
+    Svc --> Ctrl : 400 "Only a campaign awaiting approval can be reviewed"
+  else approving after the recruitment window already closed
+    Svc --> Ctrl : 400 "The recruitment time has passed"
+  else approving while suppliers are not ready (CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION on)
+    Svc -> Cfg : getNumber(CAMPAIGN_REQUIRE_SUPPLIER_CONFIRMATION)
+    Svc --> Ctrl : 400 "Ingredients are not fully confirmed by suppliers"
   else valid
-    Svc -> Repo : $queryRaw INSERT kitchen_campaigns\n(kitchen_location = ST_MakePoint(lng ?? 106.6297, lat ?? 10.8231)) RETURNING id
-    Repo -> DB : INSERT kitchen_campaigns
-    Svc --> Ctrl : campaign detail
-  end
-else Change a campaign status
-  User -> Screen : approve draft → open, or close a campaign
-  Screen -> Ctrl : PATCH /admin/campaigns/:id/status (status)
-  activate Ctrl
-  Ctrl -> Svc : setCampaignStatus(id, status, userId)
-  activate Svc
-  alt Status outside the allowed set
-    Svc --> Ctrl : 400 BadRequest
-  else valid
-    Svc -> Repo : kitchenCampaign.update(status)
+    Svc -> Repo : kitchenCampaign.update(status, recruitmentStatus, notes = reject reason)
     Repo -> DB : UPDATE kitchen_campaigns
-    Svc -> Notif : notify(charity, "Campaign status changed")
-  end
-else Assign or unassign a volunteer
-  User -> Screen : assign a volunteer to a role, or remove an assignment
-  Screen -> Ctrl : POST /admin/campaigns/:id/assign · DELETE /admin/assignments/:id
-  activate Ctrl
-  Ctrl -> Svc : adminAssignVolunteer(...) · adminUnassignVolunteer(id)
-  activate Svc
-  Svc -> Repo : volunteerProfile.findUnique include specializations + kitchenCampaign.findUnique
-  Repo --> Svc : volunteer, campaign
-  alt Wrong role / missing specialization (no override) / slot full / already assigned
-    Svc --> Ctrl : 400 / 404 / 409 error
-  else valid
-    group $transaction
-      Svc -> Repo : assignment.create(status = assigned) or assignment.delete(id)
-      Svc -> Repo : kitchenCampaign slotsFilled ±1
-      Repo -> DB : INSERT / DELETE assignment + UPDATE kitchen_campaigns
-    end
-    Svc -> Notif : notify(volunteer, the assignment change)
+    Svc -> Notif : notify(charity, "Campaign approved / rejected")
+    Svc --> Ctrl : { id, status }
   end
 else Review a campaign change request
   User -> Screen : approve or reject a change request
@@ -299,21 +280,25 @@ else Review a campaign change request
     Svc --> Ctrl : 404 / 400 error
   else reject
     Svc -> Repo : changeRequest.update(status = rejected, reviewNote)
+    Svc -> Notif : notify(charity, "Change request rejected")
   else approve
-    alt proposed slots below the filled count, or a past date
+    alt proposed slots below the current staffing, a past date, or no time left to recruit
       Svc --> Ctrl : 400 BadRequest
     else valid
       group $transaction
-        Svc -> Repo : kitchenCampaign.update(apply the proposed fields)
+        Svc -> Repo : kitchenCampaign.update(apply the proposed fields, recompute operation / recruitment times)
         opt new coordinates supplied
           Svc -> Repo : $executeRaw UPDATE kitchen_location = ST_MakePoint(lng, lat)
         end
+        opt the schedule changed
+          Svc -> Repo : $executeRaw shift work_date of assignments · reset confirmationStatus = pending
+        end
         Svc -> Repo : changeRequest.update(status = approved)
-        Repo -> DB : UPDATE kitchen_campaigns / campaign_change_requests
+        Repo -> DB : UPDATE kitchen_campaigns / assignments / campaign_change_requests
       end
+      Svc -> Notif : notify(charity, "Change request approved") · notify(volunteers, "Schedule changed — confirm again")
     end
   end
-  Svc -> Notif : notify(charity, the review outcome)
 end
 Notif --> Target : realtime notification
 Svc --> Ctrl : the matching result
@@ -324,9 +309,7 @@ Screen --> User : refresh the review queue (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 66. Manage Food Catalog ────────────────
 @startuml seq-admin-food-catalog
-!include _seq-style.iuml
 title Manage Food Catalog Sequence Diagram
 
 actor "Admin" as User
@@ -464,9 +447,7 @@ Screen --> User : refresh the catalog tree (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 67. Handle Reports ─────────────────────
 @startuml seq-admin-reports
-!include _seq-style.iuml
 title Handle User Reports Sequence Diagram
 
 actor "Admin" as User
@@ -520,9 +501,7 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 68. System Configuration ───────────────
 @startuml seq-admin-config
-!include _seq-style.iuml
 title System Configuration Sequence Diagram
 
 actor "Admin" as User
@@ -578,5 +557,67 @@ deactivate Svc
 Ctrl --> Screen : return data (200) / error
 deactivate Ctrl
 Screen --> User : the new threshold applies immediately, no deploy needed
+deactivate Screen
+@enduml
+
+@startuml seq-admin-operations
+title Admin Operations Monitoring Sequence Diagram
+
+actor "Admin" as User
+participant ":AdminOperationsScreen" as Screen
+participant ":AdminController" as Ctrl
+participant ":AdminOperationsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":PrismaService" as Repo
+database "Database" as DB
+
+User -> Screen : open an operations tab
+activate Screen
+alt Providers
+  Screen -> Ctrl : GET /admin/providers?q
+  activate Ctrl
+  Ctrl -> Svc : listProviders(q)
+  activate Svc
+  Svc -> Repo : providerProfile.findMany(search) include user
+  Svc -> Repo : $queryRaw listings / completed orders / reports / campaign requests per provider
+  Repo -> DB : SELECT provider_profiles + aggregates
+  DB --> Repo : rows
+  Svc --> Ctrl : providers[] with activity figures
+else Volunteers and shippers
+  Screen -> Ctrl : GET /admin/volunteers/overview?q
+  activate Ctrl
+  Ctrl -> Svc : listVolunteers(q)
+  activate Svc
+  Svc -> Repo : volunteerProfile.findMany(search) include user, specializations
+  Svc -> Repo : deliveries / delivery shifts / campaign assignments / bulk runs per volunteer
+  Repo -> DB : SELECT volunteer_profiles + aggregates
+  DB --> Repo : rows
+  Svc --> Ctrl : volunteers[] with specialization, points and history
+else Delivery monitor
+  Screen -> Ctrl : GET /admin/deliveries/monitor
+  activate Ctrl
+  Ctrl -> Svc : deliveryMonitor()
+  activate Svc
+  Svc -> Cfg : getNumber(DELIVERY_CLAIM_WINDOW_MINUTES / DELIVERY_SCHEDULED_CUTOFF_MINUTES)
+  Cfg --> Svc : claim deadline settings
+  Svc -> Repo : delivery.findMany(waiting + in progress) · delivery.findMany(failed, recent)\n· bulkRun.findMany(requested / approved / picked_up)
+  Repo -> DB : SELECT deliveries / bulk_runs
+  DB --> Repo : rows
+  Svc -> Svc : flag waiting, stalled and expired deliveries
+  Svc --> Ctrl : { summary, deliveries[], unclaimed[], bulkRuns[] }
+else Campaign incidents
+  Screen -> Ctrl : GET /admin/campaign-incidents?status
+  activate Ctrl
+  Ctrl -> Svc : listCampaignIncidents(status)
+  activate Svc
+  Svc -> Repo : campaignIncident.findMany(status) include campaign, reporter
+  Repo -> DB : SELECT campaign_incidents
+  DB --> Repo : rows
+  Svc --> Ctrl : incidents[] with minutesOpen
+end
+deactivate Svc
+Ctrl --> Screen : return data (200)
+deactivate Ctrl
+Screen --> User : render the table of the selected tab
 deactivate Screen
 @enduml

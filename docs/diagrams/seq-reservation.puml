@@ -1,10 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Reservations (7)
-' 18. Create · 19. My Orders · 20. Scan QR · 21. Confirm Pickup ·
-' 22. Pickup Proof · 23. Cancel · 24. Rate
-'==============================================================
-
-'──────────────────── 18. Create Reservation ─────────────────
 @startuml seq-reservation-create
 title Create Reservation Sequence Diagram
 
@@ -14,9 +7,9 @@ participant ":ReservationsController" as Ctrl
 participant ":ReservationsService" as Svc
 participant ":SystemConfigService" as Cfg
 participant ":Redlock\n(Redis)" as Lock
-participant ":DeliveriesService" as Deliveries
+participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
-database "Database" as DB
+database "Database (PostGIS)" as DB
 
 User -> Screen : tap Reserve (quantity, self pickup or delivery)
 activate Screen
@@ -37,8 +30,10 @@ alt Face not enrolled (individual receiver)
   Svc --> Ctrl : 400 FACE_NOT_ENROLLED
 else reservationsToday >= maxPerDay
   Svc --> Ctrl : 400 "Daily reservation limit reached"
-else delivery requested but the profile has no address / coordinates
-  Svc --> Ctrl : 400 "Add a delivery address before ordering"
+else delivery requested without a destination (address + coordinates)
+  Svc --> Ctrl : 400 "Choose a delivery point before ordering"
+else delivery farther than MAX_DELIVERY_DISTANCE_KM OR scheduled time invalid
+  Svc --> Ctrl : 400 BadRequest
 else valid
   Svc -> Lock : acquire(lock:reservation:{listingId}, 10s)
   activate Lock
@@ -48,26 +43,32 @@ else valid
   Repo -> DB : SELECT food_listings
   DB --> Repo : listingRow
   Repo --> Svc : listingRow
-  alt Listing inactive / outside the pickup window / not enough stock / duplicate open order
-    Svc -> Lock : release()
-    Svc --> Ctrl : 400 / 409 error
+  alt Listing inactive / outside the pickup or order window / not enough stock
+    Svc --> Ctrl : 400 BadRequest
+  else the receiver already has an open order for this listing
+    Svc --> Ctrl : 409 Conflict
   else stock available
     Svc -> Cfg : getNumber(QR_VALIDITY_MINUTES)
     activate Cfg
     Cfg --> Svc : 30 minutes
     deactivate Cfg
     group $transaction
-      Svc -> Repo : $executeRaw quantity_remaining −= qty (0 → fully_reserved)
-      Svc -> Repo : reservation.create(status = confirmed, qrToken, qrExpiresAt)
+      Svc -> Repo : $executeRaw quantity_remaining −= qty WHERE quantity_remaining >= qty\n(0 → fully_reserved)
+      Svc -> Repo : $queryRaw INSERT reservations (status = confirmed, qr_token, qr_expires_at,\ndelivery_address, delivery_location, delivery_scheduled_at)
       Svc -> Repo : receiverProfile.update(reservationsToday +1)
       Repo -> DB : UPDATE food_listings / INSERT reservations / UPDATE receiver_profiles
     end
     opt dto.requestDelivery = true
-      Svc -> Deliveries : createDeliveryAsync(reservationId, listingId)
+      Svc -> Repo : delivery.create(status = pending_assignment)
+      Svc -> Repo : $executeRaw copy pickup_location, delivery_location, distance_km
+      Repo -> DB : INSERT + UPDATE deliveries
+      Svc -> Repo : $queryRaw shippers registered for this shift (delivery_shift_registrations)
+      Repo --> Svc : onDuty[]
+      Svc -> Notif : notify(each on-duty shipper, "New delivery in your shift")
     end
-    Svc -> Lock : release()  <<finally>>
     Svc --> Ctrl : { reservationId, qrToken, qrExpiresAt }
   end
+  Svc -> Lock : release()  <<finally>>
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error
@@ -76,7 +77,6 @@ Screen --> User : show the QR code (no auto redirect)
 deactivate Screen
 @enduml
 
-'──────────────────── 19. My Orders ──────────────────────────
 @startuml seq-reservation-my-orders
 title My Orders Sequence Diagram
 
@@ -96,8 +96,8 @@ alt receiver side
   activate Svc
   Svc -> Repo : receiverProfile.findUnique(userId)
 else provider side
-  Screen -> Ctrl : GET /reservations/provider/my?page&limit&group
-  Ctrl -> Svc : findProviderReservations(userId, page, limit, group)
+  Screen -> Ctrl : GET /reservations/provider/my?page&limit
+  Ctrl -> Svc : findProviderReservations(userId, page, limit)
   Svc -> Repo : providerProfile.findUnique(userId)
 end
 Repo --> Svc : profile | null
@@ -121,16 +121,16 @@ Screen -> Ctrl : GET /reservations/:id
 activate Ctrl
 Ctrl -> Svc : findOne(id, userId)
 activate Svc
-Svc -> Repo : reservation.findUnique(id) include listing, provider, delivery
+Svc -> Repo : reservation.findFirst(id, receiverId) include listing, provider, delivery
 Repo -> DB : SELECT reservations JOIN ...
 DB --> Repo : reservation | null
 Repo --> Svc : reservation
-alt Not found
+alt Not found OR the order belongs to another receiver
   Svc --> Ctrl : 404 NotFound
-else caller is neither the receiver nor the listing owner
-  Svc --> Ctrl : 403 Forbidden
-else authorised
-  Svc --> Ctrl : order detail + qrToken + delivery status
+else found
+  Svc -> Repo : $queryRaw ST_X / ST_Y (pickup_location)
+  Repo --> Svc : pickupCoords
+  Svc --> Ctrl : order detail + qrToken + pickupCoords + delivery status
 end
 deactivate Svc
 Ctrl --> Screen : return data (200) / error
@@ -139,7 +139,6 @@ Screen --> User : render details and the QR code (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 20. Scan Reservation QR ────────────────
 @startuml seq-reservation-scan-qr
 title Scan Reservation QR Sequence Diagram
 
@@ -152,13 +151,13 @@ participant ":PrismaService" as Repo
 database "Database" as DB
 actor "Receiver" as Receiver
 
-User -> Screen : scan the receiver QR code
+User -> Screen : scan the receiver QR code (or type the short pickup code)
 activate Screen
 Screen -> Ctrl : POST /reservations/scan (qrToken)
 activate Ctrl
 Ctrl -> Svc : scanQr(qrToken, scannerUserId)
 activate Svc
-Svc -> Repo : reservation.findUnique(qrToken) include listing, receiver.user
+Svc -> Repo : reservation.findUnique(qrToken) | lookup by short code prefix\ninclude listing, receiver.user
 Repo -> DB : SELECT reservations JOIN food_listings JOIN receiver_profiles
 DB --> Repo : reservation | null
 Repo --> Svc : reservation
@@ -194,7 +193,6 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 21. Provider Confirms Pickup ───────────
 @startuml seq-reservation-confirm-pickup
 title Provider Confirms Pickup Sequence Diagram
 
@@ -248,7 +246,6 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 22. Receiver Pickup Proof ──────────────
 @startuml seq-reservation-pickup-proof
 title Receiver Submits Pickup Proof Sequence Diagram
 
@@ -319,7 +316,6 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 23. Cancel Reservation ─────────────────
 @startuml seq-reservation-cancel
 title Cancel Reservation Sequence Diagram
 
@@ -356,30 +352,29 @@ alt Not found
 else caller owns neither the order nor the listing
   Svc --> Ctrl : 403 Forbidden
 else status != confirmed
-  Svc --> Ctrl : 400 "Order has already moved into handover"
-else shipper already collected the food
+  Svc --> Ctrl : 400 "Only a confirmed order can be cancelled"
+else delivery status = qc_completed / in_transit
   Svc --> Ctrl : 400 "Shipper already picked it up — cannot cancel"
 else cancellable
   group $transaction
     Svc -> Repo : reservation.update(status = cancelled, cancelledAt, cancellationReason)
     Svc -> Repo : $executeRaw quantity_remaining = LEAST(total, remaining + qty), status = active
-    Svc -> Repo : receiverProfile.update(reservationsToday −1)
+    Svc -> Repo : receiverProfile.updateMany(reservationsToday −1)
     opt the order has a delivery
-      Svc -> Repo : delivery.update(status = failed | cancelled)
-      Svc -> Repo : shipperTaskOffer.updateMany(pending → expired)
+      Svc -> Repo : delivery.update(status = failed, failedReason)
       Svc -> Repo : volunteerProfile.update(isAvailable = true)
     end
     Repo -> DB : UPDATE reservations / food_listings / receiver_profiles / deliveries
   end
-  alt receiver cancels within 30 minutes of pickup_end_time
-    Svc -> Trust : applyDelta(receiver, −10, LATE_CANCELLATION)
+  opt a shipper had claimed the delivery
+    Svc -> Notif : notify(shipper, "The delivery was cancelled")
+  end
+  alt receiver cancels < 30 min before pickup_end_time (not while waiting for a shipper)
+    Svc -> Trust : applyDelta(receiver, −RESERVATION_LATE_CANCEL_PENALTY, LATE_CANCELLATION)
   else provider cancels
     Svc -> Notif : notify(receiver, "Provider cancelled — no trust penalty for you")
-    opt a shipper was already assigned
-      Svc -> Notif : notify(shipper, "The delivery was cancelled")
-    end
   end
-  Svc --> Ctrl : { message, quantityRestored }
+  Svc --> Ctrl : { message }
 end
 deactivate Svc
 Ctrl --> Screen : return data (200) / error
@@ -388,7 +383,6 @@ Screen --> User : order cancelled and new trust score (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 24. Rate Order ─────────────────────────
 @startuml seq-reservation-rate
 title Rate Completed Order Sequence Diagram
 
@@ -403,27 +397,27 @@ User -> Screen : rate the provider / shipper and add a comment
 activate Screen
 Screen -> Ctrl : POST /reservations/:id/rating (score, comment?, target)
 activate Ctrl
-Ctrl -> Svc : rate(reservationId, receiverUserId, dto)
+Ctrl -> Svc : rateReservation(reservationId, userId, score, comment, target)
 activate Svc
-Svc -> Repo : reservation.findUnique(id) include listing.provider, delivery.shipper
+Svc -> Repo : receiverProfile.findUnique(userId)
+Svc -> Repo : reservation.findFirst(id, receiverId) include listing.provider, delivery.shipper
 Repo -> DB : SELECT reservations JOIN ...
 DB --> Repo : reservation | null
 Repo --> Svc : reservation
-alt Not found
+alt Not found OR not the receiver of this order
   Svc --> Ctrl : 404 NotFound
-else caller is not the receiver of this order
-  Svc --> Ctrl : 403 Forbidden
 else status != completed
   Svc --> Ctrl : 400 "Only completed orders can be rated"
-else already rated
-  Svc --> Ctrl : 409 "You already rated this order"
+else target = shipper but the order has no shipper
+  Svc --> Ctrl : 400 "This order has no shipper to rate"
 else valid
-  group $transaction
-    Svc -> Repo : rating.create(raterId, rateeType, rateeId, score, comment)
-    Svc -> Repo : $executeRaw recompute avg_rating for the provider / shipper
-    Repo -> DB : INSERT ratings / UPDATE provider_profiles | volunteer_profiles
-  end
-  Svc --> Ctrl : rating
+  Svc -> Repo : rating.upsert(reservation, raterId, rateeId, score, comment)
+  Repo -> DB : INSERT / UPDATE ratings
+  Svc -> Repo : rating.aggregate(avg score of the ratee)
+  Repo --> Svc : avgScore
+  Svc -> Repo : providerProfile | volunteerProfile.update(avgRating)
+  Repo -> DB : UPDATE provider_profiles | volunteer_profiles
+  Svc --> Ctrl : { id, score, target, message }
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error

@@ -1,12 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Campaign Supply Chain (7)
-' 48. Find Nearby Suppliers · 49. Send Provider Request ·
-' 50. Provider Review & Transport · 51. Confirm Ingredient Pickup ·
-' 52. Confirm Transport Receipt · 53. Create Distribution Round ·
-' 54. Close Distribution Round
-'==============================================================
-
-'──────────────────── 48. Find Nearby Suppliers ──────────────
 @startuml seq-campaign-find-suppliers
 title Find Nearby Suppliers Sequence Diagram
 
@@ -24,7 +15,6 @@ activate Ctrl
 Ctrl -> Svc : suggestSuppliersForCampaign(campaignId, charityUserId, opts)
 activate Svc
 Svc -> Svc : assertOwner(campaignId, charityUserId)
-Svc -> Svc : radiusKm = clamp(radiusKm ?? 5, 0.5, 50)
 Svc -> Repo : $queryRaw ST_X / ST_Y (kitchen_location)
 Repo -> DB : SELECT kitchen_campaigns
 DB --> Repo : { lng, lat } | null
@@ -38,11 +28,10 @@ else the kitchen has no pinned coordinates
   Ctrl --> Screen : return data (200)
   Screen --> User : prompt to pin the kitchen location first
 else coordinates available
-  Svc -> Repo : $queryRaw provider_profiles JOIN food_listings\nWHERE verification_status = 'approved' AND users.status = 'active'\nAND listing active, in date, still in stock\nAND ST_DWithin(location, kitchen, radiusM)\nORDER BY ST_Distance LIMIT 10
+  Svc -> Repo : $queryRaw provider_profiles JOIN food_listings\nWHERE verification_status = 'approved' AND users.status = 'active'\nAND listing active, in date, still in stock\nAND ST_DWithin(location, kitchen, radiusM) ORDER BY ST_Distance
   Repo -> DB : SELECT ... GROUP BY provider
   DB --> Repo : rows[]
   Repo --> Svc : rows
-  Svc -> Svc : map → { distanceKm, listingCount, totalRemaining, estimatedKg }
   Svc --> Ctrl : { radiusKm, kitchen, matches[] }
   Ctrl --> Screen : return data (200)
   Screen --> User : render suppliers on the map and in a list
@@ -52,7 +41,6 @@ deactivate Ctrl
 deactivate Screen
 @enduml
 
-'──────────────────── 49. Send Provider Request ──────────────
 @startuml seq-campaign-send-request
 title Send Provider Request Sequence Diagram
 
@@ -65,7 +53,7 @@ participant ":PrismaService" as Repo
 database "Database" as DB
 actor "Provider" as Provider
 
-User -> Screen : pick a supplier, declare the demand, accept the non-commercial waiver
+User -> Screen : pick a supplier, declare the demand (item, kg, date, pickup window),\naccept the non-commercial waiver
 activate Screen
 Screen -> Ctrl : POST /campaigns/requests (SendProviderRequestDto)
 activate Ctrl
@@ -79,19 +67,18 @@ alt Organization or provider profile not found
   Svc --> Ctrl : 404 NotFound
 else the non-commercial waiver was not accepted
   Svc --> Ctrl : 400 "The kitchen must commit to charitable, non-commercial use"
-else neededTo <= neededFrom
+else pickup date / window missing, invalid or in the past
   Svc --> Ctrl : 400 BadRequest
 else valid
-  Svc -> Svc : demandDetails.waiverAcceptedAt = now()
-  Svc -> Repo : campaignProviderRequest.findFirst(campaignId, providerId)
+  Svc -> Repo : campaignProviderRequest.findFirst(campaignId, providerId, status = pending)
   Repo --> Svc : existing | null
-  alt a previous request exists
-    Svc -> Repo : campaignProviderRequest.update(status = pending, clear reviewedAt / note)
+  alt a pending request already exists
+    Svc -> Repo : campaignProviderRequest.update(demandDetails, message)
   else first time
     Svc -> Repo : campaignProviderRequest.create(status = pending)
   end
   Repo -> DB : INSERT / UPDATE campaign_provider_requests
-  Svc -> Notif : notify(provider, "New partnership request")
+  Svc -> Notif : notify(provider, "New ingredient request")
   Notif --> Provider : realtime notification
   Svc --> Ctrl : { message, requestId }
 end
@@ -102,21 +89,19 @@ Screen --> User : request sent, awaiting the provider
 deactivate Screen
 @enduml
 
-'──────────────────── 50. Provider Review & Transport ────────
 @startuml seq-campaign-provider-review
-title Provider Reviews Request and Creates Transport Sequence Diagram
+title Provider Reviews Ingredient Request Sequence Diagram
 
 actor "Provider" as User
 participant ":ProviderRequestsScreen" as Screen
 participant ":CampaignsController" as Ctrl
 participant ":CampaignsService" as Svc
-participant ":DeliveriesService" as Deliveries
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
-database "Database (PostGIS)" as DB
+database "Database" as DB
 actor "Charity Org" as Charity
 
-User -> Screen : open the partnership request inbox
+User -> Screen : open the ingredient request inbox
 activate Screen
 Screen -> Ctrl : GET /campaigns/provider-requests
 activate Ctrl
@@ -131,15 +116,17 @@ Ctrl --> Screen : return data (200)
 deactivate Ctrl
 Screen --> User : render the request list
 
-User -> Screen : accept (pickup time, transport needed?) or reject
-Screen -> Ctrl : PATCH /campaigns/provider-requests/:requestId/review (action, note, opts)
+User -> Screen : accept (pickup time, listing to deduct from) or reject
+Screen -> Ctrl : PATCH /campaigns/provider-requests/:requestId/review (action, note, pickupTime, listingId)
 activate Ctrl
 Ctrl -> Svc : reviewProviderRequest(providerUserId, requestId, action, note, opts)
 activate Svc
 Svc -> Repo : providerProfile.findUnique(userId) + campaignProviderRequest.findUnique(id)
 Repo --> Svc : profile, request
-alt Not found
+alt Provider profile or request not found
   Svc --> Ctrl : 404 NotFound
+else provider not approved / not active
+  Svc --> Ctrl : 403 Forbidden
 else the request belongs to another provider
   Svc --> Ctrl : 403 Forbidden
 else status != pending
@@ -148,37 +135,31 @@ else pickupTime is not in HH:mm format
   Svc --> Ctrl : 400 BadRequest
 else valid
   opt accepting
-    Svc -> Repo : kitchenCampaign.findUnique(campaignId) + $queryRaw ST_X/ST_Y(kitchen_location)
-    Repo -> DB : SELECT kitchen_campaigns
-    DB --> Repo : campaignSnapshot
-    alt transport needed but the kitchen has no coordinates
-      Svc --> Ctrl : 400 "The campaign has no valid kitchen coordinates"
-    end
-    opt transport needed
-      Svc -> Repo : $queryRaw ST_X / ST_Y (provider_profiles.location)
-      Repo --> Svc : pickupCoords | null
-      alt the provider has no coordinates
-        Svc --> Ctrl : 400 "The provider has no valid pickup coordinates"
-      end
-    end
+    Svc -> Repo : kitchenCampaign.findUnique(campaignId) include donations
+    Repo --> Svc : campaign
+    Svc -> Svc : planStockDeduction(providerId, demand, listingId)
   end
   group $transaction
-    Svc -> Repo : campaignProviderRequest.updateMany(id, status = pending → accepted / rejected,\nreviewedAt, scheduledDate, pickupStartTime, pickupEndTime, needsTransport)
+    Svc -> Repo : campaignProviderRequest.updateMany(id, status = pending → accepted / rejected,\nreviewedAt, scheduledDate, pickupStartTime, pickupEndTime)
     alt updated row count != 1
       Svc --> Ctrl : 409 "Another action already processed this request"
     end
-    opt transport needed
-      Svc -> Repo : $queryRaw WITH created_delivery AS (INSERT deliveries ...)\nINSERT campaign_transports SELECT ... RETURNING id, delivery_id
-      Repo -> DB : INSERT deliveries + campaign_transports
-      DB --> Repo : { id, delivery_id }
+    opt accepting
+      Svc -> Repo : $executeRaw UPDATE food_listings SET quantity_remaining −= units\nWHERE status = 'active' AND quantity_remaining >= units
+      alt no row updated (stock changed meanwhile)
+        Svc --> Ctrl : 400 "Not enough stock left on the listing"
+      end
+      Svc -> Repo : campaignDonation.create(status = pledged, providerRequestId)
+      Svc -> Repo : campaignTransport.create(providerRequestId, status = pending)
     end
+    Repo -> DB : UPDATE requests / food_listings · INSERT donations / campaign_transports
   end
-  opt a transport was created
-    Svc -> Deliveries : broadcastToNearbyShippers(deliveryId, lng, lat)
-  end
-  Svc -> Notif : notify(charity, outcome + pickup time + whether a shipper is coming)
+  Svc -> Notif : notify(charity, outcome + pickup date and time)
   Notif --> Charity : realtime notification
-  Svc --> Ctrl : { ...request, transportId }
+  opt accepting AND every supply target is now covered
+    Svc -> Notif : notifyAdmins("Suppliers are ready for this campaign")
+  end
+  Svc --> Ctrl : { ...request, transportId, stockDeduction }
 end
 deactivate Svc
 Ctrl --> Screen : return data (200) / error
@@ -187,86 +168,88 @@ Screen --> User : decision saved (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 51. Confirm Ingredient Pickup ──────────
 @startuml seq-campaign-ingredient-pickup
-title Confirm Ingredient Pickup Sequence Diagram
+title Assign and Confirm Ingredient Pickup Sequence Diagram
 
-actor "Campaign Shipper" as User
-participant ":PickupOrderScreen\n(Camera)" as Screen
+actor "Charity Org" as Org
+participant ":CampaignManageScreen" as Screen
 participant ":CampaignsController" as Ctrl
 participant ":CampaignsService" as Svc
 participant ":StorageService" as Storage
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database" as DB
-actor "Charity Org" as Charity
+actor "Campaign Shipper" as User
 
-User -> Screen : open the list of ingredient orders to collect
+Org -> Screen : choose which on-shift volunteers collect the ingredients
 activate Screen
-Screen -> Ctrl : GET /campaigns/my-pickup-orders
+Screen -> Ctrl : PATCH /campaigns/requests/:id/assign-pickup (assignmentIds)
 activate Ctrl
-Ctrl -> Svc : myPickupOrders(userId)
+Ctrl -> Svc : assignRequestPickup(requestId, charityUserId, dto)
 activate Svc
-Svc -> Repo : campaignProviderRequest.findMany(assigned campaigns, status = accepted)
-Repo -> DB : SELECT campaign_provider_requests JOIN kitchen_campaigns
-DB --> Repo : orders[]
-Svc --> Ctrl : orders[] with the provider address and pickup window
-deactivate Svc
-Ctrl --> Screen : return data (200)
-deactivate Ctrl
-Screen --> User : render the collection points
-
-User -> Screen : photograph the ingredients and enter the received kg
-Screen -> Ctrl : POST /campaigns/pickup-orders/:requestId/confirm (photo, receivedKg, note?)
-activate Ctrl
-Ctrl -> Storage : saveImage(photo, 'ingredient-proofs')
-activate Storage
-Storage --> Ctrl : photoUrl
-deactivate Storage
-Ctrl -> Svc : confirmIngredientPickup(providerRequestId, userId, dto, photoUrl)
-activate Svc
-Svc -> Repo : campaignProviderRequest.findUnique(id) include delivery, campaign, provider
-Svc -> Repo : volunteerProfile.findUnique(userId)
-Svc -> Repo : campaignVolunteerAssignment.findFirst(campaignId, volunteerId, role = shipper)
-Repo -> DB : SELECT ...
-DB --> Repo : rows
-Repo --> Svc : request, volunteer, assignment
-alt No proof photo
-  Svc --> Ctrl : 400 "A photo of the collected ingredients is required"
-else the request has not been accepted by the provider
-  Svc --> Ctrl : 400 "This order has not been accepted yet"
-else a shipper already delivered it through the delivery flow
-  Svc --> Ctrl : 400 "Already transported to the kitchen — no second confirmation"
-else not a campaign shipper
-  Svc --> Ctrl : 403 Forbidden
-else not checked in at the kitchen
-  Svc --> Ctrl : 400 "Check in before confirming an ingredient pickup"
-else receivedKg exceeds 150% of the ordered amount
-  Svc --> Ctrl : 400 "Received weight exceeds 150% of the order"
-else already confirmed
-  Svc --> Ctrl : 400 "This order was already confirmed"
+Svc -> Repo : campaignProviderRequest.findUnique(id) include campaign, transport
+Svc -> Repo : campaignVolunteerAssignment.findMany(assignmentIds) include shift, volunteer
+Repo --> Svc : request, assignments
+alt Request not found or not owned by this organization
+  Svc --> Ctrl : 404 NotFound
+else status != accepted OR no pickup schedule yet
+  Svc --> Ctrl : 400 BadRequest
+else an assignee is a chef / not approved / on another day / shift does not cover the pickup window
+  Svc --> Ctrl : 400 BadRequest
 else valid
-  Svc -> Repo : campaignIngredientPickup.create(requestedKg, receivedKg, photoUrl, note)
-  Svc -> Repo : campaignVolunteerAssignment.update(ingredientProofUrl, ingredientProofAt)
-  Repo -> DB : INSERT campaign_ingredient_pickups / UPDATE assignment
-  Svc -> Svc : shortfall = max(0, requestedKg − receivedKg)
-  Svc -> Notif : notify(charity, shortfall > 0 ? "Ingredients arrived SHORT" : "Ingredients collected")
-  Notif --> Charity : realtime notification
-  Svc --> Ctrl : { receivedKg, requestedKg, shortfallKg, photoUrl }
+  Svc -> Repo : campaignProviderRequest.update(pickupAssigneeIds)
+  Repo -> DB : UPDATE campaign_provider_requests
+  Svc -> Notif : notify(each new assignee, "You are assigned to collect ingredients")
+  Notif --> User : realtime notification
+  Svc --> Ctrl : { id, pickupAssigneeIds }
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> Org : pickup assigned
+
+== Shipper collects the ingredients at the supplier ==
+User -> Screen : take a photo of the collected goods, enter the received weight
+Screen -> Ctrl : POST /campaigns/pickup-orders/:requestId/confirm (multipart photo, receivedKg, note?)
+activate Ctrl
+Ctrl -> Svc : saveProofPhoto(photo)
+Svc -> Storage : saveImage(photo, 'campaign-proofs')
+Storage --> Svc : photoUrl
+Ctrl -> Svc : confirmIngredientPickup(requestId, userId, dto, photoUrl)
+activate Svc
+Svc -> Repo : campaignProviderRequest.findUnique(id) include campaign, provider
+Svc -> Repo : volunteerProfile.findUnique(userId) + assignments of this campaign
+Repo --> Svc : request, volunteer, assignments
+alt No photo
+  Svc --> Ctrl : 400 "A photo of the goods is required"
+else Request not found / not accepted yet
+  Svc --> Ctrl : 404 / 400 error
+else the volunteer is not on an operations shift / not assigned to this pickup
+  Svc --> Ctrl : 403 Forbidden
+else the volunteer has not checked in
+  Svc --> Ctrl : 400 "Check in before collecting the ingredients"
+else receivedKg far above the requested amount OR already confirmed
+  Svc --> Ctrl : 400 BadRequest
+else valid
+  Svc -> Repo : campaignIngredientPickup.create(requestId, volunteerId, receivedKg, photoUrl)
+  Svc -> Repo : campaignVolunteerAssignment.update(ingredient proof)
+  Svc -> Repo : campaignTransport.updateMany(status = delivered, pickedUpAt, deliveredAt)
+  Repo -> DB : INSERT campaign_ingredient_pickups · UPDATE assignments / campaign_transports
+  Svc -> Notif : notify(provider, "The goods were collected") · notify(org, "Ingredients are on the way")
+  Svc --> Ctrl : pickup record
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
-Screen --> User : pickup recorded (or show error message)
+Screen --> User : pickup confirmed (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 52. Confirm Transport Receipt ──────────
 @startuml seq-campaign-transport-receipt
 title Confirm Transport Receipt Sequence Diagram
 
 actor "Charity Org" as User
-participant ":CampaignManageScreen\n(Camera)" as Screen
+participant ":CampaignManageScreen" as Screen
 participant ":CampaignsController" as Ctrl
 participant ":CampaignsService" as Svc
 participant ":NotificationsService" as Notif
@@ -276,50 +259,36 @@ actor "Provider" as Provider
 
 User -> Screen : confirm the ingredients arrived at the kitchen
 activate Screen
-Screen -> Ctrl : POST /campaigns/:id/transports/:transportId/receive (note?, receiptPhotoUrl?)
+Screen -> Ctrl : POST /campaigns/:id/transports/:transportId/receive (note?)
 activate Ctrl
-Ctrl -> Svc : confirmTransportReceipt(campaignId, transportId, charityUserId, dto)
+Ctrl -> Svc : confirmTransportReceipt(campaignId, transportId, charityUserId, note)
 activate Svc
-Svc -> Repo : receiverProfile.findUnique(charityUserId) select id
-Repo -> DB : SELECT receiver_profiles
-DB --> Repo : receiver | null
-Repo --> Svc : receiver
-alt Organization profile not found
+Svc -> Repo : receiverProfile.findUnique(userId)
+Svc -> Repo : campaignTransport.findFirst(id, campaignId, owned by this organization)
+Repo -> DB : SELECT receiver_profiles / campaign_transports
+DB --> Repo : receiver, transport | null
+Repo --> Svc : receiver, transport
+alt Organization profile or transport not found
   Svc --> Ctrl : 404 NotFound
-else found
-  Svc -> Repo : campaignTransport.findFirst(id, providerRequest.campaignId,\nproviderRequest.receiverId = receiver.id)
-  Repo -> DB : SELECT campaign_transports JOIN campaign_provider_requests
-  DB --> Repo : transport | null
-  Repo --> Svc : transport
-  alt The transport does not belong to this campaign
-    Svc --> Ctrl : 404 NotFound
-  else status = received already
-    Svc --> Ctrl : current state (idempotent)
-  else status != delivered
-    Svc --> Ctrl : 400 "Confirm only after the shipper handed the food over"
-  else valid
-    Svc -> Repo : campaignTransport.updateMany(id, status = delivered → received,\nreceivedAt, receivedByUserId, receiptNote, receiptPhotoUrl)
-    Repo -> DB : UPDATE campaign_transports
-    DB --> Repo : count
-    alt another action already claimed it
-      Svc --> Ctrl : current state
-    else claimed
-      Svc -> Notif : notify(provider, "The organization confirmed receipt")
-      Notif --> Provider : realtime notification
-      Svc --> Ctrl : transport (status = received)
-      Ctrl --> Screen : return data (201)
-      Screen --> User : ingredients entered the kitchen pantry
-    end
-  end
+else status = received (already confirmed)
+  Svc --> Ctrl : current transport (idempotent)
+else status != delivered
+  Svc --> Ctrl : 400 "Confirm only after the shipper has handed over the goods"
+else valid
+  Svc -> Repo : campaignTransport.updateMany(status = delivered → received, receivedAt, note)
+  Svc -> Repo : campaignDonation.updateMany(providerRequestId, pledged → received)
+  Repo -> DB : UPDATE campaign_transports / campaign_donations
+  Svc -> Notif : notify(provider, "The kitchen received {kg} kg — thank you")
+  Notif --> Provider : realtime notification
+  Svc --> Ctrl : transport
 end
 deactivate Svc
-Ctrl --> Screen : return error (on any failure)
+Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
-Screen --> User : show error message
+Screen --> User : ingredients recorded as received (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 53. Create Distribution Round ──────────
 @startuml seq-campaign-create-distribution
 title Create Distribution Round Sequence Diagram
 
@@ -329,103 +298,191 @@ participant ":CampaignsController" as Ctrl
 participant ":CampaignsService" as Svc
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
-database "Database" as DB
-actor "Campaign Shipper" as Shipper
+database "Database (PostGIS)" as DB
+actor "Volunteers" as Volunteers
 
-User -> Screen : plan a round (servings, people, stops, assignees)
+User -> Screen : plan a distribution round (location, servings, assignees)
 activate Screen
 Screen -> Ctrl : POST /campaigns/:id/manage/distributions (CreateDistributionDto)
 activate Ctrl
 Ctrl -> Svc : createDistribution(campaignId, userId, dto)
 activate Svc
 Svc -> Svc : assertOwner(campaignId, userId)
-Svc -> Repo : kitchenCampaign.findUnique(id) select status, expectedServings
-Repo -> DB : SELECT kitchen_campaigns
-DB --> Repo : campaign | null
+Svc -> Repo : kitchenCampaign.findUnique(id)
 Repo --> Svc : campaign
-alt Caller does not own the campaign / not found
-  Svc --> Ctrl : 403 / 404 error
-else the campaign is not running
-  Svc --> Ctrl : 400 "Rounds can only be logged while the campaign is running"
-else peopleServed > servingsServed
-  Svc --> Ctrl : 400 "People served cannot exceed servings served"
-else exceeding the campaign serving quota
-  Svc -> Repo : mealDistribution.aggregate(SUM servingsServed + leftoverServings)
-  Repo --> Svc : used
-  Svc --> Ctrl : 400 "Only {remaining} servings remain"
+alt Caller does not own the campaign
+  Svc --> Ctrl : 403 Forbidden
+else status not in (in_progress, completed)
+  Svc --> Ctrl : 400 "Distribution is recorded only while the campaign is running"
 else valid
-  opt assignees selected
-    Svc -> Repo : campaignVolunteerAssignment.findMany(campaignId, volunteerId in [...],\nrole = shipper, approved statuses)
-    Repo --> Svc : valid[]
-    alt some selected people are not approved delivery volunteers
-      Svc --> Ctrl : 400 "{n} selected people are not eligible"
-    end
-  end
-  Svc -> Svc : check every pair of pinned stops is at least MIN_POINT_DISTANCE_M apart
-  alt two stops are too close together
-    Svc --> Ctrl : 400 "Stops must be at least {d} m apart"
+  Svc -> Repo : mealDistribution.aggregate(SUM servingsServed + leftover)
+  Repo --> Svc : alreadyPlanned
+  Svc -> Svc : cookedServingsSummary(campaignId)
+  alt servings exceed the campaign target OR the cooked servings still available
+    Svc --> Ctrl : 400 "Only {n} servings are available"
+  else an assignee is not an approved volunteer of this campaign
+    Svc --> Ctrl : 400 BadRequest
+  else the point is too close to another point of the same round
+    Svc --> Ctrl : 400 BadRequest
   else valid
-    Svc -> Repo : mealDistribution.create(servingsServed, peopleServed, leftover,\npoints JSONB, assigneeIds, distributedAt)
+    Svc -> Repo : mealDistribution.create(location, servingsServed, leftover, assigneeIds)
     Repo -> DB : INSERT meal_distributions
-    loop for each assignee
-      Svc -> Notif : notify(shipper, "You are assigned to a distribution round")
-    end
-    Notif --> Shipper : dispatch notification
+    Svc -> Notif : notify(each assignee, "You are assigned to a distribution round")
+    Notif --> Volunteers : realtime notification
     Svc --> Ctrl : distribution
   end
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
-Screen --> User : round created and shippers dispatched (or show error message)
+Screen --> User : distribution round created (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 54. Close Distribution Round ───────────
 @startuml seq-campaign-close-distribution
 title Close Distribution Round Sequence Diagram
 
-actor "Campaign Shipper" as User
-participant ":DistributionScreen" as Screen
+actor "Volunteer / Charity Org" as User
+participant ":DistributionTaskScreen\n(Camera)" as Screen
 participant ":CampaignsController" as Ctrl
 participant ":CampaignsService" as Svc
+participant ":StorageService" as Storage
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database" as DB
-actor "Charity Org" as Charity
+actor "Charity Org" as Org
 
-User -> Screen : report the round as finished (actual servings / people)
+User -> Screen : take proof photos, enter the servings actually handed out
 activate Screen
-Screen -> Ctrl : POST /campaigns/distributions/:distributionId/complete (report)
+Screen -> Ctrl : POST /campaigns/distributions/:distributionId/complete (multipart photos, actualServings, note?)
 activate Ctrl
-Ctrl -> Svc : completeDistribution(distributionId, userId, report)
+Ctrl -> Svc : completeDistribution(distributionId, userId, dto, photos)
 activate Svc
-Svc -> Repo : mealDistribution.findUnique(id) include campaign.charityReceiver
-Repo -> DB : SELECT meal_distributions JOIN kitchen_campaigns
-DB --> Repo : dist | null
-Repo --> Svc : dist
-alt Not found
-  Svc --> Ctrl : 404 "Distribution round not found"
-else already closed
-  Svc --> Ctrl : { completedAt, alreadyCompleted: true }
-else actualServings outside 0..planned
-  Svc --> Ctrl : 400 "Actual servings must be between 0 and {planned}"
-else neither an assigned shipper nor the campaign owner
+Svc -> Repo : mealDistribution.findUnique(id) include campaign
+Repo -> DB : SELECT meal_distributions
+DB --> Repo : distribution | null
+Repo --> Svc : distribution
+alt Distribution not found
+  Svc --> Ctrl : 404 NotFound
+else already completed
+  Svc --> Ctrl : { id, completedAt, alreadyCompleted: true }
+else actualServings < 0 OR above the planned servings
+  Svc --> Ctrl : 400 BadRequest
+else caller is neither an assignee nor the campaign owner
   Svc --> Ctrl : 403 Forbidden
-else the shipper has not checked in at the kitchen
-  Svc --> Ctrl : 400 "Check in before closing a round"
+else assignee who has not checked in
+  Svc --> Ctrl : 400 "Check in before closing the round"
 else valid
-  Svc -> Repo : mealDistribution.updateMany(id, completedAt IS NULL → completedAt,\ncompletedByVolunteerId, actualServings, actualPeopleServed, completionNote)
+  Svc -> Storage : saveImage(each photo, 'campaign-proofs')
+  Storage --> Svc : photoUrls[]
+  Svc -> Repo : mealDistribution.updateMany(id, completedAt IS NULL\n→ completedAt, actualServings, proofPhotoUrls, completedBy)
   Repo -> DB : UPDATE meal_distributions
-  opt the shipper closed it
-    Svc -> Notif : notify(charity, "Round completed — {actual}/{planned} servings")
-    Notif --> Charity : realtime notification
+  DB --> Repo : count
+  alt count != 1 (someone else closed it first)
+    Svc --> Ctrl : { alreadyCompleted: true }
+  else closed
+    opt closed by an assignee
+      Svc -> Notif : notify(org, "Distribution round finished")
+      Notif --> Org : realtime notification
+    end
+    Svc --> Ctrl : { id, completedAt, actualServings, photos }
   end
-  Svc --> Ctrl : { completedAt, actualServings, actualPeopleServed, leftover }
 end
 deactivate Svc
 Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
-Screen --> User : round closed and counted into campaign statistics
+Screen --> User : round closed (or show error message)
+deactivate Screen
+@enduml
+
+@startuml seq-campaign-incident
+title Report and Handle Campaign Incident Sequence Diagram
+
+actor "Campaign Shipper" as User
+participant ":IncidentScreen\n(Camera)" as Screen
+participant ":CampaignIncidentsController" as Ctrl
+participant ":CampaignIncidentsService" as Svc
+participant ":CampaignsService" as Campaigns
+participant ":StorageService" as Storage
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+actor "Charity Org" as Org
+
+User -> Screen : report a problem during a pickup or a distribution round
+activate Screen
+Screen -> Ctrl : POST /campaigns/:id/incidents (context, reasonCode, canContinue, referenceId?, photo?)
+activate Ctrl
+Ctrl -> Svc : report(campaignId, userId, dto, photo)
+activate Svc
+Svc -> Repo : volunteerProfile.findUnique(userId) + kitchenCampaign.findUnique(id)
+Svc -> Repo : campaignVolunteerAssignment.findFirst(operations role in this campaign)
+Repo -> DB : SELECT volunteer_profiles / kitchen_campaigns / assignments
+DB --> Repo : rows
+Repo --> Svc : volunteer, campaign, assignment
+alt Invalid context / reason, or "cannot continue" without a reference
+  Svc --> Ctrl : 400 BadRequest
+else Volunteer or campaign not found
+  Svc --> Ctrl : 404 NotFound
+else the volunteer has no operations shift in this campaign
+  Svc --> Ctrl : 403 Forbidden
+else the referenced pickup order / distribution round is already finished
+  Svc --> Ctrl : 400 BadRequest
+else valid
+  opt a photo is attached
+    Svc -> Storage : saveImage(photo, 'campaign-incidents')
+    Storage --> Svc : photoUrl
+  end
+  Svc -> Repo : campaignIncident.create(status = open, context, reason, canContinue, photoUrl)
+  Repo -> DB : INSERT campaign_incidents
+  opt canContinue = false
+    Svc -> Repo : remove the volunteer from the pickup order / distribution round
+    Repo -> DB : UPDATE campaign_provider_requests | meal_distributions
+  end
+  Svc -> Notif : notify(org, "Incident reported: {reason}")
+  Notif --> Org : realtime notification
+  Svc --> Ctrl : incident
+end
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> User : incident sent to the organization (or show error message)
+
+== Organization handles the incident ==
+alt Assign other volunteers
+  Org -> Screen : pick replacement volunteers
+  Screen -> Ctrl : PATCH /campaigns/incidents/:incidentId/reassign (assignmentIds)
+  activate Ctrl
+  Ctrl -> Svc : reassign(incidentId, userId, ids)
+  activate Svc
+  Svc -> Repo : campaignIncident.findUnique(id) include campaign
+  Repo --> Svc : incident
+  alt Incident not found / caller does not own the campaign
+    Svc --> Ctrl : 404 / 403 error
+  else the incident is not linked to a pickup order or a round
+    Svc --> Ctrl : 400 BadRequest
+  else context = pickup
+    Svc -> Campaigns : assignRequestPickup(requestId, userId, { assignmentIds })
+  else context = distribution
+    Svc -> Repo : mealDistribution.update(assigneeIds)
+  end
+  Svc -> Repo : campaignIncident.update(status = resolved, actionTaken = reassigned)
+  Repo -> DB : UPDATE campaign_incidents
+  Svc --> Ctrl : { id, status: resolved, reassignedTo }
+else Close without reassigning
+  Org -> Screen : mark the incident as handled, add a note
+  Screen -> Ctrl : PATCH /campaigns/incidents/:incidentId/resolve (note?)
+  activate Ctrl
+  Ctrl -> Svc : resolve(incidentId, userId, note)
+  activate Svc
+  Svc -> Repo : campaignIncident.update(status = resolved, resolutionNote, resolvedAt)
+  Repo -> DB : UPDATE campaign_incidents
+  Svc -> Notif : notify(volunteer, "Your incident report was handled")
+  Svc --> Ctrl : { id, status: resolved }
+end
+deactivate Svc
+Ctrl --> Screen : return data (200) / error
+deactivate Ctrl
+Screen --> Org : incident closed
 deactivate Screen
 @enduml

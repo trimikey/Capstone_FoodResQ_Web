@@ -1,89 +1,92 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Kitchen Operations (7)
-' 55. Manage Shifts · 56. Manage Menu Items · 57. Cooking Steps ·
-' 58. Safety Log · 59. Issue Handoff QR · 60. Scan Meal Handoff ·
-' 61. Beneficiary Feedback
-'==============================================================
-
-'──────────────────── 55. Manage Shifts ──────────────────────
-
 @startuml seq-kitchen-shifts
 title Manage Campaign Shifts Sequence Diagram
 
 actor "Charity Org" as User
 participant ":ShiftBoardScreen" as Screen
-participant ":KitchenOpsController" as Ctrl
-participant ":KitchenOpsService" as Svc
+participant ":KitchenOpsController" as KCtrl
+participant ":CampaignsController" as Ctrl
+participant ":KitchenOpsService" as KSvc
+participant ":CampaignsService" as Svc
 participant ":PrismaService" as Repo
 database "Database" as DB
 
 User -> Screen : open the shift board
 activate Screen
-Screen -> Ctrl : GET /campaigns/:id/shifts
-activate Ctrl
-Ctrl -> Svc : listShifts(campaignId)
-activate Svc
-Svc -> Repo : campaignShift.findMany(campaignId) order startTime
+Screen -> KCtrl : GET /campaigns/:id/shifts
+activate KCtrl
+KCtrl -> KSvc : listShifts(campaignId)
+activate KSvc
+KSvc -> Repo : campaignShift.findMany(campaignId) include assignments
 Repo -> DB : SELECT campaign_shifts
 DB --> Repo : shifts[]
-Repo --> Svc : shifts
-Svc --> Ctrl : shifts[] with slotsNeeded / slotsFilled
-deactivate Svc
-Ctrl --> Screen : return data (200)
-deactivate Ctrl
+Repo --> KSvc : shifts
+KSvc --> KCtrl : shifts[] with slotsNeeded / slotsFilled
+deactivate KSvc
+KCtrl --> Screen : return data (200)
+deactivate KCtrl
 Screen --> User : render the shifts and how many slots are still open
 
-alt Create a shift
-  User -> Screen : enter label, role, start / end time and slots
-  Screen -> Ctrl : POST /campaigns/:id/shifts (CreateShiftDto)
+alt Add a staffing row
+  User -> Screen : choose a fixed 6-hour period, a role and the slots needed
+  Screen -> Ctrl : POST /campaigns/:id/manage/shifts (CreateShiftDto)
   activate Ctrl
-  Ctrl -> Svc : createShift(campaignId, userId, dto)
+  Ctrl -> Svc : addShift(campaignId, userId, dto)
   activate Svc
-  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  Svc -> Svc : assertOwner(campaignId, userId)
   alt Caller does not own the campaign
-    Svc --> Ctrl : 403 "Only the organizing charity can manage this campaign"
-  else endTime <= startTime
-    Svc --> Ctrl : 400 "End time must be after start time"
+    Svc --> Ctrl : 403 Forbidden
+  else status != pending_approval
+    Svc --> Ctrl : 400 "Shifts cannot be edited after submission — send a change request"
+  else not one of the four fixed periods OR no role
+    Svc --> Ctrl : 400 BadRequest
+  else the same period + role already exists
+    Svc --> Ctrl : 400 "This staffing row already exists"
   else valid
-    Svc -> Repo : campaignShift.create(label, role, startTime, endTime, slotsNeeded)
+    Svc -> Repo : campaignShift.create(label, period, role, startTime, endTime, slotsNeeded)
     Repo -> DB : INSERT campaign_shifts
-    DB --> Repo : shift
+    Svc -> Svc : syncCampaignSlotsFromShifts(campaignId)
     Svc --> Ctrl : shift
   end
-else Update a shift
-  User -> Screen : change the time window or the number of slots
+else Update a staffing row
+  User -> Screen : change the period or the number of slots
   Screen -> Ctrl : PUT /campaigns/:id/shifts/:shiftId (UpdateShiftDto)
   activate Ctrl
   Ctrl -> Svc : updateShift(campaignId, shiftId, userId, dto)
   activate Svc
-  Svc -> Svc : assertCampaignOwner(campaignId, userId)
+  Svc -> Svc : assertOwner(campaignId, userId)
   Svc -> Repo : campaignShift.findUnique(shiftId)
   Repo --> Svc : shift | null
-  alt Shift not found or not in this campaign
+  alt status != pending_approval
+    Svc --> Ctrl : 400 BadRequest
+  else Shift not found or not in this campaign
     Svc --> Ctrl : 404 NotFound
   else slotsNeeded below slotsFilled
     Svc --> Ctrl : 400 "You cannot cut slots below the volunteers already assigned"
   else valid
-    Svc -> Repo : campaignShift.update(label, role, startTime, endTime, slotsNeeded)
+    Svc -> Repo : campaignShift.update(period, role, startTime, endTime, slotsNeeded)
     Repo -> DB : UPDATE campaign_shifts
+    Svc -> Svc : syncCampaignSlotsFromShifts(campaignId)
     Svc --> Ctrl : updated shift
   end
-else Delete a shift
+else Delete a staffing row
   User -> Screen : remove an empty shift
   Screen -> Ctrl : DELETE /campaigns/:id/shifts/:shiftId
   activate Ctrl
   Ctrl -> Svc : deleteShift(campaignId, shiftId, userId)
   activate Svc
-  Svc -> Svc : assertCampaignOwner(campaignId, userId)
-  Svc -> Repo : campaignVolunteerAssignment.count(shiftId, status != cancelled)
+  Svc -> Svc : assertOwner(campaignId, userId)
+  Svc -> Repo : campaignVolunteerAssignment.count(shiftId, status != cancelled / rejected)
   Repo -> DB : SELECT COUNT(*) FROM campaign_volunteer_assignments
   DB --> Repo : assignedCount
   Repo --> Svc : assignedCount
-  alt assignedCount > 0
-    Svc --> Ctrl : 400 "Volunteers are already assigned to this shift"
+  alt status != pending_approval
+    Svc --> Ctrl : 400 BadRequest
+  else assignedCount > 0
+    Svc --> Ctrl : 400 "Volunteers are already signed up for this shift"
   else empty shift
     Svc -> Repo : campaignShift.delete(shiftId)
     Repo -> DB : DELETE campaign_shifts
+    Svc -> Svc : syncCampaignSlotsFromShifts(campaignId)
     Svc --> Ctrl : { id, deleted: true }
   end
 end
@@ -94,13 +97,13 @@ Screen --> User : refresh the shift board (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 56. Manage Menu Items ──────────────────
 @startuml seq-kitchen-menu
 title Manage Campaign Menu Sequence Diagram
 
 actor "Charity Org" as User
 participant ":MenuScreen" as Screen
 participant ":KitchenOpsController" as Ctrl
+participant ":DishStepsController" as StepCtrl
 participant ":KitchenOpsService" as Svc
 participant ":DishStepsService" as Steps
 participant ":PrismaService" as Repo
@@ -133,33 +136,49 @@ alt Add a dish
     Svc --> Ctrl : 403 "Only the organizing charity can manage this campaign"
   else neither recipeId nor customName supplied
     Svc --> Ctrl : 400 "Choose a recipe or enter a dish name"
+  else recipeId does not exist
+    Svc --> Ctrl : 404 NotFound
   else valid
-    Svc -> Repo : campaignMenuItem.create(recipeId?, customName?, plannedServings, sortOrder)
-    Repo -> DB : INSERT campaign_menu_items
-    DB --> Repo : menuItem
-    Svc -> Steps : ensureStepsForMenuItem(campaignId, menuItemId, 4 scheduled times)
-    activate Steps
-    Steps -> Repo : campaignDishStep.findMany(campaignId, menuItemId)
-    Repo --> Steps : existing[]
-    alt already has the 4 steps
-      Steps --> Svc : existing steps (idempotent)
-    else missing or partial
-      Steps -> Repo : campaignDishStep.deleteMany(campaignId, menuItemId)
-      Steps -> Repo : campaignDishStep.createMany(Prep / Cook / Plate / Ready to serve)
-      Repo -> DB : DELETE + INSERT campaign_dish_steps
-      Steps --> Svc : steps[]
+    group $transaction
+      Svc -> Repo : campaignMenuItem.create(recipeId?, customName?, plannedServings, sortOrder)
+      Svc -> Repo : recipe.update(timesUsed +1)
+      Repo -> DB : INSERT campaign_menu_items / UPDATE recipes
     end
-    deactivate Steps
     Svc --> Ctrl : menuItem
   end
+  deactivate Svc
+  Ctrl --> Screen : return data (201) / error
+  deactivate Ctrl
+else Set the time of the four cooking steps
+  User -> Screen : enter the planned time of Prep / Cook / QC / Ready to serve
+  Screen -> StepCtrl : POST /campaigns/:campaignId/menu-items/:menuItemId/step-times (scheduledTimes[4])
+  activate StepCtrl
+  StepCtrl -> Steps : setScheduledTimes(campaignId, userId, menuItemId, scheduledTimes)
+  activate Steps
+  Steps -> Repo : campaignMenuItem.findUnique(menuItemId)
+  Repo --> Steps : menuItem | null
+  alt Dish not found in this campaign
+    Steps --> StepCtrl : 404 NotFound
+  else not exactly 4 times OR wrong HH:mm format
+    Steps --> StepCtrl : 400 BadRequest
+  else valid
+    Steps -> Steps : ensureStepsForMenuItem(campaignId, menuItemId, scheduledTimes)
+    Steps -> Repo : campaignDishStep.createMany(missing steps for each campaign day)
+    Steps -> Repo : campaignDishStep.updateMany(scheduledTime of steps not done)
+    Repo -> DB : INSERT / UPDATE campaign_dish_steps
+    Steps --> StepCtrl : steps[]
+  end
+  deactivate Steps
+  StepCtrl --> Screen : return data (201) / error
+  deactivate StepCtrl
 else Remove a dish
   User -> Screen : delete a dish from the menu
   Screen -> Ctrl : DELETE /campaigns/menu-items/:itemId
   activate Ctrl
   Ctrl -> Svc : removeMenuItem(itemId, userId)
   activate Svc
-  Svc -> Repo : campaignMenuItem.findUnique(itemId) include campaign
-  Repo -> DB : SELECT campaign_menu_items JOIN kitchen_campaigns
+  Svc -> Repo : campaignMenuItem.findUnique(itemId)
+  Repo -> DB : SELECT campaign_menu_items
   DB --> Repo : item | null
   Repo --> Svc : item
   alt Item not found
@@ -167,19 +186,21 @@ else Remove a dish
   else caller does not own the campaign
     Svc --> Ctrl : 403 Forbidden
   else valid
-    Svc -> Repo : campaignMenuItem.delete(itemId)
-    Repo -> DB : DELETE campaign_menu_items (+ campaign_dish_steps ON DELETE CASCADE)
+    group $transaction
+      Svc -> Repo : campaignMenuItem.delete(itemId)
+      Svc -> Repo : recipe.update(timesUsed −1)
+      Repo -> DB : DELETE campaign_menu_items (+ campaign_dish_steps ON DELETE CASCADE)
+    end
     Svc --> Ctrl : { id, deleted: true }
   end
+  deactivate Svc
+  Ctrl --> Screen : return data (200) / error
+  deactivate Ctrl
 end
-deactivate Svc
-Ctrl --> Screen : return data (200 / 201) / error
-deactivate Ctrl
 Screen --> User : refresh the menu (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 57. Cooking Steps ──────────────────────
 @startuml seq-kitchen-cooking-steps
 title Cooking Steps Sequence Diagram
 
@@ -197,26 +218,26 @@ User -> Screen : open the kitchen board
 activate Screen
 Screen -> Ctrl : GET /campaigns/:campaignId/dish-steps
 activate Ctrl
-Ctrl -> Svc : getStepsForCampaign(campaignId, currentUserId)
+Ctrl -> Svc : getStepsForCampaign(campaignId, currentUserId, date)
 activate Svc
-Svc -> Repo : kitchenCampaign.findUnique(id) select scheduledDate, startTime, endTime
+Svc -> Repo : kitchenCampaign.findUnique(id) select dates, startTime, endTime
 Svc -> Repo : campaignMenuItem.findMany include recipe, dishSteps
-Svc -> Repo : campaignVolunteerAssignment.findMany(role = chef) + last 5 kitchenSafetyLog rows
+Svc -> Repo : campaignVolunteerAssignment.findMany(role = chef) + latest kitchenSafetyLog rows
 Repo -> DB : SELECT ...
 DB --> Repo : rows
 Repo --> Svc : campaign, dishes, team, safetyLogs
 loop for each step of each dish
-  Svc -> Svc : computeEffectiveStatus(step, prevDone, isFirst, campaignTiming)
+  Svc -> Svc : computeEffectiveStatus(step, prevDone, campaignTiming)
 end
-Svc --> Ctrl : { dishes[] (steps + effectiveStatus), cookingTeam, safetyLogs }
+Svc --> Ctrl : { dishes[] (steps + effectiveStatus), cookingTeam, safetyLogs, missingIngredients }
 deactivate Svc
 Ctrl --> Screen : return data (200)
 deactivate Ctrl
-Screen --> User : four-step timeline per dish
+Screen --> User : four-step timeline per dish (Prep → Cook → QC → Ready to serve)
 
 alt Mark a step as done
   User -> Screen : take a proof photo and confirm the step
-  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/complete (proof, note?)
+  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/complete (multipart proof, note?)
   activate Ctrl
   Ctrl -> Svc : completeStep(campaignId, userId, stepId, proof, note)
   activate Svc
@@ -224,50 +245,52 @@ alt Mark a step as done
     Svc --> Ctrl : 400 "A proof photo is required"
   else photo supplied
     Svc -> Svc : assertAssignedVolunteer(campaignId, userId)
-    Svc -> Repo : volunteerProfile + campaignVolunteerAssignment.findFirst(on duty)
-    Repo --> Svc : volunteer, assignment
+    Svc -> Repo : campaignDishStep.findUnique(stepId) + the previous step
+    Repo --> Svc : step, prevStep
     alt Not assigned to this campaign / account not active
-      Svc --> Ctrl : 403 error
-    else assigned
-      Svc -> Repo : campaignDishStep.findUnique(stepId) + the previous step
-      Repo --> Svc : step, prevStep
-      Svc -> Svc : computeEffectiveStatus(...)
-      alt Not due yet, or the previous step is unfinished
-        Svc --> Ctrl : 400 "This step cannot start yet"
-      else already completed
-        Svc --> Ctrl : 400 "This step is already done"
-      else valid
-        Svc -> Storage : saveImage(proof, 'dish-step-proofs')
-        activate Storage
-        Storage --> Svc : proofUrl
-        deactivate Storage
-        Svc -> Repo : campaignDishStep.update(status = done, completedAt, completedBy, proofUrl)
-        opt the next step is already due
-          Svc -> Repo : campaignDishStep.update(next step → available, openedAt)
-        end
-        opt this was step 4 and every dish is ready
-          Svc -> Repo : campaignVolunteerAssignment.update(status = completed)
-        end
-        Repo -> DB : UPDATE campaign_dish_steps / assignments
-        Svc --> Ctrl : updated step
+      Svc --> Ctrl : 403 Forbidden
+    else step 1 while ingredients have not been received
+      Svc --> Ctrl : 400 "Ingredients are still missing"
+    else locked (not due yet / previous step unfinished / QC not approved)
+      Svc --> Ctrl : 400 "This step cannot start yet"
+    else already completed OR the dish was rejected at QC
+      Svc --> Ctrl : 400 BadRequest
+    else valid
+      Svc -> Storage : saveImage(proof, 'dish-step-proofs')
+      activate Storage
+      Storage --> Svc : proofUrl
+      deactivate Storage
+      Svc -> Repo : campaignDishStep.update(status = done, completedAt, completedBy, proofUrl)
+      Repo -> DB : UPDATE campaign_dish_steps
+      alt step 3 (QC)
+        Svc -> Notif : notifyCampaignOwner(campaignId, "QC photo awaiting your review")
+        Notif --> Org : realtime notification
+      else other steps
+        Svc -> Repo : campaignDishStep.update(next step → available, openedAt)
       end
+      opt step 4 and every dish is ready
+        Svc -> Repo : campaignVolunteerAssignment.update(status = completed)
+      end
+      Svc --> Ctrl : updated step
     end
   end
-else Flag a QC failure (emergency stop)
-  User -> Screen : enter the reason for the emergency stop
-  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/qc-fail (reason)
+else Retake the proof photo
+  User -> Screen : replace a photo uploaded by mistake
+  Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/retake-proof (multipart proof)
   activate Ctrl
-  Ctrl -> Svc : flagStepQualityFail(campaignId, userId, stepId, reason)
+  Ctrl -> Svc : retakeStepProof(campaignId, userId, stepId, proof)
   activate Svc
-  alt Reason empty or longer than 500 characters
-    Svc --> Ctrl : 400 BadRequest
-  else the step is already done or already flagged
-    Svc --> Ctrl : 400 error
+  Svc -> Repo : campaignDishStep.findUnique(stepId) include campaign.status
+  Repo --> Svc : step
+  alt step not done yet / caller did not complete this step
+    Svc --> Ctrl : 400 / 403 error
+  else campaign finished OR the QC photo was already reviewed
+    Svc --> Ctrl : 400 "The proof photo can no longer be replaced"
   else valid
-    Svc -> Repo : campaignDishStep.update(qcFailedAt, qcFailedByVolunteerId, qcFailureReason)
+    Svc -> Storage : saveImage(proof, 'dish-step-proofs')
+    Storage --> Svc : proofUrl
+    Svc -> Repo : campaignDishStep.update(proofUrl)
     Repo -> DB : UPDATE campaign_dish_steps
-    Svc -> Notif : notifyCampaignOwner(campaignId, "Emergency stop: {dish}")
-    Notif --> Org : realtime alert
     Svc --> Ctrl : updated step
   end
 end
@@ -275,10 +298,37 @@ deactivate Svc
 Ctrl --> Screen : return data (201) / error
 deactivate Ctrl
 Screen --> User : refresh the kitchen board (or show error message)
+
+== Organization reviews the QC photo ==
+Org -> Screen : approve or reject the QC photo of a dish
+Screen -> Ctrl : POST /campaigns/:campaignId/dish-steps/:stepId/review (action, reason?)
+activate Ctrl
+Ctrl -> Svc : reviewQcStep(campaignId, userId, stepId, action, reason)
+activate Svc
+Svc -> Svc : assertCampaignOwner(campaignId, userId)
+Svc -> Repo : campaignDishStep.findUnique(stepId)
+Repo --> Svc : step
+alt Not the QC step OR not awaiting review
+  Svc --> Ctrl : 400 BadRequest
+else approve
+  Svc -> Repo : campaignDishStep.update(reviewStatus = approved, reviewedAt)
+  Svc -> Repo : campaignDishStep.update(step 4 → available)
+  Repo -> DB : UPDATE campaign_dish_steps
+  Svc -> Notif : notify(chef, "QC approved — the dish may be served")
+else reject (reason required)
+  Svc -> Repo : campaignDishStep.update(reviewStatus = rejected, reviewNote)
+  Repo -> DB : UPDATE campaign_dish_steps
+  Svc -> Notif : notify(chef, "QC rejected: {reason}")
+end
+Notif --> User : realtime notification
+Svc --> Ctrl : { id, reviewStatus, dishName }
+deactivate Svc
+Ctrl --> Screen : return data (201) / error
+deactivate Ctrl
+Screen --> Org : review saved
 deactivate Screen
 @enduml
 
-'──────────────────── 58. Safety Log ─────────────────────────
 @startuml seq-kitchen-safety-log
 title Kitchen Safety Log Sequence Diagram
 
@@ -303,6 +353,8 @@ DB --> Repo : rows
 Repo --> Svc : volunteer, assignment
 alt Not a chef on duty for this campaign
   Svc --> Ctrl : 403 "You are not assigned as a chef on this campaign"
+else campaign status not in (approved, in_progress)
+  Svc --> Ctrl : 400 "Safety logs are recorded only while the campaign is active"
 else valid
   opt photo supplied
     Svc -> Storage : saveImage(photo, 'safety-logs')
@@ -314,6 +366,9 @@ else valid
   Svc -> Repo : kitchenSafetyLog.create(checkType, measuredValue, result, photoUrl, checkedBy, checkedAt)
   Repo -> DB : INSERT kitchen_safety_logs
   DB --> Repo : log
+  opt result = warning / fail
+    Svc -> Repo : notification.create(organizer, "Food-safety alert")
+  end
   Svc --> Ctrl : safetyLog
 end
 deactivate Svc
@@ -337,7 +392,6 @@ Screen --> User : render the food-safety log table
 deactivate Screen
 @enduml
 
-'──────────────────── 59. Issue Handoff QR ───────────────────
 @startuml seq-kitchen-issue-qr
 title Issue Meal Handoff QR Sequence Diagram
 
@@ -388,7 +442,6 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 60. Scan Meal Handoff ──────────────────
 @startuml seq-kitchen-scan-handoff
 title Scan Meal Handoff Sequence Diagram
 
@@ -451,7 +504,6 @@ Screen --> User : show error message
 deactivate Screen
 @enduml
 
-'──────────────────── 61. Beneficiary Feedback ───────────────
 @startuml seq-kitchen-beneficiary-feedback
 title Beneficiary Feedback Sequence Diagram
 

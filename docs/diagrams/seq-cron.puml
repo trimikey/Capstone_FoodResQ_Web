@@ -1,18 +1,3 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Scheduled Jobs (4)
-' 74. Order Lifecycle Jobs · 75. Auto-close Campaigns ·
-' 76. Unlock Cooking Steps · 77. Clean Up Bulk Runs
-'
-' NOT diagrammed (pure reminder jobs, no state change):
-'   ListingsCron.handleExpiryAlerts (30 min) — notify the provider a listing is expiring
-'   CampaignsCron.nudgeUpcomingTasks (5 min) — remind volunteers about an upcoming shift
-'
-' Every handler is wrapped in try/catch + logCronError so a failing
-' job never kills the scheduler. The outcome always surfaces on a
-' user screen as a notification or a changed order status.
-'==============================================================
-
-'──────────────────── 74. Order Lifecycle Jobs ───────────────
 @startuml seq-cron-order-jobs
 title Order Lifecycle Scheduled Jobs Sequence Diagram
 
@@ -23,14 +8,14 @@ participant ":DeliveriesService" as Del
 participant ":TrustService" as Trust
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
-database "Database (PostGIS)" as DB
+database "Database" as DB
 participant ":NotificationCenter" as Screen
 actor "Receiver / Shipper" as User
 
 group A. Every minute — expire overdue orders
   ResCron -> Res : expireNoShows()
   activate Res
-  Res -> Repo : reservation.findMany(confirmed, qrExpiresAt < now,\nno delivery OR delivery cancelled) take 200
+  Res -> Repo : reservation.findMany(confirmed, qrExpiresAt < now,\nno delivery OR delivery cancelled)
   Repo -> DB : SELECT reservations LEFT JOIN deliveries
   DB --> Repo : selfPickup[]
   Repo --> Res : selfPickup
@@ -39,11 +24,11 @@ group A. Every minute — expire overdue orders
       Res -> Repo : reservation.update(status = no_show) + restore stock + reservationsToday −1
       Repo -> DB : UPDATE reservations / food_listings / receiver_profiles
     end
-    Res -> Trust : applyDelta(receiver, −20, NO_SHOW)
+    Res -> Trust : applyDelta(receiver, −RESERVATION_NO_SHOW_PENALTY, NO_SHOW)
   end
-  Res -> Repo : reservation.findMany(confirmed, qrExpiresAt < now,\ndelivery in pending_assignment / failed) take 200
+  Res -> Repo : reservation.findMany(confirmed, qrExpiresAt < now,\ndelivery in pending_assignment / failed)
   Repo --> Res : unassigned[]
-  loop for each delivery order nobody accepted
+  loop for each delivery order nobody claimed
     group $transaction
       Res -> Repo : reservation.update(status = expired) + delivery.update(failed) + restore stock
       Repo -> DB : UPDATE reservations / deliveries / food_listings
@@ -61,30 +46,21 @@ group B. Daily at 00:00 — reset the daily quota
   deactivate Res
 end
 
-group C. Every 30 seconds — sweep shipper offers
-  DelCron -> Del : sweepOffersAndRebroadcast()
+group C. Every 30 seconds — close deliveries nobody claimed
+  DelCron -> Del : expireUnclaimedDeliveries()
   activate Del
-  Del -> Repo : shipperTaskOffer.findMany(pending, expiresAt < now)
-  Repo -> DB : SELECT shipper_task_offers
-  DB --> Repo : lapsed[]
-  Repo --> Del : lapsed
-  loop for each lapsed offer
-    Del -> Repo : offer.update(expired) + volunteerProfile.update(isAvailable = false)
-  end
-  Del -> Repo : delivery.findMany(pending_assignment, no live offer)
-  Repo --> Del : unassigned[]
-  loop for each unassigned delivery
-    alt older than ASSIGNMENT_TIMEOUT_MS (4m30s)
-      Del -> Repo : delivery.update(failed) + reservation.update(cancelled) + restore stock
-      Del -> Notif : notify(receiver, "No volunteer found — please order again")
-    else still inside the window
-      Del -> Repo : $queryRaw nearest available VERIFIED shipper within 5 km,\nnot yet offered this delivery
-      Repo -> DB : SELECT volunteer_profiles
-      DB --> Repo : shipper | null
-      opt a shipper is available
-        Del -> Repo : shipperTaskOffer.create(expiresAt = +15s)
-        Del -> Notif : emitToUser(shipper, 'delivery:offer')
+  Del -> Repo : delivery.findMany(status = pending_assignment) include reservation
+  Repo -> DB : SELECT deliveries JOIN reservations
+  DB --> Repo : candidates[]
+  Repo --> Del : candidates
+  loop for each waiting delivery
+    Del -> Del : deadline = immediate: createdAt + DELIVERY_CLAIM_WINDOW_MINUTES\nscheduled: deliveryScheduledAt − DELIVERY_SCHEDULED_CUTOFF_MINUTES
+    opt now > deadline
+      group $transaction
+        Del -> Repo : delivery.update(failed) + reservation.update(cancelled)\n+ restore stock + reservationsToday −1
+        Repo -> DB : UPDATE deliveries / reservations / food_listings / receiver_profiles
       end
+      Del -> Notif : notify(receiver, "No volunteer claimed the delivery — please order again")
     end
   end
   deactivate Del
@@ -99,7 +75,7 @@ group D. Every 5 minutes — auto-fail stalled deliveries
   Repo --> Del : stalled
   loop for each stalled delivery
     group $transaction
-      Del -> Repo : delivery.update(failed) + reservation.update(cancelled)\n+ restore stock + free the shipper
+      Del -> Repo : delivery.update(failed) + reservation.update(expired)\n+ restore stock when not yet picked up + free the shipper
       Repo -> DB : UPDATE deliveries / reservations / food_listings / volunteer_profiles
     end
     Del -> Notif : notify(receiver, "The delivery failed")
@@ -107,63 +83,135 @@ group D. Every 5 minutes — auto-fail stalled deliveries
   deactivate Del
 end
 
-Notif --> Screen : 'notification:new' / 'delivery:offer'
+Notif --> Screen : 'notification:new'
 activate Screen
-Screen --> User : order status, trust score and offer popups refresh on screen
+Screen --> User : order status and trust score refresh on screen
 deactivate Screen
 @enduml
 
-'──────────────────── 75. Auto-close Campaigns ───────────────
+@startuml seq-cron-campaign-recruitment
+title Campaign Recruitment Lifecycle Scheduled Job Sequence Diagram
+
+participant ":CampaignsCron\n(every minute)" as Cron
+participant ":CampaignsService" as Svc
+participant ":SystemConfigService" as Cfg
+participant ":NotificationsService" as Notif
+participant ":PrismaService" as Repo
+database "Database" as DB
+participant ":NotificationCenter" as Screen
+actor "Charity Org / Volunteer" as User
+
+Cron -> Svc : advanceRecruitmentLifecycle()
+activate Svc
+Svc -> Repo : kitchenCampaign.findMany(status = approved)
+Repo -> DB : SELECT kitchen_campaigns
+DB --> Repo : campaigns[]
+Repo --> Svc : campaigns
+Svc -> Cfg : getNumber(CAMPAIGN_MIN_FILL_PERCENT)
+Cfg --> Svc : minPercent
+loop for each approved campaign
+  Svc -> Svc : refreshRecruitmentStatus(campaignId)\nscheduled → open → staffed → closed_ready / expired_understaffed
+  opt the recruitment status changed
+    Svc -> Repo : kitchenCampaign.update(recruitmentStatus)
+    Svc -> Notif : notify(charity, the new recruitment status)
+  end
+  opt now >= operationStartAt
+    group $transaction
+      Svc -> Repo : $queryRaw SELECT kitchen_campaigns FOR UPDATE
+      Svc -> Svc : getStaffingReadiness(campaignId)
+      alt below the minimum confirmed staffing
+        Svc -> Repo : kitchenCampaign.update(recruitmentStatus = expired_understaffed)
+      else minimum reached but not every slot confirmed
+        Svc -> Repo : kitchenCampaign.update(recruitmentStatus = closed_ready)
+      else every slot confirmed
+        Svc -> Repo : kitchenCampaign.update(status = in_progress, recruitmentStatus = closed_ready)
+      end
+      Repo -> DB : UPDATE kitchen_campaigns
+    end
+    opt the campaign started automatically
+      Svc -> Notif : notify(charity and confirmed volunteers, "The campaign has started")
+    end
+  end
+end
+Svc --> Cron : { refreshed, started }
+deactivate Svc
+Notif --> Screen : 'notification:new'
+activate Screen
+Screen --> User : recruitment status and campaign status refresh
+deactivate Screen
+@enduml
+
 @startuml seq-cron-campaign-close
 title Auto-close Campaigns Scheduled Job Sequence Diagram
 
 participant ":CampaignsCron" as Cron
 participant ":CampaignsService" as Svc
+participant ":TrustService" as Trust
 participant ":NotificationsService" as Notif
 participant ":PrismaService" as Repo
 database "Database" as DB
 participant ":NotificationCenter" as Screen
-actor "Charity Org" as User
+actor "Charity Org / Volunteer" as User
 
-alt Daily at 00:00 — campaigns that never started
-  Cron -> Svc : expireOverdueCampaigns()
+group A. Daily at 00:00 — drafts never approved and campaigns that never started
+  Cron -> Svc : purgeStalePendingCampaigns()
   activate Svc
-  Svc -> Repo : kitchenCampaign.findMany(status = open, endDate NOT NULL)
-  Repo -> DB : SELECT kitchen_campaigns
-  DB --> Repo : candidates[]
-  Repo --> Svc : candidates
-  Svc -> Svc : endAt = endDate + endTime (UTC); overdue when endAt < now
-  alt no overdue campaign
-    Svc --> Cron : 0
-  else overdue campaigns found
-    Svc -> Repo : kitchenCampaign.updateMany(id in overdue, status = cancelled)
-    Repo -> DB : UPDATE kitchen_campaigns
-    Svc -> Notif : notify(charity, "Campaign expired — cancelled automatically")
-    Svc --> Cron : count
+  Svc -> Repo : kitchenCampaign.findMany(status = pending_approval,\nolder than CAMPAIGN_PENDING_PURGE_DAYS)
+  Repo --> Svc : stale[]
+  opt stale campaigns found
+    Svc -> Repo : kitchenCampaign.deleteMany(id in stale)
+    Repo -> DB : DELETE kitchen_campaigns
+    Svc -> Notif : notify(charity, "The pending campaign was removed")
   end
-else Hourly — running campaigns past their end time
+  Cron -> Svc : expireOverdueCampaigns()
+  Svc -> Repo : kitchenCampaign.findMany(status = approved, operationStartAt <= now,\nrecruitmentStatus != expired_understaffed)
+  Repo --> Svc : overdue[]
+  opt overdue campaigns found
+    Svc -> Repo : kitchenCampaign.updateMany(recruitmentStatus = expired_understaffed)
+    Repo -> DB : UPDATE kitchen_campaigns
+    Svc -> Notif : notify(charity and applicants, "Not enough volunteers — the campaign cannot start")
+  end
+  deactivate Svc
+end
+
+group B. Hourly — running campaigns past their end time
   Cron -> Svc : autoCompleteExpiredCampaigns()
-  Svc -> Repo : kitchenCampaign.findMany(status = in_progress, endDate NOT NULL)
+  activate Svc
+  Svc -> Repo : kitchenCampaign.findMany(status = in_progress, operationEndAt < now)
   Repo -> DB : SELECT kitchen_campaigns
   DB --> Repo : expired[]
   Repo --> Svc : expired
-  alt none expired
-    Svc --> Cron : 0
-  else expired campaigns found
+  opt expired campaigns found
     Svc -> Repo : kitchenCampaign.updateMany(id in expired, status = completed)
     Repo -> DB : UPDATE kitchen_campaigns
     Svc -> Notif : notify(charity, "Campaign closed automatically")
-    Svc --> Cron : count
   end
+  Cron -> Svc : releaseVolunteersOfFinishedCampaigns()
+  Svc -> Repo : close assignments still open in finished campaigns
+  Repo -> DB : UPDATE campaign_volunteer_assignments
+  deactivate Svc
 end
-deactivate Svc
+
+group C. Hourly — volunteers who never checked in
+  Cron -> Svc : markAbsentVolunteers()
+  activate Svc
+  Svc -> Repo : campaignVolunteerAssignment.findMany(status = assigned,\nno check-in, shift already over)
+  Repo --> Svc : stale[]
+  opt stale assignments found
+    Svc -> Repo : assignment.updateMany(status = absent) + slotsFilled −1
+    Repo -> DB : UPDATE assignments / kitchen_campaigns / campaign_shifts
+    Svc -> Trust : applyDelta(volunteer, −VOLUNTEER_NO_SHOW_PENALTY, VOLUNTEER_NO_SHOW)
+    Svc -> Notif : notify(volunteer and charity, "Marked absent")
+  end
+  deactivate Svc
+end
+
 Notif --> Screen : 'notification:new'
 activate Screen
 Screen --> User : the campaign status refreshes on the manage screen
 deactivate Screen
 @enduml
 
-'──────────────────── 76. Unlock Cooking Steps ───────────────
 @startuml seq-cron-dish-steps
 title Unlock Cooking Steps Scheduled Job Sequence Diagram
 
@@ -177,7 +225,7 @@ actor "Chef" as User
 Cron -> Svc : autoOpenAvailableSteps()
 activate Svc
 Svc -> Svc : window = [VN yesterday, VN tomorrow)
-Svc -> Repo : kitchenCampaign.findMany(status in in_progress / open,\nscheduledDate within the window)
+Svc -> Repo : kitchenCampaign.findMany(status in in_progress / approved,\ndates within the window)
 Repo -> DB : SELECT kitchen_campaigns
 DB --> Repo : campaigns[]
 Repo --> Svc : campaigns
@@ -190,7 +238,7 @@ else campaigns found
   Repo --> Svc : steps
   loop for each dish, walking its steps in order
     Svc -> Svc : due = now >= stepDueAtUtc(campaignTiming, step.scheduledTime)
-    alt due AND the previous step is done AND status = locked
+    alt due AND previous step done (QC approved) AND ingredients received AND status = locked
       Svc -> Svc : add the step to toOpen[]
     else not eligible yet
       Svc -> Svc : leave it locked
@@ -212,7 +260,6 @@ end
 deactivate Svc
 @enduml
 
-'──────────────────── 77. Clean Up Bulk Runs ─────────────────
 @startuml seq-cron-bulk-cleanup
 title Clean Up Abandoned Bulk Runs Scheduled Job Sequence Diagram
 
@@ -226,14 +273,14 @@ actor "Shipper / Provider" as User
 Cron -> Svc : expireStalled()
 activate Svc
 
-group A. Requested for over 24 hours — the provider never reviewed it
+group A. Requested too long ago — the provider never reviewed it
   Svc -> Repo : bulkRun.updateMany(status = requested,\ncreatedAt < now − REQUEST_EXPIRY_HOURS, status = cancelled)
   Repo -> DB : UPDATE bulk_runs
   DB --> Repo : count
 end
 
-group B. Approved over 4 hours ago — the shipper never collected
-  Svc -> Repo : bulkRun.findMany(status = approved,\napprovedAt < now − PICKUP_DEADLINE_HOURS) take 50
+group B. Approved but the shipper never collected
+  Svc -> Repo : bulkRun.findMany(status = approved,\napprovedAt < now − PICKUP_DEADLINE_HOURS)
   Repo -> DB : SELECT bulk_runs
   DB --> Repo : notPickedUp[]
   Repo --> Svc : notPickedUp
@@ -246,8 +293,8 @@ group B. Approved over 4 hours ago — the shipper never collected
   end
 end
 
-group C. Picked up over 8 hours ago — the run never finished
-  Svc -> Repo : bulkRun.findMany(status = picked_up,\npickedUpAt < now − RUN_COMPLETION_HOURS) take 50
+group C. Picked up but the run never finished
+  Svc -> Repo : bulkRun.findMany(status = picked_up,\npickedUpAt < now − RUN_COMPLETION_HOURS)
   Repo -> DB : SELECT bulk_runs
   DB --> Repo : overdue[]
   Repo --> Svc : overdue

@@ -1,11 +1,4 @@
-'==============================================================
-' FoodResQ — Sequence Diagrams: Supporting Modules (5)
-' 69. Notifications · 70. Reports · 71. Recipes · 72. ESG · 73. Uploads
-'==============================================================
-
-'──────────────────── 69. Notifications ──────────────────────
 @startuml seq-notification-center
-!include _seq-style.iuml
 title Realtime Notification Sequence Diagram
 
 actor "User" as User
@@ -99,9 +92,7 @@ deactivate WS
 deactivate Screen
 @enduml
 
-'──────────────────── 70. Reports ────────────────────────────
 @startuml seq-report-create
-!include _seq-style.iuml
 title Create Report Sequence Diagram
 
 actor "User" as User
@@ -165,9 +156,7 @@ Screen --> User : status of each report (pending / resolved / dismissed)
 deactivate Screen
 @enduml
 
-'──────────────────── 71. Recipes ────────────────────────────
 @startuml seq-recipe-manage
-!include _seq-style.iuml
 title Manage Recipe Library Sequence Diagram
 
 actor "Chef" as User
@@ -255,9 +244,7 @@ Screen --> User : refresh the library (or show error message)
 deactivate Screen
 @enduml
 
-'──────────────────── 72. ESG ────────────────────────────────
 @startuml seq-esg-report
-!include _seq-style.iuml
 title ESG Impact and CSR Report Sequence Diagram
 
 actor "Guest / Provider" as User
@@ -314,9 +301,7 @@ deactivate Ctrl
 deactivate Screen
 @enduml
 
-'──────────────────── 73. Uploads ────────────────────────────
 @startuml seq-upload-image
-!include _seq-style.iuml
 title Upload Image Sequence Diagram
 
 actor "User / Guest" as User
@@ -325,12 +310,12 @@ participant ":ThrottlerGuard" as Throttle
 participant ":UploadsController" as Ctrl
 participant ":ParseFilePipe" as Pipe
 participant ":StorageService" as Storage
-participant ":Disk / Object Storage" as Disk
+participant ":Cloudinary" as Cloud
 
 User -> Screen : pick an image
 activate Screen
-alt Signed in (listing photo / avatar / verification evidence)
-  Screen -> Ctrl : POST /uploads/image?kind=listing|avatar|verification (multipart)
+alt Signed in (listing photo / avatar / verification / delivery evidence)
+  Screen -> Ctrl : POST /uploads/image?kind=listing|avatar|verification|delivery-evidence (multipart)
   activate Ctrl
 else Registering as a provider, no account yet
   Screen -> Throttle : POST /uploads/register-evidence (multipart)
@@ -355,7 +340,7 @@ else valid
   Pipe --> Ctrl : file
   Ctrl -> Ctrl : folder = FOLDER_BY_KIND[kind]
   alt kind is not in the whitelist
-    Ctrl --> Screen : 400 "kind must be listing, avatar or verification"
+    Ctrl --> Screen : 400 "kind is not supported"
     Screen --> User : show error message
   else allowed kind
     Ctrl -> Storage : saveImage(file, folder)
@@ -366,10 +351,11 @@ else valid
       Ctrl --> Screen : return error
       Screen --> User : show error message
     else the content really is an image
-      Storage -> Storage : safeSubdir = subdir.replace(/[^a-z0-9_-]/gi, '')
-      Storage -> Disk : mkdir(recursive) + writeFile(randomUUID().ext)
-      Disk --> Storage : written
-      Storage --> Ctrl : "/uploads/{subdir}/{uuid}.{ext}"
+      Storage -> Cloud : upload(buffer, folder = foodresq/{subdir})
+      activate Cloud
+      Cloud --> Storage : secure_url
+      deactivate Cloud
+      Storage --> Ctrl : image URL (Cloudinary → Firebase Storage → local disk fallback)
       deactivate Storage
       Ctrl --> Screen : { url } (201)
       Screen --> User : preview the image, the url is attached to the form
